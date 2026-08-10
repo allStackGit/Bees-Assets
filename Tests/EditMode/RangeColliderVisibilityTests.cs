@@ -113,6 +113,23 @@ namespace Bees.Tests.EditMode
                 "Visibility should be removed when the final contact from this range exits.");
         }
 
+        [Test]
+        public void AiWeaponRangeDoesNotRevealPlayerMapObjects()
+        {
+            LevelFixture level = CreateLevel();
+            object aiRange = CreateRangeCollider(level.Level, "AI range", isUserControlled: false);
+            ObjectFixture target = CreateMapObject("Object inside AI range", level.Level);
+            object visibleObjects = RuntimeAssembly.GetField(level.State, "PlayerVisibleMapObjects");
+
+            RuntimeAssembly.Invoke(aiRange, "OnTriggerEnter2D", target.Collider);
+
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0),
+                "AI/Bee weapon ranges must not contribute to the player's map-object discovery state.");
+
+            RuntimeAssembly.Invoke(aiRange, "Deactivate");
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0));
+        }
+
         private LevelFixture CreateLevel()
         {
             GameObject levelObject = CreateObject("Visibility Level");
@@ -123,11 +140,12 @@ namespace Bees.Tests.EditMode
             return new LevelFixture(level, state);
         }
 
-        private object CreateRangeCollider(object level, string name)
+        private object CreateRangeCollider(object level, string name, bool isUserControlled = true)
         {
             GameObject shipObject = CreateObject(name + " Ship");
             object ship = shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
             RuntimeAssembly.SetField(ship, "Level", level);
+            RuntimeAssembly.SetField(ship, "IsUserControlled", isUserControlled);
 
             GameObject weaponObject = CreateObject(name + " Weapon");
             object weapon = weaponObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.Weapon"));
