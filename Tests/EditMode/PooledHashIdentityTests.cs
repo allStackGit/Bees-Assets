@@ -52,15 +52,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void HivemindVisibilityUsesStableSetsAndCleansDepartingShips()
+        public void HivemindVisibilityKeepsShipDeathCleanupBounded()
         {
             string state = Read("Scripts", "Levels", "GameState.cs");
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
             string queries = Read("Scripts", "Levels", "GameState.Queries.cs");
 
             Assert.That(state, Does.Contain("ReferenceIdentityComparer<Ship>.Instance"));
-            Assert.That(registry, Does.Contain("observerMap.Remove(ship.Id)"));
-            Assert.That(registry, Does.Contain("visibleShips?.Remove(ship)"));
+            Assert.That(registry, Does.Contain("HivemindShips[ship.Side - 1].Remove(ship.Id)"));
+            Assert.That(registry, Does.Not.Contain("foreach (HashSet<Ship> visibleShips in observerMap.Values)"));
+            Assert.That(queries, Does.Contain("dictionary.Value.Where(ship => !ship.IsDead)"));
+            Assert.That(state, Does.Contain("HivemindShips = new[]"));
             Assert.That(queries, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
         }
     }
