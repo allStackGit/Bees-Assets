@@ -55,6 +55,17 @@ public class SettingsMenu : MonoBehaviour
 
     public void ViewSettings()
     {
+        if (!_isSetup)
+        {
+            Stage ownerStage = GetComponentInParent<Stage>();
+            if (ownerStage == null)
+            {
+                Debug.LogError("Settings menu could not find its owning Stage.");
+                return;
+            }
+            SetupSettings(ownerStage);
+        }
+
         _hasChangedHotKeys = false;
         _newKeyCombination.Clear();
         _hasKeyInputEnabled = false;
@@ -85,6 +96,12 @@ public class SettingsMenu : MonoBehaviour
 
     public void SetupSettings(Stage stage)
     {
+        if (_isSetup)
+        {
+            Stage = stage;
+            return;
+        }
+
         Stage = stage;
         HotKeys = ConfigData.GetUserSettingsData().HotKeys;
         _entryInputs.Clear();
