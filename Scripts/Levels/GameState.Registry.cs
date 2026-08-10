@@ -158,6 +158,22 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            // Command target queues can outlive an individual target and can also be prepared
+            // before becoming the squad's active command. Remove the departing wrapper from
+            // both active and scripted queues before a pooled lifecycle can reuse it.
+            foreach (Squad squad in Squads)
+            {
+                ForgetShipFromCommandQueues(squad?.GetCommand(), ship);
+                if (squad?.CommandQueue == null)
+                {
+                    continue;
+                }
+                foreach (Command queuedCommand in squad.CommandQueue)
+                {
+                    ForgetShipFromCommandQueues(queuedCommand, ship);
+                }
+            }
+
             // Active projectiles can outlive their target. Purge queued contacts, target
             // reservations and subclass hit histories before this wrapper can be reused.
             foreach (Projectile projectile in Projectiles.ToList())
@@ -228,6 +244,22 @@ namespace Assets.Scripts.Levels
             // after ownership-sensitive deregistration has completed.
             ship.IsMinionShip = false;
             ship.IsCarrierShip = false;
+        }
+
+        private static void ForgetShipFromCommandQueues(Command command, Ship ship)
+        {
+            if (command == null || ship == null)
+            {
+                return;
+            }
+            if (command.OriginalQueue.Count > 0)
+            {
+                command.OriginalQueue = new Queue<Ship>(command.OriginalQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
+            }
+            if (command.TargetingQueue.Count > 0)
+            {
+                command.TargetingQueue = new Queue<Ship>(command.TargetingQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
+            }
         }
 
         public void AddDeadBody(ShipRemains body)
