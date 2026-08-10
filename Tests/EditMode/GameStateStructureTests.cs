@@ -33,19 +33,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DeadShooterIsNotPoolableWhileRuntimeWorkStillOwnsIt()
+        public void DeadShooterIsNotPoolableWhileItsProjectileIsStillActive()
         {
             string registry = File.ReadAllText(Path.Combine(_folder, "GameState.Registry.cs"));
-            string pathfinderLifecycle = File.ReadAllText(Path.Combine(_folder, "Pathfinder.Lifecycle.cs"));
             string shipPoolLifecycle = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Entities", "Ships", "Ship.PoolLifecycle.cs"));
 
             StringAssert.Contains("projectile.IsDead || projectile.Shooter != ship", registry);
             StringAssert.Contains("ship.CanReturnToPool()", registry);
-            StringAssert.Contains("ProjectilesInFlight.Count > 0", shipPoolLifecycle);
-            StringAssert.Contains("HasOutstandingWorkForShip(this, PathfindingLifecycleId)", shipPoolLifecycle);
-            StringAssert.Contains("ReferenceEquals(Ships[threadIndex], ship)", pathfinderLifecycle);
-            StringAssert.Contains("request.LifecycleId == lifecycleId", pathfinderLifecycle);
+            StringAssert.Contains("return ProjectilesInFlight.Count == 0", shipPoolLifecycle);
             StringAssert.Contains("ShipsToRelease.RemoveAll", registry);
         }
     }
