@@ -599,11 +599,7 @@ namespace Assets.Scripts.Levels
 
         private void SetSquadsToMine(MiningAsteroid asteroid)
         {
-            Level.State.GetSelectedSquads().ForEach(squad =>
-            {
-                if (squad.GetShips().Any(s => s.ShipType == ConfigData.ShipTypes.Factory)) squad.UserMining(asteroid);
-                else squad.Move(Stage.Camera.ScreenToWorldPoint(Input.mousePosition));
-            });
+            Level.State.GetSelectedSquads().ForEach(squad => squad.UserMining(asteroid));
         }
 
         private void SetSquadsToFullRetreat(WarpGate warpGate)
