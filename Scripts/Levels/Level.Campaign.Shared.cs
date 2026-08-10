@@ -19,7 +19,12 @@ namespace Assets.Scripts.Levels
         /// Mission-specific value accumulated by campaign objectives and converted into rewards.
         /// </summary>
         private int _questPoints;
-        private bool _lastShipRetreated;
+        private LevelOptions _lastShipRetreatedLevelOptions;
+        private bool _lastShipRetreated
+        {
+            get => CurrentLevelOptions != null && ReferenceEquals(_lastShipRetreatedLevelOptions, CurrentLevelOptions);
+            set => _lastShipRetreatedLevelOptions = value ? CurrentLevelOptions : null;
+        }
         private bool _hasSeenCarrierIntroIfNeeded;
 
         private void SetTriggers()
