@@ -24,7 +24,7 @@ namespace Assets.Scripts.Scenes
             SceneManager.sceneLoaded += HandleSceneLoaded;
         }
 
-        private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
             ResetNarrativeStateAtCampaignStart(scene.name);
 
