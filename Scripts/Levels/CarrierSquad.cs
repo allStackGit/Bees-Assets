@@ -52,6 +52,7 @@ namespace Assets.Scripts.Levels
             {
                 _id = Utilities.GetNegativeFleetshipId();
                 _ship = (CarrierShip)Level.LevelConstructor.InstantiateShip(CarrierSquadType);
+                _ship.IsCarrierShip = true;
 
                 _ship.Setup(
                         Level,
@@ -59,7 +60,6 @@ namespace Assets.Scripts.Levels
                         this,
                         ConfigData.CarrierColumnFormationOffsets[_shipIndex]
                     );
-                _ship.IsCarrierShip = true;
                 AddShip(_ship);
                 _ship.SetColor();
             }
