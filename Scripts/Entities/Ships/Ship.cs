@@ -53,7 +53,7 @@ namespace Assets.Scripts.Entities.Ships
         public Ship Killer;
         public FleetShip KillerFleetShip;
         public SavedSquad KillerSavedSquad;
-        public HashSet<Projectile> ProjectilesInFlight = new HashSet<Projectile>();
+        public HashSet<Projectile> ProjectilesInFlight = new HashSet<Projectile>(ReferenceIdentityComparer<Projectile>.Instance);
         public ShipRemains ShipRemains;
         public HashSet<Weapon> WeaponsThatHaveUsWithinRange = new HashSet<Weapon>();
         public ConfigData.ShipTypeLetters ShipTypeLetter;
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsMoving;
         public bool IsCeaseFire;
         public bool CanOverrideBounds;
-        public HashSet<Ship> ShipsHit = new HashSet<Ship>();
+        public HashSet<Ship> ShipsHit = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
 
         public volatile bool PathfindingThreadComplete, IsPathfinding;
         public volatile Pathfinder.Path PathfindingValue;
@@ -106,7 +106,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public List<Ship> ShipsWithinRange => HasWeapons
             ? Weapons.Select(weapon => weapon.ShipsWithinRange)
-                .Aggregate(new HashSet<Ship>(), (ships, current) =>
+                .Aggregate(new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance), (ships, current) =>
                 {
                     ships.UnionWith(current.Values);
                     return ships;
