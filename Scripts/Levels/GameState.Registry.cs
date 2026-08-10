@@ -247,7 +247,7 @@ namespace Assets.Scripts.Levels
                     projectile == null || projectile.IsDead || projectile.Shooter != ship);
             }
 
-            Ship[] ready = ShipsToRelease.Where(ship => ship.ProjectilesInFlight.Count == 0).ToArray();
+            Ship[] ready = ShipsToRelease.Where(ship => ship.CanReturnToPool()).ToArray();
             if (ready.Length > 0)
             {
                 HashSet<Ship> readySet = ready.ToHashSet();
