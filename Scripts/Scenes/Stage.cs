@@ -505,7 +505,7 @@ public class Stage : Scene
     public void SetupCamera()
     {
         Camera.orthographicSize = DefaultZoom;
-        _camera_localizedPosition = DefaultCameraPosition + (Vector2)transform.position;
+        _camera_localizedPosition = DefaultCameraPosition + PrimaryLevel.GetPosition();
         Camera.transform.position = new Vector3(_camera_localizedPosition.x, _camera_localizedPosition.y, -10);
         InputManager.MaintainScrollBoundary();
         if ((OverrideUserSide == 1 || OverrideUserSide == 2) && OverrideUserSide != ConfigData.Configuration.UserSide)
@@ -525,9 +525,9 @@ public class Stage : Scene
         MiniMapCamera.orthographicSize = PrimaryLevel.Map.MiniMapCameraSize;
     }
     /// <summary>
-    /// Sets up overrides for all the levels
+    /// Sets up overrides for the level currently being configured.
     /// </summary>
-    public void SetConfigOptionsAndOverrides()
+    public void SetConfigOptionsAndOverrides(Level level)
     {
         if (TimeoutTime == 0)
         {
@@ -546,11 +546,11 @@ public class Stage : Scene
         Time.timeScale = TimeScale;
         if (GeneratedSquadCountOverride > 0)
         {
-            PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
+            level.CurrentLevelOptions.EnemySquadGenerationCount = GeneratedSquadCountOverride;
         }
-        if (PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount > 0)
+        if (level.CurrentLevelOptions.EnemySquadGenerationCount > 0)
         {
-            PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(PrimaryLevel.CurrentLevelOptions.EnemySquadGenerationCount - GeneratedSquadCountMinimum) + 1 + GeneratedSquadCountMinimum;
+            level.CurrentLevelOptions.EnemySquadGenerationCount = Utilities.RandomInt(level.CurrentLevelOptions.EnemySquadGenerationCount - GeneratedSquadCountMinimum) + 1 + GeneratedSquadCountMinimum;
         }
 
         if (OverrideBeeShipTypes.Count > 0)
@@ -571,7 +571,7 @@ public class Stage : Scene
             HumanShipTypes = ConfigData.HumanShipTypes.ToList();
         }
 
-        if (PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption == -1)
+        if (level.CurrentLevelOptions.EnemyShipTypeOption == -1)
         {
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
@@ -585,7 +585,7 @@ public class Stage : Scene
             }
 
         }
-        else if (PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption == 0)
+        else if (level.CurrentLevelOptions.EnemyShipTypeOption == 0)
         {
             //Debug.Log($"The map does not have a singular enemy ship type");
             if (OverrideBeeShipTypes.Count > 0)
@@ -610,13 +610,13 @@ public class Stage : Scene
         {
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
-                BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
+                BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[level.CurrentLevelOptions.EnemyShipTypeOption - 1] };
                 //Debug.Log($"The user has selected enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
-                //Debug.Log($"Option: {PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption}");
-                HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[PrimaryLevel.CurrentLevelOptions.EnemyShipTypeOption - 1] };
+                //Debug.Log($"Option: {level.CurrentLevelOptions.EnemyShipTypeOption}");
+                HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[level.CurrentLevelOptions.EnemyShipTypeOption - 1] };
                 Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
             }
         }
