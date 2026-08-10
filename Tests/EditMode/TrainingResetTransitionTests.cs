@@ -20,15 +20,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ShipRemovalToleratesNullSpottedListsDuringEpisodeTeardown()
+        public void ShipRemovalDoesNotTouchTemporarilyNullSpottedListsDuringEpisodeTeardown()
         {
             string resetLevel = ExtractMethodBody(_levelSource, "ResetLevel");
             string removeShip = ExtractMethodBody(_registrySource, "RemoveShip");
 
             Assert.That(resetLevel, Does.Contain("Array.Clear(_reset_spottedShips"),
-                "This regression is relevant while ResetLevel temporarily nulls the per-side spotted lists before EndKill.");
-            Assert.That(removeShip, Does.Contain("if (spotted != null)"));
-            Assert.That(removeShip, Does.Contain("spotted.RemoveAll"));
+                "ResetLevel temporarily nulls the per-side spotted lists before EndKill.");
+            Assert.That(removeShip, Does.Not.Contain("SpottedShips"),
+                "Ship removal should not scan spotting state during live casualty/reset teardown; ResetState recreates it before wrapper reuse.");
+            Assert.That(removeShip, Does.Not.Contain("spotted.RemoveAll"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
