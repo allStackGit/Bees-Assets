@@ -100,9 +100,11 @@ namespace Assets.Scripts.Levels.Commands
             ship.MoveToPoint(target.GetPosition());
             return true;
         }
-        private bool HaveAnyShipsFinished(List<Barge> ships)
+        private bool HaveAllShipsFinished(List<Barge> ships)
         {
-            return ships.Any((ship) => ship.HasCompletedRun);
+            // Charge owns the whole squad's run. Completing one Barge must not finalize the
+            // command and ResetCharge() the other Barges while they are still charging/cooling.
+            return ships.Count > 0 && ships.All((ship) => ship.HasCompletedRun);
         }
         private bool ShouldShipPursueTarget(Barge ship)
         {
@@ -158,7 +160,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
 
-            if (!IsDead && HaveAnyShipsFinished(_timer_barges))
+            if (!IsDead && HaveAllShipsFinished(_timer_barges))
             {
                 SetFinalize("Completed charging run");
             }
