@@ -97,7 +97,13 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            ship.FleetShip.IsLoadedIntoLevel = false;
+            // Queen/Scout minions and Carrier children intentionally replace their
+            // transient FleetShip with the parent's FleetShip for shared stat accounting.
+            // Their teardown must not mark the still-live parent FleetShip as unloaded.
+            if (!ship.IsMinionShip && !ship.IsCarrierShip)
+            {
+                ship.FleetShip.IsLoadedIntoLevel = false;
+            }
             Ships.Remove(ship);
             MiningShips.Remove(ship);
             ShipsById.Remove(ship.Id);
@@ -105,6 +111,12 @@ namespace Assets.Scripts.Levels
             {
                 ShipsToRelease.Add(ship);
             }
+
+            // Drone/Striker pools can serve both ordinary ships and Carrier children, and
+            // spawned ship pools can later serve another lifecycle. Clear role flags only
+            // after ownership-sensitive deregistration has completed.
+            ship.IsMinionShip = false;
+            ship.IsCarrierShip = false;
         }
 
         public void AddDeadBody(ShipRemains body)
