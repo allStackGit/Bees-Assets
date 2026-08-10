@@ -17,6 +17,13 @@ namespace Assets.Scripts.Entities.Ships
 
         public int TotalSprites, SpriteIndex;
 
+        public void ResetForReuse()
+        {
+            ShouldSwapSprite = false;
+            SpriteIndex = 0;
+            CurrentSprite = null;
+        }
+
         private int _loopIndex;
         public void RecolorAnimationSprites()
         {
@@ -64,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = false;
 
             }
-            else if (Ship.Squad.HasCustomColor)
+            else if (Ship.Squad.HasCustomColor && CurrentSprite != null)
             {
                 SpriteRenderer.sprite = CurrentSprite;
                 //Debug.Log($"Should not swap sprite yet");
