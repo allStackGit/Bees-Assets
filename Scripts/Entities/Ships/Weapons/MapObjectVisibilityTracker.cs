@@ -99,24 +99,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            // Unity objects can enter their special destroyed state before managed teardown
-            // completes. Rebuild the same public HashSet instance by managed reference identity
-            // rather than relying on the object's equality/hash behavior during destruction.
-            HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
-            List<MapObject> survivors = new List<MapObject>(visibleObjects.Count);
-            foreach (MapObject candidate in visibleObjects)
-            {
-                if (!ReferenceEquals(candidate, _mapObject))
-                {
-                    survivors.Add(candidate);
-                }
-            }
-
-            visibleObjects.Clear();
-            foreach (MapObject survivor in survivors)
-            {
-                visibleObjects.Add(survivor);
-            }
+            // GameState uses ReferenceIdentityComparer<MapObject>, so removal remains stable
+            // even after Unity enters its special destroyed-object equality state. Avoid the
+            // previous copy/clear/rebuild of the entire visible set for every source removal.
+            _state.PlayerVisibleMapObjects.Remove(_mapObject);
         }
     }
 }
