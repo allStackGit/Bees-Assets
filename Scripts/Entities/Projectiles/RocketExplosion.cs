@@ -21,12 +21,6 @@ namespace Assets.Scripts.Entities.Projectiles
             IsHarmless = false;
         }
 
-        public override void ForgetShip(Ship ship)
-        {
-            base.ForgetShip(ship);
-            _shipsHit.RemoveAll(candidate => ReferenceEquals(candidate, ship));
-        }
-
         public override void Activate()
         {
             base.Activate();
