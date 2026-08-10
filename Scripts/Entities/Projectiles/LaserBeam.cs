@@ -12,7 +12,7 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         private float _scale = 2f;
         private int _powerLoss;
-        private HashSet<Ship> _shipsHit = new HashSet<Ship>();
+        private HashSet<Ship> _shipsHit = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         private Vector2 _oneAndHalf = new Vector2(1, .5f);
         private BeamCannon BeamCannon;
         public void Setup(Level level, BeamCannon beamCannon, Ship shooter, Ship target, Vector2 startingPosition, float angle, int range, int power)
