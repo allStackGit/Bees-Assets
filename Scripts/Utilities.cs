@@ -1015,8 +1015,9 @@ namespace Assets.Scripts
             {
                 Debug.Log($"Saving custom color ({squad.Color}) {type} sprites for {squad.Name}");
 
-                // Getting the list of ships in the squad
-                List<SquadShip>  cacheSquadShips = squad.GetSquadShips();
+                // Work on a snapshot because Carrier cache entries include synthetic child ship
+                // types that must never be appended to the persisted squad composition.
+                List<SquadShip> cacheSquadShips = squad.GetSquadShips().ToList();
                 for (int i = 0; i < cacheSquadShips.Count; i++) 
                 {
                     SquadShip cacheSquadShip = cacheSquadShips[i];
@@ -1053,8 +1054,9 @@ namespace Assets.Scripts
 
                                 for (int p = 0; p < cacheSquadChangeablePixels.Length; p++) 
                                 {
-                                    squad.Color.a = cacheSquadPixels[cacheSquadChangeablePixels[p]].a; // match the alpha value
-                                    cacheSquadPixels[cacheSquadChangeablePixels[p]] = squad.Color;
+                                    Color cacheSquadColor = squad.Color;
+                                    cacheSquadColor.a = cacheSquadPixels[cacheSquadChangeablePixels[p]].a;
+                                    cacheSquadPixels[cacheSquadChangeablePixels[p]] = cacheSquadColor;
                                 }
 
                                 // Create a new texture for the changed sprite
