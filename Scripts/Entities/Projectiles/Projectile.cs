@@ -19,7 +19,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public Vector2 StartingPosition;
         public float Angle;
         public GameObject Explosion;
-        public HashSet<Ship> ShipsToIgnore = new HashSet<Ship>();
+        public HashSet<Ship> ShipsToIgnore = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public Queue<Ship> CollidingQueue = new Queue<Ship>();
         public Queue<Obstacle> CollidingObstacleQueue = new Queue<Obstacle>();
         public string Name;
