@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Settings; 
 using Assets.Scripts.UI_Components;
 using System;
@@ -74,12 +75,10 @@ namespace Assets.Scripts.Scenes
 
              // Campaign
             currentLevel = ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.HumanSide, ConfigData.GameModes.Campaign);
-            //Debug.Log($"Current Level: {currentLevel} Total Levels: {ConfigData.Configuration.TotalLevels}");
 
-            if (currentLevel >= ConfigData.Configuration.TotalLevels)
+            if (CampaignMissionCatalog.IsCampaignComplete(currentLevel))
             {
-                HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Beta Campaign Completed!";
-                HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+                SetCampaignCompleteState();
             }
 
             if (!IsResettingCampaign)
@@ -223,6 +222,15 @@ namespace Assets.Scripts.Scenes
             ConfigData.CurrentGameMode = ConfigData.GameModes.Campaign;
             ConfigData.CurrentShips = ConfigData.CampaignShips;
 
+            int currentLevel = ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.UserSide,
+                ConfigData.GameModes.Campaign);
+            if (CampaignMissionCatalog.IsCampaignComplete(currentLevel))
+            {
+                SetCampaignCompleteState();
+                return;
+            }
+
             // If this is the first time the user is playing the human campaign, set up their first level and load it right away
             if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide && !ConfigData.UserProgressData.HasStartedHumanCampaign)
             {
@@ -236,6 +244,13 @@ namespace Assets.Scripts.Scenes
                 ConfigData.LoadLevel();
             }
         }
+
+        private void SetCampaignCompleteState()
+        {
+            HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Beta Campaign Completed!";
+            HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+        }
+
         public void ConfirmResetCampaign()
         {
             ResetConfirmation.SetExplanation("This will set you back to the beginning of the campaign.");
