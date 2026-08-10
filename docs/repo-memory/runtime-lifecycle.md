@@ -60,7 +60,7 @@
 - `ShipDamageStatus` and `SpottedShip` hold direct Ship wrappers; `GameState.RemoveShip()` must remove those records before the wrapper can be pooled/reidentified.
 - Nearby asteroid lists may temporarily retain destroyed wrappers; consumers must prune/filter dead/null asteroids before avoidance or targeting decisions.
 - Lifecycle role flags such as `IsMinionSquad`, `IsMinionShip`, and `IsCarrierShip` must remain valid through ownership-sensitive deregistration, then be cleared before the pooled wrapper can be reused for a different role.
-- Temporary Queen/Scout/Carrier child squads and ships share parent `SavedSquad`/`FleetShip` identities for behavior/stat accounting. Child teardown must never release the parent's `IsLoadedIntoLevel` state.
+- Temporary Queen/Scout/Carrier child squads and ships share parent `SavedSquad`/`FleetShip` identities for behavior/stat accounting. Child registration and teardown must never claim or release the parent's `IsLoadedIntoLevel` state. Child roles must therefore be established before `Setup()`/registry insertion; `CarrierSquad.ClearData()` reasserts its subclass role during base setup before `GameState.AddSquad()` runs.
 
 ## Pathfinding ownership
 
