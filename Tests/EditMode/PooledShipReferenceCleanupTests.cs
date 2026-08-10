@@ -56,5 +56,32 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("if (_ownerLevel == fadeLevel)", source);
             StringAssert.DoesNotContain("Ship.Level.AddTimer(_shrinkVisionTimer);", source);
         }
+
+        [Test]
+        public void ShipRemainsRetirePreviousLevelOwnershipBeforePoolReuse()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ShipRemains.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("private Level _ownerLevel;", source);
+            StringAssert.Contains("RetirePreviousPlacement();", source);
+            StringAssert.Contains("_ownerLevel = Ship.Level;", source);
+            StringAssert.Contains("_ownerLevel.AddTimer(_killTimer);", source);
+            StringAssert.Contains("_ownerLevel.State.Deadbodies.Remove(this);", source);
+            StringAssert.DoesNotContain("Ship.Level.AddTimer(_killTimer);", source);
+            StringAssert.DoesNotContain("Ship.Level.CancelTimer(_killTimer);", source);
+        }
+
+        [Test]
+        public void NonAnimatedShipRemainsRecolorFromImmutableBaseline()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "ShipRemains.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("private Sprite _baseSprite;", source);
+            StringAssert.Contains("_baseSprite = _spriteRenderer != null ? _spriteRenderer.sprite : null;", source);
+            StringAssert.Contains("Utilities.GetChangablePixelsForImage(colors, _baseSprite)", source);
+            StringAssert.Contains("Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels)", source);
+        }
     }
 }
