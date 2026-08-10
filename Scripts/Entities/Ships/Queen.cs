@@ -114,14 +114,13 @@ namespace Assets.Scripts.Entities.Ships
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
             Ship ship = Level.LevelConstructor.InstantiateShip(MinionType);
-
+            ship.IsMinionShip = true;
             ship.Setup(
                     Level,
                     new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
                     squad,
                     offset
                 );
-            ship.IsMinionShip = true;
             squad.AddShip(ship);
             ship.FleetShip = FleetShip;
 
