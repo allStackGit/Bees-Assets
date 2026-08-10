@@ -945,7 +945,7 @@ namespace Assets.Scripts.Levels
 
             //Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
-            Stage.SetConfigOptionsAndOverrides();
+            Stage.SetConfigOptionsAndOverrides(this);
             Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
