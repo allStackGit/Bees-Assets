@@ -178,6 +178,7 @@ namespace Assets.Scripts.Entities.Ships
                     _bomb = (StrikerBomb)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.StrikerBomb);
                     _bomb.transform.parent = Level.Map.Transform;
                     _bomb.Setup(Level, Bomb, this, ContactedShip, ContactedShip.GetRandomPointOnShip(GetPosition()), 0, 0, Bomb.Power, ContactedShip);
+                    Bomb.TransferTargetReservation();
                 }
                 else
                 {
@@ -194,8 +195,10 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Id != _trainingBombTargetRuntimeId)
             {
+                Bomb.ReleaseTargetReservation();
                 return;
             }
+            Bomb.ReleaseTargetReservation();
             LogAttackingDamage(Bomb.Power, this, FleetShip, Squad.SavedSquad, ContactedShip);
         }
 
@@ -238,6 +241,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
+            Bomb.ReleaseTargetReservation();
             Level.CancelTimer(_damageTimer);
             Level.CancelTimer(_checkCarrierReloadTimer);
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
