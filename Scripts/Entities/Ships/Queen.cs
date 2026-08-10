@@ -26,6 +26,7 @@ namespace Assets.Scripts.Entities.Ships
 
         //private int _maxMinionsPerSquad = 16;
         private ScaledTimer _spawnMinionsTimer = new ScaledTimer();
+        private bool _isDeathAnimationPending;
         public override void Create(Stage stage)
         {
             base.Create(stage);
@@ -56,6 +57,26 @@ namespace Assets.Scripts.Entities.Ships
             MinionSquadsCount = 0;
             CurrentMinionSquad = null;
             MinionSquads.Clear();
+            _isDeathAnimationPending = false;
+        }
+
+        protected override void DropExplosionAnimation()
+        {
+            if (!Stage.IsTraining)
+            {
+                _isDeathAnimationPending = true;
+            }
+            base.DropExplosionAnimation();
+        }
+
+        public override bool CanReturnToPool()
+        {
+            return !_isDeathAnimationPending && base.CanReturnToPool();
+        }
+
+        public void CompleteDeathAnimation()
+        {
+            _isDeathAnimationPending = false;
         }
 
 
