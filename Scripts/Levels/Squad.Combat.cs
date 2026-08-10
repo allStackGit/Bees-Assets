@@ -66,10 +66,11 @@ namespace Assets.Scripts.Levels
             }
 
             Level.CancelTimer(_checkChaseTimer);
-            // General minion squads share the ordinary SquadPool. Clear the per-lifecycle
-            // role before release so a later normal squad cannot inherit minion semantics.
-            IsMinionSquad = false;
             Level.State.RemoveSquad(this);
+            // General minion squads share the ordinary SquadPool. Keep the role intact
+            // through deregistration so GameState can respect its ownership semantics,
+            // then clear it before the wrapper can be reused as a normal squad.
+            IsMinionSquad = false;
             enabled = false;
         }
 
