@@ -200,8 +200,7 @@ public class DialogueManager : MonoBehaviour
             if (Input.GetKey(KeyCode.Space))
             {
                 line.IsSkipped = true;
-                yield return new WaitForSeconds(0.02f);
-                DisplayNextLine();
+                DisplayNextLineWithDelay(0.02f);
             }
             else
             {

@@ -34,6 +34,9 @@ namespace Assets.Scripts.Entities.Ships
             base.Setup(level, fleetShip, squad, offsetFromCenter);
 
             CanDropBeacons = true;
+            // A fresh Scout starts fully charged. Anchor the cooldown to this lifecycle rather
+            // than application uptime so its first beacon is immediately available every time.
+            TimeSinceLastBeaconDropped = Time.realtimeSinceStartup - ConfigData.MinimumDelayPerBeacon;
             if (IsUserControlled)
             {
                 ChargingBar.Setup(); 

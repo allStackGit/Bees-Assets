@@ -68,6 +68,10 @@ namespace Assets.Scripts.Levels
 
         public void CloseLevel()
         {
+            // Capture the combat result before cleanup removes surviving ships. Campaign
+            // dialogue triggers may continue running after CloseLevel; their outcome queries
+            // must see the result that caused closure, not deaths caused by teardown itself.
+            State.CaptureEliminationState();
             Pause();
             CancelTimer(_egg);
             CancelTimer(_fishTank);

@@ -121,16 +121,9 @@ namespace Assets.Scripts.Entities.Ships
 
 
             _targetTSVLoss = target.Tsv - _targetOldTSV;
+            // LogHitStats owns attacker/target command TSV accounting as well as persistent
+            // combat stats. Do not apply the same command reward/penalty again here.
             LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVLoss);
-
-            if (attacker.Squad.HasCommand)
-            {
-                attacker.Squad.GetCommand().Tsv += -_targetTSVLoss;
-            }
-            if (target.Squad.HasCommand)
-            {
-                target.Squad.GetCommand().Tsv += _targetTSVLoss;
-            }
             target.UpdateHealthBar();
 
 

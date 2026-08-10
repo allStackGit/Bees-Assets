@@ -34,6 +34,8 @@ namespace Assets.Scripts.Levels
         public bool IsPaused;
         public bool GameOver;
         public bool LevelEnded;
+        private bool _hasEliminationSnapshot;
+        private readonly bool[] _eliminationSnapshot = new bool[2];
         public int[] InitialTsv = { 0, 0 };
         public List<SpottedShip>[] SpottedShips = { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = { 0, 0 };
@@ -86,6 +88,45 @@ namespace Assets.Scripts.Levels
         {
             Level = level;
             Stage = Level.Stage;
+        }
+
+        public void CaptureEliminationState()
+        {
+            if (_hasEliminationSnapshot)
+            {
+                return;
+            }
+
+            if (Level != null &&
+                (Level.WinningSide == ConfigData.Configuration.HumanSide ||
+                 Level.WinningSide == ConfigData.Configuration.BeeSide))
+            {
+                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                {
+                    _eliminationSnapshot[side - 1] = side != Level.WinningSide;
+                }
+            }
+            else
+            {
+                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                {
+                    List<Ship> sideShips = GetShips(side);
+                    _eliminationSnapshot[side - 1] = sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+                }
+            }
+            _hasEliminationSnapshot = true;
+        }
+
+        public bool TryGetCapturedEliminationState(int side, out bool isKilled)
+        {
+            if (_hasEliminationSnapshot && side >= 1 && side <= _eliminationSnapshot.Length)
+            {
+                isKilled = _eliminationSnapshot[side - 1];
+                return true;
+            }
+
+            isKilled = false;
+            return false;
         }
 
         public void ResetState()
@@ -151,6 +192,9 @@ namespace Assets.Scripts.Levels
             IsPaused = false;
             GameOver = false;
             LevelEnded = false;
+            _hasEliminationSnapshot = false;
+            _eliminationSnapshot[0] = false;
+            _eliminationSnapshot[1] = false;
         }
     }
 }

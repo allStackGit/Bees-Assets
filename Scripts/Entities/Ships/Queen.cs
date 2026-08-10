@@ -78,6 +78,20 @@ namespace Assets.Scripts.Entities.Ships
             return !_isDeathAnimationPending && base.CanReturnToPool();
         }
 
+        public override void PrepareForLevelTeardown()
+        {
+            if (!_isDeathAnimationPending)
+            {
+                return;
+            }
+
+            _isDeathAnimationPending = false;
+            if (!Stage.IsTraining && ShipExplosion != null)
+            {
+                ShipExplosion.SetActive(false);
+            }
+        }
+
         public void CompleteDeathAnimation()
         {
             _isDeathAnimationPending = false;
