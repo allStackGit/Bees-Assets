@@ -92,7 +92,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             foreach (Ship ship in CachedTargetingQueue)
             {
-                if (!ship.IsDead && Utilities.IsAimedAt(this, GetDegreesTowardsPoint(GetTargetPoint(ship))))
+                if (IsShipValidTarget(ship) && Utilities.IsAimedAt(this, GetDegreesTowardsPoint(GetTargetPoint(ship))))
                 {
                     return ship;
                 }
