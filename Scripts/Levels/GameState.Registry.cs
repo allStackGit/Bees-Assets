@@ -3,6 +3,7 @@ using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels.Commands;
 
 namespace Assets.Scripts.Levels
@@ -117,6 +118,33 @@ namespace Assets.Scripts.Levels
                 if (observer.HasProximityCollider && observer.ProximityCollider != null)
                 {
                     observer.ProximityCollider.NearbyEnemyShips.Remove(ship);
+                }
+                if (observer.HasWeapons && observer.Weapons != null)
+                {
+                    foreach (Weapon weapon in observer.Weapons)
+                    {
+                        if (weapon == null)
+                        {
+                            continue;
+                        }
+
+                        weapon.ShipsWithinRange.Remove(ship.Id);
+                        if (weapon.CachedTargetingQueue.RemoveAll(candidate => ReferenceEquals(candidate, ship)) > 0)
+                        {
+                            weapon.HasCachedChanged = true;
+                        }
+                        if (ReferenceEquals(weapon.TargetShip, ship))
+                        {
+                            if (weapon is Bomb bomb)
+                            {
+                                bomb.ReleaseTargetReservation();
+                            }
+                            else
+                            {
+                                weapon.ClearTargets();
+                            }
+                        }
+                    }
                 }
                 if (observer is Striker striker)
                 {
