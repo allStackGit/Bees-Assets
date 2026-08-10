@@ -21,7 +21,8 @@
 
 - Authored battlefield: `Resources/Obstacles/Bee-noculars.prefab`. Its long wall segments form lanes/pockets; it is not an open arena.
 - Core objective is a prolonged multidirectional defense of an immobile Titania target. Yellow Jackets are useful interception pressure because they are expendable contact bombers.
-- Human staging should be centered on the Titania objective with per-ship obstacle/spacing clearance, not by translating a wide fleet formation to a persisted map anchor.
+- Human staging must preserve each player's saved intra-squad formation exactly. If the mission relocates a squad toward Titania, translate every ship in that squad by one shared delta; never individually restage ships and never call `SetOffsets()` as part of mission staging. Candidate translated formations should be checked per ship for bounds, Titania clearance, authored obstacles, and overlap with already staged squads. If no safe translated position is found, preserve the squad's existing formation and position rather than corrupting its offsets.
+- Titania staging and Bee entry-lane physics checks operate on level/map-local coordinates; convert candidate points through `Map.Transform` before using world-space `Physics2D` queries if the Level may be offset from world origin.
 - Bee reinforcements should remain visually off-map, but their entry segment must use real openings through the authored obstacle layout.
 - Bee target selection remains server/Hive Mind controlled; mission authoring should not add client-only targeting rules.
 - The authored “last mission failed” line is still unsupported until a reliable persisted prior-mission outcome exists. Do not infer it from transient `WinningSide`/scene state.
