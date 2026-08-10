@@ -165,9 +165,15 @@ namespace Assets.Scripts.Levels
             // Command target queues can outlive an individual target and can also be prepared
             // before becoming the squad's active command. Remove the departing wrapper from
             // both active and scripted queues before a pooled lifecycle can reuse it.
+            Beehive departingBeehive = ship as Beehive;
             foreach (Squad squad in Squads)
             {
-                ForgetShipFromCommandQueues(squad?.GetCommand(), ship);
+                Command activeCommand = squad?.GetCommand();
+                ForgetShipFromCommandQueues(activeCommand, ship);
+                if (departingBeehive != null && activeCommand is Heal activeHeal)
+                {
+                    activeHeal.BeehiveBecameUnavailable(departingBeehive);
+                }
                 if (squad?.CommandQueue == null)
                 {
                     continue;
@@ -343,7 +349,7 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Pool.ReturnAsteroidPieceToPool(piece);
             }
-            foreach (MiningAsteroid miningAsteroid in miningAsteroids)
+            foreach (MiningAsteroid miningAsteroid in MiningAsteroidsToRelease)
             {
                 Stage.Pool.ReturnMiningAsteroidToPool(miningAsteroid);
             }
