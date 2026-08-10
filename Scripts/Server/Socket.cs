@@ -376,7 +376,7 @@ namespace Assets.Scripts.Server
         private int _index;
         private int _resends;
         /// <summary>
-        /// Loops through all requests, updates their time on the queue and resends requests that have been on the queue for more than 10 seconds
+        /// Resends each standing request after that request's configured queue timeout.
         /// </summary>
         public void CheckForResends()
         {
@@ -385,17 +385,17 @@ namespace Assets.Scripts.Server
             for (_index = 0; _index < _standingRequests.Count; _index++)
             {
                 _sr = _standingRequests[_index];
-                if (((ConfigData.Stopwatch.ElapsedMilliseconds - _sr.StartTime) / 1000) > ConfigData.StandardMaxTimeOnQueue)
+                if (_sr.HasExceededQueueTimeout(ConfigData.Stopwatch.ElapsedMilliseconds))
                 {
                     StandingRequests.Remove(_sr);
-                    Debug.LogWarning($"Resending #{_sr.Hash}:{_sr.Type} because it's been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                    Debug.LogWarning($"Resending #{_sr.Hash}:{_sr.Type} because it's been waiting for more than {_sr.MaxTimeOnQueue}s");
                     SendRequest(_sr, true);
                     _resends++;
                 }
             }
             if (_resends > 0)
             {
-                Debug.LogWarning($"Resending {_resends} requests because they've been waiting for more than {ConfigData.StandardMaxTimeOnQueue}s");
+                Debug.LogWarning($"Resending {_resends} timed-out requests");
                 ConfigData.__TotalResends += _resends;
             }
 
