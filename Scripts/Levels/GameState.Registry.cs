@@ -98,24 +98,6 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
-            // These records are queried during the live level and should stop referring to
-            // a dead target immediately. They are small per-side registries, so prune the
-            // departing ship synchronously before deregistering it.
-            foreach (List<ShipDamageStatus> statuses in ShipDamageStatuses)
-            {
-                if (statuses != null)
-                {
-                    statuses.RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
-                }
-            }
-            foreach (List<SpottedShip> spotted in SpottedShips)
-            {
-                if (spotted != null)
-                {
-                    spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
-                }
-            }
-
             // A dead Hivemind observer must stop contributing visibility immediately. Do not
             // scan every other observer's HashSet to remove this ship as a seen target: live
             // visibility aggregation already filters dead ships, and ordinary ship wrappers
@@ -131,6 +113,12 @@ namespace Assets.Scripts.Levels
             {
                 visibleCache?.Remove(ship);
             }
+
+            // ShipDamageStatuses and SpottedShips may still contain this dead wrapper until
+            // reset. Their live readers either validate the target before use or are inactive,
+            // and ResetState clears both registries before any ship wrapper can be reused. Do
+            // not traverse both registries synchronously on every casualty for a pool-reuse
+            // scenario that cannot occur during the live level.
 
             // Queen/Scout minions and Carrier children intentionally replace their
             // transient FleetShip with the parent's FleetShip for shared stat accounting.
