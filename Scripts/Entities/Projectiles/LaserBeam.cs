@@ -30,6 +30,13 @@ namespace Assets.Scripts.Entities.Projectiles
             _shipsHit.Clear();
             Angle = 0;
         }
+
+        public override void ForgetShip(Ship ship)
+        {
+            base.ForgetShip(ship);
+            _shipsHit.Remove(ship);
+        }
+
         private int _halfHealth;
 
         public override void ContactTarget(Ship target)
