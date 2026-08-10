@@ -63,7 +63,7 @@ namespace Assets.Scripts.Settings
         {
             //Debug.Log("Fetching data for Server Settings");
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
-                this, ConfigData.StandardMaxTimeOnQueue);
+                this, Configuration.GetStandardMaxTimeOnQueue());
             ConfigData.Socket.SendRequest(_request);
         }
     }
