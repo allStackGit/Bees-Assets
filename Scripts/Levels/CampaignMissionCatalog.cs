@@ -70,6 +70,11 @@ namespace Assets.Scripts.Levels
                 new MissionDefinition(11, "A New Threat", 3, nameof(Level.Uranus3ANewThreat), nameof(Level.Uranus3Ending), nameof(Level.Uranus3Ending), level => level.Uranus3ANewThreat(), true, AutomatedScenarioStatus.InDevelopment),
             };
 
+        public static bool IsCampaignComplete(int currentMissionId)
+        {
+            return currentMissionId >= Definitions.Count;
+        }
+
         public static IEnumerable<MissionDefinition> GetAutomatedScenarioDefinitions()
         {
             for (int index = 0; index < Definitions.Count; index++)
