@@ -34,6 +34,11 @@ namespace Assets.Scripts.Server
             Type = ConfigData.RequestTypes.Request;
         }
 
+        public bool HasExceededQueueTimeout(long currentTimeMilliseconds)
+        {
+            return currentTimeMilliseconds - StartTime > MaxTimeOnQueue * 1000L;
+        }
+
         private ServerRequest _request;
         public override bool Equals(System.Object obj)
         {
