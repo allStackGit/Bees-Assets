@@ -19,14 +19,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void RemovingSquadPrunesItsPendingServerRequestsBeforePoolReuse()
+        public void DeadSquadRequestsAreRejectedByRuntimeIdentityWithoutScanningSocketDuringDeath()
         {
-            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+            string registry = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+            string commandRequest = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "CommandRequest.cs"));
+            string matchupRequest = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "MatchupStrategyRequest.cs"));
+            string socket = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "Socket.cs"));
 
-            Assert.That(source, Does.Contain("if (Level != null && Level.IsLevelSetupOnServer)"));
-            Assert.That(source, Does.Contain("ConfigData.Socket.StandingRequests.RemoveWhere"));
-            Assert.That(source, Does.Contain("commandRequest.SquadId == removedSquadItemId"));
-            Assert.That(source, Does.Contain("matchupRequest.SquadId == removedSquadItemId"));
+            Assert.That(registry, Does.Not.Contain("StandingRequests.RemoveWhere"),
+                "Squad death must remain local/bounded rather than scanning global socket state.");
+            Assert.That(commandRequest, Does.Contain("SquadId == Squad.ItemId && !Squad.IsDead"));
+            Assert.That(matchupRequest, Does.Contain("Squad.ItemId == SquadId && !Squad.IsDead"));
+            Assert.That(socket, Does.Contain("squad.ItemId == expectedItemId"));
+            Assert.That(socket, Does.Contain("!squad.IsDead"));
+            Assert.That(socket, Does.Contain("TakeStandingRequest("),
+                "Stale strategic responses should still consume their standing request before identity validation.");
         }
 
         [Test]
