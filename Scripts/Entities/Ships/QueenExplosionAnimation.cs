@@ -16,5 +16,6 @@ public class QueenExplosionAnimation : ShipExplosionAnimation
         Remains.transform.eulerAngles = Vector3.forward * Queen.Rotation;
         Remains.gameObject.SetActive(true);
         Queen.Level.State.AddDeadBody(Remains);
+        Queen.CompleteDeathAnimation();
     }
 }
