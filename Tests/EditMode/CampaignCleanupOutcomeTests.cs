@@ -36,5 +36,21 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_eliminationSnapshot[0] = false;", state);
             StringAssert.Contains("_eliminationSnapshot[1] = false;", state);
         }
+
+        [Test]
+        public void ExplicitMissionWinnerOverridesRawShipEliminationSnapshot()
+        {
+            string state = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.cs"));
+
+            int capture = state.IndexOf("public void CaptureEliminationState()", StringComparison.Ordinal);
+            int winnerCheck = state.IndexOf("Level.WinningSide == ConfigData.Configuration.HumanSide", capture, StringComparison.Ordinal);
+            int resolvedOutcome = state.IndexOf("_eliminationSnapshot[side - 1] = side != Level.WinningSide;", winnerCheck, StringComparison.Ordinal);
+            int rawShipFallback = state.IndexOf("List<Ship> sideShips = GetShips(side);", resolvedOutcome, StringComparison.Ordinal);
+
+            Assert.That(winnerCheck, Is.GreaterThan(capture));
+            Assert.That(resolvedOutcome, Is.GreaterThan(winnerCheck));
+            Assert.That(rawShipFallback, Is.GreaterThan(resolvedOutcome));
+        }
     }
 }
