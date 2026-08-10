@@ -96,7 +96,7 @@ namespace Assets.Scripts.Settings
             TimeScale = (int)so.TimeScale;
             AISquadPatrolTime = (int)so.AISquadPatrolTime;
             AIPatrolMaxSize = (int)so.AIPatrolMaxSize;
-            //AIRandomMovementMaxDistance = (int)so.AIRandomMovementMaxDistance;
+            AIRandomMovementMaxDistance = (int)so.AIRandomMovementMaxDistance;
             AISquadGuardTime = (int)so.AISquadGuardTime;
             AISquadFollowingTime = (int)so.AISquadFollowingTime;
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
