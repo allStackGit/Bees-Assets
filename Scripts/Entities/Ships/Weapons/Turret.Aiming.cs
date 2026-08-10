@@ -76,6 +76,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected override void SendProjectile()
         {
+            if (IsFiringManually || IsFiringAtAsteroid)
+            {
+                SetTargetShipNull();
+            }
             base.SendProjectile();
             Level.AddProjectile(ProjectileType, this, GetPosition(), AngleToPoint(TargetPoint));
             Ship.FleetShip.ShotsFired++;
