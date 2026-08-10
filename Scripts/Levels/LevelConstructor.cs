@@ -272,70 +272,65 @@ namespace Assets.Scripts.Levels
             Level.AllSquads.AddRange(squads);
             squads.ForEach((savedSquad) =>
             {
-                //Debug.Log($"The squad is {savedSquad.Name}");
+                // [note][testing] turn this off to do training without ships dying
+                List<SquadShip> ships = savedSquad.GetSquadShips().Where((s) => !s.GetFleetShip().IsDead).ToList();
+                if (ships.Count == 0)
+                {
+                    return;
+                }
+
+                // Do not allocate a pooled runtime Squad for a persisted squad that has no
+                // living ships. Dead-only squads remain in Level.AllSquads for persistent
+                // campaign accounting, but they have no runtime lifecycle to register/release.
                 Squad squad = savedSquad.ToSquad(Level);
                 setupSquads.Add(squad);
 
-                // [note][testing] turn this off to do training without ships dying
-                //List<SquadShip> 
-                List<SquadShip> ships = new List<SquadShip>();
-                ships = savedSquad.GetSquadShips().Where((s) => !s.GetFleetShip().IsDead).ToList();
-                if (ships.Count > 0)  
+                //Debug.Log($"There are {ships.Count} ships in {squad.Name}");
+                squad.SquadNumber = Level.State.OriginalSquadCounts[squad.Side - 1] + 1;
+                squad.SetSquadTab();
+                Level.State.AddSquad(squad);
+
+                // loop through the squadships in each saved squad 
+                ships.ForEach((squadShip) =>
                 {
-                    //Debug.Log($"There are {ships.Count} ships in {squad.Name}");
-                    squad.SquadNumber = Level.State.OriginalSquadCounts[squad.Side - 1] + 1;
-                    squad.SetSquadTab();
-                    Level.State.AddSquad(squad);
+                    //Debug.Log($"This ship is {squadShip.ShipType}");
+                    FleetShip fleetShip = squadShip.GetFleetShip();
 
-                    // loop through the squadships in each saved squad 
+                    Ship ship = InstantiateShip(fleetShip.Type);
+                    ship.Setup(
+                            Level,
+                            fleetShip,
+                            squad,
+                            squadShip.Offset
+                        );
 
-                    ships.ForEach((squadShip) =>
+                    squad.AddShip(ship);
+                    ship.SetColor();
+
+                    if (ship.ShipType == ConfigData.ShipTypes.Carrier)
                     {
-                        //Debug.Log($"This ship is {squadShip.ShipType}");
-
-                        FleetShip fleetShip = squadShip.GetFleetShip();
-
-                        
-
-                        Ship ship = InstantiateShip(fleetShip.Type);
-                        ship.Setup(
-                                Level,
-                                fleetShip,
-                                squad,
-                                squadShip.Offset
-                            );
-
-
-
-                        squad.AddShip(ship);
-                        ship.SetColor();
-
-                        if (ship.ShipType == ConfigData.ShipTypes.Carrier)
-                        {
-                            carriers.Add(ship);
-                        }
-
-                    });
-                    if (squad.IsMatchingSpeed)
-                    {
-                        squad.MatchSpeed();
+                        carriers.Add(ship);
                     }
-                    if (squad.CeaseFire)
-                    {
-                        squad.SetSquadCeaseFire(true);
-                    }
-                    if (squad.ShouldChase())
-                    {
-                        squad.SetChase(true);
-                    }
-                    //else
-                    //{
-                    //    Debug.Log($"{squad} is not matching speed");
-                    //}
-                    // set initial tsv
-                    Level.State.InitialTsv[squad.Side - 1] += squad.Tsv;
-                    //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
+                });
+                if (squad.IsMatchingSpeed)
+                {
+                    squad.MatchSpeed();
                 }
+                if (squad.CeaseFire)
+                {
+                    squad.SetSquadCeaseFire(true);
+                }
+                if (squad.ShouldChase())
+                {
+                    squad.SetChase(true);
+                }
+                //else
+                //{
+                //    Debug.Log($"{squad} is not matching speed");
+                //}
+                // set initial tsv
+                Level.State.InitialTsv[squad.Side - 1] += squad.Tsv;
+                //Debug.Log($"Increase side TSV by {squad.Tsv} / {state.InitialTsv[squad.Side - 1]}");
             });
 
             carriers.ForEach((carrier) =>
