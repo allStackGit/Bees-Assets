@@ -67,6 +67,17 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0));
         }
 
+        [Test]
+        public void TrackerUsesReferenceStableConstantTimeVisibleSetRemoval()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "MapObjectVisibilityTracker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("_state.PlayerVisibleMapObjects.Remove(_mapObject)", source);
+            StringAssert.DoesNotContain("visibleObjects.Clear()", source);
+            StringAssert.DoesNotContain("List<MapObject> survivors", source);
+        }
+
         private Fixture CreateFixture()
         {
             GameObject levelObject = CreateObject("Tracker Level");
@@ -78,6 +89,7 @@ namespace Bees.Tests.EditMode
             GameObject shipObject = CreateObject("Tracker Ship");
             object ship = shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
             RuntimeAssembly.SetField(ship, "Level", level);
+            RuntimeAssembly.SetField(ship, "IsUserControlled", true);
 
             GameObject weaponObject = CreateObject("Tracker Weapon");
             object weapon = weaponObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.Weapon"));
