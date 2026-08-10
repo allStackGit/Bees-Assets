@@ -55,7 +55,12 @@ namespace Assets.Scripts.Levels
                 new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
                 (sum, dictionary) =>
                 {
-                    sum.UnionWith(dictionary.Value.Where(ship => !ship.IsDead));
+                    // This query already visits every observer set. Prune dead targets here
+                    // rather than scanning every observer synchronously from RemoveShip().
+                    // Ordinary ship wrappers are not reused before reset, so dead references
+                    // are safe to retain until this normal visibility maintenance pass.
+                    dictionary.Value.RemoveWhere(ship => ship == null || ship.IsDead);
+                    sum.UnionWith(dictionary.Value);
                     return sum;
                 });
             return VisionCache[side - 1];
