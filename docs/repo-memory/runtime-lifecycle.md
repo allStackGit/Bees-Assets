@@ -23,6 +23,7 @@
 - Ship-owned timers must be cancelled before the Ship wrapper can enter the pool. This includes combat, asteroid recheck, failed-path retry, and hover/info timers across separate Ship partials.
 - An explicit `StopMoving()` must cancel pending path-retry work so an old failed-path callback cannot restart movement after a new order/cancel.
 - A Striker-only `BombingRun` must remain active after its enemy squad dies until the Strikers have returned to a live Carrier, or no Carrier remains. A single return-to-carrier movement update is insufficient because finalizing the command cancels the timer that continues the trip.
+- Multi-ship commands own the whole participating squad lifecycle unless explicitly documented otherwise. `Charge` must not finalize/reset every Barge when only the first Barge completes; all remaining live Barges must complete their charge/cooldown run first.
 
 ## Targeting and Hive Mind
 
