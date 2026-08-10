@@ -21,6 +21,7 @@ namespace Assets.Scripts.Entities.Ships
         private GameObject _collidingThing;
         private Ship _collidingShip;
         private Heal _command;
+        private bool _isDeathAnimationPending;
 
         protected override void OnTriggerEnter2D(Collider2D collider)
         {
@@ -44,6 +45,7 @@ namespace Assets.Scripts.Entities.Ships
         {
             base.ClearData();
             ShipsHealingHere.Clear();
+            _isDeathAnimationPending = false;
         }
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
@@ -65,10 +67,16 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!Stage.IsTraining)
             {
+                _isDeathAnimationPending = true;
                 ShrinkingAnimation.transform.SetParent(Level.Map.Transform);
                 ShrinkingAnimation.transform.localPosition = GetPosition();
                 ShrinkingAnimation.SetActive(true);
             }
+        }
+
+        public override bool CanReturnToPool()
+        {
+            return !_isDeathAnimationPending && base.CanReturnToPool();
         }
 
         public void FinalExplosion()
@@ -82,6 +90,9 @@ namespace Assets.Scripts.Entities.Ships
                 ShipExplosionSoundEffect.Play();
             }
 
+            // The shrinking animation's delayed callback has completed and no longer needs
+            // this pooled Beehive wrapper. It is safe for GameState to release it now.
+            _isDeathAnimationPending = false;
         }
 
         public void SpawnHealingCross()
