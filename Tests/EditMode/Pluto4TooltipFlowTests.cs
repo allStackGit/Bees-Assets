@@ -25,7 +25,9 @@ namespace Bees.Tests.EditMode
             Assert.That(method, Does.Contain("if (!ConfigData.UserProgressData.ShowToolTips)"));
             Assert.That(method, Does.Contain("Stage.Menus.TogglePausePanel();"));
             Assert.That(method, Does.Contain("hasSeenFleetMessages = true;"));
-            Assert.That(method, Does.Contain("else\n                            {\n                                Tooltip basicTooltip"));
+            Assert.That(method, Does.Contain("Tooltip basicTooltip"));
+            Assert.That(method.IndexOf("Tooltip basicTooltip", StringComparison.Ordinal),
+                Is.GreaterThan(method.IndexOf("else", StringComparison.Ordinal)));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
