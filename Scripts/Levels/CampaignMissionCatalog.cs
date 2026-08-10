@@ -60,10 +60,12 @@ namespace Assets.Scripts.Levels
                 new MissionDefinition(6, "Pressing Forward", nameof(Level.Neptune3PressingForwardCampaign), nameof(Level.Neptune3Ending), nameof(Level.Neptune3Ending), level => level.Neptune3PressingForwardCampaign()),
                 new MissionDefinition(7, "Minesweeper", nameof(Level.Titania1MinesweeperCampaign), nameof(Level.Titania1MinesweeperEnding), nameof(Level.Titania1MinesweeperEnding), level => level.Titania1MinesweeperCampaign(), true, AutomatedScenarioStatus.InDevelopment),
                 new MissionDefinition(8, "Beenoculars", nameof(Level.Titania2BeenocularsCampaign), nameof(Level.Titania2CampaignEnding), nameof(Level.Titania2CampaignEnding), level => level.Titania2BeenocularsCampaign(), true, AutomatedScenarioStatus.InDevelopment),
-                // These trigger graphs exist, but campaign_levels.json currently stops at mission 8.
-                new MissionDefinition(9, "On the Offensive", nameof(Level.Uranus1OnTheOffensive), nameof(Level.Uranus1Ending), nameof(Level.Uranus1Ending), level => level.Uranus1OnTheOffensive(), false, AutomatedScenarioStatus.MissingPersistedData),
-                new MissionDefinition(10, "On the Defensive", nameof(Level.Uranus2OnTheDefensive), nameof(Level.Uranus2Ending), nameof(Level.Uranus2Ending), level => level.Uranus2OnTheDefensive(), false, AutomatedScenarioStatus.MissingPersistedData),
-                new MissionDefinition(11, "A New Threat", nameof(Level.Uranus3ANewThreat), nameof(Level.Uranus3Ending), nameof(Level.Uranus3Ending), level => level.Uranus3ANewThreat(), false, AutomatedScenarioStatus.MissingPersistedData),
+                // Server-backed campaign_levels_data contains these Uranus missions. Their full
+                // isolated Configure() scenarios remain in development because they still depend on
+                // persistent fleet/UI state that the scenario host does not yet provide.
+                new MissionDefinition(9, "On the Offensive", nameof(Level.Uranus1OnTheOffensive), nameof(Level.Uranus1Ending), nameof(Level.Uranus1Ending), level => level.Uranus1OnTheOffensive(), true, AutomatedScenarioStatus.InDevelopment),
+                new MissionDefinition(10, "On the Defensive", nameof(Level.Uranus2OnTheDefensive), nameof(Level.Uranus2Ending), nameof(Level.Uranus2Ending), level => level.Uranus2OnTheDefensive(), true, AutomatedScenarioStatus.InDevelopment),
+                new MissionDefinition(11, "A New Threat", nameof(Level.Uranus3ANewThreat), nameof(Level.Uranus3Ending), nameof(Level.Uranus3Ending), level => level.Uranus3ANewThreat(), true, AutomatedScenarioStatus.InDevelopment),
             };
 
         public static IEnumerable<MissionDefinition> GetAutomatedScenarioDefinitions()
