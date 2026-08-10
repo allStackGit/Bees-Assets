@@ -4,6 +4,7 @@ using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
+using Assets.Scripts.Server;
 
 namespace Assets.Scripts.Levels
 {
@@ -48,6 +49,22 @@ namespace Assets.Scripts.Levels
             {
                 squad.SavedSquad.IsLoadedIntoLevel = false;
             }
+
+            // A server response can arrive well after this squad has died. Remove pending
+            // requests while the old ItemId is still authoritative so reconnect/resend logic
+            // cannot keep transmitting work that can only be rejected after pool reuse.
+            if (Level.IsLevelSetupOnServer)
+            {
+                int removedSquadItemId = squad.ItemId;
+                ConfigData.Socket.StandingRequests.RemoveWhere(request =>
+                    (request is CommandRequest commandRequest &&
+                     ReferenceEquals(commandRequest.Squad, squad) &&
+                     commandRequest.SquadId == removedSquadItemId) ||
+                    (request is MatchupStrategyRequest matchupRequest &&
+                     ReferenceEquals(matchupRequest.Squad, squad) &&
+                     matchupRequest.SquadId == removedSquadItemId));
+            }
+
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);
         }
