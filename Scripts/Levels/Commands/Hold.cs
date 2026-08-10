@@ -9,6 +9,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
 
+            GetSquad().StopMoving();
             PrepareDamageToSendEntries();
             TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
             Level.AddTimer(TimeoutTimer);
