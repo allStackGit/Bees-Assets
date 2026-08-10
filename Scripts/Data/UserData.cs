@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Scenes;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -72,10 +73,33 @@ namespace Assets.Scripts.Data
                 _hasCalledAction = true;
                 if (_onceDataIsLoaded != null)
                 {
-                    //Debug.Log($"Loaded data for {this.filename}");
-                    _onceDataIsLoaded(GetDataFile().GetJsonObject());
+                    // Object-rooted save files evolve as new settings/progress fields are added.
+                    // Overlay the existing save onto today's defaults so old saves inherit only
+                    // missing properties while preserving every value the user already stored.
+                    // Array-rooted formats (fleet/squad lists) intentionally pass through unchanged.
+                    _onceDataIsLoaded(GetLoadedDataWithDefaults());
                 }
             }
+        }
+        private dynamic GetLoadedDataWithDefaults()
+        {
+            object loadedObject = GetDataFile().GetJsonObject();
+            if (!(loadedObject is JObject loaded) || string.IsNullOrWhiteSpace(defaultJsonData))
+            {
+                return loadedObject;
+            }
+
+            JToken defaultToken = JToken.Parse(defaultJsonData);
+            if (!(defaultToken is JObject defaults))
+            {
+                return loadedObject;
+            }
+
+            defaults.Merge(loaded, new JsonMergeSettings
+            {
+                MergeArrayHandling = MergeArrayHandling.Replace
+            });
+            return defaults;
         }
         public virtual bool IsDataLoaded()
         {
