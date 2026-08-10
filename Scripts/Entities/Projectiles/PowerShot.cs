@@ -7,7 +7,7 @@ namespace Assets.Scripts.Entities.Projectiles
     public class PowerShot : LaserShot
     {
         private int _powerLoss;
-        private HashSet<Ship> _shipsHit = new HashSet<Ship>();
+        private HashSet<Ship> _shipsHit = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
 
         public override void ClearData()
         {
