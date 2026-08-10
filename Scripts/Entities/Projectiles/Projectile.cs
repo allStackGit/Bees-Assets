@@ -29,6 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public Animator Animator;
         public bool IsDead;
         private ShipDamageStatus _damageReservation;
+        private int _reservedDamageAmount;
 
         public override void Create(Stage stage)
         {
@@ -72,6 +73,7 @@ namespace Assets.Scripts.Entities.Projectiles
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
             _damageReservation = target != null ? Level.State.GetShipDamageStatus(shooter.Side, target) : null;
+            _reservedDamageAmount = target != null ? power : 0;
             Activate();
             if (HasBody)
             {
@@ -86,6 +88,7 @@ namespace Assets.Scripts.Entities.Projectiles
             CollidingObstacleQueue.Clear();
             ShipIsDead = false;
             _damageReservation = null;
+            _reservedDamageAmount = 0;
         }
 
         public virtual void Kill()
@@ -191,25 +194,29 @@ namespace Assets.Scripts.Entities.Projectiles
             }
 
             recipient._damageReservation = _damageReservation;
+            recipient._reservedDamageAmount = _reservedDamageAmount;
             _damageReservation = null;
+            _reservedDamageAmount = 0;
         }
 
         public virtual void RemoveDamageSentEntry()
         {
             if (_damageReservation == null)
             {
+                _reservedDamageAmount = 0;
                 return;
             }
 
-            if (_damageReservation.TotalDamageSentToShip >= Power)
+            if (_damageReservation.TotalDamageSentToShip >= _reservedDamageAmount)
             {
-                _damageReservation.TotalDamageSentToShip -= Power;
+                _damageReservation.TotalDamageSentToShip -= _reservedDamageAmount;
             }
             else
             {
                 _damageReservation.TotalDamageSentToShip = 0;
             }
             _damageReservation = null;
+            _reservedDamageAmount = 0;
         }
 
         protected void SetMovement()
