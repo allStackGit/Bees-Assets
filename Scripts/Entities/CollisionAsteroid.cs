@@ -96,7 +96,7 @@ namespace Assets.Scripts.Entities
         Vector2 _randomPoint;
         public void SetMoving()
         {
-            _randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
+            _randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
             Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), _randomPoint);
             Body.angularVelocity = Speed * Utilities.RandomFloat(ConfigData.MinimumAsteroidAngularSpeedMultiplier);
         }
