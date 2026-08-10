@@ -18,6 +18,7 @@
 - Negative FleetShip IDs belong to transient/unsaved ships and may not exist in `ConfigData.CurrentShips`. If code intentionally creates a transient `FleetShip` with metadata such as a copied name, the owning `SquadShip` must retain/cache that FleetShip object rather than discard it and later reconstruct a different object from only ID/type.
 - Saved-squad membership is runtime state on each `FleetShip`. Removing a persisted squad must release `DoesBelongToSavedSquad` for every member immediately; otherwise those ships remain unavailable until a reload reconstructs membership.
 - Temporary child squads/ships may deliberately share a parent `SavedSquad`/`FleetShip` for identity or stat accounting. Only the primary persisted squad/ship owns `IsLoadedIntoLevel`; child teardown must not mark the parent unloaded.
+- Reinforcement composition counts describe ships that can actually spawn. `Ships.GetSquadByComposition()` must compare requested counts against `GetAliveSquadShips().Count`, not total persisted slots that can include dead FleetShips.
 - `ConfigData.Version` is part of the server/database settings contract. Version changes require matching server rows whose serialized shape matches the client expectation.
 - Integration/test server operation must use the test database rather than live data.
 
