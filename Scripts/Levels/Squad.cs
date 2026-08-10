@@ -217,36 +217,15 @@ namespace Assets.Scripts.Levels
                 OpponentId = 0;
         }
 
-        private Vector2 _adjustment;
-        private readonly Vector2 _queenMultiplier = new Vector2(2.75f, 2);
-        private readonly Vector2 _wideMultiplier = new Vector2(1.4f, 1);
-        private readonly Vector2 _ultraWideMultiplier = new Vector2(2.5f, 1f);
-        private readonly ConfigData.ShipTypes[] _wideShips =
-        {
-            ConfigData.ShipTypes.Barge, ConfigData.ShipTypes.FireBarge,
-            ConfigData.ShipTypes.Flagship, ConfigData.ShipTypes.CarpenterBee
-        };
-        private readonly ConfigData.ShipTypes[] _ultraWideShips =
-        {
-            ConfigData.ShipTypes.Beehive, ConfigData.ShipTypes.WarpGate
-        };
-
         public void SetStartingPosition(Vector2 position)
         {
-            if (GetShips().Count == 1)
+            foreach (Ship ship in GetShips())
             {
-                GetShips()[0].transform.localPosition = position;
-                return;
+                // OffsetFromCenter already represents the authored/saved formation in level
+                // world units. Reapply it exactly; type-specific spacing belongs in formation
+                // authoring/templates, not in runtime placement where it distorts custom squads.
+                ship.transform.localPosition = position + ship.OffsetFromCenter;
             }
-            GetShips().ForEach(ship =>
-            {
-                _adjustment = ship.OffsetFromCenter;
-                if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1) _adjustment *= _queenMultiplier;
-                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee) _adjustment *= 1.2f;
-                else if (_wideShips.Contains(ship.ShipType)) _adjustment *= _wideMultiplier;
-                else if (_ultraWideShips.Contains(ship.ShipType)) _adjustment *= _ultraWideMultiplier;
-                ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
-            });
         }
 
         public void SetSquadTab()
