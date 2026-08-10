@@ -22,10 +22,15 @@ namespace Assets.Scripts.Levels
         private LevelOptions _lastShipRetreatedLevelOptions;
         private bool _lastShipRetreated
         {
-            get => CurrentLevelOptions != null && ReferenceEquals(_lastShipRetreatedLevelOptions, CurrentLevelOptions);
+            get => CurrentLevelOptions != null && object.ReferenceEquals(_lastShipRetreatedLevelOptions, CurrentLevelOptions);
             set => _lastShipRetreatedLevelOptions = value ? CurrentLevelOptions : null;
         }
-        private bool _hasSeenCarrierIntroIfNeeded;
+        private LevelOptions _carrierIntroCompletedLevelOptions;
+        private bool _hasSeenCarrierIntroIfNeeded
+        {
+            get => CurrentLevelOptions != null && object.ReferenceEquals(_carrierIntroCompletedLevelOptions, CurrentLevelOptions);
+            set => _carrierIntroCompletedLevelOptions = value ? CurrentLevelOptions : null;
+        }
 
         private void SetTriggers()
         {
