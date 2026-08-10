@@ -72,12 +72,10 @@ namespace Assets.Scripts.Entities.Ships
 
             if (target.Health == 0)
             {
+                // Kill() removes every ShipDamageStatus that still references this target.
+                // Do not call the get-or-create accessor after that lifecycle boundary or a
+                // dead target is briefly reinserted into combat state just to be removed again.
                 target.Kill(attacker, attackerFleetShip, attackerSavedSquad);
-                if (attacker != null)
-                {
-                    attacker.Level.State.ShipDamageStatuses[attacker.Side - 1]
-                        .Remove(attacker.Level.State.GetShipDamageStatus(attacker.Side, target));
-                }
                 return;
             }
 
