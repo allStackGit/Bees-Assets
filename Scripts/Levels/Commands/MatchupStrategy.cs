@@ -138,6 +138,7 @@ namespace Assets.Scripts.Levels.Commands
                 case ConfigData.MatchupStrategyTypes.TypeU:
                 case ConfigData.MatchupStrategyTypes.TypeV:
                 case ConfigData.MatchupStrategyTypes.TypeW:
+                case ConfigData.MatchupStrategyTypes.TypeX:
                     _type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
                     _queue.Sort((a, b) =>
                     {
