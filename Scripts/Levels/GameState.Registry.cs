@@ -3,7 +3,6 @@ using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
-using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels.Commands;
 
 namespace Assets.Scripts.Levels
@@ -99,101 +98,6 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
-            // Other live ships can retain this pooled wrapper in follow/proximity/contact
-            // state. Unity does not guarantee a trigger-exit callback when the target is
-            // disabled during the same physics step, and IsDead becomes false again when
-            // the wrapper is reused. Invalidate those references before pool ownership can
-            // change so a new lifecycle cannot silently become the old target.
-            foreach (Ship observer in Ships)
-            {
-                if (observer == null || ReferenceEquals(observer, ship))
-                {
-                    continue;
-                }
-
-                if (ReferenceEquals(observer.TargetEnemyShipToFollow, ship))
-                {
-                    observer.TargetEnemyShipToFollow = null;
-                }
-                if (observer.HasProximityCollider && observer.ProximityCollider != null)
-                {
-                    observer.ProximityCollider.NearbyEnemyShips.Remove(ship);
-                }
-                if (observer.HasWeapons && observer.Weapons != null)
-                {
-                    foreach (Weapon weapon in observer.Weapons)
-                    {
-                        if (weapon == null)
-                        {
-                            continue;
-                        }
-
-                        weapon.ShipsWithinRange.Remove(ship.Id);
-                        if (weapon.CachedTargetingQueue.RemoveAll(candidate => ReferenceEquals(candidate, ship)) > 0)
-                        {
-                            weapon.HasCachedChanged = true;
-                        }
-                        if (weapon is BeamCannon beamCannon && ReferenceEquals(beamCannon.LaserBeamTarget, ship))
-                        {
-                            beamCannon.LaserBeamTarget = null;
-                        }
-                        if (ReferenceEquals(weapon.TargetShip, ship))
-                        {
-                            if (weapon is Bomb bomb)
-                            {
-                                bomb.ReleaseTargetReservation();
-                            }
-                            else
-                            {
-                                weapon.ClearTargets();
-                            }
-                        }
-                    }
-                }
-                if (observer is Striker striker)
-                {
-                    if (ReferenceEquals(striker.TouchingShip, ship)) striker.TouchingShip = null;
-                    if (ReferenceEquals(striker.ContactedShip, ship)) striker.ContactedShip = null;
-                }
-                else if (observer is YellowJacket yellowJacket)
-                {
-                    if (ReferenceEquals(yellowJacket.TouchingShip, ship)) yellowJacket.TouchingShip = null;
-                    if (ReferenceEquals(yellowJacket.ContactedShip, ship)) yellowJacket.ContactedShip = null;
-                }
-            }
-
-            // Command target queues can outlive an individual target and can also be prepared
-            // before becoming the squad's active command. Remove the departing wrapper from
-            // both active and scripted queues before a pooled lifecycle can reuse it.
-            Beehive departingBeehive = ship as Beehive;
-            foreach (Squad squad in Squads)
-            {
-                Command activeCommand = squad?.GetCommand();
-                ForgetShipFromCommandQueues(activeCommand, ship);
-                if (departingBeehive != null && activeCommand is Heal activeHeal)
-                {
-                    activeHeal.BeehiveBecameUnavailable(departingBeehive);
-                }
-                if (squad?.CommandQueue == null)
-                {
-                    continue;
-                }
-                foreach (Command queuedCommand in squad.CommandQueue)
-                {
-                    ForgetShipFromCommandQueues(queuedCommand, ship);
-                }
-            }
-
-            // Active projectiles can outlive their target. Purge queued contacts, target
-            // reservations and subclass hit histories before this wrapper can be reused.
-            foreach (Projectile projectile in Projectiles.ToList())
-            {
-                if (projectile != null && !projectile.IsDead)
-                {
-                    projectile.ForgetShip(ship);
-                }
-            }
-
             // These records retain the live Ship wrapper, whose runtime Id changes when
             // the object is reused from the pool. Remove them while the old identity is
             // still authoritative so stale combat/spotting state cannot attach to the
@@ -254,22 +158,6 @@ namespace Assets.Scripts.Levels
             // after ownership-sensitive deregistration has completed.
             ship.IsMinionShip = false;
             ship.IsCarrierShip = false;
-        }
-
-        private static void ForgetShipFromCommandQueues(Command command, Ship ship)
-        {
-            if (command == null || ship == null)
-            {
-                return;
-            }
-            if (command.OriginalQueue.Count > 0)
-            {
-                command.OriginalQueue = new Queue<Ship>(command.OriginalQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
-            }
-            if (command.TargetingQueue.Count > 0)
-            {
-                command.TargetingQueue = new Queue<Ship>(command.TargetingQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
-            }
         }
 
         public void AddDeadBody(ShipRemains body)
