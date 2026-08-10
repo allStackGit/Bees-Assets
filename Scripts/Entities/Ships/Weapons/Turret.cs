@@ -18,6 +18,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public bool HasTargetAsteroid;
         public bool IsFiringAtAsteroid;
 
+        public override bool ShouldFire =>
+            TargetShip != null && !Ship.IsCeaseFire && IsShipValidTarget(TargetShip);
+
         public bool ShouldFireAtAsteroid =>
             !Ship.IsCeaseFire && HasTargetAsteroid && TargetShip == null && !TargetAsteroid.IsDead && TargetAsteroid.HasEnteredMap;
 
