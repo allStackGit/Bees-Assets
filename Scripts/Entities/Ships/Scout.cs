@@ -84,6 +84,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (ship != null)
                 {
                     Squad squad = CreateMinionSquad();
+                    ship.IsMinionShip = true;
                     ship.Setup(
                         Level,
                         new FleetShip(id, MinionType, false, false, 0, 0, 0, 0, 0, 0, 0),
@@ -91,7 +92,6 @@ namespace Assets.Scripts.Entities.Ships
                         Vector2.zero
                     );
 
-                    ship.IsMinionShip = true;
                     ship.SetColor();
                     ship.FleetShip = FleetShip;
                     ship.transform.localPosition = GetPosition();
