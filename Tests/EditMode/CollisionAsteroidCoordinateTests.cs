@@ -23,5 +23,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Utilities.RandomCoordinate(Level, Vector2.zero"));
             Assert.That(source, Does.Not.Contain("Utilities.RandomCoordinate(Level, Level.GetPosition()"));
         }
+
+        [Test]
+        public void PooledAsteroidDebrisRestoresAuthoredColor()
+        {
+            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "AsteroidPiece.cs"));
+            Assert.That(source, Does.Contain("_originalColor = SpriteRenderer.color"));
+            Assert.That(source, Does.Contain("SpriteRenderer.color = _originalColor"));
+        }
     }
 }
