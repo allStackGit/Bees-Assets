@@ -12,10 +12,13 @@ namespace Assets.Scripts.Server
 {
     public class CommandRequest : ServerRequest
     {
-        public readonly Squad Squad, Enemy;
+        public readonly Squad Squad;
+        private readonly Squad _enemy;
         public readonly Level Level;
         public readonly string Matchup;
         public readonly int SquadId;
+        public readonly int EnemyId;
+        public Squad Enemy => _enemy != null && !_enemy.IsDead && _enemy.ItemId == EnemyId ? _enemy : null;
 
         public new GetStrategy Request = null;
         public CommandResponse Response = null;
@@ -24,13 +27,14 @@ namespace Assets.Scripts.Server
             Type = ConfigData.RequestTypes.GetStrategy;
             Request = request;
             Squad = squad;
-            Enemy = enemy;
+            _enemy = enemy;
             Level = level;
             Matchup = matchup;
             Squad.Status = $"Requesting full command";
             request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
             SquadId = Squad.ItemId;
+            EnemyId = enemy != null ? enemy.ItemId : 0;
         }
         public bool HasSameSquad()
         {
