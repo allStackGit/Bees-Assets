@@ -7,6 +7,8 @@
 - Shared prefab/configuration arrays are templates. Copy them before per-squad mutation.
 - Pooled visual recoloring must start from immutable prefab-era sprites, not the currently displayed sprite from the previous lifecycle. Components such as `Beacon` that hold alternate runtime sprite fields must reset those fields to their original sprites before applying a new squad color.
 - Unity object identity must be explicit when identity matters. Before runtime `Setup`, many `MapObject`s have production `Id == 0`; use Transform/object identity for prefab authoring checks rather than ID-based equality.
+- Pooled `Entity` wrappers have mutable runtime `Id` values, and `Entity.GetHashCode()` is therefore lifecycle-scoped. Any hash-based collection that can outlive a member lifecycle must use `ReferenceIdentityComparer<T>` (or an immutable captured lifecycle ID), never the default Entity comparer. Otherwise pool reuse changes the member hash while it is still inside the collection and can corrupt `Contains`/`Remove` semantics or make a new lifecycle appear to inherit old visibility/contact state.
+- Live caches that retain pooled wrappers must remove departing objects before reuse, even when reference-stable hashing is used. Stable hashing fixes collection integrity; it does not make an old sighting/contact valid for the new lifecycle. Hivemind observer/visibility sets are cleaned in `GameState.RemoveShip()` for this reason.
 - Capacity loops must use strict `< limit` semantics where the protocol says “at most N”; audit `<=` carefully around 64-ship Hive Mind payloads.
 - Cast before division when producing percentages/normalized AI values. Integer division previously collapsed damaged-health information to 0/1.
 - Focused partial files own their own imports. After splitting a large class, compile-check namespace dependencies in every partial rather than relying on the old monolith's broad `using` list.
@@ -54,7 +56,7 @@
 - One-hit explosion sets must be populated before applying obstacle/ship damage. A membership check without adding the contacted object does not prevent repeated damage.
 - A dead Fire Barge remains out of the ship release pool for its five-second explosion/delayed-teardown lifetime so old callbacks/projectiles cannot observe a reused shooter wrapper.
 - Special death overrides should delegate persistent loss/stat mutations to shared death accounting exactly once. Fire Barge previously incremented `ShipsLost` itself and then called `LogKilledStats()`, double-counting squad losses.
-- Fog-of-war death fades freeze at the death position. Reusing a ship cancels old fade timers so an old vision hole cannot follow the new occupant.
+- Fog-of-war death fades freeze at the death position and retain the lifecycle `Level` that owns their timers/registry. A pooled Ship can move to another Level before the fade finishes; old callbacks must never resolve ownership through the Ship's new `Level`.
 - Warp Gate audio/UI children and squad boxes are reusable owned children; create them once and reactivate/reset rather than instantiating another child every pool lifecycle.
 - `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence.
 - `ShipDamageStatus` and `SpottedShip` hold direct Ship wrappers; `GameState.RemoveShip()` must remove those records before the wrapper can be pooled/reidentified.
