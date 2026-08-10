@@ -62,7 +62,8 @@ namespace Bees.Tests.EditMode
             Assert.That(state, Does.Contain("ReferenceIdentityComparer<Ship>.Instance"));
             Assert.That(registry, Does.Contain("HivemindShips[ship.Side - 1].Remove(ship.Id)"));
             Assert.That(registry, Does.Not.Contain("foreach (HashSet<Ship> visibleShips in observerMap.Values)"));
-            Assert.That(queries, Does.Contain("dictionary.Value.Where(ship => !ship.IsDead)"));
+            Assert.That(queries, Does.Contain("dictionary.Value.RemoveWhere(ship => ship == null || ship.IsDead)"));
+            Assert.That(queries, Does.Contain("sum.UnionWith(dictionary.Value)"));
             Assert.That(state, Does.Contain("HivemindShips = new[]"));
             Assert.That(queries, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
             Assert.That(vision, Does.Contain("TryGetValue(Ship.Id, out HashSet<Ship> visibleShips)"));
