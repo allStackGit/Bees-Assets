@@ -21,7 +21,10 @@ namespace Assets.Scripts.Levels
 
         public void AddShip(Ship ship)
         {
-            ship.FleetShip.IsLoadedIntoLevel = true;
+            if (!ship.IsMinionShip && !ship.IsCarrierShip)
+            {
+                ship.FleetShip.IsLoadedIntoLevel = true;
+            }
             Ships.Add(ship);
             ShipsById.Add(ship.Id, ship);
         }
