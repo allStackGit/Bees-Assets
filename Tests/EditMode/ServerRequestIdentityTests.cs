@@ -48,5 +48,16 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("ConfigData.Socket.StandingRequests.Remove(standingRequest);"));
             Assert.That(source, Does.Contain("Fetch();"));
         }
+
+        [Test]
+        public void RequestTimeoutUsesItsOwnSecondsBoundary()
+        {
+            object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.DataFileRequest");
+            RuntimeAssembly.SetField(request, "StartTime", 1000L);
+            RuntimeAssembly.SetField(request, "MaxTimeOnQueue", 25);
+
+            Assert.That(RuntimeAssembly.Invoke(request, "HasExceededQueueTimeout", 26000L), Is.False);
+            Assert.That(RuntimeAssembly.Invoke(request, "HasExceededQueueTimeout", 26001L), Is.True);
+        }
     }
 }
