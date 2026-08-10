@@ -38,12 +38,15 @@ namespace Bees.Tests.EditMode
         public void FireBargeCannotReturnToPoolBeforeExplosionLifetimeEnds()
         {
             string kill = ExtractMethodBody(_fireBargeSource, "Kill");
+            string canReturn = ExtractMethodBody(_fireBargeSource, "CanReturnToPool");
+            string teardown = ExtractMethodBody(_fireBargeSource, "PrepareForLevelTeardown");
             string delayedKill = ExtractMethodBody(_fireBargeSource, "DelayedKill");
 
-            Assert.That(kill, Does.Contain("Level.State.ShipsToRelease.Remove(this)"));
+            Assert.That(kill, Does.Not.Contain("ShipsToRelease.Remove(this)"));
             Assert.That(kill, Does.Contain("_waitingForDelayedRelease = true"));
             Assert.That(kill, Does.Contain("_delayedKillTimer.Reuse(5f, DelayedKill)"));
-            Assert.That(delayedKill, Does.Contain("Level.State.ShipsToRelease.Add(this)"));
+            Assert.That(canReturn, Does.Contain("!_waitingForDelayedRelease && base.CanReturnToPool()"));
+            Assert.That(teardown, Does.Contain("_waitingForDelayedRelease = false"));
             Assert.That(delayedKill, Does.Contain("_waitingForDelayedRelease = false"));
         }
 

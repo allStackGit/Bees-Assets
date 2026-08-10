@@ -25,10 +25,13 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("private ShipDamageStatus _damageReservation", source);
+            StringAssert.Contains("private int _reservedDamageAmount", source);
             StringAssert.Contains("_damageReservation = target != null ? Level.State.GetShipDamageStatus(shooter.Side, target) : null", source);
+            StringAssert.Contains("_reservedDamageAmount = target != null ? power : 0", source);
             StringAssert.Contains("if (_damageReservation == null)", source);
-            StringAssert.Contains("_damageReservation.TotalDamageSentToShip -= Power", source);
+            StringAssert.Contains("_damageReservation.TotalDamageSentToShip -= _reservedDamageAmount", source);
             StringAssert.Contains("_damageReservation = null", source);
+            StringAssert.Contains("_reservedDamageAmount = 0", source);
             StringAssert.DoesNotContain("Level.State.GetShipDamageStatus(Shooter.Side, Target)", source);
         }
     }

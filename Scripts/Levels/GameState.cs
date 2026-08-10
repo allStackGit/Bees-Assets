@@ -137,7 +137,10 @@ namespace Assets.Scripts.Levels
             // worker arrays. Never reinitialize those arrays for the next episode while an
             // old task may still be using them; detach the old instance so setup creates a
             // fresh Pathfinder and any late results remain isolated on the retired object.
-            Level.Pathfinder = null;
+            if (Level != null)
+            {
+                Level.Pathfinder = null;
+            }
 
             Ships.Clear();
             ShipsById.Clear();
