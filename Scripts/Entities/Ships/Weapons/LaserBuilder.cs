@@ -32,6 +32,10 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
+            LaserBuilderAnimation.SetActive(false);
+            Animator.speed = 1f;
+            Animator.Rebind();
+            Animator.Update(0f);
             //IsReadyForFiring = false;
         }
         public override void Activate()
