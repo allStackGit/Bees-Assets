@@ -34,7 +34,12 @@ namespace Assets.Scripts.Levels
 
         private void SetTriggers()
         {
+            // Level is reused between campaign missions/retries. A prior mission can end with
+            // deferred NextTriggers still waiting on dialogue/UI state; never let those callbacks
+            // enter the next mission's graph. Let the new mission opt back into continuous checks.
             Triggers.Clear();
+            NextTriggers.Clear();
+            HasContinuousTriggers = false;
             CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);
         }
 
