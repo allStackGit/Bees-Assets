@@ -67,7 +67,7 @@ namespace Assets.Scripts.Levels
             // A server response can arrive well after this squad has died. Remove pending
             // requests while the old ItemId is still authoritative so reconnect/resend logic
             // cannot keep transmitting work that can only be rejected after pool reuse.
-            if (Level.IsLevelSetupOnServer)
+            if (Level != null && Level.IsLevelSetupOnServer)
             {
                 int removedSquadItemId = squad.ItemId;
                 ConfigData.Socket.StandingRequests.RemoveWhere(request =>
