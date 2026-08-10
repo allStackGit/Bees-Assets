@@ -15,6 +15,12 @@ namespace Assets.Scripts.Entities.Projectiles
             _shipsHit.Clear();
         }
 
+        public override void ForgetShip(Ship ship)
+        {
+            base.ForgetShip(ship);
+            _shipsHit.Remove(ship);
+        }
+
         public override void ContactTarget(Ship target)
         {
             if (_shipsHit.Contains(target))
