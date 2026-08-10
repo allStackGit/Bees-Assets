@@ -44,6 +44,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _rotatedLeftCannonPosition = Utilities.RotatePointAroundPoint(_shipPosition, _leftCannonPosition, _cannonAngle);
             _rotatedRightCannonPosition = Utilities.RotatePointAroundPoint(_shipPosition, _rightCannonPosition, _cannonAngle);
 
+            if (IsFiringManually || IsFiringAtAsteroid)
+            {
+                SetTargetShipNull();
+            }
+
             // instantiate the projectiles
             Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, _rotatedLeftCannonPosition, _angle);
             Level.AddProjectile(ConfigData.ProjectileTypes.HumanSmall, this, _rotatedRightCannonPosition, _angle);
