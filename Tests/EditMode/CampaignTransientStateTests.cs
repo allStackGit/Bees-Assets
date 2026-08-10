@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -55,6 +56,24 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(_level, "CurrentLevelOptions", firstMission);
             Assert.That(property.GetValue(_level), Is.False,
                 $"{propertyName} should be owned by exactly one LevelOptions instance.");
+        }
+
+        [Test]
+        public void CampaignConfigurationClearsActiveAndDeferredTriggersBeforeNewMission()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("private void SetTriggers()");
+            int end = source.IndexOf("public void EasterEggTriggers()", start);
+
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = source.Substring(start, end - start);
+
+            StringAssert.Contains("Triggers.Clear();", method);
+            StringAssert.Contains("NextTriggers.Clear();", method);
+            StringAssert.Contains("HasContinuousTriggers = false;", method);
+            StringAssert.Contains("CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);", method);
         }
     }
 }
