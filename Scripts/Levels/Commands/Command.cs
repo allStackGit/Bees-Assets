@@ -200,23 +200,6 @@ namespace Assets.Scripts.Levels.Commands
             SetFinalize("The command ran out of time");
         }
 
-        public void ForgetShip(Ship ship)
-        {
-            if (ship == null)
-            {
-                return;
-            }
-
-            if (OriginalQueue.Count > 0)
-            {
-                OriginalQueue = new Queue<Ship>(OriginalQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
-            }
-            if (TargetingQueue.Count > 0)
-            {
-                TargetingQueue = new Queue<Ship>(TargetingQueue.Where(candidate => !ReferenceEquals(candidate, ship)));
-            }
-        }
-
         public List<Ship> MakeTargetingQueue()
         {
             // Shooting strategies reorder their working list. GetShips() returns the
@@ -286,39 +269,210 @@ namespace Assets.Scripts.Levels.Commands
                             {
                                 return 1;
                             }
-                            else
-                            {
-                                return 0;
-                            }
+                            return 0;
                         });
                         return _tempShips;
                     }
-                    else
-                    {
-                        return _tempShips;
-                    }
+                    return _tempShips;
             }
             return _tempShips;
         }
 
+        private Squad _prepareDamage_closestEnemy;
+        public void PrepareDamageToSendEntries(int which = 0)
+        {
+            if (!GetSquad().IsDefenseless)
+            {
+                _tempShips = new List<Ship>();
+
+                if (which == 1)
+                {
+                    _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
+                    if (_prepareDamage_closestEnemy != null)
+                    {
+                        _tempShips = _prepareDamage_closestEnemy.GetShips();
+                    }
+                }
+                else if (EnemySquad != null)
+                {
+                    _tempShips = EnemySquad.GetShips();
+                }
+
+                foreach (Ship ship in _tempShips)
+                {
+                    Level.State.GetShipDamageStatus(Side, ship);
+                }
+            }
+        }
+
         public virtual void SetFinalize(string cause)
         {
-            if (IsFinalized)
+            Finalize(cause);
+        }
+        public void SquadKilled()
+        {
+            if (CommandType == ConfigData.CommandTypes.Mining)
             {
-                return;
+                ((Mining)this).CleanupAsteroid();
             }
-            IsFinalized = true;
-            FinalizationCause = cause;
-            IsDead = true;
-            Level.CancelTimer(CommandTimer);
-            Level.CancelTimer(TimeoutTimer);
-            StopAllCoroutines();
-            if (GetSquad() != null && ReferenceEquals(GetSquad().GetCommand(), this))
+            else if (CommandType == ConfigData.CommandTypes.FullRetreat)
             {
-                GetSquad().SetCommandNull();
+                ((FullRetreat)this).CleanupWarpGate();
             }
-            Level.State.RemoveCommand(this);
-            enabled = false;
+            SetFinalize("This squad got killed");
+        }
+
+        private StoredCommand _finalize_storedCommand;
+        private StoredCommand _finalize_squadCommand;
+        private string _finalize_enemyName;
+
+        private void Finalize(string cause)
+        {
+            if (!IsDead)
+            {
+                Debug.Log($"Finalizing Command {this} because of {cause}");
+                if (cause == "")
+                {
+                    Debug.LogError($"Trying to finalize Command without cause");
+                }
+                Level.CancelTimer(CommandTimer);
+                Level.CancelTimer(TimeoutTimer);
+                StopAllCoroutines();
+
+                FinalizationCause = cause;
+                IsFinalized = true;
+                IsDead = true;
+
+                _tempShips = GetSquad().GetShips();
+                _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
+                Level.State.CommandsToRelease.Add(this);
+
+                if (!GetSquad().IsDead)
+                {
+                    GetSquad().SetCommandNull();
+                    GetSquad().HasCommand = false;
+                    GetSquad().Status = "idle";
+                    if (GetSquad().IsChasing())
+                    {
+                        GetSquad().SetChase(false);
+                    }
+                    if (GetSquad().IsSelected && Stage.Menus.HasSquadActionBox)
+                    {
+                        Stage.Menus.ActionBox.HighlightSelectedButtons();
+                    }
+
+                    if (IsHiveMindCommand && Stage.ActivateHiveMind)
+                    {
+                        GetSquad().AddToCommandList();
+                    }
+                    else
+                    {
+                        GetSquad().RunCommandQueue();
+                    }
+                    if (GetSquad().IsUserControlled && GetSquad().IsLockedOn)
+                    {
+                        GetSquad().IsLockedOn = false;
+                    }
+                }
+
+                if (IsHiveMindCommand && OutcomeId > 0 && HasStoredOutcomeRecord)
+                {
+                    if (Level.State.OutcomeIdToPastCommandIndex.TryGetValue(OutcomeId, out int storedCommandIndex) &&
+                        storedCommandIndex >= 0 &&
+                        storedCommandIndex < Level.State.PastCommands.Count &&
+                        Level.State.PastCommands[storedCommandIndex].OutcomeId == OutcomeId)
+                    {
+                        _finalize_storedCommand = Level.State.PastCommands[storedCommandIndex];
+                    }
+                    else
+                    {
+                        _finalize_storedCommand = null;
+                        Debug.LogError($"Could not finalize command outcome #{OutcomeId}: its stored-command mapping is missing or stale.");
+                    }
+
+                    if (_finalize_storedCommand != null)
+                    {
+                        _finalize_storedCommand.Tsv = Tsv;
+                        _finalize_storedCommand.IsFinalized = true;
+                    }
+
+                    if (Stage.DebugLogger.IsDebugging)
+                    {
+                        _finalize_squadCommand = GetSquad().PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
+                        if (_finalize_squadCommand != null)
+                        {
+                            _finalize_enemyName = EnemySquad != null ? EnemySquad.Name : "N/A";
+                            _finalize_squadCommand.Enemy = _finalize_enemyName;
+                            _finalize_squadCommand.Tsv = Tsv;
+                            _finalize_squadCommand.FinalizationCause = cause;
+                            _finalize_squadCommand.IsFinalized = true;
+                        }
+                        else
+                        {
+                            Debug.LogError($"Could not find squad command for OutcomeId #{OutcomeId} in Squad {GetSquad().Name}");
+                        }
+                    }
+                }
+
+                ClearData();
+                enabled = false;
+            }
+            else
+            {
+                Debug.LogError($"Trying to finalize a command ({this}) that's already been finalized with {FinalizationCause}");
+            }
+        }
+
+        public override string ToString()
+        {
+            return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} #[{ItemId}] with Strategy {CommandType} attached to " +
+                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}"; 
+        }
+
+        public override bool Equals(System.Object obj)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            Command x = obj as Command;
+            if (x == null)
+            {
+                return false;
+            }
+
+            return ItemId == x.ItemId;
+        }
+
+        public bool Equals(Command other)
+        {
+            return ItemId == other.ItemId;
+        }
+
+        public override int GetHashCode()
+        {
+            return ItemId.GetHashCode();
+        }
+
+        public static bool operator ==(Command a, Command b)
+        {
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            if (((object)a == null) || ((object)b == null))
+            {
+                return false;
+            }
+
+            return a.ItemId == b.ItemId;
+        }
+
+        public static bool operator !=(Command a, Command b)
+        {
+            return !(a == b);
         }
     }
 }
