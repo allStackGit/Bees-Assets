@@ -18,6 +18,15 @@ namespace Assets.Scripts.Levels
             SquadType = ConfigData.SquadTypes.CarrierSquad;
             IsMinionSquad = true;
         }
+        public override void ClearData()
+        {
+            base.ClearData();
+            Carrier = null;
+            CarrierSquadType = ConfigData.ShipTypes.Uninitialized;
+            IsDroneSquad = false;
+            IsCarrierSquad = true;
+            IsMinionSquad = true;
+        }
         public void SetupCarrierSquad(Carrier carrier, ConfigData.ShipTypes squadType)
         {
             Carrier = carrier;
