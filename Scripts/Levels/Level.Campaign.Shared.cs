@@ -71,6 +71,11 @@ namespace Assets.Scripts.Levels
             Pause();
             CancelTimer(_egg);
             CancelTimer(_fishTank);
+            if (IsLevelSetupOnServer)
+            {
+                ConfigData.Socket.OpenLevels.Remove(this);
+                IsLevelConnectedToServer = false;
+            }
             Map.FogOfWar.SetActive(true);
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
