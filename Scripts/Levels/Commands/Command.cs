@@ -220,7 +220,7 @@ namespace Assets.Scripts.Levels.Commands
                     _tempShips.Sort((a, b) => b.FleetShip.DamageDone.CompareTo(a.FleetShip.DamageDone));
                     break;
                 case ConfigData.ShootingStrategyTypes.LeastHealth:
-                    _tempShips.Sort((a, b) => (a.Health - a.OriginalHealth).CompareTo(b.Health - b.OriginalHealth));
+                    _tempShips.Sort((a, b) => a.Health.CompareTo(b.Health));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostHealth:
                     _tempShips.Sort((a, b) => b.Health.CompareTo(a.Health));
