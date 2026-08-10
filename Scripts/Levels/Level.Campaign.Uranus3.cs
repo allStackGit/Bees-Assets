@@ -111,6 +111,7 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             bool isBargeSquadDead = bargeSquad.IsDead;
+                            CancelTimer(reinforcements);
                             CloseLevel();
                             if (isBargeSquadDead)
                             {
@@ -119,7 +120,6 @@ namespace Assets.Scripts.Levels
                             else
                             {
                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(10, 20), true);
-                                CancelTimer(reinforcements);
                             }
                         },
                         "Level 11 Ending"));
