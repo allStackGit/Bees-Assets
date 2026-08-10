@@ -45,11 +45,15 @@ namespace Assets.Scripts.Entities.Ships
             _ownerLevel = Ship.Level;
             Transform.parent = _ownerLevel.Map.Transform;
 
-            if (HasAnimationController && Ship.Squad.HasCustomColor)
+            if (HasAnimationController)
             {
-                AnimationController.RecolorAnimationSprites();
+                AnimationController.ResetForReuse();
+                if (Ship.Squad.HasCustomColor)
+                {
+                    AnimationController.RecolorAnimationSprites();
+                }
             }
-            else if (!HasAnimationController && _spriteRenderer != null)
+            else if (_spriteRenderer != null)
             {
                 _spriteRenderer.sprite = _baseSprite;
             }
