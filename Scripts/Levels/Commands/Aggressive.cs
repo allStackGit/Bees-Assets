@@ -66,6 +66,10 @@ namespace Assets.Scripts.Levels.Commands
                             ConsecutiveTimesWithinRange = 0;
                         }
                         MoveTowardsEnemies();
+                        if (IsDead)
+                        {
+                            return;
+                        }
 
                         if (!IsCloseToTarget && GetSquad().DistanceToPoint(EnemySquad.GetPosition()) < GetSquad().MaxRange * 2)
                         {
