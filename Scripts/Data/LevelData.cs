@@ -22,11 +22,18 @@ namespace Assets.Scripts.Data
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);
                 levels.ForEach(level =>
                 {
+                    int id = (int)level.Id;
+                    int mapIndex = (int)level.MapIndex;
+                    if (type == (int)ConfigData.GameModes.Campaign)
+                    {
+                        mapIndex = CampaignMissionCatalog.Get(id).MapIndex;
+                    }
+
                     List<SavedSquad> enemyReinforcements = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemyReinforcements));
                     List<SavedSquad> enemySquads = Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>(level.EnemySquads));
                     List<(Vector2, Vector2)> obstacles = Utilities.LoadObstaclesFromJson(Utilities.JArrayToList<dynamic>(level.ObstacleList));
                     List<int> enemyExistingSquads = Utilities.JArrayToList<int>(level.EnemyExistingSquads);
-                    _levels.Add(new LevelOptions((int)level.Id, (int)level.Side, (string)level.Name, (int)level.MapIndex, (string)level.Obstacles, obstacles, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (bool) level.HasSquadActionBox, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, (string) level.EnemyReport, new List<SavedSquad>(), new Vector2((float)level.UserStartingPosition.x, (float)level.UserStartingPosition.y), new Vector2((float)level.AIStartingPosition.x, (float)level.AIStartingPosition.y)));
+                    _levels.Add(new LevelOptions(id, (int)level.Side, (string)level.Name, mapIndex, (string)level.Obstacles, obstacles, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (bool) level.HasSquadActionBox, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, (string) level.EnemyReport, new List<SavedSquad>(), new Vector2((float)level.UserStartingPosition.x, (float)level.UserStartingPosition.y), new Vector2((float)level.AIStartingPosition.x, (float)level.AIStartingPosition.y)));
                 });
             });
 
