@@ -27,12 +27,14 @@ namespace Assets.Scripts.Levels
 
         public static Vector2 WorldToLevel(Level level, Vector2 worldPoint)
         {
-            return level.Map.Transform.InverseTransformPoint(worldPoint);
+            Transform mapTransform = level?.Map?.Transform;
+            return mapTransform != null ? (Vector2)mapTransform.InverseTransformPoint(worldPoint) : worldPoint;
         }
 
         public static Vector2 LevelToWorld(Level level, Vector2 levelPoint)
         {
-            return level.Map.Transform.TransformPoint(levelPoint);
+            Transform mapTransform = level?.Map?.Transform;
+            return mapTransform != null ? (Vector2)mapTransform.TransformPoint(levelPoint) : levelPoint;
         }
     }
 }
