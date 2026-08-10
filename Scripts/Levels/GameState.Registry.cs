@@ -133,6 +133,10 @@ namespace Assets.Scripts.Levels
                         {
                             weapon.HasCachedChanged = true;
                         }
+                        if (weapon is BeamCannon beamCannon && ReferenceEquals(beamCannon.LaserBeamTarget, ship))
+                        {
+                            beamCannon.LaserBeamTarget = null;
+                        }
                         if (ReferenceEquals(weapon.TargetShip, ship))
                         {
                             if (weapon is Bomb bomb)
