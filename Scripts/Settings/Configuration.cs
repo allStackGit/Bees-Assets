@@ -73,6 +73,18 @@ namespace Assets.Scripts.Settings
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
         public bool MirrorServerStorageToLocal => !UseLocalStorage && MirrorStorage;
 
+        public static int GetStandardMaxTimeOnQueue()
+        {
+            Configuration configuration = ConfigData.Configuration;
+            if (configuration != null && configuration.IsLoaded && configuration.StandardMaxTimeOnQueue > 0)
+            {
+                return configuration.StandardMaxTimeOnQueue;
+            }
+
+            // Configuration itself must be fetched before the server-owned value is known.
+            return ConfigData.StandardMaxTimeOnQueue;
+        }
+
         public Configuration(ulong userId) : base("configuration", userId)
         {
         }
@@ -92,7 +104,6 @@ namespace Assets.Scripts.Settings
             DoesUserHaveController = (bool)so.DoesUserHaveController;
             StorageChunkSize = (int)so.StorageChunkSize;
             StandardMaxTimeOnQueue = (int)so.StandardMaxTimeOnQueue;
-            //ConfigData.StandardMaxTimeOnQueue = StandardMaxTimeOnQueue;
             TimeScale = (int)so.TimeScale;
             AISquadPatrolTime = (int)so.AISquadPatrolTime;
             AIPatrolMaxSize = (int)so.AIPatrolMaxSize;
