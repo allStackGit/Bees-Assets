@@ -5,11 +5,11 @@ using UnityEngine;
 namespace Assets.Scripts.Levels
 {
     /// <summary>
-    /// Keeps Pathfinder's Unity-facing obstacle discovery and coordinate conversion scoped
-    /// to the Level that owns the Pathfinder. Physics2D collider APIs operate in world space,
-    /// while Pathfinder grid coordinates are Level-local.
+    /// Keeps Unity-facing obstacle discovery and coordinate conversion scoped to the Level
+    /// that owns the operation. Physics2D collider APIs operate in world space, while
+    /// gameplay/pathfinding coordinates are Level-local.
     /// </summary>
-    internal static class PathfinderObstacleScope
+    public static class PathfinderObstacleScope
     {
         public static GameObject[] GetActiveObstacleObjects(Level level)
         {
