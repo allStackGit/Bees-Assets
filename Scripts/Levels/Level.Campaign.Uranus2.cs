@@ -59,7 +59,7 @@ namespace Assets.Scripts.Levels
                 () => !endMissionTooltip.gameObject.activeSelf,
                 () =>
                 {
-                    Destroy(endMissionTooltip);
+                    Destroy(endMissionTooltip.gameObject);
                     SelectedCarrierTrigger();
                     NextTriggers.Add(new Trigger(
                         () => _hasSeenCarrierIntroIfNeeded,
