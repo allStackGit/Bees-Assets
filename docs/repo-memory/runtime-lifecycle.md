@@ -11,11 +11,13 @@
 - Cast before division when producing percentages/normalized AI values. Integer division previously collapsed damaged-health information to 0/1.
 - Focused partial files own their own imports. After splitting a large class, compile-check namespace dependencies in every partial rather than relying on the old monolith's broad `using` list.
 - Connector whole-file writes must be checked immediately against their parent commit for accidental tail loss. For large files, fetch/restore the complete prior blob before changing imports or small statements.
+- Physics trigger helpers must reject invalid occupants at the boundary. A `Zone` must not add a null/dead non-Ship contact or invoke an unset callback merely because another collider overlaps it.
 
 ## Timers and commands
 
 - `ScaledTimer` is time-based in seconds. `startImmediate` must fire immediately and then schedule the next callback one normal interval later, not nearly two intervals later.
 - Remove timers while iterating from the end/backwards or from a snapshot; forward removal can skip adjacent timers for a frame.
+- One-time progression timers must be one-shot. The 30-minute Fish Tank unlock must not use `isRecurring=true`, which would repeatedly pause/show the unlock dialogue every additional 30 minutes.
 - Command-owned participant state should not depend on aggregate shared-environment collections. `FullRetreat`, for example, owns its own participant IDs even though a Warp Gate also keeps aggregate occupancy.
 - Finalizers that mutate the collection being enumerated must be invoked from a snapshot (e.g. mining commands during asteroid teardown).
 - `Command.Setup()` establishes `Squad.HasCommand`; queue runners should not blindly reassert that flag after `Execute()`, because an execution path can synchronously finalize and clear the command.
@@ -54,7 +56,7 @@
 - Special death overrides should delegate persistent loss/stat mutations to shared death accounting exactly once. Fire Barge previously incremented `ShipsLost` itself and then called `LogKilledStats()`, double-counting squad losses.
 - Fog-of-war death fades freeze at the death position. Reusing a ship cancels old fade timers so an old vision hole cannot follow the new occupant.
 - Warp Gate audio/UI children and squad boxes are reusable owned children; create them once and reactivate/reset rather than instantiating another child every pool lifecycle.
-- `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence correctly.
+- `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence.
 - `ShipDamageStatus` and `SpottedShip` hold direct Ship wrappers; `GameState.RemoveShip()` must remove those records before the wrapper can be pooled/reidentified.
 - Nearby asteroid lists may temporarily retain destroyed wrappers; consumers must prune/filter dead/null asteroids before avoidance or targeting decisions.
 - Lifecycle role flags such as `IsMinionSquad`, `IsMinionShip`, and `IsCarrierShip` must remain valid through ownership-sensitive deregistration, then be cleared before the pooled wrapper can be reused for a different role.
