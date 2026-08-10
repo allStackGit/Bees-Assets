@@ -11,13 +11,15 @@ namespace Bees.Tests.EditMode
         private static string Read(params string[] path) => File.ReadAllText(Path.Combine(Application.dataPath, Path.Combine(path)));
 
         [Test]
-        public void ShipReleaseUsesSubclassLifecycleGate()
+        public void ShipReleaseUsesSubclassLifecycleGateAndTeardownHook()
         {
             string shipPoolLifecycle = Read("Scripts", "Entities", "Ships", "Ship.PoolLifecycle.cs");
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
 
             Assert.That(shipPoolLifecycle, Does.Contain("public virtual bool CanReturnToPool()"));
             Assert.That(shipPoolLifecycle, Does.Contain("return ProjectilesInFlight.Count == 0;"));
+            Assert.That(shipPoolLifecycle, Does.Contain("public virtual void PrepareForLevelTeardown()"));
+            Assert.That(registry, Does.Contain("ship.PrepareForLevelTeardown();"));
             Assert.That(registry, Does.Contain("ShipsToRelease.Where(ship => ship.CanReturnToPool())"));
         }
 
@@ -30,7 +32,8 @@ namespace Bees.Tests.EditMode
             Assert.That(beehive, Does.Contain("private bool _isDeathAnimationPending;"));
             Assert.That(beehive, Does.Contain("_isDeathAnimationPending = true;"));
             Assert.That(beehive, Does.Contain("return !_isDeathAnimationPending && base.CanReturnToPool();"));
-            Assert.That(beehive, Does.Contain("_isDeathAnimationPending = false;"));
+            Assert.That(beehive, Does.Contain("public override void PrepareForLevelTeardown()"));
+            Assert.That(beehive, Does.Contain("ShrinkingAnimation.SetActive(false);"));
             Assert.That(shrinking, Does.Contain("Beehive.FinalExplosion();"));
         }
 
@@ -42,6 +45,8 @@ namespace Bees.Tests.EditMode
 
             Assert.That(queen, Does.Contain("QueenExplosionAnimation.Remains.Setup();"));
             Assert.That(queen, Does.Contain("return !_isDeathAnimationPending && base.CanReturnToPool();"));
+            Assert.That(queen, Does.Contain("public override void PrepareForLevelTeardown()"));
+            Assert.That(queen, Does.Contain("ShipExplosion.SetActive(false);"));
             Assert.That(animation, Does.Contain("Remains.Place();"));
             Assert.That(animation, Does.Contain("Queen.CompleteDeathAnimation();"));
             Assert.That(animation, Does.Not.Contain("Queen.Level.State.AddDeadBody(Remains)"));
