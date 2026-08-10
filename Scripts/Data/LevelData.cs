@@ -61,16 +61,14 @@ namespace Assets.Scripts.Data
                         $"Campaign progress references unknown mission Id #{levelId}.", exception);
                 }
 
-                if (!mission.HasPersistedLevelData)
-                {
-                    throw new InvalidOperationException(
-                        $"Campaign mission #{levelId} ({mission.Name}) has runtime logic but no persisted campaign level data.");
-                }
                 if (level == null)
                 {
+                    string availability = mission.HasPersistedLevelData
+                        ? string.Empty
+                        : " The runtime catalog currently marks this mission as missing persisted level data.";
                     throw new InvalidOperationException(
                         $"Campaign mission #{levelId} ({mission.Name}) is missing from persisted campaign level data. " +
-                        $"Loaded IDs: {string.Join(", ", _levels.Select(candidate => candidate.Id))}");
+                        $"Loaded IDs: {string.Join(", ", _levels.Select(candidate => candidate.Id))}.{availability}");
                 }
                 if (!MissionNamesMatch(level.Name, mission.Name))
                 {
@@ -92,16 +90,20 @@ namespace Assets.Scripts.Data
         {
             foreach (CampaignMissionCatalog.MissionDefinition mission in CampaignMissionCatalog.Definitions)
             {
-                if (!mission.HasPersistedLevelData)
+                List<LevelOptions> matches = _levels.Where(level => level.Id == mission.Id).ToList();
+                if (matches.Count == 0)
                 {
+                    if (mission.HasPersistedLevelData)
+                    {
+                        Debug.LogError(
+                            $"Campaign level data mismatch for #{mission.Id} ({mission.Name}): expected one persisted record, found none.");
+                    }
                     continue;
                 }
-
-                List<LevelOptions> matches = _levels.Where(level => level.Id == mission.Id).ToList();
-                if (matches.Count != 1)
+                if (matches.Count > 1)
                 {
                     Debug.LogError(
-                        $"Campaign level data mismatch for #{mission.Id} ({mission.Name}): expected exactly one record, found {matches.Count}.");
+                        $"Campaign level data mismatch for #{mission.Id} ({mission.Name}): expected one record, found {matches.Count}.");
                     continue;
                 }
                 if (!MissionNamesMatch(matches[0].Name, mission.Name))
