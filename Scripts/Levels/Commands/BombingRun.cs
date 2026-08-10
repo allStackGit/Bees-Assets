@@ -7,7 +7,7 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class BombingRun : Command
     {
-        public HashSet<Ship> ShipsCompletedCommand = new HashSet<Ship>();
+        public HashSet<Ship> ShipsCompletedCommand = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
 
         private List<Ship> _execute_ships;
         private Ship _execute_currentShip;
