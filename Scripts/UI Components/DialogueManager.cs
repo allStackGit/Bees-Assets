@@ -25,6 +25,7 @@ public class DialogueManager : MonoBehaviour
     private Queue<DialogueLine> dialogueLines = new Queue<DialogueLine>();
     private DialogueLine _currentLine;
     private bool _isLastDialogue;
+    private bool _isAdvancingDialogue;
 
 
     public void Setup(CutsceneManager cutsceneManager)
@@ -34,7 +35,7 @@ public class DialogueManager : MonoBehaviour
 
     public void Update()
     {
-        if (_currentLine.IsOver && Input.GetKey(KeyCode.Space))
+        if (_currentLine != null && _currentLine.IsOver && Input.GetKey(KeyCode.Space))
         {
             SpacebarImage.sprite = PressedSpacebar;
             DisplayNextLineWithDelay(.5f);
@@ -44,6 +45,7 @@ public class DialogueManager : MonoBehaviour
     public void StartDialogue(List<DialogueLine> lines, bool isLastDialogue)
     {
         _isLastDialogue = isLastDialogue;
+        _isAdvancingDialogue = false;
         dialogueLines.Clear();
 
         foreach (DialogueLine line in lines)
@@ -64,6 +66,7 @@ public class DialogueManager : MonoBehaviour
 
     public void DisplayNextLine()
     {
+        _isAdvancingDialogue = false;
         if (dialogueLines.Count == 0)
         {
             if (_isLastDialogue)
@@ -93,6 +96,11 @@ public class DialogueManager : MonoBehaviour
 
     public void DisplayNextLineWithDelay(float delaySeconds = 2f)
     {
+        if (_isAdvancingDialogue)
+        {
+            return;
+        }
+        _isAdvancingDialogue = true;
         StartCoroutine(DisplayNextLineCoroutine(delaySeconds));
     }
 
