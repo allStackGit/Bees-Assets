@@ -127,6 +127,32 @@ namespace Bees.Tests.PlayMode
             Assert.That(RuntimeAssembly.GetField(_ship, "PathfindingThreadComplete"), Is.False);
         }
 
+        [UnityTest]
+        public IEnumerator PathfinderOwnershipPreventsShipPoolReuseUntilWorkerReleasesLifecycle()
+        {
+            int lifecycleId = (int)RuntimeAssembly.GetField(_ship, "PathfindingLifecycleId");
+            RuntimeAssembly.Invoke(_pathfinder, "FindPath", _ship, 1, 1, 14, 14, 1);
+
+            Assert.That(RuntimeAssembly.Invoke(
+                _pathfinder, "HasOutstandingWorkForShip", _ship, lifecycleId), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(_ship, "CanReturnToPool"), Is.EqualTo(false),
+                "A ship wrapper must not be reusable while a pathfinder worker still owns it.");
+
+            for (int frame = 0; frame < 500; frame++)
+            {
+                RuntimeAssembly.Invoke(_pathfinder, "Update");
+                if (!(bool)RuntimeAssembly.Invoke(
+                        _pathfinder, "HasOutstandingWorkForShip", _ship, lifecycleId))
+                {
+                    Assert.That(RuntimeAssembly.Invoke(_ship, "CanReturnToPool"), Is.EqualTo(true));
+                    yield break;
+                }
+                yield return new WaitForSecondsRealtime(0.01f);
+            }
+
+            Assert.Fail("Pathfinder worker retained ship lifecycle ownership for more than five seconds.");
+        }
+
         private IEnumerator WaitForAcceptedPath(int requestId)
         {
             for (int frame = 0; frame < 500; frame++)
