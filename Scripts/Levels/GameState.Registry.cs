@@ -158,6 +158,16 @@ namespace Assets.Scripts.Levels
                 }
             }
 
+            // Active projectiles can outlive their target. Purge queued contacts, target
+            // reservations and subclass hit histories before this wrapper can be reused.
+            foreach (Projectile projectile in Projectiles.ToList())
+            {
+                if (projectile != null && !projectile.IsDead)
+                {
+                    projectile.ForgetShip(ship);
+                }
+            }
+
             // These records retain the live Ship wrapper, whose runtime Id changes when
             // the object is reused from the pool. Remove them while the old identity is
             // still authoritative so stale combat/spotting state cannot attach to the
