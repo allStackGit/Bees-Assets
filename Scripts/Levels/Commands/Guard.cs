@@ -162,21 +162,33 @@ namespace Assets.Scripts.Levels.Commands
             
         }
 
+        public override void SetFinalize(string cause)
+        {
+            if (!IsDead)
+            {
+                if (GetSquad() != null && !GetSquad().IsDead)
+                {
+                    GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
+                }
+
+                foreach (Squad guardSquad in GetGuardingSquads().ToList())
+                {
+                    if (guardSquad != null && guardSquad.HasCommand && guardSquad.GetCommand().CommandType == ConfigData.CommandTypes.Guard)
+                    {
+                        ((Guard)guardSquad.GetCommand()).OtherGuardSquads.Remove(GetSquad());
+                    }
+                }
+            }
+
+            base.SetFinalize(cause);
+        }
+
         private void FinishGuardingCommand()
         {
             if (!GetSquad().IsDead)
             {
-                GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
-                GetGuardingSquads().ForEach((squad) =>
-                {
-                    ((Guard)squad.GetCommand()).OtherGuardSquads.Remove(GetSquad());
-                }); // [alert] need to do this when the user finishes too
-                //CancelInvoke(nameof(Timer));
                 SetFinalize("Finished Guarding");
-
             }
-
-
         }
     }
 }
