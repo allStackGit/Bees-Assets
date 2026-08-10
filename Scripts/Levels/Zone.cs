@@ -15,18 +15,22 @@ namespace Assets.Scripts.Levels
         private void OnTriggerEnter2D(Collider2D collision)
         {
             Ship ship = collision.GetComponent<Ship>();
-            if (!Ships.Contains(ship))
+            if (ship == null || ship.IsDead)
             {
-                Ships.Add(ship);
+                return;
+            }
+
+            if (Ships.Add(ship))
+            {
                 //Debug.Log($"Ship {ship.Name} entered exit zone.");
-                OnShipEnter(ship);
+                OnShipEnter?.Invoke(ship);
             }
         }
 
         private void OnTriggerExit2D(Collider2D collision)
         {
             Ship ship = collision.GetComponent<Ship>();
-            if (Ships.Contains(ship))
+            if (ship != null)
             {
                 Ships.Remove(ship);
                 //Debug.Log($"Ship {ship.Name} exited exit zone.");
