@@ -1,8 +1,11 @@
 # Pathfinding and performance
 
 - Existing `BeesPerformanceQualification` is a CPU regression baseline, not minimum-spec certification: one path worker, a 64x64 open grid, repeated real background searches, and repeated `GameState.ResetState` calls.
-- Static pathfinding obstacles are authoritative through `GameState.Obstacles` and geometry sampled from `Obstacle.ClearanceMappingCollider`. Dense qualification should create real Obstacles/colliders rather than mutating private path arrays.
-- `Pathfinder.InitializeMap()` discovers initial static obstacles via the real Unity object/tag path and `Obstacle.Setup(Level)`; stripped fixtures therefore need the production obstacle tag and a minimal real Pool/Stage context.
+- Pathfinder Unity obstacle discovery must be scoped to the owning `Level.Map` hierarchy. Never use scene-global obstacle discovery on a Stage that can host multiple simultaneous Levels; doing so can reassign another Level's obstacles and corrupt their pathfinding ownership/indexes.
+- Pathfinder grid coordinates are Level-local, but `Collider2D.bounds`, `OverlapPoint`, and `ClosestPoint` use world space. Convert collider bounds/closest points world→Level before grid mapping, and convert grid-cell probe points Level→world before physics queries.
+- Training/reset must retire the current Pathfinder instance rather than reinitialize its worker arrays while background `Task.Run` searches may still be active. Old workers may finish on the retired instance; lifecycle/request IDs still guard whether their result is applied.
+- `Pathfinder` is intentionally decomposed into core coordinate/result ownership, `Pathfinder.Obstacles.cs`, `Pathfinder.Search.cs`, `Pathfinder.Models.cs`, and `PathfinderObstacleScope.cs`. Keep new behavior in the appropriate focused file rather than recreating the monolith.
+- Static pathfinding obstacles are authoritative through Level-scoped obstacle geometry sampled from `Obstacle.ClearanceMappingCollider`. Dense qualification should create real Obstacles/colliders rather than mutating private path arrays.
 - Dynamic collision-asteroid avoidance is a separate cached layer rebuilt from live moving obstacles when enabled. Tests should register dynamic obstacles after base Pathfinder initialization and advance `Stage.FixedUpdates` to force a new layer snapshot.
 - Authored obstacle layouts can be gameplay rules, not decoration. Placement/spawn/path qualification should inspect the exact mission prefab and use real collider geometry plus ship clearance.
 - Hardware qualification should record CPU/core count, RAM, GPU/VRAM/API, resolution, OS, Unity version, and batch/headless status alongside performance results.
