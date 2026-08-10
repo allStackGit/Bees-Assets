@@ -18,7 +18,7 @@ namespace Assets.Scripts
         private SavedSquadsData _savedSquadsData;
         public string ShipListType;
 
-        public Ships(FleetData fleetData, SavedSquadsData savedSquadsData) { 
+        public Ships(FleetData fleetData, SavedSquadsData savedSquadsData) {
             _fleetData = fleetData;
             _savedSquadsData = savedSquadsData;
             ShipListType = _fleetData.GetDataFile().Name;
@@ -73,8 +73,6 @@ namespace Assets.Scripts
         /// <summary>
         /// Whether there is at least one alive ship of the given type in the fleet
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
         public bool HasShipsOfType(ConfigData.ShipTypes type)
         {
             return GetAliveShips().Find((ship) => ship.Type == type) != null;
@@ -120,7 +118,6 @@ namespace Assets.Scripts
                 case "Record":
                     rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.BattlesFought > 0 ? ((double)s.BattlesWon/(double)s.BattlesFought) : 0).ToList();
                     ranking = rankings.IndexOf(ship) + 1;
-                    
                     if (ranking > 1)
                     {
                         FleetShip shipAbove = rankings.ElementAt(ranking - 2);
@@ -133,7 +130,6 @@ namespace Assets.Scripts
                             shipAbove = rankings.ElementAt(ranking - 2);
                             shipAboveValue = shipAbove.BattlesFought > 0 ? (double)shipAbove.BattlesWon / (double) shipAbove.BattlesFought : 0;
                             shipValue = ship.BattlesFought > 0 ? (double)ship.BattlesWon / (double) ship.BattlesFought : 0;
-                            //Debug.Log($"Ranking for {ship.Name}: {ranking}, {shipValue}, {shipAbove.Name}: {shipAboveValue}");
                             moved = true;
                             ranking--;
                         }
@@ -142,7 +138,6 @@ namespace Assets.Scripts
                             ranking++;
                         }
                     }
-                    
                     break;
                 case "Minerals Mined":
                     rankings = GetAliveFleetShipsBySide(side).OrderByDescending((s) => s.MineralsMined).ToList();
@@ -152,11 +147,9 @@ namespace Assets.Scripts
                         ranking--;
                     }
                     break;
-
             }
             return ranking;
         }
-
 
         // Get squad methods
         public List<SquadShip> GetSquadShips()
@@ -234,28 +227,21 @@ namespace Assets.Scripts
                         double squadAboveValue = squadAbove.Stats.BattlesFought > 0 ? (double) squadAbove.Stats.BattlesWon / squadAbove.Stats.BattlesFought : 0;
                         double squadValue = squad.Stats.BattlesFought > 0 ? (double) squad.Stats.BattlesWon / squad.Stats.BattlesFought : 0;
                         bool moved = false;
-                        //Debug.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
-                        //Debug.Log("____________");
                         while (ranking > 1 && squadValue == squadAboveValue)
                         {
                             squadAbove = rankings.ElementAt(ranking - 2);
                             squadAboveValue = squadAbove.Stats.BattlesFought > 0 ? (double) squadAbove.Stats.BattlesWon / squadAbove.Stats.BattlesFought : 0;
                             squadValue = squad.Stats.BattlesFought > 0 ? (double) squad.Stats.BattlesWon / squad.Stats.BattlesFought : 0;
-                            //Debug.Log($"Ranking for {squad.Name}: {ranking}, {squadValue}, {squadAbove.Name}: {squadAboveValue}");
                             moved = true;
                             ranking--;
-
                         }
                         if (squadValue < squadAboveValue && moved)
                         {
                             ranking++;
                         }
                     }
-                    
                     break;
-
             }
-
             return ranking;
         }
 
@@ -264,7 +250,6 @@ namespace Assets.Scripts
         {
             return GetSavedSquad(id) != null;
         }
-
 
         // add squad methods
         public void AddSquad(SavedSquad squad)
@@ -278,7 +263,6 @@ namespace Assets.Scripts
         /// </summary>
         public void ReplaceDeadSquadShips(bool replaceAISide)
         {
-            //Debug.Log($"Replacing dead squad ships");
             List<SavedSquad> squads = replaceAISide ? GetSavedSquads() : GetSavedSquadsBySide(ConfigData.Configuration.UserSide);
             bool replaced = false;
             squads.ForEach((squad) =>
@@ -299,15 +283,10 @@ namespace Assets.Scripts
                 Debug.Log("Replaced dead ships");
                 SaveSquadData();
             }
-
         }
         public bool ReplaceDeadShipsInSquad(SavedSquad squad)
         {
             bool replaced = false;
-            //if (squad.GetDeadShips().Count == 0)
-            //{
-            //    Debug.Log($"There are no dead ships for {squad}");
-            //}
             squad.GetDeadShips().ToList().ForEach((squadShip) =>
             {
                 FleetShip replacement = GetFirstAvailableShipOfType(squadShip.ShipType);
@@ -323,10 +302,6 @@ namespace Assets.Scripts
                     Debug.Log($"Replaced dead {squadShip.GetFleetShip()} with {replacement} at {squadShip.Offset}/{newSquadShip.Offset}");
                     replaced = true;
                 }
-                //else
-                //{
-                //    Debug.Log($"Could not replace {squadShip} because there were no available replacements");
-                //}
             });
             return replaced;
         }
@@ -340,7 +315,6 @@ namespace Assets.Scripts
 
         public SavedSquad BuildNewSquad(string name, int side, ConfigData.ShipTypes shipType, int shipCount)
         {
-
             Vector2[] offsets = ConfigData.GeneratedSquadFormationOffsets4x4;
             if (shipCount == 1)
             {
@@ -366,12 +340,9 @@ namespace Assets.Scripts
                 }
             }
 
-
-
             int squadId = ConfigData.UserProgressData.GetNextSavedSquadId();
             SavedSquad savedSquad = new SavedSquad(squadId, side, name, Vector2.zero, false, false, DefaultShootingStrategy, UnsetColor, null);
-            //List<FleetShip> fleetShips = CurrentShips.GetAvailableShipsOfType(shipType);
-            for (int i = 0; i < shipCount; i++) 
+            for (int i = 0; i < shipCount; i++)
             {
                 FleetShip ship = CurrentShips.GetFirstAvailableShipOfType(shipType);
                 if (ship != null)
@@ -384,65 +355,58 @@ namespace Assets.Scripts
                     Debug.Log(Utilities.ListToString(CurrentShips.GetFleetShips().Where((fs) => fs.Type == shipType).ToList()));
                 }
             }
-            //Debug.Log($"Built {savedSquad}");
             if (savedSquad.HasShips)
             {
                 CurrentShips.AddSquad(savedSquad);
                 return CurrentShips.GetSavedSquad(savedSquad.Id);
             }
             return null;
-
         }
 
         public SavedSquad GetSquadByComposition(Level level, ConfigData.ShipTypes shipType, int shipCount, bool canHaveFewerShips = false, bool canHaveMoreShips = false)
         {
-            SavedSquad savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
+            List<SavedSquad> eligibleSquads = GetSavedSquads()
+                .Where(squad => !squad.IsLoadedIntoLevel)
+                .Where(squad => squad.GetAliveSquadShips().Count > 0)
+                .Where(squad => squad.GetAliveSquadShips().All(ship => ship.ShipType == shipType))
+                .ToList();
+
+            SavedSquad savedSquad = eligibleSquads
+                .FirstOrDefault(squad => squad.GetAliveSquadShips().Count == shipCount);
+
+            if (savedSquad == null && canHaveFewerShips)
+            {
+                savedSquad = eligibleSquads
+                    .Where(squad => squad.GetAliveSquadShips().Count < shipCount)
+                    .OrderByDescending(squad => squad.GetAliveSquadShips().Count)
+                    .FirstOrDefault();
+            }
+            if (savedSquad == null && canHaveMoreShips)
+            {
+                savedSquad = eligibleSquads
+                    .Where(squad => squad.GetAliveSquadShips().Count > shipCount)
+                    .OrderBy(squad => squad.GetAliveSquadShips().Count)
+                    .FirstOrDefault();
+            }
+
             if (savedSquad == null)
             {
                 if (!canHaveFewerShips && !canHaveMoreShips)
                 {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
-
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
-
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
-
-                    Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
                     Debug.LogError($"No squad found with {shipCount} ships of type {shipType}");
                 }
-                else if (canHaveFewerShips)
+                else
                 {
-                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count <= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
-                    if (savedSquad == null && canHaveMoreShips)
-                    {
-                        savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
-                    }
-                }
-                else if (canHaveMoreShips)
-                {
-                    savedSquad = GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count >= shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType) && squad.GetAliveSquadShips().Count > 0);
-
-                }
-                if (savedSquad == null)
-                {
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount && squad.GetAliveSquadShips().All((s) => s.ShipType == shipType))}");
-
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel && squad.GetAliveSquadShips().Count == shipCount)}");
-
-                    Debug.Log($"Squads: {GetSavedSquads().Find((squad) => !squad.IsLoadedIntoLevel)}");
-
-                    Debug.Log($"Squads: {Utilities.ListToString(GetSavedSquadsBySide(Utilities.ConvertShipTypeToSide[shipType]))}");
                     Debug.LogWarning($"No squad found with {(canHaveFewerShips ? "<=" : "")}{shipCount}{(canHaveMoreShips ? ">=" : "")} ships of type {shipType}");
                 }
             }
             return savedSquad;
-
         }
+
         public SavedSquad GetSquadByComposition(ConfigData.ShipTypes shipType)
         {
             return GetSavedSquads().FirstOrDefault((squad) => squad.GetSquadShips().All((s) => s.ShipType == shipType) && squad.GetSquadShips().Count <= 4);
         }
-
 
         // alias underlying data methods
         public void SaveSquadData()
@@ -451,10 +415,7 @@ namespace Assets.Scripts
         }
         public void SaveFleetData()
         {
-            //Debug.Log($"Saving the fleet data");
             _fleetData.Save();
         }
-
-
     }
 }
