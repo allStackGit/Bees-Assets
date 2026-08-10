@@ -56,6 +56,7 @@ namespace Assets.Scripts.Entities.Ships
             HasReturnedToCarrier = false;
             TouchingShip = null;
             LastCarrierPosition = Vector2.zero;
+            _trainingBombTargetRuntimeId = 0;
         }
 
         public override void Deactivate()
@@ -164,6 +165,7 @@ namespace Assets.Scripts.Entities.Ships
 
         private StrikerBomb _bomb;
         private ScaledTimer _damageTimer = new ScaledTimer();
+        private long _trainingBombTargetRuntimeId;
         private void DropBomb()
         {
             if (!HasDroppedBomb)
@@ -179,6 +181,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 else
                 {
+                    _trainingBombTargetRuntimeId = ContactedShip != null ? ContactedShip.Id : 0;
                     _damageTimer.Reuse(2, LogBombDamage);
                     Level.AddTimer(_damageTimer);
                 }
@@ -189,6 +192,10 @@ namespace Assets.Scripts.Entities.Ships
 
         public void LogBombDamage()
         {
+            if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Id != _trainingBombTargetRuntimeId)
+            {
+                return;
+            }
             LogAttackingDamage(Bomb.Power, this, FleetShip, Squad.SavedSquad, ContactedShip);
         }
 
