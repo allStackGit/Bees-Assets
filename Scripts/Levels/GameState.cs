@@ -92,6 +92,12 @@ namespace Assets.Scripts.Levels
         {
             CleanupRuntimeObjectsForReset();
 
+            // Path searches run on background tasks and retain this Pathfinder instance's
+            // worker arrays. Never reinitialize those arrays for the next episode while an
+            // old task may still be using them; detach the old instance so setup creates a
+            // fresh Pathfinder and any late results remain isolated on the retired object.
+            Level.Pathfinder = null;
+
             Ships.Clear();
             ShipsById.Clear();
             Squads.Clear();
