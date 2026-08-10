@@ -57,6 +57,7 @@ namespace Bees.Tests.EditMode
             string state = Read("Scripts", "Levels", "GameState.cs");
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
             string queries = Read("Scripts", "Levels", "GameState.Queries.cs");
+            string vision = Read("Scripts", "Entities", "Ships", "Weapons", "HivemindVision.cs");
 
             Assert.That(state, Does.Contain("ReferenceIdentityComparer<Ship>.Instance"));
             Assert.That(registry, Does.Contain("HivemindShips[ship.Side - 1].Remove(ship.Id)"));
@@ -64,6 +65,8 @@ namespace Bees.Tests.EditMode
             Assert.That(queries, Does.Contain("dictionary.Value.Where(ship => !ship.IsDead)"));
             Assert.That(state, Does.Contain("HivemindShips = new[]"));
             Assert.That(queries, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
+            Assert.That(vision, Does.Contain("TryGetValue(Ship.Id, out HashSet<Ship> visibleShips)"));
+            Assert.That(vision, Does.Contain("Ship.ShipType == ConfigData.ShipTypes.Beacon && !Ship.IsDead"));
         }
     }
 }
