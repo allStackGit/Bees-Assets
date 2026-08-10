@@ -20,6 +20,8 @@
 - Finalizers that mutate the collection being enumerated must be invoked from a snapshot (e.g. mining commands during asteroid teardown).
 - `Command.Setup()` establishes `Squad.HasCommand`; queue runners should not blindly reassert that flag after `Execute()`, because an execution path can synchronously finalize and clear the command.
 - Derived command `Execute()` implementations must stop immediately if `base.Execute()` finalized the command; otherwise they can schedule timers or mutate state on an already-dead pooled command.
+- Command-specific side effects must be undone in the command's general `SetFinalize` path, not only its normal timeout/completion callback. Guard speed matching and reciprocal guard membership are lifecycle-owned state.
+- A command whose semantics mean “stay here” must explicitly cancel inherited movement. Starting `Hold`, or an already-safe `Retreat`, cannot assume finalizing the prior command stopped ship movement/path retries.
 - Ship-owned timers must be cancelled before the Ship wrapper can enter the pool. This includes combat, asteroid recheck, failed-path retry, and hover/info timers across separate Ship partials.
 - An explicit `StopMoving()` must cancel pending path-retry work so an old failed-path callback cannot restart movement after a new order/cancel.
 - A Striker-only `BombingRun` must remain active after its enemy squad dies until the Strikers have returned to a live Carrier, or no Carrier remains. A single return-to-carrier movement update is insufficient because finalizing the command cancels the timer that continues the trip.
@@ -36,6 +38,7 @@
 - The Hive Mind awaiting-command queue is idempotent: null/dead squads are ignored and a squad already waiting must not be enqueued again.
 - Target-queue exhaustion is normal terminal state. Ship/command helpers must return/finalize cleanly when the enemy squad has no remaining valid ships instead of dequeuing/dereferencing an empty target queue.
 - Pending damage equal to a target's remaining health is already lethal coverage; target selection must use strict `<` rather than `<=` when deciding whether more damage should be reserved.
+- Composition-derived command bans must be refreshed after casualties as well as ship additions. A squad that becomes defenseless or bomber-only must not keep the command eligibility of its earlier composition.
 
 ## Pooling and combat lifecycles
 
@@ -51,9 +54,11 @@
 - Special death overrides should delegate persistent loss/stat mutations to shared death accounting exactly once. Fire Barge previously incremented `ShipsLost` itself and then called `LogKilledStats()`, double-counting squad losses.
 - Fog-of-war death fades freeze at the death position. Reusing a ship cancels old fade timers so an old vision hole cannot follow the new occupant.
 - Warp Gate audio/UI children and squad boxes are reusable owned children; create them once and reactivate/reset rather than instantiating another child every pool lifecycle.
-- `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence.
+- `Turret` is split into lifecycle, aiming, and targeting partials. `Turret.ClearData()` must reset `TargetingPasses = 0` so a pooled turret cannot resume halfway through its three-pass firing cadence correctly.
 - `ShipDamageStatus` and `SpottedShip` hold direct Ship wrappers; `GameState.RemoveShip()` must remove those records before the wrapper can be pooled/reidentified.
 - Nearby asteroid lists may temporarily retain destroyed wrappers; consumers must prune/filter dead/null asteroids before avoidance or targeting decisions.
+- Lifecycle role flags such as `IsMinionSquad`, `IsMinionShip`, and `IsCarrierShip` must remain valid through ownership-sensitive deregistration, then be cleared before the pooled wrapper can be reused for a different role.
+- Temporary Queen/Scout/Carrier child squads and ships share parent `SavedSquad`/`FleetShip` identities for behavior/stat accounting. Child teardown must never release the parent's `IsLoadedIntoLevel` state.
 
 ## Pathfinding ownership
 
