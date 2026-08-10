@@ -48,6 +48,18 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [TestCase(11, false)]
+        [TestCase(12, true)]
+        [TestCase(32, true)]
+        public void CampaignCompletionUsesScriptedMissionBoundary(int currentMissionId, bool expectedComplete)
+        {
+            var catalogType = RuntimeAssembly.GetType("Assets.Scripts.Levels.CampaignMissionCatalog");
+
+            Assert.That(
+                RuntimeAssembly.InvokeStatic(catalogType, "IsCampaignComplete", currentMissionId),
+                Is.EqualTo(expectedComplete));
+        }
+
         [Test]
         public void UranusMissionsRemainExcludedFromFullConfigureAutomationUntilIsolationIsReady()
         {
