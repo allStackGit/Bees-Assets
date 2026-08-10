@@ -78,7 +78,7 @@ namespace Assets.Scripts.Entities.Ships
             // its pooled Ship and may belong to a differently colored squad next lifecycle.
             if (Ship.Squad.HasCustomColor && !HasAnimationController && _spriteRenderer != null && _baseSprite != null)
             {
-                Color[] colors = ConfigData.ChangeableShipColors.GetValueOrDefault(Ship.ShipType);
+                ConfigData.ChangeableShipColors.TryGetValue(Ship.ShipType, out Color[] colors);
                 int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, _baseSprite);
                 _spriteRenderer.sprite = Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels);
             }
