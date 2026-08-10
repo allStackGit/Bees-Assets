@@ -1,3 +1,6 @@
+using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
+
 namespace Assets.Scripts.Levels
 {
     /// <summary>
@@ -20,11 +23,11 @@ namespace Assets.Scripts.Levels
         public void Level10Ending() => Uranus2Ending();
         public void Level11Ending() => Uranus3Ending();
 
-        private Data.SavedSquad GetRequiredAnomalyGunshipSquad()
+        private SavedSquad GetRequiredAnomalyGunshipSquad()
         {
             foreach (Squad squad in State.GetSquadsBySide(ConfigData.Configuration.UserSide))
             {
-                foreach (Entities.Ships.Ship ship in squad.GetShips())
+                foreach (Ship ship in squad.GetShips())
                 {
                     if (ship.ShipType == ConfigData.ShipTypes.Gunship)
                     {
