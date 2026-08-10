@@ -30,6 +30,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void AggressiveTimerStopsIfTargetSelectionFinalizesCommand()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Aggressive.cs");
+            string source = File.ReadAllText(path);
+
+            int timerStart = source.IndexOf("private void Timer()");
+            int moveTowardsEnemies = source.IndexOf("MoveTowardsEnemies();", timerStart);
+            int deadGuard = source.IndexOf("if (IsDead)", moveTowardsEnemies);
+            int cadenceChange = source.IndexOf("CommandFrequency = .25f;", moveTowardsEnemies);
+
+            Assert.That(timerStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(moveTowardsEnemies, Is.GreaterThan(timerStart));
+            Assert.That(deadGuard, Is.GreaterThan(moveTowardsEnemies));
+            Assert.That(cadenceChange, Is.GreaterThan(deadGuard));
+        }
+
+        [Test]
         public void PooledAggressiveCommandRestoresDefaultCadence()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Aggressive.cs");
