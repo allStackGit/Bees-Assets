@@ -32,13 +32,29 @@ namespace Assets.Scripts.Settings
         {
             if (_request != null)
             {
-                SettingsRequest standingRequest = (SettingsRequest)ConfigData.Socket.GetStandingRequest(_request.Hash);
+                SettingsRequest standingRequest = ConfigData.Socket.GetStandingRequest(_request.Hash) as SettingsRequest;
+                if (standingRequest == null)
+                {
+                    return;
+                }
+
                 if (standingRequest.Status == 1)
                 {
                     ConfigData.Socket.StandingRequests.Remove(standingRequest);
                     //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
                     IsLoaded = true;
                     ProcessData(standingRequest.Response.Contents);
+                    return;
+                }
+
+                // Socket claims a response hash before validating the settings payload. If the
+                // payload is empty/invalid, the request remains pending but every resend with the
+                // same hash is thereafter rejected as already handled. Retire that poisoned request
+                // and create a fresh request/hash so settings loading can recover.
+                if (ConfigData.Socket.HandledRequests.Contains(_request.Hash))
+                {
+                    ConfigData.Socket.StandingRequests.Remove(standingRequest);
+                    Fetch();
                 }
             }
         }
