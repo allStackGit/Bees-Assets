@@ -401,6 +401,8 @@ namespace Assets.Scripts.Levels
 
         public void Titania2CampaignEnding()
         {
+            ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             ConfigData.UserProgressData.AdvanceToNextLevel();
 
