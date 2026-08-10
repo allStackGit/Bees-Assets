@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         {
             base.ClearData();
             Carrier = null;
-            CarrierSquadType = ConfigData.ShipTypes.Uninitialized;
+            CarrierSquadType = default;
             IsDroneSquad = false;
             IsCarrierSquad = true;
             IsMinionSquad = true;
