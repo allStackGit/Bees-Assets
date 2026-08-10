@@ -20,6 +20,9 @@ namespace Assets.Scripts.Levels
             int personnelLost = 0;
             int personnelEvacuated = 0;
             ScaledTimer clock = new ScaledTimer();
+            ScaledTimer wave2 = new ScaledTimer();
+            ScaledTimer wave3 = new ScaledTimer();
+            ScaledTimer wave4 = new ScaledTimer();
             Stage.ActivateHiveMind = false;
             Stage.Menus.GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15);
             Stage.CutsceneManager.Setup(Pluto4Ending);
@@ -115,6 +118,9 @@ namespace Assets.Scripts.Levels
                                         {
                                             _questPoints = personnelEvacuated;
                                             CancelTimer(clock);
+                                            CancelTimer(wave2);
+                                            CancelTimer(wave3);
+                                            CancelTimer(wave4);
                                             CloseLevel();
                                             if (personnelLost >= 15)
                                                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(18, 4), true);
@@ -144,7 +150,7 @@ namespace Assets.Scripts.Levels
                                     Stage.ActivateHiveMind = true;
                                     SetupHivemind();
 
-                                    ScaledTimer wave2 = new ScaledTimer(60f, () =>
+                                    wave2.Reuse(60f, () =>
                                     {
                                         AddReinforcementSquads(new List<SavedSquad>()
                                         {
@@ -156,7 +162,7 @@ namespace Assets.Scripts.Levels
                                     });
                                     AddTimer(wave2);
 
-                                    ScaledTimer wave3 = new ScaledTimer(120f, () =>
+                                    wave3.Reuse(120f, () =>
                                     {
                                         AddReinforcementSquads(new List<SavedSquad>()
                                         {
@@ -171,7 +177,7 @@ namespace Assets.Scripts.Levels
                                     });
                                     AddTimer(wave3);
 
-                                    ScaledTimer wave4 = new ScaledTimer(210f, () =>
+                                    wave4.Reuse(210f, () =>
                                     {
                                         AddReinforcementSquads(new List<SavedSquad>()
                                         {
