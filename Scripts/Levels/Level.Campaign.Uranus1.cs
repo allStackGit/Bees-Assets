@@ -163,7 +163,7 @@ namespace Assets.Scripts.Levels
                             () => !basicTooltip.gameObject.activeSelf,
                             () =>
                             {
-                                Destroy(basicTooltip);
+                                Destroy(basicTooltip.gameObject);
                                 ConfigData.UserProgressData.HasSeenCarrierIntro = true;
                                 FinishCarrierIntroduction();
                             },
