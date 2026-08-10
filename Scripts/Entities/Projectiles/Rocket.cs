@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities.Projectiles
         }
         private void IncreaseSpeed()
         {
-            Body.linearVelocity *= 1.5f;
+            Body.linearVelocity = Vector2.ClampMagnitude(Body.linearVelocity * 1.5f, MaxSpeed);
         }
         public override void Kill()
         {
