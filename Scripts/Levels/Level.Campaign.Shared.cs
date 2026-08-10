@@ -161,8 +161,11 @@ namespace Assets.Scripts.Levels
                 .FirstOrDefault(ship => ship.ShipType == ConfigData.ShipTypes.HumanTarget);
 
             humanTarget.Squad.CanAcceptUserInput = false;
-            Destroy(humanTarget.Squad.SquadTab.gameObject);
-            humanTarget.Squad.HasSquadTab = false;
+            if (humanTarget.Squad.HasSquadTab && humanTarget.Squad.SquadTab != null)
+            {
+                Destroy(humanTarget.Squad.SquadTab.gameObject);
+                humanTarget.Squad.HasSquadTab = false;
+            }
             if (humanTarget.HasUserFogOfWarVision)
             {
                 Destroy(humanTarget.FogOfWarVision.gameObject);
