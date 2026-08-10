@@ -1,8 +1,4 @@
-﻿using Assets.Scripts.Levels.Commands;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -29,49 +25,31 @@ namespace Assets.Scripts.Entities.Ships
                 WarpGate = (WarpGate)Ship;
             }
         }
+
         public void RecolorAnimationSprites()
         {
             RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
-
                 int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
 
                 if (Ship.Stage.LoadedShipAnimationSprites.ContainsKey(key))
                 {
                     RecoloredSprites = Ship.Stage.LoadedShipAnimationSprites[key];
-                    //Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
                 else
                 {
                     for (int i = 0; i < RecoloredSprites.Length; i++)
                     {
-                        RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i + 1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); // skips the first sprite because that's the base sprite
+                        RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i + 1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color);
                     }
 
                     Ship.Stage.LoadedShipAnimationSprites[key] = RecoloredSprites;
                 }
-
-
-                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
-
-
             }
         }
-        //void Update()
-        //{
-        //    if (Ship.IsWarpGate && ((WarpGate)Ship).ShipsWarpingHere.Count == 0)
-        //    {
-        //        Debug.LogWarning($"Warp gate {Ship.Name} has no ships warping here, but the animation is not disabled");
-        //    }
-        //    else if (Ship.ShipType == ConfigData.ShipTypes.Factory && !(Ship.Squad.HasCommand && Ship.Squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining &&
-        //        ((Mining)Ship.Squad.GetCommand()).HasFoundAsteroid))
-        //    {
-        //        Debug.LogWarning($"Factory {Ship.Name} has no ships mining, but the animation is not disabled");
-        //    }
-        //}
 
-        void LateUpdate()
+        private void LateUpdate()
         {
             if (ShouldSwapSprite)
             {
@@ -84,20 +62,15 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     index = SpriteIndex % RecoloredSprites.Length;
                 }
-                //Debug.Log($"Recolored index: {index}");
-                //Debug.Log($"Trying to swap {SpriteRenderer.sprite.name} with {RecoloredSprites[SpriteIndex % RecoloredSprites.Length].name} {FramesChange} over {timeDifference}s at {fps} fps");
                 SpriteRenderer.sprite = RecoloredSprites[index];
                 CurrentSprite = SpriteRenderer.sprite;
                 SpriteIndex++;
                 ShouldSwapSprite = false;
-
             }
             else if (Ship.Squad.HasCustomColor)
             {
                 SpriteRenderer.sprite = CurrentSprite;
-                //Debug.Log($"Should not swap sprite yet");
             }
-
         }
 
         public void SwapSprites()
@@ -107,19 +80,28 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = true;
             }
         }
+
         public void Activate()
         {
             if (!Ship.Stage.IsTraining || IsWarpGate)
             {
+                // Each activation is a new animation session. A destroyed pooled Warp Gate can
+                // skip FullRetreat cleanup, so command-significant readiness and frame state must
+                // be reset here rather than depending on the previous command to finalize cleanly.
+                ShouldSwapSprite = false;
+                UseSecondaryLoop = false;
+                IsReadyToWarp = false;
+                SpriteIndex = 0;
+
                 SpriteRenderer.enabled = true;
                 Animator.enabled = true;
                 Animator.Rebind();
-                Animator.Update(0f); // reset the animation to the first frame
-                enabled = true;
+                Animator.Update(0f);
 
                 if (IsWarpGate)
                 {
                     Animator.Play("Warp Gate Opening", 0, 0f);
+                    Animator.Update(0f);
                     if (Ship.Stage.ActivateAudio)
                     {
                         WarpGate.WarpGateStartingSound.enabled = true;
@@ -127,9 +109,12 @@ namespace Assets.Scripts.Entities.Ships
                         WarpGate.WarpGateStartingSound.Play();
                     }
                 }
-            }
 
+                CurrentSprite = SpriteRenderer.sprite;
+                enabled = true;
+            }
         }
+
         public void Deactivate()
         {
             if (!Ship.Stage.IsTraining || IsWarpGate)
@@ -144,25 +129,21 @@ namespace Assets.Scripts.Entities.Ships
                     WarpGate.WarpGateLoopingSound.enabled = false;
                 }
             }
-
         }
 
         /// <summary>
         /// This changes the animation by making it skip a certain number of sprites and loop a different number of sprites, effectively creating a new loop from a subset of sprites
         /// </summary>
-        /// <param name="moduloIndex"></param>
-        /// <param name="skipSprites"></param>
         public void ChangeSpriteLoop()
         {
             Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
             UseSecondaryLoop = true;
-            IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
+            IsReadyToWarp = true;
             if (WarpGate.IsAudioLoaded)
             {
                 WarpGate.WarpGateStartingSound.Stop();
                 WarpGate.WarpGateLoopingSound.Play();
             }
-
         }
     }
 }
