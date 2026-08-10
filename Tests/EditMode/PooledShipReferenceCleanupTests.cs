@@ -42,5 +42,19 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains(".Where(ship => ship.Carrier == this)", source);
             StringAssert.Contains("carrierShip.Carrier = null;", source);
         }
+
+        [Test]
+        public void FogVisionTimersStayBoundToTheLifecycleLevelThatCreatedThem()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "FogOfWarVision.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("private Level _ownerLevel;", source);
+            StringAssert.Contains("_ownerLevel = Ship.Level;", source);
+            StringAssert.Contains("Level fadeLevel = _ownerLevel;", source);
+            StringAssert.Contains("fadeLevel.AddTimer(_shrinkVisionStartTimer);", source);
+            StringAssert.Contains("if (_ownerLevel == fadeLevel)", source);
+            StringAssert.DoesNotContain("Ship.Level.AddTimer(_shrinkVisionTimer);", source);
+        }
     }
 }
