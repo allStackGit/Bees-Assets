@@ -10,18 +10,24 @@ namespace Assets.Scripts.Levels
     /// </summary>
     public partial class Level
     {
-        public void Level0Ending() => Pluto1Ending(GetRequiredAnomalyGunshipSquad());
-        public void Level1Ending() => Pluto2Ending();
-        public void Level2Ending() => Pluto3Ending();
-        public void Level3Ending() => Pluto4Ending();
-        public void Level4Ending() => Neptune1Ending();
-        public void Level5Ending() => Neptune2Ending();
-        public void Level6Ending() => Neptune3Ending();
-        public void Level7Ending() => Titania1MinesweeperEnding();
-        public void Level8Ending() => Titania2CampaignEnding();
-        public void Level9Ending() => Uranus1Ending();
-        public void Level10Ending() => Uranus2Ending();
-        public void Level11Ending() => Uranus3Ending();
+        public void Level0Ending() { PrepareCampaignSurrenderEnding(); Pluto1Ending(GetRequiredAnomalyGunshipSquad()); }
+        public void Level1Ending() { PrepareCampaignSurrenderEnding(); Pluto2Ending(); }
+        public void Level2Ending() { PrepareCampaignSurrenderEnding(); Pluto3Ending(); }
+        public void Level3Ending() { PrepareCampaignSurrenderEnding(); Pluto4Ending(); }
+        public void Level4Ending() { PrepareCampaignSurrenderEnding(); Neptune1Ending(); }
+        public void Level5Ending() { PrepareCampaignSurrenderEnding(); Neptune2Ending(); }
+        public void Level6Ending() { PrepareCampaignSurrenderEnding(); Neptune3Ending(); }
+        public void Level7Ending() { PrepareCampaignSurrenderEnding(); Titania1MinesweeperEnding(); }
+        public void Level8Ending() { PrepareCampaignSurrenderEnding(); Titania2CampaignEnding(); }
+        public void Level9Ending() { PrepareCampaignSurrenderEnding(); Uranus1Ending(); }
+        public void Level10Ending() { PrepareCampaignSurrenderEnding(); Uranus2Ending(); }
+        public void Level11Ending() { PrepareCampaignSurrenderEnding(); Uranus3Ending(); }
+
+        private void PrepareCampaignSurrenderEnding()
+        {
+            WinningSide = ConfigData.Configuration.AISide;
+            DidUserWin = false;
+        }
 
         private SavedSquad GetRequiredAnomalyGunshipSquad()
         {
@@ -36,9 +42,8 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // Pluto1Ending needs the scripted Gunship squad so it can add the awarded ship.
-            // If surrender occurs before that scripted squad exists, completing the mission
-            // would corrupt progression; fail explicitly rather than dereference null later.
+            // Pluto1 hides surrender during the scripted opening, but keep this compatibility
+            // method defensive in case a non-UI caller invokes it before the Gunship exists.
             throw new System.InvalidOperationException("Anomaly cannot complete before its scripted Gunship squad exists.");
         }
     }
