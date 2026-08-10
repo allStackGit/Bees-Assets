@@ -125,7 +125,8 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (!endKill)
                 {
-                    Level.State.ShipsToRelease.Remove(this);
+                    // Keep the dead wrapper in GameState.ShipsToRelease so level teardown
+                    // cannot lose ownership while this presentation delay is pending.
                     _waitingForDelayedRelease = true;
                     _delayedKillTimer.Reuse(5f, DelayedKill);
                     Level.AddTimer(_delayedKillTimer);
@@ -141,18 +142,28 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        public override bool CanReturnToPool()
+        {
+            return !_waitingForDelayedRelease && base.CanReturnToPool();
+        }
+
+        public void PrepareForLevelTeardown()
+        {
+            if (!_waitingForDelayedRelease)
+            {
+                return;
+            }
+
+            Level.CancelTimer(_delayedKillTimer);
+            _waitingForDelayedRelease = false;
+            Deactivate();
+        }
+
         protected void DelayedKill()
         {
             Level.CancelTimer(_delayedKillTimer);
             Deactivate();
-            if (_waitingForDelayedRelease)
-            {
-                _waitingForDelayedRelease = false;
-                if (!Level.State.ShipsToRelease.Contains(this))
-                {
-                    Level.State.ShipsToRelease.Add(this);
-                }
-            }
+            _waitingForDelayedRelease = false;
         }
     }
 }
