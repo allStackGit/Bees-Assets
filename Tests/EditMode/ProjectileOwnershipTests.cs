@@ -51,5 +51,24 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("target.Kill(attacker, attackerFleetShip, attackerSavedSquad)", lethalPath);
             StringAssert.DoesNotContain("GetShipDamageStatus", lethalPath);
         }
+
+        [Test]
+        public void ActiveProjectilesForgetDepartedShipLifecycleBeforeWrapperReuse()
+        {
+            string projectile = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "Projectile.cs"));
+            string powerShot = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "PowerShot.cs"));
+            string laserBeam = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "LaserBeam.cs"));
+            string explosion = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Projectiles", "RocketExplosion.cs"));
+            string registry = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+
+            StringAssert.Contains("public virtual void ForgetShip(Ship ship)", projectile);
+            StringAssert.Contains("ReferenceEquals(_damageReservation.Ship, ship)", projectile);
+            StringAssert.Contains("ReferenceEquals(Target, ship)", projectile);
+            StringAssert.Contains("CollidingQueue.Where(candidate => !ReferenceEquals(candidate, ship))", projectile);
+            StringAssert.Contains("public override void ForgetShip(Ship ship)", powerShot);
+            StringAssert.Contains("public override void ForgetShip(Ship ship)", laserBeam);
+            StringAssert.Contains("public override void ForgetShip(Ship ship)", explosion);
+            StringAssert.Contains("projectile.ForgetShip(ship)", registry);
+        }
     }
 }
