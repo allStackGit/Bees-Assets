@@ -12,14 +12,14 @@ namespace Assets.Scripts.Entities.Ships
     {
         private RocketExplosion Explosion;
         private AudioSource ExplosionSound;
-        public Weapon Bomb;
+        public Bomb Bomb;
         private readonly ScaledTimer _delayedKillTimer = new ScaledTimer();
         private bool _waitingForDelayedRelease;
 
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Bomb = Weapons.First();
+            Bomb = (Bomb)Weapons.First();
             IsBomber = true;
             Destroy(Bomb.Piece);
         }
@@ -46,6 +46,7 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
+            Bomb.ReleaseTargetReservation();
             StopMoving();
             CannotChangeMovementOrders = true;
             IsDead = true;
