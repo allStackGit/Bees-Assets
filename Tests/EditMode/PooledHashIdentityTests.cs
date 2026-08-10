@@ -80,6 +80,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void DepartingShipIsRemovedFromActiveAndPreparedCommandTargetQueues()
+        {
+            string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
+
+            Assert.That(registry, Does.Contain("ForgetShipFromCommandQueues(squad?.GetCommand(), ship)"));
+            Assert.That(registry, Does.Contain("foreach (Command queuedCommand in squad.CommandQueue)"));
+            Assert.That(registry, Does.Contain("command.OriginalQueue = new Queue<Ship>"));
+            Assert.That(registry, Does.Contain("command.TargetingQueue = new Queue<Ship>"));
+            Assert.That(registry, Does.Contain("!ReferenceEquals(candidate, ship)"));
+        }
+
+        [Test]
         public void ZoneDropsShipsConsumedByEnterCallbackWithoutWaitingForTriggerExit()
         {
             string zone = Read("Scripts", "Levels", "Zone.cs");
