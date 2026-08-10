@@ -32,15 +32,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CarrierSquadReassertsMinionRoleOnEachSetup()
+        public void CarrierSquadRestoresMinionRoleDuringVirtualClearData()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "CarrierSquad.cs");
             string source = File.ReadAllText(path);
+            int clearIndex = source.IndexOf("public override void ClearData()");
+            int roleIndex = source.IndexOf("IsMinionSquad = true;", clearIndex);
             int setupIndex = source.IndexOf("public void SetupCarrierSquad");
-            int roleIndex = source.IndexOf("IsMinionSquad = true;", setupIndex);
 
-            Assert.That(setupIndex, Is.GreaterThanOrEqualTo(0));
-            Assert.That(roleIndex, Is.GreaterThan(setupIndex));
+            Assert.That(clearIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(roleIndex, Is.GreaterThan(clearIndex));
+            Assert.That(setupIndex, Is.GreaterThan(roleIndex));
         }
     }
 }
