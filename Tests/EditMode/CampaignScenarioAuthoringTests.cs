@@ -99,6 +99,8 @@ namespace Bees.Tests.EditMode
         public void BeenocularsEncodesFullEvacuationDefenseContract()
         {
             string setup = ExtractMethodBody(_triggerSource, "Titania2BeenocularsCampaign");
+            string staging = ExtractMethodBodyBySignature(
+                _triggerSource, "private void StageTitania2HumanFleetPreservingFormations(");
             string ending = ExtractMethodBody(_triggerSource, "Titania2CampaignEnding");
 
             Assert.That(setup, Does.Contain("const float survivalDuration = 450f"));
@@ -107,12 +109,17 @@ namespace Bees.Tests.EditMode
             Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
                 "Beenoculars is a timed evacuation defense, not an elimination shortcut.");
 
-            Assert.That(setup, Does.Not.Contain("StageTitania2HumanFleetAtCenter"),
-                "Beenoculars must preserve the ship offsets/formation chosen in Squad Maker.");
+            Assert.That(setup, Does.Contain("StageTitania2HumanFleetPreservingFormations()"));
             Assert.That(_triggerSource, Does.Not.Contain("FindTitania2HumanShipPlacement"),
                 "Beenoculars must not individually restage ships and rebuild the player's formation.");
-            Assert.That(setup, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"),
-                "The camera may still focus on Titania without changing ship positions.");
+            Assert.That(staging, Does.Contain("Vector2 delta = candidateCenter - originalCenter"));
+            Assert.That(staging, Does.Contain("ship.transform.localPosition += (Vector3)delta"),
+                "Beenoculars should translate each accepted squad rigidly rather than rebuild its formation.");
+            Assert.That(staging, Does.Not.Contain("squad.SetOffsets()"),
+                "Rigid Titania staging must not overwrite the formation offsets chosen in Squad Maker.");
+            Assert.That(staging, Does.Contain("Physics2D.OverlapCircle(candidateShipPosition, clearance, ConfigData.ObstaclesLayerMask)"),
+                "Every preserved formation must be checked against the authored walls before placement.");
+            Assert.That(staging, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"));
             Assert.That(setup, Does.Contain("GameSpeedButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-290, -15)"),
                 "Beenoculars must keep the speed control clear of the countdown clock.");
             Assert.That(setup, Does.Contain("Stage.Menus.Clock.SetActive(true)"));
@@ -193,8 +200,13 @@ namespace Bees.Tests.EditMode
 
         private static string ExtractMethodBody(string source, string methodName)
         {
-            int signature = source.IndexOf("public void " + methodName + "(", StringComparison.Ordinal);
-            Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find method {methodName}.");
+            return ExtractMethodBodyBySignature(source, "public void " + methodName + "(");
+        }
+
+        private static string ExtractMethodBodyBySignature(string source, string signatureText)
+        {
+            int signature = source.IndexOf(signatureText, StringComparison.Ordinal);
+            Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find method signature {signatureText}.");
             int openingBrace = source.IndexOf('{', signature);
             int depth = 0;
             for (int index = openingBrace; index < source.Length; index++)
@@ -208,7 +220,7 @@ namespace Bees.Tests.EditMode
                     return source.Substring(openingBrace, index - openingBrace + 1);
                 }
             }
-            Assert.Fail($"Method {methodName} has no balanced body.");
+            Assert.Fail($"Method {signatureText} has no balanced body.");
             return string.Empty;
         }
     }
