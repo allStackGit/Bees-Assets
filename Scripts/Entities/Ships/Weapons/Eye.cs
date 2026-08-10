@@ -28,6 +28,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             base.ClearData();
             _readyToChangeColor = false;
+            if (Stage.IsRendering && Pupil != null)
+            {
+                Pupil.color = Color.white;
+            }
         }
         protected override void SendProjectile() // [projectile-method] [note]
         {
