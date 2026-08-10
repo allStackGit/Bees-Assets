@@ -83,7 +83,7 @@ namespace Bees.Tests.EditMode
         [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "PlayerVisibleMapObjects")]
         [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "450")]
         [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
-        [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
+        [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "CreateCampaignRetreatZone")]
         [TestCase(11, "Uranus3ANewThreat", "Rescue the Barges and destroy all the Bees", "Barge")]
         public void EveryScriptedMissionRetainsItsDefiningGameplayContract(
             int missionId, string setupMethod, string firstMarker, string secondMarker)
