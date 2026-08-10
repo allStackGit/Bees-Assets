@@ -206,6 +206,13 @@ namespace Assets.Scripts.Levels
 
         public void Release()
         {
+            // Release() is a teardown boundary. Presentation-only death delays must not retain
+            // pooled wrappers after the Level is ending/resetting and its timers are discarded.
+            foreach (FireBarge fireBarge in ShipsToRelease.OfType<FireBarge>())
+            {
+                fireBarge.PrepareForLevelTeardown();
+            }
+
             Ship[] ships = DrainReadyShips();
             Command[] commands = DrainReleaseQueue(CommandsToRelease);
             Squad[] squads = DrainReleaseQueue(SquadsToRelease);
