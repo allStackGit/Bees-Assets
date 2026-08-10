@@ -34,6 +34,7 @@ namespace Assets.Scripts.Scenes
 
         public int __Updates = 0;
         private int _automaticReconnectAttempts;
+        private bool _pausedForNetworkDisconnect;
 
 
         // Start is called before the first frame update
@@ -156,7 +157,12 @@ namespace Assets.Scripts.Scenes
                     Debug.Log($"Network disconnected!");
                     if (Type == ConfigData.SceneTypes.Stage)
                     {
-                        ((Stage)this).PrimaryLevel.Pause();
+                        Level primaryLevel = ((Stage)this).PrimaryLevel;
+                        _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
+                        if (_pausedForNetworkDisconnect)
+                        {
+                            primaryLevel.Pause();
+                        }
                     }
                     NetworkDisconnection.Show();
                 }
@@ -166,10 +172,11 @@ namespace Assets.Scripts.Scenes
             {
                 _automaticReconnectAttempts = 0;
                 NetworkDisconnection.Hide();
-                if (Type == ConfigData.SceneTypes.Stage)
+                if (Type == ConfigData.SceneTypes.Stage && _pausedForNetworkDisconnect)
                 {
                     ((Stage)this).PrimaryLevel.UnPause();
                 }
+                _pausedForNetworkDisconnect = false;
             }
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
