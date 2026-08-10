@@ -62,7 +62,7 @@ namespace Assets.Scripts.Levels
                     new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No },
                     new List<UnityAction>() { Stage.Menus.GoToFishTank });
                 fishTankAlert.Show();
-            }, true);
+            });
             AddTimer(_fishTank);
         }
 
