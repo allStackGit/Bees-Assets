@@ -33,5 +33,18 @@ namespace Bees.Tests.EditMode
             Assert.That(beehive, Does.Contain("_isDeathAnimationPending = false;"));
             Assert.That(shrinking, Does.Contain("Beehive.FinalExplosion();"));
         }
+
+        [Test]
+        public void QueenOwnsWrapperUntilDelayedRemainsPlacementCompletes()
+        {
+            string queen = Read("Scripts", "Entities", "Ships", "Queen.cs");
+            string animation = Read("Scripts", "Entities", "Ships", "QueenExplosionAnimation.cs");
+
+            Assert.That(queen, Does.Contain("QueenExplosionAnimation.Remains.Setup();"));
+            Assert.That(queen, Does.Contain("return !_isDeathAnimationPending && base.CanReturnToPool();"));
+            Assert.That(animation, Does.Contain("Remains.Place();"));
+            Assert.That(animation, Does.Contain("Queen.CompleteDeathAnimation();"));
+            Assert.That(animation, Does.Not.Contain("Queen.Level.State.AddDeadBody(Remains)"));
+        }
     }
 }
