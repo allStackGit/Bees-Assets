@@ -337,7 +337,7 @@ namespace Assets.Scripts.UIComponents
             if (CurrentLevel.HasObstacles)
             {
                 Debug.Log($"LevelData: {Utilities.ListToString(CurrentLevel.ObstacleMap.Obstacles)}");
-                level.ObstacleList = GameObject.FindGameObjectsWithTag("Obstacle").Select((obstacle) =>
+                level.ObstacleList = PathfinderObstacleScope.GetActiveObstacleObjects(CurrentLevel).Select((obstacle) =>
                 {
                     Debug.Log($"Making obstacle list for saved level");
                     return ((Vector2)obstacle.transform.localPosition, (Vector2)obstacle.transform.localScale);
