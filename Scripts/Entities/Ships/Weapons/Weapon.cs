@@ -310,7 +310,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                         _sortedQueue.Sort((a, b) => b.FleetShip.DamageDone.CompareTo(a.FleetShip.DamageDone));
                         break;
                     case ConfigData.ShootingStrategyTypes.LeastHealth:
-                        _sortedQueue.Sort((a, b) => (a.Health - a.OriginalHealth).CompareTo(b.Health - b.OriginalHealth));
+                        _sortedQueue.Sort((a, b) => a.Health.CompareTo(b.Health));
                         break;
                     case ConfigData.ShootingStrategyTypes.MostHealth:
                         _sortedQueue.Sort((a, b) => b.Health.CompareTo(a.Health));
