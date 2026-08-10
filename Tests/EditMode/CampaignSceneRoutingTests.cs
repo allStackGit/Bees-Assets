@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -66,6 +68,20 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", true);
 
             Assert.That(ShouldRedirect("Squad Maker"), Is.False);
+        }
+
+        [Test]
+        public void AcceptedCampaignSquadMakerConsumesIntroPermission()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "CampaignSceneRouter.cs"));
+            int seenIntroBranch = source.IndexOf("if (ConfigData.HasSeenPreLevelIntro)", StringComparison.Ordinal);
+            int consume = source.IndexOf("ConfigData.HasSeenPreLevelIntro = false;", seenIntroBranch, StringComparison.Ordinal);
+            int returnStatement = source.IndexOf("return;", seenIntroBranch, StringComparison.Ordinal);
+
+            Assert.That(seenIntroBranch, Is.GreaterThanOrEqualTo(0));
+            Assert.That(consume, Is.GreaterThan(seenIntroBranch));
+            Assert.That(returnStatement, Is.GreaterThan(consume));
         }
 
         [Test]
