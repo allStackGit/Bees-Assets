@@ -145,6 +145,12 @@ namespace Assets.Scripts.Entities
 
         public virtual void Kill()
         {
+            if (IsDead)
+            {
+                return;
+            }
+
+            IsDead = true;
             if (Level != null && Level.HasObstacles)
             {
                 Level.Pathfinder?.MarkObstacleLayerDirty();
