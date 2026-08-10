@@ -140,6 +140,11 @@ namespace Assets.Scripts.Levels
 
         public bool IsSideKilled(int side)
         {
+            if (TryGetCapturedEliminationState(side, out bool capturedState))
+            {
+                return capturedState;
+            }
+
             List<Ship> sideShips = GetShips(side);
             return sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
         }
