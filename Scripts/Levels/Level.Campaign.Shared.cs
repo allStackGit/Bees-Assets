@@ -158,15 +158,18 @@ namespace Assets.Scripts.Levels
 
         public void AddReinforcementSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 nextPosition)
         {
-            squads = squads.Where(squad => squad != null && squad.GetSquadShips().Count > 0).ToList();
+            squads = squads
+                .Where(squad => squad != null && squad.GetAliveSquadShips().Count > 0)
+                .ToList();
             for (int i = 0; i < squads.Count; i++)
             {
+                List<SquadShip> aliveShips = squads[i].GetAliveSquadShips();
                 if (squads[i].IsLoadedIntoLevel)
                 {
                     squads[i] = CurrentShips.GetSquadByComposition(
                         this,
-                        squads[i].GetSquadShips()[0].ShipType,
-                        squads[i].GetSquadShips().Count,
+                        aliveShips[0].ShipType,
+                        aliveShips.Count,
                         true,
                         true);
                 }
