@@ -36,9 +36,12 @@ namespace Bees.Tests.EditMode
         public void DeadShooterIsNotPoolableWhileItsProjectileIsStillActive()
         {
             string registry = File.ReadAllText(Path.Combine(_folder, "GameState.Registry.cs"));
+            string shipPoolLifecycle = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.PoolLifecycle.cs"));
 
             StringAssert.Contains("projectile.IsDead || projectile.Shooter != ship", registry);
-            StringAssert.Contains("ship.ProjectilesInFlight.Count == 0", registry);
+            StringAssert.Contains("ship.CanReturnToPool()", registry);
+            StringAssert.Contains("return ProjectilesInFlight.Count == 0", shipPoolLifecycle);
             StringAssert.Contains("ShipsToRelease.RemoveAll", registry);
         }
     }
