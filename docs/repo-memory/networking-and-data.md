@@ -8,7 +8,8 @@
 - Intentional shutdown (`KeepClosed`) must suppress automatic reconnect.
 - BeesServer can temporarily reject reconnects while its consolidation queue is non-empty after the last client disconnects. Recovery therefore needs repeated attempts even when the Node process itself never crashed.
 - No protocol ping/pong heartbeat is currently part of this recovery contract; add one only if runtime evidence shows transport-idle detection needs it.
-- `ConfigData.StandardMaxTimeOnQueue` is the bootstrap request timeout used before `Configuration` is loaded. Once configuration is loaded, requests that opt into that standard default must resolve the server-owned `Configuration.StandardMaxTimeOnQueue` instead (25 in active version 5); explicit per-request timeouts remain explicit.
+- `ConfigData.StandardMaxTimeOnQueue` is the bootstrap request timeout used before `Configuration` is loaded. Once configuration is loaded, requests that opt into that standard default must resolve the server-owned `Configuration.StandardMaxTimeOnQueue` instead (25 seconds in active version 5); explicit per-request timeouts remain explicit.
+- `ServerRequest.MaxTimeOnQueue` is the authoritative resend deadline for that request. `Socket.CheckForResends()` must use the request's value rather than a global timeout, otherwise both server-configured defaults and explicit request-specific deadlines are silently ignored.
 
 ## Persisted identity/schema
 
