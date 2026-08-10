@@ -10,7 +10,7 @@ namespace Assets.Scripts.Entities.Projectiles
     {
         public bool IsHarmless;
         public List<Ship> _shipsHit = new List<Ship>();
-        private readonly HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>();
+        private readonly HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
         public CircleCollider2D CircleCollider;
 
         public override void ClearData()
