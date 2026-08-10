@@ -34,7 +34,7 @@ namespace Assets.Scripts.Entities
             transform.localEulerAngles = new Vector3(0, 0, Utilities.RandomInt(360));
 
             //Debug.Log($"Setup Asteroid {Name} with Speed: {Speed}, starting at {transform.localPosition}");
-            _randomPoint = Utilities.RandomCoordinate(Level, Level.GetPosition(), new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
+            _randomPoint = Utilities.RandomCoordinate(Level, Vector2.zero, new Vector2(Level.HalfMapWidth, Level.HalfMapHeight), Vector2.zero);
             Body.linearVelocity = Speed * -Utilities.DirectionBetweenPoints(GetPosition(), _randomPoint);
             Body.angularVelocity = parent.Body.angularVelocity;
 
