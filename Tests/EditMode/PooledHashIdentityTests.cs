@@ -71,6 +71,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(registry, Does.Contain("ReferenceEquals(observer.TargetEnemyShipToFollow, ship)"));
             Assert.That(registry, Does.Contain("observer.ProximityCollider.NearbyEnemyShips.Remove(ship)"));
+            Assert.That(registry, Does.Contain("weapon.ShipsWithinRange.Remove(ship.Id)"));
+            Assert.That(registry, Does.Contain("weapon.CachedTargetingQueue.RemoveAll(candidate => ReferenceEquals(candidate, ship))"));
+            Assert.That(registry, Does.Contain("ReferenceEquals(weapon.TargetShip, ship)"));
+            Assert.That(registry, Does.Contain("bomb.ReleaseTargetReservation()"));
             Assert.That(registry, Does.Contain("ReferenceEquals(striker.TouchingShip, ship)"));
             Assert.That(registry, Does.Contain("ReferenceEquals(yellowJacket.TouchingShip, ship)"));
         }
