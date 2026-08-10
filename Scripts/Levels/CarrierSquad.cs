@@ -23,6 +23,7 @@ namespace Assets.Scripts.Levels
             Carrier = carrier;
             CarrierSquadType = squadType;
             IsCarrierSquad = true;
+            IsMinionSquad = true;
             // SetupShips uses IsDroneSquad to choose the configured ship count. Set it
             // before spawning so a pooled CarrierSquad cannot inherit the previous
             // lifecycle's Drone/Striker count.
