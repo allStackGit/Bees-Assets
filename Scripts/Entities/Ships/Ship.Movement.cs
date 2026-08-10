@@ -202,7 +202,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             if (HasTargetCoordinates)
             {
-                MovementMarker.transform.position = FinalDestination;
+                MovementMarker.transform.localPosition = FinalDestination;
                 MovementMarker.SetActive(true);
             }
             else
