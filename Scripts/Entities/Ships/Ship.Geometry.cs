@@ -31,8 +31,10 @@ namespace Assets.Scripts.Entities.Ships
 
         public Collider2D GetObstacleInPath(Vector2 destination)
         {
+            // Physics2D queries use world coordinates; Ship/command destinations are Level-local.
+            // Translation does not change the cast direction, angle, size, or distance.
             return GetLiveObstacleFromBoxCast(
-                GetPosition(),
+                GetPosition() + Level.GetPosition(),
                 GetSize(),
                 GetDegreesTowardsPoint(destination),
                 -DirectionToPoint(destination),
