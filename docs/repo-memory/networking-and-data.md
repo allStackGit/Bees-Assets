@@ -20,6 +20,7 @@
 - Temporary child squads/ships may deliberately share a parent `SavedSquad`/`FleetShip` for identity or stat accounting. Only the primary persisted squad/ship owns `IsLoadedIntoLevel`; child teardown must not mark the parent unloaded.
 - Reinforcement composition counts describe ships that can actually spawn. `Ships.GetSquadByComposition()` must compare requested counts against `GetAliveSquadShips().Count`, not total persisted slots that can include dead FleetShips.
 - `ConfigData.Version` is part of the server/database settings contract. Version changes require matching server rows whose serialized shape matches the client expectation.
+- Server configuration values used by gameplay must be assigned in `Configuration.ProcessData()` rather than silently falling back to field initializers. The active version-5 configuration currently supplies `AIRandomMovementMaxDistance` (200), so AI movement/scouting radius is a server-owned tuning value rather than the local fallback 256.
 - Integration/test server operation must use the test database rather than live data.
 
 ## Save boundaries
