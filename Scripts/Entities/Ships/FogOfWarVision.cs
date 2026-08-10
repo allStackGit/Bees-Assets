@@ -1,3 +1,4 @@
+using Assets.Scripts.Levels;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -9,8 +10,9 @@ namespace Assets.Scripts.Entities.Ships
         public SpriteMask FogIlluminator;
         public Transform Transform;
 
-        private ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
-        private ScaledTimer _shrinkVisionTimer = new ScaledTimer();
+        private readonly ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
+        private readonly ScaledTimer _shrinkVisionTimer = new ScaledTimer();
+        private Level _ownerLevel;
 
         public void Create(Ship ship)
         {
@@ -30,13 +32,20 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Activate()
         {
-            // This object belongs to a pooled Ship. A death-fade from the previous
-            // use must not shrink or reposition the newly activated vision.
-            Ship.Level.CancelTimer(_shrinkVisionStartTimer);
-            Ship.Level.CancelTimer(_shrinkVisionTimer);
-            if (!Ship.Level.State.FogOfWarVisions.Contains(this))
+            // A pooled Ship can be reused on another Level while its old death vision is
+            // still fading. Tear down the previous lifecycle through the Level that actually
+            // owns those timers/registries before adopting the Ship's new Level.
+            if (_ownerLevel != null)
             {
-                Ship.Level.State.FogOfWarVisions.Add(this);
+                _ownerLevel.CancelTimer(_shrinkVisionStartTimer);
+                _ownerLevel.CancelTimer(_shrinkVisionTimer);
+                _ownerLevel.State.FogOfWarVisions.Remove(this);
+            }
+
+            _ownerLevel = Ship.Level;
+            if (!_ownerLevel.State.FogOfWarVisions.Contains(this))
+            {
+                _ownerLevel.State.FogOfWarVisions.Add(this);
             }
             Transform.position = Ship.GetPosition();
             Transform.localScale = new Vector3(Range, Range, 0);
@@ -46,9 +55,12 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Deactivate()
         {
-            Ship.Level.CancelTimer(_shrinkVisionStartTimer);
-            Ship.Level.CancelTimer(_shrinkVisionTimer);
-            Ship.Level.State.FogOfWarVisions.Remove(this);
+            if (_ownerLevel != null)
+            {
+                _ownerLevel.CancelTimer(_shrinkVisionStartTimer);
+                _ownerLevel.CancelTimer(_shrinkVisionTimer);
+                _ownerLevel.State.FogOfWarVisions.Remove(this);
+            }
             enabled = false;
             FogIlluminator.enabled = false;
         }
@@ -61,12 +73,22 @@ namespace Assets.Scripts.Entities.Ships
                 // independently and may be reused while this visual fade is still alive.
                 Transform.position = Ship.GetPosition();
                 enabled = false;
+                Level fadeLevel = _ownerLevel;
+                if (fadeLevel == null)
+                {
+                    Deactivate();
+                    return;
+                }
+
                 _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
                 _shrinkVisionStartTimer.Reuse(initialDelay, () =>
                 {
-                    Ship.Level.AddTimer(_shrinkVisionTimer);
+                    if (_ownerLevel == fadeLevel)
+                    {
+                        fadeLevel.AddTimer(_shrinkVisionTimer);
+                    }
                 });
-                Ship.Level.AddTimer(_shrinkVisionStartTimer);
+                fadeLevel.AddTimer(_shrinkVisionStartTimer);
             }
             else
             {
@@ -79,7 +101,7 @@ namespace Assets.Scripts.Entities.Ships
             Transform.localScale *= ConfigData.VisionShrinkingMultiplier;
             if (Transform.localScale.x < 3)
             {
-                Ship.Level.CancelTimer(_shrinkVisionTimer);
+                _ownerLevel?.CancelTimer(_shrinkVisionTimer);
                 Deactivate();
             }
         }
