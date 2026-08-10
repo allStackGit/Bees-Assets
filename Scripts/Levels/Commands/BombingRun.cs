@@ -75,6 +75,19 @@ namespace Assets.Scripts.Levels.Commands
             _timerLoops = 0;
         }
 
+        public override void SetFinalize(string cause)
+        {
+            if (!IsDead && GetSquad() != null)
+            {
+                foreach (Ship ship in GetSquad().GetShips())
+                {
+                    Bomb bomb = ship.Weapons.OfType<Bomb>().FirstOrDefault();
+                    bomb?.ReleaseTargetReservation();
+                }
+            }
+            base.SetFinalize(cause);
+        }
+
         private Bomb _getTarget_bomb;
         private List<Ship> _getTarget_targetingList;
         private Striker _checkIfStrikersAreDefenseless_striker;
