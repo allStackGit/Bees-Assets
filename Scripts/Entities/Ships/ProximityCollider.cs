@@ -7,7 +7,7 @@ namespace Assets.Scripts.Entities.Ships
     public class ProximityCollider : MonoBehaviour
     {
         public CircleCollider2D Collider;
-        public HashSet<Ship> NearbyEnemyShips = new HashSet<Ship>();
+        public HashSet<Ship> NearbyEnemyShips = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         public Ship Ship;
         
         public void Create(Ship ship)
