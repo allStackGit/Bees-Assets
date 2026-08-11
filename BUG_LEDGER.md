@@ -78,3 +78,13 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Status:** Open  
 **Location:** `Scripts/Levels/Titania2Beenoculars.cs`, `Titania2BeenocularsCampaign()`, `ResolveTitania2()`, `Titania2CampaignEnding()`; `Scripts/UI Components/CutsceneManager.cs`; `Scripts/UI Components/DialogueManager.cs`  
 **Description:** `Titania2BeenocularsCampaign()` registers `Titania2CampaignEnding` as the cutscene manager's end-dialogue action. `ResolveTitania2()` then calls `PlayDialogueSection(..., true)` for both the success and failure dialogue. The `true` flag makes `DialogueManager` call `CutsceneManager.EndDialogue()` when that dialogue completes, and `EndDialogue()` invokes the registered end action. Consequently a failed mission (Titania destroyed or the player's side killed) still executes `Titania2CampaignEnding()`, which adds `State.PlayerScore`, calls `AdvanceToNextLevel()`, saves progress/squads/fleet, sets `GameOver`, and shows the level summary. A loss therefore permanently advances the campaign to Uranus instead of leaving Titania 2 incomplete.
+
+### BUG-016 — Losing Neptune 1 advances the campaign twice and skips Neptune 2
+**Status:** Open  
+**Location:** `Scripts/Levels/Level.Campaign.Endings.cs`, `Neptune1Ending()`  
+**Description:** `Neptune1Ending()` calls `AdvanceToNextLevel()` inside the non-user-win branch, then calls `AdvanceToNextLevel()` again unconditionally near the end of the method. When the AI wins, persisted campaign level 4 therefore advances to 6 instead of 5, skipping Neptune 2 (`Of Production`) entirely. The same ending invocation also proceeds to save this doubly advanced state.
+
+### BUG-017 — Uranus 1 can advance twice and skip Uranus 2
+**Status:** Open  
+**Location:** `Scripts/Levels/Level.Campaign.Endings.cs`, `Uranus1Ending()`; `Scripts/Levels/Level.Campaign.Uranus1.cs`; `Scripts/Levels/Level.Campaign.Endings.cs`, `Neptune3Ending()`  
+**Description:** `Uranus1Ending()` conditionally calls `AdvanceToNextLevel()` when the AI wins or when the player has no live Factory, then calls `AdvanceToNextLevel()` again unconditionally. Either condition therefore advances persisted mission 9 to mission 11, skipping Uranus 2. The no-Factory path is concretely reachable because `Neptune3Ending()` marks every Factory in the fleet dead when that mission ends with the AI as winner, yet still advances the campaign to Uranus and unlocks the Carrier; `HasShipsOfType(Factory)` later filters to alive fleet ships and is false.
