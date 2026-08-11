@@ -152,15 +152,17 @@ namespace Assets.Scripts.Entities.Ships
         protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss, long attackerCommandOutcomeId = 0)
         {
             if (tsvLoss < 0) Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
-            _isFriendlyFire = false;
-            if (attackerFleetShip.Side != target.Side)
+            _isFriendlyFire = attackerFleetShip.Side == target.Side;
+            if (!_isFriendlyFire)
             {
                 attackerFleetShip.DamageDone += tsvLoss;
                 attackerSavedSquad.Stats.DamageDone += tsvLoss;
             }
             else if (attacker.KillerFleetShip != null)
             {
-                _isFriendlyFire = true;
+                // If an enemy killed an explosive attacker (for example a Fire Barge),
+                // preserve the historical chain-reaction credit for the external killer.
+                // The attacking command itself is still penalized below for all same-side damage.
                 attacker.KillerFleetShip.DamageDone += tsvLoss;
                 attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
                 if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
