@@ -70,7 +70,9 @@ namespace Assets.Scripts.Scenes
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
             SocketTimer = new Timer(.1f, ConfigData.Socket.Update);
-            ResendTimer = new Timer(ConfigData.StandardMaxTimeOnQueue, ConfigData.Socket.CheckForResends);
+            // Request deadlines can differ per request and the configured default is not known
+            // when the first scene starts. Poll the cheap deadline check independently of either value.
+            ResendTimer = new Timer(1f, ConfigData.Socket.CheckForResends);
             AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry);
 
             //if (WatchServerRequests)
