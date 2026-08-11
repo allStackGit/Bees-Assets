@@ -1,4 +1,5 @@
 ﻿
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -25,7 +26,7 @@ namespace Assets.Scripts.Settings
 
         public bool DoesUserHaveController;
         public int StorageChunkSize; // how many commands to complete before storing them in the server
-        public int StandardMaxTimeOnQueue; // the default max amount of time (in ms) for a server request to wait on the queue before resending
+        public int StandardMaxTimeOnQueue; // default maximum time in seconds before a server request is eligible for resend
         public float TimeScale;
         public float AISquadPatrolTime; // how many seconds a patrol should last for the AI
         public int AIPatrolMaxSize;
@@ -113,7 +114,11 @@ namespace Assets.Scripts.Settings
             CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
             CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
             CarrierSquadCount = (int)so.CarrierSquadCount;
-            TotalLevels = (int)so.TotalLevels;
+
+            // The version-5 database dump advertises TotalLevels=10 while the same database
+            // contains campaign IDs 0-11. Runtime completion must follow the missions this client
+            // actually knows how to configure, not stale/inconsistent server metadata.
+            TotalLevels = CampaignMissionCatalog.Definitions.Count;
 
             Yes = (string)so.Yes;
             No = (string)so.No;
