@@ -58,6 +58,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void SharedSceneOnlyBootstrapsDedicatedTraining()
+        {
+            Type gameModes = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes");
+            MethodInfo shouldApply = _bootstrapType.GetMethod(
+                "ShouldApply",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(shouldApply, Is.Not.Null);
+
+            object freePlay = Enum.Parse(gameModes, "FreePlay");
+            object fishTank = Enum.Parse(gameModes, "FishTank");
+
+            Assert.That(shouldApply.Invoke(null, new[] { (object)"Hivemind Training", freePlay }), Is.True,
+                "A direct training build should restore the Hive Mind training configuration.");
+            Assert.That(shouldApply.Invoke(null, new[] { (object)"Hivemind Training", fishTank }), Is.False,
+                "Player-facing Fish Tank intentionally shares this scene and must not become headless training.");
+            Assert.That(shouldApply.Invoke(null, new[] { (object)"Space", freePlay }), Is.False);
+        }
+
+        [Test]
         public void ApplyUsesCompletePrimaryFleetRatherThanProfileUnlocks()
         {
             ApplyBootstrap();
