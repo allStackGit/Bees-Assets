@@ -16,7 +16,7 @@ namespace Assets.Scripts.UI_Components
         public AudioClip IntercomNotificationSound;
         public AudioClip SaveSound;
 
-        private const float ReducedNotificationVolume = 0.75f;
+        private const float ReducedNotificationVolume = 0.5625f;
         private AudioSource _levelIntroAmbience;
 
         void Awake()
