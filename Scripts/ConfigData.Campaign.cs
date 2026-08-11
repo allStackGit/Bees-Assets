@@ -1,5 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -7,6 +8,44 @@ namespace Assets.Scripts
 {
     public static partial class ConfigData
     {
+        /// <summary>
+        /// Campaign progress owns mission identity. Squad selection may add chosen squads to the
+        /// level options, but it must never hand Stage a different persisted campaign mission.
+        /// Negative IDs are intentionally left alone because Squad Maker uses them for explicit
+        /// test/custom levels.
+        /// </summary>
+        private static LevelOptions NormalizeCampaignLevelOptions(LevelOptions candidate)
+        {
+            if (candidate == null || CurrentGameMode != GameModes.Campaign || candidate.Id < 0 ||
+                UserProgressData == null || Configuration == null || GetCampaignLevelData() == null)
+            {
+                return candidate;
+            }
+
+            int currentMissionId = UserProgressData.GetCurrentLevel(Configuration.UserSide, GameModes.Campaign);
+            if (CampaignMissionCatalog.IsCampaignComplete(currentMissionId) || candidate.Id == currentMissionId)
+            {
+                return candidate;
+            }
+
+            LevelOptions persistedMission = GetCampaignLevelData().GetLevel(currentMissionId);
+            if (persistedMission == null)
+            {
+                Debug.LogError($"Campaign level handoff tried to use level #{candidate.Id}, but current progress is #{currentMissionId} and that persisted mission could not be loaded.");
+                return candidate;
+            }
+
+            LevelOptions corrected = (LevelOptions)persistedMission.Clone();
+            corrected.ChosenSquads = new List<SavedSquad>();
+            if (candidate.ChosenSquads != null)
+            {
+                candidate.ChosenSquads.ForEach(squad => corrected.ChosenSquads.Add((SavedSquad)squad.Clone()));
+            }
+
+            Debug.LogWarning($"Corrected mismatched campaign level handoff from #{candidate.Id} ({candidate.Name}) to current mission #{currentMissionId} ({corrected.Name}).");
+            return corrected;
+        }
+
         /// <summary>
         /// Prepares the current campaign level and routes to its pre-battle scene.
         /// In-development missions are under active gameplay testing and skip authored
