@@ -1,6 +1,7 @@
 using System;
-using System.Reflection;
+using System.IO;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -11,42 +12,25 @@ namespace Bees.Tests.EditMode
         [Test]
         public void CampaignMissionZeroClearsPriorNarrativeTransitionState()
         {
-            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            Type routerType = RuntimeAssembly.GetType("Assets.Scripts.Scenes.CampaignSceneRouter");
-            MethodInfo resetNarrativeState = routerType.GetMethod(
-                "ResetNarrativeStateAtCampaignStart",
-                BindingFlags.Static | BindingFlags.NonPublic);
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "ConfigData.Campaign.cs"));
 
-            object originalGameMode = RuntimeAssembly.GetStaticField(configDataType, "CurrentGameMode");
-            object originalLevelOptions = RuntimeAssembly.GetStaticField(configDataType, "LevelOptions");
-            object originalSeenIntro = RuntimeAssembly.GetStaticField(configDataType, "HasSeenPreLevelIntro");
-            object originalSeenIntermission = RuntimeAssembly.GetStaticField(configDataType, "HasSeenIntermission");
+            int caseZero = source.IndexOf("case 0:", StringComparison.Ordinal);
+            int caseOne = source.IndexOf("case 1:", caseZero, StringComparison.Ordinal);
+            int resetIntro = source.IndexOf("HasSeenPreLevelIntro = false;", caseZero, StringComparison.Ordinal);
+            int resetIntermission = source.IndexOf("HasSeenIntermission = false;", caseZero, StringComparison.Ordinal);
+            int loadSpace = source.IndexOf(
+                "SceneManager.LoadSceneAsync(\"Space\", LoadSceneMode.Single);",
+                caseZero,
+                StringComparison.Ordinal);
 
-            try
-            {
-                object campaignMode = Enum.Parse(
-                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes"),
-                    "Campaign");
-                object levelOptions = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.LevelOptions");
-                RuntimeAssembly.SetField(levelOptions, "Id", 0);
-
-                RuntimeAssembly.SetStaticField(configDataType, "CurrentGameMode", campaignMode);
-                RuntimeAssembly.SetStaticField(configDataType, "LevelOptions", levelOptions);
-                RuntimeAssembly.SetStaticField(configDataType, "HasSeenPreLevelIntro", true);
-                RuntimeAssembly.SetStaticField(configDataType, "HasSeenIntermission", true);
-
-                resetNarrativeState.Invoke(null, new object[] { "Space" });
-
-                Assert.That(RuntimeAssembly.GetStaticField(configDataType, "HasSeenPreLevelIntro"), Is.False);
-                Assert.That(RuntimeAssembly.GetStaticField(configDataType, "HasSeenIntermission"), Is.False);
-            }
-            finally
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "CurrentGameMode", originalGameMode);
-                RuntimeAssembly.SetStaticField(configDataType, "LevelOptions", originalLevelOptions);
-                RuntimeAssembly.SetStaticField(configDataType, "HasSeenPreLevelIntro", originalSeenIntro);
-                RuntimeAssembly.SetStaticField(configDataType, "HasSeenIntermission", originalSeenIntermission);
-            }
+            Assert.That(caseZero, Is.GreaterThanOrEqualTo(0));
+            Assert.That(caseOne, Is.GreaterThan(caseZero));
+            Assert.That(resetIntro, Is.InRange(caseZero + 1, caseOne - 1));
+            Assert.That(resetIntermission, Is.InRange(caseZero + 1, caseOne - 1));
+            Assert.That(loadSpace, Is.InRange(caseZero + 1, caseOne - 1));
+            Assert.That(resetIntro, Is.LessThan(loadSpace));
+            Assert.That(resetIntermission, Is.LessThan(loadSpace));
         }
     }
 }
