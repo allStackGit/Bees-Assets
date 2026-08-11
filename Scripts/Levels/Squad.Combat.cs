@@ -104,8 +104,17 @@ namespace Assets.Scripts.Levels
         private List<Ship> _enemies;
         public List<Ship> GetPotentialEnemies(Squad target)
         {
-            _tempShips = GetEnemyShips();
-            _enemies = _tempShips.Where(s => s.Squad == target).Take(64).ToList();
+            Vector2 origin = GetPosition();
+            _tempShips = GetEnemyShips()
+                .OrderBy(ship => ship.DistanceToPoint(origin))
+                .ThenBy(ship => ship.ShipType)
+                .ThenBy(ship => ship.Id)
+                .ToList();
+
+            // GetShipsVisibleToHiveMind is set-backed. Never let its enumeration order
+            // decide which ships enter the 64-ship Hive Mind payload, or equivalent
+            // tactical states can hash to different matchups under high density.
+            _enemies = _tempShips.Where(ship => ship.Squad == target).Take(64).ToList();
 
             foreach (Ship potentialEnemy in _tempShips)
             {
