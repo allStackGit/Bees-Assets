@@ -148,13 +148,14 @@ namespace Assets.Scripts.Levels
                 {
                     Debug.LogError("Stored command didn't have a shooting strategy");
                 }
-                else if (command.HasTargetingEnemy && command.CommandType != ConfigData.CommandTypes.Retreat)
+                else if (command.HasTargetingEnemy &&
+                    command.CommandType != ConfigData.CommandTypes.Retreat &&
+                    CommandUsesSelectedEnemy(command.CommandType))
                 {
-                    // A targetless shooting matchup has no enemy composition and cannot
-                    // represent target-priority behavior. Retreat is also excluded because
-                    // Socket currently executes Retreat with FirstSeen while retaining the
-                    // server-selected shooting outcome ID. Until that response path is
-                    // corrected, storing Retreat would train one strategy from another's behavior.
+                    // The server shooting key is derived from the selected-enemy matchup.
+                    // Only persist commands whose execution actually uses that enemy context.
+                    // Retreat is temporarily excluded because Socket executes FirstSeen while
+                    // retaining the server-selected shooting outcome ID.
                     _shootingCommands.Add(command);
                 }
 
