@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void SetCombatTimer()
         {
-            if (!IsUserControlled || !Level.Stage.ActivateHiveMind) return;
+            if (!Level.Stage.ActivateHiveMind) return;
             if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
             InCombat = true;
             _combatTimer = true;
