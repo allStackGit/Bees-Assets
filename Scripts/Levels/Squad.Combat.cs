@@ -2,6 +2,7 @@ using Assets.Scripts.Entities.Ships;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace Assets.Scripts.Levels
 {
@@ -148,9 +149,6 @@ namespace Assets.Scripts.Levels
                 .Take(_limit)
                 .ToList();
 
-            // As with enemies, the payload cap must be independent of registration/spawn
-            // order. AddToMatchup sorts the selected types afterward, but it cannot repair a
-            // nondeterministic choice of which allies entered the capped set in the first place.
             return _allies;
         }
     }
