@@ -41,17 +41,19 @@ namespace Bees.Tests.EditMode
         [Test]
         public void CurrentIdentitySelectionStillDocumentsDevelopmentOnlySteamBypass()
         {
-            string source = ReadSource("Scripts", "ConfigData.cs");
-            Assert.That(source, Does.Contain("ONLY SKIP STEAM FOR DEVELOPMENT"));
+            string source = ReadSource("Scripts", "ConfigData.Runtime.cs");
 
             int methodIndex = source.IndexOf("public static ulong GetUserId()");
-            int developmentCommentIndex = source.IndexOf("ONLY SKIP STEAM FOR DEVELOPMENT", methodIndex);
+            int steamInitializationIndex = source.IndexOf("SteamAPI.Init()", methodIndex);
             int prematureReturnIndex = source.IndexOf("return _userId;", methodIndex);
+
+            Assert.That(methodIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(steamInitializationIndex, Is.GreaterThan(methodIndex));
 
             // This assertion intentionally documents the remaining blocker. It should be
             // inverted/removed when ConfigData.GetUserId is safely patched so non-development
             // builds reach Steam identity instead of the local PlayerPrefs fallback.
-            Assert.That(prematureReturnIndex, Is.LessThan(developmentCommentIndex));
+            Assert.That(prematureReturnIndex, Is.LessThan(steamInitializationIndex));
         }
     }
 }
