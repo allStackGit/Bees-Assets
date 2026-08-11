@@ -93,6 +93,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ProcessDataUsesCatalogMissionCountWhenServerTotalIsStale()
+        {
+            object configuration = RuntimeAssembly.CreateUninitialized(
+                "Assets.Scripts.Settings.Configuration");
+
+            RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
+
+            Assert.That(
+                RuntimeAssembly.GetField(configuration, "TotalLevels"),
+                Is.EqualTo(12));
+        }
+
+        [Test]
         public void LoadedConfigurationOwnsDefaultRequestTimeout()
         {
             var configurationType = RuntimeAssembly.GetType("Assets.Scripts.Settings.Configuration");
