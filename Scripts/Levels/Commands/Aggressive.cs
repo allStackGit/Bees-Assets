@@ -19,6 +19,12 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            // Command.Setup() builds its initial movement-target queue before base.Execute()
+            // installs the server-selected shooting strategy. Discard that stale ordering so
+            // the first movement target is rebuilt under the strategy whose outcome is being learned.
+            OriginalQueue.Clear();
+            TargetingQueue.Clear();
+
             if (!GetSquad().IsDead)
             {
                 IsAttacking = true;
