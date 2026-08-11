@@ -46,6 +46,18 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
+            else if (HasOnlyBarges)
+            {
+                // The response handler maps Circle/swipes/InAndOut to Charge for barge-only
+                // squads. Keep Aggressive as the canonical Charge policy identity so Hive Mind
+                // training does not spend samples distinguishing identical executed actions.
+                BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+                BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Remove(ConfigData.CommandTypes.Hold);
+            }
             else
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
