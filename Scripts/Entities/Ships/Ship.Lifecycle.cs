@@ -226,6 +226,10 @@ namespace Assets.Scripts.Entities.Ships
             PathfindingRequestId = 0;
             PathfindingCompletedRequestId = 0;
             _hasPendingPathfindingDestination = false;
+            _isDoubleCheckingForAsteroids = false;
+            _tryingToFindPathAgain = false;
+            _retries = 0;
+            _remainingEgressWaypoints = 0;
             SetTargetCoordinates(Vector2.zero);
             HasTargetCoordinates = false;
             HasTargetDirection = false;

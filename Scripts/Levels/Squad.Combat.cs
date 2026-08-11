@@ -104,8 +104,17 @@ namespace Assets.Scripts.Levels
         private List<Ship> _enemies;
         public List<Ship> GetPotentialEnemies(Squad target)
         {
-            _tempShips = GetEnemyShips();
-            _enemies = _tempShips.Where(s => s.Squad == target).Take(64).ToList();
+            Vector2 origin = GetPosition();
+            _tempShips = GetEnemyShips()
+                .OrderBy(ship => ship.DistanceToPoint(origin))
+                .ThenBy(ship => ship.ShipType)
+                .ThenBy(ship => ship.Id)
+                .ToList();
+
+            // GetShipsVisibleToHiveMind is set-backed. Never let its enumeration order
+            // decide which ships enter the 64-ship Hive Mind payload, or equivalent
+            // tactical states can hash to different matchups under high density.
+            _enemies = _tempShips.Where(ship => ship.Squad == target).Take(64).ToList();
 
             foreach (Ship potentialEnemy in _tempShips)
             {
@@ -123,20 +132,26 @@ namespace Assets.Scripts.Levels
         private int _limit;
         public List<Ship> GetPotentialAllies(Squad target)
         {
-            _tempShips.Clear();
-            _allies = GetFriendlyShips();
             _limit = Math.Max(0, 64 - GetShipsForMatchup().Count);
-
-            foreach (Ship potentialAlly in _allies)
+            if (_limit == 0 || target == null)
             {
-                if (this != potentialAlly.Squad && _tempShips.Count < _limit &&
-                    potentialAlly.IsAnySquadShipWithinRange(target))
-                {
-                    _tempShips.Add(potentialAlly);
-                }
+                return new List<Ship>();
             }
 
-            return _tempShips;
+            Vector2 targetOrigin = target.GetPosition();
+            _allies = GetFriendlyShips()
+                .Where(potentialAlly => this != potentialAlly.Squad &&
+                    potentialAlly.IsAnySquadShipWithinRange(target))
+                .OrderBy(potentialAlly => potentialAlly.DistanceToPoint(targetOrigin))
+                .ThenBy(potentialAlly => potentialAlly.ShipType)
+                .ThenBy(potentialAlly => potentialAlly.Id)
+                .Take(_limit)
+                .ToList();
+
+            // As with enemies, the payload cap must be independent of registration/spawn
+            // order. AddToMatchup sorts the selected types afterward, but it cannot repair a
+            // nondeterministic choice of which allies entered the capped set in the first place.
+            return _allies;
         }
     }
 }

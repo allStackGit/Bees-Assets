@@ -35,6 +35,7 @@ namespace Assets.Scripts.Scenes
         public int __Updates = 0;
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
+        private bool _hasShownDeadVersionAlert;
 
 
         // Start is called before the first frame update
@@ -109,6 +110,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
                 ConfigData.ChallengeModeShips = new Ships(ConfigData.GetChallengeFleetData(), ConfigData.GetChallengeSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
+                ReconcilePersistedIdentityCounters();
 
             }
 
@@ -116,6 +118,54 @@ namespace Assets.Scripts.Scenes
             //ConfigData.Ships.ReplaceDeadSquadShips();
             UIAudioController.Instance.PlayMusic();
             IsFinalized = true;
+        }
+
+        private static int ReconcileCounterWithIds(int currentCounter, IEnumerable<long> existingIds)
+        {
+            long maxExistingId = existingIds?.DefaultIfEmpty(currentCounter).Max() ?? currentCounter;
+            if (maxExistingId > int.MaxValue)
+            {
+                throw new InvalidOperationException($"Persisted ID {maxExistingId} exceeds the supported 32-bit counter range.");
+            }
+            return Math.Max(currentCounter, (int)maxExistingId);
+        }
+
+        /// <summary>
+        /// Global fleet/squad counters and their objects are persisted in separate files.
+        /// Reconcile from the loaded objects before gameplay so a stale/partial checkpoint or
+        /// changed starting-fleet definition cannot reuse an existing persistent ID.
+        /// </summary>
+        private static void ReconcilePersistedIdentityCounters()
+        {
+            UserProgressData progress = ConfigData.UserProgressData;
+            if (progress == null)
+            {
+                return;
+            }
+
+            int safeFleetId = ReconcileCounterWithIds(
+                progress.FleetId,
+                ConfigData.GetFleetData().GetShips()
+                    .Concat(ConfigData.GetCampaignFleetData().GetShips())
+                    .Concat(ConfigData.GetChallengeFleetData().GetShips())
+                    .Select(ship => ship.Id));
+
+            int safeSavedSquadId = ReconcileCounterWithIds(
+                progress.SavedSquadId,
+                ConfigData.GetSavedSquadsData().GetSquads()
+                    .Concat(ConfigData.GetCampaignSavedSquadsData().GetSquads())
+                    .Concat(ConfigData.GetChallengeSavedSquadsData().GetSquads())
+                    .Select(squad => (long)squad.Id));
+
+            if (safeFleetId == progress.FleetId && safeSavedSquadId == progress.SavedSquadId)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"Reconciled persisted identity counters: FleetId {progress.FleetId}->{safeFleetId}, SavedSquadId {progress.SavedSquadId}->{safeSavedSquadId}.");
+            progress.FleetId = safeFleetId;
+            progress.SavedSquadId = safeSavedSquadId;
+            progress.Save();
         }
         /// <summary>
         /// Tries to reconnect to the server, called on a timer if there's a disconnection.
@@ -133,7 +183,19 @@ namespace Assets.Scripts.Scenes
             _automaticReconnectAttempts++;
             Debug.LogWarning($"Trying to automatically reconnect to the server with {Name} (attempt {_automaticReconnectAttempts})");
             ConfigData.RetryConnection();
-        } 
+        }
+
+        private bool AreOpenLevelsReconnected()
+        {
+            if (Type != ConfigData.SceneTypes.Stage || ConfigData.Socket == null)
+            {
+                return true;
+            }
+
+            return ConfigData.Socket.OpenLevels.All(level =>
+                level == null || level.IsLevelConnectedToServer);
+        }
+
         // Update is called once per frame
         protected virtual void Update()
         {
@@ -160,17 +222,24 @@ namespace Assets.Scripts.Scenes
                     if (Type == ConfigData.SceneTypes.Stage)
                     {
                         Level primaryLevel = ((Stage)this).PrimaryLevel;
-                        _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
-                        if (_pausedForNetworkDisconnect)
+                        if (primaryLevel != null && primaryLevel.State != null)
                         {
-                            primaryLevel.Pause();
+                            _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
+                            if (_pausedForNetworkDisconnect)
+                            {
+                                primaryLevel.Pause();
+                            }
+                        }
+                        else
+                        {
+                            _pausedForNetworkDisconnect = false;
                         }
                     }
                     NetworkDisconnection.Show();
                 }
             }
             
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
+            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
             {
                 _automaticReconnectAttempts = 0;
                 NetworkDisconnection.Hide();
@@ -190,9 +259,13 @@ namespace Assets.Scripts.Scenes
                     {
                         if (ConfigData.Configuration.IsDeadVersion)
                         {
-                            Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
-                                new List<string>() { ConfigData.Configuration.OK }, new List<UnityAction>() { Exit });
-                            alert.Show();
+                            if (!_hasShownDeadVersionAlert)
+                            {
+                                _hasShownDeadVersionAlert = true;
+                                Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
+                                    new List<string>() { ConfigData.Configuration.OK }, new List<UnityAction>() { Exit });
+                                alert.Show();
+                            }
                         }
                         else
                         {

@@ -1,18 +1,18 @@
-﻿
-using System.Collections;
-using UnityEngine;
+﻿using System.Globalization;
+
 namespace Assets.Scripts.Server
 {
     public class GetUserData
     {
-        public readonly ulong UserId;
-        public readonly string DataFile; // the name of the JSON chunk that will be fetched, equivilent to the file name if it was stored locally
+        public readonly string UserId;
+        public readonly string DataFile; // the name of the JSON chunk that will be fetched, equivalent to the file name if it was stored locally
         public string Type;
         public long Hash;
+
         public GetUserData(ulong userId, string dataFile)
         {
-            this.UserId = userId;
-            this.DataFile = dataFile;
+            UserId = userId.ToString(CultureInfo.InvariantCulture);
+            DataFile = dataFile;
         }
     }
 }

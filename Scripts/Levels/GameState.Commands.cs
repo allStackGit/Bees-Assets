@@ -38,6 +38,71 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        private bool TryGetStoredCommand(long outcomeId, out StoredCommand storedCommand)
+        {
+            storedCommand = null;
+            if (outcomeId <= 0 ||
+                !OutcomeIdToPastCommandIndex.TryGetValue(outcomeId, out int storedCommandIndex) ||
+                storedCommandIndex < 0 ||
+                storedCommandIndex >= PastCommands.Count)
+            {
+                return false;
+            }
+
+            storedCommand = PastCommands[storedCommandIndex];
+            return storedCommand != null && storedCommand.OutcomeId == outcomeId;
+        }
+
+        /// <summary>
+        /// Adds delayed reward to the stored Hive Mind command that owns an outcome ID.
+        /// Projectile damage can land after that command has finalized and a different
+        /// command has started, while PastCommands remains alive until the level flush.
+        /// </summary>
+        public bool AddTsvToStoredCommand(long outcomeId, long tsvDelta)
+        {
+            if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
+            {
+                return false;
+            }
+
+            storedCommand.Tsv += tsvDelta;
+            return true;
+        }
+
+        /// <summary>
+        /// Shooting policy learns from combat-only TSV. Strategic command TSV also includes
+        /// spotting, mining, healing, and other command-specific reward that must not be
+        /// attributed to target-priority selection.
+        /// </summary>
+        public bool AddShootingTsvToStoredCommand(long outcomeId, long tsvDelta)
+        {
+            if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
+            {
+                return false;
+            }
+
+            storedCommand.ShootingTsv += tsvDelta;
+            return true;
+        }
+
+        private static bool CommandUsesSelectedEnemy(ConfigData.CommandTypes commandType)
+        {
+            switch (commandType)
+            {
+                case ConfigData.CommandTypes.Aggressive:
+                case ConfigData.CommandTypes.BombingRun:
+                case ConfigData.CommandTypes.Charge:
+                case ConfigData.CommandTypes.Retreat:
+                case ConfigData.CommandTypes.CircleSquad:
+                case ConfigData.CommandTypes.RightSwipe:
+                case ConfigData.CommandTypes.LeftSwipe:
+                case ConfigData.CommandTypes.InAndOut:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
             if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
@@ -79,22 +144,29 @@ namespace Assets.Scripts.Levels
                 OutcomeIdToPastCommandIndex.Remove(command.OutcomeId);
                 _commands.Add(command);
 
-                if (command.ShootingStrategy != null)
-                {
-                    _shootingCommands.Add(command);
-                }
-                else
+                if (command.ShootingStrategy == null)
                 {
                     Debug.LogError("Stored command didn't have a shooting strategy");
                 }
-
-                if (command.MatchupStrategy != null)
+                else if (command.HasTargetingEnemy &&
+                    command.CommandType != ConfigData.CommandTypes.Retreat &&
+                    CommandUsesSelectedEnemy(command.CommandType))
                 {
-                    _targetingCommands.Add(command);
+                    // The server shooting key is derived from the selected-enemy matchup.
+                    // Only persist commands whose execution actually uses that enemy context.
+                    // Retreat is temporarily excluded because Socket executes FirstSeen while
+                    // retaining the server-selected shooting outcome ID.
+                    _shootingCommands.Add(command);
                 }
-                else
+
+                if (command.MatchupStrategy != null &&
+                    command.HasTargetingEnemy &&
+                    CommandUsesSelectedEnemy(command.CommandType))
                 {
-                    Debug.LogError("Stored command didn't have a matchup strategy");
+                    // The matchup strategy chooses an enemy squad. Do not reward that choice
+                    // for Mining, Heal, Patrol, Scouting, Hold, etc. whose core execution does
+                    // not use the selected enemy; their command TSV is unrelated to target choice.
+                    _targetingCommands.Add(command);
                 }
             }
 

@@ -115,7 +115,7 @@ namespace Assets.Scripts.Entities.Projectiles
                 HasHitShip(ship)))
             {
                 ContactTarget(ship);
-                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship);
+                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ship, CommandOutcomeId);
             }
         }
     }

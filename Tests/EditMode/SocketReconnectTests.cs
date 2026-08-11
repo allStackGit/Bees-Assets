@@ -70,5 +70,17 @@ namespace Bees.Tests.EditMode
                 Is.True,
                 "Standing requests must not be resent into a closed WebSocket.");
         }
+
+        [Test]
+        public void StartupDisconnectDoesNotRequirePrimaryLevelToExist()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
+
+            Assert.That(source, Does.Contain("primaryLevel != null && primaryLevel.State != null"),
+                "A Stage can lose its socket while settings/user data are still loading, before PrimaryLevel is spawned.");
+            Assert.That(source, Does.Contain("_pausedForNetworkDisconnect = false;"),
+                "A startup disconnect without a Level must not arm a later unpause against a missing PrimaryLevel.");
+        }
     }
 }

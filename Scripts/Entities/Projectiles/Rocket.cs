@@ -79,6 +79,7 @@ namespace Assets.Scripts.Entities.Projectiles
             // The explosion is its damage-delivery continuation, so transfer that exact
             // reservation instead of creating a second owner for the same damage.
             RocketExplosion.Setup(Level, Weapon, Shooter, null, GetPosition(), 0, 0, Power);
+            RocketExplosion.InheritCommandAttributionFrom(this);
             TransferDamageReservationTo(RocketExplosion);
             Shooter.ProjectilesInFlight.Add(RocketExplosion);
         }

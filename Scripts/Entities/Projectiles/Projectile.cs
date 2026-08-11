@@ -3,6 +3,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Scenes;
 using UnityEngine;
 
@@ -28,6 +29,7 @@ namespace Assets.Scripts.Entities.Projectiles
         public bool HasNecessaryAnimation;
         public Animator Animator;
         public bool IsDead;
+        public long CommandOutcomeId;
         private ShipDamageStatus _damageReservation;
         private int _reservedDamageAmount;
 
@@ -72,6 +74,15 @@ namespace Assets.Scripts.Entities.Projectiles
             Rotation = -(Angle * Mathf.Rad2Deg);
             FleetShip = shooter.FleetShip;
             SavedSquad = shooter.Squad.SavedSquad;
+
+            // A projectile can land after its firing command has finalized and the squad has
+            // begun another command. Snapshot the stable server outcome ID now rather than
+            // reading the shooter's current command when damage eventually lands.
+            Command firingCommand = shooter.Squad?.GetCommand();
+            CommandOutcomeId = firingCommand != null && firingCommand.IsHiveMindCommand
+                ? firingCommand.OutcomeId
+                : 0;
+
             _damageReservation = target != null ? Level.State.GetShipDamageStatus(shooter.Side, target) : null;
             _reservedDamageAmount = target != null ? power : 0;
             Activate();
@@ -87,8 +98,14 @@ namespace Assets.Scripts.Entities.Projectiles
             CollidingQueue.Clear();
             CollidingObstacleQueue.Clear();
             ShipIsDead = false;
+            CommandOutcomeId = 0;
             _damageReservation = null;
             _reservedDamageAmount = 0;
+        }
+
+        public void InheritCommandAttributionFrom(Projectile source)
+        {
+            CommandOutcomeId = source != null ? source.CommandOutcomeId : 0;
         }
 
         public virtual void Kill()
@@ -250,7 +267,7 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 _originalPower = Power;
                 ContactTarget(ship);
-                Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship);
+                Ship.LogAttackingDamage(_originalPower, Shooter, FleetShip, SavedSquad, ship, CommandOutcomeId);
             }
         }
 

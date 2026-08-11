@@ -74,6 +74,8 @@ namespace Assets.Scripts.Entities.Ships
             HasStartedCharging = false;
             WaitingForNewCharge = false;
             HasCompletedRun = false;
+            HasWaitingTargetCoordinates = false;
+            WaitingTargetCoordinates = Vector2.zero;
         }
         public override void Deactivate()
         {

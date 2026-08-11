@@ -57,6 +57,9 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void ClearData()
         {
+            // SpawnMinion uses delayed coroutines. A pooled Queen must never inherit a
+            // suspended spawn from its previous lifecycle.
+            StopAllCoroutines();
             base.ClearData();
             MinionSquadsCount = 0;
             CurrentMinionSquad = null;
@@ -184,6 +187,9 @@ namespace Assets.Scripts.Entities.Ships
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             Level.CancelTimer(_spawnMinionsTimer);
+            // SpawnMinions fans out delayed coroutines. Once this lifecycle dies, none of
+            // those callbacks may create children through a dead or reused Queen wrapper.
+            StopAllCoroutines();
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
 

@@ -14,6 +14,7 @@
 - Focused partial files own their own imports. After splitting a large class, compile-check namespace dependencies in every partial rather than relying on the old monolith's broad `using` list.
 - Connector whole-file writes must be checked immediately against their parent commit for accidental tail loss. For large files, fetch/restore the complete prior blob before changing imports or small statements.
 - Physics trigger helpers must reject invalid occupants at the boundary. A `Zone` must not add a null/dead non-Ship contact or invoke an unset callback merely because another collider overlaps it.
+- Stage-wide tuning fields are not per-Level scratch state. In particular asteroid spawn intervals must be derived locally for each Level; dividing `Stage.CurrentAsteroid*SpawnRate` or rewriting `Stage.AsteroidMinimumSpawnRate` while configuring one Level compounds across sibling Levels and later resets.
 
 ## Timers and commands
 

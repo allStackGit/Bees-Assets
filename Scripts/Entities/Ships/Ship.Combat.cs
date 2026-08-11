@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public void SetCombatTimer()
         {
-            if (!IsUserControlled || !Level.Stage.ActivateHiveMind) return;
+            if (!Level.Stage.ActivateHiveMind) return;
             if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
             InCombat = true;
             _combatTimer = true;
@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target)
+        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Entities.Ships
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
-            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
+            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
             {
@@ -93,32 +93,95 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss)
+        private static void CreditShootingTsv(Ship ship, int tsvDelta, long commandOutcomeId = 0)
+        {
+            if (ship?.Level?.State == null)
+            {
+                return;
+            }
+
+            long shootingOutcomeOwner = commandOutcomeId;
+            if (shootingOutcomeOwner <= 0)
+            {
+                Command activeCommand = ship.Squad?.GetCommand();
+                shootingOutcomeOwner = activeCommand?.OutcomeId ?? 0;
+            }
+
+            if (shootingOutcomeOwner > 0)
+            {
+                ship.Level.State.AddShootingTsvToStoredCommand(shootingOutcomeOwner, tsvDelta);
+            }
+        }
+
+        private static void CreditAttackerCommandTsv(Ship attacker, int tsvDelta, long attackerCommandOutcomeId)
+        {
+            if (attacker == null)
+            {
+                return;
+            }
+
+            Command activeCommand = attacker.Squad?.GetCommand();
+            CreditShootingTsv(attacker, tsvDelta, attackerCommandOutcomeId);
+
+            if (attackerCommandOutcomeId > 0)
+            {
+                if (activeCommand != null && activeCommand.OutcomeId == attackerCommandOutcomeId)
+                {
+                    activeCommand.Tsv += tsvDelta;
+                    return;
+                }
+
+                // The projectile can outlive the command that fired it. PastCommands is
+                // retained until the level flush, so delayed damage still belongs to that
+                // originating outcome rather than whichever command is active at impact.
+                if (!attacker.Level.State.AddTsvToStoredCommand(attackerCommandOutcomeId, tsvDelta))
+                {
+                    Debug.LogError($"Could not attribute delayed damage TSV to command outcome #{attackerCommandOutcomeId}.");
+                }
+                return;
+            }
+
+            // Synchronous/user damage has no stable projectile outcome to recover and keeps
+            // the historical strategic behavior of crediting the command active at impact.
+            if (activeCommand != null)
+            {
+                activeCommand.Tsv += tsvDelta;
+            }
+        }
+
+        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss, long attackerCommandOutcomeId = 0)
         {
             if (tsvLoss < 0) Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
-            _isFriendlyFire = false;
-            if (attackerFleetShip.Side != target.Side)
+            _isFriendlyFire = attackerFleetShip.Side == target.Side;
+            if (!_isFriendlyFire)
             {
                 attackerFleetShip.DamageDone += tsvLoss;
                 attackerSavedSquad.Stats.DamageDone += tsvLoss;
             }
             else if (attacker.KillerFleetShip != null)
             {
-                _isFriendlyFire = true;
+                // If an enemy killed an explosive attacker (for example a Fire Barge),
+                // preserve the historical chain-reaction credit for the external killer.
+                // The attacking command itself is still penalized below for all same-side damage.
                 attacker.KillerFleetShip.DamageDone += tsvLoss;
                 attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
-                if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
-                    attacker.Killer.Squad.GetCommand().Tsv += tsvLoss;
+                if (attacker.Killer != null)
+                {
+                    CreditAttackerCommandTsv(attacker.Killer, tsvLoss, attacker.KillerCommandOutcomeId);
+                }
             }
 
-            if (attacker != null && attacker.Squad.HasCommand)
-                attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? -1 : 1);
+            CreditAttackerCommandTsv(attacker, tsvLoss * (_isFriendlyFire ? -1 : 1), attackerCommandOutcomeId);
 
             if (target != null)
             {
                 target.FleetShip.DamageReceived += tsvLoss;
                 target.Squad.SavedSquad.Stats.DamageReceived += tsvLoss;
-                if (targetSquad.HasCommand) targetSquad.GetCommand().Tsv -= tsvLoss;
+                if (targetSquad.HasCommand)
+                {
+                    targetSquad.GetCommand().Tsv -= tsvLoss;
+                    CreditShootingTsv(target, -tsvLoss);
+                }
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
                     _initialTsv = target.Level.State.InitialTsv;
@@ -163,6 +226,19 @@ namespace Assets.Scripts.Entities.Ships
                 weapon.ShipsWithinRange.Remove(victim.Id);
                 weapon.HasCachedChanged = true;
             });
+        }
+
+        /// <summary>
+        /// Cancels all Level-owned timers and weapon timers associated with this ship's
+        /// current lifecycle. Special ships that override Kill() must call this too.
+        /// </summary>
+        protected void CancelOwnedTimers()
+        {
+            Level.CancelTimer(_asteroidDoubleCheckTimer);
+            Level.CancelTimer(_tryToFindPathAgainTimer);
+            Level.CancelTimer(_combatTimerScaledTimer);
+            Level.CancelTimer(_showShipStatsTimer);
+            if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
         }
 
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
@@ -213,11 +289,7 @@ namespace Assets.Scripts.Entities.Ships
             foreach (Projectile projectile in ProjectilesInFlight) projectile.ShipIsDead = true;
             if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
             else Squad.SetOffsets();
-            Level.CancelTimer(_asteroidDoubleCheckTimer);
-            Level.CancelTimer(_tryToFindPathAgainTimer);
-            Level.CancelTimer(_combatTimerScaledTimer);
-            Level.CancelTimer(_showShipStatsTimer);
-            if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
+            CancelOwnedTimers();
             Deactivate();
         }
 

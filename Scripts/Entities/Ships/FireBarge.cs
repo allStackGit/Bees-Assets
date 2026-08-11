@@ -2,6 +2,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
+using Assets.Scripts.Levels.Commands;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -31,6 +32,7 @@ namespace Assets.Scripts.Entities.Ships
                 Level.CancelTimer(_delayedKillTimer);
             }
             _waitingForDelayedRelease = false;
+            KillerCommandOutcomeId = 0;
             base.ClearData();
         }
 
@@ -48,6 +50,7 @@ namespace Assets.Scripts.Entities.Ships
 
             Bomb.ReleaseTargetReservation();
             StopMoving();
+            CancelOwnedTimers();
             CannotChangeMovementOrders = true;
             IsDead = true;
 
@@ -75,6 +78,10 @@ namespace Assets.Scripts.Entities.Ships
                     Killer = killer;
                     KillerFleetShip = killer.FleetShip;
                     KillerSavedSquad = killer.Squad.SavedSquad;
+                    Command killerCommand = killer.Squad?.GetCommand();
+                    KillerCommandOutcomeId = killerCommand != null && killerCommand.IsHiveMindCommand
+                        ? killerCommand.OutcomeId
+                        : 0;
                     LogKillerStats(KillerFleetShip, KillerSavedSquad);
                 }
 

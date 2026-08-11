@@ -17,6 +17,11 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            // Command.Setup() built this queue before base.Execute() installed the new
+            // shooting strategy. Discard the stale ordering before pursuit begins.
+            OriginalQueue.Clear();
+            TargetingQueue.Clear();
+
             IsAttacking = true;
             PrepareDamageToSendEntries();
             CommandTimer.Reuse(CommandFrequency, SwipeSquadTimer, true, true);

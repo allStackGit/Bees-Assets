@@ -79,6 +79,10 @@ namespace Assets.Scripts.Levels
                      matchupRequest.SquadId == removedSquadItemId));
             }
 
+            // The ordinary Squad pool is also used for Queen/Scout minion squads. Once all
+            // ownership-sensitive teardown above is complete, clear the transient role so a
+            // later ordinary squad cannot inherit minion persistence/numbering semantics.
+            squad.IsMinionSquad = false;
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);
         }

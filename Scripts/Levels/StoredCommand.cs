@@ -7,7 +7,7 @@ namespace Assets.Scripts.Levels
 {
     public class StoredCommand
     {
-        public long Age, Tsv, OutcomeId;
+        public long Age, Tsv, ShootingTsv, OutcomeId;
         public string Enemy, Squad;
         public string MatchUp, FinalizationCause;
 
@@ -21,6 +21,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public bool IsFinalized;
         public bool IsHiveMindCommand;
+        public bool HasTargetingEnemy;
 
         // current this is just used to get the outcome Id and TSV of a command for sending to the server
         // if was used for more things, like viewing past commands for debugging, it might be useful to use the rest of the properties
@@ -28,6 +29,7 @@ namespace Assets.Scripts.Levels
         {
             Age = command.Age;
             Tsv = command.Tsv;
+            ShootingTsv = 0;
             OutcomeId = command.OutcomeId;
             //MatchUp = command.Matchup;
             FinalizationCause = command.FinalizationCause;
@@ -36,6 +38,7 @@ namespace Assets.Scripts.Levels
             IsFinalized = command.IsFinalized;
             CommandType = command.CommandType;
             IsHiveMindCommand = command.IsHiveMindCommand;
+            HasTargetingEnemy = command.EnemySquad != null;
 
             Enemy = command.EnemySquad != null ? command.EnemySquad.Name : "Null";
             Squad = command.GetSquad().Name;

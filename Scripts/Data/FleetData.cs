@@ -13,13 +13,21 @@ namespace Assets.Scripts.Data
     public class FleetData : UserData
     {
         private List<FleetShip> _shipList = new List<FleetShip>();
+        private readonly Dictionary<ConfigData.ShipTypes, int> _startingShips;
         public string Type;
 
 
         public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type) : base()
         {
             Type = ConfigData.FleetDataFilenames[type];
-            defaultJsonData = MakeDefaultList(startingShips);
+            _startingShips = startingShips != null
+                ? new Dictionary<ConfigData.ShipTypes, int>(startingShips)
+                : new Dictionary<ConfigData.ShipTypes, int>();
+
+            // Do not allocate persistent FleetIds merely to prepare fallback JSON. User progress
+            // is loaded asynchronously and may not have applied its persisted FleetId yet. Generate
+            // the fallback only if it is actually needed and the allocator has been synchronized.
+            defaultJsonData = "";
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
             {
@@ -30,6 +38,52 @@ namespace Assets.Scripts.Data
             });
 
         }
+
+        public override string GetDefaultJson()
+        {
+            if (!string.IsNullOrWhiteSpace(defaultJsonData))
+            {
+                return defaultJsonData;
+            }
+
+            if (!TrySynchronizeFleetIdAllocator())
+            {
+                // A missing fleet response can beat the user-progress response because server
+                // reads are asynchronous. Returning the waiting sentinel makes DataFile defer the
+                // write; the existing request retry path will ask again after progress is ready.
+                return ConfigData.WaitingMessage;
+            }
+
+            defaultJsonData = MakeDefaultList(_startingShips);
+            return defaultJsonData;
+        }
+
+        private bool TrySynchronizeFleetIdAllocator()
+        {
+            if (ConfigData.UserProgressData == null)
+            {
+                return false;
+            }
+
+            // The DataFile can have received progress JSON before UserProgressData.WaitForData()
+            // runs its loader callback. Reconcile directly from that raw payload so local first-run
+            // creation and response reordering both use the persisted/default FleetId safely.
+            object progressObject = ConfigData.UserProgressData.GetDataFile()?.GetJsonObject();
+            if (progressObject is JObject progressJson && progressJson["FleetId"] != null)
+            {
+                int persistedFleetId = progressJson["FleetId"].Value<int>();
+                if (ConfigData.UserProgressData.FleetId < persistedFleetId)
+                {
+                    ConfigData.UserProgressData.FleetId = persistedFleetId;
+                }
+                return true;
+            }
+
+            // If the callback already ran, the strongly typed field is authoritative even when
+            // tooling supplied the data without retaining a JObject.
+            return ConfigData.IsUserProgressDataLoaded;
+        }
+
         private string MakeDefaultList(Dictionary<ConfigData.ShipTypes, int> startingShips)
         {
             List<ConfigData.ShipTypes> shipTypes = startingShips.Keys.ToList();
