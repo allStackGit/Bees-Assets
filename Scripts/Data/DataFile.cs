@@ -190,6 +190,14 @@ namespace Assets.Scripts.Data
         }
         public object WriteData(string data)
         {
+            // Some defaults depend on earlier asynchronously loaded identity data. The waiting
+            // sentinel means "retry the read later", not user content; never persist it or mark
+            // the file loaded.
+            if (data == ConfigData.WaitingMessage)
+            {
+                return _jsonObject;
+            }
+
             // Validate before any local or remote side effect. A malformed replacement
             // must not corrupt the last good file or be sent to the server.
             object jsonObject = JsonConvert.DeserializeObject(data);
