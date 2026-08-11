@@ -61,5 +61,17 @@ namespace Bees.Tests.EditMode
             string source = ReadSource("Scripts", "Levels", "StoredCommand.cs");
             Assert.That(source, Does.Contain("ShootingTsv = 0;"));
         }
+
+        [Test]
+        public void RetreatIsNotPersistedAsServerSelectedShootingBehaviorWhileSocketForcesFirstSeen()
+        {
+            string socket = ReadSource("Scripts", "Server", "Socket.cs");
+            string state = ReadSource("Scripts", "Levels", "GameState.Commands.cs");
+
+            Assert.That(socket, Does.Contain("((Retreat)_tempSquad.GetCommand()).Execute(ConfigData.ShootingStrategyTypes.FirstSeen"),
+                "If Retreat begins honoring the server-selected shooting strategy, this containment test should be updated and the exclusion can be removed.");
+            Assert.That(state, Does.Contain("command.CommandType != ConfigData.CommandTypes.Retreat"),
+                "Retreat must not train the server-selected shooting outcome while executing FirstSeen instead.");
+        }
     }
 }
