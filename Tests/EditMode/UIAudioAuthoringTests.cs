@@ -49,7 +49,7 @@ namespace Bees.Tests.EditMode
         {
             string source = Read("Scripts", "UI Components", "UIAudioController.cs");
 
-            Assert.That(source, Does.Contain("private const float ReducedNotificationVolume = 0.75f;"));
+            Assert.That(source, Does.Contain("private const float ReducedNotificationVolume = 0.5625f;"));
             Assert.That(source, Does.Contain("PlayUiClip(DeleteSquadSound, ReducedNotificationVolume);"));
             Assert.That(source, Does.Contain("PlayUiClip(IntercomNotificationSound, ReducedNotificationVolume);"));
             Assert.That(source, Does.Contain("PlayUiClip(SaveSound, ReducedNotificationVolume);"));
