@@ -1,3 +1,4 @@
+using Assets.Scripts.UIComponents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -37,6 +38,18 @@ internal static class HiveMindTrainingBootstrap
         if (stage == null)
         {
             return;
+        }
+
+        // Training skips GameMenus.Setup(), but Level.SetupLevel() still reaches the legacy
+        // ActionBox setup path before the training UI objects are destroyed at frame end.
+        // Bind only the serialized objects that path needs; do not initialize player menus.
+        if (stage.Menus == null && stage.UIManager != null)
+        {
+            stage.Menus = stage.UIManager.GetComponentInChildren<GameMenus>(true);
+        }
+        if (stage.Menus != null && stage.Menus.ActionBox == null && stage.Menus.SquadActionBoxUI != null)
+        {
+            stage.Menus.ActionBox = stage.Menus.SquadActionBoxUI.GetComponent<SquadActionBox>();
         }
 
         stage.IsTrainingHiveMind = true;
