@@ -1,0 +1,36 @@
+using System;
+using System.IO;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace Bees.Tests.EditMode
+{
+    [TestFixture]
+    [Category("BeesFoundation")]
+    public class CampaignStageConfigurationTests
+    {
+        [Test]
+        public void CampaignTriggersUsePersistedProgressMissionIdentity()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs"));
+
+            Assert.That(source, Does.Contain("UserProgressData.GetCurrentLevel("));
+            Assert.That(source, Does.Contain("CampaignMissionCatalog.Configure(this, missionId);"));
+            Assert.That(source, Does.Not.Contain("CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);"));
+        }
+
+        [Test]
+        public void CampaignStageDisablesGenericMapAndSquadOverrides()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "CampaignStageConfiguration.cs"));
+
+            Assert.That(source, Does.Contain("stage.HasRandomizedOptions = true;"));
+            Assert.That(source, Does.Contain("stage.OverrideMapIndex = mission.MapIndex;"));
+            Assert.That(source, Does.Contain("stage.GeneratedSquadCountOverride = 0;"));
+            Assert.That(source, Does.Contain("stage.UseFullyRandomSquads = false;"));
+            Assert.That(source, Does.Contain("stage.UseFullyRandomEnemySquads = false;"));
+        }
+    }
+}
