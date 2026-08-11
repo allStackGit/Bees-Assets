@@ -26,7 +26,20 @@ namespace Assets.Scripts.Levels
         private void SetTriggers()
         {
             Triggers.Clear();
-            CampaignMissionCatalog.Configure(this, CurrentLevelOptions.Id);
+
+            // Campaign progress is the authoritative mission identity. LevelOptions is mutable UI
+            // handoff state (chosen squads, etc.) and must not be able to select a different
+            // campaign script if it becomes stale or mismatched between scenes.
+            int missionId = ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.UserSide,
+                ConfigData.GameModes.Campaign);
+
+            if (CurrentLevelOptions != null && CurrentLevelOptions.Id != missionId)
+            {
+                Debug.LogError($"Campaign level options are #{CurrentLevelOptions.Id} ({CurrentLevelOptions.Name}) while progress is mission #{missionId}. Using campaign progress for mission setup.");
+            }
+
+            CampaignMissionCatalog.Configure(this, missionId);
         }
 
         public void EasterEggTriggers()
