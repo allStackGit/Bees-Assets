@@ -9,10 +9,23 @@ namespace Assets.Scripts.Levels
     {
         private const int FormationCompressionSteps = 20;
         private Vector2 _center;
+        private bool _preserveAuthoredOffsetsOnNextSetOffsets;
 
         public void SetOffsets()
         {
             RefreshCompositionCommandBans();
+
+            // Ship.Setup() receives the authored SavedSquad/SquadShip offset. The first
+            // SetOffsets call happens immediately after initial spawning; recomputing from
+            // obstacle-adjusted spawn positions here would permanently replace the authored
+            // formation with the temporary placement. Preserve the source formation once,
+            // then allow later lifecycle changes (casualties, detachments, etc.) to recenter it.
+            if (_preserveAuthoredOffsetsOnNextSetOffsets)
+            {
+                _preserveAuthoredOffsetsOnNextSetOffsets = false;
+                return;
+            }
+
             _center = GetCenterPoint();
             _tempShips = GetShips();
             foreach (Ship ship in _tempShips)
@@ -48,9 +61,6 @@ namespace Assets.Scripts.Levels
             }
             else if (HasOnlyBarges)
             {
-                // The response handler maps Circle/swipes/InAndOut to Charge for barge-only
-                // squads. Keep Aggressive as the canonical Charge policy identity so Hive Mind
-                // training does not spend samples distinguishing identical executed actions.
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
