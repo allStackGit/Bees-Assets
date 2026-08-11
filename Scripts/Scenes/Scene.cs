@@ -134,7 +134,19 @@ namespace Assets.Scripts.Scenes
             _automaticReconnectAttempts++;
             Debug.LogWarning($"Trying to automatically reconnect to the server with {Name} (attempt {_automaticReconnectAttempts})");
             ConfigData.RetryConnection();
-        } 
+        }
+
+        private bool AreOpenLevelsReconnected()
+        {
+            if (Type != ConfigData.SceneTypes.Stage || ConfigData.Socket == null)
+            {
+                return true;
+            }
+
+            return ConfigData.Socket.OpenLevels.All(level =>
+                level == null || level.IsLevelConnectedToServer);
+        }
+
         // Update is called once per frame
         protected virtual void Update()
         {
@@ -171,7 +183,7 @@ namespace Assets.Scripts.Scenes
                 }
             }
             
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen)
+            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
             {
                 _automaticReconnectAttempts = 0;
                 NetworkDisconnection.Hide();
