@@ -39,18 +39,19 @@ namespace Bees.Tests.EditMode
         {
             string source = File.ReadAllText(MovementSourcePath);
             int bargeStart = source.IndexOf("else if (HasOnlyBarges)");
-            int followingElse = source.IndexOf("\n            else\n", bargeStart);
+            const string holdRemoval = "BannedStrats.Remove(ConfigData.CommandTypes.Hold);";
+            int bargeEnd = source.IndexOf(holdRemoval, bargeStart);
 
             Assert.That(bargeStart, Is.GreaterThanOrEqualTo(0));
-            Assert.That(followingElse, Is.GreaterThan(bargeStart));
-            string branch = source.Substring(bargeStart, followingElse - bargeStart);
+            Assert.That(bargeEnd, Is.GreaterThan(bargeStart));
+            string branch = source.Substring(bargeStart, bargeEnd + holdRemoval.Length - bargeStart);
 
             StringAssert.Contains("BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);", branch);
             StringAssert.Contains("BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);", branch);
             StringAssert.Contains("BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);", branch);
             StringAssert.Contains("BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);", branch);
             StringAssert.Contains("BannedStrats.Add(ConfigData.CommandTypes.InAndOut);", branch);
-            StringAssert.Contains("BannedStrats.Remove(ConfigData.CommandTypes.Hold);", branch);
+            StringAssert.Contains(holdRemoval, branch);
         }
 
         [Test]
