@@ -93,6 +93,26 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        private static void CreditShootingTsv(Ship ship, int tsvDelta, long commandOutcomeId = 0)
+        {
+            if (ship?.Level?.State == null)
+            {
+                return;
+            }
+
+            long shootingOutcomeOwner = commandOutcomeId;
+            if (shootingOutcomeOwner <= 0)
+            {
+                Command activeCommand = ship.Squad?.GetCommand();
+                shootingOutcomeOwner = activeCommand?.OutcomeId ?? 0;
+            }
+
+            if (shootingOutcomeOwner > 0)
+            {
+                ship.Level.State.AddShootingTsvToStoredCommand(shootingOutcomeOwner, tsvDelta);
+            }
+        }
+
         private static void CreditAttackerCommandTsv(Ship attacker, int tsvDelta, long attackerCommandOutcomeId)
         {
             if (attacker == null)
@@ -101,6 +121,8 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             Command activeCommand = attacker.Squad?.GetCommand();
+            CreditShootingTsv(attacker, tsvDelta, attackerCommandOutcomeId);
+
             if (attackerCommandOutcomeId > 0)
             {
                 if (activeCommand != null && activeCommand.OutcomeId == attackerCommandOutcomeId)
@@ -119,8 +141,8 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            // Synchronous/user damage has no stable Hive Mind outcome to recover and keeps
-            // the historical behavior of crediting the command active at the time of damage.
+            // Synchronous/user damage has no stable projectile outcome to recover and keeps
+            // the historical strategic behavior of crediting the command active at impact.
             if (activeCommand != null)
             {
                 activeCommand.Tsv += tsvDelta;
@@ -142,7 +164,10 @@ namespace Assets.Scripts.Entities.Ships
                 attacker.KillerFleetShip.DamageDone += tsvLoss;
                 attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
                 if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
+                {
                     attacker.Killer.Squad.GetCommand().Tsv += tsvLoss;
+                    CreditShootingTsv(attacker.Killer, tsvLoss);
+                }
             }
 
             CreditAttackerCommandTsv(attacker, tsvLoss * (_isFriendlyFire ? -1 : 1), attackerCommandOutcomeId);
@@ -151,7 +176,11 @@ namespace Assets.Scripts.Entities.Ships
             {
                 target.FleetShip.DamageReceived += tsvLoss;
                 target.Squad.SavedSquad.Stats.DamageReceived += tsvLoss;
-                if (targetSquad.HasCommand) targetSquad.GetCommand().Tsv -= tsvLoss;
+                if (targetSquad.HasCommand)
+                {
+                    targetSquad.GetCommand().Tsv -= tsvLoss;
+                    CreditShootingTsv(target, -tsvLoss);
+                }
                 if (target.Stage.IsTrainingNueralNetwork)
                 {
                     _initialTsv = target.Level.State.InitialTsv;
