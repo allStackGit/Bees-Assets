@@ -147,6 +147,7 @@ namespace Assets.Scripts.Levels
             int squadNumber, string name, Color color)
         {
             ClearData();
+            _preserveAuthoredOffsetsOnNextSetOffsets = true;
             IsImmobile = isImobile;
             Level = level;
             SavedSquad = savedSquad;
@@ -271,8 +272,8 @@ namespace Assets.Scripts.Levels
                 return true;
             }
 
-            const int maxSearchDistance = 512;
             int step = Pathfinder.Scale * 2;
+            int maxSearchDistance = Mathf.Max(Level.MapWidth, Level.MapHeight);
             int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
 
             for (int radius = 1; radius <= maxRadius; radius++)
@@ -425,10 +426,6 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            // Dense obstacle fields may not contain a nearby location where the whole formation
-            // fits unchanged. Preserve each saved slot as the target and move only the blocked
-            // ships by the minimum amount necessary, rather than spawning inside geometry and
-            // allowing physics to scatter the squad arbitrarily.
             PlaceFormationSlotsIndividually(position);
         }
 
