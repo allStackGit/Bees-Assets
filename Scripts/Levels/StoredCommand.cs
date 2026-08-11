@@ -7,7 +7,7 @@ namespace Assets.Scripts.Levels
 {
     public class StoredCommand
     {
-        public long Age, Tsv, OutcomeId;
+        public long Age, Tsv, ShootingTsv, OutcomeId;
         public string Enemy, Squad;
         public string MatchUp, FinalizationCause;
 
@@ -29,6 +29,7 @@ namespace Assets.Scripts.Levels
         {
             Age = command.Age;
             Tsv = command.Tsv;
+            ShootingTsv = 0;
             OutcomeId = command.OutcomeId;
             //MatchUp = command.Matchup;
             FinalizationCause = command.FinalizationCause;
