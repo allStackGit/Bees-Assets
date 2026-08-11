@@ -79,13 +79,16 @@ namespace Assets.Scripts.Levels
                 OutcomeIdToPastCommandIndex.Remove(command.OutcomeId);
                 _commands.Add(command);
 
-                if (command.ShootingStrategy != null)
-                {
-                    _shootingCommands.Add(command);
-                }
-                else
+                if (command.ShootingStrategy == null)
                 {
                     Debug.LogError("Stored command didn't have a shooting strategy");
+                }
+                else if (command.HasTargetingEnemy)
+                {
+                    // A targetless command's TSV can contain mining, healing, scouting, and
+                    // other non-shooting reward, and its shooting matchup has no enemy
+                    // composition. Do not train shooting target selection from that mixed signal.
+                    _shootingCommands.Add(command);
                 }
 
                 if (command.MatchupStrategy != null && command.HasTargetingEnemy)
