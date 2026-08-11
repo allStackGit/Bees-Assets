@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target)
+        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -68,7 +68,7 @@ namespace Assets.Scripts.Entities.Ships
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
-            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange);
+            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
             {
@@ -93,7 +93,41 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss)
+        private static void CreditAttackerCommandTsv(Ship attacker, int tsvDelta, long attackerCommandOutcomeId)
+        {
+            if (attacker == null)
+            {
+                return;
+            }
+
+            Command activeCommand = attacker.Squad?.GetCommand();
+            if (attackerCommandOutcomeId > 0)
+            {
+                if (activeCommand != null && activeCommand.OutcomeId == attackerCommandOutcomeId)
+                {
+                    activeCommand.Tsv += tsvDelta;
+                    return;
+                }
+
+                // The projectile can outlive the command that fired it. PastCommands is
+                // retained until the level flush, so delayed damage still belongs to that
+                // originating outcome rather than whichever command is active at impact.
+                if (!attacker.Level.State.AddTsvToStoredCommand(attackerCommandOutcomeId, tsvDelta))
+                {
+                    Debug.LogError($"Could not attribute delayed damage TSV to command outcome #{attackerCommandOutcomeId}.");
+                }
+                return;
+            }
+
+            // Synchronous/user damage has no stable Hive Mind outcome to recover and keeps
+            // the historical behavior of crediting the command active at the time of damage.
+            if (activeCommand != null)
+            {
+                activeCommand.Tsv += tsvDelta;
+            }
+        }
+
+        protected static void LogHitStats(Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, Squad targetSquad, int tsvLoss, long attackerCommandOutcomeId = 0)
         {
             if (tsvLoss < 0) Debug.LogError($"The tsv loss for target {target.Name} is negative when it should be positive: {tsvLoss}");
             _isFriendlyFire = false;
@@ -111,8 +145,7 @@ namespace Assets.Scripts.Entities.Ships
                     attacker.Killer.Squad.GetCommand().Tsv += tsvLoss;
             }
 
-            if (attacker != null && attacker.Squad.HasCommand)
-                attacker.Squad.GetCommand().Tsv += tsvLoss * (_isFriendlyFire ? -1 : 1);
+            CreditAttackerCommandTsv(attacker, tsvLoss * (_isFriendlyFire ? -1 : 1), attackerCommandOutcomeId);
 
             if (target != null)
             {
