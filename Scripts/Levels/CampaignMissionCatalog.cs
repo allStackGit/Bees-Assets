@@ -26,14 +26,12 @@ namespace Assets.Scripts.Levels
             public readonly string TerminalMethod;
             public readonly bool HasPersistedLevelData;
             public readonly AutomatedScenarioStatus ScenarioStatus;
-            public readonly bool SkipPreLevelIntroForTesting;
             private readonly Action<Level> _configure;
 
             public MissionDefinition(int id, string name, int mapIndex, string setupMethod, string completionMethod,
                 string terminalMethod, Action<Level> configure,
                 bool hasPersistedLevelData = true,
-                AutomatedScenarioStatus scenarioStatus = AutomatedScenarioStatus.Ready,
-                bool skipPreLevelIntroForTesting = false)
+                AutomatedScenarioStatus scenarioStatus = AutomatedScenarioStatus.Ready)
             {
                 Id = id;
                 Name = name;
@@ -44,7 +42,6 @@ namespace Assets.Scripts.Levels
                 _configure = configure;
                 HasPersistedLevelData = hasPersistedLevelData;
                 ScenarioStatus = scenarioStatus;
-                SkipPreLevelIntroForTesting = skipPreLevelIntroForTesting;
             }
 
             public void Configure(Level level)
@@ -63,8 +60,8 @@ namespace Assets.Scripts.Levels
                 new MissionDefinition(4, "Seize the Means", 1, nameof(Level.Neptune1SeizeTheMeans), nameof(Level.Neptune1Ending), nameof(Level.Neptune1Ending), level => level.Neptune1SeizeTheMeans()),
                 new MissionDefinition(5, "Of Production", 1, nameof(Level.Neptune2OfProduction), nameof(Level.Neptune2Ending), nameof(Level.Neptune2Ending), level => level.Neptune2OfProduction()),
                 new MissionDefinition(6, "Pressing Forward", 1, nameof(Level.Neptune3PressingForwardCampaign), nameof(Level.Neptune3Ending), nameof(Level.Neptune3Ending), level => level.Neptune3PressingForwardCampaign()),
-                new MissionDefinition(7, "Minesweeper", 2, nameof(Level.Titania1MinesweeperCampaign), nameof(Level.Titania1MinesweeperEnding), nameof(Level.Titania1MinesweeperEnding), level => level.Titania1MinesweeperCampaign(), true, AutomatedScenarioStatus.InDevelopment, true),
-                new MissionDefinition(8, "Beenoculars", 2, nameof(Level.Titania2BeenocularsCampaign), nameof(Level.Titania2CampaignEnding), nameof(Level.Titania2CampaignEnding), level => level.Titania2BeenocularsCampaign(), true, AutomatedScenarioStatus.InDevelopment, true),
+                new MissionDefinition(7, "Minesweeper", 2, nameof(Level.Titania1MinesweeperCampaign), nameof(Level.Titania1MinesweeperEnding), nameof(Level.Titania1MinesweeperEnding), level => level.Titania1MinesweeperCampaign(), true, AutomatedScenarioStatus.InDevelopment),
+                new MissionDefinition(8, "Beenoculars", 2, nameof(Level.Titania2BeenocularsCampaign), nameof(Level.Titania2CampaignEnding), nameof(Level.Titania2CampaignEnding), level => level.Titania2BeenocularsCampaign(), true, AutomatedScenarioStatus.InDevelopment),
                 // Server-backed campaign_levels_data contains these Uranus missions. Their full
                 // isolated Configure() scenarios remain in development because they still depend on
                 // persistent fleet/UI state that the scenario host does not yet provide.
@@ -78,9 +75,13 @@ namespace Assets.Scripts.Levels
             return currentMissionId >= Definitions.Count;
         }
 
+        /// <summary>
+        /// In-development campaign missions are the missions currently under active gameplay testing.
+        /// They skip the pre-level intro so repeated test runs go straight to squad selection.
+        /// </summary>
         public static bool ShouldSkipPreLevelIntroForTesting(int missionId)
         {
-            return Get(missionId).SkipPreLevelIntroForTesting;
+            return Get(missionId).ScenarioStatus == AutomatedScenarioStatus.InDevelopment;
         }
 
         public static IEnumerable<MissionDefinition> GetAutomatedScenarioDefinitions()
