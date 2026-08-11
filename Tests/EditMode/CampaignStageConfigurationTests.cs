@@ -32,5 +32,18 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("stage.UseFullyRandomSquads = false;"));
             Assert.That(source, Does.Contain("stage.UseFullyRandomEnemySquads = false;"));
         }
+
+        [Test]
+        public void CampaignTestLevelsKeepTheirAdHocLevelOptions()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "CampaignStageConfiguration.cs"));
+
+            Assert.That(source, Does.Contain("if (ConfigData.IsTestingLevel ||"));
+            Assert.That(source, Does.Contain("ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0"));
+            Assert.That(source.IndexOf("if (ConfigData.IsTestingLevel ||", StringComparison.Ordinal),
+                Is.LessThan(source.IndexOf("int missionId = ConfigData.UserProgressData.GetCurrentLevel(", StringComparison.Ordinal)),
+                "Test-mode bypass must happen before persisted campaign mission configuration is applied.");
+        }
     }
 }
