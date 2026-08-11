@@ -140,6 +140,7 @@ namespace Assets.Scripts.Levels
             }
 
             Vector2 targetOrigin = target.GetPosition();
+            // Take(_limit) enforces the same strict cap as the former _tempShips.Count < _limit loop.
             _allies = GetFriendlyShips()
                 .Where(potentialAlly => this != potentialAlly.Squad &&
                     potentialAlly.IsAnySquadShipWithinRange(target))
