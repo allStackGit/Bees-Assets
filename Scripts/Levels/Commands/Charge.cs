@@ -33,6 +33,12 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            // Initial Charge target selection below uses the live weapon strategy correctly,
+            // but later pursuit can fall back to Command.TargetingQueue. Remove the queue that
+            // Setup built under the previous shooting strategy so that fallback is also current.
+            OriginalQueue.Clear();
+            TargetingQueue.Clear();
+
             IsAttacking = true;
             GetSquad().Status = $"Starting charging run against {EnemySquad.Name}";
             PrepareDamageToSendEntries();
