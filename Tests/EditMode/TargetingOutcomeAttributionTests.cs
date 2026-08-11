@@ -24,7 +24,10 @@ namespace Bees.Tests.EditMode
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("command.MatchupStrategy != null && command.HasTargetingEnemy", source);
+            StringAssert.Contains("if (command.MatchupStrategy != null &&", source);
+            StringAssert.Contains("command.HasTargetingEnemy &&", source);
+            StringAssert.Contains("CommandUsesSelectedEnemy(command.CommandType))", source);
+            StringAssert.Contains("_targetingCommands.Add(command);", source);
         }
     }
 }
