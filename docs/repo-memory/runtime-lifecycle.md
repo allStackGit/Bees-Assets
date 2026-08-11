@@ -68,6 +68,7 @@
 
 - Ship path requests are protected by both `PathfindingRequestId` and `PathfindingLifecycleId`. A completed background path may modify a Ship only when both still match.
 - Reinitializing a `Pathfinder` while one of its `Task.Run` searches still owns the instance's scratch arrays is unsafe even if Ship lifecycle IDs reject the eventual stale result. A reset must retire that Pathfinder instance (or otherwise wait/cancel workers) rather than mutate its arrays under active workers.
+- Static obstacle-map rebuilds have the same immutability requirement as Pathfinder reset. `RebuildStaticObstacleLayer()` replaces shared static clearance and rewrites per-thread clearance snapshots, so it must never run while a background search is active. When destructible static geometry changes (for example a Fire Tank opens a route), reserve idle worker slots, let existing workers finish against the conservative old map, rebuild atomically on the main thread, then release queued searches onto the new map.
 - Queue membership is not authoritative identity for pooled Ships; queued requests carry explicit request/lifecycle IDs and stale membership must not suppress a new lifecycle's request.
 
 ## Healing, mining, retreat
