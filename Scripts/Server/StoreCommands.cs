@@ -24,8 +24,6 @@ namespace Assets.Scripts.Server
             {
                 temp.Add(new ServerStoredCommand(storedCommand.Tsv, storedCommand.OutcomeId));
             });
-            Commands = temp.ToArray();
-            temp.Clear();
 
             shootingCommands.ForEach((storedCommand) =>
             {
@@ -36,11 +34,8 @@ namespace Assets.Scripts.Server
                 if (outcomeId > 0)
                 {
                     retainedSecondaryOutcomeIds.Add(outcomeId);
-                    temp.Add(new ServerStoredCommand(storedCommand.ShootingTsv, outcomeId));
                 }
             });
-            ShootingCommands = temp.ToArray();
-            temp.Clear();
 
             targetingCommands.ForEach((storedCommand) =>
             {
@@ -48,10 +43,8 @@ namespace Assets.Scripts.Server
                 if (outcomeId > 0)
                 {
                     retainedSecondaryOutcomeIds.Add(outcomeId);
-                    temp.Add(new ServerStoredCommand(storedCommand.Tsv, outcomeId));
                 }
             });
-            TargetingCommands = temp.ToArray();
 
             // The server reserves targeting/shooting outcome IDs when it selects policies.
             // Some selected secondary policies intentionally do not influence execution and
@@ -71,7 +64,38 @@ namespace Assets.Scripts.Server
                     discardedOutcomeIds.Add(targetingOutcomeId);
                 }
             });
+
+            // Keep the explicit field for protocol clarity, and also emit discard markers in
+            // Commands so the currently deployed server wrapper can consume them without a
+            // risky rewrite of the legacy request dispatcher.
             DiscardedOutcomeIds = new List<long>(discardedOutcomeIds).ToArray();
+            foreach (long outcomeId in DiscardedOutcomeIds)
+            {
+                temp.Add(new ServerStoredCommand(0, outcomeId, true));
+            }
+            Commands = temp.ToArray();
+            temp.Clear();
+
+            shootingCommands.ForEach((storedCommand) =>
+            {
+                long outcomeId = storedCommand.ShootingStrategy?.OutcomeId ?? 0;
+                if (outcomeId > 0)
+                {
+                    temp.Add(new ServerStoredCommand(storedCommand.ShootingTsv, outcomeId));
+                }
+            });
+            ShootingCommands = temp.ToArray();
+            temp.Clear();
+
+            targetingCommands.ForEach((storedCommand) =>
+            {
+                long outcomeId = storedCommand.MatchupStrategy?.OutcomeId ?? 0;
+                if (outcomeId > 0)
+                {
+                    temp.Add(new ServerStoredCommand(storedCommand.Tsv, outcomeId));
+                }
+            });
+            TargetingCommands = temp.ToArray();
         }
     }
 }
