@@ -6,10 +6,11 @@ namespace Assets.Scripts.Scenes
 {
     /// <summary>
     /// Compatibility boundary for the legacy ConfigData.LoadLevel flow.
-    /// Campaign levels 2+ currently enter Squad Maker before their authored Level Intro.
-    /// Redirect only pre-battle campaign Squad Maker loads whose intro state is still pending.
-    /// Once LevelIntro marks HasSeenPreLevelIntro, allow that Squad Maker load and consume
-    /// the permission so the following campaign mission still receives its own intro.
+    /// Campaign levels 2+ still request Squad Maker first, so intercept that scene before its
+    /// Start lifecycle can render or initialize the page and synchronously replace it with the
+    /// authored Level Intro. Once LevelIntro marks HasSeenPreLevelIntro, allow the subsequent
+    /// Squad Maker load and consume the permission so the following mission gets its own intro.
+    /// Test levels bypass this redirect entirely.
     /// </summary>
     internal static class CampaignSceneRouter
     {
@@ -39,7 +40,10 @@ namespace Assets.Scripts.Scenes
                 return;
             }
 
-            SceneManager.LoadSceneAsync(LevelIntroScene, LoadSceneMode.Single);
+            // Do not queue an asynchronous replacement here: that permits Squad Maker to
+            // render for one or more frames before the intro finishes loading. A synchronous
+            // replacement keeps the user-visible campaign order Main Menu -> Intro -> Squad Maker.
+            SceneManager.LoadScene(LevelIntroScene, LoadSceneMode.Single);
         }
 
         private static void ResetNarrativeStateAtCampaignStart(string sceneName)
