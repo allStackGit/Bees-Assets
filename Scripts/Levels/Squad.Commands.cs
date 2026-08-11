@@ -251,22 +251,20 @@ namespace Assets.Scripts.Levels
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.ClosestFriendly);
             }
-            if (!BannedStrats.Contains(ConfigData.CommandTypes.Mining) &&
-                (!Level.ActivateMining || !HasMiningShips || GetNearestMiningAsteroid() == null))
+
+            // These are request-local availability conditions. Do not persist them into
+            // BannedStrats: asteroids, healing capacity, Warp Gates, and squad composition
+            // can change later in the same level.
+            if (!Level.ActivateMining || !HasMiningShips || GetNearestMiningAsteroid() == null)
             {
-                BannedStrats.Add(ConfigData.CommandTypes.Mining);
                 _bannedStrats.Add(ConfigData.CommandTypes.Mining);
             }
-            if (!BannedStrats.Contains(ConfigData.CommandTypes.FullRetreat) &&
-                (Side != ConfigData.Configuration.HumanSide || !Level.State.HasWarpGates || HasOnlyWarpGates))
+            if (Side != ConfigData.Configuration.HumanSide || !Level.State.HasWarpGates || HasOnlyWarpGates)
             {
-                BannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
                 _bannedStrats.Add(ConfigData.CommandTypes.FullRetreat);
             }
-            if (!BannedStrats.Contains(ConfigData.CommandTypes.Heal) &&
-                (Side != ConfigData.Configuration.BeeSide || !Level.State.HasBeehives || HasOnlyBeehives))
+            if (Side != ConfigData.Configuration.BeeSide || !Level.State.HasBeehives || HasOnlyBeehives)
             {
-                BannedStrats.Add(ConfigData.CommandTypes.Heal);
                 _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
             else if (Level.State.GetBeeShips().Count(s => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4) == 0)
