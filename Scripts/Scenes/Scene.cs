@@ -173,10 +173,17 @@ namespace Assets.Scripts.Scenes
                     if (Type == ConfigData.SceneTypes.Stage)
                     {
                         Level primaryLevel = ((Stage)this).PrimaryLevel;
-                        _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
-                        if (_pausedForNetworkDisconnect)
+                        if (primaryLevel != null && primaryLevel.State != null)
                         {
-                            primaryLevel.Pause();
+                            _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
+                            if (_pausedForNetworkDisconnect)
+                            {
+                                primaryLevel.Pause();
+                            }
+                        }
+                        else
+                        {
+                            _pausedForNetworkDisconnect = false;
                         }
                     }
                     NetworkDisconnection.Show();
