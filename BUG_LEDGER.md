@@ -118,3 +118,8 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Status:** Open  
 **Location:** `Scripts/Levels/Squad.Combat.cs`, `GetPotentialEnemies()` / `GetPotentialAllies()`  
 **Description:** `Squad.Combat.cs` declares local `Vector2` values but imports only project ship types plus `System`, `System.Collections.Generic`, and `System.Linq`; it does not import `UnityEngine` or qualify `Vector2`. Because `Vector2` is a UnityEngine type, this source fails compilation with CS0246 until `using UnityEngine;` is restored.
+
+### BUG-024 — EditMode squad-pool test directly references an unavailable runtime assembly
+**Status:** Open  
+**Location:** `Tests/EditMode/SquadPoolRoleResetTests.cs`, imports / fields / `SetUp()` / test body  
+**Description:** `SquadPoolRoleResetTests` imports `Assets.Scripts.Levels` and directly types fields and calls against `GameState` and `Squad`. The EditMode test assembly does not reference the generated runtime `Assembly-CSharp` assembly that owns those types, so the test source cannot resolve the namespace/types and prevents the EditMode test assembly from compiling. The later main fix removes the compile-time dependency and accesses the runtime types through the repository's `RuntimeAssembly` reflection helper.
