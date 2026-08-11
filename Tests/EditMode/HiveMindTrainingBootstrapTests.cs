@@ -79,6 +79,39 @@ namespace Bees.Tests.EditMode
                 EnumNames(RuntimeAssembly.GetField(_stage, "OverrideHumanShipTypes")));
         }
 
+        [Test]
+        public void ApplyPreservesButDeactivatesLegacySetupUiAcrossEpisodes()
+        {
+            GameObject uiManager = new GameObject("Training UI Manager");
+            GameObject actionBoxChild = new GameObject("Action Box Child");
+            GameObject unrelatedUi = new GameObject("Unrelated Training UI");
+            try
+            {
+                actionBoxChild.transform.SetParent(uiManager.transform);
+                RuntimeAssembly.SetField(_stage, "UIManager", uiManager);
+                RuntimeAssembly.SetField(_stage, "UIElements", new List<GameObject>
+                {
+                    uiManager,
+                    actionBoxChild,
+                    unrelatedUi
+                });
+
+                ApplyBootstrap();
+
+                Assert.That(uiManager.activeSelf, Is.False,
+                    "Legacy setup UI should survive but remain inactive during headless training.");
+                List<GameObject> remainingUi = (List<GameObject>)RuntimeAssembly.GetField(_stage, "UIElements");
+                CollectionAssert.AreEquivalent(new[] { unrelatedUi }, remainingUi,
+                    "The training teardown list must not destroy the UI hierarchy reused by later SetupLevel calls.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(unrelatedUi);
+                UnityEngine.Object.DestroyImmediate(actionBoxChild);
+                UnityEngine.Object.DestroyImmediate(uiManager);
+            }
+        }
+
         private void ApplyBootstrap()
         {
             MethodInfo apply = _bootstrapType.GetMethod(
