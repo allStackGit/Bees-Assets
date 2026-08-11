@@ -18,6 +18,12 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            // Command.Setup() built this queue before the newly selected shooting strategy
+            // was installed by base.Execute(). Force first pursuit targeting to use the
+            // current strategy instead of the previous command's ordering.
+            OriginalQueue.Clear();
+            TargetingQueue.Clear();
+
             if (!EnemySquad.IsDead)
             {
                 IsAttacking = true;
