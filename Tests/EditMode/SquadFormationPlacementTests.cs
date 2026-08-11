@@ -9,20 +9,23 @@ namespace Bees.Tests.EditMode
     public class SquadFormationPlacementTests
     {
         [Test]
-        public void StartingPlacementPreservesWholeFormationThenFallsBackToNearestSlots()
+        public void StartingPlacementPreservesAuthoredOffsetsAndSearchesWholeMapBeforeDistorting()
         {
-            string source = File.ReadAllText(Path.Combine(
+            string squadSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Levels", "Squad.cs"));
+            string movementSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.Movement.cs"));
 
-            Assert.That(source, Does.Contain("private bool TryFindNearestFormationCenter(Vector2 requestedCenter, out Vector2 center)"));
-            Assert.That(source, Does.Contain("private bool CanPlaceFormationAt(Vector2 center)"));
-            Assert.That(source, Does.Contain("Level.Pathfinder.CanOccupyDestination(GetFormationSlot(ship, center), ship.GetClearance())"));
-            Assert.That(source, Does.Contain("private void PlaceFormationSlotsIndividually(Vector2 requestedCenter)"));
-            Assert.That(source, Does.Contain("FindNearestIndividualFormationSlot(ship, requestedSlot, placed)"));
-            Assert.That(source, Does.Contain("WouldOverlapPlacedShip"));
-            Assert.That(source, Does.Contain("TryFindNearestValidDestination(requestedSlot, ship.GetClearance(), out Vector2 validDestination)"));
-            Assert.That(source, Does.Contain("if (TryFindNearestFormationCenter(position, out Vector2 formationCenter))"));
-            Assert.That(source, Does.Contain("PlaceFormationSlotsIndividually(position);"));
+            Assert.That(squadSource, Does.Contain("_preserveAuthoredOffsetsOnNextSetOffsets = true;"));
+            Assert.That(movementSource, Does.Contain("if (_preserveAuthoredOffsetsOnNextSetOffsets)"));
+            Assert.That(movementSource, Does.Contain("_preserveAuthoredOffsetsOnNextSetOffsets = false;"));
+            Assert.That(squadSource, Does.Contain("int maxSearchDistance = Mathf.Max(Level.MapWidth, Level.MapHeight);"),
+                "An intact authored formation should be searched for across the usable map before per-ship fallback is allowed.");
+            Assert.That(squadSource, Does.Contain("private bool TryFindNearestFormationCenter(Vector2 requestedCenter, out Vector2 center)"));
+            Assert.That(squadSource, Does.Contain("Level.Pathfinder.CanOccupyDestination(GetFormationSlot(ship, center), ship.GetClearance())"));
+            Assert.That(squadSource, Does.Contain("private void PlaceFormationSlotsIndividually(Vector2 requestedCenter)"));
+            Assert.That(squadSource, Does.Contain("if (TryFindNearestFormationCenter(position, out Vector2 formationCenter))"));
+            Assert.That(squadSource, Does.Contain("PlaceFormationSlotsIndividually(position);"));
         }
     }
 }
