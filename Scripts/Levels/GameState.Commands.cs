@@ -130,11 +130,13 @@ namespace Assets.Scripts.Levels
                 {
                     Debug.LogError("Stored command didn't have a shooting strategy");
                 }
-                else if (command.HasTargetingEnemy)
+                else if (command.HasTargetingEnemy && command.CommandType != ConfigData.CommandTypes.Retreat)
                 {
                     // A targetless shooting matchup has no enemy composition and cannot
-                    // represent target-priority behavior. Combat-only ShootingTsv is used
-                    // by StoreCommands when this entry is serialized.
+                    // represent target-priority behavior. Retreat is also excluded because
+                    // Socket currently executes Retreat with FirstSeen while retaining the
+                    // server-selected shooting outcome ID. Until that response path is
+                    // corrected, storing Retreat would train one strategy from another's behavior.
                     _shootingCommands.Add(command);
                 }
 
