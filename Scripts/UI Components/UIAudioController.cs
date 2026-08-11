@@ -16,6 +16,7 @@ namespace Assets.Scripts.UI_Components
         public AudioClip IntercomNotificationSound;
         public AudioClip SaveSound;
 
+        private const float ReducedNotificationVolume = 0.75f;
         private AudioSource _levelIntroAmbience;
 
         void Awake()
@@ -52,11 +53,11 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        private void PlayUiClip(AudioClip clip)
+        private void PlayUiClip(AudioClip clip, float volumeScale = 1f)
         {
             if (ButtonClick != null && clip != null)
             {
-                ButtonClick.PlayOneShot(clip);
+                ButtonClick.PlayOneShot(clip, volumeScale);
             }
         }
 
@@ -70,7 +71,7 @@ namespace Assets.Scripts.UI_Components
 
         public void PlayDeleteSquadSound()
         {
-            PlayUiClip(DeleteSquadSound);
+            PlayUiClip(DeleteSquadSound, ReducedNotificationVolume);
         }
 
         public void PlayErrorSound()
@@ -80,12 +81,12 @@ namespace Assets.Scripts.UI_Components
 
         public void PlayIntercomSound()
         {
-            PlayUiClip(IntercomNotificationSound);
+            PlayUiClip(IntercomNotificationSound, ReducedNotificationVolume);
         }
 
         public void PlaySaveSound()
         {
-            PlayUiClip(SaveSound);
+            PlayUiClip(SaveSound, ReducedNotificationVolume);
         }
 
         public void PlayLevelIntroAmbience()
