@@ -18,15 +18,17 @@ namespace Bees.Tests.EditMode
             int storeCommands = source.IndexOf("public void StoreCommands()", StringComparison.Ordinal);
             Assert.That(storeCommands, Is.GreaterThanOrEqualTo(0));
 
-            int shootingGuard = source.IndexOf("else if (command.HasTargetingEnemy)", storeCommands, StringComparison.Ordinal);
+            int shootingGuard = source.IndexOf("else if (command.HasTargetingEnemy &&", storeCommands, StringComparison.Ordinal);
             int addShooting = source.IndexOf("_shootingCommands.Add(command);", storeCommands, StringComparison.Ordinal);
-            int targetingGuard = source.IndexOf("command.MatchupStrategy != null && command.HasTargetingEnemy", storeCommands, StringComparison.Ordinal);
+            int targetingGuard = source.IndexOf("if (command.MatchupStrategy != null &&", storeCommands, StringComparison.Ordinal);
+            int targetingEnemyGuard = source.IndexOf("command.HasTargetingEnemy &&", targetingGuard, StringComparison.Ordinal);
             int addTargeting = source.IndexOf("_targetingCommands.Add(command);", storeCommands, StringComparison.Ordinal);
 
             Assert.That(shootingGuard, Is.GreaterThan(storeCommands));
             Assert.That(addShooting, Is.GreaterThan(shootingGuard));
             Assert.That(targetingGuard, Is.GreaterThan(addShooting));
-            Assert.That(addTargeting, Is.GreaterThan(targetingGuard));
+            Assert.That(targetingEnemyGuard, Is.GreaterThan(targetingGuard));
+            Assert.That(addTargeting, Is.GreaterThan(targetingEnemyGuard));
         }
 
         [Test]
