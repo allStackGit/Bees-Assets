@@ -116,8 +116,20 @@ namespace Assets.Scripts.Data
                     }
                     else if (standingRequest.Status == -1)
                     {
-                        //Debug.Log($"The standing request has completed but needs to be resent");
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
+
+                        // A missing server file normally writes its defaults and then retries the
+                        // read so the just-created row becomes authoritative. Dedicated training
+                        // intentionally suppresses that persistent write; WriteData has already
+                        // installed the defaults in memory, so retrying would loop forever on the
+                        // still-missing server row. Accept the transient in-memory defaults instead.
+                        if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime && _isDataLoaded)
+                        {
+                            _request = null;
+                            return;
+                        }
+
+                        //Debug.Log($"The standing request has completed but needs to be resent");
                         ReadContents();
                         return;
                     }
@@ -201,6 +213,19 @@ namespace Assets.Scripts.Data
             // Validate before any local or remote side effect. A malformed replacement
             // must not corrupt the last good file or be sent to the server.
             object jsonObject = JsonConvert.DeserializeObject(data);
+
+            // Dedicated Hive Mind training may traverse ordinary player save/default code while
+            // bootstrapping its runtime. Training state is disposable and must never mutate a
+            // real profile, including the direct missing-file default writes issued by Socket.
+            // Keep the data usable in memory without touching local disk or the server.
+            if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime)
+            {
+                _textContents = data;
+                _jsonObject = jsonObject;
+                _isDataLoaded = true;
+                return GetJsonObject();
+            }
+
             if (ConfigData.Configuration.UseLocalStorage)
             {
                 WriteLocalData(data);
