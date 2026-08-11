@@ -45,6 +45,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void LoudNotificationCuesPlayAtReducedVolume()
+        {
+            string source = Read("Scripts", "UI Components", "UIAudioController.cs");
+
+            Assert.That(source, Does.Contain("private const float ReducedNotificationVolume = 0.75f;"));
+            Assert.That(source, Does.Contain("PlayUiClip(DeleteSquadSound, ReducedNotificationVolume);"));
+            Assert.That(source, Does.Contain("PlayUiClip(IntercomNotificationSound, ReducedNotificationVolume);"));
+            Assert.That(source, Does.Contain("PlayUiClip(SaveSound, ReducedNotificationVolume);"));
+            Assert.That(source, Does.Contain("PlayUiClip(ErrorSound);"), "Unrelated error feedback should keep its existing volume.");
+        }
+
+        [Test]
         public void IntercomPlaysOnlyWhenANewDialogueSectionStarts()
         {
             string source = Read("Scripts", "UI Components", "DialogueManager.cs");
