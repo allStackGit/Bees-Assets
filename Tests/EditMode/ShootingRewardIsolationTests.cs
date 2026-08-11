@@ -23,8 +23,8 @@ namespace Bees.Tests.EditMode
         public void ShootingOutcomesSerializeCombatOnlyReward()
         {
             string source = ReadSource("Scripts", "Server", "StoreCommands.cs");
-            Assert.That(source, Does.Contain("new ServerStoredCommand(storedCommand.ShootingTsv, storedCommand.ShootingStrategy.OutcomeId)"));
-            Assert.That(source, Does.Not.Contain("new ServerStoredCommand(storedCommand.Tsv, storedCommand.ShootingStrategy.OutcomeId)"));
+            Assert.That(source, Does.Contain("new ServerStoredCommand(storedCommand.ShootingTsv, outcomeId)"));
+            Assert.That(source, Does.Not.Contain("new ServerStoredCommand(storedCommand.Tsv, outcomeId)"));
         }
 
         [Test]
