@@ -11,16 +11,18 @@ namespace Bees.Tests.EditMode
         [Test]
         public void ShipRemovalRefreshesCompositionDerivedCommandBans()
         {
-            string source = File.ReadAllText(Path.Combine(
+            string squadSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Levels", "Squad.cs"));
+            string movementSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.Movement.cs"));
 
-            int refresh = source.IndexOf("private void RefreshCompositionCommandBans()");
-            int add = source.IndexOf("public void AddShip(Ship ship)");
-            int remove = source.IndexOf("public void RemoveShip(Ship ship)");
+            int refresh = movementSource.IndexOf("private void RefreshCompositionCommandBans()");
+            int add = squadSource.IndexOf("public void AddShip(Ship ship)");
+            int remove = squadSource.IndexOf("public void RemoveShip(Ship ship)");
 
             Assert.That(refresh, Is.GreaterThanOrEqualTo(0));
-            Assert.That(source.IndexOf("RefreshCompositionCommandBans();", add), Is.GreaterThan(add));
-            Assert.That(source.IndexOf("RefreshCompositionCommandBans();", remove), Is.GreaterThan(remove),
+            Assert.That(squadSource.IndexOf("RefreshCompositionCommandBans();", add), Is.GreaterThan(add));
+            Assert.That(squadSource.IndexOf("RefreshCompositionCommandBans();", remove), Is.GreaterThan(remove),
                 "Casualties must refresh defenseless/bomber-only command eligibility.");
         }
     }
