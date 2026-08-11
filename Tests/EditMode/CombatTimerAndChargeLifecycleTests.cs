@@ -27,6 +27,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CombatTimerTracksHiveMindShipsRegardlessOfPlayerOwnership()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            string source = File.ReadAllText(path);
+
+            int start = source.IndexOf("public void SetCombatTimer()");
+            int end = source.IndexOf("public void LogDamage", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+
+            string method = source.Substring(start, end - start);
+            StringAssert.Contains("if (!Level.Stage.ActivateHiveMind) return;", method);
+            StringAssert.DoesNotContain("!IsUserControlled", method);
+        }
+
+        [Test]
         public void ChargeStopsAfterBaseExecutionFinalizes()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Charge.cs");
