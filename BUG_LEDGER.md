@@ -113,3 +113,8 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Status:** Open  
 **Location:** `Scripts/Levels/LevelConstructor.cs`, `PositionSquads()`; `Scripts/Levels/Squad.cs`, `SetStartingPosition()`  
 **Description:** Initial and reinforcement placement computes a center from map bounds and then `SetStartingPosition()` blindly applies every ship's formation offset (including enlarged offsets for Queen/Bumblebee/wide ships). Neither method checks the occupied destination for each ship against the pathfinder/obstacle grid. On levels with obstacles, a center that is itself usable can therefore place one or more offset formation members directly into blocked space; the squad begins intersecting an obstacle before any normal pathfinding command can correct it.
+
+### BUG-023 — Squad combat source does not compile because Vector2 is unresolved
+**Status:** Open  
+**Location:** `Scripts/Levels/Squad.Combat.cs`, `GetPotentialEnemies()` / `GetPotentialAllies()`  
+**Description:** `Squad.Combat.cs` declares local `Vector2` values but imports only project ship types plus `System`, `System.Collections.Generic`, and `System.Linq`; it does not import `UnityEngine` or qualify `Vector2`. Because `Vector2` is a UnityEngine type, this source fails compilation with CS0246 until `using UnityEngine;` is restored.
