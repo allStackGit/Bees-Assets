@@ -45,28 +45,14 @@ namespace Bees.Tests.EditMode
         [Test]
         public void PendingCampaignBattleRedirectsSquadMakerToAuthoredIntro()
         {
-            object campaignMode = Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes"), "Campaign");
-            object levelOptions = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.LevelOptions");
-
-            RuntimeAssembly.SetStaticField(_configDataType, "CurrentGameMode", campaignMode);
-            RuntimeAssembly.SetStaticField(_configDataType, "LevelOptions", levelOptions);
-            RuntimeAssembly.SetStaticField(_configDataType, "IsTestingLevel", false);
-            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", false);
-
+            ConfigureCampaignMission(2, false, false);
             Assert.That(ShouldRedirect("Squad Maker"), Is.True);
         }
 
         [Test]
         public void CompletedIntroAllowsCampaignSquadSelection()
         {
-            object campaignMode = Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes"), "Campaign");
-            object levelOptions = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.LevelOptions");
-
-            RuntimeAssembly.SetStaticField(_configDataType, "CurrentGameMode", campaignMode);
-            RuntimeAssembly.SetStaticField(_configDataType, "LevelOptions", levelOptions);
-            RuntimeAssembly.SetStaticField(_configDataType, "IsTestingLevel", false);
-            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", true);
-
+            ConfigureCampaignMission(2, false, true);
             Assert.That(ShouldRedirect("Squad Maker"), Is.False);
         }
 
@@ -95,15 +81,35 @@ namespace Bees.Tests.EditMode
         [Test]
         public void TestLevelsDoNotRedirectIntoCampaignIntro()
         {
+            ConfigureCampaignMission(2, true, false);
+            Assert.That(ShouldRedirect("Squad Maker"), Is.False);
+        }
+
+        [TestCase(7)]
+        [TestCase(8)]
+        public void TitaniaMissionsMarkedForTestingBypassPreLevelIntro(int missionId)
+        {
+            ConfigureCampaignMission(missionId, false, false);
+            Assert.That(ShouldRedirect("Squad Maker"), Is.False);
+        }
+
+        [Test]
+        public void NonTestingMissionAfterTitaniaStillReceivesPreLevelIntro()
+        {
+            ConfigureCampaignMission(9, false, false);
+            Assert.That(ShouldRedirect("Squad Maker"), Is.True);
+        }
+
+        private void ConfigureCampaignMission(int missionId, bool isTestingLevel, bool hasSeenIntro)
+        {
             object campaignMode = Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+GameModes"), "Campaign");
             object levelOptions = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.LevelOptions");
+            RuntimeAssembly.SetField(levelOptions, "Id", missionId);
 
             RuntimeAssembly.SetStaticField(_configDataType, "CurrentGameMode", campaignMode);
             RuntimeAssembly.SetStaticField(_configDataType, "LevelOptions", levelOptions);
-            RuntimeAssembly.SetStaticField(_configDataType, "IsTestingLevel", true);
-            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", false);
-
-            Assert.That(ShouldRedirect("Squad Maker"), Is.False);
+            RuntimeAssembly.SetStaticField(_configDataType, "IsTestingLevel", isTestingLevel);
+            RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", hasSeenIntro);
         }
 
         private static string ReadRouterSource()
