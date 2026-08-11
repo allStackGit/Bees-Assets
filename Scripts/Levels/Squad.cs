@@ -241,6 +241,11 @@ namespace Assets.Scripts.Levels
             return adjustment;
         }
 
+        private Vector2 GetFormationSlot(Ship ship, Vector2 center)
+        {
+            return GetShips().Count == 1 ? center : center + GetFormationAdjustment(ship);
+        }
+
         private bool CanPlaceFormationAt(Vector2 center)
         {
             if (Level == null || Level.Pathfinder == null || !Level.HasObstacles)
@@ -250,8 +255,7 @@ namespace Assets.Scripts.Levels
 
             foreach (Ship ship in GetShips())
             {
-                Vector2 shipPosition = center + GetFormationAdjustment(ship);
-                if (!Level.Pathfinder.CanOccupyDestination(shipPosition, ship.GetClearance()))
+                if (!Level.Pathfinder.CanOccupyDestination(GetFormationSlot(ship, center), ship.GetClearance()))
                 {
                     return false;
                 }
@@ -259,15 +263,16 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        private Vector2 FindNearestFormationCenter(Vector2 requestedCenter)
+        private bool TryFindNearestFormationCenter(Vector2 requestedCenter, out Vector2 center)
         {
+            center = requestedCenter;
             if (GetShips().Count == 0 || CanPlaceFormationAt(requestedCenter))
             {
-                return requestedCenter;
+                return true;
             }
 
-            const int maxSearchDistance = 256;
-            int step = Pathfinder.Scale;
+            const int maxSearchDistance = 512;
+            int step = Pathfinder.Scale * 2;
             int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
 
             for (int radius = 1; radius <= maxRadius; radius++)
@@ -303,26 +308,128 @@ namespace Assets.Scripts.Levels
 
                 if (found)
                 {
+                    center = best;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool WouldOverlapPlacedShip(Ship ship, Vector2 candidate, Ship placedShip, Vector2 placedPosition)
+        {
+            return Mathf.Abs(candidate.x - placedPosition.x) < ship.GetHalfWidth() + placedShip.GetHalfWidth() &&
+                   Mathf.Abs(candidate.y - placedPosition.y) < ship.GetHalfHeight() + placedShip.GetHalfHeight();
+        }
+
+        private bool IsValidIndividualFormationSlot(Ship ship, Vector2 candidate, List<(Ship ship, Vector2 position)> placed)
+        {
+            if (!Level.Pathfinder.CanOccupyDestination(candidate, ship.GetClearance()))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < placed.Count; i++)
+            {
+                if (WouldOverlapPlacedShip(ship, candidate, placed[i].ship, placed[i].position))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private Vector2 FindNearestIndividualFormationSlot(Ship ship, Vector2 requestedSlot, List<(Ship ship, Vector2 position)> placed)
+        {
+            if (Level == null || Level.Pathfinder == null || !Level.HasObstacles ||
+                IsValidIndividualFormationSlot(ship, requestedSlot, placed))
+            {
+                return requestedSlot;
+            }
+
+            const int maxSearchDistance = 256;
+            int step = Pathfinder.Scale;
+            int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
+
+            for (int radius = 1; radius <= maxRadius; radius++)
+            {
+                Vector2 best = requestedSlot;
+                float bestDistance = float.MaxValue;
+                bool found = false;
+
+                for (int x = -radius; x <= radius; x++)
+                {
+                    for (int y = -radius; y <= radius; y++)
+                    {
+                        if (Mathf.Abs(x) != radius && Mathf.Abs(y) != radius)
+                        {
+                            continue;
+                        }
+
+                        Vector2 candidate = requestedSlot + new Vector2(x * step, y * step);
+                        if (!IsValidIndividualFormationSlot(ship, candidate, placed))
+                        {
+                            continue;
+                        }
+
+                        float distance = (candidate - requestedSlot).sqrMagnitude;
+                        if (!found || distance < bestDistance)
+                        {
+                            found = true;
+                            bestDistance = distance;
+                            best = candidate;
+                        }
+                    }
+                }
+
+                if (found)
+                {
                     return best;
                 }
             }
 
-            return requestedCenter;
+            if (Level.Pathfinder.TryFindNearestValidDestination(requestedSlot, ship.GetClearance(), out Vector2 validDestination))
+            {
+                return validDestination;
+            }
+            return requestedSlot;
+        }
+
+        private void PlaceFormationSlotsIndividually(Vector2 requestedCenter)
+        {
+            List<(Ship ship, Vector2 position)> placed = new List<(Ship ship, Vector2 position)>();
+            foreach (Ship ship in GetShips())
+            {
+                Vector2 requestedSlot = GetFormationSlot(ship, requestedCenter);
+                Vector2 position = FindNearestIndividualFormationSlot(ship, requestedSlot, placed);
+                ship.transform.localPosition = position;
+                placed.Add((ship, position));
+            }
         }
 
         public void SetStartingPosition(Vector2 position)
         {
-            position = FindNearestFormationCenter(position);
-            if (GetShips().Count == 1)
+            if (TryFindNearestFormationCenter(position, out Vector2 formationCenter))
             {
-                GetShips()[0].transform.localPosition = position;
+                if (GetShips().Count == 1)
+                {
+                    GetShips()[0].transform.localPosition = formationCenter;
+                    return;
+                }
+
+                GetShips().ForEach(ship =>
+                {
+                    _adjustment = GetFormationAdjustment(ship);
+                    ship.transform.localPosition = new Vector2(formationCenter.x + _adjustment.x, formationCenter.y + _adjustment.y);
+                });
                 return;
             }
-            GetShips().ForEach(ship =>
-            {
-                _adjustment = GetFormationAdjustment(ship);
-                ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
-            });
+
+            // Dense obstacle fields may not contain a nearby location where the whole formation
+            // fits unchanged. Preserve each saved slot as the target and move only the blocked
+            // ships by the minimum amount necessary, rather than spawning inside geometry and
+            // allowing physics to scatter the squad arbitrarily.
+            PlaceFormationSlotsIndividually(position);
         }
 
         public void SetSquadTab()
