@@ -77,7 +77,12 @@ namespace Assets.Scripts
         public static int MaxThreads;
         public static string WaitingMessage = "{\"status\": \"waiting\"}";
 
-        public static LevelOptions LevelOptions;
+        private static LevelOptions _levelOptions;
+        public static LevelOptions LevelOptions
+        {
+            get => _levelOptions;
+            set => _levelOptions = NormalizeCampaignLevelOptions(value);
+        }
         public static bool IsTestingLevel;
         public static bool ChooseRandomLevel;
         public static bool HasSeenPreLevelIntro;
