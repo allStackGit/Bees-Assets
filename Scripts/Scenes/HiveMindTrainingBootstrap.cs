@@ -71,8 +71,8 @@ internal static class HiveMindTrainingBootstrap
         }
 
         // Training skips GameMenus.Setup(), but Level.SetupLevel() still reaches the legacy
-        // ActionBox setup path before the training UI objects are destroyed at frame end.
-        // Bind only the serialized objects that path needs; do not initialize player menus.
+        // ActionBox setup path on every episode. Keep that serialized hierarchy alive across
+        // resets, but deactivate it so headless training does not render or process player UI.
         if (stage.Menus == null && stage.UIManager != null)
         {
             stage.Menus = stage.UIManager.GetComponentInChildren<GameMenus>(true);
@@ -81,6 +81,7 @@ internal static class HiveMindTrainingBootstrap
         {
             stage.Menus.ActionBox = stage.Menus.SquadActionBoxUI.GetComponent<SquadActionBox>();
         }
+        PreserveLegacySetupUi(stage);
 
         stage.IsTrainingHiveMind = true;
         stage.IsTrainingNueralNetwork = false;
@@ -97,5 +98,37 @@ internal static class HiveMindTrainingBootstrap
         // HumanTarget is a scripted objective, so random squads use the complete primary fleet.
         stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(TrainingBeeShipTypes);
         stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(TrainingHumanShipTypes);
+    }
+
+    private static void PreserveLegacySetupUi(Stage stage)
+    {
+        if (stage.UIManager == null)
+        {
+            return;
+        }
+
+        Transform uiManagerTransform = stage.UIManager.transform;
+        if (stage.UIElements != null)
+        {
+            for (int i = stage.UIElements.Count - 1; i >= 0; i--)
+            {
+                GameObject uiElement = stage.UIElements[i];
+                if (uiElement == null)
+                {
+                    continue;
+                }
+
+                Transform elementTransform = uiElement.transform;
+                if (elementTransform == uiManagerTransform ||
+                    elementTransform.IsChildOf(uiManagerTransform) ||
+                    uiManagerTransform.IsChildOf(elementTransform))
+                {
+                    uiElement.SetActive(false);
+                    stage.UIElements.RemoveAt(i);
+                }
+            }
+        }
+
+        stage.UIManager.SetActive(false);
     }
 }
