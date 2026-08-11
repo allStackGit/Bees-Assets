@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System;
 
 namespace Bees.Tests.EditMode
 {
@@ -6,7 +7,7 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class ConfigurationSettingsTests
     {
-        private object _configDataType;
+        private Type _configDataType;
         private object _previousConfiguration;
         private object _previousShipTurningRadius;
 
@@ -67,15 +68,15 @@ namespace Bees.Tests.EditMode
         public void SetUp()
         {
             _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            _previousConfiguration = RuntimeAssembly.GetStaticField((System.Type)_configDataType, "Configuration");
-            _previousShipTurningRadius = RuntimeAssembly.GetStaticField((System.Type)_configDataType, "ShipTurningRadius");
+            _previousConfiguration = RuntimeAssembly.GetStaticField(_configDataType, "Configuration");
+            _previousShipTurningRadius = RuntimeAssembly.GetStaticField(_configDataType, "ShipTurningRadius");
         }
 
         [TearDown]
         public void TearDown()
         {
-            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", _previousConfiguration);
-            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "ShipTurningRadius", _previousShipTurningRadius);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", _previousConfiguration);
+            RuntimeAssembly.SetStaticField(_configDataType, "ShipTurningRadius", _previousShipTurningRadius);
         }
 
         [Test]
@@ -100,7 +101,7 @@ namespace Bees.Tests.EditMode
 
             RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
             RuntimeAssembly.SetField(configuration, "IsLoaded", true);
-            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", configuration);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
 
             Assert.That(
                 RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
@@ -116,7 +117,7 @@ namespace Bees.Tests.EditMode
 
             RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
             RuntimeAssembly.SetField(configuration, "IsLoaded", false);
-            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", configuration);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
 
             Assert.That(
                 RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
