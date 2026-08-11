@@ -46,6 +46,20 @@ namespace Bees.Tests.EditMode
                 "Friendly-fire classification must not depend on whether the explosive attacker has external killer metadata.");
         }
 
+        [Test]
+        public void FireBargeChainReactionKeepsOriginalKillerOutcome()
+        {
+            string fireBarge = ReadSource("Scripts", "Entities", "Ships", "FireBarge.cs");
+            string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
+
+            Assert.That(fireBarge, Does.Contain("KillerCommandOutcomeId = killerCommand != null && killerCommand.IsHiveMindCommand"));
+            Assert.That(fireBarge, Does.Contain("KillerCommandOutcomeId = 0;"),
+                "The pooled Fire Barge wrapper must not retain a previous killer outcome.");
+            Assert.That(combat, Does.Contain("CreditAttackerCommandTsv(attacker.Killer, tsvLoss, attacker.KillerCommandOutcomeId)"));
+            Assert.That(combat, Does.Not.Contain("attacker.Killer.Squad.GetCommand().Tsv += tsvLoss"),
+                "Delayed chain-reaction reward must not be assigned to whichever killer command is active at impact time.");
+        }
+
         [TestCase("Mining.cs")]
         [TestCase("Heal.cs")]
         [TestCase("FullRetreat.cs")]
