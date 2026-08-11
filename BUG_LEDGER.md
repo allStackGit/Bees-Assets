@@ -39,3 +39,7 @@ This ledger records only defects validated by static code tracing. No tests, bui
 ### BUG-009 — Global handled-response hashes grow without a bounded lifetime
 **Location:** `Scripts/Server/Socket.cs`, `TryClaimResponse()` / `HandleBasicResponse()` and response dispatch  
 **Description:** Every response hash is inserted into the socket-global `HandledRequests` set by `TryClaimResponse()`. Level-owned strategy/setup responses have level ownership for later cleanup, but basic responses such as repeated `StoreCommands`/`StoreUserData` do not. Those hashes therefore accumulate for the process lifetime, producing unbounded memory growth in long-running/training sessions while also retaining stale dedupe identities indefinitely.
+
+### BUG-010 — Campaign completion is persisted as a non-atomic three-file checkpoint
+**Location:** `Scripts/Levels/Level.Campaign.Endings.cs`, `SaveCampaignProgress()`  
+**Description:** Campaign endings mutate progression and fleet/squad state, then `SaveCampaignProgress()` independently sends `UserProgressData.Save()`, `SaveSquadData()`, and `SaveFleetData()`. These are separate asynchronous persistence requests with no shared checkpoint/version/transaction, so interruption or partial server success can persist an advanced campaign level while retaining an older fleet or squad snapshot, leaving the next session in a state that never existed in memory.
