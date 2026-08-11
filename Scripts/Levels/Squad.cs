@@ -290,12 +290,26 @@ namespace Assets.Scripts.Levels
             }
             else if (HasOnlyBombers)
             {
+                // The response handler maps all movement-attack variants to BombingRun for
+                // bomber-only squads. Keep Aggressive as the single server policy identity so
+                // training does not spend minimum-use samples on indistinguishable actions.
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
                 BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
+            }
+            else if (HasOnlyBarges)
+            {
+                // Circle/swipes/InAndOut are also converted to Charge for barge-only squads.
+                // Aggressive is the canonical Charge policy identity; Hold remains distinct.
+                BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
+                BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+                BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+                BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+                BannedStrats.Remove(ConfigData.CommandTypes.Hold);
             }
             else
             {
