@@ -1,6 +1,7 @@
 ﻿
 using System.Collections;
 using System.Linq;
+using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -10,6 +11,7 @@ namespace Assets.Scripts.Levels.Commands
         public bool IsComfortablyWithinRange;
         public bool HasTakenPosition;
         public int ConsecutiveTimesWithinRange = 0;
+        private Coroutine _moveTowardsEnemiesCoroutine;
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
@@ -47,6 +49,45 @@ namespace Assets.Scripts.Levels.Commands
             IsComfortablyWithinRange = false;
             ConsecutiveTimesWithinRange = 0;
             HasTakenPosition = false;
+            _moveTowardsEnemiesCoroutine = null;
+        }
+
+        private void BeginMoveTowardsEnemies()
+        {
+            if (_moveTowardsEnemiesCoroutine == null && !IsDead)
+            {
+                _moveTowardsEnemiesCoroutine = StartCoroutine(MoveTowardsEnemiesAcrossFrames());
+            }
+        }
+
+        private IEnumerator MoveTowardsEnemiesAcrossFrames()
+        {
+            Ship[] ships = GetSquad().GetShips().Where(ship => ship != null && !ship.IsDead).ToArray();
+            for (int i = 0; i < ships.Length; i++)
+            {
+                if (IsDead || GetSquad().IsDead || EnemySquad == null || EnemySquad.IsDead)
+                {
+                    _moveTowardsEnemiesCoroutine = null;
+                    yield break;
+                }
+
+                Ship ship = ships[i];
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
+                {
+                    _moveTowardsEnemiesCoroutine = null;
+                    SetFinalize("No more enemy ships to target");
+                    yield break;
+                }
+
+                ship.MoveToPoint(target.GetPosition());
+                // Path-map snapshots and request startup are main-thread work even though the
+                // actual path search runs on Task.Run. Spread squad attack startup over frames
+                // so a right-click cannot initialize every ship's path request in one frame.
+                yield return null;
+            }
+
+            _moveTowardsEnemiesCoroutine = null;
         }
 
         private void Timer()
@@ -71,7 +112,7 @@ namespace Assets.Scripts.Levels.Commands
                         {
                             ConsecutiveTimesWithinRange = 0;
                         }
-                        MoveTowardsEnemies();
+                        BeginMoveTowardsEnemies();
                         if (IsDead)
                         {
                             return;
