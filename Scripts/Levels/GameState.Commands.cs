@@ -38,13 +38,9 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        /// <summary>
-        /// Adds delayed reward to the stored Hive Mind command that owns an outcome ID.
-        /// Projectile damage can land after that command has finalized and a different
-        /// command has started, while PastCommands remains alive until the level flush.
-        /// </summary>
-        public bool AddTsvToStoredCommand(long outcomeId, long tsvDelta)
+        private bool TryGetStoredCommand(long outcomeId, out StoredCommand storedCommand)
         {
+            storedCommand = null;
             if (outcomeId <= 0 ||
                 !OutcomeIdToPastCommandIndex.TryGetValue(outcomeId, out int storedCommandIndex) ||
                 storedCommandIndex < 0 ||
@@ -53,13 +49,39 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            StoredCommand storedCommand = PastCommands[storedCommandIndex];
-            if (storedCommand == null || storedCommand.OutcomeId != outcomeId)
+            storedCommand = PastCommands[storedCommandIndex];
+            return storedCommand != null && storedCommand.OutcomeId == outcomeId;
+        }
+
+        /// <summary>
+        /// Adds delayed reward to the stored Hive Mind command that owns an outcome ID.
+        /// Projectile damage can land after that command has finalized and a different
+        /// command has started, while PastCommands remains alive until the level flush.
+        /// </summary>
+        public bool AddTsvToStoredCommand(long outcomeId, long tsvDelta)
+        {
+            if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
             {
                 return false;
             }
 
             storedCommand.Tsv += tsvDelta;
+            return true;
+        }
+
+        /// <summary>
+        /// Shooting policy learns from combat-only TSV. Strategic command TSV also includes
+        /// spotting, mining, healing, and other command-specific reward that must not be
+        /// attributed to target-priority selection.
+        /// </summary>
+        public bool AddShootingTsvToStoredCommand(long outcomeId, long tsvDelta)
+        {
+            if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
+            {
+                return false;
+            }
+
+            storedCommand.ShootingTsv += tsvDelta;
             return true;
         }
 
@@ -110,9 +132,9 @@ namespace Assets.Scripts.Levels
                 }
                 else if (command.HasTargetingEnemy)
                 {
-                    // A targetless command's TSV can contain mining, healing, scouting, and
-                    // other non-shooting reward, and its shooting matchup has no enemy
-                    // composition. Do not train shooting target selection from that mixed signal.
+                    // A targetless shooting matchup has no enemy composition and cannot
+                    // represent target-priority behavior. Combat-only ShootingTsv is used
+                    // by StoreCommands when this entry is serialized.
                     _shootingCommands.Add(command);
                 }
 
