@@ -78,7 +78,8 @@ namespace Bees.Tests.EditMode
         private static string ReadCampaignSource()
         {
             return File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "ConfigData.Campaign.cs"));
+                    Application.dataPath, "Scripts", "ConfigData.Campaign.cs"))
+                .Replace("\r\n", "\n");
         }
     }
 }
