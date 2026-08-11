@@ -6,6 +6,10 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class ConfigurationSettingsTests
     {
+        private object _configDataType;
+        private object _previousConfiguration;
+        private object _previousShipTurningRadius;
+
         private const string Contents = @"{
             \"IsDeadVersion\": false,
             \"UseLocalStorage\": false,
@@ -29,7 +33,7 @@ namespace Bees.Tests.EditMode
             \"CarrierCarryDroneMax\": 4,
             \"CarrierCarryStrikerMax\": 4,
             \"CarrierSquadCount\": 2,
-            \"TotalLevels\": 32,
+            \"TotalLevels\": 10,
             \"Tooltips\": [],
             \"Yes\": \"Yes\",
             \"No\": \"No\",
@@ -59,6 +63,21 @@ namespace Bees.Tests.EditMode
             \"SquadMakerSecondSide\": \"BeeSide\"
         }";
 
+        [SetUp]
+        public void SetUp()
+        {
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _previousConfiguration = RuntimeAssembly.GetStaticField((System.Type)_configDataType, "Configuration");
+            _previousShipTurningRadius = RuntimeAssembly.GetStaticField((System.Type)_configDataType, "ShipTurningRadius");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", _previousConfiguration);
+            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "ShipTurningRadius", _previousShipTurningRadius);
+        }
+
         [Test]
         public void ProcessDataLoadsConfiguredAiRandomMovementDistance()
         {
@@ -76,50 +95,32 @@ namespace Bees.Tests.EditMode
         public void LoadedConfigurationOwnsDefaultRequestTimeout()
         {
             var configurationType = RuntimeAssembly.GetType("Assets.Scripts.Settings.Configuration");
-            var configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            object previousConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
             object configuration = RuntimeAssembly.CreateUninitialized(
                 "Assets.Scripts.Settings.Configuration");
 
-            try
-            {
-                RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
-                RuntimeAssembly.SetField(configuration, "IsLoaded", true);
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", configuration);
+            RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
+            RuntimeAssembly.SetField(configuration, "IsLoaded", true);
+            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", configuration);
 
-                Assert.That(
-                    RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
-                    Is.EqualTo(25));
-            }
-            finally
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", previousConfiguration);
-            }
+            Assert.That(
+                RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
+                Is.EqualTo(25));
         }
 
         [Test]
         public void UnloadedConfigurationKeepsBootstrapRequestTimeout()
         {
             var configurationType = RuntimeAssembly.GetType("Assets.Scripts.Settings.Configuration");
-            var configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            object previousConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
             object configuration = RuntimeAssembly.CreateUninitialized(
                 "Assets.Scripts.Settings.Configuration");
 
-            try
-            {
-                RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
-                RuntimeAssembly.SetField(configuration, "IsLoaded", false);
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", configuration);
+            RuntimeAssembly.Invoke(configuration, "ProcessData", Contents);
+            RuntimeAssembly.SetField(configuration, "IsLoaded", false);
+            RuntimeAssembly.SetStaticField((System.Type)_configDataType, "Configuration", configuration);
 
-                Assert.That(
-                    RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
-                    Is.EqualTo(10));
-            }
-            finally
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "Configuration", previousConfiguration);
-            }
+            Assert.That(
+                RuntimeAssembly.InvokeStatic(configurationType, "GetStandardMaxTimeOnQueue"),
+                Is.EqualTo(10));
         }
     }
 }
