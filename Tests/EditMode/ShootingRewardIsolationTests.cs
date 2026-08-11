@@ -23,8 +23,16 @@ namespace Bees.Tests.EditMode
         public void ShootingOutcomesSerializeCombatOnlyReward()
         {
             string source = ReadSource("Scripts", "Server", "StoreCommands.cs");
-            Assert.That(source, Does.Contain("new ServerStoredCommand(storedCommand.ShootingTsv, outcomeId)"));
-            Assert.That(source, Does.Not.Contain("new ServerStoredCommand(storedCommand.Tsv, outcomeId)"));
+            int shootingStart = source.IndexOf("shootingCommands.ForEach((storedCommand) =>", StringComparison.Ordinal);
+            Assert.That(shootingStart, Is.GreaterThanOrEqualTo(0));
+
+            int targetingStart = source.IndexOf("targetingCommands.ForEach((storedCommand) =>", shootingStart, StringComparison.Ordinal);
+            Assert.That(targetingStart, Is.GreaterThan(shootingStart));
+
+            string shootingBlock = source.Substring(shootingStart, targetingStart - shootingStart);
+            Assert.That(shootingBlock, Does.Contain("new ServerStoredCommand(storedCommand.ShootingTsv, outcomeId)"));
+            Assert.That(shootingBlock, Does.Not.Contain("new ServerStoredCommand(storedCommand.Tsv, outcomeId)"),
+                "Shooting outcomes must serialize combat-only ShootingTsv rather than the command's strategic TSV.");
         }
 
         [Test]
