@@ -12,6 +12,10 @@
 - `ServerRequest.MaxTimeOnQueue` is the authoritative resend deadline for that request. `Socket.CheckForResends()` must use the request's value rather than a global timeout, otherwise both server-configured defaults and explicit request-specific deadlines are silently ignored.
 - Resend *polling cadence* is separate from the request deadline. `Scene` checks elapsed request deadlines once per second while the socket is open; tying the polling timer to a 10- or 25-second default would quantize and delay otherwise-correct per-request deadlines.
 - Closing a `Level` retires every outstanding `SetupLevelRequest`/`ReconnectLevelRequest` owned by that exact Level reference and removes it from `Socket.OpenLevels` even if initial setup never completed. Otherwise a late setup response after scene exit can resurrect a destroyed Level in reconnect state.
+- Server request hashes are retry identities. Any server path that abandons queued/failed work must release its `pendingRequests` hash; otherwise a client resend with the same hash is rejected forever as already pending. This includes DB exceptions and requests whose originating connection disappears before queue processing.
+- One WebSocket connection owns one Hive Mind `Game` state. Multiple sibling `Level` instances intentionally share the same socket; repeated `setup-level`/restart-reconnect messages must reuse the connection Game rather than replace it and discard pending outcome IDs.
+- Hive Mind pending outcome metadata is currently in-memory only. A server restart loses the matchup/strategy identity behind outstanding outcome IDs. The client already receives matchup and strategy IDs in strategy responses; durable StoreCommands recovery should preserve and resend that identity rather than relying on outcome ID alone.
+- Server matchup-cache files are optional performance state, not required data. Missing, empty, truncated, or malformed cache files must recover as empty caches and must never prevent a clean server checkout from starting.
 
 ## Persisted identity/schema
 
@@ -29,8 +33,12 @@
 - Server configuration values used by gameplay must be assigned in `Configuration.ProcessData()` rather than silently falling back to field initializers. The active version-5 configuration currently supplies `AIRandomMovementMaxDistance` (200), so AI movement/scouting radius is a server-owned tuning value rather than the local fallback 256.
 - Version-5 `starting-settings` currently matches the `StartingSettings` loader exactly, and all 24 version-5 `ship-stats` entries have parallel weapon/stat arrays matching `ShipStats.ProcessData()` expectations. Legacy configuration keys such as old visibility lists and `SquadGenerationCount` should not be reactivated merely because they remain in the database; current ownership is elsewhere in the client.
 - Integration/test server operation must use the test database rather than live data.
+- Real platform user IDs exceed JavaScript's exact integer range. User IDs must remain decimal strings on the JSON/Node wire and may only be converted to numeric types where the representation is guaranteed lossless.
 
 ## Save boundaries
 
 - Low-level `SaveSquadData`/`SaveFleetData` are also used by automatic campaign persistence. User-facing save audio/feedback belongs at explicit UI save-completion boundaries, not inside the generic persistence calls.
 - Sprite-cache writes must finish before `HasCachedSprite` is marked. However, that flag is coarse FleetShip readiness, while cache files are keyed by ship type, squad color and sprite index; a missing/corrupt individual cache entry is therefore a valid cache miss and must fall back to live recoloring rather than make rendering fail.
+- A database read error is not a missing user-data file. The client intentionally creates defaults when the server explicitly reports a genuinely missing file; therefore the server must never convert a DB read exception into the same null response, or a transient outage can cause the client to overwrite valid progress/fleet/squad/settings data with defaults.
+- Server-backed writes are not durable merely because a request was queued. Failed DB writes must return a retryable failure and must release the request hash; the client must not retire StoreCommands or StoreUserData payloads on non-success responses.
+- Campaign mission completion currently persists `user_progress`, saved squads, and fleet data as three separate asynchronous requests. Those three files form one logical campaign checkpoint; without a shared transactional/versioned save boundary, partial persistence can advance campaign progress while losing the corresponding fleet/squad changes.
