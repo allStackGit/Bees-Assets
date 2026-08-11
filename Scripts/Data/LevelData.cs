@@ -40,7 +40,10 @@ namespace Assets.Scripts.Data
         }
         public List<LevelOptions> GetLevels()
         {
-            return _levels;
+            // Persisted/server JSON order is not a campaign identity. Several legacy callers use
+            // list position as the mission index, so expose a deterministic ID order here rather
+            // than allowing database row order to select the wrong mission/map/squads.
+            return _levels.OrderBy(level => level.Id).ToList();
         }
         public LevelOptions GetLevel(int levelId)
         {
