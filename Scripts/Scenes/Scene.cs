@@ -35,6 +35,7 @@ namespace Assets.Scripts.Scenes
         public int __Updates = 0;
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
+        private bool _hasShownDeadVersionAlert;
 
 
         // Start is called before the first frame update
@@ -190,9 +191,13 @@ namespace Assets.Scripts.Scenes
                     {
                         if (ConfigData.Configuration.IsDeadVersion)
                         {
-                            Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
-                                new List<string>() { ConfigData.Configuration.OK }, new List<UnityAction>() { Exit });
-                            alert.Show();
+                            if (!_hasShownDeadVersionAlert)
+                            {
+                                _hasShownDeadVersionAlert = true;
+                                Dialogue alert = new Dialogue(DialoguePrefab, "The game is out of date!", "Your version of the game is out of date and needs to be updated.",
+                                    new List<string>() { ConfigData.Configuration.OK }, new List<UnityAction>() { Exit });
+                                alert.Show();
+                            }
                         }
                         else
                         {
