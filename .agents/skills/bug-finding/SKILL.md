@@ -14,6 +14,7 @@ Perform a static, repository-wide bug audit. Find, validate, and record real def
 3. Fetch the latest `main`.
 4. Create a new audit branch from current `main`. Use a descriptive `bug-audit/...` branch name and avoid overwriting an existing branch.
 5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all findings from this audit.
+6. If an existing ledger contains entries without a `Status` field, add one. Use `Open` for a still-valid unresolved bug unless repository evidence establishes another status; never guess that a bug is fixed or invalid.
 
 Do not modify production code.
 
@@ -54,8 +55,19 @@ Maintain one `BUG_LEDGER.md` containing all validated findings.
 Each bug must use this format:
 
 ### BUG-001 — Short Issue Name
+**Status:** Open  
 **Location:** `path/to/file.ext`, class/function/method or relevant lines  
 **Description:** Concise explanation of the incorrect behavior, the code path that causes it, and the conditions under which it occurs.
+
+Every bug entry must contain exactly one `Status` field. Use these statuses:
+
+- `Open` — validated and unresolved.
+- `In Progress` — a fix is actively being worked on.
+- `Fixed` — the corresponding defect has been corrected.
+- `Invalid` — later investigation disproved the original finding.
+- `Deferred` — still valid but intentionally postponed.
+
+Newly validated findings must start as `Open`. Do not delete fixed, invalid, or deferred entries; preserve the audit history by changing their status. Do not mark a bug `Fixed` or `Invalid` without repository evidence supporting that status.
 
 Continue sequential numbering for the entire audit.
 
