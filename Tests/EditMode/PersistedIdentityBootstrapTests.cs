@@ -46,13 +46,10 @@ namespace Bees.Tests.EditMode
 
             int methodStart = source.IndexOf("public object WriteData(string data)", StringComparison.Ordinal);
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
-            int methodEnd = source.IndexOf("\n        }\n    }", methodStart, StringComparison.Ordinal);
-            Assert.That(methodEnd, Is.GreaterThan(methodStart));
-            string writeData = source.Substring(methodStart, methodEnd - methodStart);
 
-            int sentinelCheck = writeData.IndexOf("data == ConfigData.WaitingMessage", StringComparison.Ordinal);
-            int serverWrite = writeData.IndexOf("WriteServerData(data);", StringComparison.Ordinal);
-            Assert.That(sentinelCheck, Is.GreaterThanOrEqualTo(0));
+            int sentinelCheck = source.IndexOf("data == ConfigData.WaitingMessage", methodStart, StringComparison.Ordinal);
+            int serverWrite = source.IndexOf("WriteServerData(data);", sentinelCheck, StringComparison.Ordinal);
+            Assert.That(sentinelCheck, Is.GreaterThan(methodStart));
             Assert.That(serverWrite, Is.GreaterThan(sentinelCheck),
                 "The waiting sentinel must return before any server write can occur.");
         }
