@@ -272,9 +272,13 @@ namespace Assets.Scripts.Levels
 
         public List<Ship> GetShips() => _ships;
 
-        public void AddShip(Ship ship)
+        private void RefreshCompositionCommandBans()
         {
-            _ships.Add(ship);
+            if (_ships.Count == 0)
+            {
+                return;
+            }
+
             if (IsDefenseless)
             {
                 BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
@@ -302,12 +306,19 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Remove(ConfigData.CommandTypes.Hold);
             }
+        }
+
+        public void AddShip(Ship ship)
+        {
+            _ships.Add(ship);
+            RefreshCompositionCommandBans();
             HasAddedShips = true;
         }
 
         public void RemoveShip(Ship ship)
         {
             _ships.Remove(ship);
+            RefreshCompositionCommandBans();
             if (IsSelected && !Stage.IsTraining) Stage.Menus.ActionBox.SetSquadsText();
         }
 
