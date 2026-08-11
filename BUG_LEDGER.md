@@ -43,3 +43,7 @@ This ledger records only defects validated by static code tracing. No tests, bui
 ### BUG-010 — Campaign completion is persisted as a non-atomic three-file checkpoint
 **Location:** `Scripts/Levels/Level.Campaign.Endings.cs`, `SaveCampaignProgress()`  
 **Description:** Campaign endings mutate progression and fleet/squad state, then `SaveCampaignProgress()` independently sends `UserProgressData.Save()`, `SaveSquadData()`, and `SaveFleetData()`. These are separate asynchronous persistence requests with no shared checkpoint/version/transaction, so interruption or partial server success can persist an advanced campaign level while retaining an older fleet or squad snapshot, leaving the next session in a state that never existed in memory.
+
+### BUG-011 — Steam first-run flag is inverted
+**Location:** `Scripts/ConfigData.cs`, `GetUserId()`, `HasPlayedBefore()`, and `SetupUserData()`  
+**Description:** The Steam branch assigns `FirstTimePlaying = HasPlayedBefore()`, while `HasPlayedBefore()` returns true for an existing player and `SetupUserData()` passes `!FirstTimePlaying` as `shouldFileExist` to progress/fleet/squad/settings loaders. If the unreachable Steam branch in BUG-001 is enabled as written, returning players are therefore treated as first-time users and their existing files are not expected/loaded normally, while genuinely new Steam players are treated as though files should already exist. The assignment must be the inverse of `HasPlayedBefore()` (or the surrounding semantics renamed/reworked) before Steam identity can be safely activated.
