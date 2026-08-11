@@ -52,7 +52,7 @@ namespace Bees.Tests.EditMode
                 throw new MissingMethodException(instance.GetType().FullName, methodName);
             }
 
-            return method.Invoke(instance, arguments);
+            return method.Invoke(instance, CompleteOptionalArguments(method, arguments));
         }
 
         public static object InvokeStatic(Type type, string methodName, params object[] arguments)
@@ -66,7 +66,32 @@ namespace Bees.Tests.EditMode
                 throw new MissingMethodException(type.FullName, methodName);
             }
 
-            return method.Invoke(null, arguments);
+            return method.Invoke(null, CompleteOptionalArguments(method, arguments));
+        }
+
+        private static object[] CompleteOptionalArguments(MethodInfo method, object[] arguments)
+        {
+            ParameterInfo[] parameters = method.GetParameters();
+            if (arguments.Length == parameters.Length)
+            {
+                return arguments;
+            }
+            if (arguments.Length > parameters.Length)
+            {
+                return arguments;
+            }
+
+            object[] completed = new object[parameters.Length];
+            Array.Copy(arguments, completed, arguments.Length);
+            for (int index = arguments.Length; index < parameters.Length; index++)
+            {
+                if (!parameters[index].IsOptional)
+                {
+                    return arguments;
+                }
+                completed[index] = parameters[index].DefaultValue;
+            }
+            return completed;
         }
 
         public static object CreateUninitialized(string fullName)
