@@ -36,6 +36,16 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("CreditShootingTsv(target, -tsvLoss)"));
         }
 
+        [Test]
+        public void SameSideDamageAlwaysPenalizesTheAttackingCommand()
+        {
+            string source = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            Assert.That(source, Does.Contain("_isFriendlyFire = attackerFleetShip.Side == target.Side;"));
+            Assert.That(source, Does.Contain("tsvLoss * (_isFriendlyFire ? -1 : 1)"));
+            Assert.That(source, Does.Not.Contain("else if (attacker.KillerFleetShip != null)\n            {\n                _isFriendlyFire = true;"),
+                "Friendly-fire classification must not depend on whether the explosive attacker has external killer metadata.");
+        }
+
         [TestCase("Mining.cs")]
         [TestCase("Heal.cs")]
         [TestCase("FullRetreat.cs")]
