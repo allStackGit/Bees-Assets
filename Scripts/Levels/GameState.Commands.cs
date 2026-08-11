@@ -88,13 +88,9 @@ namespace Assets.Scripts.Levels
                     Debug.LogError("Stored command didn't have a shooting strategy");
                 }
 
-                if (command.MatchupStrategy != null)
+                if (command.MatchupStrategy != null && command.HasTargetingEnemy)
                 {
                     _targetingCommands.Add(command);
-                }
-                else
-                {
-                    Debug.LogError("Stored command didn't have a matchup strategy");
                 }
             }
 
