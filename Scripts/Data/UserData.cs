@@ -61,6 +61,15 @@ namespace Assets.Scripts.Data
         }
         public void Save()
         {
+            // Dedicated Hive Mind training reuses ordinary gameplay code paths that update
+            // player counters at episode end. Those values are not training state and must not
+            // be written back to a real profile. Fish Tank shares the same Unity scene but is
+            // explicitly excluded by IsDedicatedTrainingRuntime.
+            if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime)
+            {
+                return;
+            }
+
             GetDataFile().WriteData(ToJson());
         }
         public void WaitForData()
