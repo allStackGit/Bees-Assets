@@ -123,3 +123,8 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Status:** Open  
 **Location:** `Tests/EditMode/SquadPoolRoleResetTests.cs`, imports / fields / `SetUp()` / test body  
 **Description:** `SquadPoolRoleResetTests` imports `Assets.Scripts.Levels` and directly types fields and calls against `GameState` and `Squad`. The EditMode test assembly does not reference the generated runtime `Assembly-CSharp` assembly that owns those types, so the test source cannot resolve the namespace/types and prevents the EditMode test assembly from compiling. The later main fix removes the compile-time dependency and accesses the runtime types through the repository's `RuntimeAssembly` reflection helper.
+
+### BUG-025 — Enemy right-click fallback dispatches the attack command twice
+**Status:** Open  
+**Location:** `Scripts/Levels/LevelInputManager.cs`, `CheckForAttackAISquad()` / `HasAttackingShipInput()` / `CheckActions()`; `Scripts/Entities/Ships/Ship.Interaction.cs`, `Clicked()`  
+**Description:** When a right-click does not resolve `_clickedShip` through the normal click raycast but `CheckForAttackAISquad()` finds a nearby enemy ship, that fallback directly calls `Clicked(RightClick)` and then returns `true`. `HasAttackingShipInput()` propagates the `true`, after which `CheckActions()` calls `_clickedShip.Clicked(RightClick)` again in the same frame. Each `Clicked()` invocation sends `UserAggressive()` to every selected squad, so one physical right-click can finalize/start the same attack twice, duplicating command dispatch and its associated command/request/state transitions.
