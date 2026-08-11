@@ -88,3 +88,18 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Status:** Open  
 **Location:** `Scripts/Levels/Level.Campaign.Endings.cs`, `Uranus1Ending()`; `Scripts/Levels/Level.Campaign.Uranus1.cs`; `Scripts/Levels/Level.Campaign.Endings.cs`, `Neptune3Ending()`  
 **Description:** `Uranus1Ending()` conditionally calls `AdvanceToNextLevel()` when the AI wins or when the player has no live Factory, then calls `AdvanceToNextLevel()` again unconditionally. Either condition therefore advances persisted mission 9 to mission 11, skipping Uranus 2. The no-Factory path is concretely reachable because `Neptune3Ending()` marks every Factory in the fleet dead when that mission ends with the AI as winner, yet still advances the campaign to Uranus and unlocks the Carrier; `HasShipsOfType(Factory)` later filters to alive fleet ships and is false.
+
+### BUG-018 — An initial socket failure can remain permanently unretried
+**Status:** Open  
+**Location:** `Scripts/Scenes/Scene.cs`, `Update()` / `AutomaticConnectionRetry()`; `Scripts/Server/Socket.cs`, `Error()` / `Close()`  
+**Description:** Automatic reconnect only runs while `Socket.HasClosed` is true, and `AutomaticConnectionRetry()` independently returns when `HasClosed` is false. However an initial transport failure can report `OnError` without subsequently reporting `OnClose`; `Socket.Error()` only logs the error and leaves `HasClosed` false. In that reachable state the socket is not open, no retry timer runs, and the retry callback would refuse to reconnect even if called, leaving startup permanently disconnected until manual intervention or restart.
+
+### BUG-019 — Campaign and challenge mission selection depends on persisted row order
+**Status:** Open  
+**Location:** `Scripts/Data/LevelData.cs`, `GetLevels()`; `Scripts/Scenes/SquadMaker.cs`, `SetupForCampaign()`, `SetupForChallengeMode()`, `LoadLevel()`  
+**Description:** `LevelData` appends levels in the order received from persisted/server JSON and `GetLevels()` returns that unsorted list. Squad Maker then builds `_levelOptionIndexesToLevels` sequentially from that list but calls `LoadLevel()` with the persisted mission ID as though it were the list index. If rows arrive out of ID order, campaign/challenge mission ID N selects whichever level happened to be the Nth row, giving the wrong map, supply capacity, enemy/options data, and selected mission. A sparse/misaligned set of IDs can instead leave no dictionary entry for the current ID and fail lookup entirely.
+
+### BUG-020 — Normal Squad Maker launch clears the prepared level handoff before Space loads
+**Status:** Open  
+**Location:** `Scripts/Scenes/SquadMaker.cs`, `ProcessStartingLevel()`; `Scripts/Scenes/SquadMakerPersistence.cs`, `HandleSceneUnloaded()`; `Scripts/Levels/Level.cs`, `SetupLevel()`  
+**Description:** For campaign/challenge launch from the first Squad Maker side, `ProcessStartingLevel()` clones `_chosenLevel` into `ConfigData.LevelOptions`, sets `IsUserLoadingCustomEnemySquads = true`, adds the player's chosen squads, and then leaves Squad Maker for Space. `SquadMakerPersistence.HandleSceneUnloaded()` runs during that normal transition and, because the side is still the first side and the custom-enemy flag is true, immediately clears both the flag and `ConfigData.LevelOptions`. `Level.SetupLevel()` consequently sees no prepared level and constructs a new generated `LevelOptions` instead of launching the selected campaign/challenge mission, discarding its authored map/enemy/options configuration and chosen-level identity.
