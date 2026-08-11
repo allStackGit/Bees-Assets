@@ -74,7 +74,15 @@ namespace Assets.Scripts
         public static HashSet<long> UsedHashes = new HashSet<long>();
         public static long UniqueCounter;
         public static WaitForEndOfFrame WaitForEndOfFrame = new WaitForEndOfFrame();
-        public static int MaxThreads;
+        private static int _maxThreads = 1;
+        public static int MaxThreads
+        {
+            get => _maxThreads;
+            // Pathfinder searches are CPU-heavy Task.Run work. Leaving one worker per logical
+            // processor (minus one) allows a squad attack to saturate the machine and starve
+            // Unity's main/render threads. Keep the existing queue but bound concurrent A* work.
+            set => _maxThreads = Mathf.Clamp(value, 1, 4);
+        }
         public static string WaitingMessage = "{\"status\": \"waiting\"}";
 
         private static LevelOptions _levelOptions;
