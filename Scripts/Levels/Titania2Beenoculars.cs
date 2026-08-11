@@ -20,9 +20,8 @@ namespace Assets.Scripts.Levels
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
 
-            // Bee-noculars is a walled defensive arena. Stage the player's ships individually
-            // in the central Titania pocket rather than preserving a wide persisted formation
-            // that can straddle the authored walls.
+            // Bee-noculars is a walled defensive arena. Keep every saved squad formation intact
+            // while relocating whole squads into clear space around Titania.
             StageTitania2HumanFleetAtCenter();
 
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
@@ -40,8 +39,11 @@ namespace Assets.Scripts.Levels
                 HumanTarget titania = CreateHumanTarget(Titania2Center);
 
                 TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
-                Stage.Menus.Clock.SetActive(true);
                 float endTime = Time.time + survivalDuration;
+                int initialMinutes = Mathf.FloorToInt(survivalDuration / 60f);
+                int initialSeconds = Mathf.FloorToInt(survivalDuration % 60f);
+                clockText.text = $"{initialMinutes}:{initialSeconds:D2}";
+                Stage.Menus.Clock.SetActive(true);
 
                 bool playedTenPercent = false;
                 bool playedTwentyFourPercent = false;
@@ -186,10 +188,10 @@ namespace Assets.Scripts.Levels
 
         private void StageTitania2HumanFleetAtCenter()
         {
-            const float placementStep = 20f;
-            const int maxRing = 6;
-            const float titaniasReservedRadius = 18f;
-            const float shipPadding = 4f;
+            const float placementStep = 24f;
+            const int maxRing = 12;
+            const float titaniasReservedRadius = 22f;
+            const float squadPadding = 8f;
 
             List<Vector2> occupiedCenters = new List<Vector2>();
             List<float> occupiedRadii = new List<float>();
@@ -198,22 +200,30 @@ namespace Assets.Scripts.Levels
             Physics2D.SyncTransforms();
             foreach (Squad squad in userSquads)
             {
-                foreach (Ship ship in squad.GetShips())
+                if (squad.GetShips().Count == 0)
                 {
-                    float clearance = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight()) + shipPadding;
-                    Vector2 placement = FindTitania2HumanShipPlacement(
-                        clearance,
-                        placementStep,
-                        maxRing,
-                        titaniasReservedRadius,
-                        occupiedCenters,
-                        occupiedRadii);
-
-                    ship.transform.localPosition = placement;
-                    occupiedCenters.Add(placement);
-                    occupiedRadii.Add(clearance);
+                    continue;
                 }
-                squad.SetOffsets();
+
+                // Use the squad's current authored formation envelope as one indivisible unit.
+                // A conservative circle means that if this location is accepted, every saved
+                // formation slot is clear without moving ships independently.
+                float formationRadius = Mathf.Max(squad.GetWidth(), squad.GetHeight()) * 0.5f + squadPadding;
+                Vector2 placement = FindTitania2HumanSquadPlacement(
+                    formationRadius,
+                    placementStep,
+                    maxRing,
+                    titaniasReservedRadius,
+                    occupiedCenters,
+                    occupiedRadii);
+
+                squad.SetStartingPosition(placement);
+                Physics2D.SyncTransforms();
+
+                Vector2 actualCenter = squad.GetPosition();
+                float actualRadius = Mathf.Max(squad.GetWidth(), squad.GetHeight()) * 0.5f + squadPadding;
+                occupiedCenters.Add(actualCenter);
+                occupiedRadii.Add(actualRadius);
             }
 
             Physics2D.SyncTransforms();
@@ -221,11 +231,11 @@ namespace Assets.Scripts.Levels
             CurrentLevelOptions.UserStartingPosition = Titania2Center;
             StartingPositions[userIndex] = Titania2Center;
             Stage.DefaultCameraPosition = Titania2Center;
-            Debug.Log($"Staged {occupiedCenters.Count} Beenoculars human ships around Titania at {Titania2Center}.");
+            Debug.Log($"Staged {userSquads.Count} Beenoculars human squads around Titania at {Titania2Center} while preserving saved formations.");
         }
 
-        private Vector2 FindTitania2HumanShipPlacement(
-            float clearance,
+        private Vector2 FindTitania2HumanSquadPlacement(
+            float formationRadius,
             float placementStep,
             int maxRing,
             float titaniasReservedRadius,
@@ -244,16 +254,18 @@ namespace Assets.Scripts.Levels
                         }
 
                         Vector2 candidate = Titania2Center + new Vector2(x * placementStep, y * placementStep);
-                        if (candidate.x - clearance < MinX || candidate.x + clearance > MaxX ||
-                            candidate.y - clearance < MinY || candidate.y + clearance > MaxY)
+                        if (candidate.x - formationRadius < MinX || candidate.x + formationRadius > MaxX ||
+                            candidate.y - formationRadius < MinY || candidate.y + formationRadius > MaxY)
                         {
                             continue;
                         }
-                        if (Vector2.Distance(candidate, Titania2Center) < titaniasReservedRadius + clearance)
+                        if (Vector2.Distance(candidate, Titania2Center) < titaniasReservedRadius + formationRadius)
                         {
                             continue;
                         }
-                        if (Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask) != null)
+
+                        Vector2 worldCandidate = PathfinderObstacleScope.LevelToWorld(this, candidate);
+                        if (Physics2D.OverlapCircle(worldCandidate, formationRadius, ConfigData.ObstaclesLayerMask) != null)
                         {
                             continue;
                         }
@@ -261,7 +273,7 @@ namespace Assets.Scripts.Levels
                         bool overlapsFleet = false;
                         for (int i = 0; i < occupiedCenters.Count; i++)
                         {
-                            if (Vector2.Distance(candidate, occupiedCenters[i]) < clearance + occupiedRadii[i])
+                            if (Vector2.Distance(candidate, occupiedCenters[i]) < formationRadius + occupiedRadii[i])
                             {
                                 overlapsFleet = true;
                                 break;
@@ -275,8 +287,8 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            Debug.LogWarning($"Beenoculars could not find a fully clear central placement for a ship with {clearance:0.0} clearance.");
-            return Titania2Center + new Vector2(0f, -(titaniasReservedRadius + clearance));
+            Debug.LogWarning($"Beenoculars could not find a fully clear central placement for a squad with {formationRadius:0.0} radius.");
+            return Titania2Center + new Vector2(0f, -(titaniasReservedRadius + formationRadius));
         }
 
         private void AddTitania2BeeWave(List<SavedSquad> squads, float normalizedX, float normalizedY)
