@@ -1,5 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Server;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
 using System.Linq;
@@ -75,11 +76,16 @@ namespace Assets.Scripts.Levels
             Pause();
             CancelTimer(_egg);
             CancelTimer(_fishTank);
-            if (IsLevelSetupOnServer)
-            {
-                ConfigData.Socket.OpenLevels.Remove(this);
-                IsLevelConnectedToServer = false;
-            }
+
+            // A level can be closed before its initial SetupLevel response arrives. Retire every
+            // level-owned setup/reconnect request before the scene disappears so a late response
+            // cannot re-register this old Level in Socket.OpenLevels or reconnect a dead scene.
+            ConfigData.Socket.StandingRequests.RemoveWhere(request =>
+                (request is SetupLevelRequest setupRequest && ReferenceEquals(setupRequest.Level, this)) ||
+                (request is ReconnectLevelRequest reconnectRequest && ReferenceEquals(reconnectRequest.Level, this)));
+            ConfigData.Socket.OpenLevels.Remove(this);
+            IsLevelConnectedToServer = false;
+
             Map.FogOfWar.SetActive(true);
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
