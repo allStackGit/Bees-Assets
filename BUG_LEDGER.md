@@ -30,9 +30,9 @@ This ledger records only defects validated by static code tracing. No tests, bui
 **Description:** Android/iPhone cache branches build their path with `BaseFolder` (`SaveData`) instead of `CacheFolder` (`SpriteCache`). Sprite-cache files therefore share the persistent save-data directory rather than the cache directory, breaking the intended save/cache storage boundary whenever sprite caching is used on mobile.
 
 ### BUG-006 — Runtime Level source has an unconditional UnityEditor dependency
-**Status:** Fixed  
+**Status:** Open  
 **Location:** `Scripts/Levels/Level.cs`, imports  
-**Description:** The audited version of `Level.cs` unconditionally imported `UnityEditor` even though it is runtime gameplay code. Current `main` no longer contains that runtime editor import, so the player-build compilation dependency has been removed.
+**Description:** `Level.cs` again unconditionally imports `UnityEditor` even though it is runtime gameplay code and the file does not require editor-only APIs for ordinary gameplay. This reintroduces a player-build compilation dependency on the editor-only UnityEditor assembly.
 
 ### BUG-007 — Random squad generation excludes the configured minimum
 **Status:** Open  
