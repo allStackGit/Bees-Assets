@@ -168,14 +168,14 @@ namespace Assets.Scripts.Scenes
             progress.Save();
         }
         /// <summary>
-        /// Tries to reconnect to the server, called on a timer if there's a disconnection.
-        /// Reconnect attempts are intentionally repeated because BeesServer can temporarily
-        /// reject new sockets while it finishes a consolidation pass after the last client drops.
+        /// Tries to reconnect to the server on a timer whenever the socket remains unopened.
+        /// This covers both a previously closed connection and an initial connection attempt that
+        /// fails without producing an OnClose callback.
         /// </summary>
         private void AutomaticConnectionRetry()
         {
             if (!IsSocketManager || ConfigData.Socket == null || ConfigData.Socket.KeepClosed ||
-                ConfigData.Socket.IsOpen || !ConfigData.Socket.HasClosed)
+                ConfigData.Socket.IsOpen)
             {
                 return;
             }
@@ -209,11 +209,17 @@ namespace Assets.Scripts.Scenes
             {
                 ResendTimer.Update();
             }
-              
+
+            // Retry any socket that remains unopened, including an initial transport failure that
+            // reports OnError without OnClose. Keep the disconnect UI below tied to HasClosed so
+            // the normal initial connection window does not show a false disconnect dialogue.
+            if (IsSocketManager && !ConfigData.Socket.IsOpen && !ConfigData.Socket.KeepClosed)
+            {
+                AutomaticReconnectTimer.Update();
+            }
 
             if (ConfigData.Socket.HasClosed && IsSocketManager)
             {
-                AutomaticReconnectTimer.Update();
                 //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
 
                 if (!NetworkDisconnection.IsOpen)
@@ -287,4 +293,3 @@ namespace Assets.Scripts.Scenes
         }
     }
 }
-
