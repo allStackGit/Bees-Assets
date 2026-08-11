@@ -165,10 +165,9 @@ namespace Assets.Scripts.Entities.Ships
                 // The attacking command itself is still penalized below for all same-side damage.
                 attacker.KillerFleetShip.DamageDone += tsvLoss;
                 attacker.KillerSavedSquad.Stats.DamageDone += tsvLoss;
-                if (attacker.Killer != null && attacker.Killer.Squad.HasCommand)
+                if (attacker.Killer != null)
                 {
-                    attacker.Killer.Squad.GetCommand().Tsv += tsvLoss;
-                    CreditShootingTsv(attacker.Killer, tsvLoss);
+                    CreditAttackerCommandTsv(attacker.Killer, tsvLoss, attacker.KillerCommandOutcomeId);
                 }
             }
 
