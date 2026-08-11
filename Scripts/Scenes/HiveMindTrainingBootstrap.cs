@@ -1,4 +1,6 @@
+using Assets.Scripts;
 using Assets.Scripts.UIComponents;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -14,6 +16,34 @@ internal static class HiveMindTrainingBootstrap
     internal const int TrainingLevelCount = 16;
     internal const int TrainingTimeoutSeconds = 420;
     internal const int TrainingInitialCommandDelaySeconds = 1;
+
+    private static readonly ConfigData.ShipTypes[] TrainingBeeShipTypes =
+    {
+        ConfigData.ShipTypes.Beehive,
+        ConfigData.ShipTypes.Bumblebee,
+        ConfigData.ShipTypes.CarpenterBee,
+        ConfigData.ShipTypes.Honeybee,
+        ConfigData.ShipTypes.Hornet,
+        ConfigData.ShipTypes.Leafcutter,
+        ConfigData.ShipTypes.Queen,
+        ConfigData.ShipTypes.Wasp,
+        ConfigData.ShipTypes.YellowJacket,
+    };
+
+    private static readonly ConfigData.ShipTypes[] TrainingHumanShipTypes =
+    {
+        ConfigData.ShipTypes.Barge,
+        ConfigData.ShipTypes.Carrier,
+        ConfigData.ShipTypes.Cruiser,
+        ConfigData.ShipTypes.Dreadnought,
+        ConfigData.ShipTypes.Factory,
+        ConfigData.ShipTypes.FireBarge,
+        ConfigData.ShipTypes.Flagship,
+        ConfigData.ShipTypes.Frigate,
+        ConfigData.ShipTypes.Gunship,
+        ConfigData.ShipTypes.Scout,
+        ConfigData.ShipTypes.WarpGate,
+    };
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void ApplyToLoadedTrainingScene()
@@ -61,5 +91,11 @@ internal static class HiveMindTrainingBootstrap
         stage.LevelCount = TrainingLevelCount;
         stage.TimeoutTime = TrainingTimeoutSeconds;
         stage.InitialCommandDelay = TrainingInitialCommandDelaySeconds;
+
+        // Random Hive Mind training must not depend on the current player's unlock progress.
+        // Spawned-only children (Drone/Striker/Beacon) are exercised through their owners and
+        // HumanTarget is a scripted objective, so random squads use the complete primary fleet.
+        stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(TrainingBeeShipTypes);
+        stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(TrainingHumanShipTypes);
     }
 }
