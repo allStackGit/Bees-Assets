@@ -7,6 +7,7 @@ using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
+    // class that holds and manages storage for user progress data
     public abstract class UserData
     {
 
@@ -105,7 +106,7 @@ namespace Assets.Scripts.Data
         {
             return file.IsDataLoaded();
         }
-        public string GetDefaultJson()
+        public virtual string GetDefaultJson()
         {
             return defaultJsonData;
         }
