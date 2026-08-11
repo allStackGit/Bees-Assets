@@ -58,6 +58,8 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
 
             Assert.That(source, Does.Contain("AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry)"));
+            Assert.That(source, Does.Contain("ResendTimer = new Timer(1f, ConfigData.Socket.CheckForResends)"),
+                "Resend polling must be independent of any particular request deadline so per-request timeouts remain meaningful.");
             Assert.That(source, Does.Contain("ConfigData.Socket.KeepClosed"),
                 "Intentional socket shutdowns must not start automatic reconnect attempts.");
             Assert.That(source, Does.Contain("_automaticReconnectAttempts++"),
