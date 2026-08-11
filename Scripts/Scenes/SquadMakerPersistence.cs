@@ -16,6 +16,8 @@ namespace Assets.Scripts.Scenes
         {
             SceneManager.sceneUnloaded -= HandleSceneUnloaded;
             SceneManager.sceneUnloaded += HandleSceneUnloaded;
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            SceneManager.sceneLoaded += HandleSceneLoaded;
         }
 
         private static void HandleSceneUnloaded(UnityEngine.SceneManagement.Scene scene)
@@ -28,12 +30,21 @@ namespace Assets.Scripts.Scenes
             // Ship fields such as Name are edited directly on the canonical FleetShip.
             // Persist those edits regardless of which Squad Maker exit path was used.
             ConfigData.CurrentShips?.SaveFleetData();
+        }
 
-            // Entering custom opposing-force selection moves SquadMakerSide to the second
-            // side before the first scene unloads. If the user backs out, GoBack moves it
-            // to the first side before unloading instead. Discard that abandoned custom
-            // enemy transaction so a later Swarms/Powerful/random setup is not incorrectly
-            // treated as custom-enemy loading by Level.Setup().
+        private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
+        {
+            if (scene.name != SquadMakerScene)
+            {
+                return;
+            }
+
+            // Custom opposing-force selection moves SquadMakerSide to the second side before
+            // loading another Squad Maker. Backing out moves it to the first side and loads
+            // Squad Maker again. Clean up only on that explicit return-to-first-side path.
+            // Do not clear on Squad Maker unload: normal campaign/challenge/free-play starts
+            // also leave from the first side, and their prepared LevelOptions must survive
+            // the transition to Space.
             if (ConfigData.IsUserLoadingCustomEnemySquads &&
                 ConfigData.Configuration != null &&
                 ConfigData.SquadMakerSide == ConfigData.Configuration.SquadMakerFirstSide)
