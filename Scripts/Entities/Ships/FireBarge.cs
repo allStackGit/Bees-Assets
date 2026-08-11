@@ -50,6 +50,7 @@ namespace Assets.Scripts.Entities.Ships
 
             Bomb.ReleaseTargetReservation();
             StopMoving();
+            CancelOwnedTimers();
             CannotChangeMovementOrders = true;
             IsDead = true;
 
