@@ -85,6 +85,24 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        private static bool CommandUsesSelectedEnemy(ConfigData.CommandTypes commandType)
+        {
+            switch (commandType)
+            {
+                case ConfigData.CommandTypes.Aggressive:
+                case ConfigData.CommandTypes.BombingRun:
+                case ConfigData.CommandTypes.Charge:
+                case ConfigData.CommandTypes.Retreat:
+                case ConfigData.CommandTypes.CircleSquad:
+                case ConfigData.CommandTypes.RightSwipe:
+                case ConfigData.CommandTypes.LeftSwipe:
+                case ConfigData.CommandTypes.InAndOut:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
             if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
@@ -140,8 +158,13 @@ namespace Assets.Scripts.Levels
                     _shootingCommands.Add(command);
                 }
 
-                if (command.MatchupStrategy != null && command.HasTargetingEnemy)
+                if (command.MatchupStrategy != null &&
+                    command.HasTargetingEnemy &&
+                    CommandUsesSelectedEnemy(command.CommandType))
                 {
+                    // The matchup strategy chooses an enemy squad. Do not reward that choice
+                    // for Mining, Heal, Patrol, Scouting, Hold, etc. whose core execution does
+                    // not use the selected enemy; their command TSV is unrelated to target choice.
                     _targetingCommands.Add(command);
                 }
             }
