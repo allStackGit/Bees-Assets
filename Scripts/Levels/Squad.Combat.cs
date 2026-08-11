@@ -132,20 +132,26 @@ namespace Assets.Scripts.Levels
         private int _limit;
         public List<Ship> GetPotentialAllies(Squad target)
         {
-            _tempShips.Clear();
-            _allies = GetFriendlyShips();
             _limit = Math.Max(0, 64 - GetShipsForMatchup().Count);
-
-            foreach (Ship potentialAlly in _allies)
+            if (_limit == 0 || target == null)
             {
-                if (this != potentialAlly.Squad && _tempShips.Count < _limit &&
-                    potentialAlly.IsAnySquadShipWithinRange(target))
-                {
-                    _tempShips.Add(potentialAlly);
-                }
+                return new List<Ship>();
             }
 
-            return _tempShips;
+            Vector2 targetOrigin = target.GetPosition();
+            _allies = GetFriendlyShips()
+                .Where(potentialAlly => this != potentialAlly.Squad &&
+                    potentialAlly.IsAnySquadShipWithinRange(target))
+                .OrderBy(potentialAlly => potentialAlly.DistanceToPoint(targetOrigin))
+                .ThenBy(potentialAlly => potentialAlly.ShipType)
+                .ThenBy(potentialAlly => potentialAlly.Id)
+                .Take(_limit)
+                .ToList();
+
+            // As with enemies, the payload cap must be independent of registration/spawn
+            // order. AddToMatchup sorts the selected types afterward, but it cannot repair a
+            // nondeterministic choice of which allies entered the capped set in the first place.
+            return _allies;
         }
     }
 }
