@@ -38,6 +38,8 @@ namespace Assets.Scripts.Levels
         private int _nextRequestId;
         private int _dynamicLayerFrame = -1;
         private bool _staticObstacleLayerDirty;
+        private bool _staticObstacleRebuildPending;
+        private bool[] _staticRebuildBlockedSlots = new bool[ConfigData.MaxThreads];
         private readonly ConcurrentQueue<PathResult> _completedPaths = new ConcurrentQueue<PathResult>();
         private readonly List<int> _obstaclePointIndexes = new List<int>();
         private readonly HashSet<int> _obstaclePointIndexSet = new HashSet<int>();
@@ -165,8 +167,79 @@ namespace Assets.Scripts.Levels
 
         public void MarkObstacleLayerDirty()
         {
-            _staticObstacleLayerDirty = true;
+            EnsureStaticRebuildBlockedSlots();
+            if (HasActivePathWorkers())
+            {
+                // RebuildStaticObstacleLayer rewrites the shared base maps and every thread's
+                // clearance buffer. Never run it while a Task.Run search is reading one of those
+                // snapshots. Reserve otherwise-idle slots too so new searches queue until the
+                // current workers finish and the rebuild has been applied atomically on main.
+                _staticObstacleRebuildPending = true;
+                _staticObstacleLayerDirty = false;
+                for (int i = 0; i < IsThreadActive.Length; i++)
+                {
+                    if (!IsThreadActive[i])
+                    {
+                        IsThreadActive[i] = true;
+                        _staticRebuildBlockedSlots[i] = true;
+                    }
+                }
+            }
+            else
+            {
+                _staticObstacleLayerDirty = true;
+            }
             _dynamicLayerFrame = -1;
+        }
+
+        private void EnsureStaticRebuildBlockedSlots()
+        {
+            if (_staticRebuildBlockedSlots == null || _staticRebuildBlockedSlots.Length != IsThreadActive.Length)
+            {
+                _staticRebuildBlockedSlots = new bool[IsThreadActive.Length];
+            }
+        }
+
+        private bool HasActivePathWorkers()
+        {
+            if (IsThreadActive == null)
+            {
+                return false;
+            }
+
+            EnsureStaticRebuildBlockedSlots();
+            for (int i = 0; i < IsThreadActive.Length; i++)
+            {
+                if (IsThreadActive[i] && !_staticRebuildBlockedSlots[i])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool PreparePendingStaticObstacleRebuild()
+        {
+            if (!_staticObstacleRebuildPending)
+            {
+                return true;
+            }
+            if (HasActivePathWorkers())
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _staticRebuildBlockedSlots.Length; i++)
+            {
+                if (_staticRebuildBlockedSlots[i])
+                {
+                    _staticRebuildBlockedSlots[i] = false;
+                    IsThreadActive[i] = false;
+                }
+            }
+            _staticObstacleRebuildPending = false;
+            _staticObstacleLayerDirty = true;
+            return true;
         }
 
         private int ToIndex(int x, int y) => (y * Width) + x;
@@ -176,6 +249,15 @@ namespace Assets.Scripts.Levels
         public void Update()
         {
             ApplyCompletedPathResults();
+
+            if (!PreparePendingStaticObstacleRebuild())
+            {
+                return;
+            }
+            if (_staticObstacleLayerDirty)
+            {
+                UpdateDynamicObstacleLayer();
+            }
 
             if (PathsWaiting.Count <= 0)
             {
