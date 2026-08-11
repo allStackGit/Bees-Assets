@@ -27,6 +27,14 @@ namespace Assets.Scripts.Scenes
                 return;
             }
 
+            // Campaign test mode intentionally uses an ad-hoc negative-ID LevelOptions object.
+            // It is not the persisted campaign mission and must retain its selected map/options.
+            if (ConfigData.IsTestingLevel ||
+                (ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0))
+            {
+                return;
+            }
+
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide,
                 ConfigData.GameModes.Campaign);
