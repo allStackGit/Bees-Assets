@@ -11,6 +11,7 @@
 - `ConfigData.StandardMaxTimeOnQueue` is the bootstrap request timeout used before `Configuration` is loaded. Once configuration is loaded, requests that opt into that standard default must resolve the server-owned `Configuration.StandardMaxTimeOnQueue` instead (25 seconds in active version 5); explicit per-request timeouts remain explicit.
 - `ServerRequest.MaxTimeOnQueue` is the authoritative resend deadline for that request. `Socket.CheckForResends()` must use the request's value rather than a global timeout, otherwise both server-configured defaults and explicit request-specific deadlines are silently ignored.
 - Resend *polling cadence* is separate from the request deadline. `Scene` checks elapsed request deadlines once per second while the socket is open; tying the polling timer to a 10- or 25-second default would quantize and delay otherwise-correct per-request deadlines.
+- Closing a `Level` retires every outstanding `SetupLevelRequest`/`ReconnectLevelRequest` owned by that exact Level reference and removes it from `Socket.OpenLevels` even if initial setup never completed. Otherwise a late setup response after scene exit can resurrect a destroyed Level in reconnect state.
 
 ## Persisted identity/schema
 
