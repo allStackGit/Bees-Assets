@@ -110,6 +110,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
                 ConfigData.ChallengeModeShips = new Ships(ConfigData.GetChallengeFleetData(), ConfigData.GetChallengeSavedSquadsData());
                 ConfigData.CurrentShips = ConfigData.FreePlayShips;
+                ReconcilePersistedIdentityCounters();
 
             }
 
@@ -117,6 +118,54 @@ namespace Assets.Scripts.Scenes
             //ConfigData.Ships.ReplaceDeadSquadShips();
             UIAudioController.Instance.PlayMusic();
             IsFinalized = true;
+        }
+
+        private static int ReconcileCounterWithIds(int currentCounter, IEnumerable<long> existingIds)
+        {
+            long maxExistingId = existingIds?.DefaultIfEmpty(currentCounter).Max() ?? currentCounter;
+            if (maxExistingId > int.MaxValue)
+            {
+                throw new InvalidOperationException($"Persisted ID {maxExistingId} exceeds the supported 32-bit counter range.");
+            }
+            return Math.Max(currentCounter, (int)maxExistingId);
+        }
+
+        /// <summary>
+        /// Global fleet/squad counters and their objects are persisted in separate files.
+        /// Reconcile from the loaded objects before gameplay so a stale/partial checkpoint or
+        /// changed starting-fleet definition cannot reuse an existing persistent ID.
+        /// </summary>
+        private static void ReconcilePersistedIdentityCounters()
+        {
+            UserProgressData progress = ConfigData.UserProgressData;
+            if (progress == null)
+            {
+                return;
+            }
+
+            int safeFleetId = ReconcileCounterWithIds(
+                progress.FleetId,
+                ConfigData.GetFleetData().GetShips()
+                    .Concat(ConfigData.GetCampaignFleetData().GetShips())
+                    .Concat(ConfigData.GetChallengeFleetData().GetShips())
+                    .Select(ship => ship.Id));
+
+            int safeSavedSquadId = ReconcileCounterWithIds(
+                progress.SavedSquadId,
+                ConfigData.GetSavedSquadsData().GetSquads()
+                    .Concat(ConfigData.GetCampaignSavedSquadsData().GetSquads())
+                    .Concat(ConfigData.GetChallengeSavedSquadsData().GetSquads())
+                    .Select(squad => (long)squad.Id));
+
+            if (safeFleetId == progress.FleetId && safeSavedSquadId == progress.SavedSquadId)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"Reconciled persisted identity counters: FleetId {progress.FleetId}->{safeFleetId}, SavedSquadId {progress.SavedSquadId}->{safeSavedSquadId}.");
+            progress.FleetId = safeFleetId;
+            progress.SavedSquadId = safeSavedSquadId;
+            progress.Save();
         }
         /// <summary>
         /// Tries to reconnect to the server, called on a timer if there's a disconnection.
