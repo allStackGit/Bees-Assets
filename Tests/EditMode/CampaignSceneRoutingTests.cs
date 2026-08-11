@@ -73,8 +73,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void AcceptedCampaignSquadMakerConsumesIntroPermission()
         {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Scenes", "CampaignSceneRouter.cs"));
+            string source = ReadRouterSource();
             int seenIntroBranch = source.IndexOf("if (ConfigData.HasSeenPreLevelIntro)", StringComparison.Ordinal);
             int consume = source.IndexOf("ConfigData.HasSeenPreLevelIntro = false;", seenIntroBranch, StringComparison.Ordinal);
             int returnStatement = source.IndexOf("return;", seenIntroBranch, StringComparison.Ordinal);
@@ -82,6 +81,15 @@ namespace Bees.Tests.EditMode
             Assert.That(seenIntroBranch, Is.GreaterThanOrEqualTo(0));
             Assert.That(consume, Is.GreaterThan(seenIntroBranch));
             Assert.That(returnStatement, Is.GreaterThan(consume));
+        }
+
+        [Test]
+        public void PendingCampaignIntroReplacesSquadMakerBeforeItCanRender()
+        {
+            string source = ReadRouterSource();
+            Assert.That(source, Does.Contain("SceneManager.LoadScene(LevelIntroScene, LoadSceneMode.Single);"));
+            Assert.That(source, Does.Not.Contain("SceneManager.LoadSceneAsync(LevelIntroScene, LoadSceneMode.Single);"),
+                "The intro redirect must complete synchronously so Squad Maker cannot render before the intro.");
         }
 
         [Test]
@@ -96,6 +104,12 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetStaticField(_configDataType, "HasSeenPreLevelIntro", false);
 
             Assert.That(ShouldRedirect("Squad Maker"), Is.False);
+        }
+
+        private static string ReadRouterSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "CampaignSceneRouter.cs"));
         }
 
         private bool ShouldRedirect(string sceneName)
