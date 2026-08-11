@@ -228,6 +228,19 @@ namespace Assets.Scripts.Entities.Ships
             });
         }
 
+        /// <summary>
+        /// Cancels all Level-owned timers and weapon timers associated with this ship's
+        /// current lifecycle. Special ships that override Kill() must call this too.
+        /// </summary>
+        protected void CancelOwnedTimers()
+        {
+            Level.CancelTimer(_asteroidDoubleCheckTimer);
+            Level.CancelTimer(_tryToFindPathAgainTimer);
+            Level.CancelTimer(_combatTimerScaledTimer);
+            Level.CancelTimer(_showShipStatsTimer);
+            if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
+        }
+
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             if (IsDead) return;
@@ -276,11 +289,7 @@ namespace Assets.Scripts.Entities.Ships
             foreach (Projectile projectile in ProjectilesInFlight) projectile.ShipIsDead = true;
             if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
             else Squad.SetOffsets();
-            Level.CancelTimer(_asteroidDoubleCheckTimer);
-            Level.CancelTimer(_tryToFindPathAgainTimer);
-            Level.CancelTimer(_combatTimerScaledTimer);
-            Level.CancelTimer(_showShipStatsTimer);
-            if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
+            CancelOwnedTimers();
             Deactivate();
         }
 
