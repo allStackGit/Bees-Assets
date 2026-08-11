@@ -38,6 +38,31 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        /// <summary>
+        /// Adds delayed reward to the stored Hive Mind command that owns an outcome ID.
+        /// Projectile damage can land after that command has finalized and a different
+        /// command has started, while PastCommands remains alive until the level flush.
+        /// </summary>
+        public bool AddTsvToStoredCommand(long outcomeId, long tsvDelta)
+        {
+            if (outcomeId <= 0 ||
+                !OutcomeIdToPastCommandIndex.TryGetValue(outcomeId, out int storedCommandIndex) ||
+                storedCommandIndex < 0 ||
+                storedCommandIndex >= PastCommands.Count)
+            {
+                return false;
+            }
+
+            StoredCommand storedCommand = PastCommands[storedCommandIndex];
+            if (storedCommand == null || storedCommand.OutcomeId != outcomeId)
+            {
+                return false;
+            }
+
+            storedCommand.Tsv += tsvDelta;
+            return true;
+        }
+
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
             if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
