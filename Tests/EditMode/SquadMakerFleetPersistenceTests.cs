@@ -22,10 +22,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void BackingOutOfCustomEnemySelectionDiscardsPendingTransaction()
+        public void LeavingSquadMakerForLevelDoesNotDiscardPreparedLevelOptions()
+        {
+            string source = ReadSource();
+            int unloadStart = source.IndexOf("private static void HandleSceneUnloaded");
+            int loadStart = source.IndexOf("private static void HandleSceneLoaded");
+            string unloadHandler = source.Substring(unloadStart, loadStart - unloadStart);
+
+            Assert.That(unloadHandler, Does.Not.Contain("ConfigData.LevelOptions = null;"),
+                "Normal Squad Maker -> Space transitions must preserve the prepared level options.");
+        }
+
+        [Test]
+        public void BackingOutOfCustomEnemySelectionDiscardsPendingTransactionOnReturnToSquadMaker()
         {
             string source = ReadSource();
 
+            Assert.That(source, Does.Contain("SceneManager.sceneLoaded += HandleSceneLoaded;"));
+            Assert.That(source, Does.Contain("private static void HandleSceneLoaded"));
             Assert.That(source, Does.Contain("ConfigData.IsUserLoadingCustomEnemySquads &&"));
             Assert.That(source, Does.Contain("ConfigData.SquadMakerSide == ConfigData.Configuration.SquadMakerFirstSide"));
             Assert.That(source, Does.Contain("ConfigData.IsUserLoadingCustomEnemySquads = false;"));
