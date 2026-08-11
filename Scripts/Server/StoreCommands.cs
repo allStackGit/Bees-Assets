@@ -34,16 +34,10 @@ namespace Assets.Scripts.Server
             temp.Clear();
             shootingCommands.ForEach((storedCommand) =>
             {
-                //if (!ids.Contains(storedCommand.ShootingStrategy.OutcomeId))
-                //{
-                //    ids.Add(storedCommand.ShootingStrategy.OutcomeId);
-                //    Debug.Log($"Adding shooting strategy #{storedCommand.ShootingStrategy.OutcomeId}");
-                //}
-                //else
-                //{
-                //    Debug.LogError($"A command/strategy with OutcomeId #{storedCommand.ShootingStrategy.OutcomeId} has already been added to the list");
-                //}
-                temp.Add(new ServerStoredCommand(storedCommand.Tsv, storedCommand.ShootingStrategy.OutcomeId));
+                // Shooting target selection learns only from combat TSV accumulated by
+                // Ship combat accounting, not from strategic reward such as spotting,
+                // mining, healing, or retreat-specific value.
+                temp.Add(new ServerStoredCommand(storedCommand.ShootingTsv, storedCommand.ShootingStrategy.OutcomeId));
             });
             ShootingCommands = temp.ToArray();
             temp.Clear();
