@@ -6,9 +6,8 @@ using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Restores the intentional automated Hive Mind training configuration for the dedicated
-/// training scene. The scene asset has drifted back toward an interactive single-level
-/// configuration, while the historical authored training setup used 16 headless levels
-/// with 420-second episode timeouts.
+/// training runtime. The same Unity scene is also used by the player-facing Fish Tank mode,
+/// so scene name alone is not sufficient to decide that automated training was requested.
 /// </summary>
 internal static class HiveMindTrainingBootstrap
 {
@@ -45,10 +44,18 @@ internal static class HiveMindTrainingBootstrap
         ConfigData.ShipTypes.WarpGate,
     };
 
+    internal static bool IsDedicatedTrainingRuntime =>
+        ShouldApply(SceneManager.GetActiveScene().name, ConfigData.CurrentGameMode);
+
+    internal static bool ShouldApply(string sceneName, ConfigData.GameModes gameMode)
+    {
+        return sceneName == TrainingSceneName && gameMode != ConfigData.GameModes.FishTank;
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void ApplyToLoadedTrainingScene()
     {
-        if (SceneManager.GetActiveScene().name != TrainingSceneName)
+        if (!IsDedicatedTrainingRuntime)
         {
             return;
         }
