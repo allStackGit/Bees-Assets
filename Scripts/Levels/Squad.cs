@@ -231,8 +231,88 @@ namespace Assets.Scripts.Levels
             ConfigData.ShipTypes.Beehive, ConfigData.ShipTypes.WarpGate
         };
 
+        private Vector2 GetFormationAdjustment(Ship ship)
+        {
+            Vector2 adjustment = ship.OffsetFromCenter;
+            if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1) adjustment *= _queenMultiplier;
+            else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee) adjustment *= 1.2f;
+            else if (_wideShips.Contains(ship.ShipType)) adjustment *= _wideMultiplier;
+            else if (_ultraWideShips.Contains(ship.ShipType)) adjustment *= _ultraWideMultiplier;
+            return adjustment;
+        }
+
+        private bool CanPlaceFormationAt(Vector2 center)
+        {
+            if (Level == null || Level.Pathfinder == null || !Level.HasObstacles)
+            {
+                return true;
+            }
+
+            foreach (Ship ship in GetShips())
+            {
+                Vector2 shipPosition = center + GetFormationAdjustment(ship);
+                if (!Level.Pathfinder.CanOccupyDestination(shipPosition, ship.GetClearance()))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private Vector2 FindNearestFormationCenter(Vector2 requestedCenter)
+        {
+            if (GetShips().Count == 0 || CanPlaceFormationAt(requestedCenter))
+            {
+                return requestedCenter;
+            }
+
+            const int maxSearchDistance = 256;
+            int step = Pathfinder.Scale;
+            int maxRadius = Mathf.CeilToInt((float)maxSearchDistance / step);
+
+            for (int radius = 1; radius <= maxRadius; radius++)
+            {
+                Vector2 best = requestedCenter;
+                float bestDistance = float.MaxValue;
+                bool found = false;
+
+                for (int x = -radius; x <= radius; x++)
+                {
+                    for (int y = -radius; y <= radius; y++)
+                    {
+                        if (Mathf.Abs(x) != radius && Mathf.Abs(y) != radius)
+                        {
+                            continue;
+                        }
+
+                        Vector2 candidate = requestedCenter + new Vector2(x * step, y * step);
+                        if (!CanPlaceFormationAt(candidate))
+                        {
+                            continue;
+                        }
+
+                        float distance = (candidate - requestedCenter).sqrMagnitude;
+                        if (!found || distance < bestDistance)
+                        {
+                            found = true;
+                            bestDistance = distance;
+                            best = candidate;
+                        }
+                    }
+                }
+
+                if (found)
+                {
+                    return best;
+                }
+            }
+
+            return requestedCenter;
+        }
+
         public void SetStartingPosition(Vector2 position)
         {
+            position = FindNearestFormationCenter(position);
             if (GetShips().Count == 1)
             {
                 GetShips()[0].transform.localPosition = position;
@@ -240,11 +320,7 @@ namespace Assets.Scripts.Levels
             }
             GetShips().ForEach(ship =>
             {
-                _adjustment = ship.OffsetFromCenter;
-                if (ship.ShipType == ConfigData.ShipTypes.Queen && GetShips().Count > 1) _adjustment *= _queenMultiplier;
-                else if (ship.ShipType == ConfigData.ShipTypes.Bumblebee) _adjustment *= 1.2f;
-                else if (_wideShips.Contains(ship.ShipType)) _adjustment *= _wideMultiplier;
-                else if (_ultraWideShips.Contains(ship.ShipType)) _adjustment *= _ultraWideMultiplier;
+                _adjustment = GetFormationAdjustment(ship);
                 ship.transform.localPosition = new Vector2(position.x + _adjustment.x, position.y + _adjustment.y);
             });
         }
