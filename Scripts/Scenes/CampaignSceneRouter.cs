@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Levels;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -6,11 +7,11 @@ namespace Assets.Scripts.Scenes
 {
     /// <summary>
     /// Compatibility boundary for the legacy ConfigData.LoadLevel flow.
-    /// Campaign levels 2+ still request Squad Maker first, so intercept that scene before its
-    /// Start lifecycle can render or initialize the page and synchronously replace it with the
-    /// authored Level Intro. Once LevelIntro marks HasSeenPreLevelIntro, allow the subsequent
-    /// Squad Maker load and consume the permission so the following mission gets its own intro.
-    /// Test levels bypass this redirect entirely.
+    /// Campaign levels 2+ still request Squad Maker first. Missions explicitly marked for
+    /// intro-bypass testing may continue directly into Squad Maker; all other campaign missions
+    /// are synchronously replaced with their authored Level Intro before Squad Maker can render.
+    /// Once LevelIntro marks HasSeenPreLevelIntro, allow the subsequent Squad Maker load and
+    /// consume the permission so the following mission gets its own intro.
     /// </summary>
     internal static class CampaignSceneRouter
     {
@@ -41,8 +42,7 @@ namespace Assets.Scripts.Scenes
             }
 
             // Do not queue an asynchronous replacement here: that permits Squad Maker to
-            // render for one or more frames before the intro finishes loading. A synchronous
-            // replacement keeps the user-visible campaign order Main Menu -> Intro -> Squad Maker.
+            // render for one or more frames before the intro finishes loading.
             SceneManager.LoadScene(LevelIntroScene, LoadSceneMode.Single);
         }
 
@@ -65,10 +65,15 @@ namespace Assets.Scripts.Scenes
 
         private static bool IsPendingCampaignSquadMaker(string sceneName)
         {
-            return sceneName == SquadMakerScene &&
-                ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
-                ConfigData.LevelOptions != null &&
-                !ConfigData.IsTestingLevel;
+            if (sceneName != SquadMakerScene ||
+                ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
+                ConfigData.LevelOptions == null ||
+                ConfigData.IsTestingLevel)
+            {
+                return false;
+            }
+
+            return !CampaignMissionCatalog.ShouldSkipPreLevelIntroForTesting(ConfigData.LevelOptions.Id);
         }
     }
 }
