@@ -75,7 +75,6 @@ namespace Assets.Scripts.Data
 
         public string PlayerName;
 
-
         public LevelOptions CurrentLevel;
 
         public UserProgressData(bool shouldFileExist): base()
@@ -87,9 +86,6 @@ namespace Assets.Scripts.Data
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
             {
                 ConfigData.IsUserProgressDataLoaded = true;
-                //Debug.Log($"User progress data is loaded");
-                //Debug.Log("Updated config file");
-                //Debug.Log($"JSON from DataFile: {json}");
                 CurrentHumanCampaignLevel = json.CurrentHumanCampaignLevel;
                 CurrentBeeCampaignLevel = json.CurrentBeeCampaignLevel;
                 CurrentHumanChallengeLevel = json.CurrentHumanChallengeLevel;
@@ -133,8 +129,6 @@ namespace Assets.Scripts.Data
                 HumanFishTankWins = json.HumanFishTankWins;
                 BeeFishTankWins = json.BeeFishTankWins;
 
-
-
                 PlayerName = json.PlayerName;
 
                 VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleBeeShipTypes));
@@ -144,14 +138,7 @@ namespace Assets.Scripts.Data
                 UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.UnlockedCampaignShips));
 
                 SetShipTypes();
-                AllShipTypes = new HashSet<ConfigData.ShipTypes>(VisibleShipTypes);
-                AllShipTypes.Add(ConfigData.ShipTypes.Beacon);
-                AllShipTypes.Add(ConfigData.ShipTypes.Drone);
-                AllShipTypes.Add(ConfigData.ShipTypes.Striker);
-
-
             });
-            
         }
 
         public void SetShipTypes()
@@ -161,7 +148,15 @@ namespace Assets.Scripts.Data
             ConfigData.BeeShipTypes = VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = VisibleHumanShipTypes;
 
+            // Strategy availability is a property of the complete strategy catalog, not of
+            // the player's current unlocks. Rebuild this whenever visibility changes so Hive
+            // Mind type-target bans always cover every type strategy the server can select.
+            AllShipTypes = ConfigData.TypesOfShootingStrategies
+                .Where(strategy => (int)strategy > 15)
+                .Select(strategy => Utilities.ConvertShootingStrategyToShipType[strategy])
+                .ToHashSet();
         }
+
         public override string ToJson()
         {
             JObject json = new JObject
@@ -219,10 +214,12 @@ namespace Assets.Scripts.Data
                 .OrderBy(shipType => (int)shipType)
                 .Select(shipType => Utilities.ConvertShipTypeToName[shipType]));
         }
+
         public void GetCurrentLevelOptions()
         {
             CurrentLevel = ConfigData.GetCampaignLevelData().GetLevel(GetCurrentLevel(ConfigData.Configuration.UserSide));
         }
+
         public void SetCurrentLevel(int level)
         {
             if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
@@ -251,11 +248,10 @@ namespace Assets.Scripts.Data
                     Save();
                 }
             }
-
         }
+
         public int GetCurrentLevel(int side, ConfigData.GameModes gameMode = ConfigData.GameModes.Unset)
         {
-
             if (gameMode == ConfigData.GameModes.Unset)
             {
                 gameMode = ConfigData.CurrentGameMode;
@@ -278,30 +274,48 @@ namespace Assets.Scripts.Data
             }
             Debug.LogError("GetCurrentLevel called when not in Campaign or Challenge mode!");
             return -1;
-            
-
         }
+
         public void AdvanceToNextLevel()
         {
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
+                int currentLevel = GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign);
+                Stage activeStage = ConfigData.Scenes.OfType<Stage>().LastOrDefault(scene => scene != null && scene.PrimaryLevel != null);
+                Level activeLevel = activeStage?.PrimaryLevel;
 
-                    Debug.Log($"Advancing from {CurrentHumanCampaignLevel} to {CurrentHumanCampaignLevel + 1} in the human campaign");
-                    SetCurrentLevel(CurrentHumanCampaignLevel + 1);
-                }
-                else
+                if (activeLevel?.CurrentLevelOptions != null && activeLevel.CurrentLevelOptions.Id >= 0)
                 {
-                    Debug.Log($"Advancing from {CurrentBeeCampaignLevel} to {CurrentBeeCampaignLevel + 1} in the bee campaign");
-                    SetCurrentLevel(CurrentBeeCampaignLevel + 1);
+                    int missionId = activeLevel.CurrentLevelOptions.Id;
+
+                    // Beenoculars is a survival objective. Losing Titania does not complete the
+                    // mission, so its failure dialogue must not advance campaign progress.
+                    if (missionId == 8 && activeLevel.WinningSide == ConfigData.Configuration.AISide)
+                    {
+                        Debug.Log("Beenoculars was lost; keeping campaign progress on mission 8.");
+                        return;
+                    }
+
+                    int targetLevel = missionId + 1;
+                    if (currentLevel >= targetLevel)
+                    {
+                        // Several legacy endings call this method more than once. Advancement is
+                        // mission-idempotent so a duplicate call cannot skip the next mission.
+                        return;
+                    }
+
+                    Debug.Log($"Advancing campaign from {currentLevel} to {targetLevel} after mission {missionId}");
+                    SetCurrentLevel(targetLevel);
+                    return;
                 }
+
+                // Defensive fallback for tooling/non-scene callers that do not own a live Level.
+                SetCurrentLevel(currentLevel + 1);
             }
             else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
             {
                 if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
                 {
-
                     Debug.Log($"Advancing from {CurrentHumanChallengeLevel} to {CurrentHumanChallengeLevel + 1} in the human challenge mode");
                     SetCurrentLevel(CurrentHumanChallengeLevel + 1);
                 }
@@ -311,21 +325,19 @@ namespace Assets.Scripts.Data
                     SetCurrentLevel(CurrentBeeChallengeLevel + 1);
                 }
             }
-
-            
         }
+
         /// <summary>
         /// Gets the next incremental Fleet Id. Does not save the data to "disk"
         /// </summary>
-        /// <returns></returns>
         public int GetNextFleetId()
         {
             return ++FleetId;
         }
+
         /// <summary>
         /// Gets the next incremental Saved Squad Number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
         /// </summary>
-        /// <returns></returns>
         public int GetNextSavedSquadNumber()
         {
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
@@ -352,18 +364,14 @@ namespace Assets.Scripts.Data
                 }
                 return BeeFreePlaySavedSquadNumber++;
             }
-
         }
+
         /// <summary>
         /// Returns the next saved squad id. Used for uniquely identifying every saved squad regardless of game mode
         /// </summary>
-        /// <returns></returns>
         public int GetNextSavedSquadId()
         {
             return ++SavedSquadId;
         }
-
-
-
     }
 }
