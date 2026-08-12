@@ -153,8 +153,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(ending, Does.Contain("CampaignScore += State.PlayerScore"));
             Assert.That(ending, Does.Contain("AdvanceToNextLevel"));
-            Assert.That(ending, Does.Contain("SaveSquadData"));
-            Assert.That(ending, Does.Contain("SaveFleetData"));
+            Assert.That(ending, Does.Contain("CampaignCheckpoint.Save()"),
+                "Beenoculars must persist campaign progress, squads, and fleet through the atomic checkpoint path.");
+            Assert.That(ending, Does.Not.Contain("SaveSquadData"));
+            Assert.That(ending, Does.Not.Contain("SaveFleetData"));
             Assert.That(ending, Does.Contain("State.GameOver = true"));
             Assert.That(ending, Does.Contain("ShowLevelSummary"));
         }
