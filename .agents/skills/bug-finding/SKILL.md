@@ -12,7 +12,7 @@ Perform a repository-wide static bug audit and repair loop. Find, validate, reco
 1. Read `AGENTS.md` and applicable repository instructions if present.
 2. Read existing repository memory relevant to architecture, pitfalls, and known bugs.
 3. Fetch the latest `main`.
-4. Create a new working branch from current `main`. Use a descriptive `bug-audit/...` branch name and avoid overwriting an existing branch.
+4. **Always create and check out a new working branch from the current `main` before making any audit, ledger, test, or production-code changes.** Use a descriptive `bug-audit/...` branch name. Never reuse or overwrite an existing audit branch; if the intended name already exists, choose a new unique name.
 5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all current findings.
 6. Reconcile the existing ledger against the working tree before beginning:
    - remove entries that repository evidence shows are already fixed, invalid, obsolete, or unreachable;
@@ -145,6 +145,15 @@ Do not claim the repository is mathematically bug-free. The completion claim is 
 
 Keep all audit records, fixes, and test changes on the dedicated working branch unless the user explicitly instructs otherwise.
 
-Commit progress periodically so findings, fixes, and regression tests are not lost. Keep commits coherent and limited to the audit/repair work and repository memory required by it.
+Commit all accumulated audit/repair changes whenever **any** of these triggers occurs:
+
+1. **10 bugs found:** immediately after the 10th newly validated bug since the previous commit is logged in `BUG_LEDGER.md`. Bugs discovered during a repair phase count as findings too.
+2. **Finding → fixing transition:** immediately before leaving Phase 1 for Phase 2, commit all pending finding/ledger changes even if fewer than 10 bugs were found since the previous commit.
+3. **10 bugs fixed:** immediately after the 10th bug since the previous commit is resolved or disproved and its ledger entry is removed. Include the corresponding production, test, ledger, and repository-memory changes in that commit.
+4. **Fixing → finding transition:** immediately before leaving Phase 2 and returning to Phase 1, commit all pending repair/test/ledger changes even if fewer than 10 bugs were fixed since the previous commit.
+
+Treat each commit as a checkpoint: after committing, restart the found/fixed counters from zero. Do not create an empty commit when a transition occurs with no uncommitted changes. If multiple triggers coincide, one checkpoint commit satisfies all triggers that occurred at that point.
+
+Keep commits coherent and limited to the audit/repair work and repository memory required by it. Do not postpone a required checkpoint merely to finish a pass, subsystem, or additional bug.
 
 Never merge the working branch into `main` as part of this skill unless the user explicitly requests the merge.
