@@ -56,7 +56,10 @@ namespace Assets.Scripts
 
         private static bool AreProfileMembersReady()
         {
-            if (ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded)
+            // Follow the same bootstrap ownership rule as SocketResponseLifecycleGuard: do not
+            // force creation/use of ConfigData.Socket before a live Scene owns socket management.
+            if (ConfigData.SocketManager == null ||
+                ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded)
             {
                 return false;
             }
