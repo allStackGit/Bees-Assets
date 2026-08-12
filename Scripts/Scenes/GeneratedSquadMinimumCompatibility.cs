@@ -17,10 +17,15 @@ internal static class GeneratedSquadMinimumCompatibility
     {
         SceneManager.sceneLoaded -= HandleSceneLoaded;
         SceneManager.sceneLoaded += HandleSceneLoaded;
+        SceneManager.sceneUnloaded -= HandleSceneUnloaded;
+        SceneManager.sceneUnloaded += HandleSceneUnloaded;
+        PruneDestroyedStages();
     }
 
     private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
     {
+        PruneDestroyedStages();
+
         Stage stage = Object.FindFirstObjectByType<Stage>();
         if (stage == null || stage.GeneratedSquadCountMinimum <= 0 || !AdjustedStages.Add(stage))
         {
@@ -28,5 +33,15 @@ internal static class GeneratedSquadMinimumCompatibility
         }
 
         stage.GeneratedSquadCountMinimum--;
+    }
+
+    private static void HandleSceneUnloaded(UnityEngine.SceneManagement.Scene scene)
+    {
+        PruneDestroyedStages();
+    }
+
+    internal static void PruneDestroyedStages()
+    {
+        AdjustedStages.RemoveWhere(stage => stage == null);
     }
 }
