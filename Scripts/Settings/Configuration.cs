@@ -86,6 +86,11 @@ namespace Assets.Scripts.Settings
             return ConfigData.StandardMaxTimeOnQueue;
         }
 
+        private static string NormalizeUiText(string value, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
+        }
+
         public Configuration(ulong userId) : base("configuration", userId)
         {
         }
@@ -120,12 +125,20 @@ namespace Assets.Scripts.Settings
             // actually knows how to configure, not stale/inconsistent server metadata.
             TotalLevels = CampaignMissionCatalog.Definitions.Count;
 
-            Yes = (string)so.Yes;
-            No = (string)so.No;
-            OK = (string)so.OK;
-            AreYouSure = (string)so.AreYouSure;
-            AreYouSureExit = (string)so.AreYouSureExit;
-            LevelProgressLost = (string)so.LevelProgressLost;
+            // These labels are required to keep confirmation dialogs operable. Older/partial
+            // settings rows have existed in the database, so core labels must not be allowed to
+            // become blank. A title that collapses to the explanation is also repaired because it
+            // produces an unusable prompt with duplicated warning text.
+            Yes = NormalizeUiText((string)so.Yes, "Yes");
+            No = NormalizeUiText((string)so.No, "No");
+            OK = NormalizeUiText((string)so.OK, "OK");
+            AreYouSure = NormalizeUiText((string)so.AreYouSure, "Are you sure?");
+            AreYouSureExit = NormalizeUiText((string)so.AreYouSureExit, "Are you sure you want to exit?");
+            LevelProgressLost = NormalizeUiText((string)so.LevelProgressLost, "All progress on the level will be lost");
+            if (string.Equals(AreYouSureExit.Trim(), LevelProgressLost.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                AreYouSureExit = "Are you sure you want to exit?";
+            }
             DeleteSquadConfirmation = (string)so.DeleteSquadConfirmation;
             ClearSquadConfirmation = (string)so.ClearSquadConfirmation;
             LoadSquadConfirmation = (string)so.LoadSquadConfirmation;
