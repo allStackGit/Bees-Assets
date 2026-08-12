@@ -1,6 +1,6 @@
 ---
 name: performance-optimization
-description: Perform a repository-wide game performance optimization loop for Bees: find and log validated performance opportunities, require two consecutive clean full-code passes, implement every worthwhile optimization, measure when execution is available, and repeat until no validated opportunities remain. Optimize for maximum frame rate, minimum CPU/GPU/memory/GC/resource use, and broad low-end hardware compatibility without degrading gameplay correctness or stability.
+description: Perform a repository-wide game performance optimization loop for Bees: find and log validated performance opportunities, require two consecutive clean full-code passes, implement every worthwhile optimization, measure when execution is available, and repeat until no validated opportunities remain. Optimize for maximum frame rate, minimum CPU/GPU/memory/GC/resource use, and broad low-end hardware compatibility without degrading gameplay correctness or stability. Profiling and benchmarking are optional enhancements when execution is available; static-only execution must still complete the full workflow.
 ---
 
 # Performance Optimization
@@ -14,23 +14,48 @@ The primary objective is to make the game run as fast and efficiently as practic
 1. Read `AGENTS.md`, `CLAUDE.md`, and applicable repository instructions if present.
 2. Fetch the latest `main`.
 3. **Always create and check out a new working branch from the current `main` before making any optimization-ledger, benchmark, test, repository-memory, configuration, asset, or production-code changes.** Use a descriptive `performance/...` branch name. Never reuse or overwrite an existing optimization branch; if the intended name already exists, choose a new unique name.
-4. **Read and follow `.agents/skills/repo-learning/SKILL.md`. Repository learning is mandatory for this entire workflow.** Load the durable repository memory and focused documentation it requires before beginning.
+4. **Invoke and follow `.agents/skills/repo-learning/SKILL.md` as a mandatory companion skill for the entire workflow.** Load the durable repository memory and focused documentation it requires before beginning the first optimization pass. The performance-optimization skill does not replace repository learning and must not proceed as though repository memory were optional.
 5. Create or locate `PERFORMANCE_LEDGER.md` at the repository root. Use that single file for all current unresolved optimization opportunities.
 6. Reconcile the existing ledger against the working tree before beginning:
    - remove entries already implemented, invalid, obsolete, unreachable, or no longer worthwhile;
    - retain every still-valid opportunity;
    - ensure retained entries follow the ledger format below.
-7. Identify the repository's available profiling, benchmarking, Unity Profiler, test, build, and representative gameplay workflows. Use the least expensive reliable measurement that can validate a performance claim.
+7. Identify any available profiling, benchmarking, Unity Profiler, test, build, and representative gameplay workflows. These are optional evidence sources when runtime execution is available; their absence must not block or shorten the static optimization workflow.
 
 ## Repository Learning Requirement
 
 Use the `repo-learning` skill continuously during every finding pass, optimization phase, measurement phase, and post-change review.
 
-- Use maintained repository memory to reduce redundant reading and identify known architecture, hot paths, lifecycle behavior, pooling/caching conventions, platform assumptions, and prior performance pitfalls.
+- Consult maintained repository memory before each full pass and before changing an unfamiliar subsystem so prior architecture, contracts, pitfalls, hot paths, and known performance facts reduce redundant rereading.
 - Revalidate memory against current source whenever correctness or performance depends on a detail that may have changed.
-- Record durable reusable performance knowledge when discovered, but do not create a chronological profiling diary.
+- Record durable reusable performance knowledge when discovered, including important hot paths, scaling behavior, safe caching/pooling rules, ownership/lifetime constraints, and optimization pitfalls.
+- Do not create a chronological profiling diary or duplicate existing memory.
 - Replace stale knowledge and consolidate duplicates.
-- Include repository-learning updates in the same required checkpoint commits as the work that produced them.
+- Include repository-learning updates in the same required checkpoint commits as the optimization work that produced them.
+- Continue using repository learning even in static-only execution mode; lack of profiling or benchmarking does not reduce this requirement.
+
+## Execution Modes
+
+This skill must work both with and without the ability to execute the project.
+
+### Runtime-Capable Mode
+
+When the environment can run the game, profiler, benchmarks, tests, or representative workloads, use runtime evidence where it materially improves confidence. Establish equivalent before/after measurements for substantial changes when practical.
+
+### Static-Only Mode
+
+When runtime execution, profiling, benchmarking, builds, or tests are unavailable, **continue the complete find/log/optimize/repeat workflow using static analysis and code tracing. Do not stop, defer the audit, or require the user to provide measurements.**
+
+In static-only mode:
+
+- validate performance opportunities from clear code-path evidence, reachability, frequency/scaling, allocation behavior, algorithmic complexity, redundant work, synchronization, resource lifetime, or engine/API cost;
+- do not reject an otherwise well-supported optimization solely because no profiler or benchmark can be run;
+- do not invent speedup percentages, frame-rate gains, allocation counts, or other measurements;
+- mark runtime measurement as unavailable or pending when useful, but this does not by itself keep a ledger entry unresolved;
+- statically review tests or benchmarks that are added, but do not require them to be executable for the workflow to proceed;
+- use the same two-clean-pass stop condition, based on the strongest evidence available in that environment.
+
+Runtime measurement increases confidence; it is not a prerequisite for this skill to function or complete.
 
 ## Hard Constraints
 
@@ -43,14 +68,14 @@ Performance is never allowed to come from silently making the game less correct 
 - Do not reduce numerical correctness or precision where it can alter gameplay behavior.
 - Do not lower graphical or simulation quality as a hidden optimization. Optional scalable quality settings are acceptable when they preserve the current intended default behavior and improve low-end compatibility.
 - Do not optimize editor-only or cold paths at the expense of runtime hot paths unless the change has independent value.
-- Do not make broad architectural rewrites when a smaller robust change can remove the measured cost.
+- Do not make broad architectural rewrites when a smaller robust change can remove the cost.
 - Do not log style cleanup, generic refactors, or theoretical micro-optimizations without a concrete performance mechanism.
 
 When a proposed change has meaningful regression risk, prefer a smaller optimization or add focused tests/validation around the affected contract.
 
 ## Measurement Discipline
 
-Performance claims require evidence proportionate to the change.
+Performance claims require evidence proportionate to the environment and the change.
 
 When runtime execution is available:
 
@@ -75,7 +100,7 @@ Useful metrics include:
 
 Do not benchmark a changed workload, reduced entity count, disabled feature, easier scene, or altered quality target and present it as an optimization.
 
-When runtime execution is unavailable, static analysis may validate an opportunity only when the performance mechanism is clear from the code path, such as avoidable per-frame allocation, repeated expensive lookup in a hot loop, needless O(n²) work, redundant serialization, unnecessary synchronization, repeated asset/resource loading, or avoidable work that is provably invariant. Mark measurement as pending rather than inventing a speedup number.
+When runtime execution is unavailable, static analysis may validate an opportunity when the performance mechanism is clear from the code path, such as avoidable per-frame allocation, repeated expensive lookup in a hot loop, needless O(n²) work, redundant serialization, unnecessary synchronization, repeated asset/resource loading, or avoidable work that is provably invariant. Record the evidence actually available and never invent a speedup number.
 
 ## Core Loop
 
@@ -95,7 +120,7 @@ For each suspected opportunity:
 4. Check whether existing caching, pooling, batching, culling, throttling, parallelism, engine behavior, or guards already eliminate the apparent cost.
 5. Identify a concrete optimization that preserves behavior and stability.
 6. Estimate risk and the resource expected to improve.
-7. Measure the baseline when execution is available and useful.
+7. Measure the baseline when execution is available and useful; otherwise use static evidence without treating missing measurement as a blocker.
 8. Log the opportunity only when the mechanism is validated and the expected benefit is plausibly meaningful.
 
 Prefer systemic hot-path improvements over cosmetic micro-optimizations. Still include small changes when they occur at very high frequency, remove allocations or synchronization from a critical loop, reduce hardware requirements, or combine into a meaningful cumulative saving.
@@ -116,12 +141,12 @@ For each entry:
 
 1. Reconfirm that the cost still exists in the current working tree.
 2. Trace enough surrounding behavior to understand correctness, lifecycle, ownership, threading, and gameplay contracts.
-3. Establish or retain a baseline measurement when execution is available.
+3. Establish or retain a baseline measurement when execution is available; otherwise retain the static evidence supporting the opportunity.
 4. Implement the smallest robust optimization that addresses the underlying cost.
 5. Add or update focused tests when useful to protect behavior that the optimization could accidentally change. Tests should validate contracts, not implementation details.
 6. Review the change for stability hazards, changed ordering, stale pooled state, lifetime errors, race conditions, memory retention, numerical changes, hidden quality reductions, and cross-system regressions.
-7. Re-measure the same representative workload when execution is available.
-8. Remove the ledger entry only when the optimization is implemented and evidence supports keeping it. If investigation disproves the opportunity, the gain is negligible, or the regression risk outweighs the gain, revert/omit the change and remove the entry as invalid or not worthwhile.
+7. Re-measure the same representative workload when execution is available. In static-only mode, perform a careful post-change trace to verify that the targeted cost was actually removed or reduced by construction.
+8. Remove the ledger entry when the optimization is implemented and the available evidence supports keeping it. If investigation disproves the opportunity, the gain is negligible, or the regression risk outweighs the gain, revert/omit the change and remove the entry as invalid or not worthwhile.
 
 Do not keep a change merely because it looks faster. The optimized code should have a defensible performance mechanism and preserve the game's contract.
 
@@ -185,11 +210,11 @@ Stop only when all of the following are simultaneously true:
 
 1. `PERFORMANCE_LEDGER.md` contains no unresolved opportunities.
 2. No production optimization remains to be made from the previous cycle.
-3. Any tests or benchmarks judged necessary have been added or updated and reviewed.
-4. Implemented changes with runnable measurements have been compared against equivalent baselines and do not show material regressions in critical resources.
+3. Any tests or benchmarks judged useful have been added or updated and statically reviewed; their absence or inability to run does not block static-only completion.
+4. For changes where runtime measurement is available, equivalent before/after evidence shows no material regression in critical resources. For static-only changes, code tracing shows that the targeted cost was removed or reduced by construction without violating the hard constraints.
 5. Two consecutive complete, deliberate full-code passes over the current post-optimization codebase found zero new validated worthwhile optimization opportunities.
 
-Do not claim the game is maximally optimized in an absolute sense. Completion means the repository reached an empty performance ledger and two consecutive clean full-code passes under the available evidence and measurement environment.
+Do not claim the game is maximally optimized in an absolute sense. Completion means the repository reached an empty performance ledger and two consecutive clean full-code passes under the evidence available in the execution environment. Missing profiling or benchmarking alone is never a reason to prevent completion.
 
 ## Git Discipline
 
