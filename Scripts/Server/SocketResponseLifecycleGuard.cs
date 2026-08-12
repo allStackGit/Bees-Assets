@@ -65,6 +65,13 @@ namespace Assets.Scripts.Server
             }
         }
 
+        private static bool IsSuccessfulWriteStatus(int status)
+        {
+            // Legacy/basic responses historically used 1 for success. The current BeesServer
+            // uses HTTP-style success codes (normally 200). Accept both wire conventions.
+            return status == 1 || (status >= 200 && status < 300);
+        }
+
         private static bool ShouldKeepWriteRequestPending(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0)
@@ -92,7 +99,7 @@ namespace Assets.Scripts.Server
             bool isBasicWrite = response.RequestType == ConfigData.RequestTypes.StoreCommands ||
                                 response.RequestType == ConfigData.RequestTypes.StoreUserData ||
                                 response.RequestType == ConfigData.RequestTypes.SendRLData;
-            if (!isBasicWrite || response.Status == 1)
+            if (!isBasicWrite || IsSuccessfulWriteStatus(response.Status))
             {
                 return false;
             }
