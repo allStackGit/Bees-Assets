@@ -1,7 +1,6 @@
 using Assets.Scripts.Server;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using UnityEngine;
 
 namespace Assets.Scripts
 {
@@ -15,25 +14,6 @@ namespace Assets.Scripts
         public const string DataFile = "__campaign_checkpoint__";
 
         private static bool _pendingSave;
-        private static CheckpointPump _pump;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Install()
-        {
-            EnsurePump();
-        }
-
-        private static void EnsurePump()
-        {
-            if (_pump != null)
-            {
-                return;
-            }
-
-            GameObject host = new GameObject("Profile Checkpoint Pump");
-            Object.DontDestroyOnLoad(host);
-            _pump = host.AddComponent<CheckpointPump>();
-        }
 
         public static bool IsProfileMember(string filename)
         {
@@ -54,10 +34,10 @@ namespace Assets.Scripts
         }
 
         /// <summary>
-        /// Requests one coherent profile checkpoint. The write is deferred until all seven profile
-        /// members have completed their in-memory load callbacks, which also makes first-run/reset
-        /// constructors safe: they can establish local default contents before any server snapshot
-        /// is taken. Multiple Save() calls in the same frame collapse into the same checkpoint.
+        /// Requests one coherent profile checkpoint. The write is deferred until the existing
+        /// socket lifecycle guard reaches its next update and all seven profile members have
+        /// completed their in-memory load callbacks. Several synchronous legacy Save() calls
+        /// therefore collapse into one snapshot instead of exposing an intermediate split state.
         /// </summary>
         public static void Save()
         {
@@ -72,7 +52,6 @@ namespace Assets.Scripts
             }
 
             _pendingSave = true;
-            EnsurePump();
         }
 
         private static bool AreProfileMembersReady()
@@ -98,7 +77,7 @@ namespace Assets.Scripts
                    ConfigData.GetChallengeSavedSquadsData() != null;
         }
 
-        private static void FlushIfReady()
+        internal static void FlushIfReady()
         {
             if (!_pendingSave || !AreProfileMembersReady())
             {
@@ -122,14 +101,6 @@ namespace Assets.Scripts
                 checkpoint.ToString(Formatting.None));
             ConfigData.Socket.SendRequest(new StoreUserDataRequest(payload, ConfigData.StandardMaxTimeOnQueue));
             _pendingSave = false;
-        }
-
-        private sealed class CheckpointPump : MonoBehaviour
-        {
-            private void Update()
-            {
-                FlushIfReady();
-            }
         }
     }
 }
