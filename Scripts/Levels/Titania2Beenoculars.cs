@@ -19,9 +19,6 @@ namespace Assets.Scripts.Levels
             _titania2Resolved = false;
             _titania2MissionTimers.Clear();
             HasContinuousTriggers = true;
-
-            // Bee-noculars is a walled defensive arena. Keep every saved squad formation intact
-            // while relocating whole squads into clear space around Titania.
             StageTitania2HumanFleetAtCenter();
 
             Stage.Menus.SetMissionStatus("Survive and defend Titania!");
@@ -99,10 +96,6 @@ namespace Assets.Scripts.Levels
                 }, true);
                 AddTitania2Timer(survivalClock);
 
-                // Prefab review: the left edge is largely sealed by a long wall, the upper/right
-                // edges are segmented, and the most reliable openings are in the lower corners
-                // plus gaps on the north/east sides. Each requested lane is checked against the
-                // live obstacle colliders and shifted along its edge to the nearest clear opening.
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
                 }, 1f, -0.65f);
@@ -205,9 +198,6 @@ namespace Assets.Scripts.Levels
                     continue;
                 }
 
-                // Use the squad's current authored formation envelope as one indivisible unit.
-                // A conservative circle means that if this location is accepted, every saved
-                // formation slot is clear without moving ships independently.
                 float formationRadius = Mathf.Max(squad.GetWidth(), squad.GetHeight()) * 0.5f + squadPadding;
                 Vector2 placement = FindTitania2HumanSquadPlacement(
                     formationRadius,
@@ -413,14 +403,14 @@ namespace Assets.Scripts.Levels
 
         public void Titania2CampaignEnding()
         {
-            ConfigData.HasSeenPreLevelIntro = false;
-            ConfigData.HasSeenIntermission = false;
-            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
-            ConfigData.UserProgressData.AdvanceToNextLevel();
-
-            ConfigData.UserProgressData.Save();
-            ConfigData.CurrentShips.SaveSquadData();
-            ConfigData.CurrentShips.SaveFleetData();
+            if (WinningSide == ConfigData.Configuration.UserSide)
+            {
+                ConfigData.HasSeenPreLevelIntro = false;
+                ConfigData.HasSeenIntermission = false;
+                ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+                ConfigData.UserProgressData.AdvanceToNextLevel();
+                CampaignCheckpoint.Save();
+            }
 
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
