@@ -192,6 +192,18 @@ namespace Assets.Scripts.Data
                 _serverWriterOverride(data);
                 return;
             }
+
+            // Profile data is cross-file state: user_progress owns the global fleet/squad ID
+            // allocators while each mode stores the identified objects in separate files. Route
+            // every live-server write of those members through one coalesced transaction. Keep
+            // ConfigData.Test outside this hook so local test/mirror configurations cannot recurse
+            // through CampaignCheckpoint's explicit local-storage path.
+            if (!ConfigData.Test && global::Assets.Scripts.CampaignCheckpoint.IsProfileMember(Name))
+            {
+                global::Assets.Scripts.CampaignCheckpoint.Save();
+                return;
+            }
+
             ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(_userId, Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
