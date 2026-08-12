@@ -111,9 +111,9 @@ namespace Bees.Tests.EditMode
             object configuration = RuntimeAssembly.CreateUninitialized(
                 "Assets.Scripts.Settings.Configuration");
             string malformed = Contents
-                .Replace(@"""Yes"": ""Yes""", @"""Yes"": """"")
-                .Replace(@"""No"": ""No""", @"""No"": ""   """)
-                .Replace(@"""AreYouSureExit"": ""Exit?""", @"""AreYouSureExit"": ""Lost""");
+                .Replace("\"Yes\": \"Yes\"", "\"Yes\": \"\"")
+                .Replace("\"No\": \"No\"", "\"No\": \"   \"")
+                .Replace("\"AreYouSureExit\": \"Exit?\"", "\"AreYouSureExit\": \"Lost\"");
 
             RuntimeAssembly.Invoke(configuration, "ProcessData", malformed);
 
