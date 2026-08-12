@@ -1,5 +1,6 @@
+using System.IO;
 using NUnit.Framework;
-using Assets.Scripts;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -10,8 +11,12 @@ namespace Bees.Tests.EditMode
         [Test]
         public void DevelopmentClientUsesBeesServerDevelopmentPort()
         {
-            Assert.That(ConfigData.DevelopmentPort, Is.EqualTo(7146));
-            Assert.That(ConfigData.DevelopmentServerHostname, Is.EqualTo(ConfigData.LocalServerHostname));
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "ConfigData.cs"));
+
+            Assert.That(source, Does.Contain("public const int DevelopmentPort = 7146;"));
+            Assert.That(source, Does.Contain("public const string DevelopmentServerHostname = LocalServerHostname;"));
+            Assert.That(source, Does.Contain("_socket = new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);"));
         }
     }
 }
