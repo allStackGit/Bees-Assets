@@ -69,7 +69,11 @@ namespace Assets.Scripts
                     }
                     else
                     {
-                        _socket = new Socket(ProductionPort, ProductionServerHostname, UseWebSocketSharp);
+                        _socket = SecureSocketFactory.Create(
+                            ProductionPort,
+                            ProductionServerHostname,
+                            UseWebSocketSharp,
+                            secure: true);
                     }
                 }
                 return _socket;

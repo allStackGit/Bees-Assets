@@ -41,16 +41,11 @@ namespace Assets.Scripts.Settings
                 if (standingRequest.Status == 1)
                 {
                     ConfigData.Socket.StandingRequests.Remove(standingRequest);
-                    //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
                     IsLoaded = true;
                     ProcessData(standingRequest.Response.Contents);
                     return;
                 }
 
-                // Socket claims a response hash before validating the settings payload. If the
-                // payload is empty/invalid, the request remains pending but every resend with the
-                // same hash is thereafter rejected as already handled. Retire that poisoned request
-                // and create a fresh request/hash so settings loading can recover.
                 if (ConfigData.Socket.HandledRequests.Contains(_request.Hash))
                 {
                     ConfigData.Socket.StandingRequests.Remove(standingRequest);
@@ -61,7 +56,12 @@ namespace Assets.Scripts.Settings
 
         protected virtual void Fetch()
         {
-            //Debug.Log("Fetching data for Server Settings");
+            if (ConfigData.Production && !SteamWebApiAuth.IsReady)
+            {
+                SteamWebApiAuth.EnsureRequested();
+                return;
+            }
+
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
                 this, Configuration.GetStandardMaxTimeOnQueue());
             ConfigData.Socket.SendRequest(_request);
