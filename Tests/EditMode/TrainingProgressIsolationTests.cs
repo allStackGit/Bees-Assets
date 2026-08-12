@@ -31,8 +31,8 @@ namespace Bees.Tests.EditMode
         [TearDown]
         public void TearDown()
         {
-            Object.DestroyImmediate(_levelObject);
-            Object.DestroyImmediate(_stageObject);
+            UnityEngine.Object.DestroyImmediate(_levelObject);
+            UnityEngine.Object.DestroyImmediate(_stageObject);
         }
 
         [Test]
