@@ -34,6 +34,16 @@ public class FullRetreat : Command
             if (_shipIdsWarping.Count > 0)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
+                if (IsDead)
+                {
+                    return;
+                }
+
+                // A destroyed/unreachable route must not leave the squad permanently owned by
+                // this command after ship pathfinding has exhausted its own retry budget.
+                TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
+                Level.AddTimer(TimeoutTimer);
+
                 TargetWarpGate.ShipAnimationController.Activate();
                 WaitToWarp();
                 if (!IsDead)

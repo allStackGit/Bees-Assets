@@ -14,7 +14,7 @@ namespace Assets.Scripts.Server
         // strongly typed but put the identifier on the wire as decimal text; MySQL can
         // bind that string losslessly to its BIGINT userId columns.
         public string UserId;
-        public readonly string AuthTicket;
+        public string AuthTicket;
         public float Version;
         public string Type;
         public long Hash;

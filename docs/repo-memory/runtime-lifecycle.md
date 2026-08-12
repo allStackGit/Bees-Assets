@@ -23,6 +23,7 @@
 - Remove timers while iterating from the end/backwards or from a snapshot; forward removal can skip adjacent timers for a frame.
 - One-time progression timers must be one-shot. The 30-minute Fish Tank unlock must not use `isRecurring=true`, which would repeatedly pause/show the unlock dialogue every additional 30 minutes.
 - Command-owned participant state should not depend on aggregate shared-environment collections. `FullRetreat`, for example, owns its own participant IDs even though a Warp Gate also keeps aggregate occupancy.
+- Movement commands must have an overall finalization escape hatch when ship pathfinding can exhaust its own retries. A stopped ship does not release `Squad.HasCommand`; `FullRetreat` therefore uses `StandardMaxCommandTime` in addition to ship-level failed-path retry limits.
 - Finalizers that mutate the collection being enumerated must be invoked from a snapshot (e.g. mining commands during asteroid teardown).
 - `Command.Setup()` establishes `Squad.HasCommand`; queue runners should not blindly reassert that flag after `Execute()`, because an execution path can synchronously finalize and clear the command.
 - Derived command `Execute()` implementations must stop immediately if `base.Execute()` finalized the command; otherwise they can schedule timers or mutate state on an already-dead pooled command.

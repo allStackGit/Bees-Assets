@@ -72,7 +72,10 @@ namespace Assets.Scripts
 
         internal static void FlushIfReady()
         {
-            if (!_pendingSave || !AreProfileMembersReady())
+            // Keep the coalesced save pending while transport recovery is in progress. Serializing
+            // a fresh seven-file checkpoint every rendered frame and attempting to send it through
+            // a closed WebSocket turns a normal disconnect into a main-thread allocation/error loop.
+            if (!_pendingSave || !AreProfileMembersReady() || !ConfigData.Socket.IsOpen)
             {
                 return;
             }
