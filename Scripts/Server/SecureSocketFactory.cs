@@ -40,9 +40,7 @@ namespace Assets.Scripts.Server
                 throw new NotSupportedException("Production WSS currently requires the WebSocketSharp transport.");
             }
 
-#pragma warning disable SYSLIB0050
             Socket socket = (Socket)FormatterServices.GetUninitializedObject(typeof(Socket));
-#pragma warning restore SYSLIB0050
             ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             HostnameField.SetValue(socket, hostname);
