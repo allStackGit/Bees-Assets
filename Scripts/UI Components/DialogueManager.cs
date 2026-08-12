@@ -47,6 +47,37 @@ public class DialogueManager : MonoBehaviour
         _isLastDialogue = isLastDialogue;
         _isAdvancingDialogue = false;
         dialogueLines.Clear();
+        _currentLine = null;
+
+        if (ConfigData.SkipDialogue)
+        {
+            // Skipping presentation must still advance the cutscene state exactly as if the
+            // dialogue section had been completed. Intermediate sections use BreakDialogue()
+            // so mission-specific break callbacks execute; the final section uses EndDialogue().
+            foreach (DialogueLine line in lines)
+            {
+                if (line == null)
+                {
+                    continue;
+                }
+                line.IsSkipped = true;
+                line.IsOver = true;
+            }
+
+            StopAllCoroutines();
+            DialogueBox.SetActive(false);
+            ContinueButton.SetActive(false);
+
+            if (_isLastDialogue)
+            {
+                EndDialogue();
+            }
+            else
+            {
+                CutsceneManager.BreakDialogue();
+            }
+            return;
+        }
 
         foreach (DialogueLine line in lines)
         {
