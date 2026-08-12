@@ -10,7 +10,6 @@ namespace Assets.Scripts.Server
         private const int MaxTrackedHandledResponses = 4096;
 
         private static SocketResponseLifecycleGuard _instance;
-        private readonly List<byte[]> _messagesToReplay = new List<byte[]>();
         private readonly Dictionary<long, float> _handledAt = new Dictionary<long, float>();
         private readonly List<long> _hashesToRemove = new List<long>();
 
@@ -27,19 +26,7 @@ namespace Assets.Scripts.Server
         {
             CampaignCheckpoint.FlushIfReady();
             if (ConfigData.SocketManager == null) return;
-            Socket socket = ConfigData.Socket;
-            FilterFailedResponses(socket);
-            PruneHandledResponses(socket);
-        }
-
-        private void FilterFailedResponses(Socket socket)
-        {
-            _messagesToReplay.Clear();
-            while (socket.MessageQueue.TryDequeue(out byte[] bytes))
-            {
-                if (!ShouldSuppressResponse(socket, bytes)) _messagesToReplay.Add(bytes);
-            }
-            for (int i = 0; i < _messagesToReplay.Count; i++) socket.MessageQueue.Enqueue(_messagesToReplay[i]);
+            PruneHandledResponses(ConfigData.Socket);
         }
 
         private static bool IsSuccessfulWriteStatus(int status)
@@ -55,13 +42,7 @@ namespace Assets.Scripts.Server
                    requestType == ConfigData.RequestTypes.GetStrategy;
         }
 
-        /// <summary>
-        /// Filters failure acknowledgements before Socket.Message() can claim their hash and dispatch
-        /// them by Type into success-only payload handlers. Returning true consumes the response.
-        /// Retryable failures leave their standing request intact; terminal typed authorization
-        /// failures retire only that request without applying any success state.
-        /// </summary>
-        private static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
+        internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return false;
 
@@ -77,11 +58,20 @@ namespace Assets.Scripts.Server
             }
             catch { return false; }
 
-            // Missing user data is represented by the normal get-user-data payload with null
-            // Filename/Contents and no error status. Authentication/authorization/database errors
-            // instead carry an HTTP-like failure Status. Keep those responses away from
-            // HandleUserDataResponse/HandleSettingsResponse so they can never enter missing-file
-            // initialization; the standing request remains available to the normal resend path.
+            // Only a 401 for the currently-owned request may start a credential refresh. After a
+            // refresh Socket rotates auth-bearing request hashes, so delayed 401s from the rejected
+            // credential no longer match a standing request and cannot invalidate the replacement.
+            if (response.Status == 401 && ConfigData.Production)
+            {
+                ServerRequest unauthorizedRequest = socket.GetStandingRequest(response.Hash);
+                if (unauthorizedRequest != null)
+                {
+                    Debug.LogWarning($"Server rejected request #{response.Hash}:{response.RequestType} with status 401; refreshing Steam authentication before retry.");
+                    SteamWebApiAuth.Refresh();
+                }
+                return true;
+            }
+
             bool isDataRead = response.RequestType == ConfigData.RequestTypes.GetUserData ||
                               response.RequestType == ConfigData.RequestTypes.GetSettings;
             if (isDataRead && response.Status >= 400)
@@ -93,9 +83,6 @@ namespace Assets.Scripts.Server
                 return true;
             }
 
-            // setup/reconnect/strategy failures are basic responses containing only Type/Hash/Status.
-            // They must never reach the corresponding success parser: default payload values can mark
-            // a Level connected with GameId 0 or feed null strategy names into command handlers.
             if (IsTypedPayloadResponse(response.RequestType) && response.Status >= 400)
             {
                 ServerRequest standingRequest = socket.GetStandingRequest(response.Hash);

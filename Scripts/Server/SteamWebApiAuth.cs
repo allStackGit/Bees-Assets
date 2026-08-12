@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text;
 using Steamworks;
 using UnityEngine;
@@ -50,6 +51,19 @@ namespace Assets.Scripts.Server
             }
         }
 
+        internal static void Refresh()
+        {
+            // Several in-flight requests can receive the same 401. One rejected ticket should
+            // produce one replacement request, not repeatedly cancel that replacement.
+            if (_requestPending && !IsReady)
+            {
+                return;
+            }
+
+            Reset();
+            EnsureRequested();
+        }
+
         private static void EnsureRetryPump()
         {
             if (_retryPump != null)
@@ -81,7 +95,77 @@ namespace Assets.Scripts.Server
                 builder.Append(response.m_rgubTicket[i].ToString("x2"));
             }
             _ticketHex = builder.ToString();
+
+            if (ConfigData.Production)
+            {
+                RefreshStandingAuthenticationRequests(_ticketHex);
+            }
+
             ConfigData.LoadSettings();
+        }
+
+        private static void RefreshStandingAuthenticationRequests(string ticket)
+        {
+            Socket socket = ConfigData.Socket;
+            if (socket == null || !socket.IsOpen || string.IsNullOrEmpty(ticket))
+            {
+                return;
+            }
+
+            foreach (ServerRequest request in socket.StandingRequests
+                         .Where(HasAuthenticationPayload)
+                         .ToList())
+            {
+                // A retry after credential replacement is a new transport identity. Rotate the
+                // hash so a delayed 401 from the rejected ticket cannot match the replacement
+                // request and start another refresh cycle. Remove hash-based set membership before
+                // mutation so those sets cannot be corrupted by a changed GetHashCode().
+                long oldHash = request.Hash;
+                socket.StandingRequests.Remove(request);
+                ConfigData.__PastServerRequests.Remove(request);
+                socket.HandledRequests.Remove(oldHash);
+
+                request.Hash = Utilities.Hash();
+                ApplyAuthenticationPayload(request, ticket);
+                socket.SendRequest(request, true);
+            }
+        }
+
+        private static bool HasAuthenticationPayload(ServerRequest request)
+        {
+            return request != null &&
+                   (request.Type == ConfigData.RequestTypes.SetupLevel ||
+                    request.Type == ConfigData.RequestTypes.ReconnectLevel ||
+                    request.Type == ConfigData.RequestTypes.StoreUserData ||
+                    request.Type == ConfigData.RequestTypes.GetUserData ||
+                    request.Type == ConfigData.RequestTypes.GetSettings);
+        }
+
+        private static void ApplyAuthenticationPayload(ServerRequest request, string ticket)
+        {
+            switch (request.Type)
+            {
+                case ConfigData.RequestTypes.SetupLevel:
+                    ((SetupLevelRequest)request).Request.AuthTicket = ticket;
+                    ((SetupLevelRequest)request).Request.Hash = request.Hash;
+                    break;
+                case ConfigData.RequestTypes.ReconnectLevel:
+                    ((ReconnectLevelRequest)request).Request.AuthTicket = ticket;
+                    ((ReconnectLevelRequest)request).Request.Hash = request.Hash;
+                    break;
+                case ConfigData.RequestTypes.StoreUserData:
+                    ((StoreUserDataRequest)request).Request.AuthTicket = ticket;
+                    ((StoreUserDataRequest)request).Request.Hash = request.Hash;
+                    break;
+                case ConfigData.RequestTypes.GetUserData:
+                    ((DataFileRequest)request).Request.AuthTicket = ticket;
+                    ((DataFileRequest)request).Request.Hash = request.Hash;
+                    break;
+                case ConfigData.RequestTypes.GetSettings:
+                    ((SettingsRequest)request).Request.AuthTicket = ticket;
+                    ((SettingsRequest)request).Request.Hash = request.Hash;
+                    break;
+            }
         }
 
         internal static void Reset()

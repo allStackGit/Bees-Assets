@@ -82,5 +82,69 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_pausedForNetworkDisconnect = false;"),
                 "A startup disconnect without a Level must not arm a later unpause against a missing PrimaryLevel.");
         }
+
+        [Test]
+        public void WebSocketSharpTransportDoesNotBlockUnityOnConnectOrSend()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+
+            Assert.That(source, Does.Contain("socket.ConnectAsync();"),
+                "WebSocketSharp connection handshakes must not run synchronously on Unity's main thread.");
+            Assert.That(source, Does.Not.Contain("_webSocketSharpSocket.Connect();"));
+            Assert.That(source, Does.Contain("ThreadPool.QueueUserWorkItem(_ => DrainSharpSendQueue())"),
+                "WebSocketSharp stream writes must run through the serialized background sender.");
+            Assert.That(source, Does.Contain("message.Socket.Send(message.Json);"));
+        }
+
+        [Test]
+        public void SocketDispatchBoundsMainThreadResponseWorkAndFiltersInline()
+        {
+            string socketSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+            string guardSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SocketResponseLifecycleGuard.cs"));
+
+            Assert.That(socketSource, Does.Contain("MaxMessagesPerUpdate"));
+            Assert.That(socketSource, Does.Contain("messagesProcessed < MaxMessagesPerUpdate"));
+            Assert.That(socketSource, Does.Contain("SocketResponseLifecycleGuard.ShouldSuppressResponse(this, _update_message)"));
+            Assert.That(guardSource, Does.Not.Contain("while (socket.MessageQueue.TryDequeue"),
+                "The lifecycle guard must not drain and replay the entire response queue every rendered frame.");
+        }
+
+        [Test]
+        public void AuthenticationRejectionRefreshesTicketAndRotatesRetryIdentity()
+        {
+            string guardSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SocketResponseLifecycleGuard.cs"));
+            string authSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SteamWebApiAuth.cs"));
+
+            Assert.That(guardSource, Does.Contain("response.Status == 401 && ConfigData.Production"));
+            Assert.That(guardSource, Does.Contain("SteamWebApiAuth.Refresh();"));
+            Assert.That(authSource, Does.Contain("request.Hash = Utilities.Hash();"),
+                "A replacement credential must use a new retry identity so a delayed 401 from the rejected ticket cannot match it.");
+            Assert.That(authSource, Does.Contain("ApplyAuthenticationPayload(request, ticket)"));
+            Assert.That(authSource, Does.Contain("socket.SendRequest(request, true)"));
+        }
+
+        [Test]
+        public void DisconnectedCheckpointStaysCoalescedUntilSocketReopens()
+        {
+            string checkpointSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "CampaignCheckpoint.cs"));
+
+            Assert.That(checkpointSource, Does.Contain("!AreProfileMembersReady() || !ConfigData.Socket.IsOpen"));
+        }
+
+        [Test]
+        public void FullRetreatHasAnOverallCommandTimeout()
+        {
+            string retreatSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Commands", "FullRetreat.cs"));
+
+            Assert.That(retreatSource, Does.Contain("TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout)"));
+            Assert.That(retreatSource, Does.Contain("Level.AddTimer(TimeoutTimer)"));
+        }
     }
 }
