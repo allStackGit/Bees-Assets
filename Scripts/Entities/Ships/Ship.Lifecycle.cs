@@ -240,6 +240,10 @@ namespace Assets.Scripts.Entities.Ships
             InCombat = false;
             IsDead = false;
             AreRocketFlaresOutOfSync = false;
+            IsCeaseFire = false;
+            IsMoving = false;
+            CurrentSpeed = Speed;
+            MotherSquad = null;
             DestinationQueue.Clear();
             NearbyAsteroids.Clear();
             TargetEnemyShipToFollow = null;
