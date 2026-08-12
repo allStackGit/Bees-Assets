@@ -9,23 +9,36 @@ namespace Bees.Tests.EditMode
     public class CampaignCheckpointRoutingTests
     {
         [Test]
-        public void CampaignPersistenceMembersRouteThroughAtomicCheckpoint()
+        public void EveryProfileMemberRoutesThroughTheAtomicServerCheckpoint()
         {
-            string userData = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Data", "UserData.cs"));
+            string dataFile = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "DataFile.cs"));
             string checkpoint = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "CampaignCheckpoint.cs"));
+            string userData = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "UserData.cs"));
 
-            Assert.That(userData, Does.Contain("this is UserProgressData"));
-            Assert.That(userData, Does.Contain("ConfigData.SavedSquadsDataFilenames[1]"));
-            Assert.That(userData, Does.Contain("ConfigData.FleetDataFilenames[1]"));
-            Assert.That(userData, Does.Contain("ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign"));
-            Assert.That(userData, Does.Contain("CampaignCheckpoint.Save()"));
+            Assert.That(dataFile, Does.Contain("CampaignCheckpoint.IsProfileMember(Name)"));
+            Assert.That(dataFile, Does.Contain("CampaignCheckpoint.Save()"));
+            Assert.That(dataFile, Does.Contain("!ConfigData.Test"),
+                "Local test storage must not recurse through the live-server checkpoint hook.");
 
+            Assert.That(checkpoint, Does.Contain("filename == ConfigData.UserProgressFilename"));
+            for (int index = 0; index < 3; index++)
+            {
+                Assert.That(checkpoint, Does.Contain($"ConfigData.FleetDataFilenames[i]"));
+                Assert.That(checkpoint, Does.Contain($"ConfigData.SavedSquadsDataFilenames[i]"));
+                Assert.That(checkpoint, Does.Contain($"[ConfigData.FleetDataFilenames[{index}]]"));
+                Assert.That(checkpoint, Does.Contain($"[ConfigData.SavedSquadsDataFilenames[{index}]]"));
+            }
             Assert.That(checkpoint, Does.Contain("[ConfigData.UserProgressFilename] = ConfigData.UserProgressData.ToJson()"));
-            Assert.That(checkpoint, Does.Contain("[ConfigData.SavedSquadsDataFilenames[1]]"));
-            Assert.That(checkpoint, Does.Contain("[ConfigData.FleetDataFilenames[1]]"));
+            Assert.That(checkpoint, Does.Contain("ConfigData.IsFleetDataLoaded[i]"));
+            Assert.That(checkpoint, Does.Contain("ConfigData.IsSavedSquadsDataLoaded[i]"));
+            Assert.That(checkpoint, Does.Contain("_pendingSave = true"));
             Assert.That(checkpoint, Does.Contain("ConfigData.Socket.SendRequest"));
+
+            Assert.That(userData, Does.Not.Contain("ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign"),
+                "Profile transaction routing belongs at the DataFile boundary so reset/default writes cannot bypass it.");
         }
     }
 }
