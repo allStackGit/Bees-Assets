@@ -4,19 +4,16 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
+        private const float Titania2OffscreenSpawnDistance = 80f;
+
         private void EnsureTitania2ReinforcementRoute(ref Vector2 startingPosition, ref Vector2 nextPosition)
         {
             Vector2 requestedEntry = nextPosition;
 
-            // Reinforcements used to spawn outside the map and then move to nextPosition.
-            // Squad.SetStartingPosition() is obstacle-aware, however, so an off-map coordinate is
-            // relocated to the nearest place where the formation fits. On Beenoculars that can be
-            // a sealed pocket near an edge. Never feed an off-map spawn into generic formation
-            // placement: if the requested entry is connected to Titania, spawn directly there.
             if (Pathfinder.CanOccupyDestination(nextPosition, ConfigData.MinimumClearance) &&
                 Pathfinder.AreStaticallyConnected(nextPosition, Titania2Center, ConfigData.MinimumClearance))
             {
-                startingPosition = nextPosition;
+                startingPosition = GetTitania2OffscreenSpawn(nextPosition);
                 return;
             }
 
@@ -28,8 +25,6 @@ namespace Assets.Scripts.Levels
             const float edgeMargin = 28f;
             const float scanStep = 20f;
 
-            // Scan all four map edges. A candidate is accepted only when the pathfinder's
-            // authored/static map says it belongs to the same connected region as Titania.
             for (float x = MinX + edgeMargin; x <= MaxX - edgeMargin; x += scanStep)
             {
                 ConsiderTitania2Entry(
@@ -56,14 +51,14 @@ namespace Assets.Scripts.Levels
 
             if (found)
             {
-                Debug.LogWarning($"Beenoculars reinforcement entry {requestedEntry} is unusable or sealed; rerouting spawn to connected entry {bestEntry}.");
-                startingPosition = bestEntry;
+                Debug.LogWarning($"Beenoculars reinforcement entry {requestedEntry} is unusable or sealed; rerouting to connected entry {bestEntry}.");
                 nextPosition = bestEntry;
+                startingPosition = GetTitania2OffscreenSpawn(bestEntry);
                 return;
             }
 
-            // Never strand a Bee squad in a sealed pocket. If no connected edge opening can be
-            // found, place it in the playable region as a last-resort mission-safe fallback.
+            // If the authored map exposes no connected edge opening, fail safe inside the
+            // playable arena rather than manufacturing an off-screen route through a wall.
             if (Pathfinder.TryFindNearestValidDestination(Titania2Center + new Vector2(0f, -60f), ConfigData.MinimumClearance, out Vector2 fallback) &&
                 Pathfinder.AreStaticallyConnected(fallback, Titania2Center, ConfigData.MinimumClearance))
             {
@@ -73,11 +68,32 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            // Titania itself is known to be in the playable mission arena. This is preferable to
-            // allowing generic off-map formation placement to choose an isolated compartment.
             Debug.LogError("Beenoculars could not resolve a connected reinforcement lane; spawning at Titania as a final safety fallback.");
             startingPosition = Titania2Center;
             nextPosition = Titania2Center;
+        }
+
+        private Vector2 GetTitania2OffscreenSpawn(Vector2 entryPoint)
+        {
+            float leftDistance = Mathf.Abs(entryPoint.x - MinX);
+            float rightDistance = Mathf.Abs(MaxX - entryPoint.x);
+            float bottomDistance = Mathf.Abs(entryPoint.y - MinY);
+            float topDistance = Mathf.Abs(MaxY - entryPoint.y);
+            float nearest = Mathf.Min(leftDistance, rightDistance, bottomDistance, topDistance);
+
+            if (nearest == leftDistance)
+            {
+                return new Vector2(MinX - Titania2OffscreenSpawnDistance, entryPoint.y);
+            }
+            if (nearest == rightDistance)
+            {
+                return new Vector2(MaxX + Titania2OffscreenSpawnDistance, entryPoint.y);
+            }
+            if (nearest == bottomDistance)
+            {
+                return new Vector2(entryPoint.x, MinY - Titania2OffscreenSpawnDistance);
+            }
+            return new Vector2(entryPoint.x, MaxY + Titania2OffscreenSpawnDistance);
         }
 
         private void ConsiderTitania2Entry(
@@ -93,8 +109,6 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            // Keep enough physical room around the entry that generic formation placement does
-            // not have to search into a neighboring compartment just to fit the squad.
             Vector2 worldEntry = PathfinderObstacleScope.LevelToWorld(this, entryPoint);
             if (Physics2D.OverlapCircle(worldEntry, 18f, ConfigData.ObstaclesLayerMask) != null)
             {
