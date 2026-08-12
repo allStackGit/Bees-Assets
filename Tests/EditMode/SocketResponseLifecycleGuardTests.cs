@@ -9,7 +9,7 @@ namespace Bees.Tests.EditMode
     public class SocketResponseLifecycleGuardTests
     {
         [Test]
-        public void FailedBasicWritesRemainRetryableInsteadOfBeingRetired()
+        public void FailedBasicWritesRemainRetryableAndSuccessCoversBothWireConventions()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "SocketResponseLifecycleGuard.cs"));
@@ -17,7 +17,11 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.StoreCommands"));
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.StoreUserData"));
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.SendRLData"));
-            Assert.That(source, Does.Contain("response.Status == 200"));
+            Assert.That(source, Does.Contain("status == 1"),
+                "Legacy success acknowledgements must remain accepted.");
+            Assert.That(source, Does.Contain("status >= 200 && status < 300"),
+                "Current BeesServer HTTP-style success acknowledgements must be accepted.");
+            Assert.That(source, Does.Contain("IsSuccessfulWriteStatus(response.Status)"));
             Assert.That(source, Does.Contain("response.Status == 409"));
             Assert.That(source, Does.Contain("response.Status == 403"));
             Assert.That(source, Does.Contain("socket.GetStandingRequest(response.Hash)"));
