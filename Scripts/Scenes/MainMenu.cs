@@ -108,7 +108,7 @@ namespace Assets.Scripts.Scenes
             if (currentLevel >= challengeLevels)
             {
                 HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Challenge Mode Completed!";
-                HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+                HumanChallengeModeButton.GetComponent<Button>().enabled = false;
             }
 
 
