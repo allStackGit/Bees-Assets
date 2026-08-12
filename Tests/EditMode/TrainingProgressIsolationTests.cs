@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -49,6 +50,25 @@ namespace Bees.Tests.EditMode
                 "Training result handling should return before touching player profile/UI dependencies.");
             Assert.That(RuntimeAssembly.GetField(_level, "DidUserWin"), Is.False,
                 "Automated training has no user-specific win result.");
+        }
+
+        [Test]
+        public void TrainingSetupReturnsBeforePersistedFleetDependency()
+        {
+            RuntimeAssembly.SetField(_stage, "IsTraining", true);
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            object originalCurrentShips = RuntimeAssembly.GetStaticField(configDataType, "CurrentShips");
+
+            try
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", null);
+                Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(_level, "ReconcilePersistedFleetForSetup"),
+                    "Training setup should not dereference or mutate the player's persisted Ships object.");
+            }
+            finally
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", originalCurrentShips);
+            }
         }
     }
 }

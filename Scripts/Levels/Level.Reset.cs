@@ -194,7 +194,7 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
 
-            //Debug.Log($"Chosen squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
+            //Debug.Log($"Chosen squads: {Utilities.ListToString(ConfigData.LevelOptions.ChosenSquads)}");
             if (Stage.HasRandomizedOptions)
             {
                 RandomizeOptions();
@@ -345,8 +345,8 @@ namespace Assets.Scripts.Levels
             //if (count > 0)
             //{
             //    Debug.LogError($"Found alive projectiles at end of level");
-            //} 
-            ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
+            //}
+            ReconcilePersistedFleetForSetup();
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
             if (!Stage.WatchServerRequests)
             {
@@ -357,6 +357,18 @@ namespace Assets.Scripts.Levels
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void ReconcilePersistedFleetForSetup()
+        {
+            // Fully random training squads are transient and do not own the player's saved fleet.
+            // Never repair/save persisted squad membership as a side effect of an automated episode.
+            if (Stage.IsTraining)
+            {
+                return;
+            }
+
+            ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
         }
 
         private void ResetRuntimeState(HashSet<long> allHandledRequests)
