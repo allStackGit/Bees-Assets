@@ -109,10 +109,13 @@ namespace Bees.Tests.EditMode
 
             Assert.That(setup, Does.Contain("StageTitania2HumanFleetAtCenter"),
                 "Beenoculars must stage the player's fleet in Titania's central defensive pocket.");
-            Assert.That(_triggerSource, Does.Contain("FindTitania2HumanShipPlacement"));
-            Assert.That(_triggerSource, Does.Contain("ship.GetHalfWidth()"));
-            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(candidate, clearance, ConfigData.ObstaclesLayerMask)"),
-                "Central staging must reject obstacle-overlapping ship positions.");
+            Assert.That(_triggerSource, Does.Contain("FindTitania2HumanSquadPlacement"));
+            Assert.That(_triggerSource, Does.Contain("formationRadius = Mathf.Max(squad.GetWidth(), squad.GetHeight())"),
+                "Central staging must validate the complete saved formation envelope rather than individual ships.");
+            Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(worldCandidate, formationRadius, ConfigData.ObstaclesLayerMask)"),
+                "Central staging must reject obstacle-overlapping whole-squad positions.");
+            Assert.That(_triggerSource, Does.Contain("squad.SetStartingPosition(placement)"),
+                "Central staging must relocate the squad as a formation rather than scattering its ships independently.");
             Assert.That(_triggerSource, Does.Contain("CurrentLevelOptions.UserStartingPosition = Titania2Center"));
             Assert.That(_triggerSource, Does.Contain("Stage.DefaultCameraPosition = Titania2Center"));
 
@@ -140,6 +143,8 @@ namespace Bees.Tests.EditMode
             Assert.That(_triggerSource, Does.Contain("Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask)"),
                 "The off-map arrival segment must actually pass through a clear opening.");
             Assert.That(_triggerSource, Does.Contain("AddReinforcementSquads(new List<SavedSquad> { squads[i] }, spawnPoint, entryPoint)"));
+            Assert.That(_triggerSource, Does.Contain("SetOffscreenStartingPosition(startingPosition)"),
+                "Validated Beenoculars reinforcements must be moved back off-screen without obstacle-aware relocation before entering the map.");
 
             Assert.That(_triggerSource, Does.Contain("GetRange(26, 5)"));
             Assert.That(_triggerSource, Does.Contain("GetRange(31, 2)"));
