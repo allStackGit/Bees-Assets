@@ -34,6 +34,11 @@ namespace Assets.Scripts.Server
 
         private void Update()
         {
+            // Checkpoint writes are intentionally coalesced until the next frame. Flush before the
+            // socket-manager guard so first-run/default writes remain pending until their complete
+            // seven-file in-memory profile is ready rather than being discarded during bootstrap.
+            CampaignCheckpoint.FlushIfReady();
+
             // Scene.Start establishes the socket manager and creates ConfigData.Socket. Avoid
             // touching the lazy Socket property before the normal scene bootstrap owns it.
             if (ConfigData.SocketManager == null)
