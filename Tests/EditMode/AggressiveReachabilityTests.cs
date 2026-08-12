@@ -24,7 +24,8 @@ namespace Bees.Tests.EditMode
 
             Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("),
                 "Enemy right-click handling must not synchronously build or query whole-map connectivity components.");
-            Assert.That(interaction, Does.Contain("selectedSquad.UserAggressive(Squad);"));
+            Assert.That(interaction, Does.Contain("UserAggressive(Squad)"),
+                "Enemy right-click handling must dispatch an aggressive command to the selected squads.");
         }
     }
 }
