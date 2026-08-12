@@ -1,12 +1,6 @@
 ﻿
 
 using Assets.Scripts.Levels;
-using Assets.Scripts.Scenes;
-using System.Collections;
-using System.Linq;
-using System.Security.Policy;
-using System.Text.RegularExpressions;
-using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
@@ -35,6 +29,14 @@ namespace Assets.Scripts.Server
             request.Hash = Hash;
             SquadId = Squad.ItemId;
             EnemyId = enemy != null ? enemy.ItemId : 0;
+
+            // Strategic Matchup intentionally contains nearby allied ships in its first segment.
+            // Shooting learning must identify only the acting squad and enemies; reuse the enemy
+            // segment already selected by MakeMatchupAndGetCommand while rebuilding the friendly
+            // segment from this request's acting squad alone.
+            string[] matchupSegments = (matchup ?? string.Empty).Split('|');
+            string enemySegment = matchupSegments.Length > 1 ? matchupSegments[1] : string.Empty;
+            request.ShootingMatchup = $"{Squad.AddToMatchup(Squad.GetShipsForMatchup())}|{enemySegment}";
         }
         public bool HasSameSquad()
         {
