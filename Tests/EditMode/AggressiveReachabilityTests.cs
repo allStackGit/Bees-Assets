@@ -19,7 +19,7 @@ namespace Bees.Tests.EditMode
             Assert.That(aggressive, Does.Contain("if (!ship.IsPathfinding)"),
                 "Recurring aggressive targeting must not invalidate an A* search that is still running.");
             Assert.That(aggressive, Does.Contain("ship.MoveToPoint(target.GetPosition());"));
-            Assert.That(aggressive, Does.Contain("if (IsHiveMindCommand)\n                {\n                    PrepareDamageToSendEntries();"),
+            Assert.That(aggressive, Does.Match(@"if\s*\(IsHiveMindCommand\)\s*\{\s*PrepareDamageToSendEntries\(\);"),
                 "User attacks must not do Hive Mind damage bookkeeping synchronously on the click frame.");
 
             Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("),
