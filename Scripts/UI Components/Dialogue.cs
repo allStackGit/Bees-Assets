@@ -31,6 +31,11 @@ namespace Assets.Scripts.UI_Components
             _playSaveSoundOnShow = buttonLabels.Count == 0 && buttonActions.Count == 0;
 
             _dialogue = GameObject.Instantiate(prefab);
+            // Prefabs are serialized active. Hide the clone before touching any child hierarchy so
+            // a malformed/stale prefab or unexpected constructor exception can never leave an
+            // unconfigured modal blocking the scene. Show() is the only path that makes it visible.
+            _dialogue.SetActive(false);
+
             _titleBox = _dialogue.transform.Find($"Main Panel/Text/Title").gameObject;
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
             _buttonsContainer = _dialogue.transform.Find($"Main Panel/Buttons").gameObject;
@@ -56,7 +61,6 @@ namespace Assets.Scripts.UI_Components
                 Debug.LogError($"{buttonLabels.Count} button labels given and {buttonActions.Count} button actions were given while making a new dialogue box");
             }
             _buttonPrefab.SetActive(false);
-            Hide();
         }
 
         private GameObject MakeButton(string label, UnityAction action)
