@@ -11,15 +11,15 @@ Compact facts that are expensive to rediscover when auditing or changing Hive Mi
 - Large `Level` responsibilities are split into partials. `Level.Environment.cs` owns environment randomization, clearance, static obstacles, collision-asteroid spawning, and mining-asteroid spawning; keep environment fixes there rather than growing `Level.cs` again.
 - Dedicated Hive Mind training samples both static-obstacle/no-static and collision-asteroid/no-asteroid dimensions. Do not reintroduce a blanket `!Stage.IsTraining` gate around those environment choices; that silently trains only obstacle-free command values.
 - Asteroid spawn timing is Level-owned. Derive each Level's interval from the serialized Stage baseline (`AsteroidMinimumSpawnRate` / `AsteroidMaxSpawnRate`) and apply option multipliers locally. Never use zero-initialized/shared `CurrentAsteroid*` fields as mutable per-Level scratch state.
-- `GeneratedSquadMinimumCompatibility` normalizes the legacy exclusive-minimum formula once for the Stage lifetime. Training resets reuse that same corrected minimum so the 4-squad lower bound does not disappear after the first episode.
+- `GeneratedSquadMinimumCompatibility` normalizes the legacy exclusive-minimum formula once for the Stage lifetime. Training resets reuse that same corrected minimum so the 4-squad lower bound does not disappear after the first episode. Its process-wide Stage registry must prune destroyed Unity wrappers on scene unload/load.
 
 ## Matchup identity and historical coverage
 
 - The supplied historical SQL represents sparse experience. Matchup strings themselves are not stored in SQL; only hashed `matchup_id` values survive, so historical key fragmentation cannot be reconstructed later from the database alone.
 - Strategic matchup identity intentionally includes acting ships, relevant nearby allies, enemy composition, an in-range flag, and comparative-health bucket.
-- Shooting identity is deliberately separate from strategic ally context. The client sends `GetStrategy.ShootingMatchup` as acting-squad composition plus enemy composition; BeesServer carries that request-local value through `AsyncLocalStorage` while evaluating the shared `Game`. Never derive the current shooting key from the strategic first segment again, because nearby allies fragment target-priority history.
+- Shooting identity is deliberately separate from strategic ally context. The client sends request-local `GetStrategy.ShootingMatchup` in the canonical `actingShips|enemyShips|` shape; the trailing delimiter is required by BeesServer's legacy enemy-type parser. BeesServer carries that request-local value through `AsyncLocalStorage` while evaluating the shared `Game`. Never derive the current shooting key from the strategic first segment again, because nearby allies fragment target-priority history.
 - Request-local shooting identity is required for the 16-Level training runtime. Do not store the current shooting key in mutable `Game` state: simultaneous `get-strategy` requests would overwrite one another.
-- High-density matchup construction has a remaining design consideration rather than a validated current defect: when more than 64 relevant ships are visible, any future representative-sampling change must be deterministic before relying on exact keys for large battles.
+- High-density matchup construction is deterministic before the 64-ship cap: relevant enemies/allies are ordered by distance, ship type, and runtime ID before truncation. Preserve deterministic representative selection when changing large-battle matchup construction.
 
 ## Reward and attribution invariants
 
@@ -30,12 +30,13 @@ Compact facts that are expensive to rediscover when auditing or changing Hive Mi
 - Fire Barge chain reactions have two owners: the originating Barge command receives same-side penalties, while an enemy killer can receive the historical chain-reaction bonus. Snapshot the killer's outcome identity at death and reset it on pooled reuse.
 - `PastCommands` plus `OutcomeIdToPastCommandIndex` are the stable per-Level attribution store. Finalized command wrappers remain unavailable for reuse until level teardown, after command storage.
 - Scout-created Beacons and ordinary Beacons share one pool. `Ship.ClearData()` clears `MotherSquad`; Hive Mind vision credits `MotherSquad` only for a current Scout-minion Beacon and otherwise credits the Beacon's own squad.
+- Retreat currently executes with `FirstSeen` instead of the server-selected shooting strategy. Keep Retreat out of shooting-outcome persistence unless that execution contract is changed; its strategic and targeting outcomes remain valid.
 
 ## Outcome persistence invariants
 
 - A `store-commands` success response means the matched outcome mutations committed durably. Server persistence is serialized per `Game`; failed transactions preserve retryable reservation metadata.
 - Durable outcome reservations survive process restart and are not expired merely because wall-clock age exceeds a normal long-running level. Reservation ownership ends when the outcome is committed/discarded or the owning retained Game lifecycle is deliberately retired.
-- A mixed stale/valid StoreCommands batch must not sacrifice valid rewards. The server partitions stale IDs, commits the valid subset transactionally, then reports stale IDs explicitly.
+- A mixed stale/valid StoreCommands batch must not sacrifice valid rewards. The server partitions stale IDs, commits the valid subset transactionally, then reports stale IDs explicitly. A 409 after that partition is terminal for the submitted operation because the valid siblings are already committed.
 - Database row `ID` and temporary client/server `OutcomeId` are different identities. SQL rows are created only when final TSV is returned through `store-commands`.
 - Every terminal request path must release `server.pendingRequests` ownership. Request hashes are scoped by connection where duplicate client hashes can coexist across sockets.
 - Strategy caches must invalidate after committed outcome writes. The server runtime crosses a `node:vm` boundary, so Map recognition must be cross-realm-safe rather than relying on host-realm `instanceof Map`.
