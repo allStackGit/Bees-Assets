@@ -298,10 +298,6 @@ namespace Assets.Scripts.Levels
                     {
                         velocity = asteroid.Body.linearVelocity;
                     }
-                    else if (obstacle is AsteroidPiece asteroidPiece)
-                    {
-                        velocity = asteroidPiece.Body.linearVelocity;
-                    }
 
                     FillObstaclePointIndexes(obstacle, velocity.x, velocity.y, _obstaclePointIndexes, _obstaclePointIndexSet);
                     for (int pointIndex = 0; pointIndex < _obstaclePointIndexes.Count; pointIndex++)
@@ -336,8 +332,7 @@ namespace Assets.Scripts.Levels
             return obstacle != null &&
                 !obstacle.IsDead &&
                 obstacle.gameObject.activeInHierarchy &&
-                (obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid ||
-                 obstacle.ObstacleType == ConfigData.ObstacleTypes.AsteroidPiece);
+                obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid;
         }
 
         private void RebuildStaticObstacleLayer()
