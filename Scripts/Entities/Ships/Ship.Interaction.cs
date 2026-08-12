@@ -26,6 +26,31 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        private static bool CanIssueUserAttack(Squad attacker, Squad enemy)
+        {
+            if (attacker == null || enemy == null || attacker.Level?.Pathfinder == null || !attacker.Level.HasObstacles)
+            {
+                return true;
+            }
+
+            int clearance = int.MaxValue;
+            foreach (Ship ship in attacker.GetShips())
+            {
+                if (ship == null || ship.IsDead || !ship.IsMobile)
+                {
+                    continue;
+                }
+                clearance = Mathf.Min(clearance, ship.GetClearance());
+            }
+
+            if (clearance == int.MaxValue)
+            {
+                clearance = ConfigData.MinimumClearance;
+            }
+
+            return attacker.Level.Pathfinder.AreStaticallyConnected(attacker.GetPosition(), enemy.GetPosition(), clearance);
+        }
+
         public void Clicked(int mouseButton, bool isCtrlClick = false)
         {
             if (!IsUserControlled && mouseButton == LevelInputManager.RightClick)
@@ -43,7 +68,20 @@ namespace Assets.Scripts.Entities.Ships
 
                 _lastEnemyRightClickFrame = Time.frameCount;
                 _lastEnemyRightClickSquadItemId = targetSquadItemId;
-                Level.State.GetSelectedSquads().ForEach(selectedSquad => selectedSquad.UserAggressive(Squad));
+
+                foreach (Squad selectedSquad in Level.State.GetSelectedSquads())
+                {
+                    // Reject permanently disconnected targets before UserAggressive() finalizes
+                    // the current order, obtains a pooled command, builds targeting queues, or
+                    // starts any pathfinding. This keeps an isolated authored pocket from turning
+                    // a right-click into a burst of doomed attack work.
+                    if (!CanIssueUserAttack(selectedSquad, Squad))
+                    {
+                        Debug.LogWarning($"Ignoring attack from {selectedSquad} to unreachable enemy {Squad}.");
+                        continue;
+                    }
+                    selectedSquad.UserAggressive(Squad);
+                }
             }
             else if (IsUserControlled && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
             {
