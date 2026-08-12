@@ -8,7 +8,6 @@ using System;
 
 namespace Assets.Scripts.Data
 {
-    // stores user data as JSON either on a local file or in the server
     public class DataFile
     {
         public readonly string Name;
@@ -29,13 +28,8 @@ namespace Assets.Scripts.Data
             this.Path = ConfigData.GetBasePath();
             this.FullPath = System.IO.Path.Combine(Path, Name + Extension);
             _userId = ConfigData.GetUserId();
-            //Debug.Log($"Full file path is {FullPath}");
         }
 
-        /// <summary>
-        /// Test/tooling constructor that keeps storage inside an explicitly owned directory
-        /// and replaces the live socket write with a supplied transport callback.
-        /// </summary>
         public DataFile(string name, string basePath, ulong userId, Action<string> serverWriter)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -56,7 +50,6 @@ namespace Assets.Scripts.Data
         private void MakeFileIfNecessary()
         {
             Directory.CreateDirectory(Path);
-            // make file if it does not exist
             if (!Exists())
             {
                 FileStream fs = File.Create(FullPath);
@@ -109,7 +102,6 @@ namespace Assets.Scripts.Data
                     if (standingRequest.Status == 1)
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
-                        //Debug.Log($"The standing request has completed, setting the contents: {standingRequest.Response.Contents}");
                         SetContents(standingRequest.Response.Contents);
                         _isDataLoaded = true;
                         return;
@@ -118,29 +110,17 @@ namespace Assets.Scripts.Data
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
 
-                        // A missing server file normally writes its defaults and then retries the
-                        // read so the just-created row becomes authoritative. Dedicated training
-                        // intentionally suppresses that persistent write; WriteData has already
-                        // installed the defaults in memory, so retrying would loop forever on the
-                        // still-missing server row. Accept the transient in-memory defaults instead.
                         if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime && _isDataLoaded)
                         {
                             _request = null;
                             return;
                         }
 
-                        //Debug.Log($"The standing request has completed but needs to be resent");
                         ReadContents();
                         return;
                     }
-                    else
-                    {
-                        //Debug.Log("Still waiting for datafile request to complete");
-                    }
                 }
-
             }
-
         }
         public string GetContents()
         {
@@ -181,9 +161,8 @@ namespace Assets.Scripts.Data
             }
             else
             {
-                return true; // if the file doesn't exist on the server, the socket handler will make the data file send the defaults
+                return true;
             }
-            
         }
         public void WriteServerData(string data)
         {
@@ -192,6 +171,13 @@ namespace Assets.Scripts.Data
                 _serverWriterOverride(data);
                 return;
             }
+
+            if (!ConfigData.Test && global::Assets.Scripts.CampaignCheckpoint.IsProfileMember(Name))
+            {
+                global::Assets.Scripts.CampaignCheckpoint.Save();
+                return;
+            }
+
             ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(_userId, Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
@@ -202,22 +188,13 @@ namespace Assets.Scripts.Data
         }
         public object WriteData(string data)
         {
-            // Some defaults depend on earlier asynchronously loaded identity data. The waiting
-            // sentinel means "retry the read later", not user content; never persist it or mark
-            // the file loaded.
             if (data == ConfigData.WaitingMessage)
             {
                 return _jsonObject;
             }
 
-            // Validate before any local or remote side effect. A malformed replacement
-            // must not corrupt the last good file or be sent to the server.
             object jsonObject = JsonConvert.DeserializeObject(data);
 
-            // Dedicated Hive Mind training may traverse ordinary player save/default code while
-            // bootstrapping its runtime. Training state is disposable and must never mutate a
-            // real profile, including the direct missing-file default writes issued by Socket.
-            // Keep the data usable in memory without touching local disk or the server.
             if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime)
             {
                 _textContents = data;
@@ -246,7 +223,6 @@ namespace Assets.Scripts.Data
             _jsonObject = jsonObject;
             _isDataLoaded = true;
             return GetJsonObject();
-
         }
     }
 }

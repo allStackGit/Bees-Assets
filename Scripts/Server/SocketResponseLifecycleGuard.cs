@@ -25,6 +25,7 @@ namespace Assets.Scripts.Server
 
         private void Update()
         {
+            CampaignCheckpoint.FlushIfReady();
             if (ConfigData.SocketManager == null) return;
             Socket socket = ConfigData.Socket;
             FilterFailedBasicWriteResponses(socket);
