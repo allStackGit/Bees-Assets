@@ -33,11 +33,20 @@ namespace Assets.Scripts.Server
             // Strategic Matchup intentionally contains nearby allied ships in its first segment.
             // Shooting learning must identify only the acting squad and enemies; reuse the enemy
             // segment already selected by MakeMatchupAndGetCommand while rebuilding the friendly
-            // segment from this request's acting squad alone.
-            string[] matchupSegments = (matchup ?? string.Empty).Split('|');
-            string enemySegment = matchupSegments.Length > 1 ? matchupSegments[1] : string.Empty;
-            request.ShootingMatchup = $"{Squad.AddToMatchup(Squad.GetShipsForMatchup())}|{enemySegment}";
+            // segment from this request's acting squad alone. Keep the trailing delimiter because
+            // BeesServer's legacy enemy-type parser expects the canonical "ships|enemies|" shape.
+            request.ShootingMatchup = BuildShootingMatchupIdentity(
+                Squad.AddToMatchup(Squad.GetShipsForMatchup()),
+                matchup);
         }
+
+        internal static string BuildShootingMatchupIdentity(string actingShips, string strategicMatchup)
+        {
+            string[] matchupSegments = (strategicMatchup ?? string.Empty).Split('|');
+            string enemySegment = matchupSegments.Length > 1 ? matchupSegments[1] : string.Empty;
+            return $"{actingShips ?? string.Empty}|{enemySegment}|";
+        }
+
         public bool HasSameSquad()
         {
             return Squad != null && SquadId == Squad.ItemId && !Squad.IsDead;
