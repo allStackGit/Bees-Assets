@@ -131,28 +131,13 @@ namespace Assets.Scripts
 #if UNITY_EDITOR
             string path = Application.dataPath + $"/{BaseFolder}/";
             string path1 = Application.dataPath + $"/{BaseFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
-#elif UNITY_ANDROID
-            string path = Application.persistentDataPath + $"/{BaseFolder}/";
-            string path1 = Application.persistentDataPath + $"/{BaseFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
-#elif UNITY_IPHONE
-            string path = Application.persistentDataPath + $"/{BaseFolder}/";
-            string path1 = Application.persistentDataPath + $"/{BaseFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
 #else
-            string path = Application.dataPath + $"/{BaseFolder}/";
-            string path1 = Application.dataPath + $"/{BaseFolder}";
+            string path = Application.persistentDataPath + $"/{BaseFolder}/";
+            string path1 = Application.persistentDataPath + $"/{BaseFolder}";
+#endif
             if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
             return path;
-#endif
         }
 
         public static string GetCachePath()
@@ -160,28 +145,13 @@ namespace Assets.Scripts
 #if UNITY_EDITOR
             string path = Application.dataPath + $"/{CacheFolder}/";
             string path1 = Application.dataPath + $"/{CacheFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
-#elif UNITY_ANDROID
-            string path = Application.persistentDataPath + $"/{BaseFolder}/";
-            string path1 = Application.persistentDataPath + $"/{BaseFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
-#elif UNITY_IPHONE
-            string path = Application.persistentDataPath + $"/{BaseFolder}/";
-            string path1 = Application.persistentDataPath + $"/{BaseFolder}";
-            if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            return path;
 #else
-            string path = Application.dataPath + $"/{BaseFolder}/";
-            string path1 = Application.dataPath + $"/{BaseFolder}";
+            string path = Application.temporaryCachePath + $"/{CacheFolder}/";
+            string path1 = Application.temporaryCachePath + $"/{CacheFolder}";
+#endif
             if (!Directory.Exists(path1)) Directory.CreateDirectory(path1);
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
             return path;
-#endif
         }
 
         /// <summary>
@@ -285,34 +255,44 @@ namespace Assets.Scripts
 
         public static ulong GetUserId()
         {
-            _userId = (ulong)PlayerPrefs.GetInt("user_id");
-            if (_userId == 0)
+            if (_userId != 0)
             {
-                _userId = (ulong)Utilities.RandomInt();
-                PlayerPrefs.SetInt("user_id", (int)_userId);
-            }
-            return _userId;
-
-#pragma warning disable CS0162
-            if (!SteamAPI.Init())
-            {
-                Debug.LogWarning("Steam API failed to initialize!");
-                _userId = (ulong)PlayerPrefs.GetInt("user_id");
-                if (_userId == 0)
-                {
-                    _userId = (ulong)Utilities.RandomInt();
-                    PlayerPrefs.SetInt("user_id", (int)_userId);
-                }
                 return _userId;
             }
-            else if (_userId == 0)
+
+            // Prefer the platform identity whenever Steam is available. The former implementation
+            // returned the local PlayerPrefs ID before this branch, making Steam identity unreachable.
+            if (SteamAPI.Init())
             {
                 CSteamID steamID = SteamUser.GetSteamID();
-                _userId = steamID.m_SteamID;
-                FirstTimePlaying = HasPlayedBefore();
+                if (steamID.m_SteamID != 0)
+                {
+                    _userId = steamID.m_SteamID;
+                    FirstTimePlaying = !HasPlayedBefore();
+                    return _userId;
+                }
             }
+            else
+            {
+                Debug.LogWarning("Steam API failed to initialize; using local fallback identity.");
+            }
+
+            int storedUserId = PlayerPrefs.GetInt("user_id");
+            bool hadStoredIdentity = storedUserId != 0;
+            if (!hadStoredIdentity)
+            {
+                storedUserId = Utilities.RandomInt();
+                if (storedUserId == 0)
+                {
+                    storedUserId = 1;
+                }
+                PlayerPrefs.SetInt("user_id", storedUserId);
+                PlayerPrefs.Save();
+            }
+
+            _userId = unchecked((ulong)(uint)storedUserId);
+            FirstTimePlaying = !hadStoredIdentity;
             return _userId;
-#pragma warning restore CS0162
         }
 
         public static bool HasPlayedBefore()
