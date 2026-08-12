@@ -37,7 +37,7 @@ namespace Assets.Scripts.Server
             _messagesToReplay.Clear();
             while (socket.MessageQueue.TryDequeue(out byte[] bytes))
             {
-                if (!ShouldKeepRequestPending(socket, bytes)) _messagesToReplay.Add(bytes);
+                if (!ShouldSuppressResponse(socket, bytes)) _messagesToReplay.Add(bytes);
             }
             for (int i = 0; i < _messagesToReplay.Count; i++) socket.MessageQueue.Enqueue(_messagesToReplay[i]);
         }
@@ -47,7 +47,21 @@ namespace Assets.Scripts.Server
             return status == 1 || (status >= 200 && status < 300);
         }
 
-        private static bool ShouldKeepRequestPending(Socket socket, byte[] bytes)
+        private static bool IsTypedPayloadResponse(ConfigData.RequestTypes requestType)
+        {
+            return requestType == ConfigData.RequestTypes.SetupLevel ||
+                   requestType == ConfigData.RequestTypes.ReconnectLevel ||
+                   requestType == ConfigData.RequestTypes.GetMatchupStrategy ||
+                   requestType == ConfigData.RequestTypes.GetStrategy;
+        }
+
+        /// <summary>
+        /// Filters failure acknowledgements before Socket.Message() can claim their hash and dispatch
+        /// them by Type into success-only payload handlers. Returning true consumes the response.
+        /// Retryable failures leave their standing request intact; terminal typed authorization
+        /// failures retire only that request without applying any success state.
+        /// </summary>
+        private static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return false;
 
@@ -75,6 +89,27 @@ namespace Assets.Scripts.Server
                 if (socket.GetStandingRequest(response.Hash) != null)
                 {
                     Debug.LogWarning($"Server rejected read request #{response.Hash}:{response.RequestType} with status {response.Status}; keeping it pending instead of treating it as missing data.");
+                }
+                return true;
+            }
+
+            // setup/reconnect/strategy failures are basic responses containing only Type/Hash/Status.
+            // They must never reach the corresponding success parser: default payload values can mark
+            // a Level connected with GameId 0 or feed null strategy names into command handlers.
+            if (IsTypedPayloadResponse(response.RequestType) && response.Status >= 400)
+            {
+                ServerRequest standingRequest = socket.GetStandingRequest(response.Hash);
+                if (response.Status == 403)
+                {
+                    if (standingRequest != null)
+                    {
+                        socket.StandingRequests.Remove(standingRequest);
+                    }
+                    Debug.LogWarning($"Server permanently rejected typed request #{response.Hash}:{response.RequestType} with status {response.Status}; retiring it without applying success state.");
+                }
+                else if (standingRequest != null)
+                {
+                    Debug.LogWarning($"Server rejected typed request #{response.Hash}:{response.RequestType} with status {response.Status}; keeping it pending for retry without dispatching the incomplete payload.");
                 }
                 return true;
             }

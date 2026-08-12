@@ -25,8 +25,27 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("response.Status == 409"));
             Assert.That(source, Does.Contain("response.Status == 403"));
             Assert.That(source, Does.Contain("socket.GetStandingRequest(response.Hash)"));
-            Assert.That(source, Does.Not.Contain("StandingRequests.Remove(request)"),
+            Assert.That(source, Does.Contain("keeping it pending for retry"),
                 "A retryable failed write acknowledgement must leave its request standing so the normal resend policy can retry it.");
+        }
+
+        [Test]
+        public void FailedTypedPayloadResponsesAreConsumedBeforeSuccessDispatch()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SocketResponseLifecycleGuard.cs"));
+
+            Assert.That(source, Does.Contain("ConfigData.RequestTypes.SetupLevel"));
+            Assert.That(source, Does.Contain("ConfigData.RequestTypes.ReconnectLevel"));
+            Assert.That(source, Does.Contain("ConfigData.RequestTypes.GetMatchupStrategy"));
+            Assert.That(source, Does.Contain("ConfigData.RequestTypes.GetStrategy"));
+            Assert.That(source, Does.Contain("IsTypedPayloadResponse(response.RequestType) && response.Status >= 400"));
+            Assert.That(source, Does.Contain("return true;"),
+                "Failed typed responses must be consumed before Socket.Message can claim their hash or parse success-only fields.");
+            Assert.That(source, Does.Contain("socket.StandingRequests.Remove(standingRequest)"),
+                "Terminal authorization failures should retire the standing request without applying typed success state.");
+            Assert.That(source, Does.Contain("keeping it pending for retry without dispatching the incomplete payload"),
+                "Retryable typed failures must remain available for reconnect/resend recovery.");
         }
 
         [Test]
