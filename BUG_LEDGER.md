@@ -7,3 +7,7 @@
 ### BUG-002 — Successful server writes are classified as failures and resent forever
 **Location:** `Scripts/Server/SocketResponseLifecycleGuard.cs`, `ShouldKeepWriteRequestPending`; BeesServer write response contract  
 **Description:** The guard treats a basic write as successful only when `response.Status == 1`, but BeesServer sends `Status: 200` for successful `store-commands` and `store-user-data` responses. The guard therefore consumes every successful write response before `Socket.HandleBasicResponse` can retire it, leaves the request in `StandingRequests`, and the normal timeout logic resends the already-successful write indefinitely. This causes repeated user-data writes and perpetual StoreCommands retries and can amplify load dramatically during training.
+
+### BUG-003 — Production client traffic is sent over unencrypted WebSocket
+**Location:** `Scripts/Server/Socket.cs`, `Protocol`, `IsSecured`, constructor URL construction  
+**Description:** The production socket URL is always constructed with `Protocol = "ws"`; `IsSecured` is never enabled anywhere in authored code, and it only changes the WebSocketSharp TLS options rather than the URL scheme. Server-backed player data therefore travels over an unencrypted WebSocket on the production path. This also prevents safely transporting a reusable Steam authentication ticket needed to bind the connection to the player's identity. Production must use `wss://` with certificate validation while retaining an explicit insecure mode only for local/test use.
