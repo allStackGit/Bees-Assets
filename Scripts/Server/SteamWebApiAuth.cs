@@ -68,6 +68,11 @@ namespace Assets.Scripts.Server
                 builder.Append(response.m_rgubTicket[i].ToString("x2"));
             }
             _ticketHex = builder.ToString();
+
+            // Scene.LoadSettingsWhenOpen deliberately bootstraps settings only once. The first
+            // call initiates this asynchronous ticket request, so explicitly resume that bootstrap
+            // on the Steam callback once the identity proof is available.
+            ConfigData.LoadSettings();
         }
 
         internal static void Reset()
