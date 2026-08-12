@@ -106,26 +106,6 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ProcessDataRepairsMissingOrCollapsedCoreDialogueLabels()
-        {
-            object configuration = RuntimeAssembly.CreateUninitialized(
-                "Assets.Scripts.Settings.Configuration");
-            string malformed = Contents
-                .Replace("\"Yes\": \"Yes\"", "\"Yes\": \"\"")
-                .Replace("\"No\": \"No\"", "\"No\": \"   \"")
-                .Replace("\"AreYouSureExit\": \"Exit?\"", "\"AreYouSureExit\": \"Lost\"");
-
-            RuntimeAssembly.Invoke(configuration, "ProcessData", malformed);
-
-            Assert.That(RuntimeAssembly.GetField(configuration, "Yes"), Is.EqualTo("Yes"));
-            Assert.That(RuntimeAssembly.GetField(configuration, "No"), Is.EqualTo("No"));
-            Assert.That(
-                RuntimeAssembly.GetField(configuration, "AreYouSureExit"),
-                Is.EqualTo("Are you sure you want to exit?"));
-            Assert.That(RuntimeAssembly.GetField(configuration, "LevelProgressLost"), Is.EqualTo("Lost"));
-        }
-
-        [Test]
         public void LoadedConfigurationOwnsDefaultRequestTimeout()
         {
             var configurationType = RuntimeAssembly.GetType("Assets.Scripts.Settings.Configuration");

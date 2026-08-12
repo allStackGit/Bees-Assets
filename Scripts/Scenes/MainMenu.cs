@@ -26,10 +26,6 @@ namespace Assets.Scripts.Scenes
         new void Start()
         {
             Name = "Main Menu";
-            // The serialized commander-name prompt is an instance of the generic dialogue prefab,
-            // whose prefab root is active by default. Hide it before any asynchronous user-data
-            // loading so the normal main menu is always the initial visible state.
-            CommanderNameDialogue?.SetActive(false);
             base.Start();
             //Debug.Log($"Started {Name} scene");
         }
@@ -139,9 +135,11 @@ namespace Assets.Scripts.Scenes
                 ResetBeesTrainingRoomButton.SetActive(true);
             }
 
-            // Once user data is available, show the name prompt only for a genuinely unnamed
-            // profile; otherwise keep the normal menu unobstructed.
-            CommanderNameDialogue.SetActive(string.IsNullOrEmpty(ConfigData.UserProgressData.PlayerName));
+
+            if (ConfigData.UserProgressData.PlayerName == "")
+            {
+                CommanderNameDialogue.SetActive(true);
+            }
 
         }
         public void SubmitName()
