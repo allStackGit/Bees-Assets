@@ -1,89 +1,110 @@
 ---
 name: bug-finding
-description: Perform a repository-wide static bug audit by tracing code paths and recording only validated defects in a single current-state ledger. Use when asked to find, audit, scan, or catalogue bugs without running tests or GitHub Actions.
+description: Perform a repository-wide static bug audit and repair loop: find and log validated defects, require two consecutive clean full-code passes, fix every ledgered bug, then repeat until the ledger is empty and two clean passes find nothing. Do not run tests or GitHub Actions unless explicitly requested separately.
 ---
 
 # Bug Finding
 
-Perform a static, repository-wide bug audit. Find, validate, and record real defects without modifying production code.
+Perform a repository-wide static bug audit and repair loop. Find, validate, record, and then fix real defects until repeated review no longer reveals any.
 
 ## Setup
 
 1. Read `AGENTS.md` and applicable repository instructions if present.
 2. Read existing repository memory relevant to architecture, pitfalls, and known bugs.
 3. Fetch the latest `main`.
-4. Create a new audit branch from current `main`. Use a descriptive `bug-audit/...` branch name and avoid overwriting an existing branch.
-5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all current findings from this audit.
-6. Reconcile the existing ledger against current `main` before adding new findings:
-   - remove entries for defects that repository evidence shows are already fixed, invalid, obsolete, or no longer reachable;
-   - retain still-valid unresolved entries and ensure each has exactly one `Status` field;
-   - use `Open` for a still-valid unresolved bug unless repository evidence establishes another active status;
-   - if no existing entries remain valid, clear the old ledger contents and begin a fresh current-state ledger.
-
-Do not modify production code.
+4. Create a new working branch from current `main`. Use a descriptive `bug-audit/...` branch name and avoid overwriting an existing branch.
+5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all current findings.
+6. Reconcile the existing ledger against the working tree before beginning:
+   - remove entries that repository evidence shows are already fixed, invalid, obsolete, or unreachable;
+   - retain every still-valid unresolved defect;
+   - ensure retained entries follow the ledger format below.
 
 ## Restrictions
 
 - Do not run tests.
 - Do not run qualification suites, simulations, benchmarks, builds, or executables.
 - Do not trigger, rerun, or rely on GitHub Actions.
-- Do not make speculative bug reports.
-- Do not record style issues, refactoring opportunities, theoretical risks, or unusual-looking code unless they produce a concrete incorrect behavior.
-- Do not stop merely because several bugs have been found.
+- Do not log speculative defects.
+- Do not log style issues, refactoring opportunities, theoretical risks, or unusual-looking code unless they cause concrete incorrect behavior.
+- Do not stop after finding or fixing a particular number of bugs.
+- Do not treat a partial review as a full pass.
 
-This is a static-analysis and code-tracing task.
+This workflow relies on static analysis, code tracing, and careful review of the resulting fixes.
 
-## Audit Process
+## Core Loop
 
-Explore the entire codebase systematically.
+Repeat the following cycle until the final stop condition is satisfied.
 
-Work through major subsystems, entry points, state transitions, data flows, and important call chains rather than inspecting files in isolation.
+### Phase 1 — Find and Log Bugs
+
+Perform full repository passes looking for validated defects.
+
+A full pass means systematically covering the entire relevant codebase, including major subsystems, entry points, state transitions, data flows, important call chains, boundary behavior, and cross-system assumptions. Do not count a focused subsystem review or continuation of an incomplete pass as a full pass.
 
 For each potential defect:
 
 1. Identify the suspected incorrect behavior.
-2. Trace the relevant execution path through callers, callees, state, configuration, and data transformations.
-3. Check surrounding code for protections, invariants, alternate paths, or assumptions that would make the suspected issue harmless.
-4. Search references and usages where necessary to determine whether the problematic path is actually reachable.
-5. Determine the concrete conditions under which the defect occurs.
-6. Record it only when the code provides sufficient evidence that an incorrect result or behavior can occur.
+2. Trace the execution path through callers, callees, state, configuration, and data transformations.
+3. Check for guards, invariants, alternate paths, or assumptions that make the suspected issue harmless.
+4. Search references and usages to establish reachability where needed.
+5. Determine the concrete conditions under which incorrect behavior occurs.
+6. Log it only when the code itself provides sufficient evidence that the defect is real.
 
-A bug is validated when the defect can be demonstrated by reasoning from the code path itself. Runtime reproduction is not required, but speculation is insufficient.
+A bug is validated when incorrect behavior can be demonstrated by reasoning from the code path. Runtime reproduction is not required, but suspicion is insufficient.
 
-If evidence is uncertain, continue investigating rather than logging the issue.
+Continue performing full passes until **two consecutive full passes find zero new validated defects**.
+
+- If a pass finds one or more new bugs, log all of them, finish that full pass, reset the clean-pass count to zero, and begin another full pass.
+- A clean pass counts only if the entire relevant codebase was reviewed and no new validated defects were found anywhere in that pass.
+- The two clean passes must be separate deliberate passes, not one pass described twice.
+
+Only after two consecutive clean full passes may the workflow move to Phase 2.
+
+### Phase 2 — Fix Every Bug in the Ledger
+
+Process every currently valid bug in `BUG_LEDGER.md`.
+
+For each bug:
+
+1. Reconfirm that the defect still exists in the current working tree.
+2. Trace enough surrounding behavior to understand the intended contract and avoid a narrow fix that breaks another path.
+3. Implement the smallest robust correction that resolves the underlying defect.
+4. Statically review the change, its callers/callees, and affected state/data flows for regressions or incomplete handling.
+5. Once repository evidence shows the defect is resolved, remove its ledger entry. If investigation disproves the entry instead, remove it as invalid.
+
+Do not leave a validated bug unfixed merely because it is inconvenient, low severity, or outside the subsystem currently being inspected. Phase 2 is complete only when every ledger entry from that cycle has been resolved or disproved.
+
+If fixing one bug reveals another validated defect, add the new defect to the ledger and continue resolving the existing ledger. The next audit cycle will independently re-examine the full codebase.
+
+### Phase 3 — Repeat
+
+After Phase 2, return to Phase 1 and perform fresh full-code audit passes against the modified codebase.
+
+Fixes may expose, introduce, or make other defects reachable, so previous clean passes do not carry forward across a repair phase. The clean-pass count always resets to zero after production code changes.
+
+Repeat Phases 1 and 2 for as many cycles as necessary.
 
 ## Bug Ledger
 
-Maintain one `BUG_LEDGER.md` containing only currently valid findings.
+Maintain one `BUG_LEDGER.md` containing only currently valid unresolved findings.
 
 Each bug must use this format:
 
 ### BUG-001 — Short Issue Name
-**Status:** Open  
 **Location:** `path/to/file.ext`, class/function/method or relevant lines  
 **Description:** Concise explanation of the incorrect behavior, the code path that causes it, and the conditions under which it occurs.
 
-Every bug entry must contain exactly one `Status` field. Use these active statuses:
+New findings should use the next unused sequential identifier. Keep identifiers stable while entries remain in the ledger. If the ledger becomes completely empty, a later cycle may restart at `BUG-001`.
 
-- `Open` — validated and unresolved.
-- `In Progress` — a fix is actively being worked on outside this audit.
-- `Deferred` — still valid but intentionally postponed.
+The ledger is a current work queue, not permanent history. Remove entries once they are fixed, disproved, obsolete, or no longer reachable. Git history preserves prior findings.
 
-Newly validated findings must start as `Open`.
-
-The ledger is a current defect ledger, not a permanent history. When repository evidence shows that an entry is fixed, invalid, obsolete, or no longer reachable on the current baseline, remove that entry instead of retaining it as historical clutter. Git history preserves previous audit records.
-
-Keep bug identifiers stable for retained entries during an audit. For a fully cleared ledger, restart numbering at `BUG-001`. Otherwise assign new bugs the next unused sequential identifier; do not renumber retained bugs merely to close gaps.
-
-Keep descriptions short but specific enough that another developer can understand and reproduce the reasoning without rediscovering the bug.
-
-Do not duplicate an existing ledger entry. If a newly investigated path is another manifestation of the same underlying defect, update the existing entry only when useful.
+Do not duplicate an existing entry. Multiple manifestations of one underlying defect should normally remain one bug entry.
 
 ## Coverage Discipline
 
-Maintain private working notes or a temporary checklist of areas already examined so the audit progresses through the repository rather than repeatedly revisiting familiar code.
+Maintain private working notes or a temporary checklist of areas covered during each pass so a pass genuinely progresses through the entire codebase.
 
-Prioritize:
+Pay particular attention to:
 
 - core execution paths
 - state machines and lifecycle transitions
@@ -92,31 +113,31 @@ Prioritize:
 - boundary conditions
 - error and recovery paths
 - ownership and cleanup
-- concurrency or ordering assumptions
+- concurrency and ordering assumptions
 - indexing, ranges, counts, and off-by-one behavior
 - null, missing, and invalid state handling
 - cross-system contracts
-- code whose callers make assumptions not enforced by the callee
+- caller/callee assumption mismatches
+- interactions changed by fixes made in the previous cycle
 
-After completing the initial repository pass, perform additional passes focused on cross-system interactions and assumptions that may not be visible when reviewing individual components.
+Use different review angles across passes where useful. The second clean pass should challenge the conclusions of the first rather than mechanically repeating the same inspection order.
 
-## Stop Condition
+## Final Stop Condition
 
-Do not stop after finding a particular number of bugs.
+Stop only when all of the following are simultaneously true:
 
-Continue until:
+1. `BUG_LEDGER.md` contains no unresolved bugs.
+2. No production-code fixes remain to be made from the previous cycle.
+3. Two consecutive, complete, deliberate full-code passes over the current post-fix codebase found zero new validated defects.
 
-1. the codebase has been systematically covered,
-2. important execution paths and subsystem interactions have been traced,
-3. promising suspicious paths have either been validated and logged or disproven, and
-4. another deliberate search pass fails to produce a new validated defect.
+If either clean pass finds a defect, log it, reset the clean-pass count, complete the audit phase, fix the resulting ledger, and repeat the cycle.
 
-The goal is not to claim that the repository is bug-free. Continue until static analysis no longer reveals additional validated bugs.
+Do not claim the repository is mathematically bug-free. The completion claim is only that repeated static analysis reached an empty ledger and two consecutive clean full-code passes.
 
 ## Git Discipline
 
-All audit records belong on the dedicated audit branch.
+Keep all audit records and fixes on the dedicated working branch unless the user explicitly instructs otherwise.
 
-Commit ledger updates periodically so findings are not lost. Keep commits limited to audit documentation and repository memory required by the audit.
+Commit progress periodically so findings and fixes are not lost. Keep commits coherent and limited to the audit/repair work and repository memory required by it.
 
-Never merge the audit branch into `main` as part of this skill.
+Never merge the working branch into `main` as part of this skill unless the user explicitly requests the merge.
