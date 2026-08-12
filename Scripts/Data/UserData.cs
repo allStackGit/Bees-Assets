@@ -25,6 +25,16 @@ namespace Assets.Scripts.Data
             //Debug.Log("Called setup file");
             this.filename = filename;
             this.file = new DataFile(filename);
+
+            // Steam playtime/local first-run state cannot tell us whether a server-backed save
+            // already exists. Always read remote storage first; the get-user-data response path
+            // creates defaults only when the server explicitly reports the file missing. This
+            // prevents an existing remote profile from being overwritten with first-run defaults.
+            if (!ConfigData.Configuration.UseLocalStorage)
+            {
+                shouldFileExist = true;
+            }
+
             dynamic json = null;
             // check if the file should already exist (which it should if this isn't the user's first time) and if it does in fact exist
             if (!file.Exists())
