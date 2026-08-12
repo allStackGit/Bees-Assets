@@ -22,6 +22,13 @@ namespace Assets.Scripts.Data
         private ulong _userId;
         private readonly Action<string> _serverWriterOverride;
 
+        /// <summary>
+        /// True only when a server-backed read was already in flight and the missing-data
+        /// response path created this file from defaults. Existing remote rows, including old
+        /// profiles whose PlayerName happens to be blank, remain false.
+        /// </summary>
+        public bool WasCreatedFromMissingStorage { get; private set; }
+
         public DataFile(string name)
         {
             this.Name = name;
@@ -194,6 +201,14 @@ namespace Assets.Scripts.Data
             }
 
             object jsonObject = JsonConvert.DeserializeObject(data);
+
+            // For remote storage, the only write that can occur while the initial get-user-data
+            // request is still unresolved is the client's missing-row fallback. Remember that
+            // distinction so UI can tell a genuinely new profile from an existing blank profile.
+            if (!ConfigData.Configuration.UseLocalStorage && _request != null && !_isDataLoaded)
+            {
+                WasCreatedFromMissingStorage = true;
+            }
 
             if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime)
             {
