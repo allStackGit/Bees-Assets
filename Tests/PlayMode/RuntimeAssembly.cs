@@ -28,7 +28,14 @@ namespace Bees.Tests.PlayMode
 
         public static object GetStaticField(Type type, string fieldName)
         {
-            return GetStaticFieldInfo(type, fieldName).GetValue(null);
+            FieldInfo field = TryGetStaticFieldInfo(type, fieldName);
+            if (field != null)
+            {
+                return field.GetValue(null);
+            }
+
+            PropertyInfo property = GetStaticPropertyInfo(type, fieldName);
+            return property.GetValue(null);
         }
 
         public static void SetField(object instance, string fieldName, object value)
@@ -38,7 +45,20 @@ namespace Bees.Tests.PlayMode
 
         public static void SetStaticField(Type type, string fieldName, object value)
         {
-            GetStaticFieldInfo(type, fieldName).SetValue(null, value);
+            FieldInfo field = TryGetStaticFieldInfo(type, fieldName);
+            if (field != null)
+            {
+                field.SetValue(null, value);
+                return;
+            }
+
+            PropertyInfo property = GetStaticPropertyInfo(type, fieldName);
+            if (!property.CanWrite)
+            {
+                throw new MissingMemberException(type.FullName, fieldName);
+            }
+
+            property.SetValue(null, value);
         }
 
         public static object Invoke(object instance, string methodName, params object[] arguments)
@@ -104,18 +124,25 @@ namespace Bees.Tests.PlayMode
             return field;
         }
 
-        private static FieldInfo GetStaticFieldInfo(Type type, string fieldName)
+        private static FieldInfo TryGetStaticFieldInfo(Type type, string fieldName)
         {
-            FieldInfo field = type.GetField(
+            return type.GetField(
                 fieldName,
                 BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        }
 
-            if (field == null)
+        private static PropertyInfo GetStaticPropertyInfo(Type type, string propertyName)
+        {
+            PropertyInfo property = type.GetProperty(
+                propertyName,
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+
+            if (property == null)
             {
-                throw new MissingFieldException(type.FullName, fieldName);
+                throw new MissingMemberException(type.FullName, propertyName);
             }
 
-            return field;
+            return property;
         }
     }
 }
