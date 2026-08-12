@@ -70,21 +70,8 @@ namespace Assets.Scripts.Data
                 return;
             }
 
-            // Campaign progress, saved squads, and fleet are one consistency boundary. Any save
-            // of one member during campaign play must persist all three through the transaction;
-            // otherwise legacy helpers can advance or mutate one file independently.
-            bool isCampaignCheckpointMember =
-                this is UserProgressData ||
-                filename == ConfigData.SavedSquadsDataFilenames[1] ||
-                filename == ConfigData.FleetDataFilenames[1];
-            if (!ConfigData.Test &&
-                isCampaignCheckpointMember &&
-                ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
-            {
-                global::Assets.Scripts.CampaignCheckpoint.Save();
-                return;
-            }
-
+            // DataFile owns the server persistence boundary. Profile members update their local
+            // in-memory JSON here and DataFile coalesces the corresponding server transaction.
             GetDataFile().WriteData(ToJson());
         }
         public void WaitForData()
