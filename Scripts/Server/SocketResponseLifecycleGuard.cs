@@ -42,6 +42,11 @@ namespace Assets.Scripts.Server
             for (int i = 0; i < _messagesToReplay.Count; i++) socket.MessageQueue.Enqueue(_messagesToReplay[i]);
         }
 
+        private static bool IsSuccessfulWriteStatus(int status)
+        {
+            return status == 1 || (status >= 200 && status < 300);
+        }
+
         private static bool ShouldKeepWriteRequestPending(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return false;
@@ -61,7 +66,7 @@ namespace Assets.Scripts.Server
             bool isBasicWrite = response.RequestType == ConfigData.RequestTypes.StoreCommands ||
                                 response.RequestType == ConfigData.RequestTypes.StoreUserData ||
                                 response.RequestType == ConfigData.RequestTypes.SendRLData;
-            if (!isBasicWrite || response.Status == 200) return false;
+            if (!isBasicWrite || IsSuccessfulWriteStatus(response.Status)) return false;
 
             bool terminalStoreCommands = response.RequestType == ConfigData.RequestTypes.StoreCommands && response.Status == 409;
             bool terminalAuthorization = response.Status == 403;
