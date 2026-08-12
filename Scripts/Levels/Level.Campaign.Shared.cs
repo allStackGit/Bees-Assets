@@ -177,6 +177,13 @@ namespace Assets.Scripts.Levels
 
         public void AddReinforcementSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 nextPosition)
         {
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+                ConfigData.UserProgressData != null &&
+                ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign) == 8)
+            {
+                EnsureTitania2ReinforcementRoute(ref startingPosition, ref nextPosition);
+            }
+
             squads = squads.Where(squad => squad != null && squad.GetSquadShips().Count > 0).ToList();
             for (int i = 0; i < squads.Count; i++)
             {
