@@ -9,19 +9,22 @@ namespace Bees.Tests.EditMode
     public class AggressiveReachabilityTests
     {
         [Test]
-        public void AggressiveRejectsPermanentlyDisconnectedTargetsBeforePathfinding()
+        public void AggressiveDoesNotSupersedeLivePathsOrBuildConnectivityOnClickFrame()
         {
             string aggressive = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Levels", "Commands", "Aggressive.cs"));
-            string connectivity = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "Levels", "Pathfinder.Connectivity.cs"));
+            string interaction = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Interaction.cs"));
 
-            Assert.That(aggressive, Does.Contain("AreStaticallyConnected(GetSquad().GetPosition(), EnemySquad.GetPosition(), connectivityClearance)"));
-            Assert.That(aggressive, Does.Contain("SetFinalize(\"Enemy squad is in an unreachable map region\")"));
+            Assert.That(aggressive, Does.Contain("if (!ship.IsPathfinding)"),
+                "Recurring aggressive targeting must not invalidate an A* search that is still running.");
+            Assert.That(aggressive, Does.Contain("ship.MoveToPoint(target.GetPosition());"));
             Assert.That(aggressive, Does.Contain("if (IsHiveMindCommand)\n                {\n                    PrepareDamageToSendEntries();"),
                 "User attacks must not do Hive Mind damage bookkeeping synchronously on the click frame.");
-            Assert.That(connectivity, Does.Contain("private int[] BuildStaticConnectivity(int clearance)"));
-            Assert.That(connectivity, Does.Contain("startComponent == components[destinationIndex]"));
+
+            Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("),
+                "Enemy right-click handling must not synchronously build or query whole-map connectivity components.");
+            Assert.That(interaction, Does.Contain("selectedSquad.UserAggressive(Squad);"));
         }
     }
 }
