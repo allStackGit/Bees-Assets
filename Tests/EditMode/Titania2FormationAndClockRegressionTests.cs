@@ -14,7 +14,7 @@ namespace Bees.Tests.EditMode
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Levels", "Titania2Beenoculars.cs"));
-            string staging = ExtractMethodBody(source, "StageTitania2HumanFleetAtCenter");
+            string staging = ExtractPrivateMethodBody(source, "StageTitania2HumanFleetAtCenter");
 
             Assert.That(staging, Does.Contain("squad.SetStartingPosition(placement);"),
                 "Beenoculars should relocate the saved formation as a whole squad.");
@@ -39,11 +39,13 @@ namespace Bees.Tests.EditMode
                 "The authored prefab time must never render for a frame before the mission duration is initialized.");
         }
 
-        private static string ExtractMethodBody(string source, string methodName)
+        private static string ExtractPrivateMethodBody(string source, string methodName)
         {
-            int signature = source.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
-            Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find method {methodName}.");
+            int signature = source.IndexOf("private void " + methodName + "(", StringComparison.Ordinal);
+            Assert.That(signature, Is.GreaterThanOrEqualTo(0), $"Could not find private method {methodName}.");
             int openingBrace = source.IndexOf('{', signature);
+            Assert.That(openingBrace, Is.GreaterThanOrEqualTo(0));
+
             int depth = 0;
             for (int index = openingBrace; index < source.Length; index++)
             {
