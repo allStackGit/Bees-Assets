@@ -1,5 +1,4 @@
 ﻿using System.Globalization;
-using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
@@ -15,6 +14,7 @@ namespace Assets.Scripts.Server
         // strongly typed but put the identifier on the wire as decimal text; MySQL can
         // bind that string losslessly to its BIGINT userId columns.
         public string UserId;
+        public readonly string AuthTicket;
         public float Version;
         public string Type;
         public long Hash;
@@ -23,6 +23,7 @@ namespace Assets.Scripts.Server
         {
             LevelId = levelId;
             UserId = userId.ToString(CultureInfo.InvariantCulture);
+            AuthTicket = ConfigData.Production ? SteamWebApiAuth.TicketHex : null;
             GameId = gameId;
         }
     }

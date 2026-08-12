@@ -17,10 +17,12 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.StoreCommands"));
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.StoreUserData"));
             Assert.That(source, Does.Contain("response.RequestType == ConfigData.RequestTypes.SendRLData"));
-            Assert.That(source, Does.Contain("response.Status == 1"));
+            Assert.That(source, Does.Contain("response.Status == 200"));
+            Assert.That(source, Does.Contain("response.Status == 409"));
+            Assert.That(source, Does.Contain("response.Status == 403"));
             Assert.That(source, Does.Contain("socket.GetStandingRequest(response.Hash)"));
             Assert.That(source, Does.Not.Contain("StandingRequests.Remove(request)"),
-                "A failed write acknowledgement must leave its request standing so the normal resend policy can retry it.");
+                "A retryable failed write acknowledgement must leave its request standing so the normal resend policy can retry it.");
         }
 
         [Test]
