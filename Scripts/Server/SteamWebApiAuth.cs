@@ -13,6 +13,7 @@ namespace Assets.Scripts.Server
         private static HAuthTicket _ticketHandle = HAuthTicket.Invalid;
         private static bool _requestPending;
         private static string _ticketHex;
+        private static SteamAuthRetryPump _retryPump;
 
         internal static bool IsReady => !string.IsNullOrEmpty(_ticketHex);
         internal static string TicketHex => _ticketHex;
@@ -23,6 +24,7 @@ namespace Assets.Scripts.Server
             {
                 return;
             }
+            EnsureRetryPump();
 
             try
             {
@@ -48,6 +50,17 @@ namespace Assets.Scripts.Server
             }
         }
 
+        private static void EnsureRetryPump()
+        {
+            if (_retryPump != null)
+            {
+                return;
+            }
+            GameObject host = new GameObject("Steam Web API Auth Retry");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            _retryPump = host.AddComponent<SteamAuthRetryPump>();
+        }
+
         private static void OnTicketReceived(GetTicketForWebApiResponse_t response)
         {
             if (response.m_hAuthTicket != _ticketHandle)
@@ -68,10 +81,6 @@ namespace Assets.Scripts.Server
                 builder.Append(response.m_rgubTicket[i].ToString("x2"));
             }
             _ticketHex = builder.ToString();
-
-            // Scene.LoadSettingsWhenOpen deliberately bootstraps settings only once. The first
-            // call initiates this asynchronous ticket request, so explicitly resume that bootstrap
-            // on the Steam callback once the identity proof is available.
             ConfigData.LoadSettings();
         }
 
@@ -90,6 +99,32 @@ namespace Assets.Scripts.Server
             _ticketHandle = HAuthTicket.Invalid;
             _ticketHex = null;
             _requestPending = false;
+            if (_retryPump != null)
+            {
+                UnityEngine.Object.Destroy(_retryPump.gameObject);
+                _retryPump = null;
+            }
+        }
+
+        private sealed class SteamAuthRetryPump : MonoBehaviour
+        {
+            private float _nextAttempt;
+
+            private void Update()
+            {
+                if (IsReady)
+                {
+                    Destroy(gameObject);
+                    _retryPump = null;
+                    return;
+                }
+                if (Time.unscaledTime < _nextAttempt)
+                {
+                    return;
+                }
+                _nextAttempt = Time.unscaledTime + 0.5f;
+                EnsureRequested();
+            }
         }
     }
 }
