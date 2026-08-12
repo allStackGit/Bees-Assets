@@ -21,14 +21,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SettingsAndLevelBootstrapCarrySteamWebApiTicket()
+        public void EveryUserBootstrapRequestCarriesSteamWebApiTicket()
         {
             string settings = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "GetUserSettingsData.cs"));
             string setup = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "SetupLevel.cs"));
+            string getData = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "GetUserData.cs"));
+            string storeData = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "StoreUserData.cs"));
             string auth = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "SteamWebApiAuth.cs"));
 
             Assert.That(settings, Does.Contain("SteamWebApiAuth.TicketHex"));
             Assert.That(setup, Does.Contain("SteamWebApiAuth.TicketHex"));
+            Assert.That(getData, Does.Contain("SteamWebApiAuth.TicketHex"));
+            Assert.That(storeData, Does.Contain("SteamWebApiAuth.TicketHex"));
             Assert.That(auth, Does.Contain("SteamUser.GetAuthTicketForWebApi"));
             Assert.That(auth, Does.Contain("ConfigData.LoadSettings();"));
         }
