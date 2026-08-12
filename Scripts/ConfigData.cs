@@ -59,9 +59,18 @@ namespace Assets.Scripts
             {
                 if (_socket == null)
                 {
-                    _socket = Test
-                        ? new Socket(TestPort, TestServerHostname, UseWebSocketSharp)
-                        : new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+                    if (Test)
+                    {
+                        _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
+                    }
+                    else if (Development)
+                    {
+                        _socket = new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+                    }
+                    else
+                    {
+                        _socket = new Socket(ProductionPort, ProductionServerHostname, UseWebSocketSharp);
+                    }
                 }
                 return _socket;
             }
