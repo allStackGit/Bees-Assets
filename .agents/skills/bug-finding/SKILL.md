@@ -1,6 +1,6 @@
 ---
 name: bug-finding
-description: Perform a repository-wide static bug audit by tracing code paths and recording only validated defects in a single ledger. Use when asked to find, audit, scan, or catalogue bugs without running tests or GitHub Actions.
+description: Perform a repository-wide static bug audit by tracing code paths and recording only validated defects in a single current-state ledger. Use when asked to find, audit, scan, or catalogue bugs without running tests or GitHub Actions.
 ---
 
 # Bug Finding
@@ -13,8 +13,12 @@ Perform a static, repository-wide bug audit. Find, validate, and record real def
 2. Read existing repository memory relevant to architecture, pitfalls, and known bugs.
 3. Fetch the latest `main`.
 4. Create a new audit branch from current `main`. Use a descriptive `bug-audit/...` branch name and avoid overwriting an existing branch.
-5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all findings from this audit.
-6. If an existing ledger contains entries without a `Status` field, add one. Use `Open` for a still-valid unresolved bug unless repository evidence establishes another status; never guess that a bug is fixed or invalid.
+5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all current findings from this audit.
+6. Reconcile the existing ledger against current `main` before adding new findings:
+   - remove entries for defects that repository evidence shows are already fixed, invalid, obsolete, or no longer reachable;
+   - retain still-valid unresolved entries and ensure each has exactly one `Status` field;
+   - use `Open` for a still-valid unresolved bug unless repository evidence establishes another active status;
+   - if no existing entries remain valid, clear the old ledger contents and begin a fresh current-state ledger.
 
 Do not modify production code.
 
@@ -50,7 +54,7 @@ If evidence is uncertain, continue investigating rather than logging the issue.
 
 ## Bug Ledger
 
-Maintain one `BUG_LEDGER.md` containing all validated findings.
+Maintain one `BUG_LEDGER.md` containing only currently valid findings.
 
 Each bug must use this format:
 
@@ -59,17 +63,17 @@ Each bug must use this format:
 **Location:** `path/to/file.ext`, class/function/method or relevant lines  
 **Description:** Concise explanation of the incorrect behavior, the code path that causes it, and the conditions under which it occurs.
 
-Every bug entry must contain exactly one `Status` field. Use these statuses:
+Every bug entry must contain exactly one `Status` field. Use these active statuses:
 
 - `Open` — validated and unresolved.
-- `In Progress` — a fix is actively being worked on.
-- `Fixed` — the corresponding defect has been corrected.
-- `Invalid` — later investigation disproved the original finding.
+- `In Progress` — a fix is actively being worked on outside this audit.
 - `Deferred` — still valid but intentionally postponed.
 
-Newly validated findings must start as `Open`. Do not delete fixed, invalid, or deferred entries; preserve the audit history by changing their status. Do not mark a bug `Fixed` or `Invalid` without repository evidence supporting that status.
+Newly validated findings must start as `Open`.
 
-Continue sequential numbering for the entire audit.
+The ledger is a current defect ledger, not a permanent history. When repository evidence shows that an entry is fixed, invalid, obsolete, or no longer reachable on the current baseline, remove that entry instead of retaining it as historical clutter. Git history preserves previous audit records.
+
+Keep bug identifiers stable for retained entries during an audit. For a fully cleared ledger, restart numbering at `BUG-001`. Otherwise assign new bugs the next unused sequential identifier; do not renumber retained bugs merely to close gaps.
 
 Keep descriptions short but specific enough that another developer can understand and reproduce the reasoning without rediscovering the bug.
 
