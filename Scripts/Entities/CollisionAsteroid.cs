@@ -17,6 +17,7 @@ namespace Assets.Scripts.Entities
         public AsteroidExplosionAnimation AsteroidExplosionAnimation;
         public bool HasCollisionAnimation, HasCrackedSprite;
         public bool HasDroppedDestructionAnimation, HasTouchedMapBorder, HasEnteredMap;
+        public bool IsShard;
         public Sprite OriginalSprite, CrackedSprite;
         public bool IsDelayKilled;
 
@@ -175,10 +176,22 @@ namespace Assets.Scripts.Entities
                     SpawnBreakAwayAsteroids();
                 }
                 Level.State.RemoveObstacle(this);
-                Level.State.AsteroidsToRelease.Add(this);
                 Level.CancelTimer(_delayKillTimer);
                 Level.CancelTimer(_collisionAnimation);
                 gameObject.SetActive(false);
+
+                // Shards have their own prefab/pool. Returning them through the ordinary
+                // asteroid release queue contaminates CollisionAsteroidPool and eventually
+                // makes GetCollisionAsteroidFromPool() return a shard prefab. Return shards
+                // directly to their owning pool; full asteroids continue through State.Release.
+                if (IsShard)
+                {
+                    Stage.Pool.ReturnCollisionAsteroidShardToPool(this);
+                }
+                else
+                {
+                    Level.State.AsteroidsToRelease.Add(this);
+                }
             }
         }
 
@@ -197,6 +210,7 @@ namespace Assets.Scripts.Entities
             for (_loopIndex = 0; _loopIndex < _asteroidCount; _loopIndex++)
             {
                 _asteroidShard = Stage.Pool.GetCollisionAsteroidShardFromPool();
+                _asteroidShard.IsShard = true;
                 _asteroidShard.Setup(Level);
                 _asteroidShard.transform.localPosition = GetPosition();
                 _asteroidShard.Body.angularVelocity = Body.angularVelocity;
