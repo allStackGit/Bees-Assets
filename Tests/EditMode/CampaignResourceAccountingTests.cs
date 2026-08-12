@@ -27,26 +27,40 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DesignedCampaignFailureBranchesStillSkipMiningMissions()
+        public void CampaignOutcomeBranchesAdvanceExactlyOnceAfterOutcomeAccounting()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Campaign.Endings.cs");
             string source = File.ReadAllText(path);
 
             string neptune1 = ExtractMethodBody(source, "Neptune1Ending");
-            int lossAdvance = neptune1.IndexOf("ConfigData.UserProgressData.AdvanceToNextLevel();", StringComparison.Ordinal);
             int mineralsAccounting = neptune1.IndexOf("int mineralsMined = 0;", StringComparison.Ordinal);
             int completionAdvance = neptune1.IndexOf(
                 "ConfigData.UserProgressData.AdvanceToNextLevel();",
-                lossAdvance + 1,
+                StringComparison.Ordinal);
+            int secondAdvance = neptune1.IndexOf(
+                "ConfigData.UserProgressData.AdvanceToNextLevel();",
+                completionAdvance + 1,
                 StringComparison.Ordinal);
 
             Assert.That(neptune1, Does.Contain("WinningSide == ConfigData.Configuration.UserSide"));
-            Assert.That(lossAdvance, Is.GreaterThanOrEqualTo(0));
-            Assert.That(mineralsAccounting, Is.GreaterThan(lossAdvance));
+            Assert.That(mineralsAccounting, Is.GreaterThanOrEqualTo(0));
             Assert.That(completionAdvance, Is.GreaterThan(mineralsAccounting));
+            Assert.That(secondAdvance, Is.EqualTo(-1),
+                "Neptune 1 must advance exactly once; the former loss-path advance skipped Neptune 2.");
 
             string uranus1 = ExtractMethodBody(source, "Uranus1Ending");
-            Assert.That(uranus1, Does.Contain(
+            int uranusAdvance = uranus1.IndexOf(
+                "ConfigData.UserProgressData.AdvanceToNextLevel();",
+                StringComparison.Ordinal);
+            int uranusSecondAdvance = uranus1.IndexOf(
+                "ConfigData.UserProgressData.AdvanceToNextLevel();",
+                uranusAdvance + 1,
+                StringComparison.Ordinal);
+
+            Assert.That(uranusAdvance, Is.GreaterThanOrEqualTo(0));
+            Assert.That(uranusSecondAdvance, Is.EqualTo(-1),
+                "Uranus 1 must advance exactly once and must not skip Uranus 2 on a loss or missing Factory.");
+            Assert.That(uranus1, Does.Not.Contain(
                 "WinningSide == ConfigData.Configuration.AISide || !ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory)"));
         }
 
