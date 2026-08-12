@@ -1,13 +1,12 @@
 ﻿
 using System.Linq;
-using System.Text.RegularExpressions;
-using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
     public class GetStrategy
     {
         public readonly string Matchup;
+        public string ShootingMatchup;
         public readonly int Side;
         public readonly ulong OpponentId;
         public readonly string[] BannedStrats;
@@ -24,7 +23,6 @@ namespace Assets.Scripts.Server
                 .Concat(new[] { "Move To Point" })
                 .Distinct()
                 .ToArray();
-
         }
     }
 }
