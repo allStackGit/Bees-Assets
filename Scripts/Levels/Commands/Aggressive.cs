@@ -21,6 +21,22 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            // Permanently separated map regions can otherwise make every ship launch a full A*
+            // search to the time limit and retry it repeatedly. Reject such commands before any
+            // movement work starts. Use the smallest mobile-ship clearance so this only rejects
+            // regions that no ship in the attacking squad can reach.
+            int connectivityClearance = GetSquad().GetShips()
+                .Where(ship => ship != null && !ship.IsDead && ship.IsMobile)
+                .Select(ship => ship.GetClearance())
+                .DefaultIfEmpty(ConfigData.MinimumClearance)
+                .Min();
+            if (EnemySquad != null &&
+                !Level.Pathfinder.AreStaticallyConnected(GetSquad().GetPosition(), EnemySquad.GetPosition(), connectivityClearance))
+            {
+                SetFinalize("Enemy squad is in an unreachable map region");
+                return;
+            }
+
             // Command.Setup() builds its initial movement-target queue before base.Execute()
             // installs the server-selected shooting strategy. Discard that stale ordering so
             // the first movement target is rebuilt under the strategy whose outcome is being learned.
@@ -30,7 +46,13 @@ namespace Assets.Scripts.Levels.Commands
             if (!GetSquad().IsDead)
             {
                 IsAttacking = true;
-                PrepareDamageToSendEntries();
+                // Damage snapshots are learning bookkeeping for Hive Mind commands. User-issued
+                // attacks have no server outcome IDs and should not synchronously walk the enemy
+                // squad on the input frame merely to populate data that will never be stored.
+                if (IsHiveMindCommand)
+                {
+                    PrepareDamageToSendEntries();
+                }
                 CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                 Level.AddTimer(CommandTimer);
 
