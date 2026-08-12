@@ -146,6 +146,65 @@ namespace Assets.Scripts.Levels
         private double _timeDouble, _levelOver_fps, _levelOver_fups;
         private ScaledTimer _saveAndEndHalfSecond = new ScaledTimer();
         private ScaledTimer _saveAndEndFiveSecond = new ScaledTimer();
+
+        private void RecordPlayerLevelResult()
+        {
+            // Automated training episodes are simulation state. They still need WinningSide for
+            // command/outcome accounting, but they must never mutate or persist player progression.
+            if (Stage.IsTraining)
+            {
+                DidUserWin = false;
+                return;
+            }
+
+            if (WinningSide == ConfigData.Configuration.HumanSide)
+            {
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
+                {
+                    ConfigData.UserProgressData.HumanFreePlayWins++;
+                }
+                else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                {
+                    ConfigData.UserProgressData.HumanChallengeWins++;
+                }
+                else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+                {
+                    ConfigData.UserProgressData.HumanFishTankWins++;
+                }
+            }
+            else if (WinningSide == ConfigData.Configuration.BeeSide)
+            {
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
+                {
+                    ConfigData.UserProgressData.BeeFreePlayWins++;
+                }
+                else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                {
+                    ConfigData.UserProgressData.BeeChallengeWins++;
+                }
+                else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+                {
+                    ConfigData.UserProgressData.BeeFishTankWins++;
+                }
+            }
+
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            {
+                Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanChallengeWins, ConfigData.UserProgressData.BeeChallengeWins);
+            }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
+            {
+                Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
+            }
+            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
+            {
+                Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFishTankWins, ConfigData.UserProgressData.BeeFishTankWins);
+            }
+
+            DidUserWin = WinningSide == ConfigData.Configuration.UserSide;
+            ConfigData.UserProgressData.Save();
+        }
+
         /// <summary>
         /// Ends the level and marks the winner
         /// </summary>
@@ -189,37 +248,11 @@ namespace Assets.Scripts.Levels
                 {
                     //Debug.Log($"Humans won!");
                     WinningSide = ConfigData.Configuration.HumanSide;
-                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
-                    {
-                        ConfigData.UserProgressData.HumanFreePlayWins++;
-                    }
-                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
-                    {
-                        ConfigData.UserProgressData.HumanChallengeWins++;
-                    }
-                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
-                    {
-                        //Debug.Log($"Fish tank human wins: {ConfigData.UserProgressData.HumanFishTankWins}");
-                        ConfigData.UserProgressData.HumanFishTankWins++;
-                    }
                 }
                 else if (State.IsSideKilled(ConfigData.Configuration.HumanSide) && !State.IsSideKilled(ConfigData.Configuration.BeeSide))
                 {
                     //Debug.Log($"Bees won!");
                     WinningSide = ConfigData.Configuration.BeeSide;
-                    if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
-                    {
-                        ConfigData.UserProgressData.BeeFreePlayWins++;
-                    }
-                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
-                    {
-                        ConfigData.UserProgressData.BeeChallengeWins++;
-                    }
-                    else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
-                    {
-                        //Debug.Log($"Fish tank bee wins: {ConfigData.UserProgressData.BeeFishTankWins}");
-                        ConfigData.UserProgressData.BeeFishTankWins++;
-                    }
                 }
                 else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
                 {
@@ -232,31 +265,8 @@ namespace Assets.Scripts.Levels
                         Debug.LogError("Neither side is dead!");
                     }
                 }
-                
 
-                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
-                {
-                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanChallengeWins, ConfigData.UserProgressData.BeeChallengeWins);
-                }
-                else if (!Stage.IsTraining && ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay)
-                {
-                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFreePlayWins, ConfigData.UserProgressData.BeeFreePlayWins);
-                }
-                else if (!Stage.IsTraining && ConfigData.CurrentGameMode == ConfigData.GameModes.FishTank)
-                {
-                    Stage.Menus.UpdateScore(ConfigData.UserProgressData.HumanFishTankWins, ConfigData.UserProgressData.BeeFishTankWins);
-                }
-
-                if (WinningSide == ConfigData.Configuration.UserSide)
-                {
-                    DidUserWin = true;
-                }
-                else
-                {
-                    DidUserWin = false;
-                }
-
-                ConfigData.UserProgressData.Save();
+                RecordPlayerLevelResult();
                 UnPause();
             }
 
