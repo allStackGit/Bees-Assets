@@ -174,7 +174,6 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                ConfigData.UserProgressData.AdvanceToNextLevel();
                 int mineralsMined = 0;
                 for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
                 {
@@ -257,10 +256,6 @@ namespace Assets.Scripts.Levels
         public void Uranus1Ending()
         {
             Debug.Log("Level 6 complete");
-            if (WinningSide == ConfigData.Configuration.AISide || !ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
-            {
-                ConfigData.UserProgressData.AdvanceToNextLevel();
-            }
 
             ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
             ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
@@ -344,9 +339,7 @@ namespace Assets.Scripts.Levels
 
         private void SaveCampaignProgress()
         {
-            ConfigData.UserProgressData.Save();
-            CurrentShips.SaveSquadData();
-            CurrentShips.SaveFleetData();
+            CampaignCheckpoint.Save();
         }
     }
 }
