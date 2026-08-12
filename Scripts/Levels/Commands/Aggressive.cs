@@ -21,22 +21,6 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            // Permanently separated map regions can otherwise make every ship launch a full A*
-            // search to the time limit and retry it repeatedly. Reject such commands before any
-            // movement work starts. Use the smallest mobile-ship clearance so this only rejects
-            // regions that no ship in the attacking squad can reach.
-            int connectivityClearance = GetSquad().GetShips()
-                .Where(ship => ship != null && !ship.IsDead && ship.IsMobile)
-                .Select(ship => ship.GetClearance())
-                .DefaultIfEmpty(ConfigData.MinimumClearance)
-                .Min();
-            if (EnemySquad != null &&
-                !Level.Pathfinder.AreStaticallyConnected(GetSquad().GetPosition(), EnemySquad.GetPosition(), connectivityClearance))
-            {
-                SetFinalize("Enemy squad is in an unreachable map region");
-                return;
-            }
-
             // Command.Setup() builds its initial movement-target queue before base.Execute()
             // installs the server-selected shooting strategy. Discard that stale ordering so
             // the first movement target is rebuilt under the strategy whose outcome is being learned.
@@ -102,10 +86,19 @@ namespace Assets.Scripts.Levels.Commands
                     yield break;
                 }
 
-                ship.MoveToPoint(target.GetPosition());
+                // Do not supersede a live A* request just because the recurring aggressive
+                // timer refreshed the target. MoveToPoint invalidates an in-flight request,
+                // while the old Task.Run search continues until completion/time-out. Repeating
+                // that every command tick creates a permanent backlog of obsolete CPU-heavy
+                // searches. Let the current request finish; the next aggressive tick can then
+                // refresh the destination if the target has actually moved.
+                if (!ship.IsPathfinding)
+                {
+                    ship.MoveToPoint(target.GetPosition());
+                }
+
                 // Path-map snapshots and request startup are main-thread work even though the
-                // actual path search runs on Task.Run. Spread squad attack startup over frames
-                // so a right-click cannot initialize every ship's path request in one frame.
+                // actual path search runs on Task.Run. Spread squad attack startup over frames.
                 yield return null;
             }
 
