@@ -59,7 +59,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            Squad rewardSquad = Ship.ShipType == ConfigData.ShipTypes.Beacon ? Ship.MotherSquad : Ship.Squad;
+            // Scout-spawned Beacons credit vision to their parent Scout command. Ordinary
+            // Beacons are independent squad members and must credit their own live squad.
+            Squad rewardSquad = Ship.ShipType == ConfigData.ShipTypes.Beacon && Ship.IsMinionShip
+                ? Ship.MotherSquad
+                : Ship.Squad;
             if (rewardSquad == null || rewardSquad.IsDead || !rewardSquad.HasCommand || rewardSquad.GetCommand() == null)
             {
                 return;
