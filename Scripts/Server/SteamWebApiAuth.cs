@@ -5,10 +5,6 @@ using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
-    /// <summary>
-    /// Owns the Steam Web API ticket used to authenticate a production BeesServer connection.
-    /// Development/test sockets intentionally do not depend on Steam authentication.
-    /// </summary>
     internal static class SteamWebApiAuth
     {
         internal const string Identity = "bees-server";
@@ -34,7 +30,10 @@ namespace Assets.Scripts.Server
                 {
                     return;
                 }
-                _callback ??= Callback<GetTicketForWebApiResponse_t>.Create(OnTicketReceived);
+                if (_callback == null)
+                {
+                    _callback = Callback<GetTicketForWebApiResponse_t>.Create(OnTicketReceived);
+                }
                 _ticketHandle = SteamUser.GetAuthTicketForWebApi(Identity);
                 if (_ticketHandle == HAuthTicket.Invalid)
                 {
@@ -81,7 +80,6 @@ namespace Assets.Scripts.Server
                 }
                 catch
                 {
-                    // Steam may already be shut down during process teardown.
                 }
             }
             _ticketHandle = HAuthTicket.Invalid;
