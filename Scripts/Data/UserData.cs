@@ -70,6 +70,18 @@ namespace Assets.Scripts.Data
                 return;
             }
 
+            // Campaign progress and its fleet/squad snapshot form one consistency boundary.
+            // Route every campaign UserProgressData save through the checkpoint transaction so
+            // helper methods such as SetCurrentLevel cannot persist progression by itself before
+            // the matching campaign fleet and squad state is durable.
+            if (!ConfigData.Test &&
+                this is UserProgressData &&
+                ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+            {
+                global::Assets.Scripts.CampaignCheckpoint.Save();
+                return;
+            }
+
             GetDataFile().WriteData(ToJson());
         }
         public void WaitForData()
