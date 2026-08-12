@@ -1,6 +1,6 @@
 ---
 name: bug-finding
-description: Perform a repository-wide static bug audit and repair loop: find and log validated defects, require two consecutive clean full-code passes, fix every ledgered bug, then repeat until the ledger is empty and two clean passes find nothing. Do not run tests or GitHub Actions unless explicitly requested separately.
+description: Perform a repository-wide static bug audit and repair loop: find and log validated defects, require two consecutive clean full-code passes, fix every ledgered bug, add or update tests when useful for coverage, then repeat until the ledger is empty and two clean passes find nothing. Do not run tests or GitHub Actions unless explicitly requested separately.
 ---
 
 # Bug Finding
@@ -22,6 +22,8 @@ Perform a repository-wide static bug audit and repair loop. Find, validate, reco
 ## Restrictions
 
 - Do not run tests.
+- You may create, modify, or extend tests when needed to cover a validated bug, its fix, an important regression case, or a clarified contract.
+- Tests added by this skill must be reviewed statically but must not be executed as part of this workflow.
 - Do not run qualification suites, simulations, benchmarks, builds, or executables.
 - Do not trigger, rerun, or rely on GitHub Actions.
 - Do not log speculative defects.
@@ -29,7 +31,7 @@ Perform a repository-wide static bug audit and repair loop. Find, validate, reco
 - Do not stop after finding or fixing a particular number of bugs.
 - Do not treat a partial review as a full pass.
 
-This workflow relies on static analysis, code tracing, and careful review of the resulting fixes.
+This workflow relies on static analysis, code tracing, careful review of the resulting fixes, and static review of any tests added for coverage.
 
 ## Core Loop
 
@@ -69,8 +71,11 @@ For each bug:
 1. Reconfirm that the defect still exists in the current working tree.
 2. Trace enough surrounding behavior to understand the intended contract and avoid a narrow fix that breaks another path.
 3. Implement the smallest robust correction that resolves the underlying defect.
-4. Statically review the change, its callers/callees, and affected state/data flows for regressions or incomplete handling.
-5. Once repository evidence shows the defect is resolved, remove its ledger entry. If investigation disproves the entry instead, remove it as invalid.
+4. Determine whether the defect or corrected contract should be covered by a new or updated automated test. Add or modify tests when doing so provides meaningful regression coverage or protects an important behavior that was previously untested.
+5. Statically review the production change, any test changes, callers/callees, and affected state/data flows for regressions, incorrect assumptions, or incomplete handling. Do not execute the tests.
+6. Once repository evidence shows the defect is resolved, remove its ledger entry. If investigation disproves the entry instead, remove it as invalid.
+
+Do not create tests merely to inflate coverage or mirror implementation details. Prefer focused regression tests that would fail for the validated defect and pass for the intended behavior.
 
 Do not leave a validated bug unfixed merely because it is inconvenient, low severity, or outside the subsystem currently being inspected. Phase 2 is complete only when every ledger entry from that cycle has been resolved or disproved.
 
@@ -80,7 +85,7 @@ If fixing one bug reveals another validated defect, add the new defect to the le
 
 After Phase 2, return to Phase 1 and perform fresh full-code audit passes against the modified codebase.
 
-Fixes may expose, introduce, or make other defects reachable, so previous clean passes do not carry forward across a repair phase. The clean-pass count always resets to zero after production code changes.
+Fixes and test additions may expose, introduce, or make other defects reachable, so previous clean passes do not carry forward across a repair phase. The clean-pass count always resets to zero after production code changes.
 
 Repeat Phases 1 and 2 for as many cycles as necessary.
 
@@ -119,6 +124,7 @@ Pay particular attention to:
 - cross-system contracts
 - caller/callee assumption mismatches
 - interactions changed by fixes made in the previous cycle
+- gaps in existing tests that would allow a validated defect to regress unnoticed
 
 Use different review angles across passes where useful. The second clean pass should challenge the conclusions of the first rather than mechanically repeating the same inspection order.
 
@@ -128,16 +134,17 @@ Stop only when all of the following are simultaneously true:
 
 1. `BUG_LEDGER.md` contains no unresolved bugs.
 2. No production-code fixes remain to be made from the previous cycle.
-3. Two consecutive, complete, deliberate full-code passes over the current post-fix codebase found zero new validated defects.
+3. Any tests judged necessary for the fixes have been added or updated and statically reviewed.
+4. Two consecutive, complete, deliberate full-code passes over the current post-fix codebase found zero new validated defects.
 
 If either clean pass finds a defect, log it, reset the clean-pass count, complete the audit phase, fix the resulting ledger, and repeat the cycle.
 
-Do not claim the repository is mathematically bug-free. The completion claim is only that repeated static analysis reached an empty ledger and two consecutive clean full-code passes.
+Do not claim the repository is mathematically bug-free. The completion claim is only that repeated static analysis reached an empty ledger and two consecutive clean full-code passes. Tests created by this skill have not been executed unless the user separately requested test execution.
 
 ## Git Discipline
 
-Keep all audit records and fixes on the dedicated working branch unless the user explicitly instructs otherwise.
+Keep all audit records, fixes, and test changes on the dedicated working branch unless the user explicitly instructs otherwise.
 
-Commit progress periodically so findings and fixes are not lost. Keep commits coherent and limited to the audit/repair work and repository memory required by it.
+Commit progress periodically so findings, fixes, and regression tests are not lost. Keep commits coherent and limited to the audit/repair work and repository memory required by it.
 
 Never merge the working branch into `main` as part of this skill unless the user explicitly requests the merge.
