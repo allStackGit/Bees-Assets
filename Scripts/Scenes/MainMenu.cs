@@ -26,6 +26,10 @@ namespace Assets.Scripts.Scenes
         new void Start()
         {
             Name = "Main Menu";
+            // Serialized modal instances must never be visible during asynchronous bootstrap.
+            // FinalizeSceneWithUserData explicitly decides whether a genuinely new profile needs
+            // the commander-name prompt once the server/local save state is known.
+            CommanderNameDialogue?.SetActive(false);
             base.Start();
             //Debug.Log($"Started {Name} scene");
         }
@@ -135,11 +139,12 @@ namespace Assets.Scripts.Scenes
                 ResetBeesTrainingRoomButton.SetActive(true);
             }
 
-
-            if (ConfigData.UserProgressData.PlayerName == "")
-            {
-                CommanderNameDialogue.SetActive(true);
-            }
+            DataFile progressFile = ConfigData.UserProgressData.GetDataFile();
+            bool createdRemoteProfile = !ConfigData.Configuration.UseLocalStorage && progressFile.WasCreatedFromMissingStorage;
+            bool createdLocalProfile = ConfigData.Configuration.UseLocalStorage && ConfigData.FirstTimePlaying;
+            bool needsCommanderName = string.IsNullOrWhiteSpace(ConfigData.UserProgressData.PlayerName) &&
+                (createdRemoteProfile || createdLocalProfile);
+            CommanderNameDialogue?.SetActive(needsCommanderName);
 
         }
         public void SubmitName()
@@ -167,7 +172,6 @@ namespace Assets.Scripts.Scenes
             DeselectButton();
             Debug.Log("Settings!");
         }
-
         public void GoToTrainingRoom(string side)
         {
             DeselectButton();
