@@ -70,12 +70,15 @@ namespace Assets.Scripts.Data
                 return;
             }
 
-            // Campaign progress and its fleet/squad snapshot form one consistency boundary.
-            // Route every campaign UserProgressData save through the checkpoint transaction so
-            // helper methods such as SetCurrentLevel cannot persist progression by itself before
-            // the matching campaign fleet and squad state is durable.
+            // Campaign progress, saved squads, and fleet are one consistency boundary. Any save
+            // of one member during campaign play must persist all three through the transaction;
+            // otherwise legacy helpers can advance or mutate one file independently.
+            bool isCampaignCheckpointMember =
+                this is UserProgressData ||
+                filename == ConfigData.SavedSquadsDataFilenames[1] ||
+                filename == ConfigData.FleetDataFilenames[1];
             if (!ConfigData.Test &&
-                this is UserProgressData &&
+                isCampaignCheckpointMember &&
                 ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
             {
                 global::Assets.Scripts.CampaignCheckpoint.Save();
