@@ -6,19 +6,25 @@ namespace Assets.Scripts.Levels
     {
         private void EnsureTitania2ReinforcementRoute(ref Vector2 startingPosition, ref Vector2 nextPosition)
         {
-            if (Pathfinder.AreStaticallyConnected(nextPosition, Titania2Center, ConfigData.MinimumClearance))
+            Vector2 requestedEntry = nextPosition;
+
+            // Reinforcements used to spawn outside the map and then move to nextPosition.
+            // Squad.SetStartingPosition() is obstacle-aware, however, so an off-map coordinate is
+            // relocated to the nearest place where the formation fits. On Beenoculars that can be
+            // a sealed pocket near an edge. Never feed an off-map spawn into generic formation
+            // placement: if the requested entry is connected to Titania, spawn directly there.
+            if (Pathfinder.CanOccupyDestination(nextPosition, ConfigData.MinimumClearance) &&
+                Pathfinder.AreStaticallyConnected(nextPosition, Titania2Center, ConfigData.MinimumClearance))
             {
+                startingPosition = nextPosition;
                 return;
             }
 
-            Vector2 requestedEntry = nextPosition;
             bool found = false;
             float bestDistance = float.MaxValue;
-            Vector2 bestSpawn = startingPosition;
             Vector2 bestEntry = nextPosition;
 
             const float insideDistance = 32f;
-            const float outsideDistance = 80f;
             const float edgeMargin = 28f;
             const float scanStep = 20f;
 
@@ -27,56 +33,58 @@ namespace Assets.Scripts.Levels
             for (float x = MinX + edgeMargin; x <= MaxX - edgeMargin; x += scanStep)
             {
                 ConsiderTitania2Entry(
-                    new Vector2(x, MinY - outsideDistance),
                     new Vector2(x, MinY + insideDistance),
                     requestedEntry,
-                    ref found, ref bestDistance, ref bestSpawn, ref bestEntry);
+                    ref found, ref bestDistance, ref bestEntry);
                 ConsiderTitania2Entry(
-                    new Vector2(x, MaxY + outsideDistance),
                     new Vector2(x, MaxY - insideDistance),
                     requestedEntry,
-                    ref found, ref bestDistance, ref bestSpawn, ref bestEntry);
+                    ref found, ref bestDistance, ref bestEntry);
             }
 
             for (float y = MinY + edgeMargin; y <= MaxY - edgeMargin; y += scanStep)
             {
                 ConsiderTitania2Entry(
-                    new Vector2(MinX - outsideDistance, y),
                     new Vector2(MinX + insideDistance, y),
                     requestedEntry,
-                    ref found, ref bestDistance, ref bestSpawn, ref bestEntry);
+                    ref found, ref bestDistance, ref bestEntry);
                 ConsiderTitania2Entry(
-                    new Vector2(MaxX + outsideDistance, y),
                     new Vector2(MaxX - insideDistance, y),
                     requestedEntry,
-                    ref found, ref bestDistance, ref bestSpawn, ref bestEntry);
+                    ref found, ref bestDistance, ref bestEntry);
             }
 
             if (found)
             {
-                Debug.LogWarning($"Beenoculars reinforcement entry {requestedEntry} is in a sealed map region; rerouting to {bestEntry}.");
-                startingPosition = bestSpawn;
+                Debug.LogWarning($"Beenoculars reinforcement entry {requestedEntry} is unusable or sealed; rerouting spawn to connected entry {bestEntry}.");
+                startingPosition = bestEntry;
                 nextPosition = bestEntry;
                 return;
             }
 
             // Never strand a Bee squad in a sealed pocket. If no connected edge opening can be
             // found, place it in the playable region as a last-resort mission-safe fallback.
-            if (Pathfinder.TryFindNearestValidDestination(Titania2Center + new Vector2(0f, -60f), ConfigData.MinimumClearance, out Vector2 fallback))
+            if (Pathfinder.TryFindNearestValidDestination(Titania2Center + new Vector2(0f, -60f), ConfigData.MinimumClearance, out Vector2 fallback) &&
+                Pathfinder.AreStaticallyConnected(fallback, Titania2Center, ConfigData.MinimumClearance))
             {
                 Debug.LogError($"Beenoculars found no connected map-edge reinforcement lane; spawning inside the playable arena at {fallback}.");
                 startingPosition = fallback;
                 nextPosition = fallback;
+                return;
             }
+
+            // Titania itself is known to be in the playable mission arena. This is preferable to
+            // allowing generic off-map formation placement to choose an isolated compartment.
+            Debug.LogError("Beenoculars could not resolve a connected reinforcement lane; spawning at Titania as a final safety fallback.");
+            startingPosition = Titania2Center;
+            nextPosition = Titania2Center;
         }
 
         private void ConsiderTitania2Entry(
-            Vector2 spawnPoint,
             Vector2 entryPoint,
             Vector2 requestedEntry,
             ref bool found,
             ref float bestDistance,
-            ref Vector2 bestSpawn,
             ref Vector2 bestEntry)
         {
             if (!Pathfinder.CanOccupyDestination(entryPoint, ConfigData.MinimumClearance) ||
@@ -85,9 +93,10 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            Vector2 worldSpawn = PathfinderObstacleScope.LevelToWorld(this, spawnPoint);
+            // Keep enough physical room around the entry that generic formation placement does
+            // not have to search into a neighboring compartment just to fit the squad.
             Vector2 worldEntry = PathfinderObstacleScope.LevelToWorld(this, entryPoint);
-            if (Physics2D.Linecast(worldSpawn, worldEntry, ConfigData.ObstaclesLayerMask).collider != null)
+            if (Physics2D.OverlapCircle(worldEntry, 18f, ConfigData.ObstaclesLayerMask) != null)
             {
                 return;
             }
@@ -97,7 +106,6 @@ namespace Assets.Scripts.Levels
             {
                 found = true;
                 bestDistance = distance;
-                bestSpawn = spawnPoint;
                 bestEntry = entryPoint;
             }
         }
