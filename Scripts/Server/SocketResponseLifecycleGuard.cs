@@ -28,16 +28,16 @@ namespace Assets.Scripts.Server
             CampaignCheckpoint.FlushIfReady();
             if (ConfigData.SocketManager == null) return;
             Socket socket = ConfigData.Socket;
-            FilterFailedBasicWriteResponses(socket);
+            FilterFailedResponses(socket);
             PruneHandledResponses(socket);
         }
 
-        private void FilterFailedBasicWriteResponses(Socket socket)
+        private void FilterFailedResponses(Socket socket)
         {
             _messagesToReplay.Clear();
             while (socket.MessageQueue.TryDequeue(out byte[] bytes))
             {
-                if (!ShouldKeepWriteRequestPending(socket, bytes)) _messagesToReplay.Add(bytes);
+                if (!ShouldKeepRequestPending(socket, bytes)) _messagesToReplay.Add(bytes);
             }
             for (int i = 0; i < _messagesToReplay.Count; i++) socket.MessageQueue.Enqueue(_messagesToReplay[i]);
         }
@@ -47,7 +47,7 @@ namespace Assets.Scripts.Server
             return status == 1 || (status >= 200 && status < 300);
         }
 
-        private static bool ShouldKeepWriteRequestPending(Socket socket, byte[] bytes)
+        private static bool ShouldKeepRequestPending(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return false;
 
@@ -62,6 +62,22 @@ namespace Assets.Scripts.Server
                 response.RequestType = requestType;
             }
             catch { return false; }
+
+            // Missing user data is represented by the normal get-user-data payload with null
+            // Filename/Contents and no error status. Authentication/authorization/database errors
+            // instead carry an HTTP-like failure Status. Keep those responses away from
+            // HandleUserDataResponse/HandleSettingsResponse so they can never enter missing-file
+            // initialization; the standing request remains available to the normal resend path.
+            bool isDataRead = response.RequestType == ConfigData.RequestTypes.GetUserData ||
+                              response.RequestType == ConfigData.RequestTypes.GetSettings;
+            if (isDataRead && response.Status >= 400)
+            {
+                if (socket.GetStandingRequest(response.Hash) != null)
+                {
+                    Debug.LogWarning($"Server rejected read request #{response.Hash}:{response.RequestType} with status {response.Status}; keeping it pending instead of treating it as missing data.");
+                }
+                return true;
+            }
 
             bool isBasicWrite = response.RequestType == ConfigData.RequestTypes.StoreCommands ||
                                 response.RequestType == ConfigData.RequestTypes.StoreUserData ||
