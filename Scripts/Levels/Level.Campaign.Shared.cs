@@ -27,9 +27,6 @@ namespace Assets.Scripts.Levels
         {
             Triggers.Clear();
 
-            // Campaign progress is the authoritative mission identity. LevelOptions is mutable UI
-            // handoff state (chosen squads, etc.) and must not be able to select a different
-            // campaign script if it becomes stale or mismatched between scenes.
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide,
                 ConfigData.GameModes.Campaign);
@@ -82,17 +79,11 @@ namespace Assets.Scripts.Levels
 
         public void CloseLevel()
         {
-            // Capture the combat result before cleanup removes surviving ships. Campaign
-            // dialogue triggers may continue running after CloseLevel; their outcome queries
-            // must see the result that caused closure, not deaths caused by teardown itself.
             State.CaptureEliminationState();
             Pause();
             CancelTimer(_egg);
             CancelTimer(_fishTank);
 
-            // A level can be closed before its initial SetupLevel response arrives. Retire every
-            // level-owned setup/reconnect request before the scene disappears so a late response
-            // cannot re-register this old Level in Socket.OpenLevels or reconnect a dead scene.
             ConfigData.Socket.StandingRequests.RemoveWhere(request =>
                 (request is SetupLevelRequest setupRequest && ReferenceEquals(setupRequest.Level, this)) ||
                 (request is ReconnectLevelRequest reconnectRequest && ReferenceEquals(reconnectRequest.Level, this)));
@@ -128,9 +119,6 @@ namespace Assets.Scripts.Levels
             });
         }
 
-        /// <summary>
-        /// Test hook for executing code after the level is fully set up.
-        /// </summary>
         public void PostSetupTest()
         {
             Debug.Log("POST SETUP TEST HAS BEEN CALLED");
@@ -177,9 +165,11 @@ namespace Assets.Scripts.Levels
 
         public void AddReinforcementSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 nextPosition)
         {
-            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+            bool isBeenoculars = ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
                 ConfigData.UserProgressData != null &&
-                ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign) == 8)
+                ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign) == 8;
+
+            if (isBeenoculars)
             {
                 EnsureTitania2ReinforcementRoute(ref startingPosition, ref nextPosition);
             }
@@ -197,13 +187,39 @@ namespace Assets.Scripts.Levels
                         true);
                 }
 
-                if (squads[i] != null)
+                if (squads[i] == null)
+                {
+                    continue;
+                }
+
+                if (!isBeenoculars || startingPosition == nextPosition)
                 {
                     LevelConstructor.SpawnShipsAndSquads(
                         new List<SavedSquad>() { squads[i] },
                         startingPosition,
                         nextPosition,
                         true);
+                    continue;
+                }
+
+                // Build the squad at the validated in-map entry first so ordinary obstacle-aware
+                // formation setup cannot relocate an intentional off-map point into a sealed room.
+                // Once setup is complete, move only the newly-created runtime squads to the authored
+                // off-screen point without collision correction, then issue their entry move.
+                HashSet<Squad> existingSquads = new HashSet<Squad>(State.GetAllSquads());
+                LevelConstructor.SpawnShipsAndSquads(
+                    new List<SavedSquad>() { squads[i] },
+                    nextPosition,
+                    Vector2.zero,
+                    true);
+
+                foreach (Squad spawnedSquad in State.GetAllSquads().Where(squad => !existingSquads.Contains(squad)))
+                {
+                    spawnedSquad.SetOffscreenStartingPosition(startingPosition);
+                    if (!spawnedSquad.IsImmobile)
+                    {
+                        spawnedSquad.Move(nextPosition);
+                    }
                 }
             }
         }
