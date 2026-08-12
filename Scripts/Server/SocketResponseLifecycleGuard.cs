@@ -92,8 +92,18 @@ namespace Assets.Scripts.Server
             bool isBasicWrite = response.RequestType == ConfigData.RequestTypes.StoreCommands ||
                                 response.RequestType == ConfigData.RequestTypes.StoreUserData ||
                                 response.RequestType == ConfigData.RequestTypes.SendRLData;
-            if (!isBasicWrite || response.Status == 1)
+            if (!isBasicWrite || response.Status == 200)
             {
+                return false;
+            }
+
+            // BeesServer uses 409 specifically to retire StoreCommands outcomes whose reservation
+            // disappeared across a server restart. Those outcomes cannot be made valid by retrying;
+            // replaying the request forever would only amplify load. Let the normal basic response
+            // handler retire the request, while keeping every other non-successful write retryable.
+            if (response.RequestType == ConfigData.RequestTypes.StoreCommands && response.Status == 409)
+            {
+                Debug.LogWarning($"Server rejected stale StoreCommands request #{response.Hash}; retiring it instead of retrying indefinitely.");
                 return false;
             }
 
