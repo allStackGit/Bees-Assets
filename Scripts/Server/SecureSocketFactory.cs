@@ -1,55 +1,65 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Reflection;
-using UnityEngine;
+using System.Runtime.Serialization;
+using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.Server
 {
     /// <summary>
-    /// The legacy Socket constructor builds and connects immediately. Keep that implementation
-    /// intact, but for production close its bootstrap connection and replace it with WSS before
-    /// the Socket instance is returned to any caller that can send application data.
+    /// The legacy Socket constructor connects immediately. For production, reproduce its small
+    /// initialization sequence without invoking that constructor so the first network connection
+    /// is WSS rather than briefly opening WS and racing its close callback against the secure one.
     /// </summary>
     internal static class SecureSocketFactory
     {
-        private static readonly FieldInfo WebSocketUrlField = typeof(Socket).GetField(
-            "_websocketURL", BindingFlags.Instance | BindingFlags.NonPublic);
-        private static readonly FieldInfo WebSocketSharpField = typeof(Socket).GetField(
-            "_webSocketSharpSocket", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo HostnameField = RequiredField("_hostname");
+        private static readonly FieldInfo PortField = RequiredField("_port");
+        private static readonly FieldInfo WebSocketUrlField = RequiredField("_websocketURL");
+        private static readonly FieldInfo UseWebSocketSharpField = RequiredField("_useWebSocketSharp");
+
+        private static FieldInfo RequiredField(string name)
+        {
+            FieldInfo field = typeof(Socket).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            if (field == null)
+            {
+                throw new MissingFieldException(typeof(Socket).FullName, name);
+            }
+            return field;
+        }
 
         internal static Socket Create(int port, string hostname, bool useWebSocketSharp, bool secure)
         {
-            Socket socket = new Socket(port, hostname, useWebSocketSharp);
             if (!secure)
             {
-                return socket;
+                return new Socket(port, hostname, useWebSocketSharp);
             }
             if (!useWebSocketSharp)
             {
                 throw new NotSupportedException("Production WSS currently requires the WebSocketSharp transport.");
             }
-            if (WebSocketUrlField == null || WebSocketSharpField == null)
-            {
-                throw new MissingFieldException("Socket transport internals changed; update SecureSocketFactory deliberately.");
-            }
 
-            WebSocketSharp.WebSocket bootstrapSocket = WebSocketSharpField.GetValue(socket) as WebSocketSharp.WebSocket;
-            if (bootstrapSocket != null)
-            {
-                try
-                {
-                    bootstrapSocket.Close();
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogWarning($"Could not close bootstrap WebSocket before enabling TLS: {exception.Message}");
-                }
-            }
+#pragma warning disable SYSLIB0050
+            Socket socket = (Socket)FormatterServices.GetUninitializedObject(typeof(Socket));
+#pragma warning restore SYSLIB0050
+            ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            HostnameField.SetValue(socket, hostname);
+            PortField.SetValue(socket, port);
+            UseWebSocketSharpField.SetValue(socket, true);
+            WebSocketUrlField.SetValue(socket, $"wss://{hostname}:{port}");
 
             socket.Protocol = "wss";
             socket.IsSecured = true;
+            socket.IsOpen = false;
             socket.HasClosed = false;
             socket.KeepClosed = false;
-            WebSocketUrlField.SetValue(socket, $"wss://{hostname}:{port}");
+            socket.StandingRequests = new HashSet<ServerRequest>();
+            socket.HandledRequests = new HashSet<long>();
+            socket.MessageQueue = new ConcurrentQueue<byte[]>();
+            socket.OpenLevels = new List<Level>();
+
             socket.MakeSocket();
             return socket;
         }
