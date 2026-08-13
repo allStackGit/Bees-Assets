@@ -67,7 +67,14 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
+            int requestIdBeforeMove = PathfindingRequestId;
             MoveToPoint(destination);
+            if (PathfindingRequestId != requestIdBeforeMove)
+            {
+                // MoveToPoint only changes the path request identity when it actually dispatches
+                // or queues A*. Direct movement therefore does not inflate this diagnostic.
+                FreezeDiagnostics.RecordPathRequest(this);
+            }
         }
     }
 }
