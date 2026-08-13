@@ -64,7 +64,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             return !potentialTargetShip.IsDead &&
                    IsShipWithinRange(potentialTargetShip) &&
                    potentialTargetShip.IsInBounds() &&
-                   (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(GetPosition(), GetTargetPoint(potentialTargetShip)));
+                   (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(
+                       GetPosition() + Level.GetPosition(),
+                       GetTargetPoint(potentialTargetShip) + Level.GetPosition()));
         }
 
         protected void FireNext()
