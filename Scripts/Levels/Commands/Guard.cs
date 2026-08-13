@@ -117,8 +117,12 @@ namespace Assets.Scripts.Levels.Commands
                             break;
                     }
 
-                    // Set the destination
-                    SetAndMove(_timer_position);
+                    // A guard target is moving, but a timer refresh must not invalidate a live
+                    // path worker. Let current searches settle and refresh on a later tick.
+                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                    {
+                        SetAndMove(_timer_position);
+                    }
                     if (Vector2.Distance(_timer_position, GetSquad().GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
                     {
                         GetSquad().SetSquadSpeed(_guardedSquad.SlowestSpeed);
