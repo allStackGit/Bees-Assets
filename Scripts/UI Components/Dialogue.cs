@@ -93,9 +93,10 @@ namespace Assets.Scripts.UI_Components
                 action();
                 Hide();
             });
-            // Dialogue buttons are cloned after the scene-loaded scan. Configure sound ownership
-            // after adding the dialogue action so the fallback generic click runs last.
+            // Dialogue buttons are cloned after the scene-loaded scans, so apply both sound and
+            // visual ownership directly when each control is created.
             ButtonSoundOwnershipGuard.Configure(button);
+            GameHudLayoutGuard.ConfigureButtonStyle(button);
             buttonObject.SetActive(true);
             return buttonObject;
         }
