@@ -23,6 +23,7 @@ namespace Bees.Tests.EditMode
         {
             string queries = ReadSource("Scripts", "Levels", "GameState.Queries.cs");
             string vision = ReadSource("Scripts", "Entities", "Ships", "Weapons", "HivemindVision.cs");
+            string registry = ReadSource("Scripts", "Levels", "GameState.Registry.cs");
 
             Assert.That(queries, Does.Contain("public bool RecordHiveMindSighting(Ship observer, Ship spotted)"));
             Assert.That(queries, Does.Contain("return VisionCache[sideIndex].Add(spotted);"));
@@ -31,6 +32,9 @@ namespace Bees.Tests.EditMode
                 "Pairwise sight triggers must not rebuild the entire faction visibility graph.");
             Assert.That(vision, Does.Contain("state.RecordHiveMindSighting(Ship, _shipEnter)"));
             Assert.That(vision, Does.Not.Contain("GetShipsVisibleToHiveMind(Ship.Side).Contains"));
+            Assert.That(registry, Does.Contain("int removedObserverSideIndex = ship.IsHiveMindControlled ? ship.Side - 1 : -1;"));
+            Assert.That(registry, Does.Contain("sideCache.Clear();"),
+                "Observer death must refresh the affected side cache so incremental visibility preserves the old live-observer semantics.");
         }
 
         [Test]
