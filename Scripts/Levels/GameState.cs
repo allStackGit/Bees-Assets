@@ -61,6 +61,11 @@ namespace Assets.Scripts.Levels
             new List<ShipDamageStatus>(),
             new List<ShipDamageStatus>()
         };
+        public Dictionary<long, ShipDamageStatus>[] ShipDamageStatusesById =
+        {
+            new Dictionary<long, ShipDamageStatus>(),
+            new Dictionary<long, ShipDamageStatus>()
+        };
         public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
 
         public int PlayerMineralsMined;
@@ -158,13 +163,13 @@ namespace Assets.Scripts.Levels
                 else HivemindShips[side].Clear();
                 if (VisionCache[side] == null) VisionCache[side] = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
                 else VisionCache[side].Clear();
+                ShipDamageStatuses[side].Clear();
+                ShipDamageStatusesById[side].Clear();
             }
             Deadbodies.Clear();
             FireBargeExplosions.Clear();
             MiningAsteroids.Clear();
             MiningShips.Clear();
-            ShipDamageStatuses[0].Clear();
-            ShipDamageStatuses[1].Clear();
             ShipsToRelease.Clear();
             SquadsToRelease.Clear();
             CommandsToRelease.Clear();
