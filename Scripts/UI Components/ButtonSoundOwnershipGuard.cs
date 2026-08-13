@@ -20,23 +20,33 @@ namespace Assets.Scripts.UI_Components
             {
                 foreach (Button button in root.GetComponentsInChildren<Button>(true))
                 {
-                    bool ownsSerializedButtonSound = false;
-                    for (int index = 0; index < button.onClick.GetPersistentEventCount(); index++)
-                    {
-                        Object target = button.onClick.GetPersistentTarget(index);
-                        string methodName = button.onClick.GetPersistentMethodName(index);
-                        if (target is UIAudioController && methodName == nameof(UIAudioController.PlayButtonSound))
-                        {
-                            button.onClick.SetPersistentListenerState(index, UnityEventCallState.Off);
-                            ownsSerializedButtonSound = true;
-                        }
-                    }
-
-                    if (ownsSerializedButtonSound && button.GetComponent<ButtonSoundOwner>() == null)
-                    {
-                        button.gameObject.AddComponent<ButtonSoundOwner>();
-                    }
+                    Configure(button);
                 }
+            }
+        }
+
+        internal static void Configure(Button button)
+        {
+            if (button == null || button.GetComponent<ButtonSoundOwner>() != null)
+            {
+                return;
+            }
+
+            bool ownsSerializedButtonSound = false;
+            for (int index = 0; index < button.onClick.GetPersistentEventCount(); index++)
+            {
+                Object target = button.onClick.GetPersistentTarget(index);
+                string methodName = button.onClick.GetPersistentMethodName(index);
+                if (target is UIAudioController && methodName == nameof(UIAudioController.PlayButtonSound))
+                {
+                    button.onClick.SetPersistentListenerState(index, UnityEventCallState.Off);
+                    ownsSerializedButtonSound = true;
+                }
+            }
+
+            if (ownsSerializedButtonSound)
+            {
+                button.gameObject.AddComponent<ButtonSoundOwner>();
             }
         }
     }
