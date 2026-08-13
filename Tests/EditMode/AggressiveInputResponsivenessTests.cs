@@ -42,6 +42,7 @@ namespace Bees.Tests.EditMode
             string heal = ReadSource("Scripts", "Levels", "Commands", "Heal.cs");
             string retreat = ReadSource("Scripts", "Levels", "Commands", "FullRetreat.cs");
             string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
+            string shipMovement = ReadSource("Scripts", "Entities", "Ships", "Ship.Movement.cs");
 
             Assert.That(bombingRun, Does.Contain("if (!ship.IsPathfinding)"),
                 "Bombing Run can refresh a tracked target every 0.25 seconds and must not invalidate a live A* request.");
@@ -57,6 +58,8 @@ namespace Bees.Tests.EditMode
                 "Retreat's recurring Warp Gate refresh must not churn active path workers.");
             Assert.That(striker, Does.Contain("else if (!IsPathfinding)"),
                 "A returning Striker tracks a moving Carrier and must not supersede its current path request.");
+            Assert.That(shipMovement, Does.Contain("if (!IsPathfinding)\n                {\n                    MoveToPoint(FinalDestination);"),
+                "Recurring collision-asteroid rechecks must let the current A* search settle before refreshing its destination.");
         }
     }
 }
