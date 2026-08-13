@@ -224,7 +224,10 @@ namespace Assets.Scripts.Levels
                         }
                     }
                 }
-                outOfBoundsHiveSquads.ForEach(squad => State.AddToSquadsAwaitingHiveMindCommands(squad));
+                for (int i = 0; i < outOfBoundsHiveSquads.Count; i++)
+                {
+                    State.AddToSquadsAwaitingHiveMindCommands(outOfBoundsHiveSquads[i]);
+                }
                 outOfBoundsHiveSquads.Clear();
             }
         }
