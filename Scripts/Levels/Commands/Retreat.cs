@@ -18,7 +18,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 return;
             }
-
             if (!EnemySquad.IsDead)
             {
                 _enemyPosition = EnemySquad.GetPosition();
@@ -30,9 +29,7 @@ namespace Assets.Scripts.Levels.Commands
                     _angle = GetSquad().AngleToPoint(_enemyPosition);
                     GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
                     _position = GetSquad().GetPosition();
-                    _retreatPoint = new Vector2(
-                        (Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x),
-                        (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
+                    _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
 
                     CommandTimer.Reuse(CommandFrequency, Timer, true, true);
@@ -62,10 +59,6 @@ namespace Assets.Scripts.Levels.Commands
             if (GetSquad().HasReachedDestination)
             {
                 SetFinalize("Retreating and got far enough away.");
-            }
-            else
-            {
-                SetAndMove(_retreatPoint);
             }
         }
 
