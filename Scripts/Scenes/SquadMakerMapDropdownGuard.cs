@@ -20,7 +20,10 @@ namespace Assets.Scripts.Scenes
             SceneManager.sceneLoaded += HandleSceneLoaded;
         }
 
-        private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        // This class lives in Assets.Scripts.Scenes, which also contains the game's own Scene
+        // type. Fully qualify Unity's Scene here so the callback exactly matches
+        // SceneManager.sceneLoaded (UnityAction<UnityEngine.SceneManagement.Scene, LoadSceneMode>).
+        private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
             SquadMaker squadMaker = Object.FindObjectOfType<SquadMaker>();
             if (squadMaker == null || squadMaker.MapDropdown == null)
