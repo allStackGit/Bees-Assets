@@ -1,4 +1,5 @@
 using Assets.Scripts.Scenes;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -40,80 +41,117 @@ namespace Assets.Scripts.Levels.Commands
         private List<Squad> _queue, _targetedSquads;
         private Vector2 _location;
         private ConfigData.ShipTypes _type;
-        //private int _aShipsOfType, _bShipsOfType;
+        private readonly Dictionary<Squad, float> _distanceKeys = new Dictionary<Squad, float>();
+        private readonly Dictionary<Squad, int> _typeCountKeys = new Dictionary<Squad, int>();
+
+        private Squad SelectByScore(Func<Squad, double> score, bool descending)
+        {
+            Squad selected = _queue[0];
+            double selectedScore = score(selected);
+            for (int i = 1; i < _queue.Count; i++)
+            {
+                Squad candidate = _queue[i];
+                double candidateScore = score(candidate);
+                if ((descending && candidateScore > selectedScore) || (!descending && candidateScore < selectedScore))
+                {
+                    selected = candidate;
+                    selectedScore = candidateScore;
+                }
+            }
+            return selected;
+        }
+
+        private Squad SelectInCombat()
+        {
+            Squad selected = _queue[0];
+            for (int i = 1; i < _queue.Count; i++)
+            {
+                Squad candidate = _queue[i];
+                if ((candidate.InCombat && !selected.InCombat) ||
+                    (candidate.InCombat == selected.InCombat && candidate.MaxRange < selected.MaxRange))
+                {
+                    selected = candidate;
+                }
+            }
+            return selected;
+        }
+
         public Squad SortSquads()
         {
-            //Debug.Log("Sorting squads");
-            //Debug.Log($"Squad: {Squad}");
             _queue = Level.State.GetSquadsVisibleToHiveMind(Side);
-            //Debug.Log($"Squads visible to HiveMind {Side}: {queue.Count}");
-            //Debug.Log($"Ships visible to HiveMind {Side}: {Level.State.GetShipsVisibleToHiveMind(Side).Count}");
 
             if (_queue.Count == 0)
             {
-                //Debug.Log($"There were no enemy squads to sort for the targeting queue");
                 return null;
             }
 
             switch (MatchupType)
             {
                 case ConfigData.MatchupStrategyTypes.Random:
-                    // Ordering by a two-value random key is biased because OrderBy is stable:
-                    // earlier entries win ties disproportionately. Choose an index uniformly.
                     return _queue[Utilities.RandomInt(_queue.Count)];
 
                 case ConfigData.MatchupStrategyTypes.Revenge:
-                    return _queue.OrderByDescending(s => s.LastKilled).First();
+                    return SelectByScore(s => s.LastKilled, true);
 
                 case ConfigData.MatchupStrategyTypes.MostDangerous:
-                    return _queue.OrderByDescending(s => s.DamageDone).First();
+                    return SelectByScore(s => s.DamageDone, true);
 
                 case ConfigData.MatchupStrategyTypes.LeastHealth:
-                    return _queue.OrderBy(s => s.Health).First();
+                    return SelectByScore(s => s.Health, false);
 
                 case ConfigData.MatchupStrategyTypes.MostHealth:
-                    return _queue.OrderByDescending(s => s.Health).First();
+                    return SelectByScore(s => s.Health, true);
 
                 case ConfigData.MatchupStrategyTypes.MostPowerful:
-                    return _queue.OrderByDescending(s => s.Firepower).First();
+                    return SelectByScore(s => s.Firepower, true);
 
                 case ConfigData.MatchupStrategyTypes.LeastPowerful:
-                    return _queue.OrderBy(s => s.Firepower).First();
+                    return SelectByScore(s => s.Firepower, false);
 
                 case ConfigData.MatchupStrategyTypes.Closest:
                     _location = Squad.GetPosition();
-                    _queue.Sort((a, b) => a.DistanceToPoint(_location).CompareTo(b.DistanceToPoint(_location)));
+                    _distanceKeys.Clear();
+                    foreach (Squad candidate in _queue)
+                    {
+                        _distanceKeys[candidate] = candidate.DistanceToPoint(_location);
+                    }
+                    _queue.Sort((a, b) => _distanceKeys[a].CompareTo(_distanceKeys[b]));
                     return _queue.First();
 
                 case ConfigData.MatchupStrategyTypes.Furthest:
                     _location = Squad.GetPosition();
-                    _queue.Sort((a, b) => b.DistanceToPoint(_location).CompareTo(a.DistanceToPoint(_location)));
+                    _distanceKeys.Clear();
+                    foreach (Squad candidate in _queue)
+                    {
+                        _distanceKeys[candidate] = candidate.DistanceToPoint(_location);
+                    }
+                    _queue.Sort((a, b) => _distanceKeys[b].CompareTo(_distanceKeys[a]));
                     return _queue.First();
 
                 case ConfigData.MatchupStrategyTypes.MostRange:
-                    return _queue.OrderByDescending(s => s.MaxRange).First();
+                    return SelectByScore(s => s.MaxRange, true);
 
                 case ConfigData.MatchupStrategyTypes.LeastRange:
-                    return _queue.OrderBy(s => s.MaxRange).First();
+                    return SelectByScore(s => s.MaxRange, false);
 
                 case ConfigData.MatchupStrategyTypes.Fastest:
-                    return _queue.OrderByDescending(s => s.TotalSpeed).First();
+                    return SelectByScore(s => s.TotalSpeed, true);
 
                 case ConfigData.MatchupStrategyTypes.Slowest:
-                    return _queue.OrderBy(s => s.TotalSpeed).First();
+                    return SelectByScore(s => s.TotalSpeed, false);
 
                 case ConfigData.MatchupStrategyTypes.InCombat:
-                    return _queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault();
+                    return SelectInCombat();
 
                 case ConfigData.MatchupStrategyTypes.GangUp:
                     _targetedSquads = Level.State.GetTargetedSquads(Side);
-                    return _targetedSquads.Count > 0 ? _targetedSquads.First() : _queue.OrderByDescending(s => s.InCombat).ThenBy(s => s.MaxRange).FirstOrDefault(); // In Combat
+                    return _targetedSquads.Count > 0 ? _targetedSquads.First() : SelectInCombat();
 
                 case ConfigData.MatchupStrategyTypes.MostValuable:
-                    return _queue.OrderByDescending(s => s.Tsv).First();
+                    return SelectByScore(s => s.Tsv, true);
 
                 case ConfigData.MatchupStrategyTypes.LeastValuable:
-                    return _queue.OrderBy(s => s.Tsv).First();
+                    return SelectByScore(s => s.Tsv, false);
 
                 case ConfigData.MatchupStrategyTypes.TypeA:
                 case ConfigData.MatchupStrategyTypes.TypeB:
@@ -140,12 +178,20 @@ namespace Assets.Scripts.Levels.Commands
                 case ConfigData.MatchupStrategyTypes.TypeW:
                 case ConfigData.MatchupStrategyTypes.TypeX:
                     _type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
-                    _queue.Sort((a, b) =>
+                    _typeCountKeys.Clear();
+                    foreach (Squad candidate in _queue)
                     {
-                        int aShipsOfType = a.GetShips().Count(s => s.ShipType == _type);
-                        int bShipsOfType = b.GetShips().Count(s => s.ShipType == _type);
-                        return bShipsOfType.CompareTo(aShipsOfType);
-                    });
+                        int count = 0;
+                        foreach (var ship in candidate.GetShips())
+                        {
+                            if (ship.ShipType == _type)
+                            {
+                                count++;
+                            }
+                        }
+                        _typeCountKeys[candidate] = count;
+                    }
+                    _queue.Sort((a, b) => _typeCountKeys[b].CompareTo(_typeCountKeys[a]));
                     return _queue.First();
                 default:
                     return _queue.First();
