@@ -156,7 +156,13 @@ namespace Assets.Scripts.Levels.Commands
 
         public void SendShipToTarget(Ship ship)
         {
-            ship.MoveToPoint(ship.TargetEnemyShipToFollow.GetPosition());
+            // Target-follow timers can run much faster than a difficult A* search. Do not
+            // supersede a live request just to refresh a moving target: invalidation only
+            // discards the result, while the Task.Run worker keeps consuming a path slot.
+            if (!ship.IsPathfinding)
+            {
+                ship.MoveToPoint(ship.TargetEnemyShipToFollow.GetPosition());
+            }
         }
 
         private bool AreBombersCloseToEnemyTargets()
