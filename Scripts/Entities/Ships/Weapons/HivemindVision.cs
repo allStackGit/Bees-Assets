@@ -50,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             // every pairwise trigger enter, which caused first contact between dense squads to
             // multiply main-thread work dramatically.
             bool isFirstSideWideSighting = state.RecordHiveMindSighting(Ship, _shipEnter);
-            Ship.Stage.DebugLogger?.RecordHiveMindSightEnter(isFirstSideWideSighting);
+            FreezeDiagnostics.RecordHiveMindSightEnter(Ship.Level, isFirstSideWideSighting);
             if (!isFirstSideWideSighting)
             {
                 return;
