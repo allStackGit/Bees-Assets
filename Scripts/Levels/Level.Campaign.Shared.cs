@@ -83,6 +83,8 @@ namespace Assets.Scripts.Levels
             Pause();
             CancelTimer(_egg);
             CancelTimer(_fishTank);
+            CancelTimer(_checkTriggersTimer);
+            HasContinuousTriggers = false;
 
             ConfigData.Socket.StandingRequests.RemoveWhere(request =>
                 (request is SetupLevelRequest setupRequest && ReferenceEquals(setupRequest.Level, this)) ||
@@ -96,6 +98,7 @@ namespace Assets.Scripts.Levels
                 Stage.Menus.MissionStatus.SetActive(false);
             }
 
+            State.TargetingSquadMarkers.ToList().ForEach(target => target.Kill());
             foreach (Ship ship in State.GetShips().ToList())
             {
                 if (ship.HasUserFogOfWarVision)
