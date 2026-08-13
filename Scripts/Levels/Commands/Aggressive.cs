@@ -1,6 +1,6 @@
 ﻿
 using System.Collections;
-using System.Linq;
+using System.Collections.Generic;
 using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
@@ -12,6 +12,7 @@ namespace Assets.Scripts.Levels.Commands
         public bool HasTakenPosition;
         public int ConsecutiveTimesWithinRange = 0;
         private Coroutine _moveTowardsEnemiesCoroutine;
+        private readonly List<Ship> _moveTowardsEnemiesShips = new List<Ship>();
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
@@ -68,19 +69,29 @@ namespace Assets.Scripts.Levels.Commands
 
         private IEnumerator MoveTowardsEnemiesAcrossFrames()
         {
-            Ship[] ships = GetSquad().GetShips().Where(ship => ship != null && !ship.IsDead).ToArray();
-            for (int i = 0; i < ships.Length; i++)
+            _moveTowardsEnemiesShips.Clear();
+            foreach (Ship ship in GetSquad().GetShips())
+            {
+                if (ship != null && !ship.IsDead)
+                {
+                    _moveTowardsEnemiesShips.Add(ship);
+                }
+            }
+
+            for (int i = 0; i < _moveTowardsEnemiesShips.Count; i++)
             {
                 if (IsDead || GetSquad().IsDead || EnemySquad == null || EnemySquad.IsDead)
                 {
+                    _moveTowardsEnemiesShips.Clear();
                     _moveTowardsEnemiesCoroutine = null;
                     yield break;
                 }
 
-                Ship ship = ships[i];
+                Ship ship = _moveTowardsEnemiesShips[i];
                 Ship target = ship.SetAndGetTargetEnemy();
                 if (target == null)
                 {
+                    _moveTowardsEnemiesShips.Clear();
                     _moveTowardsEnemiesCoroutine = null;
                     SetFinalize("No more enemy ships to target");
                     yield break;
@@ -96,6 +107,7 @@ namespace Assets.Scripts.Levels.Commands
                 yield return null;
             }
 
+            _moveTowardsEnemiesShips.Clear();
             _moveTowardsEnemiesCoroutine = null;
         }
 
