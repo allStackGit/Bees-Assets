@@ -8,17 +8,33 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class GameHudLayoutGuardTests
     {
+        private static string ReadGuardSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "GameHudLayoutGuard.cs"));
+        }
+
         [Test]
         public void VisibleMissionClockMovesGameSpeedButtonBesideIt()
         {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "UI Components", "GameHudLayoutGuard.cs"));
+            string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Clock.activeInHierarchy"));
             Assert.That(source, Does.Contain("_clockRect.rect.width + _speedRect.rect.width"));
             Assert.That(source, Does.Contain("ControlGap"));
-            Assert.That(source, Does.Contain("_speedRect.anchoredPosition = new Vector2(x, _clockRect.anchoredPosition.y);"));
+            Assert.That(source, Does.Contain("_speedRect.anchoredPosition = new Vector2(x, y);"));
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = _normalSpeedPosition;"));
+        }
+
+        [Test]
+        public void VisiblePlutoShieldMovesGameSpeedButtonBelowShield()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("_menus.PlutoShield.activeInHierarchy"));
+            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
+            Assert.That(source, Does.Contain("_plutoShieldRect.rect.height + _speedRect.rect.height"));
+            Assert.That(source, Does.Contain("((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap"));
         }
     }
 }
