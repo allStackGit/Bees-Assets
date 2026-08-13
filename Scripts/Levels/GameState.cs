@@ -133,10 +133,6 @@ namespace Assets.Scripts.Levels
         {
             CleanupRuntimeObjectsForReset();
 
-            // Path searches run on background tasks and retain this Pathfinder instance's
-            // worker arrays. Never reinitialize those arrays for the next episode while an
-            // old task may still be using them; detach the old instance so setup creates a
-            // fresh Pathfinder and any late results remain isolated on the retired object.
             if (Level != null)
             {
                 Level.Pathfinder = null;
@@ -152,19 +148,17 @@ namespace Assets.Scripts.Levels
             PlayerVisibleMapObjects.Clear();
             Obstacles.Clear();
             FogOfWarVisions.Clear();
-            SpottedShips = new[] { new List<SpottedShip>(), new List<SpottedShip>() };
-            InitialTsv = new[] { 0, 0 };
-            OriginalSquadCounts = new[] { 0, 0 };
-            HivemindShips = new[]
+            for (int side = 0; side < 2; side++)
             {
-                new Dictionary<long, HashSet<Ship>>(),
-                new Dictionary<long, HashSet<Ship>>()
-            };
-            VisionCache = new[]
-            {
-                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
-                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)
-            };
+                if (SpottedShips[side] == null) SpottedShips[side] = new List<SpottedShip>();
+                else SpottedShips[side].Clear();
+                InitialTsv[side] = 0;
+                OriginalSquadCounts[side] = 0;
+                if (HivemindShips[side] == null) HivemindShips[side] = new Dictionary<long, HashSet<Ship>>();
+                else HivemindShips[side].Clear();
+                if (VisionCache[side] == null) VisionCache[side] = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
+                else VisionCache[side].Clear();
+            }
             Deadbodies.Clear();
             FireBargeExplosions.Clear();
             MiningAsteroids.Clear();
