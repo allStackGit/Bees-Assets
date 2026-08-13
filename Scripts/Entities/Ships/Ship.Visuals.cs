@@ -84,9 +84,20 @@ namespace Assets.Scripts.Entities.Ships
             gameObject.name = Name;
         }
 
+        private static void SetRocketFlareState(List<GameObject> flares, bool active)
+        {
+            flares.ForEach(flare =>
+            {
+                if (flare.activeSelf != active)
+                {
+                    flare.SetActive(active);
+                }
+            });
+        }
+
         public virtual void SetRocketFlares()
         {
-            CenterRocketFlares.ForEach(flare => flare.SetActive(true));
+            SetRocketFlareState(CenterRocketFlares, true);
             if (!HasRightRocketFlares || !HasLeftRocketFlares)
             {
                 return;
@@ -94,26 +105,26 @@ namespace Assets.Scripts.Entities.Ships
 
             if (_differenceInAngleToPoint > 5)
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(true));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(RightRocketFlares, true);
+                SetRocketFlareState(LeftRocketFlares, false);
                 AreRocketFlaresOutOfSync = true;
             }
             else if (_differenceInAngleToPoint < -5)
             {
-                LeftRocketFlares.ForEach(flare => flare.SetActive(true));
-                RightRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(LeftRocketFlares, true);
+                SetRocketFlareState(RightRocketFlares, false);
                 AreRocketFlaresOutOfSync = true;
             }
             else if (!HasOnlySideRocketFlares)
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(true));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(true));
+                SetRocketFlareState(RightRocketFlares, true);
+                SetRocketFlareState(LeftRocketFlares, true);
                 AreRocketFlaresOutOfSync = false;
             }
             else
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(false));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(RightRocketFlares, false);
+                SetRocketFlareState(LeftRocketFlares, false);
             }
         }
 
