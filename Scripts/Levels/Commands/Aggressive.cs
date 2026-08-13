@@ -86,16 +86,10 @@ namespace Assets.Scripts.Levels.Commands
                     yield break;
                 }
 
-                // Do not supersede a live A* request just because the recurring aggressive
-                // timer refreshed the target. MoveToPoint invalidates an in-flight request,
-                // while the old Task.Run search continues until completion/time-out. Repeating
-                // that every command tick creates a permanent backlog of obsolete CPU-heavy
-                // searches. Let the current request finish; the next aggressive tick can then
-                // refresh the destination if the target has actually moved.
-                if (!ship.IsPathfinding)
-                {
-                    ship.MoveToPoint(target.GetPosition());
-                }
+                // Moving-target pursuit has different ownership from a fresh player movement
+                // order. Keep active A*, a useful current path, and failed-search retry backoff
+                // instead of replacing them every aggressive timer tick.
+                ship.MoveToTrackedPoint(target.GetPosition());
 
                 // Path-map snapshots and request startup are main-thread work even though the
                 // actual path search runs on Task.Run. Spread squad attack startup over frames.
@@ -107,6 +101,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
+            FreezeDiagnostics.RecordAggressiveTick(Level);
             if (!GetSquad().IsDead)
             {
                 if (!EnemySquad.IsDead)
