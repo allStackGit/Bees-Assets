@@ -114,12 +114,10 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
-            foreach (List<ShipDamageStatus> statuses in ShipDamageStatuses)
+            for (int sideIndex = 0; sideIndex < ShipDamageStatuses.Length; sideIndex++)
             {
-                if (statuses != null)
-                {
-                    statuses.RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
-                }
+                ShipDamageStatuses[sideIndex].RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
+                ShipDamageStatusesById[sideIndex].Remove(ship.Id);
             }
             foreach (List<SpottedShip> spotted in SpottedShips)
             {
