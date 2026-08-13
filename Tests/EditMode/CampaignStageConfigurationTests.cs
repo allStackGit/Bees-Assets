@@ -21,6 +21,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void AffectedCampaignMissionsInstallTheirCompatibilitySetup()
+        {
+            string shared = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs"));
+            string rules = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "CampaignObjectiveRules.cs"));
+
+            Assert.That(shared, Does.Contain("if (missionId == 4)"));
+            Assert.That(shared, Does.Contain("Neptune1SeizeTheMeansWithEndingContinuation();"));
+            Assert.That(shared, Does.Contain("else if (missionId == 9)"));
+            Assert.That(shared, Does.Contain("Uranus1OnTheOffensiveWithAuthoredFog();"));
+
+            Assert.That(rules, Does.Contain("ContinuationName = \"Level 4 Post-success dialogue\""));
+            Assert.That(rules, Does.Contain("Level.NextTriggers.Remove(continuation);"));
+            Assert.That(rules, Does.Contain("CurrentLevelOptions.FogOfWar != 1"));
+            Assert.That(rules, Does.Contain("Map.FogOfWar.SetActive(true);"));
+            Assert.That(rules, Does.Contain("ship.FogOfWarVision.Activate();"));
+        }
+
+        [Test]
         public void CampaignStageDisablesGenericMapAndSquadOverrides()
         {
             string source = File.ReadAllText(Path.Combine(
