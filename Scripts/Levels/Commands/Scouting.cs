@@ -1,22 +1,19 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
 {
     public class Scouting : Command
     {
-        /*
-        Sends the squad towards a random spot on the map in search of ships
-         */
         private bool _foundShips;
         List<Scout> Scouts = new List<Scout>();
         HashSet<long> ScoutIds = new HashSet<long>();
         private Vector2 _position, _randomPoint;
         private Vector2 _ten = Vector2.one * 10;
         private ScaledTimer _dropBeaconsTimer = new ScaledTimer();
+
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
@@ -32,29 +29,28 @@ namespace Assets.Scripts.Levels.Commands
 
             TimeoutTimer.Reuse(300, EndCommand);
             Level.AddTimer(TimeoutTimer);
-            //Debug.Log($"Added {TimeoutTimer}");
-
 
             if (GetSquad().Side == ConfigData.Configuration.HumanSide)
             {
-                GetSquad().GetShips().ForEach((ship) =>
+                List<Ship> ships = GetSquad().GetShips();
+                for (int i = 0; i < ships.Count; i++)
                 {
+                    Ship ship = ships[i];
                     if (ship.ShipType == ConfigData.ShipTypes.Scout)
                     {
                         Scouts.Add((Scout)ship);
                         ScoutIds.Add(ship.Id);
                     }
-                });
+                }
 
                 if (Scouts.Count > 0)
                 {
                     _dropBeaconsTimer.Reuse(ConfigData.MinimumDelayPerBeacon, DropScoutBeacons, true);
                     Level.AddTimer(_dropBeaconsTimer);
-                    //InvokeRepeating(nameof(DropScoutBeacons), ConfigData.MinimumDelayPerBeacon, ConfigData.MinimumDelayPerBeacon);
                 }
             }
-
         }
+
         public override void ClearData()
         {
             base.ClearData();
@@ -62,6 +58,7 @@ namespace Assets.Scripts.Levels.Commands
             Scouts.Clear();
             ScoutIds.Clear();
         }
+
         private void Timer()
         {
             if (!GetSquad().IsDead && GetSquad().HasReachedDestination)
@@ -70,47 +67,36 @@ namespace Assets.Scripts.Levels.Commands
                 _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, _ten);
                 SetAndMove(_randomPoint);
                 GetSquad().Status = $"Moving to random destination to look for ships: {_randomPoint}";
-
             }
-
         }
-        private List<Scout> _scoutsToRemove = new List<Scout>();
+
         public void DropScoutBeacons()
         {
-            Scouts.ForEach((scout) =>
+            for (int i = Scouts.Count - 1; i >= 0; i--)
             {
-                if (!scout.IsDead) 
+                Scout scout = Scouts[i];
+                if (scout == null || scout.IsDead)
                 {
-                    scout.DropBeacon();
+                    if (scout != null)
+                    {
+                        ScoutIds.Remove(scout.Id);
+                    }
+                    Scouts.RemoveAt(i);
+                    continue;
                 }
-                else
-                {
-                    _scoutsToRemove.Add(scout);
-                }
-            });
-
-            if (_scoutsToRemove.Count > 0)
-            {
-                Scouts = Scouts.Except(_scoutsToRemove).ToList();
-                _scoutsToRemove.Clear();
+                scout.DropBeacon();
             }
         }
 
         private ScaledTimer _endCommandTimer = new ScaledTimer();
-        /// <summary>
-        /// Triggered when the squad finds a ship that is unknown to the hivemind 
-        /// </summary>
         public void FoundNewShips()
         {
             if (!_foundShips)
             {
                 _foundShips = true;
                 Level.CancelTimer(TimeoutTimer);
-                //Debug.Log($"Canceled {TimeoutTimer}");
                 _endCommandTimer.Reuse(5, EndCommand);
                 Level.AddTimer(_endCommandTimer);
-                //Debug.Log($"Added {_endCommandTimer}");
-
             }
         }
 
@@ -118,26 +104,19 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (_foundShips)
             {
-                //Debug.Log($"Ending scouting command for {GetSquad()} because we found ships");
                 SetFinalize("Found ships");
             }
             else
             {
                 SetFinalize("Ran out of time");
-                //Debug.Log($"Ending scouting command for {GetSquad()} because we ran out of time");
             }
         }
 
         public override void SetFinalize(string cause)
         {
-            //Debug.Log($"Setting finalize ({cause}) for Scout command with {GetSquad()}");
-            //Debug.Log($"Canceled {_endCommandTimer}");
-
             Level.CancelTimer(_dropBeaconsTimer);
             Level.CancelTimer(_endCommandTimer);
             base.SetFinalize(cause);
         }
-
-
     }
 }
