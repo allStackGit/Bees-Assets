@@ -3,7 +3,6 @@
 using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -83,6 +82,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             CachedTargetingQueue.Clear();
             ShipsWithinRange.Clear();
             _targetDistanceKeys.Clear();
+            _enemyTargetBuffer.Clear();
+            _disregardRangeBuffer.Clear();
             IsUsingCachedTargetingQueue = false;
             HasCachedChanged = false;
         }
@@ -172,18 +173,35 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
         }
 
-        List<Ship> _enemies;
+        private readonly List<Ship> _enemyTargetBuffer = new List<Ship>();
         public List<Ship> GetEnemyShipsWithinRange()
         {
+            _enemyTargetBuffer.Clear();
             if (Ship.Squad.HasEnemy && Ship.Squad.IsAttacking)
             {
-                _enemies = ShipsWithinRange.Where((s) => s.Value.Squad == Ship.Squad.GetCommand().EnemySquad).Select((s) => s.Value).ToList();
-                if (_enemies.Count > 0) return _enemies;
+                Squad enemySquad = Ship.Squad.GetCommand().EnemySquad;
+                foreach (Ship candidate in ShipsWithinRange.Values)
+                {
+                    if (candidate.Squad == enemySquad)
+                    {
+                        _enemyTargetBuffer.Add(candidate);
+                    }
+                }
+                if (_enemyTargetBuffer.Count > 0)
+                {
+                    return _enemyTargetBuffer;
+                }
             }
-            return ShipsWithinRange.Select((s) => s.Value).ToList();
+
+            _enemyTargetBuffer.Clear();
+            foreach (Ship candidate in ShipsWithinRange.Values)
+            {
+                _enemyTargetBuffer.Add(candidate);
+            }
+            return _enemyTargetBuffer;
         }
 
-        private List<Ship> _shipQueue;
+        private readonly List<Ship> _disregardRangeBuffer = new List<Ship>();
         protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
             if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
@@ -191,9 +209,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 IsUsingCachedTargetingQueue = true;
                 return CachedTargetingQueue;
             }
-            _shipQueue = disregardRange ? Ship.Squad.GetCommand().EnemySquad.GetShips().ToList() : GetEnemyShipsWithinRange();
+
+            if (disregardRange)
+            {
+                _disregardRangeBuffer.Clear();
+                _disregardRangeBuffer.AddRange(Ship.Squad.GetCommand().EnemySquad.GetShips());
+                _queue = _disregardRangeBuffer;
+            }
+            else
+            {
+                _queue = GetEnemyShipsWithinRange();
+            }
             IsUsingCachedTargetingQueue = false;
-            return _shipQueue;
+            return _queue;
         }
 
         public void ClearTargets()
