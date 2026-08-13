@@ -36,7 +36,20 @@ namespace Assets.Scripts.Levels
                 Debug.LogError($"Campaign level options are #{CurrentLevelOptions.Id} ({CurrentLevelOptions.Name}) while progress is mission #{missionId}. Using campaign progress for mission setup.");
             }
 
-            CampaignMissionCatalog.Configure(this, missionId);
+            // These two missions need narrow compatibility setup around their legacy implementations.
+            // Keep their catalog metadata unchanged while making the runtime behavior explicit here.
+            if (missionId == 4)
+            {
+                Neptune1SeizeTheMeansWithEndingContinuation();
+            }
+            else if (missionId == 9)
+            {
+                Uranus1OnTheOffensiveWithAuthoredFog();
+            }
+            else
+            {
+                CampaignMissionCatalog.Configure(this, missionId);
+            }
         }
 
         public void EasterEggTriggers()
