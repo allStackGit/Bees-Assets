@@ -1,5 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using UnityEngine;
 
 namespace Assets.Scripts.Levels
 {
@@ -10,6 +11,11 @@ namespace Assets.Scripts.Levels
     /// </summary>
     public partial class Level
     {
+        // Keep these shared ConfigData values available to compatibility partials without
+        // requiring every file to import ConfigData statics independently.
+        private static ConfigData.ShootingStrategyTypes DefaultShootingStrategy => ConfigData.DefaultShootingStrategy;
+        private static Color UnsetColor => ConfigData.UnsetColor;
+
         public void Level0Ending() { PrepareCampaignSurrenderEnding(); Pluto1Ending(GetRequiredAnomalyGunshipSquad()); }
         public void Level1Ending() { PrepareCampaignSurrenderEnding(); Pluto2Ending(); }
         public void Level2Ending() { PrepareCampaignSurrenderEnding(); Pluto3Ending(); }
