@@ -66,14 +66,15 @@ namespace Bees.Tests.PlayMode
             Assert.That((bool)RuntimeAssembly.GetField(_ship, "HasTargetCoordinates"), Is.True);
             Assert.That((Vector2)RuntimeAssembly.GetField(_ship, "FinalDestination"), Is.EqualTo(initialDestination));
 
+            RuntimeAssembly.SetField(_ship, "IsFollowingPath", true);
             RuntimeAssembly.Invoke(_ship, "MoveToTrackedPoint", new Vector2(24f, 0f));
             Assert.That((Vector2)RuntimeAssembly.GetField(_ship, "FinalDestination"), Is.EqualTo(initialDestination),
-                "Small target jitter must not rewrite a still-useful movement endpoint every 0.25 seconds.");
+                "Small target jitter must not replace a still-useful path every 0.25 seconds.");
 
-            Vector2 materialMove = new Vector2(32f, 0f);
+            Vector2 materialMove = new Vector2(1000f, 0f);
             RuntimeAssembly.Invoke(_ship, "MoveToTrackedPoint", materialMove);
             Assert.That((Vector2)RuntimeAssembly.GetField(_ship, "FinalDestination"), Is.EqualTo(materialMove),
-                "A materially moved target must still be followed on an obstacle-free map.");
+                "A materially moved target must still be followed once the current path is no longer useful.");
         }
     }
 }
