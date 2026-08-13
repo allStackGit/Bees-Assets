@@ -1,29 +1,19 @@
 ﻿
-using System.Collections;
-using System.Linq;
-using System.Security.Cryptography;
+using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
 {
     public class ClosestFriendly : Command
     {
-        /*
-        Sends the squad to go to the nearest friendly squad. Once they're close to the squad they 
-        just follow that squad for a period before finalizing the strategy.
-        */
         private Squad _closestFriendlySquad;
+
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-
-
-            //_parameters.setTimer = false;
             _closestFriendlySquad = GetSquad().GetClosestValidFriendlySquad();
-            if (_closestFriendlySquad != null )
+            if (_closestFriendlySquad != null)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                //InvokeRepeating(nameof(Timer), CommandFrequency, CommandFrequency);
-                //Invoke(nameof(FinishFollowing), ConfigData.Configuration.AISquadFollowingTime);
                 CommandTimer.Reuse(CommandFrequency, Timer, true);
                 Level.AddTimer(CommandTimer);
                 TimeoutTimer.Reuse(ConfigData.Configuration.AISquadFollowingTime, Timeout);
@@ -33,46 +23,50 @@ namespace Assets.Scripts.Levels.Commands
             {
                 SetFinalize("There is no friendly squad to follow");
             }
-
-
-
         }
+
         public override void ClearData()
         {
             base.ClearData();
             _closestFriendlySquad = null;
         }
 
+        private bool IsAnyShipPathfinding()
+        {
+            foreach (Ship ship in GetSquad().GetShips())
+            {
+                if (ship.IsPathfinding)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         Vector2 _timer_position;
         private void Timer()
         {
-            if (!GetSquad().IsDead)
+            Squad squad = GetSquad();
+            if (squad.IsDead)
             {
-                if (_closestFriendlySquad != null && !_closestFriendlySquad.IsDead)
-                {
-                    //Debug.Log($"_closestFriendlySquad: {_closestFriendlySquad.Name} IsDead: {_closestFriendlySquad.IsDead}");
-                    _timer_position = _closestFriendlySquad.GetPosition();
-                    if (GetSquad().HasReachedDestination)
-                    {
-                        GetSquad().Status = $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}";
-                    }
-                    else
-                    {
-                        GetSquad().Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
-                    }
-
-                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
-                    {
-                        SetAndMove(_timer_position);
-                    }
-                }
-                else
-                {
-                    //CancelInvoke(nameof(Timer));
-                    SetFinalize("The friendly squad to follow is gone or dead");
-                }
+                return;
             }
-            
+
+            if (_closestFriendlySquad == null || _closestFriendlySquad.IsDead)
+            {
+                SetFinalize("The friendly squad to follow is gone or dead");
+                return;
+            }
+
+            _timer_position = _closestFriendlySquad.GetPosition();
+            squad.Status = squad.HasReachedDestination
+                ? $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}"
+                : $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
+
+            if (!IsAnyShipPathfinding())
+            {
+                SetAndMove(_timer_position);
+            }
         }
     }
 }
