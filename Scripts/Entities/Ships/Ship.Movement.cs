@@ -31,6 +31,13 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             destination = CanOverrideBounds ? destination : Level.ForceBounds(destination);
+            if (IsPathfinding && destination == PathfindingDestination)
+            {
+                // Recurring command timers often restate the current destination. Reissuing an
+                // identical request must not invalidate a worker whose result is still usable.
+                return;
+            }
+
             PathfindingDestination = destination;
             if (IsPathfinding)
             {
