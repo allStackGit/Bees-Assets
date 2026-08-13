@@ -1,5 +1,4 @@
 using Assets.Scripts.Entities.Ships;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -9,7 +8,6 @@ namespace Assets.Scripts.Levels
     public partial class Squad
     {
         private List<Ship> _squadShips;
-        private float _width, _height, _midX, _midY;
 
         public bool CanSeeSquad(Squad squad)
         {
@@ -62,38 +60,96 @@ namespace Assets.Scripts.Levels
 
         public Vector2 GetLeftMostPoint()
         {
-            _tempShip = GetShips().OrderBy(ship => ship.GetLeftMostPoint().x).First();
-            return new Vector2(_tempShip.GetLeftMostPoint().x, _tempShip.GetY());
+            return TryGetBounds(out Vector2 left, out _, out _, out _) ? left : Vector2.zero;
         }
 
         public Vector2 GetRightMostPoint()
         {
-            _tempShip = GetShips().OrderByDescending(ship => ship.GetRightMostPoint().x).First();
-            return new Vector2(_tempShip.GetRightMostPoint().x, _tempShip.GetY());
+            return TryGetBounds(out _, out Vector2 right, out _, out _) ? right : Vector2.zero;
         }
 
         public Vector2 GetTopMostPoint()
         {
-            _tempShip = GetShips().OrderByDescending(ship => ship.GetTopMostPoint().y).First();
-            return new Vector2(_tempShip.GetX(), _tempShip.GetTopMostPoint().y);
+            return TryGetBounds(out _, out _, out Vector2 top, out _) ? top : Vector2.zero;
         }
 
         public Vector2 GetBottomMostPoint()
         {
-            _tempShip = GetShips().OrderBy(ship => ship.GetBottomMostPoint().y).First();
-            return new Vector2(_tempShip.GetX(), _tempShip.GetBottomMostPoint().y);
+            return TryGetBounds(out _, out _, out _, out Vector2 bottom) ? bottom : Vector2.zero;
         }
 
-        public float GetWidth() => Math.Abs(GetLeftMostPoint().x - GetRightMostPoint().x);
-        public float GetHeight() => Math.Abs(GetTopMostPoint().y - GetBottomMostPoint().y);
+        public float GetWidth()
+        {
+            return TryGetBounds(out Vector2 left, out Vector2 right, out _, out _)
+                ? right.x - left.x
+                : 0f;
+        }
+
+        public float GetHeight()
+        {
+            return TryGetBounds(out _, out _, out Vector2 top, out Vector2 bottom)
+                ? top.y - bottom.y
+                : 0f;
+        }
 
         public Vector2 GetCenterPoint()
         {
-            _width = GetWidth();
-            _height = GetHeight();
-            _midX = GetRightMostPoint().x - (_width / 2);
-            _midY = GetBottomMostPoint().y + (_height / 2);
-            return new Vector2(_midX, _midY);
+            if (!TryGetBounds(out Vector2 left, out Vector2 right, out Vector2 top, out Vector2 bottom))
+            {
+                return Vector2.zero;
+            }
+
+            return new Vector2((left.x + right.x) * 0.5f, (bottom.y + top.y) * 0.5f);
+        }
+
+        /// <summary>
+        /// Calculates all four squad bounds in one pass. The old geometry accessors independently
+        /// sorted the same ship list, so one center lookup could perform six list sorts; distance
+        /// based targeting could then invoke that work repeatedly from inside a sort comparator.
+        /// </summary>
+        private bool TryGetBounds(out Vector2 left, out Vector2 right, out Vector2 top, out Vector2 bottom)
+        {
+            List<Ship> ships = GetShips();
+            if (ships == null || ships.Count == 0)
+            {
+                left = right = top = bottom = Vector2.zero;
+                return false;
+            }
+
+            Ship first = ships[0];
+            left = first.GetLeftMostPoint();
+            right = first.GetRightMostPoint();
+            top = first.GetTopMostPoint();
+            bottom = first.GetBottomMostPoint();
+
+            for (int i = 1; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                Vector2 candidate = ship.GetLeftMostPoint();
+                if (candidate.x < left.x)
+                {
+                    left = candidate;
+                }
+
+                candidate = ship.GetRightMostPoint();
+                if (candidate.x > right.x)
+                {
+                    right = candidate;
+                }
+
+                candidate = ship.GetTopMostPoint();
+                if (candidate.y > top.y)
+                {
+                    top = candidate;
+                }
+
+                candidate = ship.GetBottomMostPoint();
+                if (candidate.y < bottom.y)
+                {
+                    bottom = candidate;
+                }
+            }
+            return true;
         }
 
         public float AngleToPoint(Vector2 point)
