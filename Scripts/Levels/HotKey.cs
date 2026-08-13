@@ -2,7 +2,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Assets.Scripts.Levels
 {
@@ -24,6 +26,7 @@ namespace Assets.Scripts.Levels
         /// This action stops as soon as the key is released and a new action is performed
         /// </summary>
         private bool _hasReleaseAction;
+        private bool _blockedByTextInput;
         private float _lastInputTime;
         public int Id;
 
@@ -63,8 +66,52 @@ namespace Assets.Scripts.Levels
             Keys = keys;
             MakeKeyString();
         }
+
+        private static bool IsEditingTextField()
+        {
+            EventSystem eventSystem = EventSystem.current;
+            if (eventSystem == null || eventSystem.currentSelectedGameObject == null)
+            {
+                return false;
+            }
+
+            TMP_InputField input = eventSystem.currentSelectedGameObject.GetComponent<TMP_InputField>();
+            if (input == null)
+            {
+                input = eventSystem.currentSelectedGameObject.GetComponentInParent<TMP_InputField>();
+            }
+            return input != null && input.isFocused;
+        }
+
         public bool CheckInput()
         {
+            if (IsEditingTextField())
+            {
+                // A gameplay key typed into a text box must never leak through when the field
+                // gains focus, and a key held while leaving the field must be released once
+                // before it can become a gameplay command again.
+                if (!_hasInputRelease && _hasReleaseAction && ReleaseAction != null)
+                {
+                    ReleaseAction();
+                }
+                if (Keys.Any(k => Input.GetKey(k)))
+                {
+                    _blockedByTextInput = true;
+                }
+                _hasInputRelease = true;
+                return false;
+            }
+
+            if (_blockedByTextInput)
+            {
+                if (Keys.Any(k => Input.GetKey(k)))
+                {
+                    return false;
+                }
+                _blockedByTextInput = false;
+                _hasInputRelease = true;
+            }
+
             if (HasInput())
             {
                 Action();
@@ -82,6 +129,11 @@ namespace Assets.Scripts.Levels
 
         public bool HasInput()
         {
+            if (IsEditingTextField())
+            {
+                return false;
+            }
+
             List<KeyCode> keysPressed = Utilities.GetAllKeys();
             if (_hasInputRelease && Keys.All((k) => keysPressed.Contains(k)) && keysPressed.All((k) => Keys.Contains(k)))
             {
