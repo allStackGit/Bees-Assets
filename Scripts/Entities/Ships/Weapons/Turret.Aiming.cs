@@ -9,14 +9,19 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected void MoveTargetingMarker()
         {
-            if (HasTargetingMarker && Ship.Squad.IsSelected && IsAimedAtTarget && !IsFiringManually)
+            if (!HasTargetingMarker)
+            {
+                return;
+            }
+
+            bool shouldShowMarker = Ship.Squad.IsSelected && IsAimedAtTarget && !IsFiringManually;
+            if (shouldShowMarker)
             {
                 TargetingMarker.transform.position = TargetPoint;
-                TargetingMarker.SetActive(true);
             }
-            else if (HasTargetingMarker)
+            if (TargetingMarker.activeSelf != shouldShowMarker)
             {
-                TargetingMarker.SetActive(false);
+                TargetingMarker.SetActive(shouldShowMarker);
             }
         }
 
