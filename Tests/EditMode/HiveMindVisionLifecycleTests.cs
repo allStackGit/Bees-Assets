@@ -17,7 +17,7 @@ namespace Bees.Tests.EditMode
             int methodStart = source.IndexOf("private void RecordSighting(");
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
 
-            int addVisibility = source.IndexOf("observerVisibility.Add(_shipEnter);", methodStart);
+            int addVisibility = source.IndexOf("RecordHiveMindSighting(Ship, _shipEnter)", methodStart);
             int commandEligibility = source.IndexOf("!rewardSquad.HasCommand", methodStart);
             Assert.That(addVisibility, Is.GreaterThan(methodStart));
             Assert.That(commandEligibility, Is.GreaterThan(addVisibility));
