@@ -22,11 +22,11 @@ namespace Bees.Tests.EditMode
         public void DualCannonReservesExactlyItsAggregateProjectileDamage()
         {
             string dualPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "DualCannon.cs");
-            string levelPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.cs");
+            string levelEndingPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Ending.cs");
             string dualSource = File.ReadAllText(dualPath);
-            string levelSource = File.ReadAllText(levelPath);
+            string levelEndingSource = File.ReadAllText(levelEndingPath);
 
-            StringAssert.Contains("_projectile_power /= 2", levelSource);
+            StringAssert.Contains("_projectile_power /= 2", levelEndingSource);
             StringAssert.Contains("TotalDamageSentToShip += Power;", dualSource);
             StringAssert.DoesNotContain("TotalDamageSentToShip += Power * 2", dualSource);
         }
