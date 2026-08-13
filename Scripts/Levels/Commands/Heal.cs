@@ -18,6 +18,8 @@ namespace Assets.Scripts.Levels.Commands
         private Queue<Ship> _shipsThatNeedBeehive;
         private Ship _ship;
         private Dictionary<long, Beehive> _shipsAndBeehives = new Dictionary<long, Beehive>();
+        private readonly HashSet<Beehive> _healingCrossBeehives = new HashSet<Beehive>();
+        private readonly HashSet<Ship> _reservedShipsToRelease = new HashSet<Ship>();
         private int _healingTimerCount;
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, List<Beehive> beehives)
@@ -67,6 +69,8 @@ namespace Assets.Scripts.Levels.Commands
             ShipsHealing.Clear();
             _shipsAndBeehives.Clear();
             _shipsThatLostBeehiveOrDied.Clear();
+            _healingCrossBeehives.Clear();
+            _reservedShipsToRelease.Clear();
             _shipsThatNeedBeehive?.Clear();
             _shipsThatNeedBeehive = null;
             _healingTimerCount = 0;
@@ -80,8 +84,15 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            _shipsThatNeedBeehive = new Queue<Ship>(_shipsThatNeedBeehive
-                .Where((ship) => ship != null && !ship.IsDead && ship.Health < ship.MaxHealth && !_shipsAndBeehives.ContainsKey(ship.Id)));
+            int shipsToCheck = _shipsThatNeedBeehive.Count;
+            for (_index = 0; _index < shipsToCheck; _index++)
+            {
+                _ship = _shipsThatNeedBeehive.Dequeue();
+                if (_ship != null && !_ship.IsDead && _ship.Health < _ship.MaxHealth && !_shipsAndBeehives.ContainsKey(_ship.Id))
+                {
+                    _shipsThatNeedBeehive.Enqueue(_ship);
+                }
+            }
 
             for (_index = 0; _index < TargetBeehives.Count && _shipsThatNeedBeehive.Count > 0; _index++)
             {
@@ -116,7 +127,13 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead)
             {
-                TargetBeehives = TargetBeehives.Where((b) => b != null && !b.IsDead).ToList();
+                for (_index = TargetBeehives.Count - 1; _index >= 0; _index--)
+                {
+                    if (TargetBeehives[_index] == null || TargetBeehives[_index].IsDead)
+                    {
+                        TargetBeehives.RemoveAt(_index);
+                    }
+                }
                 if (TargetBeehives.Count > 0)
                 {
                     MoveToBeehives();
@@ -239,13 +256,16 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (Level.HasPlayer)
             {
-                ShipsHealing
-                    .Where((s) => s != null && _shipsAndBeehives.ContainsKey(s.Id))
-                    .Select((s) => _shipsAndBeehives[s.Id])
-                    .Where((b) => b != null && !b.IsDead)
-                    .Distinct()
-                    .ToList()
-                    .ForEach((b) => b.SpawnHealingCross());
+                _healingCrossBeehives.Clear();
+                for (_index = 0; _index < ShipsHealing.Count; _index++)
+                {
+                    _ship = ShipsHealing[_index];
+                    if (_ship != null && _shipsAndBeehives.TryGetValue(_ship.Id, out _beehive) &&
+                        _beehive != null && !_beehive.IsDead && _healingCrossBeehives.Add(_beehive))
+                    {
+                        _beehive.SpawnHealingCross();
+                    }
+                }
             }
             _healingTimerCount++;
             for (_index = 0; _index < ShipsHealing.Count; _index++)
@@ -281,10 +301,14 @@ namespace Assets.Scripts.Levels.Commands
 
         public override void SetFinalize(string cause)
         {
-            foreach (Ship reservedShip in ShipsWaitingToHeal.Concat(ShipsHealing).Distinct().ToList())
+            _reservedShipsToRelease.Clear();
+            _reservedShipsToRelease.UnionWith(ShipsWaitingToHeal);
+            _reservedShipsToRelease.UnionWith(ShipsHealing);
+            foreach (Ship reservedShip in _reservedShipsToRelease)
             {
                 ReleaseHealingReservation(reservedShip);
             }
+            _reservedShipsToRelease.Clear();
             Level.CancelTimer(_healingTimer);
             base.SetFinalize(cause);
         }
