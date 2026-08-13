@@ -56,12 +56,13 @@ namespace Bees.Tests.EditMode
         {
             string state = Read("Scripts", "Levels", "GameState.cs");
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
-            string queries = Read("Scripts", "Levels", "GameState.Queries.cs");
 
-            Assert.That(state, Does.Contain("ReferenceIdentityComparer<Ship>.Instance"));
+            Assert.That(state, Does.Contain("public HashSet<Ship>[] VisionCache"));
+            Assert.That(state, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
             Assert.That(registry, Does.Contain("observerMap.Remove(ship.Id)"));
             Assert.That(registry, Does.Contain("visibleShips?.Remove(ship)"));
-            Assert.That(queries, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
+            Assert.That(registry, Does.Contain("visibleCache?.Remove(ship)"));
+            Assert.That(registry, Does.Contain("HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex]"));
         }
     }
 }
