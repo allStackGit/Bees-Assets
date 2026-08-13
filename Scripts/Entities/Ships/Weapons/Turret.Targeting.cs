@@ -1,4 +1,5 @@
 using System.Linq;
+using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
@@ -8,6 +9,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void TargetingSequence()
         {
+            FreezeDiagnostics.RecordTurretTargetingPass(Level, ShipsWithinRange.Count);
             TargetingPasses++;
             if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
             {
@@ -61,7 +63,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public override bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return !potentialTargetShip.IsDead &&
+            return potentialTargetShip != null &&
+                   !potentialTargetShip.IsDead &&
+                   potentialTargetShip.Side != Side &&
                    IsShipWithinRange(potentialTargetShip) &&
                    potentialTargetShip.IsInBounds() &&
                    (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(
