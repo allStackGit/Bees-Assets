@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -24,9 +25,40 @@ namespace Assets.Scripts.Levels.Commands
             Level = Squad.Level;
         }
 
-        private List<Squad> _queue, _targetedSquads;
+        private readonly List<Squad> _queue = new List<Squad>();
+        private readonly HashSet<Squad> _visibleSquads = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
+        private List<Squad> _targetedSquads;
         private Vector2 _location;
         private ConfigData.ShipTypes _type;
+
+        private void BuildVisibleSquadQueue()
+        {
+            _queue.Clear();
+            _visibleSquads.Clear();
+
+            if (Side == ConfigData.Configuration.UserSide && Level.HasPlayer)
+            {
+                List<Squad> squads = Level.State.GetAllSquads();
+                for (int i = 0; i < squads.Count; i++)
+                {
+                    Squad candidate = squads[i];
+                    if (candidate.Side != Side && !candidate.IsDead)
+                    {
+                        _queue.Add(candidate);
+                    }
+                }
+                return;
+            }
+
+            foreach (Ship ship in Level.State.GetShipsVisibleToHiveMind(Side))
+            {
+                Squad candidate = ship.Squad;
+                if (candidate != null && !candidate.IsDead && _visibleSquads.Add(candidate))
+                {
+                    _queue.Add(candidate);
+                }
+            }
+        }
 
         private Squad SelectByScore(Func<Squad, double> score, bool descending)
         {
@@ -99,7 +131,7 @@ namespace Assets.Scripts.Levels.Commands
         private static int CountShipsOfType(Squad squad, ConfigData.ShipTypes type)
         {
             int count = 0;
-            List<Assets.Scripts.Entities.Ships.Ship> ships = squad.GetShips();
+            List<Ship> ships = squad.GetShips();
             for (int i = 0; i < ships.Count; i++)
             {
                 if (ships[i].ShipType == type)
@@ -112,7 +144,7 @@ namespace Assets.Scripts.Levels.Commands
 
         public Squad SortSquads()
         {
-            _queue = Level.State.GetSquadsVisibleToHiveMind(Side);
+            BuildVisibleSquadQueue();
             if (_queue.Count == 0)
             {
                 return null;
