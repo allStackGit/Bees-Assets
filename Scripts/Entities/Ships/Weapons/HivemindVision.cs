@@ -44,17 +44,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             GameState state = Ship.Level.State;
-            if (!state.HivemindShips[Ship.Side - 1].TryGetValue(Ship.Id, out var observerVisibility))
-            {
-                return;
-            }
 
-            // Knowledge is independent of command/request timing. An enemy entering sight while
-            // this squad is between Hive Mind commands must still be available to the next
-            // matchup selection even if it never exits and re-enters this trigger.
-            bool wasAlreadyKnown = state.GetShipsVisibleToHiveMind(Ship.Side).Contains(_shipEnter);
-            observerVisibility.Add(_shipEnter);
-            if (wasAlreadyKnown)
+            // Record the observer relationship and first-side-wide sighting in one incremental
+            // operation. The previous implementation rebuilt the entire side visibility set for
+            // every pairwise trigger enter, which caused first contact between dense squads to
+            // multiply main-thread work dramatically.
+            bool isFirstSideWideSighting = state.RecordHiveMindSighting(Ship, _shipEnter);
+            Ship.Stage.DebugLogger?.RecordHiveMindSightEnter(isFirstSideWideSighting);
+            if (!isFirstSideWideSighting)
             {
                 return;
             }
