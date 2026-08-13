@@ -34,11 +34,14 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void StandardButtonsHaveOneGenericSoundOwner()
+        public void StandardAndDynamicButtonsHaveOneGenericSoundOwner()
         {
-            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "UI Components", "ButtonSoundOwnershipGuard.cs"));
-            StringAssert.Contains("UnityEventCallState.Off", source);
-            StringAssert.Contains("PlayButtonSoundIfActionDidNot", source);
+            string guardSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "UI Components", "ButtonSoundOwnershipGuard.cs"));
+            string dialogueSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "UI Components", "Dialogue.cs"));
+
+            StringAssert.Contains("UnityEventCallState.Off", guardSource);
+            StringAssert.Contains("PlayButtonSoundIfActionDidNot", guardSource);
+            StringAssert.Contains("ButtonSoundOwnershipGuard.Configure(button);", dialogueSource);
         }
     }
 }
