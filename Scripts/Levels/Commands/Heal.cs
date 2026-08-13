@@ -218,7 +218,10 @@ namespace Assets.Scripts.Levels.Commands
                     continue;
                 }
 
-                _ship.MoveToPoint(_beehive.GetPosition());
+                if (!_ship.IsPathfinding)
+                {
+                    _ship.MoveToPoint(_beehive.GetPosition());
+                }
             }
 
             for (_index = 0; _index < _shipsThatLostBeehiveOrDied.Count; _index++)
