@@ -7,11 +7,13 @@ namespace Assets.Scripts.Server
     internal sealed class SocketResponseLifecycleGuard : MonoBehaviour
     {
         private const float HandledResponseRetentionSeconds = 120f;
+        private const float HandledResponsePruneIntervalSeconds = 1f;
         private const int MaxTrackedHandledResponses = 4096;
 
         private static SocketResponseLifecycleGuard _instance;
         private readonly Dictionary<long, float> _handledAt = new Dictionary<long, float>();
         private readonly List<long> _hashesToRemove = new List<long>();
+        private float _nextPruneAt;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -26,7 +28,12 @@ namespace Assets.Scripts.Server
         {
             CampaignCheckpoint.FlushIfReady();
             if (ConfigData.SocketManager == null) return;
-            PruneHandledResponses(ConfigData.Socket);
+
+            Socket socket = ConfigData.Socket;
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextPruneAt && socket.HandledRequests.Count <= MaxTrackedHandledResponses) return;
+            _nextPruneAt = now + HandledResponsePruneIntervalSeconds;
+            PruneHandledResponses(socket, now);
         }
 
         private static bool IsSuccessfulWriteStatus(int status)
@@ -122,9 +129,8 @@ namespace Assets.Scripts.Server
             return true;
         }
 
-        private void PruneHandledResponses(Socket socket)
+        private void PruneHandledResponses(Socket socket, float now)
         {
-            float now = Time.realtimeSinceStartup;
             foreach (long hash in socket.HandledRequests)
             {
                 if (!_handledAt.ContainsKey(hash)) _handledAt.Add(hash, now);
