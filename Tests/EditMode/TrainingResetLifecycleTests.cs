@@ -45,5 +45,18 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("((AsteroidPiece)obstacle).Kill();", method);
             StringAssert.Contains("Release();", method);
         }
+
+        [Test]
+        public void LevelResetPreservesBoundedSquadRequestHistoryForLateResponses()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Reset.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("request is CommandRequest || request is MatchupStrategyRequest", source);
+            StringAssert.Contains("OrderByDescending(request => request.StartTime)", source);
+            StringAssert.Contains("Take(StaleSquadRequestHistoryLimit)", source);
+            StringAssert.Contains("ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);", source);
+            StringAssert.DoesNotContain("ConfigData.__PastServerRequests.Clear();", source);
+        }
     }
 }
