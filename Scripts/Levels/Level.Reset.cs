@@ -10,10 +10,9 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
-        private Ship[] _reset_ships;
+        private readonly List<Ship> _resetShips = new List<Ship>();
         private float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
         private Vector2 _reset_swap;
-        readonly List<SpottedShip>[] _reset_spottedShips = new List<SpottedShip>[] { new List<SpottedShip>(), new List<SpottedShip>() };
         private int _reset_i;
         /// <summary>
         /// Used for Nueral Network training. Resets the level.
@@ -25,7 +24,8 @@ namespace Assets.Scripts.Levels
             //Academy.Instance.StatsRecorder.Add("Episode Time", Seconds);
 
             //Debug.Log($"Reset level ({Seconds}), Unclamped Bee reward: {BeeCumaltiveReward}, Unclamped Human reward: {HumanCumulativeReward}");
-            _reset_ships = State.GetShips().ToArray();
+            _resetShips.Clear();
+            _resetShips.AddRange(State.GetShips());
 
             State.GameOver = false;
             State.LevelEnded = false;
@@ -87,9 +87,9 @@ namespace Assets.Scripts.Levels
                     //Debug.Log($"Humans won! Lost {LostBeeShips} bees, reward: {BeeCumaltiveReward}, {HumanCumulativeReward}");
 
                 }
-                else
+                else if (!Stage.IsTraining)
                 {
-                    Debug.Log($"Both sides died! no on won!");
+                    Debug.Log("Both sides died! no on won!");
                     //AgentGroup.SetGroupReward(0);
                     //HumanAgentGroup.SetGroupReward(0);
 
@@ -97,13 +97,18 @@ namespace Assets.Scripts.Levels
                 //AgentGroup.EndGroupEpisode();
                 //HumanAgentGroup.EndGroupEpisode();
             }
-            Array.Clear(_reset_spottedShips, 0, 2);
-            State.SpottedShips = _reset_spottedShips;
 
-
-            for (_reset_i = 0; _reset_i < _reset_ships.Length; _reset_i++)
+            // RemoveShip prunes spotting entries during ordinary lifecycle teardown. Reset already
+            // owns the entire old episode, so clear the existing containers once before killing
+            // the snapshot instead of nulling/recreating them or repeatedly scanning old sightings.
+            for (_reset_i = 0; _reset_i < State.SpottedShips.Length; _reset_i++)
             {
-                _reset_ships[_reset_i].EndKill();
+                State.SpottedShips[_reset_i]?.Clear();
+            }
+
+            for (_reset_i = 0; _reset_i < _resetShips.Count; _reset_i++)
+            {
+                _resetShips[_reset_i].EndKill();
             }
             SetupLevel();
             //Invoke(nameof(StartNew), .1f);
@@ -170,10 +175,16 @@ namespace Assets.Scripts.Levels
 
                     }
                 });
-                Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
+                if (!Stage.IsTraining)
+                {
+                    Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
+                }
             }
 
-            Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
+            if (!Stage.IsTraining)
+            {
+                Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
+            }
 
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
@@ -189,7 +200,10 @@ namespace Assets.Scripts.Levels
             //Debug.Log($"Playing level: {CurrentLevelOptions.Name} with squads: {Utilities.ListToString(CurrentLevelOptions.ChosenSquads)}");
             // Check settings and config variables
             Stage.SetConfigOptionsAndOverrides(this);
-            Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
+            if (!Stage.IsTraining)
+            {
+                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
+            }
 
             //Debug.Log($"The human side is {ConfigData.Configuration.HumanSide}, the Bee side is {ConfigData.Configuration.BeeSide}, the AI side is {ConfigData.Configuration.AISide}, the user side is {ConfigData.Configuration.UserSide}");
             //Debug.Log($"The AI Starting position is {AIStartingPosition}, the user starting position is {UserStartingPosition}");
@@ -201,7 +215,10 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                Debug.Log($"The map does not have randomized options");
+                if (!Stage.IsTraining)
+                {
+                    Debug.Log("The map does not have randomized options");
+                }
                 CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
                 Map = Stage.Pool.GetPooledMap(CurrentLevelOptions.MapIndex);
