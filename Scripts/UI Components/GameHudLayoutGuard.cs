@@ -1,5 +1,7 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using Assets.Scripts.UIComponents;
 
 namespace Assets.Scripts.UI_Components
@@ -32,6 +34,8 @@ namespace Assets.Scripts.UI_Components
 
         private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
+            ApplyReadableInputFieldStyle(scene);
+
             GameMenus menus = Object.FindObjectOfType<GameMenus>();
             if (menus == null || menus.gameObject.GetComponent<GameHudLayoutGuard>() != null)
             {
@@ -40,6 +44,48 @@ namespace Assets.Scripts.UI_Components
 
             GameHudLayoutGuard guard = menus.gameObject.AddComponent<GameHudLayoutGuard>();
             guard.Initialize(menus);
+        }
+
+        private static void ApplyReadableInputFieldStyle(UnityEngine.SceneManagement.Scene scene)
+        {
+            Color background = ConfigData.GetUIColor("squadbox-default-color");
+            background.a = 1f;
+            Color foreground = ConfigData.GetUIColor("supply-capacity-label");
+
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (TMP_InputField input in root.GetComponentsInChildren<TMP_InputField>(true))
+                {
+                    if (input.targetGraphic != null)
+                    {
+                        input.targetGraphic.color = background;
+                    }
+
+                    // Selectable state colors multiply the input background. Keep focus and hover
+                    // at full brightness so the selected field cannot become darker than idle.
+                    ColorBlock colors = input.colors;
+                    colors.normalColor = Color.white;
+                    colors.highlightedColor = Color.white;
+                    colors.selectedColor = Color.white;
+                    colors.pressedColor = Color.white;
+                    colors.disabledColor = new Color(1f, 1f, 1f, 0.55f);
+                    colors.colorMultiplier = 1f;
+                    input.colors = colors;
+
+                    if (input.textComponent != null)
+                    {
+                        input.textComponent.color = foreground;
+                    }
+                    if (input.placeholder is TMP_Text placeholder)
+                    {
+                        Color placeholderColor = foreground;
+                        placeholderColor.a = 0.65f;
+                        placeholder.color = placeholderColor;
+                    }
+                    input.customCaretColor = true;
+                    input.caretColor = foreground;
+                }
+            }
         }
 
         private void Initialize(GameMenus menus)
