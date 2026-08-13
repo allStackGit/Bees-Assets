@@ -133,8 +133,16 @@ namespace Assets.Scripts.UI_Components
         }
         public void ChangeButton(int index, string label, UnityAction action)
         {
-            GameObject.Destroy(_buttons[index]);
-            _buttons[index] = MakeButton(label, action);
+            GameObject previousButton = _buttons[index];
+            int siblingIndex = previousButton.transform.GetSiblingIndex();
+
+            // Destroy is deferred until the end of the frame. Hide the old button immediately so
+            // a dialogue shown in this same frame never renders both the old and replacement controls.
+            previousButton.SetActive(false);
+            GameObject replacementButton = MakeButton(label, action);
+            replacementButton.transform.SetSiblingIndex(siblingIndex);
+            _buttons[index] = replacementButton;
+            GameObject.Destroy(previousButton);
         }
     }
 }
