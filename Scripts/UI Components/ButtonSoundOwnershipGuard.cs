@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -42,10 +41,9 @@ namespace Assets.Scripts.UI_Components
         }
     }
 
-    internal sealed class ButtonSoundOwner : MonoBehaviour, IPointerDownHandler
+    internal sealed class ButtonSoundOwner : MonoBehaviour
     {
         private Button _button;
-        private bool _buttonSoundWasPlayingBeforeClick;
 
         private void Awake()
         {
@@ -66,14 +64,6 @@ namespace Assets.Scripts.UI_Components
             _button?.onClick.RemoveListener(PlayButtonSoundIfActionDidNot);
         }
 
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            AudioSource source = UIAudioController.Instance != null
-                ? UIAudioController.Instance.ButtonClick
-                : null;
-            _buttonSoundWasPlayingBeforeClick = source != null && source.isPlaying;
-        }
-
         private void PlayButtonSoundIfActionDidNot()
         {
             UIAudioController audio = UIAudioController.Instance;
@@ -82,15 +72,15 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            // Persistent button actions execute before runtime listeners. If the action already
+            // started either the normal click or a special UI sound on the shared click source,
+            // leave it alone. If a prior rapid click is still audible, also avoid stacking a new
+            // generic click on top of it.
             AudioSource source = audio.ButtonClick;
-            bool actionStartedUiSound = !_buttonSoundWasPlayingBeforeClick &&
-                                        source != null && source.isPlaying;
-            if (!actionStartedUiSound)
+            if (source == null || !source.isPlaying)
             {
                 audio.PlayButtonSound();
             }
-
-            _buttonSoundWasPlayingBeforeClick = source != null && source.isPlaying;
         }
     }
 }
