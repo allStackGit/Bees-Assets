@@ -66,6 +66,33 @@ namespace Assets.Scripts.Levels
                 }
             }
         }
+
+        /// <summary>
+        /// Creates an escape field plus a same-sized green marker on the minimap-rendered layer.
+        /// The gameplay Exit Zone is intentionally on a UI layer that the minimap camera excludes.
+        /// </summary>
+        private Zone CreateCampaignExitZone(Vector2 localPosition, Vector2 localScale)
+        {
+            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
+            exitBox.transform.localPosition = localPosition;
+            exitBox.transform.localScale = localScale;
+
+            GameObject minimapMarker = Instantiate(Stage.Prefabs.MinimapCircle, Map.transform);
+            minimapMarker.name = "Exit Zone Minimap Marker";
+            minimapMarker.transform.localPosition = localPosition;
+            minimapMarker.transform.localScale = localScale;
+
+            SpriteRenderer markerRenderer = minimapMarker.GetComponent<SpriteRenderer>();
+            SpriteRenderer exitRenderer = exitBox.GetComponent<SpriteRenderer>();
+            if (markerRenderer != null)
+            {
+                markerRenderer.color = exitRenderer != null
+                    ? exitRenderer.color
+                    : new Color(0.20291919f, 0.754717f, 0.23970567f, 1f);
+            }
+
+            return exitBox.GetComponent<Zone>();
+        }
     }
 
     internal sealed class Neptune1EndingContinuation : MonoBehaviour
