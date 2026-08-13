@@ -22,9 +22,8 @@ namespace Bees.Tests.EditMode
                 "Right-click input must not lazily flood-fill the pathfinder grid on Unity's main thread.");
             Assert.That(interaction, Does.Contain("selectedSquad.UserAggressive(Squad)"));
 
-            Assert.That(aggressive, Does.Contain("if (!ship.IsPathfinding)"),
-                "Recurring aggressive targeting must not invalidate a live A* request every command tick.");
-            Assert.That(aggressive, Does.Contain("ship.MoveToPoint(target.GetPosition());"));
+            Assert.That(aggressive, Does.Contain("ship.MoveToTrackedPoint(target.GetPosition());"));
+            Assert.That(aggressive, Does.Not.Contain("ship.MoveToPoint(target.GetPosition());"));
         }
     }
 }
