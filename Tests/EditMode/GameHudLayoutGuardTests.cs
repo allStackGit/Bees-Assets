@@ -62,13 +62,12 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TextInputsKeepReadableBackgroundAndSelectionColors()
+        public void TextInputsMatchButtonGreenAndStayBrightWhenSelected()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("GetComponentsInChildren<TMP_InputField>(true)"));
-            Assert.That(source, Does.Contain("ConfigData.GetUIColor(\"squadbox-default-color\")"));
-            Assert.That(source, Does.Contain("background.a = 1f;"));
+            Assert.That(source, Does.Contain("new Color32(30, 207, 136, 255)"));
             Assert.That(source, Does.Contain("colors.selectedColor = Color.white;"));
             Assert.That(source, Does.Contain("input.textComponent.color = foreground;"));
             Assert.That(source, Does.Contain("input.caretColor = foreground;"));
