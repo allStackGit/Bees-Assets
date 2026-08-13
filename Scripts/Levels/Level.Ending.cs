@@ -5,7 +5,6 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -28,8 +27,11 @@ namespace Assets.Scripts.Levels
         private int _save_i;
         private SavedSquad _save_savedSquad;
         private FleetShip _save_fleetship;
-        private Ship[] _save_ships;
-        private Obstacle[] _save_obstacles;
+        private readonly List<Ship> _save_ships = new List<Ship>();
+        private readonly List<FogOfWarVision> _save_fogOfWarVisions = new List<FogOfWarVision>();
+        private readonly List<TargetingSquadMarker> _save_targetingSquadMarkers = new List<TargetingSquadMarker>();
+        private readonly List<Obstacle> _save_obstacles = new List<Obstacle>();
+        private readonly List<Projectile> _save_projectiles = new List<Projectile>();
         private ScaledTimer _levelEndedDialogueTimer = new ScaledTimer();
 
         public void SaveAndEnd()
@@ -61,20 +63,31 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.SaveSquadData();
             }
 
-            _save_ships = State.GetShips().ToArray();
-            for (_save_i = 0; _save_i < _save_ships.Length; _save_i++) _save_ships[_save_i].EndKill();
-            State.FogOfWarVisions.ToList().ForEach(vision => vision.Kill(0, true));
-            State.TargetingSquadMarkers.ToList().ForEach(target => target.Kill());
+            _save_ships.Clear();
+            _save_ships.AddRange(State.GetShips());
+            for (_save_i = 0; _save_i < _save_ships.Count; _save_i++) _save_ships[_save_i].EndKill();
+
+            _save_fogOfWarVisions.Clear();
+            _save_fogOfWarVisions.AddRange(State.FogOfWarVisions);
+            for (_save_i = 0; _save_i < _save_fogOfWarVisions.Count; _save_i++) _save_fogOfWarVisions[_save_i].Kill(0, true);
+
+            _save_targetingSquadMarkers.Clear();
+            _save_targetingSquadMarkers.AddRange(State.TargetingSquadMarkers);
+            for (_save_i = 0; _save_i < _save_targetingSquadMarkers.Count; _save_i++) _save_targetingSquadMarkers[_save_i].Kill();
 
             if (HasObstacles)
             {
-                ObstacleMap.Obstacles.ToList().ForEach(obstacle => Destroy(obstacle.gameObject));
+                for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                {
+                    Destroy(ObstacleMap.Obstacles[_save_i].gameObject);
+                }
                 Destroy(ObstacleMap.ObstacleBackground);
             }
             if (State.Obstacles.Count > 0)
             {
-                _save_obstacles = State.Obstacles.ToArray();
-                for (_save_i = 0; _save_i < _save_obstacles.Length; _save_i++)
+                _save_obstacles.Clear();
+                _save_obstacles.AddRange(State.Obstacles);
+                for (_save_i = 0; _save_i < _save_obstacles.Count; _save_i++)
                 {
                     if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                         ((CollisionAsteroid)_save_obstacles[_save_i]).Kill(true);
@@ -86,7 +99,12 @@ namespace Assets.Scripts.Levels
                         Debug.LogError($"{_save_obstacles[_save_i].Name} does not have valid obstacle type: {_save_obstacles[_save_i].ObstacleType}");
                 }
             }
-            if (State.Projectiles.Count > 0) State.Projectiles.ToList().ForEach(projectile => projectile.Kill());
+            if (State.Projectiles.Count > 0)
+            {
+                _save_projectiles.Clear();
+                _save_projectiles.AddRange(State.Projectiles);
+                for (_save_i = 0; _save_i < _save_projectiles.Count; _save_i++) _save_projectiles[_save_i].Kill();
+            }
             while (State.Deadbodies.Count > 0)
             {
                 State.Deadbodies[0].Kill();
