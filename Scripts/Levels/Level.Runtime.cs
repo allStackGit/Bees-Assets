@@ -287,6 +287,13 @@ namespace Assets.Scripts.Levels
                     SaveAndEnd(); // invoke immediately because training is happening
 
                 }
+                else if (!IsLevelConnectedToServer)
+                {
+                    // Campaign CloseLevel disconnects the completed level before its final dialogue.
+                    // Once disconnected, Update intentionally stops advancing level timers, so a
+                    // delayed SaveAndEnd timer can never fire. Complete teardown synchronously here.
+                    SaveAndEnd();
+                }
                 else
                 {
                     if (State.FireBargeExplosions.Count > 0)
