@@ -1,9 +1,6 @@
 ﻿using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Xml.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -33,9 +30,6 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            // Initial Charge target selection below uses the live weapon strategy correctly,
-            // but later pursuit can fall back to Command.TargetingQueue. Remove the queue that
-            // Setup built under the previous shooting strategy so that fallback is also current.
             OriginalQueue.Clear();
             TargetingQueue.Clear();
 
@@ -75,7 +69,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private void GetTargetShip(Ship chargingShip)
         {
-            _getTargetShip_bomb = (Bomb)chargingShip.Weapons.First();
+            _getTargetShip_bomb = (Bomb)chargingShip.Weapons[0];
             _getTargetShip_targetingList = _getTargetShip_bomb.MakeSortedTargetingList(true);
             if (_getTargetShip_targetingList.Count > 0)
             {
@@ -109,12 +103,24 @@ namespace Assets.Scripts.Levels.Commands
             }
             return true;
         }
-        private bool HaveAllShipsFinished(List<Barge> ships)
+
+        private static bool HaveAllShipsFinished(List<Ship> ships)
         {
-            // Charge owns the whole squad's run. Completing one Barge must not finalize the
-            // command and ResetCharge() the other Barges while they are still charging/cooling.
-            return ships.Count > 0 && ships.All((ship) => ship.HasCompletedRun);
+            if (ships.Count == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!((Barge)ships[i]).HasCompletedRun)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
+
         private bool ShouldShipPursueTarget(Barge ship)
         {
             return !ship.HasStartedCharging && !ship.HasCompletedRun && ship.HasTargetEnemyShipToFollow;
@@ -123,11 +129,13 @@ namespace Assets.Scripts.Levels.Commands
         private bool HasTargetsWithinChargingRange(Barge barge)
         {
             Vector2 levelOffset = Level.GetPosition();
-            return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
-            !Utilities.HasObstaclesInTheWay(barge.GetPosition() + levelOffset, barge.Charge.TargetShip.GetPosition() + levelOffset) && barge.ShipsWithinRange.Contains(barge.Charge.TargetShip);
+            Ship target = barge.Charge.TargetShip;
+            return target != null &&
+                   Utilities.IsRotatedTowards(barge, barge.GetDegreesTowardsPoint(target.GetPosition())) &&
+                   !Utilities.HasObstaclesInTheWay(barge.GetPosition() + levelOffset, target.GetPosition() + levelOffset) &&
+                   barge.Charge.ShipsWithinRange.ContainsKey(target.Id);
         }
 
-        private List<Barge> _timer_barges;
         private int _timer_index;
 
         private void Timer()
@@ -143,10 +151,10 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
-            for (_timer_index = 0; _timer_index < _timer_barges.Count && !IsDead; _timer_index++)
+            List<Ship> ships = GetSquad().GetShips();
+            for (_timer_index = 0; _timer_index < ships.Count && !IsDead; _timer_index++)
             {
-                Barge barge = _timer_barges[_timer_index];
+                Barge barge = (Barge)ships[_timer_index];
                 if (ShouldShipPursueTarget(barge))
                 {
                     if (HasTargetsWithinChargingRange(barge))
@@ -170,7 +178,7 @@ namespace Assets.Scripts.Levels.Commands
                 }
             }
 
-            if (!IsDead && HaveAllShipsFinished(_timer_barges))
+            if (!IsDead && HaveAllShipsFinished(ships))
             {
                 SetFinalize("Completed charging run");
             }
@@ -178,11 +186,11 @@ namespace Assets.Scripts.Levels.Commands
 
         public override void SetFinalize(string cause)
         {
-            _timer_barges = GetSquad().GetShips().Select((ship) => (Barge)ship).ToList();
-            _timer_barges.ForEach((barge) =>
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
             {
-                barge.ResetCharge();
-            });
+                ((Barge)ships[i]).ResetCharge();
+            }
 
             base.SetFinalize(cause);
         }
