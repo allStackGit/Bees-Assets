@@ -2,7 +2,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels.Commands;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -18,6 +17,8 @@ namespace Assets.Scripts.Entities.Ships
         public GameObject HealingCrossPrefab;
         public List<HealingCross> HealingCrosses = new List<HealingCross>();
 
+        private readonly List<HealingCross> _inactiveHealingCrosses = new List<HealingCross>();
+        private readonly List<Ship> _shipsHealingSnapshot = new List<Ship>();
         private GameObject _collidingThing;
         private Ship _collidingShip;
         private Heal _command;
@@ -41,28 +42,79 @@ namespace Assets.Scripts.Entities.Ships
                 Stage.Selector.SelectShip(this);
             }
         }
+
+        private void ReleaseActiveHealingCrosses()
+        {
+            while (HealingCrosses.Count > 0)
+            {
+                HealingCross cross = HealingCrosses[HealingCrosses.Count - 1];
+                if (cross == null)
+                {
+                    HealingCrosses.RemoveAt(HealingCrosses.Count - 1);
+                    continue;
+                }
+                cross.BeehiveKill();
+            }
+        }
+
+        public void RecycleHealingCross(HealingCross healingCross)
+        {
+            if (healingCross == null)
+            {
+                return;
+            }
+            healingCross.gameObject.SetActive(false);
+            _inactiveHealingCrosses.Add(healingCross);
+        }
+
         public override void ClearData()
         {
+            ReleaseActiveHealingCrosses();
             base.ClearData();
             ShipsHealingHere.Clear();
             _isDeathAnimationPending = false;
         }
+
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            HealingCrosses.ToList().ForEach((c) => c.BeehiveKill()); // the ToList() is needed to avoid modifying the collection while killing the crosses
-            if (Level.State.GetBeeShips().Where((s) => s.IsBeehive).Count() == 1) // check if this is the last beehive
+            ReleaseActiveHealingCrosses();
+
+            int liveBeehives = 0;
+            List<Ship> levelShips = Level.State.Ships;
+            for (int i = 0; i < levelShips.Count; i++)
+            {
+                Ship ship = levelShips[i];
+                if (!ship.IsDead && ship.IsBeehive)
+                {
+                    liveBeehives++;
+                    if (liveBeehives > 1)
+                    {
+                        break;
+                    }
+                }
+            }
+            if (liveBeehives == 1)
             {
                 Level.State.HasBeehives = false;
             }
-            ShipsHealingHere.ToList().ForEach((s) =>
+
+            _shipsHealingSnapshot.Clear();
+            foreach (Ship ship in ShipsHealingHere)
             {
-                if (s != null && s.Squad.GetCommand() is Heal healCommand && healCommand.IsShipActivelyHealing(s))
+                _shipsHealingSnapshot.Add(ship);
+            }
+            for (int i = 0; i < _shipsHealingSnapshot.Count; i++)
+            {
+                Ship ship = _shipsHealingSnapshot[i];
+                if (ship != null && ship.Squad.GetCommand() is Heal healCommand && healCommand.IsShipActivelyHealing(ship))
                 {
-                    s.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
+                    ship.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
                 }
-            });
+            }
+            _shipsHealingSnapshot.Clear();
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
+
         protected override void DropExplosionAnimation()
         {
             if (!Stage.IsTraining)
@@ -81,6 +133,7 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void PrepareForLevelTeardown()
         {
+            ReleaseActiveHealingCrosses();
             if (!_isDeathAnimationPending)
             {
                 return;
@@ -104,21 +157,31 @@ namespace Assets.Scripts.Entities.Ships
                 ShipExplosionSoundEffect.Play();
             }
 
-            // The shrinking animation's delayed callback has completed and no longer needs
-            // this pooled Beehive wrapper. It is safe for GameState to release it now.
             _isDeathAnimationPending = false;
         }
 
         public void SpawnHealingCross()
         {
-            //Debug.Log($"Spawning healing cross for {Name} at {GetPosition()}");
-            GameObject healingCrossObj = Instantiate(HealingCrossPrefab, transform.position, Quaternion.identity);
-            healingCrossObj.transform.SetParent(Level.Map.Transform);
-            healingCrossObj.transform.localPosition = Utilities.RandomCoordinate(Level, GetPosition(), new Vector2(16, 16), Vector2.zero);
-            HealingCross healingCross = healingCrossObj.GetComponent<HealingCross>();
+            HealingCross healingCross;
+            if (_inactiveHealingCrosses.Count > 0)
+            {
+                int lastIndex = _inactiveHealingCrosses.Count - 1;
+                healingCross = _inactiveHealingCrosses[lastIndex];
+                _inactiveHealingCrosses.RemoveAt(lastIndex);
+                healingCross.transform.SetParent(Level.Map.Transform);
+                healingCross.transform.position = transform.position;
+                healingCross.gameObject.SetActive(true);
+            }
+            else
+            {
+                GameObject healingCrossObj = Instantiate(HealingCrossPrefab, transform.position, Quaternion.identity);
+                healingCrossObj.transform.SetParent(Level.Map.Transform);
+                healingCross = healingCrossObj.GetComponent<HealingCross>();
+            }
+
+            healingCross.transform.localPosition = Utilities.RandomCoordinate(Level, GetPosition(), new Vector2(16, 16), Vector2.zero);
             healingCross.Setup(this);
             HealingCrosses.Add(healingCross);
         }
-
     }
 }
