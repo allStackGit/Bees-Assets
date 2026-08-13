@@ -25,14 +25,15 @@ namespace Assets.Scripts.Levels
             NextTriggers.Clear();
 
             int triggeredCount = 0;
-            Triggers.ForEach((trigger) =>
+            for (int i = 0; i < Triggers.Count; i++)
             {
+                LevelTrigger trigger = Triggers[i];
                 if (trigger.Conditional())
                 {
                     trigger.Action();
                     triggeredCount++;
                 }
-            });
+            }
             for (int i = Triggers.Count - 1; i >= 0; i--)
             {
                 if (Triggers[i].HasBeenTriggered)
