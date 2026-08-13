@@ -1,7 +1,3 @@
 # Bug Ledger
 
-Only defects validated by static code tracing are recorded here. No tests, builds, executables, benchmarks, simulations, package-manager commands, or GitHub Actions were run as part of this static audit.
-
-### BUG-005 — A timer that reuses itself inside its callback has its reset state overwritten by the old update
-**Location:** `Scripts/ScaledTimer.cs`, `Reuse()` / `Update()`; concrete self-reuse callers in `Scripts/Levels/Commands/Aggressive.cs`, `BombingRun.cs`, and `CircleSquad.cs`  
-**Description:** `ScaledTimer.Reuse()` explicitly starts a fresh timer interval by setting `Elapsed = 0` and may also replace `Length` and the callback. In the normal elapsed branch, however, `ScaledTimer.Update()` invokes `Action()` first and then executes `Elapsed -= Length`. If the callback cancels/reuses the same timer—as Aggressive, Bombing Run, and Circle Squad do when switching their command frequency—the callback's `Reuse()` reset is immediately modified by the still-running old `Update()`. Because `Length` is also read after the callback, the code subtracts the newly configured interval from the freshly reset `Elapsed`, making it negative. A 0.25-second replacement interval therefore begins at roughly -0.25 seconds and waits about two intervals before firing. Timer reuse must be treated as a new generation so the old update cannot mutate the new generation's elapsed state.
+No unresolved defects are currently recorded. No tests, builds, executables, benchmarks, simulations, package-manager commands, or GitHub Actions were run as part of this static audit.
