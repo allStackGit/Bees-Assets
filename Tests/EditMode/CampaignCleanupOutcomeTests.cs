@@ -52,5 +52,38 @@ namespace Bees.Tests.EditMode
             Assert.That(resolvedOutcome, Is.GreaterThan(winnerCheck));
             Assert.That(rawShipFallback, Is.GreaterThan(resolvedOutcome));
         }
+
+        [Test]
+        public void DisconnectedCampaignLevelCompletesTeardownWithoutWaitingForStoppedTimers()
+        {
+            string runtime = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Runtime.cs"));
+
+            int levelOver = runtime.IndexOf("public void LevelOver()", StringComparison.Ordinal);
+            int disconnected = runtime.IndexOf("else if (!IsLevelConnectedToServer)", levelOver, StringComparison.Ordinal);
+            int saveAndEnd = runtime.IndexOf("SaveAndEnd();", disconnected, StringComparison.Ordinal);
+
+            Assert.That(disconnected, Is.GreaterThan(levelOver));
+            Assert.That(saveAndEnd, Is.GreaterThan(disconnected),
+                "A campaign level disconnected by CloseLevel would wait on a timer that Update no longer advances.");
+        }
+
+        [Test]
+        public void CloseLevelStopsContinuousTriggersAndRemovesTargetingMarkers()
+        {
+            string shared = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Shared.cs"));
+
+            int closeLevel = shared.IndexOf("public void CloseLevel()", StringComparison.Ordinal);
+            int cancelTriggerTimer = shared.IndexOf("CancelTimer(_checkTriggersTimer);", closeLevel, StringComparison.Ordinal);
+            int disableContinuousTriggers = shared.IndexOf("HasContinuousTriggers = false;", cancelTriggerTimer, StringComparison.Ordinal);
+            int removeTargetingMarkers = shared.IndexOf("State.TargetingSquadMarkers.ToList().ForEach(target => target.Kill());", disableContinuousTriggers, StringComparison.Ordinal);
+            int killShips = shared.IndexOf("foreach (Ship ship in State.GetShips().ToList())", removeTargetingMarkers, StringComparison.Ordinal);
+
+            Assert.That(cancelTriggerTimer, Is.GreaterThan(closeLevel));
+            Assert.That(disableContinuousTriggers, Is.GreaterThan(cancelTriggerTimer));
+            Assert.That(removeTargetingMarkers, Is.GreaterThan(disableContinuousTriggers));
+            Assert.That(killShips, Is.GreaterThan(removeTargetingMarkers));
+        }
     }
 }
