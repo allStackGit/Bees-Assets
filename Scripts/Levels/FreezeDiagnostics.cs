@@ -91,13 +91,8 @@ namespace Assets.Scripts.Levels
 
         public static void Tick(Level level)
         {
-            if (level == null)
+            if (level == null || !level.EnableFreezeDiagnostics)
             {
-                return;
-            }
-            if (!level.EnableFreezeDiagnostics)
-            {
-                LevelCounters.Remove(level);
                 return;
             }
 
@@ -150,6 +145,14 @@ namespace Assets.Scripts.Levels
             counters.PathShipNames.Clear();
         }
 
+        public static void Forget(Level level)
+        {
+            if (level != null)
+            {
+                LevelCounters.Remove(level);
+            }
+        }
+
         private static Counters GetEnabledCounters(Level level)
         {
             if (level == null || !level.EnableFreezeDiagnostics)
@@ -174,9 +177,31 @@ namespace Assets.Scripts.Levels
         [TextArea]
         public string __FreezeDiagnosticsLastSnapshot;
 
+        private bool _freezeDiagnosticsWasEnabled;
+
         private void LateUpdate()
         {
+            if (!EnableFreezeDiagnostics)
+            {
+                if (_freezeDiagnosticsWasEnabled)
+                {
+                    FreezeDiagnostics.Forget(this);
+                    _freezeDiagnosticsWasEnabled = false;
+                }
+                return;
+            }
+
+            _freezeDiagnosticsWasEnabled = true;
             FreezeDiagnostics.Tick(this);
+        }
+
+        private void OnDisable()
+        {
+            if (_freezeDiagnosticsWasEnabled)
+            {
+                FreezeDiagnostics.Forget(this);
+                _freezeDiagnosticsWasEnabled = false;
+            }
         }
     }
 }
