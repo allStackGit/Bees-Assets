@@ -23,13 +23,13 @@ namespace Assets.Scripts.Levels
 
         public ShipDamageStatus GetShipDamageStatus(int side, Ship potentialTargetShip)
         {
-            ShipDamageStatus status = ShipDamageStatuses[side - 1]
-                .FirstOrDefault(entry => entry.Ship == potentialTargetShip);
-
-            if (status == null)
+            int sideIndex = side - 1;
+            if (!ShipDamageStatusesById[sideIndex].TryGetValue(potentialTargetShip.Id, out ShipDamageStatus status) ||
+                status.Ship != potentialTargetShip)
             {
                 status = new ShipDamageStatus(potentialTargetShip);
-                ShipDamageStatuses[side - 1].Add(status);
+                ShipDamageStatuses[sideIndex].Add(status);
+                ShipDamageStatusesById[sideIndex][potentialTargetShip.Id] = status;
             }
             return status;
         }
