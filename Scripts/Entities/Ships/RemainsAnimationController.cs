@@ -71,7 +71,7 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = false;
 
             }
-            else if (Ship.Squad.HasCustomColor && CurrentSprite != null)
+            else if (Ship.Squad.HasCustomColor && CurrentSprite != null && SpriteRenderer.sprite != CurrentSprite)
             {
                 SpriteRenderer.sprite = CurrentSprite;
                 //Debug.Log($"Should not swap sprite yet");
