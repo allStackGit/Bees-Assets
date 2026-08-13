@@ -15,6 +15,7 @@ namespace Assets.Scripts.Levels.Commands
         public MiningAsteroid TargetAstroid;
         public List<Ship> MiningShips = new List<Ship>();
         public List<Ship> ShipsCurrentlyMining = new List<Ship>();
+        private Vector2 _miningDestinationOffset;
 
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, MiningAsteroid asteroid)
         {
@@ -33,6 +34,17 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("This squad has no live mining ships");
                 return;
             }
+
+            // Give each mining command its own nearby point instead of sending every Factory or
+            // Carpenter Bee squad to the exact asteroid center. Keep the offset comfortably
+            // inside the collider so the squad still intersects the asteroid and starts mining.
+            float spreadRadius = 6f;
+            if (TargetAstroid.Collider != null)
+            {
+                Vector2 halfExtents = TargetAstroid.Collider.bounds.extents;
+                spreadRadius = Mathf.Clamp(Mathf.Min(halfExtents.x, halfExtents.y) * 0.3f, 3f, 12f);
+            }
+            _miningDestinationOffset = UnityEngine.Random.insideUnitCircle * spreadRadius;
 
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
             PrepareDamageToSendEntries(1);
@@ -62,6 +74,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             base.ClearData();
             TargetAstroid = null;
+            _miningDestinationOffset = Vector2.zero;
             HasFoundAsteroid = false;
             MiningShips.Clear();
             ShipsCurrentlyMining.Clear();
@@ -72,7 +85,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!GetSquad().IsDead && !TargetAstroid.IsDead)
             {
-                _position = TargetAstroid.GetPosition();
+                _position = TargetAstroid.GetPosition() + _miningDestinationOffset;
                 SetAndMove(_position);
                 GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
             }
