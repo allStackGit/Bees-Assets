@@ -1,5 +1,5 @@
 ﻿
-using System.Linq;
+using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -19,9 +19,6 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            // Command.Setup() built this queue before the newly selected shooting strategy
-            // was installed by base.Execute(). Force first pursuit targeting to use the
-            // current strategy instead of the previous command's ordering.
             OriginalQueue.Clear();
             TargetingQueue.Clear();
 
@@ -59,6 +56,18 @@ namespace Assets.Scripts.Levels.Commands
             HasReachedEnemySquad = false;
         }
 
+        private bool IsAnyShipPathfinding()
+        {
+            foreach (Ship ship in GetSquad().GetShips())
+            {
+                if (ship.IsPathfinding)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void InAndOutTimer()
         {
             if (IsDead || GetSquad().IsDead)
@@ -77,7 +86,7 @@ namespace Assets.Scripts.Levels.Commands
                 if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                 {
                     GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                    if (!IsAnyShipPathfinding())
                     {
                         MoveTowardsEnemies();
                     }
