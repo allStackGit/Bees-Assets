@@ -1,4 +1,5 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -16,37 +17,25 @@ namespace Assets.Scripts.Levels
             //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
-                
-
-                if (!HasPlayer)
+                List<Squad> squads = State.GetAllSquads();
+                for (int i = 0; i < squads.Count; i++)
                 {
-                    State.GetAllSquads().ForEach(s => {
-                        if (!s.IsImmobile && !s.HasCommandQueue)
-                        {
-                            s.AddToCommandList();
-                        }
-                    });
-                }
-                else
-                {
-                    State.GetSquadsBySide(ConfigData.Configuration.AISide).ForEach(s => {
-                        if (!s.IsImmobile && !s.HasCommandQueue)
-                        {
-                            s.AddToCommandList();
-                        }
-                    });
+                    Squad squad = squads[i];
+                    if ((HasPlayer && squad.Side != ConfigData.Configuration.AISide) || squad.IsImmobile || squad.HasCommandQueue)
+                    {
+                        continue;
+                    }
+                    squad.AddToCommandList();
                 }
 
-                    //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
-                    _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
+                //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
+                _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
                 _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
                 {
-
                     AddTimer(_hivemindTimer);
                 });
                 AddTimer(_initialCommandDelayTimer);
             }
-           
         }
         public void MakeSaveLevel()
         {
@@ -57,8 +46,6 @@ namespace Assets.Scripts.Levels
         }
         public void SetupShips()
         {
-
-
             //if (ConfigData.ChooseRandomLevel)
             //{
             //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad) && 
@@ -77,12 +64,41 @@ namespace Assets.Scripts.Levels
             LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
              //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
             LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
-            CalculateShipClearances();
+            AssignShipClearancesForSetup();
             if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
             {
                 CurrentLevelOptions.EnemyReinforcementDelay = ConfigData.StandardReinforcementsDelay;
             }
         }
+
+        private void AssignShipClearancesForSetup()
+        {
+            List<Ship> ships = State.Ships;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (!Stage.ShipClearances.TryGetValue(ship.ShipType, out int clearance))
+                {
+                    float halfWidth = ship.GetHalfWidth();
+                    float halfHeight = ship.GetHalfHeight();
+                    clearance = Mathf.CeilToInt(halfWidth > halfHeight ? halfWidth : halfHeight);
+                    while (clearance % Pathfinder.Scale > 0)
+                    {
+                        clearance++;
+                    }
+                    clearance /= Pathfinder.Scale;
+                    clearance = Mathf.Max(clearance, ConfigData.MinimumClearance);
+                    Stage.ShipClearances.Add(ship.ShipType, clearance);
+                }
+
+                ship.Clearance = clearance;
+                if (clearance > MaximumClearance)
+                {
+                    MaximumClearance = clearance;
+                }
+            }
+        }
+
         private ScaledTimer _timeoutTimer = new ScaledTimer();
         public void SetupMapAndCamera()
         {
