@@ -27,11 +27,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void VisiblePlutoShieldMovesGameSpeedButtonBelowShield()
+        public void VisiblePlutoShieldAlignsGameSpeedButtonWithEvacuationCounterTop()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.PlutoShield.activeInHierarchy"));
+            Assert.That(source, Does.Contain("_menus.Counter.activeInHierarchy"));
+            Assert.That(source, Does.Contain("_counterRect.anchoredPosition.y"));
+            Assert.That(source, Does.Contain("_counterRect.rect.height - _speedRect.rect.height"));
+            Assert.That(source, Does.Contain("((_counterRect.rect.height - _speedRect.rect.height) * 0.5f)"));
+        }
+
+        [Test]
+        public void ShieldOnlyLayoutStillPlacesGameSpeedButtonBelowShield()
+        {
+            string source = ReadGuardSource();
+
             Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
             Assert.That(source, Does.Contain("_plutoShieldRect.rect.height + _speedRect.rect.height"));
             Assert.That(source, Does.Contain("((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap"));
