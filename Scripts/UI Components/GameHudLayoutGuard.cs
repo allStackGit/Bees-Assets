@@ -15,6 +15,7 @@ namespace Assets.Scripts.UI_Components
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
         private const float ControlGap = 10f;
+        private const float DynamicButtonScanInterval = 0.25f;
         private static readonly Color MenuButtonFrameColor = new Color32(55, 148, 110, 255);
 
         private GameMenus _menus;
@@ -29,6 +30,7 @@ namespace Assets.Scripts.UI_Components
         private bool _savedStageMouseScrolling;
         private bool _savedUserMouseScrolling;
         private Stage _mouseScrollStage;
+        private float _nextDynamicButtonScan;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -127,8 +129,7 @@ namespace Assets.Scripts.UI_Components
             }
 
             // The shared red X is authored at only 16x16. Enlarge the selectable itself so hover
-            // and pointer-up do not fall off the button with normal hand movement. The X scales
-            // with it, which also makes this intentionally tiny legacy control easier to see.
+            // and pointer-up do not fall off the button with normal hand movement.
             if (button.gameObject.name == "Close Button")
             {
                 RectTransform rect = button.GetComponent<RectTransform>();
@@ -174,6 +175,23 @@ namespace Assets.Scripts.UI_Components
         private void Update()
         {
             UpdateMouseScrollOwnership();
+            UpdateDynamicButtonStyles();
+        }
+
+        private void UpdateDynamicButtonStyles()
+        {
+            if (_menus == null || Time.unscaledTime < _nextDynamicButtonScan)
+            {
+                return;
+            }
+            _nextDynamicButtonScan = Time.unscaledTime + DynamicButtonScanInterval;
+
+            // Tooltips and some end-state UI are instantiated after sceneLoaded. Re-scan the menu
+            // hierarchy at a low frequency so their Close Buttons receive the same usable hit area.
+            foreach (Button button in _menus.GetComponentsInChildren<Button>(true))
+            {
+                ConfigureButtonStyle(button);
+            }
         }
 
         private void UpdateMouseScrollOwnership()
