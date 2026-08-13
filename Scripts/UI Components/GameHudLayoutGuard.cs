@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using Assets.Scripts.Scenes;
 using Assets.Scripts.UIComponents;
 
 namespace Assets.Scripts.UI_Components
@@ -12,6 +13,7 @@ namespace Assets.Scripts.UI_Components
     /// code also moves the speed button to fixed coordinates. Centralize the final layout
     /// here so visible mission HUD controls always own their space.
     /// </summary>
+    [DefaultExecutionOrder(-1000)]
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
         private const float ControlGap = 10f;
@@ -24,6 +26,10 @@ namespace Assets.Scripts.UI_Components
         private Vector2 _normalSpeedPosition;
         private bool _clockWasVisible;
         private bool _initialized;
+        private bool _mouseScrollSuppressed;
+        private bool _savedStageMouseScrolling;
+        private bool _savedUserMouseScrolling;
+        private Stage _mouseScrollStage;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -48,8 +54,8 @@ namespace Assets.Scripts.UI_Components
 
         private static void ApplyReadableInputFieldStyle(UnityEngine.SceneManagement.Scene scene)
         {
-            Color background = ConfigData.GetUIColor("squadbox-default-color");
-            background.a = 1f;
+            // Match the normal green button face exactly: RGB 30, 207, 136 (#1ECF88).
+            Color background = new Color32(30, 207, 136, 255);
             Color foreground = ConfigData.GetUIColor("supply-capacity-label");
 
             foreach (GameObject root in scene.GetRootGameObjects())
@@ -116,6 +122,76 @@ namespace Assets.Scripts.UI_Components
             _clockWasVisible = false;
             _initialized = true;
             ApplyLayout();
+        }
+
+        private void Update()
+        {
+            UpdateMouseScrollOwnership();
+        }
+
+        private void UpdateMouseScrollOwnership()
+        {
+            Stage stage = _menus != null ? _menus.Stage : null;
+            if (stage == null || ConfigData.UserProgressData == null)
+            {
+                RestoreMouseScrolling();
+                return;
+            }
+
+            Vector3 mouse = Input.mousePosition;
+            bool pointerInsideWindow = Application.isFocused &&
+                                       mouse.x >= 0f && mouse.x < Screen.width &&
+                                       mouse.y >= 0f && mouse.y < Screen.height;
+            if (pointerInsideWindow)
+            {
+                RestoreMouseScrolling();
+                return;
+            }
+
+            if (!_mouseScrollSuppressed || _mouseScrollStage != stage)
+            {
+                RestoreMouseScrolling();
+                _mouseScrollStage = stage;
+                _savedStageMouseScrolling = stage.UseMouseScrolling;
+                _savedUserMouseScrolling = ConfigData.UserProgressData.UseMouseScrolling;
+                _mouseScrollSuppressed = true;
+            }
+
+            // LevelInputManager enables edge scrolling when either of these values is true.
+            // Temporarily suppress both while the pointer is outside the client rectangle so
+            // negative/off-window coordinates cannot masquerade as a screen edge.
+            stage.UseMouseScrolling = false;
+            ConfigData.UserProgressData.UseMouseScrolling = false;
+        }
+
+        private void RestoreMouseScrolling()
+        {
+            if (!_mouseScrollSuppressed)
+            {
+                return;
+            }
+
+            if (_mouseScrollStage != null)
+            {
+                _mouseScrollStage.UseMouseScrolling = _savedStageMouseScrolling;
+            }
+            if (ConfigData.UserProgressData != null)
+            {
+                ConfigData.UserProgressData.UseMouseScrolling = _savedUserMouseScrolling;
+            }
+
+            _mouseScrollStage = null;
+            _mouseScrollSuppressed = false;
+        }
+
+        private void OnDisable()
+        {
+            RestoreMouseScrolling();
+        }
+
+        private void OnDestroy()
+        {
+            RestoreMouseScrolling();
         }
 
         private void LateUpdate()
