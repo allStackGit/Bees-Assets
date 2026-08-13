@@ -248,6 +248,13 @@ namespace Assets.Scripts.Server
             _f_message = System.Text.Encoding.UTF8.GetString(bytes);
             _message_response = JsonUtility.FromJson<ServerResponse>(_f_message);
             _message_response.RequestType = Utilities.ConvertNameToRequestType[_message_response.Type];
+            Message(_f_message, _message_response);
+        }
+
+        private void Message(string message, ServerResponse response)
+        {
+            _f_message = message;
+            _message_response = response;
 
             if (TryClaimResponse(_message_response.Hash))
             {
@@ -371,6 +378,9 @@ namespace Assets.Scripts.Server
         }
 
         private byte[] _update_message;
+        private string _update_parsedMessage;
+        private ServerResponse _update_response;
+
         public void Update()
         {
             int actionsProcessed = 0;
@@ -384,8 +394,16 @@ namespace Assets.Scripts.Server
             int messagesProcessed = 0;
             while (messagesProcessed < MaxMessagesPerUpdate && MessageQueue.TryDequeue(out _update_message))
             {
-                if (!SocketResponseLifecycleGuard.ShouldSuppressResponse(this, _update_message))
+                if (SocketResponseLifecycleGuard.TryParseResponse(_update_message, out _update_parsedMessage, out _update_response))
                 {
+                    if (!SocketResponseLifecycleGuard.ShouldSuppressResponse(this, _update_response))
+                    {
+                        Message(_update_parsedMessage, _update_response);
+                    }
+                }
+                else
+                {
+                    // Preserve the legacy malformed/unknown-envelope path and its diagnostics.
                     Message(_update_message);
                 }
                 messagesProcessed++;
@@ -587,14 +605,20 @@ namespace Assets.Scripts.Server
             }
         }
 
-        private List<ServerRequest> _checkStandingRequests_serverRequests;
+        private readonly List<ServerRequest> _checkStandingRequests_serverRequests = new List<ServerRequest>();
         private ServerRequest _checkStandingRequests_currentRequest;
         private DataFileRequest _checkStandingRequests_dataFileRequest;
         private SettingsRequest _checkStandingRequests_settingsRequest;
 
         private void CheckStandingRequests()
         {
-            _checkStandingRequests_serverRequests = StandingRequests.ToList();
+            if (StandingRequests.Count == 0)
+            {
+                return;
+            }
+
+            _checkStandingRequests_serverRequests.Clear();
+            _checkStandingRequests_serverRequests.AddRange(StandingRequests);
             for (_index = 0; _index < _checkStandingRequests_serverRequests.Count; _index++)
             {
                 _checkStandingRequests_currentRequest = _checkStandingRequests_serverRequests[_index];
