@@ -37,6 +37,9 @@ namespace Bees.Tests.EditMode
         {
             string bombingRun = ReadSource("Scripts", "Levels", "Commands", "BombingRun.cs");
             string charge = ReadSource("Scripts", "Levels", "Commands", "Charge.cs");
+            string circle = ReadSource("Scripts", "Levels", "Commands", "CircleSquad.cs");
+            string closestFriendly = ReadSource("Scripts", "Levels", "Commands", "ClosestFriendly.cs");
+            string guard = ReadSource("Scripts", "Levels", "Commands", "Guard.cs");
             string inAndOut = ReadSource("Scripts", "Levels", "Commands", "InAndOut.cs");
             string swipe = ReadSource("Scripts", "Levels", "Commands", "SwipeSquad.cs");
             string heal = ReadSource("Scripts", "Levels", "Commands", "Heal.cs");
@@ -48,6 +51,12 @@ namespace Bees.Tests.EditMode
                 "Bombing Run can refresh a tracked target every 0.25 seconds and must not invalidate a live A* request.");
             Assert.That(charge, Does.Contain("if (!ship.IsPathfinding)"),
                 "Charge pursuit must let its current A* request settle before refreshing a target position.");
+            Assert.That(circle, Does.Contain("!GetSquad().GetShips().Any(ship => ship.IsPathfinding)"),
+                "Circle Squad refreshes a moving enemy-relative destination as often as every 0.25 seconds and must not churn path workers.");
+            Assert.That(closestFriendly, Does.Contain("!GetSquad().GetShips().Any(ship => ship.IsPathfinding)"),
+                "Following a moving friendly squad must not supersede a live path search on every timer tick.");
+            Assert.That(guard, Does.Contain("!GetSquad().GetShips().Any(ship => ship.IsPathfinding)"),
+                "Guard formation tracking must wait for live path searches before refreshing its moving destination.");
             Assert.That(inAndOut, Does.Contain("!GetSquad().GetShips().Any(ship => ship.IsPathfinding)"),
                 "In-and-Out must not run the shared unguarded pursuit loop while any squad path request is live.");
             Assert.That(swipe, Does.Contain("!GetSquad().GetShips().Any(ship => ship.IsPathfinding)"),
@@ -60,6 +69,8 @@ namespace Bees.Tests.EditMode
                 "A returning Striker tracks a moving Carrier and must not supersede its current path request.");
             Assert.That(shipMovement, Does.Contain("if (!IsPathfinding)\n                {\n                    MoveToPoint(FinalDestination);"),
                 "Recurring collision-asteroid rechecks must let the current A* search settle before refreshing its destination.");
+            Assert.That(shipMovement, Does.Contain("if (IsPathfinding && destination == PathfindingDestination)"),
+                "Restating an identical timer-owned destination must not invalidate a live path worker whose result is still usable.");
         }
     }
 }
