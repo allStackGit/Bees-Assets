@@ -77,7 +77,9 @@ namespace Assets.Scripts.UI_Components
             buttonText.font = _explanationText.font;
             buttonText.fontSharedMaterial = _explanationText.fontSharedMaterial;
             buttonText.text = label;
-            buttonObject.GetComponent<Button>().onClick.AddListener(delegate ()
+
+            Button button = buttonObject.GetComponent<Button>();
+            button.onClick.AddListener(delegate ()
             {
                 if (action != null && action.Method.Name == "DeleteCurrentSquad")
                 {
@@ -91,6 +93,9 @@ namespace Assets.Scripts.UI_Components
                 action();
                 Hide();
             });
+            // Dialogue buttons are cloned after the scene-loaded scan. Configure sound ownership
+            // after adding the dialogue action so the fallback generic click runs last.
+            ButtonSoundOwnershipGuard.Configure(button);
             buttonObject.SetActive(true);
             return buttonObject;
         }
