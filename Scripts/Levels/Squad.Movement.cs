@@ -1,6 +1,5 @@
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -10,16 +9,11 @@ namespace Assets.Scripts.Levels
         private const int FormationCompressionSteps = 20;
         private Vector2 _center;
         private bool _preserveAuthoredOffsetsOnNextSetOffsets;
+        private readonly List<Ship> _mobileShipsForMovement = new List<Ship>();
 
         public void SetOffsets()
         {
             RefreshCompositionCommandBans();
-
-            // Ship.Setup() receives the authored SavedSquad/SquadShip offset. The first
-            // SetOffsets call happens immediately after initial spawning; recomputing from
-            // obstacle-adjusted spawn positions here would permanently replace the authored
-            // formation with the temporary placement. Preserve the source formation once,
-            // then allow later lifecycle changes (casualties, detachments, etc.) to recenter it.
             if (_preserveAuthoredOffsetsOnNextSetOffsets)
             {
                 _preserveAuthoredOffsetsOnNextSetOffsets = false;
@@ -98,22 +92,39 @@ namespace Assets.Scripts.Levels
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
 
-            _tempShips = GetShips().Where(ship => ship.IsMobile).ToList();
+            _mobileShipsForMovement.Clear();
+            int largestClearance = 0;
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (!ship.IsMobile)
+                {
+                    continue;
+                }
+                _mobileShipsForMovement.Add(ship);
+                if (Level.HasObstacles)
+                {
+                    largestClearance = Mathf.Max(largestClearance, ship.GetClearance());
+                }
+            }
+
             Vector2 formationCenter = Level.ForceBounds(destination);
             float formationCompression = 1f;
 
-            if (Level.HasObstacles && _tempShips.Count > 0 && !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+            if (Level.HasObstacles && _mobileShipsForMovement.Count > 0 &&
+                !TryGetFormationCompression(formationCenter, _mobileShipsForMovement, out formationCompression))
             {
-                int largestClearance = _tempShips.Max(ship => ship.GetClearance());
                 if (!Level.Pathfinder.TryFindNearestValidDestination(formationCenter, largestClearance, out formationCenter) ||
-                    !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+                    !TryGetFormationCompression(formationCenter, _mobileShipsForMovement, out formationCompression))
                 {
                     return;
                 }
             }
 
-            foreach (Ship ship in _tempShips)
+            for (int i = 0; i < _mobileShipsForMovement.Count; i++)
             {
+                Ship ship = _mobileShipsForMovement[i];
                 Vector2 shipDestination = Level.ForceBounds(formationCenter + (ship.OffsetFromCenter * formationCompression));
                 ship.MoveToPoint(shipDestination);
             }
