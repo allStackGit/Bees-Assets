@@ -1,11 +1,6 @@
 ﻿using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
-using Assets.Scripts.Levels.Commands;
-using Assets.Scripts.Scenes;
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Xml.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -44,11 +39,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (_colliderEnter.CompareTag("Ship"))
             {
                 _shipEnter = _colliderEnter.GetComponent<Ship>();
-                if (!_shipEnter.IsDead)
+                if (_shipEnter != null &&
+                    !_shipEnter.IsDead &&
+                    Weapon != null &&
+                    Weapon.Ship != null &&
+                    _shipEnter.Side != Weapon.Ship.Side &&
+                    !Weapon.ShipsWithinRange.ContainsKey(_shipEnter.Id))
                 {
+                    // A weapon's range cache is an enemy-candidate cache, not a raw physics
+                    // contact cache. Keeping friendly ships out here prevents every downstream
+                    // targeting pass from scanning/re-sorting friendlies and prevents fallback
+                    // targeting from ever treating a formation mate as an enemy.
                     Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
                     _shipEnter.WeaponsThatHaveUsWithinRange.Add(Weapon);
                     Weapon.HasCachedChanged = true;
+                    Weapon.Stage.DebugLogger?.RecordWeaponRangeEnter();
                 }
 
             }
@@ -80,11 +85,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 _shipExit = _colliderExit.GetComponent<Ship>();
 
-                Weapon.ShipsWithinRange.Remove(_shipExit.Id);
-                Weapon.HasCachedChanged = true;
-                if (!_shipExit.IsDead)
+                if (_shipExit != null && Weapon.ShipsWithinRange.Remove(_shipExit.Id))
                 {
-                    _shipExit.WeaponsThatHaveUsWithinRange.Remove(Weapon);
+                    Weapon.HasCachedChanged = true;
+                    if (!_shipExit.IsDead)
+                    {
+                        _shipExit.WeaponsThatHaveUsWithinRange.Remove(Weapon);
+                    }
                 }
             }
             else if (_colliderExit.CompareTag("Projectile"))
