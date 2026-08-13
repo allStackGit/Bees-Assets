@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
@@ -44,6 +47,146 @@ namespace Assets.Scripts.Levels
         }
 
         /// <summary>
+        /// Neptune III advances the campaign toward Titania but no longer grants the Carrier.
+        /// Carrier acquisition belongs to completion of the Titania sequence.
+        /// </summary>
+        public void Neptune3PressingForwardWithTitaniaCarrierProgression()
+        {
+            Neptune3PressingForwardCampaign();
+            Stage.CutsceneManager.EndDialogueAction = Neptune3EndingWithoutCarrier;
+            Stage.CutsceneManager.HasEndDialogueAction = true;
+        }
+
+        public void Neptune3EndingWithoutCarrier()
+        {
+            Debug.Log("Level 5 complete");
+            if (WinningSide == ConfigData.Configuration.AISide)
+            {
+                ConfigData.CurrentShips.GetFleetShips()
+                    .Where(fleetShip => fleetShip.Type == ConfigData.ShipTypes.Factory)
+                    .ToList()
+                    .ForEach(fleetShip => fleetShip.IsDead = true);
+            }
+
+            // Preserve the non-Carrier progression from Neptune III. The Carrier itself is
+            // awarded after successful completion of Titania II below.
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
+            ConfigData.UserProgressData.SetShipTypes();
+            ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
+            ConfigData.UserProgressData.HasMetAlejandraAndEmilia = true;
+            ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+            SaveCampaignProgress();
+
+            State.GameOver = true;
+            Stage.Menus.ShowLevelSummary();
+        }
+
+        /// <summary>
+        /// Titania I contains fixed one-ship patrols. The old implementation generated and saved
+        /// a special test fleet; the active implementation removed that seeding but still queried
+        /// the persistent fleet for many exact singleton squads. Install temporary encounter-only
+        /// singleton squads for setup, then remove them from persistence immediately after spawn.
+        /// </summary>
+        public void Titania1MinesweeperWithPatrolCompatibility()
+        {
+            List<SavedSquad> authoredPatrols = new List<SavedSquad>();
+            AddTemporaryTitaniaPatrols(authoredPatrols, ConfigData.ShipTypes.Hornet, 8);
+            AddTemporaryTitaniaPatrols(authoredPatrols, ConfigData.ShipTypes.Wasp, 7);
+            AddTemporaryTitaniaPatrols(authoredPatrols, ConfigData.ShipTypes.Leafcutter, 2);
+
+            try
+            {
+                Titania1MinesweeperCampaign();
+            }
+            finally
+            {
+                // Runtime Squads retain their SavedSquad references after construction. Removing
+                // these negative-ID setup records prevents them from ever being written to the
+                // persistent squad file while leaving the authored encounter intact.
+                foreach (SavedSquad patrol in authoredPatrols)
+                {
+                    ConfigData.CurrentShips.RemoveSquad(patrol);
+                }
+            }
+        }
+
+        private static void AddTemporaryTitaniaPatrols(
+            List<SavedSquad> patrols,
+            ConfigData.ShipTypes shipType,
+            int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                FleetShip fleetShip = new FleetShip(
+                    Utilities.GetNegativeFleetshipId(), shipType, false, false,
+                    0, 0, 0, 0, 0, 0, 0);
+                SavedSquad patrol = new SavedSquad(
+                    Utilities.GetNegativeSavedSquadId(),
+                    fleetShip.Side,
+                    $"Titania patrol {Utilities.ConvertShipTypeToName[shipType]}",
+                    Vector2.zero,
+                    false,
+                    false,
+                    DefaultShootingStrategy,
+                    UnsetColor,
+                    null);
+                patrol.AddShipToSquad(new SquadShip(fleetShip, Vector2.zero));
+                ConfigData.CurrentShips.AddSquad(patrol);
+                patrols.Add(patrol);
+            }
+        }
+
+        /// <summary>
+        /// Successful completion of both Titania missions awards and unlocks the Carrier. The
+        /// idempotence check protects migrated saves that already received one from old Neptune III.
+        /// </summary>
+        public void Titania2BeenocularsWithCarrierUnlock()
+        {
+            Titania2BeenocularsCampaign();
+            Stage.CutsceneManager.EndDialogueAction = Titania2CampaignEndingWithCarrierUnlock;
+            Stage.CutsceneManager.HasEndDialogueAction = true;
+        }
+
+        public void Titania2CampaignEndingWithCarrierUnlock()
+        {
+            if (WinningSide == ConfigData.Configuration.UserSide)
+            {
+                bool carrierAlreadyUnlocked =
+                    ConfigData.UserProgressData.UnlockedCampaignShips.Contains(ConfigData.ShipTypes.Carrier) ||
+                    ConfigData.UserProgressData.VisibleHumanShipTypes.Contains(ConfigData.ShipTypes.Carrier);
+
+                if (!carrierAlreadyUnlocked)
+                {
+                    ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);
+                    ConfigData.CurrentShips.BuildNewSquad(
+                        $"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}",
+                        ConfigData.Configuration.HumanSide,
+                        ConfigData.ShipTypes.Carrier,
+                        1);
+                    State.PlayerNewShipsReceived += 1;
+                }
+
+                if (!ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Contains(ConfigData.ShipTypes.Carrier))
+                {
+                    ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+                }
+                if (!ConfigData.UserProgressData.VisibleHumanShipTypes.Contains(ConfigData.ShipTypes.Carrier))
+                {
+                    ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+                }
+                if (!ConfigData.UserProgressData.UnlockedCampaignShips.Contains(ConfigData.ShipTypes.Carrier))
+                {
+                    ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier);
+                }
+                ConfigData.UserProgressData.SetShipTypes();
+            }
+
+            Titania2CampaignEnding();
+        }
+
+        /// <summary>
         /// Re-applies Uranus I's authored fog flag after the legacy environment setup path.
         /// The mission data requests fog even when the generic Stage controller flag was false.
         /// </summary>
@@ -65,33 +208,6 @@ namespace Assets.Scripts.Levels
                     ship.FogOfWarVision.Activate();
                 }
             }
-        }
-
-        /// <summary>
-        /// Creates an escape field plus a same-sized green marker on the minimap-rendered layer.
-        /// The gameplay Exit Zone is intentionally on a UI layer that the minimap camera excludes.
-        /// </summary>
-        private Zone CreateCampaignExitZone(Vector2 localPosition, Vector2 localScale)
-        {
-            GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
-            exitBox.transform.localPosition = localPosition;
-            exitBox.transform.localScale = localScale;
-
-            GameObject minimapMarker = Instantiate(Stage.Prefabs.MinimapCircle, Map.transform);
-            minimapMarker.name = "Exit Zone Minimap Marker";
-            minimapMarker.transform.localPosition = localPosition;
-            minimapMarker.transform.localScale = localScale;
-
-            SpriteRenderer markerRenderer = minimapMarker.GetComponent<SpriteRenderer>();
-            SpriteRenderer exitRenderer = exitBox.GetComponent<SpriteRenderer>();
-            if (markerRenderer != null)
-            {
-                markerRenderer.color = exitRenderer != null
-                    ? exitRenderer.color
-                    : new Color(0.20291919f, 0.754717f, 0.23970567f, 1f);
-            }
-
-            return exitBox.GetComponent<Zone>();
         }
     }
 
@@ -119,6 +235,63 @@ namespace Assets.Scripts.Levels
             Level.NextTriggers.Remove(continuation);
             continuation.Action();
             enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// Exit zones are world-space UI and therefore absent from the minimap camera. Mirror any
+    /// campaign Zone that appears later in the mission with the existing minimap-only sprite.
+    /// </summary>
+    internal sealed class CampaignExitZoneMinimapGuard : MonoBehaviour
+    {
+        private const float ScanInterval = 0.25f;
+        private float _nextScan;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Install()
+        {
+            GameObject host = new GameObject("Campaign Exit Zone Minimap Guard");
+            DontDestroyOnLoad(host);
+            host.AddComponent<CampaignExitZoneMinimapGuard>();
+        }
+
+        private void Update()
+        {
+            if (Time.unscaledTime < _nextScan || ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+            {
+                return;
+            }
+            _nextScan = Time.unscaledTime + ScanInterval;
+
+            foreach (Level level in FindObjectsOfType<Level>())
+            {
+                if (level == null || level.Map == null || level.Stage == null || level.Stage.Prefabs == null ||
+                    level.Stage.Prefabs.MinimapCircle == null)
+                {
+                    continue;
+                }
+
+                foreach (Zone zone in level.Map.GetComponentsInChildren<Zone>(true))
+                {
+                    if (zone == null || zone.transform.Find("Exit Zone Minimap Marker") != null)
+                    {
+                        continue;
+                    }
+
+                    GameObject marker = Instantiate(level.Stage.Prefabs.MinimapCircle, zone.transform);
+                    marker.name = "Exit Zone Minimap Marker";
+                    marker.transform.localPosition = Vector3.zero;
+                    marker.transform.localRotation = Quaternion.identity;
+                    marker.transform.localScale = Vector3.one;
+
+                    SpriteRenderer markerRenderer = marker.GetComponent<SpriteRenderer>();
+                    SpriteRenderer zoneRenderer = zone.GetComponent<SpriteRenderer>();
+                    if (markerRenderer != null && zoneRenderer != null)
+                    {
+                        markerRenderer.color = zoneRenderer.color;
+                    }
+                }
+            }
         }
     }
 }
