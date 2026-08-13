@@ -20,6 +20,7 @@
 ## Timers and commands
 
 - `ScaledTimer` is time-based in seconds. `startImmediate` must fire immediately and then schedule the next callback one normal interval later, not nearly two intervals later.
+- `ScaledTimer.Reuse()` starts a new timer generation. If a timer callback cancels/reuses that same timer (for example when a command changes from a multi-second cadence to 0.25 seconds), the still-running old `Update()` call must not subtract the completed old interval from the freshly reset `Elapsed` state. Generation ownership protects callback-driven self-reconfiguration.
 - Remove timers while iterating from the end/backwards or from a snapshot; forward removal can skip adjacent timers for a frame.
 - One-time progression timers must be one-shot. The 30-minute Fish Tank unlock must not use `isRecurring=true`, which would repeatedly pause/show the unlock dialogue every additional 30 minutes.
 - Command-owned participant state should not depend on aggregate shared-environment collections. `FullRetreat`, for example, owns its own participant IDs even though a Warp Gate also keeps aggregate occupancy.
