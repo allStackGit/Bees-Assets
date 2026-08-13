@@ -9,17 +9,10 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class Guard : Command
     {
-        /* The guarding squad(s) moves at the speed (if it's fast enough) of the guarded squad (the squad that's to be guarded). 
-         * The squad(s) take up position in order of N, W, E, S points from the guarded squad, checking the positions of the other squad(s) and positioning accordingly
-         * A timer will check the position of the guarded squad and tell the guarding squad(s) to move accordingly. 
-         * If the Squad is an AI squad, a timer will stop the command 
-         */
         private Squad _guardedSquad;
         public List<Squad> OtherGuardSquads = new List<Squad>();
-        /// <summary>
-        /// The position of the squad as either, 0, 1, 2, or 3. Corresponds to the cardinal directions to determine where the squad should be
-        /// </summary>
         public int GuardPosition;
+
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, Squad guardedSquad)
         {
             if (IsHiveMindCommand)
@@ -33,51 +26,49 @@ namespace Assets.Scripts.Levels.Commands
             if (_guardedSquad != null)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
-                // add this squad to the list for all other guard squads
-                Level.State.GetSquadsBySide(GetSquad().Side).ForEach((guardingSquad) =>
+
+                List<Squad> squads = Level.State.Squads;
+                for (int i = 0; i < squads.Count; i++)
                 {
-                    // check if it's a guarding squad and guarding the same squad as this squad
-                    if (guardingSquad != GetSquad() && guardingSquad.HasCommand &&
-                    guardingSquad.GetCommand().CommandType == ConfigData.CommandTypes.Guard && ((Guard)guardingSquad.GetCommand())._guardedSquad == _guardedSquad)
+                    Squad guardingSquad = squads[i];
+                    if (guardingSquad.Side != GetSquad().Side || guardingSquad.IsDead ||
+                        guardingSquad == GetSquad() || !guardingSquad.HasCommand)
+                    {
+                        continue;
+                    }
+                    if (guardingSquad.GetCommand()?.CommandType == ConfigData.CommandTypes.Guard &&
+                        ((Guard)guardingSquad.GetCommand())._guardedSquad == _guardedSquad)
                     {
                         ((Guard)guardingSquad.GetCommand()).OtherGuardSquads.Add(GetSquad());
                         OtherGuardSquads.Add(guardingSquad);
                     }
-                });
+                }
+
                 GuardPosition = GetGuardingSquads().Count % 4;
-                //Debug.Log($"{Squad.Name} is guarding {_guardedSquad.Name} at position #{GuardPosition}");
                 GetSquad().Status = $"Guarding {_guardedSquad.Name}";
 
                 CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                 Level.AddTimer(CommandTimer);
-                //Debug.Log($"Adding guard timer for {this}");
                 if (IsHiveMindCommand)
                 {
                     TimeoutTimer.Reuse(ConfigData.Configuration.AISquadGuardTime, FinishGuardingCommand);
                     Level.AddTimer(TimeoutTimer);
-                    //Invoke(nameof(FinishGuardingCommand), ConfigData.Configuration.AISquadGuardTime);
-
                 }
-
-                //InvokeRepeating(nameof(Timer), 0, CommandFrequency);
             }
             else
             {
                 GetSquad().BannedStrats.Add(CommandType);
                 SetFinalize("There are no squads to guard");
             }
-
-
         }
+
         public override void ClearData()
         {
             base.ClearData();
             _guardedSquad = null;
             OtherGuardSquads.Clear();
+            _f_otherGuardSquads.Clear();
         }
-        //////////////////////////////////////////////////////////////////////////////
-        // Class-level variables for Timer() method:
-        //////////////////////////////////////////////////////////////////////////////
 
         private Vector2 _timer_position;
         private Vector2 _timer_offsetFromSquad;
@@ -85,7 +76,6 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            // Determine initial destination based on other guarding squads
             if (!IsDead)
             {
                 if (!_guardedSquad.IsDead)
@@ -117,8 +107,6 @@ namespace Assets.Scripts.Levels.Commands
                             break;
                     }
 
-                    // A guard target is moving, but a timer refresh must not invalidate a live
-                    // path worker. Let current searches settle and refresh on a later tick.
                     if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
                     {
                         SetAndMove(_timer_position);
@@ -140,30 +128,58 @@ namespace Assets.Scripts.Levels.Commands
                         GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
                         throw e;
                     }
-                    //CancelInvoke(nameof(Timer));
                     SetFinalize("Guarded squad died");
                 }
             }
         }
+
         private Squad GetClosestAvailableSquadToGuard()
         {
-            return Level.State.GetSquadsBySide(Side).Where((s) => s != GetSquad() && (!s.HasCommand || s.GetCommand().CommandType != ConfigData.CommandTypes.Guard)).OrderBy(s => s.DistanceToPoint(GetSquad().GetPosition())).FirstOrDefault();
-        }
-        private List<Squad> _f_otherGuardSquads = new List<Squad>();
-        public List<Squad> GetGuardingSquads()
-        {
-            if (_guardedSquad != null && OtherGuardSquads.Count > 0)
+            Squad closest = null;
+            float closestDistance = float.MaxValue;
+            Vector2 origin = GetSquad().GetPosition();
+            List<Squad> squads = Level.State.Squads;
+            for (int i = 0; i < squads.Count; i++)
             {
-                _f_otherGuardSquads = OtherGuardSquads.Where((squad) => squad.HasCommand && squad != GetSquad() && squad.GetCommand().CommandType == ConfigData.CommandTypes.Guard).ToList();
-
-                if (_f_otherGuardSquads.Count > 0)
+                Squad candidate = squads[i];
+                if (candidate.Side != Side || candidate.IsDead || candidate == GetSquad() ||
+                    (candidate.HasCommand && candidate.GetCommand()?.CommandType == ConfigData.CommandTypes.Guard))
                 {
-                    return _f_otherGuardSquads.Where((squad) => ((Guard)squad.GetCommand())._guardedSquad != null && ((Guard)squad.GetCommand())._guardedSquad == _guardedSquad).ToList();
+                    continue;
+                }
+
+                float distance = candidate.DistanceToPoint(origin);
+                if (closest == null || distance < closestDistance)
+                {
+                    closest = candidate;
+                    closestDistance = distance;
                 }
             }
+            return closest;
+        }
+
+        private readonly List<Squad> _f_otherGuardSquads = new List<Squad>();
+        public List<Squad> GetGuardingSquads()
+        {
             _f_otherGuardSquads.Clear();
+            if (_guardedSquad == null || OtherGuardSquads.Count == 0)
+            {
+                return _f_otherGuardSquads;
+            }
+
+            for (int i = 0; i < OtherGuardSquads.Count; i++)
+            {
+                Squad squad = OtherGuardSquads[i];
+                if (squad == null || squad == GetSquad() || !squad.HasCommand)
+                {
+                    continue;
+                }
+                if (squad.GetCommand() is Guard guard && guard._guardedSquad == _guardedSquad)
+                {
+                    _f_otherGuardSquads.Add(squad);
+                }
+            }
             return _f_otherGuardSquads;
-            
         }
 
         public override void SetFinalize(string cause)
@@ -175,11 +191,13 @@ namespace Assets.Scripts.Levels.Commands
                     GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);
                 }
 
-                foreach (Squad guardSquad in GetGuardingSquads().ToList())
+                List<Squad> guardingSquads = GetGuardingSquads();
+                for (int i = 0; i < guardingSquads.Count; i++)
                 {
-                    if (guardSquad != null && guardSquad.HasCommand && guardSquad.GetCommand().CommandType == ConfigData.CommandTypes.Guard)
+                    Squad guardSquad = guardingSquads[i];
+                    if (guardSquad != null && guardSquad.HasCommand && guardSquad.GetCommand() is Guard guardCommand)
                     {
-                        ((Guard)guardSquad.GetCommand()).OtherGuardSquads.Remove(GetSquad());
+                        guardCommand.OtherGuardSquads.Remove(GetSquad());
                     }
                 }
             }
