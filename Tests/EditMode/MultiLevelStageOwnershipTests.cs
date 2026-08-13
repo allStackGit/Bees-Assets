@@ -12,12 +12,12 @@ namespace Bees.Tests.EditMode
         public void StageAppliesOptionsToExplicitConfiguringLevel()
         {
             string stage = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs"));
-            string level = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.cs"));
+            string levelReset = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Reset.cs"));
 
             Assert.That(stage, Does.Contain("SetConfigOptionsAndOverrides(Level level)"));
             Assert.That(stage, Does.Contain("level.CurrentLevelOptions.EnemySquadGenerationCount"));
             Assert.That(stage, Does.Contain("level.CurrentLevelOptions.EnemyShipTypeOption"));
-            Assert.That(level, Does.Contain("Stage.SetConfigOptionsAndOverrides(this);"));
+            Assert.That(levelReset, Does.Contain("Stage.SetConfigOptionsAndOverrides(this);"));
         }
 
         [Test]
