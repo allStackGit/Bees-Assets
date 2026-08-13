@@ -1,4 +1,5 @@
 ﻿
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -55,7 +56,10 @@ namespace Assets.Scripts.Levels.Commands
                     if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                     {
                         GetSquad().Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
-                        SetAndMove(EnemySquad.GetPosition());
+                        if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                        {
+                            SetAndMove(EnemySquad.GetPosition());
+                        }
                     }
                     else
                     {
@@ -90,7 +94,10 @@ namespace Assets.Scripts.Levels.Commands
                         }
 
                         _lastDestination = _timer_destination;
-                        SetAndMove(_timer_destination);
+                        if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                        {
+                            SetAndMove(_timer_destination);
+                        }
                     }
                 }
                 else
