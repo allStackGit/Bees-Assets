@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -18,6 +19,12 @@ namespace Bees.Tests.EditMode
         {
             return File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "UI Components", "Dialogue.cs"));
+        }
+
+        private static string ReadGameMenusSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "GameMenus.cs"));
         }
 
         [Test]
@@ -65,6 +72,25 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("colors.selectedColor = Color.white;"));
             Assert.That(source, Does.Contain("input.textComponent.color = foreground;"));
             Assert.That(source, Does.Contain("input.caretColor = foreground;"));
+        }
+
+        [Test]
+        public void FreePlaySideSwitchFollowsBeeProgression()
+        {
+            string source = ReadGameMenusSource();
+
+            Assert.That(source, Does.Contain("VisibleBeeShipTypes.Contains(ConfigData.ShipTypes.Beehive)"));
+            Assert.That(source, Does.Contain("SwitchSidesButton.SetActive(false);"));
+
+            int switchMethod = source.IndexOf("public void SwitchSides()", StringComparison.Ordinal);
+            int progressionCheck = source.IndexOf("!IsBeeFreePlaySideAvailable", switchMethod, StringComparison.Ordinal);
+            int earlyReturn = source.IndexOf("return;", progressionCheck, StringComparison.Ordinal);
+            int closeLevel = source.IndexOf("CurrentLevel.CloseLevel();", switchMethod, StringComparison.Ordinal);
+
+            Assert.That(progressionCheck, Is.GreaterThan(switchMethod));
+            Assert.That(earlyReturn, Is.GreaterThan(progressionCheck));
+            Assert.That(closeLevel, Is.GreaterThan(earlyReturn),
+                "The side switch must stop before closing the current free-play level when the Bee progression marker is absent.");
         }
 
         [Test]
