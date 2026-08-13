@@ -125,7 +125,7 @@ namespace Assets.Scripts.Levels
 
             level.__FreezeDiagnosticsLastSnapshot =
                 $"frameWorst={counters.WorstFrameMs:F1}ms aggressive={counters.AggressiveTicks} " +
-                $"pathRequests={counters.PathRequests} busiestPathShip={busiestShip} " +
+                $"trackedPathRequests={counters.PathRequests} busiestTrackedPathShip={busiestShip} " +
                 $"pathQueue={pathQueueDepth} activePathWorkers={activePathWorkers} " +
                 $"hiveSightEnters={counters.HiveMindSightEnters} firstSightings={counters.FirstSideWideSightings} " +
                 $"weaponRangeEnters={counters.WeaponRangeEnters} turretPasses={counters.TurretTargetingPasses} " +
