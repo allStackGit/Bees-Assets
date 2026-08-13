@@ -16,7 +16,7 @@ namespace Assets.Scripts.Levels
         public void Level3Ending() { PrepareCampaignSurrenderEnding(); Pluto4Ending(); }
         public void Level4Ending() { PrepareCampaignSurrenderEnding(); Neptune1Ending(); }
         public void Level5Ending() { PrepareCampaignSurrenderEnding(); Neptune2Ending(); }
-        public void Level6Ending() { PrepareCampaignSurrenderEnding(); Neptune3Ending(); }
+        public void Level6Ending() { PrepareCampaignSurrenderEnding(); Neptune3EndingWithoutCarrier(); }
         public void Level7Ending() { PrepareCampaignSurrenderEnding(); Titania1MinesweeperEnding(); }
         public void Level8Ending() { PrepareCampaignSurrenderEnding(); Titania2CampaignEnding(); }
         public void Level9Ending() { PrepareCampaignSurrenderEnding(); Uranus1Ending(); }
