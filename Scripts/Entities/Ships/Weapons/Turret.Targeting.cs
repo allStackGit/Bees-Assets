@@ -1,12 +1,9 @@
-using System.Collections.Generic;
 using System.Linq;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public partial class Turret
     {
-        private int _index;
-        private IEnumerable<Ship> _shipsWithinRange;
         private Ship _potentialTargetShip;
 
         private void TargetingSequence()
@@ -52,10 +49,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public bool HasValidTarget()
         {
-            _shipsWithinRange = ShipsWithinRange.Values;
-            for (_index = 0; _index < ShipsWithinRange.Count; _index++)
+            foreach (Ship ship in ShipsWithinRange.Values)
             {
-                if (IsShipValidTarget(_shipsWithinRange.ElementAt(_index)))
+                if (IsShipValidTarget(ship))
                 {
                     return true;
                 }
