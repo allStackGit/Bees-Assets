@@ -1,15 +1,10 @@
-using Assets.Scripts.Scenes;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-
 using UnityEngine;
-using Random = System.Random;
 
 namespace Assets.Scripts.Levels.Commands
 {
-    public class MatchupStrategy 
+    public class MatchupStrategy
     {
         public Squad Squad;
         public ConfigData.MatchupStrategyTypes MatchupType;
@@ -19,12 +14,7 @@ namespace Assets.Scripts.Levels.Commands
         public long OutcomeId;
         public int Side;
         public Level Level;
-        //public bool IsDead;
 
-        public MatchupStrategy()
-        {
-            //IsDead = true;
-        }
         public void Setup(ConfigData.MatchupStrategyTypes type, long outcomeId, Squad squad)
         {
             OutcomeId = outcomeId;
@@ -32,17 +22,11 @@ namespace Assets.Scripts.Levels.Commands
             Squad = squad;
             Side = Squad.Side;
             Level = Squad.Level;
-            //IsDead = false;
         }
-        //public void Kill()
-        //{
-        //    IsDead = true;
-        //}
+
         private List<Squad> _queue, _targetedSquads;
         private Vector2 _location;
         private ConfigData.ShipTypes _type;
-        private readonly Dictionary<Squad, float> _distanceKeys = new Dictionary<Squad, float>();
-        private readonly Dictionary<Squad, int> _typeCountKeys = new Dictionary<Squad, int>();
 
         private Squad SelectByScore(Func<Squad, double> score, bool descending)
         {
@@ -76,10 +60,59 @@ namespace Assets.Scripts.Levels.Commands
             return selected;
         }
 
+        private Squad SelectByDistance(bool furthest)
+        {
+            _location = Squad.GetPosition();
+            Squad selected = _queue[0];
+            float selectedDistance = selected.DistanceToPoint(_location);
+            for (int i = 1; i < _queue.Count; i++)
+            {
+                Squad candidate = _queue[i];
+                float candidateDistance = candidate.DistanceToPoint(_location);
+                if ((furthest && candidateDistance > selectedDistance) ||
+                    (!furthest && candidateDistance < selectedDistance))
+                {
+                    selected = candidate;
+                    selectedDistance = candidateDistance;
+                }
+            }
+            return selected;
+        }
+
+        private Squad SelectByTypeCount(ConfigData.ShipTypes type)
+        {
+            Squad selected = _queue[0];
+            int selectedCount = CountShipsOfType(selected, type);
+            for (int i = 1; i < _queue.Count; i++)
+            {
+                Squad candidate = _queue[i];
+                int candidateCount = CountShipsOfType(candidate, type);
+                if (candidateCount > selectedCount)
+                {
+                    selected = candidate;
+                    selectedCount = candidateCount;
+                }
+            }
+            return selected;
+        }
+
+        private static int CountShipsOfType(Squad squad, ConfigData.ShipTypes type)
+        {
+            int count = 0;
+            List<Assets.Scripts.Entities.Ships.Ship> ships = squad.GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].ShipType == type)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
         public Squad SortSquads()
         {
             _queue = Level.State.GetSquadsVisibleToHiveMind(Side);
-
             if (_queue.Count == 0)
             {
                 return null;
@@ -89,70 +122,39 @@ namespace Assets.Scripts.Levels.Commands
             {
                 case ConfigData.MatchupStrategyTypes.Random:
                     return _queue[Utilities.RandomInt(_queue.Count)];
-
                 case ConfigData.MatchupStrategyTypes.Revenge:
                     return SelectByScore(s => s.LastKilled, true);
-
                 case ConfigData.MatchupStrategyTypes.MostDangerous:
                     return SelectByScore(s => s.DamageDone, true);
-
                 case ConfigData.MatchupStrategyTypes.LeastHealth:
                     return SelectByScore(s => s.Health, false);
-
                 case ConfigData.MatchupStrategyTypes.MostHealth:
                     return SelectByScore(s => s.Health, true);
-
                 case ConfigData.MatchupStrategyTypes.MostPowerful:
                     return SelectByScore(s => s.Firepower, true);
-
                 case ConfigData.MatchupStrategyTypes.LeastPowerful:
                     return SelectByScore(s => s.Firepower, false);
-
                 case ConfigData.MatchupStrategyTypes.Closest:
-                    _location = Squad.GetPosition();
-                    _distanceKeys.Clear();
-                    foreach (Squad candidate in _queue)
-                    {
-                        _distanceKeys[candidate] = candidate.DistanceToPoint(_location);
-                    }
-                    _queue.Sort((a, b) => _distanceKeys[a].CompareTo(_distanceKeys[b]));
-                    return _queue.First();
-
+                    return SelectByDistance(false);
                 case ConfigData.MatchupStrategyTypes.Furthest:
-                    _location = Squad.GetPosition();
-                    _distanceKeys.Clear();
-                    foreach (Squad candidate in _queue)
-                    {
-                        _distanceKeys[candidate] = candidate.DistanceToPoint(_location);
-                    }
-                    _queue.Sort((a, b) => _distanceKeys[b].CompareTo(_distanceKeys[a]));
-                    return _queue.First();
-
+                    return SelectByDistance(true);
                 case ConfigData.MatchupStrategyTypes.MostRange:
                     return SelectByScore(s => s.MaxRange, true);
-
                 case ConfigData.MatchupStrategyTypes.LeastRange:
                     return SelectByScore(s => s.MaxRange, false);
-
                 case ConfigData.MatchupStrategyTypes.Fastest:
                     return SelectByScore(s => s.TotalSpeed, true);
-
                 case ConfigData.MatchupStrategyTypes.Slowest:
                     return SelectByScore(s => s.TotalSpeed, false);
-
                 case ConfigData.MatchupStrategyTypes.InCombat:
                     return SelectInCombat();
-
                 case ConfigData.MatchupStrategyTypes.GangUp:
                     _targetedSquads = Level.State.GetTargetedSquads(Side);
-                    return _targetedSquads.Count > 0 ? _targetedSquads.First() : SelectInCombat();
-
+                    return _targetedSquads.Count > 0 ? _targetedSquads[0] : SelectInCombat();
                 case ConfigData.MatchupStrategyTypes.MostValuable:
                     return SelectByScore(s => s.Tsv, true);
-
                 case ConfigData.MatchupStrategyTypes.LeastValuable:
                     return SelectByScore(s => s.Tsv, false);
-
                 case ConfigData.MatchupStrategyTypes.TypeA:
                 case ConfigData.MatchupStrategyTypes.TypeB:
                 case ConfigData.MatchupStrategyTypes.TypeC:
@@ -178,23 +180,9 @@ namespace Assets.Scripts.Levels.Commands
                 case ConfigData.MatchupStrategyTypes.TypeW:
                 case ConfigData.MatchupStrategyTypes.TypeX:
                     _type = Utilities.ConvertMatchupStrategyToShipType[MatchupType];
-                    _typeCountKeys.Clear();
-                    foreach (Squad candidate in _queue)
-                    {
-                        int count = 0;
-                        foreach (var ship in candidate.GetShips())
-                        {
-                            if (ship.ShipType == _type)
-                            {
-                                count++;
-                            }
-                        }
-                        _typeCountKeys[candidate] = count;
-                    }
-                    _queue.Sort((a, b) => _typeCountKeys[b].CompareTo(_typeCountKeys[a]));
-                    return _queue.First();
+                    return SelectByTypeCount(_type);
                 default:
-                    return _queue.First();
+                    return _queue[0];
             }
         }
     }
