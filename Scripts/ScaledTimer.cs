@@ -37,6 +37,7 @@ namespace Assets.Scripts
         /// The unique Id of the ScaledTimer
         /// </summary>
         public long Id;
+        private int _reuseGeneration;
         /// <summary>
         /// Takes the time in seconds to elapse before calling action()
         /// </summary>
@@ -67,6 +68,7 @@ namespace Assets.Scripts
             Elapsed = 0;
             IsCanceled = false;
             StartImmediate = startImmediate;
+            _reuseGeneration++;
         }
 
         /// <summary>
@@ -94,8 +96,18 @@ namespace Assets.Scripts
 
             if (Elapsed > Length)
             {
+                int updateGeneration = _reuseGeneration;
+                float completedLength = Length;
                 Action();
-                Elapsed -= Length;
+
+                // A callback is allowed to cancel/reuse this same timer and add the new
+                // configuration back to the Level. Reuse() starts a new interval at zero;
+                // the old Update invocation must not subtract its completed interval from
+                // that new generation's freshly reset elapsed state.
+                if (_reuseGeneration == updateGeneration)
+                {
+                    Elapsed -= completedLength;
+                }
                 return true;
             }
             return false;
