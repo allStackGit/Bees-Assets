@@ -45,7 +45,7 @@ namespace Bees.Tests.EditMode
             string heal = ReadSource("Scripts", "Levels", "Commands", "Heal.cs");
             string retreat = ReadSource("Scripts", "Levels", "Commands", "FullRetreat.cs");
             string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
-            string shipMovement = ReadSource("Scripts", "Entities", "Ships", "Ship.Movement.cs");
+            string shipMovement = ReadSource("Scripts", "Entities", "Ships", "Ship.Movement.cs").Replace("\r\n", "\n");
 
             Assert.That(bombingRun, Does.Contain("if (!ship.IsPathfinding)"),
                 "Bombing Run can refresh a tracked target every 0.25 seconds and must not invalidate a live A* request.");
