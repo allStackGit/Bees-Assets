@@ -5,10 +5,6 @@ namespace Assets.Scripts.Levels.Commands
 {
     public class MoveToRandom : Command
     {
-        /*
-        Sends the squad towards a random spot on the map
-         */
-        private Vector2 _destination;
         private int _range;
 
         public void Setup(Squad squad, bool isHiveMindCommand, Squad enemy, string matchup, int range = 0)
@@ -37,9 +33,7 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("Reached the random destination on the map");
                     return;
                 }
-                _destination = GetDestination();
-                SetAndMove(_destination);
-                GetSquad().Status = $"Moving to random destination: {_destination}";
+                GetSquad().Status = $"Moving to random destination: {GetDestination()}";
             }
         }
     }
