@@ -42,7 +42,7 @@ namespace Assets.Scripts.Entities.Ships
         public void SetCombatTimer()
         {
             if (!Level.Stage.ActivateHiveMind) return;
-            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimerTimer);
+            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
             InCombat = true;
             _combatTimer = true;
             _combatTimerScaledTimer.Reuse(_repeatRate, CombatTimer, true);
@@ -63,7 +63,7 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
+        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerSavedFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -72,11 +72,11 @@ namespace Assets.Scripts.Entities.Ships
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
-            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
+            LogHitStats(attacker, attackerSavedFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
             {
-                target.Kill(attacker, attackerFleetShip, attackerSavedSquad);
+                target.Kill(attacker, attackerSavedFleetShip, attackerSavedSquad);
                 if (attacker != null)
                 {
                     attacker.Level.State.ShipDamageStatuses[attacker.Side - 1]
