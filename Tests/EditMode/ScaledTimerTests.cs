@@ -71,6 +71,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CallbackReuseKeepsFreshElapsedState()
+        {
+            object timer = null;
+            Action reusedAction = () => { };
+            Action callback = () => RuntimeAssembly.Invoke(timer, "Reuse", .25f, reusedAction, true, false);
+            timer = Activator.CreateInstance(
+                _timerType,
+                new object[] { 3f, callback, true, false });
+
+            RuntimeAssembly.SetField(timer, "Elapsed", 3.1f);
+            bool completed = (bool)RuntimeAssembly.Invoke(timer, "Update");
+
+            Assert.That(completed, Is.True);
+            Assert.That(RuntimeAssembly.GetField(timer, "Length"), Is.EqualTo(.25f));
+            Assert.That((float)RuntimeAssembly.GetField(timer, "Elapsed"), Is.EqualTo(0f).Within(.0001f),
+                "Reuse inside the callback starts a new timer generation and the old update must not subtract from it.");
+            Assert.That(RuntimeAssembly.GetField(timer, "Action"), Is.SameAs(reusedAction));
+        }
+
+        [Test]
         public void CanceledImmediateTimerDoesNotRun()
         {
             int callCount = 0;
