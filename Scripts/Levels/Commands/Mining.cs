@@ -1,7 +1,6 @@
 ﻿using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -25,7 +24,17 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            MiningShips = GetSquad().GetShips().Where(ship => ship.IsMiningShip && !ship.IsDead).ToList();
+            MiningShips.Clear();
+            List<Ship> squadShips = GetSquad().GetShips();
+            for (int i = 0; i < squadShips.Count; i++)
+            {
+                Ship ship = squadShips[i];
+                if (ship.IsMiningShip && !ship.IsDead)
+                {
+                    MiningShips.Add(ship);
+                }
+            }
+
             TargetAstroid = asteroid;
             if (MiningShips.Count == 0)
             {
@@ -37,8 +46,9 @@ namespace Assets.Scripts.Levels.Commands
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
             PrepareDamageToSendEntries(1);
 
-            MiningShips.ForEach(ship =>
+            for (int i = 0; i < MiningShips.Count; i++)
             {
+                Ship ship = MiningShips[i];
                 if (!ship.IsDead && ship.Collider.IsTouching(TargetAstroid.Collider))
                 {
                     if (!TargetAstroid.SquadsMining.Contains(ship.Squad))
@@ -47,7 +57,14 @@ namespace Assets.Scripts.Levels.Commands
                     }
                     FoundAsteroid(ship);
                 }
-            });
+            }
+
+            if (!HasFoundAsteroid)
+            {
+                _position = TargetAstroid.GetPosition();
+                SetAndMove(_position);
+                GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
+            }
 
             CommandTimer.Reuse(CommandFrequency, Timer, true, true);
             Level.AddTimer(CommandTimer);
@@ -70,15 +87,19 @@ namespace Assets.Scripts.Levels.Commands
         private Vector2 _position;
         public void Timer()
         {
-            if (!GetSquad().IsDead && !TargetAstroid.IsDead)
+            if (GetSquad().IsDead)
             {
-                _position = TargetAstroid.GetPosition();
-                SetAndMove(_position);
-                GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
+                return;
             }
-            else if (TargetAstroid.IsDead)
+            if (TargetAstroid.IsDead)
             {
                 SetFinalize("Mining asteroid was destroyed");
+                return;
+            }
+
+            if (!HasFoundAsteroid)
+            {
+                GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {TargetAstroid.GetPosition()}";
             }
         }
 
@@ -111,7 +132,18 @@ namespace Assets.Scripts.Levels.Commands
                 _miningTimer.Reuse(5, Mine, true);
                 Level.AddTimer(_miningTimer);
             }
-            if (MiningShips.All(shipInSquad => shipInSquad.IsDead || ShipsCurrentlyMining.Contains(shipInSquad)))
+
+            bool allMiningShipsReady = true;
+            for (int i = 0; i < MiningShips.Count; i++)
+            {
+                Ship miningShip = MiningShips[i];
+                if (!miningShip.IsDead && !ShipsCurrentlyMining.Contains(miningShip))
+                {
+                    allMiningShipsReady = false;
+                    break;
+                }
+            }
+            if (allMiningShipsReady)
             {
                 HasFoundAsteroid = true;
                 _stopMovingTowardsAsteroidTimer.Reuse(5, StopMovingTowardsAsteroid);
@@ -132,7 +164,14 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            ShipsCurrentlyMining.RemoveAll(ship => ship == null || ship.IsDead || !ship.IsMiningShip);
+            for (int i = ShipsCurrentlyMining.Count - 1; i >= 0; i--)
+            {
+                Ship ship = ShipsCurrentlyMining[i];
+                if (ship == null || ship.IsDead || !ship.IsMiningShip)
+                {
+                    ShipsCurrentlyMining.RemoveAt(i);
+                }
+            }
             if (ShipsCurrentlyMining.Count == 0)
             {
                 SetFinalize("No mining ships remain at the asteroid");
@@ -181,11 +220,13 @@ namespace Assets.Scripts.Levels.Commands
             Level.CancelTimer(_miningTimer);
             Level.CancelTimer(_stopMovingTowardsAsteroidTimer);
             CleanupAsteroid();
-            GetSquad().GetShips().ForEach(ship =>
+            List<Ship> squadShips = GetSquad().GetShips();
+            for (int i = 0; i < squadShips.Count; i++)
             {
+                Ship ship = squadShips[i];
                 if (!ship.HasShipAnimation)
                 {
-                    return;
+                    continue;
                 }
                 if (ship.ShipType == ConfigData.ShipTypes.Factory)
                 {
@@ -195,7 +236,7 @@ namespace Assets.Scripts.Levels.Commands
                 {
                     ship.ShipAnimation.SetActive(false);
                 }
-            });
+            }
             base.SetFinalize(cause);
         }
     }
