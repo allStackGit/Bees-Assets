@@ -69,7 +69,14 @@ namespace Assets.Scripts.UI_Components
             buttonObject.transform.SetParent(_buttonsContainer.transform, false);
             buttonObject.transform.localScale = Vector3.one;
 
-            buttonObject.transform.GetChild(0).gameObject.GetComponent<TMP_Text>().text = label;
+            TMP_Text buttonText = buttonObject.transform.GetChild(0).gameObject.GetComponent<TMP_Text>();
+            // The inherited button prefab uses a decorative TMP asset whose O/0 glyph has very
+            // different metrics from K, making short labels such as "OK" look like "0K". Dialogue
+            // body text already uses the intended UI font, so reuse that asset/material while
+            // preserving the button prefab's authored size, alignment, and style.
+            buttonText.font = _explanationText.font;
+            buttonText.fontSharedMaterial = _explanationText.fontSharedMaterial;
+            buttonText.text = label;
             buttonObject.GetComponent<Button>().onClick.AddListener(delegate ()
             {
                 if (action != null && action.Method.Name == "DeleteCurrentSquad")
