@@ -1,4 +1,4 @@
-using System.Linq;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Levels;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -35,7 +35,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public void TryToFindAsteroidTarget()
         {
-            TargetAsteroid = Ship.NearbyAsteroids.FirstOrDefault(asteroid => asteroid != null && !asteroid.IsDead);
+            TargetAsteroid = null;
+            for (int i = 0; i < Ship.NearbyAsteroids.Count; i++)
+            {
+                CollisionAsteroid asteroid = Ship.NearbyAsteroids[i];
+                if (asteroid != null && !asteroid.IsDead)
+                {
+                    TargetAsteroid = asteroid;
+                    break;
+                }
+            }
             HasTargetAsteroid = TargetAsteroid != null;
         }
 
