@@ -9,20 +9,20 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class TrainingResetTransitionTests
     {
-        private string _levelSource;
+        private string _levelResetSource;
         private string _registrySource;
 
         [SetUp]
         public void SetUp()
         {
-            _levelSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.cs"));
+            _levelResetSource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Reset.cs"));
             _registrySource = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
         }
 
         [Test]
         public void ShipRemovalToleratesNullSpottedListsDuringEpisodeTeardown()
         {
-            string resetLevel = ExtractMethodBody(_levelSource, "ResetLevel");
+            string resetLevel = ExtractMethodBody(_levelResetSource, "ResetLevel");
             string removeShip = ExtractMethodBody(_registrySource, "RemoveShip");
 
             Assert.That(resetLevel, Does.Contain("Array.Clear(_reset_spottedShips"),
