@@ -14,6 +14,12 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "UI Components", "GameHudLayoutGuard.cs"));
         }
 
+        private static string ReadDialogueSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "Dialogue.cs"));
+        }
+
         [Test]
         public void VisibleMissionClockMovesGameSpeedButtonBesideIt()
         {
@@ -46,6 +52,17 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
             Assert.That(source, Does.Contain("_plutoShieldRect.rect.height + _speedRect.rect.height"));
             Assert.That(source, Does.Contain("((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap"));
+        }
+
+        [Test]
+        public void ReplacingDialogueButtonPreservesItsLayoutPosition()
+        {
+            string source = ReadDialogueSource();
+
+            Assert.That(source, Does.Contain("int siblingIndex = previousButton.transform.GetSiblingIndex();"));
+            Assert.That(source, Does.Contain("previousButton.SetActive(false);"));
+            Assert.That(source, Does.Contain("replacementButton.transform.SetSiblingIndex(siblingIndex);"));
+            Assert.That(source, Does.Contain("GameObject.Destroy(previousButton);"));
         }
     }
 }
