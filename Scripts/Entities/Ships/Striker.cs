@@ -231,7 +231,7 @@ namespace Assets.Scripts.Entities.Ships
                             ((BombingRun)Squad.GetCommand()).SendShipToTarget(this);
                         }
                     }
-                    else
+                    else if (!IsPathfinding)
                     {
                         MoveToPoint(_destination);
                     }
