@@ -8,7 +8,7 @@ namespace Assets.Scripts.UI_Components
     /// Keeps optional top-level HUD controls from occupying the same screen space.
     /// Campaign missions turn the clock on and off dynamically, while some legacy mission
     /// code also moves the speed button to fixed coordinates. Centralize the final layout
-    /// here so a visible clock always owns its space.
+    /// here so visible mission HUD controls always own their space.
     /// </summary>
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
@@ -17,6 +17,7 @@ namespace Assets.Scripts.UI_Components
         private GameMenus _menus;
         private RectTransform _clockRect;
         private RectTransform _speedRect;
+        private RectTransform _plutoShieldRect;
         private Vector2 _normalSpeedPosition;
         private bool _clockWasVisible;
         private bool _initialized;
@@ -51,6 +52,10 @@ namespace Assets.Scripts.UI_Components
 
             _clockRect = _menus.Clock.GetComponent<RectTransform>();
             _speedRect = _menus.GameSpeedButton.GetComponent<RectTransform>();
+            _plutoShieldRect = _menus.PlutoShield != null
+                ? _menus.PlutoShield.GetComponent<RectTransform>()
+                : null;
+
             if (_clockRect == null || _speedRect == null)
             {
                 enabled = false;
@@ -86,7 +91,20 @@ namespace Assets.Scripts.UI_Components
                 // button immediately to the left of the clock, accounting for both widths.
                 float x = _clockRect.anchoredPosition.x -
                           ((_clockRect.rect.width + _speedRect.rect.width) * 0.5f) - ControlGap;
-                _speedRect.anchoredPosition = new Vector2(x, _clockRect.anchoredPosition.y);
+                float y = _clockRect.anchoredPosition.y;
+
+                // Pluto IV uses the whole top row for the planetary shield and mission clock.
+                // Keeping the speed button beside the clock would place it over the shield,
+                // so drop it directly below the shield while preserving the clock-safe X.
+                if (_plutoShieldRect != null &&
+                    _menus.PlutoShield != null &&
+                    _menus.PlutoShield.activeInHierarchy)
+                {
+                    y = _plutoShieldRect.anchoredPosition.y -
+                        ((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap;
+                }
+
+                _speedRect.anchoredPosition = new Vector2(x, y);
             }
             else if (_clockWasVisible)
             {
