@@ -163,6 +163,22 @@ namespace Assets.Scripts.Levels
             return humanTarget;
         }
 
+        private bool IsOutsidePlayableBounds(Vector2 position)
+        {
+            return position.x < MinX || position.x > MaxX ||
+                   position.y < MinY || position.y > MaxY;
+        }
+
+        private bool ShouldStageOffscreenReinforcement(Vector2 startingPosition, Vector2 nextPosition)
+        {
+            // Vector2.zero is the existing sentinel for "spawn here without an entry move".
+            // Only bypass ordinary placement when the authored route is explicitly outside -> inside.
+            return nextPosition != Vector2.zero &&
+                   startingPosition != nextPosition &&
+                   IsOutsidePlayableBounds(startingPosition) &&
+                   !IsOutsidePlayableBounds(nextPosition);
+        }
+
         public void AddReinforcementSquads(List<SavedSquad> squads, Vector2 startingPosition, Vector2 nextPosition)
         {
             bool isBeenoculars = ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
@@ -173,6 +189,8 @@ namespace Assets.Scripts.Levels
             {
                 EnsureTitania2ReinforcementRoute(ref startingPosition, ref nextPosition);
             }
+
+            bool stageOffscreen = ShouldStageOffscreenReinforcement(startingPosition, nextPosition);
 
             squads = squads.Where(squad => squad != null && squad.GetSquadShips().Count > 0).ToList();
             for (int i = 0; i < squads.Count; i++)
@@ -192,7 +210,7 @@ namespace Assets.Scripts.Levels
                     continue;
                 }
 
-                if (!isBeenoculars || startingPosition == nextPosition)
+                if (!stageOffscreen)
                 {
                     LevelConstructor.SpawnShipsAndSquads(
                         new List<SavedSquad>() { squads[i] },
@@ -202,10 +220,10 @@ namespace Assets.Scripts.Levels
                     continue;
                 }
 
-                // Build the squad at the validated in-map entry first so ordinary obstacle-aware
-                // formation setup cannot relocate an intentional off-map point into a sealed room.
-                // Once setup is complete, move only the newly-created runtime squads to the authored
-                // off-screen point without collision correction, then issue their entry move.
+                // Obstacle-aware SetStartingPosition correctly relocates normal invalid starts,
+                // but that same behavior pulls deliberately off-map reinforcement spawns back
+                // onto the map edge. Build at the authored in-map entry, then move the intact
+                // formation back to its off-screen start without placement correction.
                 HashSet<Squad> existingSquads = new HashSet<Squad>(State.GetAllSquads());
                 LevelConstructor.SpawnShipsAndSquads(
                     new List<SavedSquad>() { squads[i] },
