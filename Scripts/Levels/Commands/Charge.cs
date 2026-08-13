@@ -103,7 +103,10 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("No more enemy ships to target");
                 return false;
             }
-            ship.MoveToPoint(target.GetPosition());
+            if (!ship.IsPathfinding)
+            {
+                ship.MoveToPoint(target.GetPosition());
+            }
             return true;
         }
         private bool HaveAllShipsFinished(List<Barge> ships)
