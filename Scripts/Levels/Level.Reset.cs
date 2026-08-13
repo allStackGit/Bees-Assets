@@ -1,5 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Server;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,6 +11,7 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
+        private const int StaleSquadRequestHistoryLimit = 4096;
         private Ship[] _reset_ships;
         private float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
         private Vector2 _reset_swap;
@@ -348,15 +350,32 @@ namespace Assets.Scripts.Levels
             //}
             ReconcilePersistedFleetForSetup();
             ResetRuntimeState(ConfigData.Socket.HandledRequests);
-            if (!Stage.WatchServerRequests)
-            {
-                ConfigData.__PastServerRequests.Clear();
-            }
+            PruneServerRequestHistoryForReset();
 
             if (Map != null)
             {
                 Stage.Pool.ReturnMapToPool(Map);
             }
+        }
+
+        private void PruneServerRequestHistoryForReset()
+        {
+            if (Stage.WatchServerRequests)
+            {
+                return;
+            }
+
+            // Late strategy responses can still be queued on the process-wide socket after the
+            // owning Level has ended. SocketResponseLifecycleGuard uses the original request to
+            // prove that such a response belonged to a retired Squad lifecycle. Preserve only the
+            // newest bounded set of request types needed for that ownership check; discard all
+            // unrelated debug history as before so normal play does not accumulate it indefinitely.
+            HashSet<ServerRequest> staleResponseHistory = ConfigData.__PastServerRequests
+                .Where(request => request is CommandRequest || request is MatchupStrategyRequest)
+                .OrderByDescending(request => request.StartTime)
+                .Take(StaleSquadRequestHistoryLimit)
+                .ToHashSet();
+            ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);
         }
 
         private void ReconcilePersistedFleetForSetup()
