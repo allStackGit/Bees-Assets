@@ -180,9 +180,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (IsShipValidTarget(_potentialTargetShip))
                     {
-                        _shipDamageStatus = Level.State.GetShipDamageStatus(Side, _potentialTargetShip);
                         if (useShipDamageStatus)
                         {
+                            _shipDamageStatus = Level.State.GetShipDamageStatus(Side, _potentialTargetShip);
                             if (_shipDamageStatus.TotalDamageSentToShip < _shipDamageStatus.Health)
                             {
                                 SetTargetShip(_potentialTargetShip);
@@ -261,6 +261,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected virtual List<Ship> GetPotentialEnemyTargetShips(bool disregardRange)
         {
+            if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
+            {
+                IsUsingCachedTargetingQueue = true;
+                return CachedTargetingQueue;
+            }
+
             if (disregardRange)
             {
                 _shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips().ToList();
@@ -268,11 +274,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else
             {
                 _shipQueue = GetEnemyShipsWithinRange();
-            }
-            if (!HasCachedChanged && CachedShootingStrategy == Ship.ShootingStrategy)
-            {
-                IsUsingCachedTargetingQueue = true;
-                return CachedTargetingQueue;
             }
             IsUsingCachedTargetingQueue = false;
             return _shipQueue;
