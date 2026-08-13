@@ -621,16 +621,8 @@ namespace Assets.Scripts
         };
 
 
-        // ===========================================================
-        // Class-level fields for Hash methods
-        // ===========================================================
         private static Random _rnd = new Random();
 
-        /// <summary>
-        /// Temporarily replaces the gameplay random stream with a seeded stream.
-        /// Dispose the returned scope to restore the previous stream. This is intended
-        /// for deterministic scenarios/replays, before simulation work begins.
-        /// </summary>
         public static IDisposable UseDeterministicRandom(int seed)
         {
             Random previous = _rnd;
@@ -662,22 +654,12 @@ namespace Assets.Scripts
 
         public static long Hash()
         {
-            //long hash = UniqueHash();
-            //Debug.Log($"Hash: {hash}");
-            //return hash;
-            //return RandomLong(10000000);
-            //return UniqueHash();
             return Unique53Hash();
-            //return RandomInt(); 
         }
 
-        /// <summary>
-        /// Generates a number that's guarenteed to be unique (for this game load) and is less than 10t
-        /// </summary>
-        /// <returns></returns>
         public static long UniqueHash()
         {
-            _uniqueHash_tempHash = RandomLong(10000000); // If you don't pass 10m in, it could potentially generate a number larger than JS's MAX_SAFE_INT
+            _uniqueHash_tempHash = RandomLong(10000000);
             while (ConfigData.UsedHashes.Contains(_uniqueHash_tempHash))
             {
                 Debug.LogWarning($"A duplicate hash was found! {_uniqueHash_tempHash} There are {ConfigData.UsedHashes.Count} unique hashes stored");
@@ -687,15 +669,11 @@ namespace Assets.Scripts
             return _uniqueHash_tempHash;
         }
 
-        // 21-bit random client ID [0 … 2^21-1]
         private static readonly long _clientId = GenerateClientId();
-
-        // 32-bit counter, wraps only after ~4 billion requests
         private static long _counter = 0;
 
         private static long GenerateClientId()
         {
-            // Fill 4 bytes and mask to 21 bits
             Span<byte> buf = stackalloc byte[4];
             RandomNumberGenerator.Fill(buf);
             int raw = BitConverter.ToInt32(buf);
@@ -704,22 +682,13 @@ namespace Assets.Scripts
 
         private static uint _ctr;
         private static long _id;
-        /// <summary>
-        /// Gets the next unique 53-bit ID.
-        /// Safe for JS Number (<=2^53), unique across clients.
-        /// </summary>
         public static long Unique53Hash()
         {
-            // Atomically increment the 32-bit counter
             _ctr = (uint)Interlocked.Increment(ref _counter);
-
-            // Combine into a 53-bit value
             _id = (_clientId << 32) | _ctr;
             return _id;
         }
-        // ===========================================================
-        // Class-level fields for Shuffle method
-        // ===========================================================
+
         private static int _shuffle_n;
         private static int _shuffle_k;
         private static object _shuffle_value;
@@ -742,29 +711,22 @@ namespace Assets.Scripts
         public static void ShakeObject(GameObject gameObject, Vector2 originalPosition)
         {
             gameObject.transform.localPosition = originalPosition + new Vector2(RandomFloat(.5f) * RandomSign(), RandomFloat(.5f) * RandomSign());
-
             gameObject.transform.localEulerAngles = new Vector3(0, 0, RandomFloat(15f) * RandomSign());
         }
 
         public static void Shake(Level level, GameObject gameObject, float duration, Action endAction)
         {
             Vector2 originalPosition = gameObject.transform.localPosition;
-
             _shakeTimer.Reuse(.025f, () =>
             {
-                //Debug.Log($"Shaking {gameObject.name}");
                 ShakeObject(gameObject, originalPosition);
             }, true);
-
             level.AddTimer(_shakeTimer);
-
             _cancelTimer.Reuse(duration, () =>
             {
-                //Debug.Log($"Canceling shake for {gameObject.name}");
                 CancelShake(level);
                 endAction();
             }, false);
-
             level.AddTimer(_cancelTimer);
         }
 
@@ -781,9 +743,6 @@ namespace Assets.Scripts
         {
             return _rnd;
         }
-        /// <summary>
-        /// Returns an integer between 0 (inclusive) and max (exclusive)
-        /// </summary>
         public static int RandomInt(int max = int.MaxValue) 
         {
             return _rnd.Next(max);
@@ -803,39 +762,22 @@ namespace Assets.Scripts
             }
             return str;
         }
-        /// <summary>
-        /// Generates a long by multiplying two random numbers no larger than max
-        /// </summary>
-        /// <param name="max"></param>
-        /// <returns></returns>
         public static long RandomLong(int max = int.MaxValue)
         {
             return (long) _rnd.Next(max) * _rnd.Next(max);
         }
-        /// <summary>
-        /// Returns a float between 0 (inclusive) and max (exclusive)
-        /// </summary>
         public static float RandomFloat(float max)
         {
             return (float) _rnd.NextDouble() * max;
         }
         public static int RandomSign()
         {
-            //Debug.Log($"Random sign: {(r > 0 ? 1 : -1)}");
             return RandomInt(2) > 0 ? 1 : -1;
         }
-        /// <summary>
-        /// Returns a random boolean value
-        /// </summary>
-        /// <returns></returns>
         public static bool CoinToss()
         {
             return RandomInt(2) == 0;
         }
-        // not strictly speaking the maximum and minimum distance, but the max change in x or y
-        // ===========================================================
-        // Class-level fields for RandomCoordinate method
-        // ===========================================================
         private static Vector2 _randomCoordinate_newLocation;
         private static int _randomCoordinate_loops;
 
@@ -878,9 +820,6 @@ namespace Assets.Scripts
             return AngleBetweenPoints(c, a) - AngleBetweenPoints(b, a);
         }
 
-        // ===========================================================
-        // Class-level fields for GenerateName methods
-        // ===========================================================
         private static string[] _generateName_consonants = { "b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "l", "n", "p", "q", "r", "s", "sh", "zh", "t", "v", "w", "x" };
         private static string[] _generateName_vowels = { "a", "e", "i", "o", "u", "ae", "y" };
         private static string _generateName_result;
@@ -921,82 +860,76 @@ namespace Assets.Scripts
             return _generateName_result;
         }
 
-        // Static WorldUnitsToScreenPixels method variables
         private static Vector2 worldUnitsToScreenPixels_baseWorldPoint;
         private static Vector2 worldUnitsToScreenPixels_screenPoint;
-
-        // Static ScreenPixelsToWorldUnits method variables
         private static Vector2 screenPixelsToWorldUnits_baseWorldPoint;
         private static Vector2 screenPixelsToWorldUnits_worldPoint;
-
-        // Static WriteJsonFile method variables
         private static string writeJsonFile_path;
-
-        // Static WriteTextFile method variables
         private static string writeTextFile_path;
 
         public static Vector2 WorldUnitsToScreenPixels(Vector2 vector, Camera camera)
         {
-            // Assign static variables
             worldUnitsToScreenPixels_baseWorldPoint = camera.WorldToScreenPoint(Vector2.zero);
             worldUnitsToScreenPixels_screenPoint = camera.WorldToScreenPoint(vector);
-
             return new Vector2(Mathf.Abs(worldUnitsToScreenPixels_baseWorldPoint.x - worldUnitsToScreenPixels_screenPoint.x),
                                Mathf.Abs(worldUnitsToScreenPixels_baseWorldPoint.y - worldUnitsToScreenPixels_screenPoint.y));
         }
 
         public static Vector2 ScreenPixelsToWorldUnits(Vector2 vector, Camera camera)
         {
-            // Assign static variables
             screenPixelsToWorldUnits_baseWorldPoint = camera.ScreenToWorldPoint(Vector2.zero);
             screenPixelsToWorldUnits_worldPoint = camera.ScreenToWorldPoint(vector);
-
             return new Vector2(Mathf.Abs(screenPixelsToWorldUnits_baseWorldPoint.x - screenPixelsToWorldUnits_worldPoint.x),
                                Mathf.Abs(screenPixelsToWorldUnits_baseWorldPoint.y - screenPixelsToWorldUnits_worldPoint.y));
         }
 
         public static void WriteJsonFile(string contents)
         {
-            // Assign static variable
             writeJsonFile_path = $"{ConfigData.GetBasePath()}/{Hash()}.json";
             File.WriteAllText(writeJsonFile_path, contents);
         }
 
         public static void WriteTextFile(string contents)
         {
-            // Assign static variable
             writeTextFile_path = $"{ConfigData.GetBasePath()}/{Hash()}.txt";
             File.WriteAllText(writeTextFile_path, contents);
         }
-        // --- SetChangablePixelsForImage Method Variables ---
-        // Local variables for SetChangablePixelsForImage
+
         private static Texture2D sourceTexture_SetChangablePixelsForImage;
         private static Color[] pixels_SetChangablePixelsForImage;
         private static List<int> indexes_SetChangablePixelsForImage;
         private static float threshhold;
+        private static float threshholdSquared;
         private static int c;
         private static int _i;
-        private static Vector3 colorWithoutAlpha;
-        private static Vector3 pixelWithoutAlpha;
-        private static float _distance;
+        private static float colorR;
+        private static float colorG;
+        private static float colorB;
+        private static float deltaR;
+        private static float deltaG;
+        private static float deltaB;
+        private static float distanceSquared;
 
         public static int[] GetChangablePixelsForImage(Color[] colors, Sprite sprite)
         {
-            // Declare all local variables as class-level static variables
             sourceTexture_SetChangablePixelsForImage = sprite.texture;
             pixels_SetChangablePixelsForImage = sourceTexture_SetChangablePixelsForImage.GetPixels();
             indexes_SetChangablePixelsForImage = new List<int>();
             threshhold = .035f;
+            threshholdSquared = threshhold * threshhold;
 
-            // Loop through the colors and pixels to find matching colors
             for (c = 0; c < colors.Length; c++)
             {
+                colorR = colors[c].r;
+                colorG = colors[c].g;
+                colorB = colors[c].b;
                 for (_i = 0; _i < pixels_SetChangablePixelsForImage.Length; _i++)
                 {
-                    colorWithoutAlpha = new Vector3(colors[c].r, colors[c].g, colors[c].b);
-                    pixelWithoutAlpha = new Vector3(pixels_SetChangablePixelsForImage[_i].r, pixels_SetChangablePixelsForImage[_i].g, pixels_SetChangablePixelsForImage[_i].b);
-                    _distance = Vector3.Distance(pixelWithoutAlpha, colorWithoutAlpha);
-                    if (_distance < threshhold && pixels_SetChangablePixelsForImage[_i].a > 0)
+                    deltaR = pixels_SetChangablePixelsForImage[_i].r - colorR;
+                    deltaG = pixels_SetChangablePixelsForImage[_i].g - colorG;
+                    deltaB = pixels_SetChangablePixelsForImage[_i].b - colorB;
+                    distanceSquared = (deltaR * deltaR) + (deltaG * deltaG) + (deltaB * deltaB);
+                    if (distanceSquared < threshholdSquared && pixels_SetChangablePixelsForImage[_i].a > 0)
                     {
                         indexes_SetChangablePixelsForImage.Add(_i);
                     }
@@ -1008,15 +941,11 @@ namespace Assets.Scripts
 
         public static IEnumerator CacheSquadCustomSprites(SavedSquad squad, Dictionary<ConfigData.ShipTypes, List<Sprite>> shipPartSprites, string type, Dictionary<ConfigData.ShipTypes, Vector2Int> sizes, Dialogue dialogue = null)
         {
-            // Start the timer to measure how long the sprite processing takes
             float cacheSquadStartTime = Time.realtimeSinceStartup;
 
             if (squad.HasCustomColor)
             {
                 Debug.Log($"Saving custom color ({squad.Color}) {type} sprites for {squad.Name}");
-
-                // Work on a snapshot because Carrier cache entries include synthetic child ship
-                // types that must never be appended to the persisted squad composition.
                 List<SquadShip> cacheSquadShips = squad.GetSquadShips().ToList();
                 for (int i = 0; i < cacheSquadShips.Count; i++) 
                 {
@@ -1027,27 +956,18 @@ namespace Assets.Scripts
                         cacheSquadShips.Add(new SquadShip(-1, ConfigData.ShipTypes.Striker, Vector2.zero));
                     }
 
-                    // If the ship's type exists in the dictionary
                     if (shipPartSprites.ContainsKey(cacheSquadShip.ShipType))
                     {
-                        // Get the colors for the current ship type
                         Color[]  cacheSquadColors = ConfigData.ChangeableShipColors.GetValueOrDefault(cacheSquadShip.ShipType);
                         int cacheSquadIndex = 0;
-
-                        // Get the list of sprites for the ship type
                         List<Sprite> cacheSquadSprites = shipPartSprites[cacheSquadShip.ShipType];
                         for (int j = 0; j < cacheSquadSprites.Count; j++)
                         {
                             Sprite cacheSquadSprite = cacheSquadSprites[j];
-
-                            // Check if the ship type requires special handling (e.g., Factory or WarpGate)
                             if (((cacheSquadShip.ShipType == ConfigData.ShipTypes.Factory || cacheSquadShip.ShipType == ConfigData.ShipTypes.WarpGate) && cacheSquadIndex > 0) || type == "remains")
                             {
-
                                 int[] cacheSquadChangeablePixels = GetChangablePixelsForImage(cacheSquadColors, cacheSquadSprite);
                                 yield return ConfigData.WaitForEndOfFrame;
-
-                                // Process the sprite
                                 Texture2D cacheSquadSourceTexture = cacheSquadSprite.texture;
                                 Color[]  cacheSquadPixels = cacheSquadSourceTexture.GetPixels();
                                 yield return ConfigData.WaitForEndOfFrame;
@@ -1059,21 +979,18 @@ namespace Assets.Scripts
                                     cacheSquadPixels[cacheSquadChangeablePixels[p]] = cacheSquadColor;
                                 }
 
-                                // Create a new texture for the changed sprite
                                 Texture2D cacheSquadChangedTexture = new Texture2D(cacheSquadSourceTexture.width, cacheSquadSourceTexture.height);
                                 cacheSquadChangedTexture.filterMode = FilterMode.Point;
                                 yield return ConfigData.WaitForEndOfFrame;
                                 cacheSquadChangedTexture.SetPixels(cacheSquadPixels);
 
-                                // Get the sprite's size and calculate rows/columns
                                 Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
                                 int cacheSquadSpriteRows = cacheSquadSourceTexture.height / cacheSquadSpriteSize.y;
                                 int cacheSquadSpriteColumns = cacheSquadSourceTexture.width / cacheSquadSpriteSize.x;
 
-                                // Create new sprites from the modified texture
-                                for (int y = 0; y < cacheSquadSpriteRows; y++) // Use class-level static `cacheSquadY`
+                                for (int y = 0; y < cacheSquadSpriteRows; y++)
                                 {
-                                    for (int x = 0; x < cacheSquadSpriteColumns; x++) // Use class-level static `cacheSquadX`
+                                    for (int x = 0; x < cacheSquadSpriteColumns; x++)
                                     {
                                         Sprite cacheSquadRecoloredSprite = Sprite.Create(cacheSquadChangedTexture, new Rect(cacheSquadSpriteSize.x * x, (cacheSquadSourceTexture.height - cacheSquadSpriteSize.y * y) - cacheSquadSpriteSize.y, cacheSquadSpriteSize.x, cacheSquadSpriteSize.y), ConfigData.HalfSize);
                                         yield return ConfigData.WaitForEndOfFrame;
@@ -1093,7 +1010,6 @@ namespace Assets.Scripts
                             }
                             else
                             {
-                                // Handle regular ship sprite coloring
                                 Vector2Int cacheSquadSpriteSize = sizes[cacheSquadShip.ShipType];
                                 if (j > 0)
                                 {
@@ -1134,12 +1050,11 @@ namespace Assets.Scripts
             }
         }
 
-        // Private class-level variables for SetImageColor method
-        private static Texture2D _setImageSourceTexture; // Method: SetImageColor
-        private static Color[] _setImagePixels; // Method: SetImageColor
-        private static Texture2D _setImageChangedTexture; // Method: SetImageColor
-        private static Sprite _setImageRecoloredSprite; // Method: SetImageColor
-        private static int _setImagePixelIndex; // Method: SetImageColor
+        private static Texture2D _setImageSourceTexture;
+        private static Color[] _setImagePixels;
+        private static Texture2D _setImageChangedTexture;
+        private static Sprite _setImageRecoloredSprite;
+        private static int _setImagePixelIndex;
         private static Vector2 _setImageHalf = Vector2.one / 2;
 
         public static Sprite SetImageColor(Color color, Sprite sprite, int[] changeablePixels)
@@ -1147,7 +1062,7 @@ namespace Assets.Scripts
             _setImageSourceTexture = sprite.texture;
             _setImagePixels = _setImageSourceTexture.GetPixels();
 
-            for (_setImagePixelIndex = 0; _setImagePixelIndex < changeablePixels.Length; _setImagePixelIndex++) // Use private static `_setImagePixelIndex`
+            for (_setImagePixelIndex = 0; _setImagePixelIndex < changeablePixels.Length; _setImagePixelIndex++)
             {
                 _setImagePixels[changeablePixels[_setImagePixelIndex]] = color;
             }
@@ -1156,54 +1071,35 @@ namespace Assets.Scripts
 
             _setImageChangedTexture.SetPixels(_setImagePixels);
             _setImageChangedTexture.Apply(true);
-
-            // Debug.Log($"width: {dimensions.x}, height: {dimensions.y}");
             _setImageRecoloredSprite = Sprite.Create(_setImageChangedTexture, new Rect(0, 0, _setImageSourceTexture.width, _setImageSourceTexture.height), _setImageHalf, ConfigData.PixelsPerUnit);
             return _setImageRecoloredSprite;
         }
 
-        // Class-level static variables for LoadSquadsFromJson method
-        private static List<SavedSquad> savedSquads = new List<SavedSquad>(); // Method: LoadSquadsFromJson
-        private static Color color; // Method: LoadSquadsFromJson
-        private static SquadStatBlock Stats; // Method: LoadSquadsFromJson
-        private static SavedSquad savedSquad; // Method: LoadSquadsFromJson
-        private static List<dynamic> ships; // Method: LoadSquadsFromJson
-        private static SquadShip squadShip; // Method: LoadSquadsFromJson
+        private static List<SavedSquad> savedSquads = new List<SavedSquad>();
+        private static Color color;
+        private static SquadStatBlock Stats;
+        private static SavedSquad savedSquad;
+        private static List<dynamic> ships;
+        private static SquadShip squadShip;
 
         public static List<SavedSquad> LoadSquadsFromJson(List<dynamic> jsonSquads)
         {
             savedSquads.Clear();
-            // Iterating through each squad in the jsonSquads
             jsonSquads.ForEach((squad) =>
             {
-                // Setting color values based on squad data
                 color = new Color((float)squad.Color.r, (float)squad.Color.g, (float)squad.Color.b, (float)squad.Color.a);
-
-                // Creating the Stats block for the squad
                 Stats = new SquadStatBlock((string)squad.Stats.Commander, (int)squad.Stats.BattlesFought, (int)squad.Stats.BattlesWon,
                     (int)squad.Stats.ShipsLost, (int)squad.Stats.DamageDone, (int)squad.Stats.DamageReceived, (int)squad.Stats.Kills);
-
-                // Creating the SavedSquad object
                 savedSquad = new SavedSquad((long)squad.Id, (int)squad.Side, (string)squad.Name, new Vector2((float)squad.StartingPosition.x, (float)squad.StartingPosition.y),
                     (bool)squad.CeaseFire, (bool)squad.IsMatchingSpeed, ConvertShootingStrategyNameToType[(string)squad.ChosenShootingStrategy], color, Stats);
-
-                // Convert squad's ships data to list of dynamic objects
                 ships = squad.Ships.ToObject<List<dynamic>>();
-
-                // Iterate over the ships for the current squad
                 ships.ForEach((ship) =>
                 {
-                    // Adding each ship to the squad
                     squadShip = new SquadShip((long)ship.FleetId, ConvertShipNameToShipType[(string)ship.ShipType], new Vector2((float)ship.Offset.x, (float)ship.Offset.y));
-
                     savedSquad.AddShipToSquad(squadShip);
                 });
-
-                // Add the completed squad to the list of saved squads
                 savedSquads.Add(savedSquad);
             });
-
-            // Returning the list of saved squads
             return savedSquads.ToList();
         }
 
@@ -1212,130 +1108,90 @@ namespace Assets.Scripts
         public static List<(Vector2, Vector2)> LoadObstaclesFromJson(List<dynamic> jsonObstacles)
         {
             _obstacles.Clear();
-            // Iterating through each squad in the jsonSquads
             jsonObstacles.ForEach((obstacle) =>
             {
                 _obstacle = (new Vector2((float) obstacle.Position.x, (float) obstacle.Position.y), new Vector2((float)obstacle.Scale.x, (float)obstacle.Scale.y));
                 _obstacles.Add(_obstacle);
             });
-
-            // Returning the list of saved squads
             return _obstacles.ToList();
         }
 
-
-
-        // Private class-level variables for GetAllKeys method
-        private static List<KeyCode> _getAllKeysPressed; // Method: GetAllKeys
+        private static List<KeyCode> _getAllKeysPressed;
 
         public static List<KeyCode> GetAllKeys()
         {
             _getAllKeysPressed = new List<KeyCode>();
             if (Input.anyKey)
             {
-                foreach (KeyCode _getAllKey in Enum.GetValues(typeof(KeyCode))) // Use private static `_getAllKey`
+                foreach (KeyCode _getAllKey in Enum.GetValues(typeof(KeyCode)))
                 {
                     if (_getAllKey < KeyCode.Mouse0 && Input.GetKey(_getAllKey))
                     {
-                        // Debug.Log("Key pressed: " + _getAllKey);
                         _getAllKeysPressed.Add(_getAllKey);
-                        // Debug.Log($"Current keys pressed: {Utilities.ListToString(_newKeyCombination)}");
                     }
                 }
             }
             return _getAllKeysPressed;
         }
 
-
         public static Vector2 ForceBounds(float x, float y, float MaxX, float MaxY, float MinX, float MinY)
         {
             return new Vector2(Mathf.Clamp(x, MinX, MaxX), Mathf.Clamp(y, MinY, MaxY));
         }
 
-        // Private class-level variables for RotatePointAroundPoint method
-        private static float _rotatePointCosAngle; // Method: RotatePointAroundPoint
-        private static float _rotatePointSinAngle; // Method: RotatePointAroundPoint
-        private static Vector2 _rotatePointTranslatedVector; // Method: RotatePointAroundPoint
-        private static float _rotatePointRotatedX; // Method: RotatePointAroundPoint
-        private static float _rotatePointRotatedY; // Method: RotatePointAroundPoint
-        private static Vector2 _rotatePointRotatedVector; // Method: RotatePointAroundPoint
+        private static float _rotatePointCosAngle;
+        private static float _rotatePointSinAngle;
+        private static Vector2 _rotatePointTranslatedVector;
+        private static float _rotatePointRotatedX;
+        private static float _rotatePointRotatedY;
+        private static Vector2 _rotatePointRotatedVector;
 
         public static Vector2 RotatePointAroundPoint(Vector2 pivot, Vector2 rotatedPoint, float radians)
         {
             _rotatePointCosAngle = Mathf.Cos(radians);
             _rotatePointSinAngle = Mathf.Sin(radians);
-
-            // Translate the original vector to be relative to the pivot
             _rotatePointTranslatedVector = rotatedPoint - pivot;
-
-            // Rotate the translated vector
             _rotatePointRotatedX = _rotatePointTranslatedVector.x * _rotatePointCosAngle - _rotatePointTranslatedVector.y * _rotatePointSinAngle;
             _rotatePointRotatedY = _rotatePointTranslatedVector.x * _rotatePointSinAngle + _rotatePointTranslatedVector.y * _rotatePointCosAngle;
-
-            // Translate the rotated vector back to the original position
             _rotatePointRotatedVector = new Vector2(_rotatePointRotatedX, _rotatePointRotatedY) + pivot;
-
             return _rotatePointRotatedVector;
         }
 
-        /// <summary>
-        /// Finds the point on a circle between the position given, the angle, and the radius (distance) given
-        /// </summary>
-        /// <param name="angle"></param>
-        /// <param name="distance"></param>
-        /// <returns></returns>
         public static Vector2 CirclePoint(float angle, float distance, Vector2 position)
         {
             angle *= -1;
             angle -= Mathf.PI * .5f;
             return new Vector2((position.x + (Mathf.Cos(angle) * distance)), (position.y + (Mathf.Sin(angle) * distance)));
         }
-        // Private class-level variables for RotateIntPointAroundPoint method
-        private static double _rotateIntPointCosAngle; // Method: RotateIntPointAroundPoint
-        private static double _rotateIntPointSinAngle; // Method: RotateIntPointAroundPoint
-        private static Vector2Int _rotateIntPointTranslatedVector; // Method: RotateIntPointAroundPoint
-        private static double _rotateIntPointRotatedX; // Method: RotateIntPointAroundPoint
-        private static double _rotateIntPointRotatedY; // Method: RotateIntPointAroundPoint
-        private static Vector2Int _rotateIntPointRotatedVector; // Method: RotateIntPointAroundPoint
+
+        private static double _rotateIntPointCosAngle;
+        private static double _rotateIntPointSinAngle;
+        private static Vector2Int _rotateIntPointTranslatedVector;
+        private static double _rotateIntPointRotatedX;
+        private static double _rotateIntPointRotatedY;
+        private static Vector2Int _rotateIntPointRotatedVector;
 
         public static Vector2Int RotateIntPointAroundPoint(Vector2Int pivot, Vector2Int rotatedPoint, float radians)
         {
             _rotateIntPointCosAngle = Mathf.Cos(radians);
             _rotateIntPointSinAngle = Mathf.Sin(radians);
-
-            // Translate the original vector to be relative to the pivot
             _rotateIntPointTranslatedVector = rotatedPoint - pivot;
-
-            // Rotate the translated vector
             _rotateIntPointRotatedX = _rotateIntPointTranslatedVector.x * _rotateIntPointCosAngle - _rotateIntPointTranslatedVector.y * _rotateIntPointSinAngle;
             _rotateIntPointRotatedY = _rotateIntPointTranslatedVector.x * _rotateIntPointSinAngle + _rotateIntPointTranslatedVector.y * _rotateIntPointCosAngle;
-
-            // Translate the rotated vector back to the original position
             _rotateIntPointRotatedVector = new Vector2Int(Convert.ToInt32(_rotateIntPointRotatedX), Convert.ToInt32(_rotateIntPointRotatedY)) + pivot;
-
             return _rotateIntPointRotatedVector;
         }
 
-
-        /// <summary>
-        /// Rotates the game object on this ship the quickest way towards a rotation and returns true once it reaches that rotation. Returns false once it is done rotating
-        /// </summary>
-        /// <param name="entity"></param>
-        /// <param name="rotation"></param>
-        /// <param name="rotationSpeed"></param>
-        /// <returns></returns>
         public static bool TimedRotation(Turret turret, float rotation, float rotationSpeed)
         {
             return TimedRotationDifference(turret, rotation, rotationSpeed) == 0;
         }
 
-        // Private class-level variables for TimedRotationDifference method
-        private static float _timedRotationDifferenceDifference; // Method: TimedRotationDifference
+        private static float _timedRotationDifferenceDifference;
         private static float _rotationRate;
         private static Vector3 _forward = Vector3.forward;
         private const int _levelOfPrecision = 3;
         private const int _levelOfPrecisionNegative = -_levelOfPrecision;
-        //private static Vector3 _timedRotationDifferenceRotationVector; // Method: TimedRotationDifference
 
         public static float TimedRotationDifference(Ship ship, float rotation, float rotationSpeed)
         {
@@ -1344,86 +1200,50 @@ namespace Assets.Scripts
 
             if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
-                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
-                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} before rotating");
                 ship.Transform.Rotate(_forward * _rotationRate);
                 ship.Rotation += _rotationRate;
                 ship.Turrets.ForEach((t) => t.Rotation += _rotationRate);
-                //Debug.Log($"For {ship}, Rotation is {ship.Rotation}, z is {ship.Transform.localEulerAngles.z}, a rotation rate of {-_rotationRate} has been applied");
-                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} after rotating");
                 return _timedRotationDifferenceDifference;
-
             }
             else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
             {
-                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
-                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} before rotating");
                 ship.Transform.Rotate(_forward * -_rotationRate);
                 ship.Rotation -= _rotationRate;
                 ship.Turrets.ForEach((t) => t.Rotation -= _rotationRate);
-                //Debug.Log($"For {ship}, Rotation is {ship.Rotation}, z is {ship.Transform.localEulerAngles.z}, a rotation rate of {-_rotationRate} has been applied");
-                //Debug.Log($"For {ship}, the turret has a rotation of {ship.Turrets.First().Rotation}, and a z of {ship.Turrets.First().PieceTransform.eulerAngles.z} after rotating");
-
                 return _timedRotationDifferenceDifference;
             }
             return 0;
-            //else
-            //{
-            //    //entity.Transform.eulerAngles = _forward * rotation;
-            //    //entity.Rotation = rotation;
-            //    return 0;
-            //}
         }
         public static float TimedRotationDifference(Turret turret, float rotation, float rotationSpeed)
         {
             _timedRotationDifferenceDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
             _rotationRate = turret.Stage.FixedDeltaTime * rotationSpeed;
 
-            //Debug.Log($"For turret ship {turret.Ship}, Rotation is {turret.Rotation}, z is {turret.PieceTransform.eulerAngles.z}, a rotation rate of {_rotationRate} is being applied");
-
-            //if (Math.Abs(turret.Rotation - turret.PieceTransform.eulerAngles.z) > 1)
-            //{
-            //    Debug.LogWarning($"{turret.Ship}, has out of sync turret rotation: Rotation is {turret.Rotation}, z is {turret.PieceTransform.eulerAngles.z}");
-            //}
-
             if (_timedRotationDifferenceDifference > _levelOfPrecision)
             {
-                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed);
                 turret.PieceTransform.Rotate(_forward * _rotationRate);
                 turret.Rotation += _rotationRate;
                 return _timedRotationDifferenceDifference;
             }
             else if (_timedRotationDifferenceDifference < _levelOfPrecisionNegative)
             {
-                //_timedRotationDifferenceRotationVector = new Vector3(0, 0, 1 * Time.fixedDeltaTime * rotationSpeed * -1);
                 turret.PieceTransform.Rotate(_forward * -_rotationRate);
                 turret.Rotation -= _rotationRate;
                 return _timedRotationDifferenceDifference;
             }
             else if (_timedRotationDifferenceDifference != 0)
             {
-                //weapon.PieceTransform.Rotate(_forward * _timedRotationDifferenceDifference);
-                //weapon.Rotation = _timedRotationDifferenceDifference;
-                //Debug.Log(_timedRotationDifferenceDifference);
                 turret.PieceTransform.eulerAngles = _forward * rotation;
                 turret.Rotation = rotation;
             }
             return 0;
-
         }
 
-        /// <summary>
-        /// Checks if the different in angle between the rotation and the entity is within 3
-        /// </summary>
-        /// <param name="entity"></param>
-        /// <param name="rotation"></param>
-        /// <returns></returns>
-        private static float _isRotatedTowardsDifference; // Method: IsRotatedTowards
+        private static float _isRotatedTowardsDifference;
 
         public static bool IsRotatedTowards(Turret turret, float rotation)
         {
             _isRotatedTowardsDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
-
             if (_isRotatedTowardsDifference > _levelOfPrecision || _isRotatedTowardsDifference < _levelOfPrecisionNegative)
             {
                 return false;
@@ -1433,7 +1253,6 @@ namespace Assets.Scripts
         public static bool IsRotatedTowards(Entity entity, float rotation)
         {
             _isRotatedTowardsDifference = Mathf.DeltaAngle(entity.Rotation, rotation);
-
             if (_isRotatedTowardsDifference > _levelOfPrecision || _isRotatedTowardsDifference < _levelOfPrecisionNegative)
             {
                 return false;
@@ -1441,20 +1260,12 @@ namespace Assets.Scripts
             return true;
         }
 
-        /// <summary>
-        /// Checks to see if a game object is rotated towards a rotation or not
-        /// </summary>
-        /// <param name="entity"></param>
-        /// <param name="rotation"></param>
-        /// <returns></returns>
-        // Private class-level variables for IsAimedAt method
-        private static float _isAimedAtDifference; // Method: IsAimedAt
-        private static float _isAimedAtCloseEnough = 3; // Method: IsAimedAt
+        private static float _isAimedAtDifference;
+        private static float _isAimedAtCloseEnough = 3;
 
         public static bool IsAimedAt(Turret turret, float rotation)
         {
             _isAimedAtDifference = Mathf.DeltaAngle(turret.Rotation, rotation);
-
             if (_isAimedAtDifference > _isAimedAtCloseEnough)
             {
                 return false;
@@ -1469,8 +1280,7 @@ namespace Assets.Scripts
             }
         }
 
-        // Private class-level variables for ListToString method
-        private static string _listToStringResult; // Method: ListToString
+        private static string _listToStringResult;
 
         public static string ListToString<T>(List<T> list)
         {
@@ -1484,9 +1294,8 @@ namespace Assets.Scripts
             return _listToStringResult;
         }
 
-        // Private class-level variables for SetUIColor method
-        private static Image _setUIColorImage; // Method: SetUIColor
-        private static SpriteRenderer _setUIColorSprite; // Method: SetUIColor
+        private static Image _setUIColorImage;
+        private static SpriteRenderer _setUIColorSprite;
 
         public static void SetUIColor(GameObject gameObject, Color color)
         {
@@ -1520,7 +1329,6 @@ namespace Assets.Scripts
         public static string ValidateInputString(string str)
         {
             return Regex.Replace(str, @"[^a-zA-Z0-9\-\s!@#%&*_+=:'.?]", "");
-            //Debug.Log($"Unvalidated string: {name}, replaced string {valid}");
         }
 
         public static List<T> JArrayToList<T>(dynamic jArray)
@@ -1528,8 +1336,7 @@ namespace Assets.Scripts
            return ((JArray)jArray).ToList<dynamic>().ConvertAll((item) => (T)item);
         }
 
-        // Private class-level variables for JArrayToWeaponTypes method
-        private static List<string> _jArrayToWeaponTypesWeaponList; // Method: JArrayToWeaponTypes
+        private static List<string> _jArrayToWeaponTypesWeaponList;
 
         public static List<ConfigData.WeaponTypes> JArrayToWeaponTypes(dynamic jArray)
         {
@@ -1537,16 +1344,14 @@ namespace Assets.Scripts
             return _jArrayToWeaponTypesWeaponList.ConvertAll((_jArrayToWeaponTypesItem) => ConvertWeaponNameToType[_jArrayToWeaponTypesItem]);
         }
 
-        private static List<string> _jArrayToWeaponSoundTypesWeaponList; // Method: JArrayToWeaponTypes
+        private static List<string> _jArrayToWeaponSoundTypesWeaponList;
         public static List<ConfigData.WeaponSoundTypes> JArrayToWeaponSoundTypes(dynamic jArray)
         {
             _jArrayToWeaponSoundTypesWeaponList = JArrayToList<string>(jArray);
             return _jArrayToWeaponSoundTypesWeaponList.ConvertAll((_jArrayToWeaponTypesItem) => ConvertWeaponSoundNameToType[_jArrayToWeaponTypesItem]);
         }
 
-
-        // Private class-level variables for JArrayToProjectileTypes method
-        private static List<string> _jArrayToProjectileTypesProjectileList; // Method: JArrayToProjectileTypes
+        private static List<string> _jArrayToProjectileTypesProjectileList;
 
         public static List<ConfigData.ProjectileTypes> JArrayToProjectileTypes(dynamic jArray)
         {
@@ -1554,8 +1359,7 @@ namespace Assets.Scripts
             return _jArrayToProjectileTypesProjectileList.ConvertAll((_jArrayToProjectileTypesItem) => ConvertProjectileNameToType[_jArrayToProjectileTypesItem]);
         }
 
-        // Private class-level variables for JArrayToShipTypes method
-        private static List<string> _jArrayToShipTypesShipList; // Method: JArrayToShipTypes
+        private static List<string> _jArrayToShipTypesShipList;
 
         public static List<ConfigData.ShipTypes> JArrayToShipTypes(dynamic jArray)
         {
@@ -1574,10 +1378,9 @@ namespace Assets.Scripts
             });
             return dictionary;
         }
-        // Private class-level variables for JArrayToShipTypeDictionary method
-        private static Dictionary<ConfigData.ShipTypes, int> _jArrayToShipTypeDictionaryDictionary; // Method: JArrayToShipTypeDictionary
-        private static List<dynamic> _jArrayToShipTypeDictionaryList; // Method: JArrayToShipTypeDictionary
-        private static Dictionary<string, int> _jArrayToShipTypeDictionaryD; // Method: JArrayToShipTypeDictionary
+        private static Dictionary<ConfigData.ShipTypes, int> _jArrayToShipTypeDictionaryDictionary;
+        private static List<dynamic> _jArrayToShipTypeDictionaryList;
+        private static Dictionary<string, int> _jArrayToShipTypeDictionaryD;
 
         public static Dictionary<ConfigData.ShipTypes, int> JArrayToShipTypeDictionary(dynamic jArray)
         {
@@ -1591,49 +1394,25 @@ namespace Assets.Scripts
             return _jArrayToShipTypeDictionaryDictionary;
         }
 
-        /// <summary>
-        /// Returns the rated TSV of the ship, weighted by its health
-        /// </summary>
-        /// <param name="ship"></param>
-        /// <returns></returns>
         public static int CalculateTsv(Ship ship)
         {
-            //Debug.Log($"Calculating TSV for {ship.Name}");
             return (int) (GetMaxTsv(ship.ShipType) * CalculateHealthFactor(ship)) + (ship.Health > 0 ? ship.FleetShip.MineralsMinedThisLevel : 0);
-            //return CalculateTsv(ship.Speed, ship.Firepower, ship.Health, ship.Sight);
         }
-        /// <summary>
-        /// Returns the health multiplier which ranges from > .5 to 1 if the ship has health, and returns 0 if the ship is dead
-        /// </summary>
-        /// <param name="ship"></param>
-        /// <returns></returns>
         public static float CalculateHealthFactor(Ship ship)
         {
             return ship.Health > 0 ? (float)(ship.MaxHealth + ship.Health) / (ship.MaxHealth * 2) : 0;
         }
        
-        /// <summary>
-        /// Returns the maximum value of the TSV for the fleet ship i.e. when it has full health
-        /// </summary>
-        /// <param name="ship"></param>
-        /// <returns></returns>
         public static int GetMaxTsv(ConfigData.ShipTypes type)
         {
             return ConfigData.GetShipInfo(type).Tsv;
-            //return CalculateTsv(ship.Speed, ship.Firepower, ship.MaxHealth, ship.Sight);
         }
-        
 
         public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {
-            //Debug.Log($"Power: {(power * ProjectileValue)}, DPS: {((power * ProjectileValue) / rateOfFire)}, Range: {Mathf.Pow((range / 20), 2)}");
             return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
         }
-        /// <summary>
-        /// Linecasts from start to end to check for any obstacles in the path. Returns true if there are obstacles in the way
-        /// </summary>
-        /// <param name="destination"></param>
-        /// <returns></returns>
+
         public static bool HasObstaclesInTheWay(Vector2 start, Vector2 end)
         {
             return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayerMask).collider != null;
@@ -1643,23 +1422,6 @@ namespace Assets.Scripts
             return Physics2D.Linecast(start, end, ConfigData.ObstaclesLayerMask).collider;
         }
 
-        /// <summary>
-        /// Linecasts from start to end to check for any obstacles in the path. Returns true if there are obstacles or obstacle proximity ranges in the way
-        /// </summary>
-        /// <param name="start"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
-        //public static bool HasObstaclesCloseToInTheWay(Vector2 start, Vector2 end)
-        //{
-        //    //Collider2D obstacle = Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider;
-        //    //if (obstacle != null)
-        //    //{
-        //    //    Debug.Log($"There is {obstacle.gameObject.name} in the way between {start} and {end}");
-        //    //    return true;
-        //    //}
-        //    //return false;
-        //    //return Physics2D.Linecast(start, end, ConfigData.ObstacleProximityRangesLayerMask).collider != null;
-        //}
         public static void Print2DArray(bool[][] array)
         {
             string line = "";
@@ -1676,30 +1438,21 @@ namespace Assets.Scripts
 
         public static void Print2DArrayAsImage(int[][] array)
         {
-            //array.Reverse();
             Texture2D texture = new Texture2D(array.Length, array[0].Length, TextureFormat.RGB24, false);
-            //Color[] pixels = texture.GetPixels();
             for (int y = 0; y < array[0].Length; y++)
             {
                 for (int x = 0; x < array.Length; x++)
                 {
-
                     if (array[x][y] > 0)
                     {
-
                         texture.SetPixel(x, array[0].Length-(y+1), new Color(0, ((float)array[x][y] / (array.Length / 2)) + .25f, .25f));
                     } 
                     else
                     {
                         texture.SetPixel(x, array[0].Length - (y + 1), ConfigData.GetUIColor("bad"));
-
                     }
                 }
             }
-            //Color[] pixels = texture.GetPixels();
-            //System.Array.Reverse(pixels, 0, pixels.Length);
-            //texture.SetPixels(pixels);
-            //texture.Apply();
             string path = $"{ConfigData.GetBasePath()}/{Hash()}.png";
             File.WriteAllBytes(path, texture.EncodeToPNG());
         }
@@ -1712,9 +1465,5 @@ namespace Assets.Scripts
         {
             return -(Hash() + ConfigData.CurrentShips.GetSavedSquads().Count);
         }
-
-
-
-
     }
 }
