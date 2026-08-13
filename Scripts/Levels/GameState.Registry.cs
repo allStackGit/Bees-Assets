@@ -137,6 +137,7 @@ namespace Assets.Scripts.Levels
 
             // Hivemind visibility is live runtime state. Remove this lifecycle both as an
             // observer and as a seen target before the pooled wrapper receives a new Id.
+            int removedObserverSideIndex = ship.IsHiveMindControlled ? ship.Side - 1 : -1;
             foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
             {
                 if (observerMap == null)
@@ -152,6 +153,30 @@ namespace Assets.Scripts.Levels
             foreach (HashSet<Ship> visibleCache in VisionCache)
             {
                 visibleCache?.Remove(ship);
+            }
+
+            if (removedObserverSideIndex >= 0 && removedObserverSideIndex < HivemindShips.Length)
+            {
+                // The old GetShipsVisibleToHiveMind implementation implicitly rebuilt this set
+                // from live observers on every query. Preserve the same semantics when an
+                // observer dies, but pay that aggregation cost once at the rare lifecycle
+                // boundary instead of once per pairwise sight trigger.
+                HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex];
+                sideCache.Clear();
+                foreach (HashSet<Ship> visibleShips in HivemindShips[removedObserverSideIndex].Values)
+                {
+                    if (visibleShips == null)
+                    {
+                        continue;
+                    }
+                    foreach (Ship visibleShip in visibleShips)
+                    {
+                        if (visibleShip != null && !visibleShip.IsDead)
+                        {
+                            sideCache.Add(visibleShip);
+                        }
+                    }
+                }
             }
 
             // Queen/Scout minions and Carrier children intentionally replace their
