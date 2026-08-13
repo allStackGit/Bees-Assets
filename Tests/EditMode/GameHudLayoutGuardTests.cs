@@ -55,6 +55,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TextInputsKeepReadableBackgroundAndSelectionColors()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("GetComponentsInChildren<TMP_InputField>(true)"));
+            Assert.That(source, Does.Contain("ConfigData.GetUIColor(\"squadbox-default-color\")"));
+            Assert.That(source, Does.Contain("background.a = 1f;"));
+            Assert.That(source, Does.Contain("colors.selectedColor = Color.white;"));
+            Assert.That(source, Does.Contain("input.textComponent.color = foreground;"));
+            Assert.That(source, Does.Contain("input.caretColor = foreground;"));
+        }
+
+        [Test]
         public void ReplacingDialogueButtonPreservesItsLayoutPosition()
         {
             string source = ReadDialogueSource();
