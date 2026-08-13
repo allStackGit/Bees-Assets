@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -163,10 +162,15 @@ namespace Assets.Scripts.Entities.Ships
             if (PathfindingValue != null && PathfindingValue.Points.Count > 0)
             {
                 _retries = 0;
-                DestinationQueue = new Queue<Vector2>(PathfindingValue.Points);
+                List<Vector2> pathPoints = PathfindingValue.Points;
+                DestinationQueue.Clear();
+                for (int i = 0; i < pathPoints.Count; i++)
+                {
+                    DestinationQueue.Enqueue(pathPoints[i]);
+                }
                 _remainingEgressWaypoints = PathfindingValue.EgressPointCount;
                 SkipClosePathWaypoints();
-                FinalDestination = DestinationQueue.Last();
+                FinalDestination = pathPoints[pathPoints.Count - 1];
                 SetTargetCoordinates(DestinationQueue.Dequeue());
                 if (_remainingEgressWaypoints > 0)
                 {
@@ -390,7 +394,10 @@ namespace Assets.Scripts.Entities.Ships
         {
             Transform.Rotate(Vector3.forward * rotationStep);
             Rotation += rotationStep;
-            Turrets.ForEach(turret => turret.Rotation += rotationStep);
+            for (int i = 0; i < Turrets.Count; i++)
+            {
+                Turrets[i].Rotation += rotationStep;
+            }
         }
 
         public void StopMoving(string reason = null)
