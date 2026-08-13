@@ -49,15 +49,35 @@ namespace Assets.Scripts.Levels
             };
         }
 
+        /// <summary>
+        /// Records one observer-to-target HiveMind sighting and returns true only when this is
+        /// the first live sighting of that target for the entire side. VisionCache is the
+        /// authoritative side-wide set; rebuilding it from every observer on every trigger event
+        /// made first squad contact scale with the accumulated observer/target graph.
+        /// </summary>
+        public bool RecordHiveMindSighting(Ship observer, Ship spotted)
+        {
+            if (observer == null || spotted == null || observer.IsDead || spotted.IsDead || observer.Side == spotted.Side)
+            {
+                return false;
+            }
+
+            int sideIndex = observer.Side - 1;
+            if (sideIndex < 0 || sideIndex >= HivemindShips.Length ||
+                !HivemindShips[sideIndex].TryGetValue(observer.Id, out HashSet<Ship> observerVisibility))
+            {
+                return false;
+            }
+
+            observerVisibility.Add(spotted);
+            return VisionCache[sideIndex].Add(spotted);
+        }
+
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
-            VisionCache[side - 1] = HivemindShips[side - 1].Aggregate(
-                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
-                (sum, dictionary) =>
-                {
-                    sum.UnionWith(dictionary.Value.Where(ship => !ship.IsDead));
-                    return sum;
-                });
+            // RemoveShip keeps this cache synchronized with pooled ship lifecycles. Returning the
+            // maintained set is intentionally O(1); callers on trigger/command hot paths must not
+            // reconstruct visibility from every observer.
             return VisionCache[side - 1];
         }
 
