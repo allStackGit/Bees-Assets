@@ -69,7 +69,7 @@ namespace Bees.Tests.EditMode
                 "A returning Striker tracks a moving Carrier and must not supersede its current path request.");
             Assert.That(shipMovement, Does.Contain("if (!IsPathfinding)\n                {\n                    MoveToPoint(FinalDestination);"),
                 "Recurring collision-asteroid rechecks must let the current A* search settle before refreshing its destination.");
-            Assert.That(shipMovement, Does.Contain("if (IsPathfinding && destination == PathfindingDestination)"),
+            Assert.That(shipMovement, Does.Contain("if (IsPathfinding && !foundObstacle && destination == PathfindingDestination)"),
                 "Restating an identical timer-owned destination must not invalidate a live path worker whose result is still usable.");
         }
     }
