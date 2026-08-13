@@ -42,6 +42,49 @@ namespace Assets.Scripts.Server
                    requestType == ConfigData.RequestTypes.GetStrategy;
         }
 
+        private static bool IsStaleSquadResponse(Socket socket, ServerResponse response)
+        {
+            if (response.RequestType != ConfigData.RequestTypes.GetStrategy &&
+                response.RequestType != ConfigData.RequestTypes.GetMatchupStrategy)
+            {
+                return false;
+            }
+
+            // A live standing request still owns this response. The ordinary handler will consume
+            // it and CanApplySquadResponse will make the final runtime-identity check.
+            if (socket.GetStandingRequest(response.Hash) != null)
+            {
+                return false;
+            }
+
+            // RemoveSquad intentionally retires pending command/matchup requests when their squad
+            // dies. The server can already have started processing one of those requests, so its
+            // response may arrive after the standing request has been removed. Match the response
+            // to the historical request and suppress it only when that captured squad lifecycle is
+            // no longer current. Truly unknown hashes still reach Socket.Message and remain errors.
+            foreach (ServerRequest request in ConfigData.__PastServerRequests)
+            {
+                if (request == null || request.Hash != response.Hash)
+                {
+                    continue;
+                }
+
+                if (request is CommandRequest commandRequest)
+                {
+                    return !commandRequest.HasSameSquad();
+                }
+
+                if (request is MatchupStrategyRequest matchupRequest)
+                {
+                    return !matchupRequest.HasSameSquad();
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
         internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return false;
@@ -57,6 +100,14 @@ namespace Assets.Scripts.Server
                 response.RequestType = requestType;
             }
             catch { return false; }
+
+            if (IsStaleSquadResponse(socket, response))
+            {
+                // Mark the hash handled as well as suppressing this payload so duplicate or delayed
+                // copies cannot later fall through into a command handler after the squad is gone.
+                socket.HandledRequests.Add(response.Hash);
+                return true;
+            }
 
             // Only a 401 for the currently-owned request may start a credential refresh. After a
             // refresh Socket rotates auth-bearing request hashes, so delayed 401s from the rejected
