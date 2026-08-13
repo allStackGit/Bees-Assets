@@ -77,19 +77,43 @@ namespace Assets.Scripts.Levels
 
         public Squad GetClosestEnemySquad()
         {
-            return Level.State.GetSquadsVisibleToHiveMind(Side)
-                .OrderBy(squad => squad.DistanceToPoint(GetPosition()))
-                .FirstOrDefault();
+            Vector2 origin = GetPosition();
+            Squad closest = null;
+            float closestDistance = float.MaxValue;
+            foreach (Squad squad in Level.State.GetSquadsVisibleToHiveMind(Side))
+            {
+                float distance = squad.DistanceToPoint(origin);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closest = squad;
+                }
+            }
+            return closest;
         }
 
         public Squad GetClosestValidFriendlySquad()
         {
-            _tempSquads = Level.State.GetSquadsBySide(Side)
-                .Where(squad => squad != this &&
-                    (!squad.HasCommand || squad.GetCommand() == null ||
-                     squad.GetCommand().CommandType != ConfigData.CommandTypes.ClosestFriendly))
-                .ToList();
-            return _tempSquads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
+            Vector2 origin = GetPosition();
+            Squad closest = null;
+            float closestDistance = float.MaxValue;
+            foreach (Squad squad in Level.State.GetSquadsBySide(Side))
+            {
+                if (squad == this ||
+                    (squad.HasCommand && squad.GetCommand() != null &&
+                     squad.GetCommand().CommandType == ConfigData.CommandTypes.ClosestFriendly))
+                {
+                    continue;
+                }
+
+                float distance = squad.DistanceToPoint(origin);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closest = squad;
+                }
+            }
+            return closest;
         }
 
         public List<Ship> GetEnemyShips()
