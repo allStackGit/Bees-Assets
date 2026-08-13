@@ -10,11 +10,19 @@ namespace Assets.Scripts.Levels
         public void AddSpottedShips(List<Ship> spottedShips, Ship spotter)
         {
             List<SpottedShip> known = SpottedShips[spotter.Side - 1];
-            foreach (Ship spotted in spottedShips)
+            for (int i = 0; i < spottedShips.Count; i++)
             {
-                // Existing semantics are ship-level de-duplication for a side; spotter ID is
-                // retained as attribution on the first sighting.
-                if (!known.Any(existing => existing.Ship.Id == spotted.Id))
+                Ship spotted = spottedShips[i];
+                bool alreadyKnown = false;
+                for (int j = 0; j < known.Count; j++)
+                {
+                    if (known[j].Ship.Id == spotted.Id)
+                    {
+                        alreadyKnown = true;
+                        break;
+                    }
+                }
+                if (!alreadyKnown)
                 {
                     known.Add(new SpottedShip(spotted, spotter.Id));
                 }
@@ -49,12 +57,6 @@ namespace Assets.Scripts.Levels
             };
         }
 
-        /// <summary>
-        /// Records one observer-to-target HiveMind sighting and returns true only when this is
-        /// the first live sighting of that target for the entire side. VisionCache is the
-        /// authoritative side-wide set; rebuilding it from every observer on every trigger event
-        /// made first squad contact scale with the accumulated observer/target graph.
-        /// </summary>
         public bool RecordHiveMindSighting(Ship observer, Ship spotted)
         {
             if (observer == null || spotted == null || observer.IsDead || spotted.IsDead || observer.Side == spotted.Side)
@@ -75,15 +77,12 @@ namespace Assets.Scripts.Levels
 
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
-            // RemoveShip keeps this cache synchronized with pooled ship lifecycles. Returning the
-            // maintained set is intentionally O(1); callers on trigger/command hot paths must not
-            // reconstruct visibility from every observer.
             return VisionCache[side - 1];
         }
 
         public HashSet<ConfigData.ShipTypes> GetHumanShipTypes()
         {
-            return GetHumanShips().Select(ship => ship.ShipType).ToHashSet();
+            return GetShipTypes(ConfigData.Configuration.HumanSide);
         }
 
         public List<Ship> GetBeeShips()
@@ -93,12 +92,35 @@ namespace Assets.Scripts.Levels
 
         public HashSet<ConfigData.ShipTypes> GetBeeShipTypes()
         {
-            return GetBeeShips().Select(ship => ship.ShipType).ToHashSet();
+            return GetShipTypes(ConfigData.Configuration.BeeSide);
+        }
+
+        private HashSet<ConfigData.ShipTypes> GetShipTypes(int side)
+        {
+            HashSet<ConfigData.ShipTypes> types = new HashSet<ConfigData.ShipTypes>();
+            for (int i = 0; i < Ships.Count; i++)
+            {
+                Ship ship = Ships[i];
+                if (ship.Side == side)
+                {
+                    types.Add(ship.ShipType);
+                }
+            }
+            return types;
         }
 
         public int GetTsvBySide(int side)
         {
-            return GetSquadsBySide(side).Sum(squad => squad.Tsv);
+            int total = 0;
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (squad.Side == side && !squad.IsDead)
+                {
+                    total += squad.Tsv;
+                }
+            }
+            return total;
         }
 
         public List<Ship> GetHumanShips()
@@ -123,9 +145,6 @@ namespace Assets.Scripts.Levels
                 return GetEnemySquads(side);
             }
 
-            // Visibility is accumulated per ship, but matchup selection is per squad.
-            // Without Distinct(), larger visible squads are duplicated in the matchup queue
-            // and receive disproportionate weight, especially for Random strategy selection.
             return GetShipsVisibleToHiveMind(side)
                 .Select(ship => ship.Squad)
                 .Where(squad => squad != null && !squad.IsDead)
@@ -135,12 +154,28 @@ namespace Assets.Scripts.Levels
 
         public Squad GetSquadByNumber(int side, int squadNumber)
         {
-            return GetSquadsBySide(side).FirstOrDefault(squad => squad.SquadNumber == squadNumber);
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (!squad.IsDead && squad.Side == side && squad.SquadNumber == squadNumber)
+                {
+                    return squad;
+                }
+            }
+            return null;
         }
 
         public Squad GetSquadById(long id)
         {
-            return GetAllSquads().FirstOrDefault(squad => squad.Id == id);
+            for (int i = 0; i < Squads.Count; i++)
+            {
+                Squad squad = Squads[i];
+                if (squad.Id == id)
+                {
+                    return squad;
+                }
+            }
+            return null;
         }
 
         public List<Squad> GetAllSquads()
@@ -165,8 +200,21 @@ namespace Assets.Scripts.Levels
                 return capturedState;
             }
 
-            List<Ship> sideShips = GetShips(side);
-            return sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+            bool hasShip = false;
+            for (int i = 0; i < Ships.Count; i++)
+            {
+                Ship ship = Ships[i];
+                if (ship.Side != side)
+                {
+                    continue;
+                }
+                hasShip = true;
+                if (ship.IsMobile)
+                {
+                    return false;
+                }
+            }
+            return !hasShip || true;
         }
     }
 }
