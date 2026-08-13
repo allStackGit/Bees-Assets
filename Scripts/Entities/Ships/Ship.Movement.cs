@@ -117,7 +117,13 @@ namespace Assets.Scripts.Entities.Ships
             NearbyAsteroids.RemoveAll(asteroid => asteroid == null || asteroid.IsDead);
             if (NearbyAsteroids.Count > 0)
             {
-                MoveToPoint(FinalDestination);
+                // This timer runs every second while dynamic asteroids remain nearby. Invalidating
+                // an active A* request here only discards its result; the worker keeps running.
+                // Let that search settle before refreshing the same final destination.
+                if (!IsPathfinding)
+                {
+                    MoveToPoint(FinalDestination);
+                }
             }
             else
             {
