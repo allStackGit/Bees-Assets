@@ -24,12 +24,31 @@ namespace Bees.Tests.EditMode
             string source = ReadSource("Scripts", "Levels", "Commands", "Aggressive.cs");
 
             Assert.That(source, Does.Contain("MoveTowardsEnemiesAcrossFrames"));
-            Assert.That(source, Does.Contain("ship.MoveToPoint(target.GetPosition());"));
+            Assert.That(source, Does.Contain("ship.MoveToTrackedPoint(target.GetPosition());"));
             Assert.That(source, Does.Contain("yield return null;"),
                 "Attack startup must not initialize every ship path request in one Unity update.");
             Assert.That(source, Does.Contain("if (_moveTowardsEnemiesCoroutine == null && !IsDead)"),
                 "Recurring aggressive timers must not start overlapping movement-startup coroutines.");
             Assert.That(source, Does.Not.Contain("                        MoveTowardsEnemies();"));
+        }
+
+        [Test]
+        public void AggressiveTrackedMovementHonorsWorkerPathAndFailureOwnership()
+        {
+            string aggressive = ReadSource("Scripts", "Levels", "Commands", "Aggressive.cs");
+            string tracked = ReadSource("Scripts", "Entities", "Ships", "Ship.TrackedMovement.cs");
+
+            Assert.That(aggressive, Does.Contain("ship.MoveToTrackedPoint(target.GetPosition());"),
+                "Aggressive must use the moving-target ownership policy instead of issuing fresh MoveToPoint orders every timer tick.");
+            Assert.That(tracked, Does.Contain("if (IsPathfinding)"),
+                "A live A* worker must retain ownership until it settles.");
+            Assert.That(tracked, Does.Contain("if (_tryingToFindPathAgain)"),
+                "Aggressive must not bypass the failed-path retry backoff while IsPathfinding is false.");
+            Assert.That(tracked, Does.Contain("if (IsFollowingPath)"));
+            Assert.That(tracked, Does.Contain("TrackedTargetPathReplanDistance = Pathfinder.Scale * 2f"),
+                "A useful path should only be replaced after the tracked endpoint moves materially.");
+            Assert.That(tracked, Does.Contain("TrackedTargetPathReplanInterval = 1f"),
+                "Moving targets must have a bounded A* replan cadence.");
         }
 
         [Test]
