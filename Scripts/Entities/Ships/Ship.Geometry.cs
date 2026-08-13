@@ -10,7 +10,6 @@ namespace Assets.Scripts.Entities.Ships
     {
         private readonly RaycastHit2D[] _obstacleCastHits = new RaycastHit2D[16];
         private RaycastHit2D _movementObstacleHit;
-        private int _rangeIndex;
         private List<Ship> _tempShips;
         private Vector2 _randomPointBounds, _basePosition, _randomPoint;
         private int _x, _y;
@@ -83,9 +82,9 @@ namespace Assets.Scripts.Entities.Ships
 
         public bool IsShipWithinRange(Ship ship)
         {
-            for (_rangeIndex = 0; _rangeIndex < Weapons.Count; _rangeIndex++)
+            for (int weaponIndex = 0; weaponIndex < Weapons.Count; weaponIndex++)
             {
-                if (Weapons[_rangeIndex].IsShipValidTarget(ship))
+                if (Weapons[weaponIndex].IsShipValidTarget(ship))
                 {
                     return true;
                 }
@@ -101,9 +100,9 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsAnySquadShipWithinRange(Squad enemy)
         {
             _tempShips = enemy.GetShips();
-            for (_rangeIndex = 0; _rangeIndex < _tempShips.Count; _rangeIndex++)
+            for (int shipIndex = 0; shipIndex < _tempShips.Count; shipIndex++)
             {
-                if (IsShipWithinRange(_tempShips[_rangeIndex]))
+                if (IsShipWithinRange(_tempShips[shipIndex]))
                 {
                     return true;
                 }
