@@ -172,8 +172,9 @@ namespace Assets.Scripts.Levels
         private bool ShouldStageOffscreenReinforcement(Vector2 startingPosition, Vector2 nextPosition)
         {
             // Vector2.zero is the existing sentinel for "spawn here without an entry move".
-            // Only bypass ordinary placement when the authored route is explicitly outside -> inside.
-            return nextPosition != Vector2.zero &&
+            // Only bypass obstacle-aware placement when the authored route is explicitly outside -> inside.
+            return HasObstacles &&
+                   nextPosition != Vector2.zero &&
                    startingPosition != nextPosition &&
                    IsOutsidePlayableBounds(startingPosition) &&
                    !IsOutsidePlayableBounds(nextPosition);
