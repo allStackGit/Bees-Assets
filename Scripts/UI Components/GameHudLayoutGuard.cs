@@ -8,15 +8,14 @@ using Assets.Scripts.UIComponents;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Keeps optional top-level HUD controls from occupying the same screen space.
-    /// Campaign missions turn the clock on and off dynamically, while some legacy mission
-    /// code also moves the speed button to fixed coordinates. Centralize the final layout
-    /// here so visible mission HUD controls always own their space.
+    /// Keeps optional top-level HUD controls from occupying the same screen space and applies
+    /// small scene-wide UI compatibility fixes to legacy controls.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
         private const float ControlGap = 10f;
+        private static readonly Color MenuButtonFrameColor = new Color32(55, 148, 110, 255);
 
         private GameMenus _menus;
         private RectTransform _clockRect;
@@ -41,6 +40,7 @@ namespace Assets.Scripts.UI_Components
         private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
             ApplyReadableInputFieldStyle(scene);
+            ApplyButtonInteractionStyle(scene);
 
             GameMenus menus = Object.FindObjectOfType<GameMenus>();
             if (menus == null || menus.gameObject.GetComponent<GameHudLayoutGuard>() != null)
@@ -90,6 +90,53 @@ namespace Assets.Scripts.UI_Components
                     }
                     input.customCaretColor = true;
                     input.caretColor = foreground;
+                }
+            }
+        }
+
+        private static void ApplyButtonInteractionStyle(UnityEngine.SceneManagement.Scene scene)
+        {
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (Button button in root.GetComponentsInChildren<Button>(true))
+                {
+                    ConfigureButtonStyle(button);
+                }
+            }
+        }
+
+        internal static void ConfigureButtonStyle(Button button)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            // The legacy menu-button art has a four-pixel frame baked into a very wide source
+            // sprite. Stretching it to narrower/taller controls makes the left/right frame almost
+            // disappear. Add a fixed-width outline matching the authored frame color so all four
+            // sides retain comparable visual weight at arbitrary button aspect ratios.
+            if (button.targetGraphic is Image image && image.sprite != null &&
+                image.sprite.name.StartsWith("menu_button") &&
+                button.gameObject.GetComponent<Outline>() == null)
+            {
+                Outline outline = button.gameObject.AddComponent<Outline>();
+                outline.effectColor = MenuButtonFrameColor;
+                outline.effectDistance = new Vector2(2f, -2f);
+                outline.useGraphicAlpha = false;
+            }
+
+            // The shared red X is authored at only 16x16. Enlarge the selectable itself so hover
+            // and pointer-up do not fall off the button with normal hand movement. The X scales
+            // with it, which also makes this intentionally tiny legacy control easier to see.
+            if (button.gameObject.name == "Close Button")
+            {
+                RectTransform rect = button.GetComponent<RectTransform>();
+                if (rect != null)
+                {
+                    rect.sizeDelta = new Vector2(
+                        Mathf.Max(rect.sizeDelta.x, 28f),
+                        Mathf.Max(rect.sizeDelta.y, 28f));
                 }
             }
         }
