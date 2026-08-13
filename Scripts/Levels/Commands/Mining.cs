@@ -37,7 +37,7 @@ namespace Assets.Scripts.Levels.Commands
             base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
             PrepareDamageToSendEntries(1);
 
-            MiningShips.ToList().ForEach(ship =>
+            MiningShips.ForEach(ship =>
             {
                 if (!ship.IsDead && ship.Collider.IsTouching(TargetAstroid.Collider))
                 {
@@ -132,9 +132,7 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            ShipsCurrentlyMining = ShipsCurrentlyMining
-                .Where(ship => ship != null && !ship.IsDead && ship.IsMiningShip)
-                .ToList();
+            ShipsCurrentlyMining.RemoveAll(ship => ship == null || ship.IsDead || !ship.IsMiningShip);
             if (ShipsCurrentlyMining.Count == 0)
             {
                 SetFinalize("No mining ships remain at the asteroid");
