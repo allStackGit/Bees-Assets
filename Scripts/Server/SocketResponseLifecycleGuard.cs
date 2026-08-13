@@ -49,25 +49,42 @@ namespace Assets.Scripts.Server
                    requestType == ConfigData.RequestTypes.GetStrategy;
         }
 
-        internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
+        internal static bool TryParseResponse(byte[] bytes, out string json, out ServerResponse response)
         {
+            json = null;
+            response = null;
             if (bytes == null || bytes.Length == 0) return false;
-
-            ServerResponse response;
             try
             {
-                string json = System.Text.Encoding.UTF8.GetString(bytes);
+                json = System.Text.Encoding.UTF8.GetString(bytes);
                 response = JsonUtility.FromJson<ServerResponse>(json);
                 if (response == null || string.IsNullOrEmpty(response.Type) ||
                     !Utilities.ConvertNameToRequestType.TryGetValue(response.Type, out ConfigData.RequestTypes requestType))
+                {
+                    json = null;
+                    response = null;
                     return false;
+                }
                 response.RequestType = requestType;
+                return true;
             }
-            catch { return false; }
+            catch
+            {
+                json = null;
+                response = null;
+                return false;
+            }
+        }
 
-            // Only a 401 for the currently-owned request may start a credential refresh. After a
-            // refresh Socket rotates auth-bearing request hashes, so delayed 401s from the rejected
-            // credential no longer match a standing request and cannot invalidate the replacement.
+        internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
+        {
+            return TryParseResponse(bytes, out _, out ServerResponse response) && ShouldSuppressResponse(socket, response);
+        }
+
+        internal static bool ShouldSuppressResponse(Socket socket, ServerResponse response)
+        {
+            if (response == null) return false;
+
             if (response.Status == 401 && ConfigData.Production)
             {
                 ServerRequest unauthorizedRequest = socket.GetStandingRequest(response.Hash);
