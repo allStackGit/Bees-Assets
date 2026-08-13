@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -34,9 +34,13 @@ namespace Assets.Scripts.Levels
                     triggeredCount++;
                 }
             });
-            //Triggers.AddRange(NextTriggers);
-            //NextTriggers.Clear();
-            Triggers = Triggers.Where((trigger) => !trigger.HasBeenTriggered).ToList();
+            for (int i = Triggers.Count - 1; i >= 0; i--)
+            {
+                if (Triggers[i].HasBeenTriggered)
+                {
+                    Triggers.RemoveAt(i);
+                }
+            }
             if (!HasContinuousTriggers && Triggers.Count == 0) {
                 CancelTimer(_checkTriggersTimer);
                 //CancelInvoke(nameof(CheckTriggers));
@@ -76,7 +80,7 @@ namespace Assets.Scripts.Levels
             Timers.Add(scaledTimer);
             //_currentTimerIDs.Add(scaledTimer.Id); // [debug]
         }
-        private ScaledTimer[] _loopTimers;
+        private readonly List<ScaledTimer> _loopTimers = new List<ScaledTimer>();
         void Update()
         {
             //GameObject.Find("Rotated Point").transform.position = Utilities.RotatePointAroundPoint(GameObject.Find("Pivot").transform.position, __OriginalPosition, __RotationTest);
@@ -130,9 +134,10 @@ namespace Assets.Scripts.Levels
         {
             if (Timers.Count > 0)
             {
-                _loopTimers = Timers.ToArray();
+                _loopTimers.Clear();
+                _loopTimers.AddRange(Timers);
 
-                for (_updateIndex = 0; _updateIndex < _loopTimers.Length; _updateIndex++)
+                for (_updateIndex = 0; _updateIndex < _loopTimers.Count; _updateIndex++)
                 {
                     if (_loopTimers[_updateIndex].Update() && !_loopTimers[_updateIndex].IsRecurring && !_loopTimers[_updateIndex].IsCanceled)
                     {
