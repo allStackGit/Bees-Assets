@@ -14,6 +14,8 @@ namespace Assets.Scripts.Levels
         private readonly List<Obstacle> _resetObstacles = new List<Obstacle>();
         private readonly List<Ship> _readyShips = new List<Ship>();
         private readonly HashSet<Ship> _readyShipSet = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
+        private readonly List<Projectile> _projectilesToRemove = new List<Projectile>();
+        private readonly List<ServerRequest> _standingRequestsToRemove = new List<ServerRequest>();
         private readonly List<Command> _releaseCommands = new List<Command>();
         private readonly List<Squad> _releaseSquads = new List<Squad>();
         private readonly List<CollisionAsteroid> _releaseAsteroids = new List<CollisionAsteroid>();
@@ -73,13 +75,23 @@ namespace Assets.Scripts.Levels
             if (Level != null && Level.IsLevelSetupOnServer)
             {
                 int removedSquadItemId = squad.ItemId;
-                ConfigData.Socket.StandingRequests.RemoveWhere(request =>
-                    (request is CommandRequest commandRequest &&
-                     ReferenceEquals(commandRequest.Squad, squad) &&
-                     commandRequest.SquadId == removedSquadItemId) ||
-                    (request is MatchupStrategyRequest matchupRequest &&
-                     ReferenceEquals(matchupRequest.Squad, squad) &&
-                     matchupRequest.SquadId == removedSquadItemId));
+                _standingRequestsToRemove.Clear();
+                foreach (ServerRequest request in ConfigData.Socket.StandingRequests)
+                {
+                    if ((request is CommandRequest commandRequest &&
+                         ReferenceEquals(commandRequest.Squad, squad) &&
+                         commandRequest.SquadId == removedSquadItemId) ||
+                        (request is MatchupStrategyRequest matchupRequest &&
+                         ReferenceEquals(matchupRequest.Squad, squad) &&
+                         matchupRequest.SquadId == removedSquadItemId))
+                    {
+                        _standingRequestsToRemove.Add(request);
+                    }
+                }
+                for (int requestIndex = 0; requestIndex < _standingRequestsToRemove.Count; requestIndex++)
+                {
+                    ConfigData.Socket.StandingRequests.Remove(_standingRequestsToRemove[requestIndex]);
+                }
             }
 
             squad.IsMinionSquad = false;
@@ -116,14 +128,31 @@ namespace Assets.Scripts.Levels
 
             for (int sideIndex = 0; sideIndex < ShipDamageStatuses.Length; sideIndex++)
             {
-                ShipDamageStatuses[sideIndex].RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
+                List<ShipDamageStatus> statuses = ShipDamageStatuses[sideIndex];
+                for (int statusIndex = statuses.Count - 1; statusIndex >= 0; statusIndex--)
+                {
+                    ShipDamageStatus status = statuses[statusIndex];
+                    if (status == null || status.Ship == null || status.Ship == ship)
+                    {
+                        statuses.RemoveAt(statusIndex);
+                    }
+                }
                 ShipDamageStatusesById[sideIndex].Remove(ship.Id);
             }
-            foreach (List<SpottedShip> spotted in SpottedShips)
+            for (int sideIndex = 0; sideIndex < SpottedShips.Length; sideIndex++)
             {
-                if (spotted != null)
+                List<SpottedShip> spotted = SpottedShips[sideIndex];
+                if (spotted == null)
                 {
-                    spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
+                    continue;
+                }
+                for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)
+                {
+                    SpottedShip entry = spotted[spottedIndex];
+                    if (entry == null || entry.Ship == null || entry.Ship == ship)
+                    {
+                        spotted.RemoveAt(spottedIndex);
+                    }
                 }
             }
 
@@ -272,8 +301,19 @@ namespace Assets.Scripts.Levels
             _readyShipSet.Clear();
             foreach (Ship ship in ShipsToRelease)
             {
-                ship.ProjectilesInFlight.RemoveWhere(projectile =>
-                    projectile == null || projectile.IsDead || projectile.Shooter != ship);
+                _projectilesToRemove.Clear();
+                foreach (Projectile projectile in ship.ProjectilesInFlight)
+                {
+                    if (projectile == null || projectile.IsDead || projectile.Shooter != ship)
+                    {
+                        _projectilesToRemove.Add(projectile);
+                    }
+                }
+                for (int projectileIndex = 0; projectileIndex < _projectilesToRemove.Count; projectileIndex++)
+                {
+                    ship.ProjectilesInFlight.Remove(_projectilesToRemove[projectileIndex]);
+                }
+
                 if (ship.CanReturnToPool())
                 {
                     _readyShips.Add(ship);
@@ -283,7 +323,13 @@ namespace Assets.Scripts.Levels
 
             if (_readyShipSet.Count > 0)
             {
-                ShipsToRelease.RemoveAll(_readyShipSet.Contains);
+                for (int shipIndex = ShipsToRelease.Count - 1; shipIndex >= 0; shipIndex--)
+                {
+                    if (_readyShipSet.Contains(ShipsToRelease[shipIndex]))
+                    {
+                        ShipsToRelease.RemoveAt(shipIndex);
+                    }
+                }
             }
             return _readyShips;
         }
