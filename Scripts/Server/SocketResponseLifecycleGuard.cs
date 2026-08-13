@@ -157,19 +157,35 @@ namespace Assets.Scripts.Server
             foreach (KeyValuePair<long, float> entry in _handledAt)
             {
                 if (!socket.HandledRequests.Contains(entry.Key) || now - entry.Value >= HandledResponseRetentionSeconds)
-                    _hashesToRemove.Add(entry.Key);
-            }
-
-            if (_handledAt.Count - _hashesToRemove.Count > MaxTrackedHandledResponses)
-            {
-                foreach (KeyValuePair<long, float> entry in _handledAt)
                 {
-                    if (_hashesToRemove.Contains(entry.Key)) continue;
                     _hashesToRemove.Add(entry.Key);
-                    if (_handledAt.Count - _hashesToRemove.Count <= MaxTrackedHandledResponses) break;
                 }
             }
 
+            RemoveTrackedHashes(socket);
+
+            int excessCount = _handledAt.Count - MaxTrackedHandledResponses;
+            if (excessCount <= 0)
+            {
+                return;
+            }
+
+            _hashesToRemove.Clear();
+            foreach (KeyValuePair<long, float> entry in _handledAt)
+            {
+                _hashesToRemove.Add(entry.Key);
+                excessCount--;
+                if (excessCount == 0)
+                {
+                    break;
+                }
+            }
+
+            RemoveTrackedHashes(socket);
+        }
+
+        private void RemoveTrackedHashes(Socket socket)
+        {
             for (int i = 0; i < _hashesToRemove.Count; i++)
             {
                 long hash = _hashesToRemove[i];
