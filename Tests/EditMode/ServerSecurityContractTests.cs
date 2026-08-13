@@ -29,7 +29,8 @@ namespace Bees.Tests.EditMode
             string storeData = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "StoreUserData.cs"));
             string auth = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Server", "SteamWebApiAuth.cs"));
 
-            Assert.That(settings, Does.Contain("SteamWebApiAuth.TicketHex"));
+            Assert.That(settings, Does.Contain("GetUserSettingsData : GetUserData"),
+                "Settings bootstrap requests inherit the authenticated GetUserData request fields.");
             Assert.That(setup, Does.Contain("SteamWebApiAuth.TicketHex"));
             Assert.That(getData, Does.Contain("SteamWebApiAuth.TicketHex"));
             Assert.That(storeData, Does.Contain("SteamWebApiAuth.TicketHex"));
