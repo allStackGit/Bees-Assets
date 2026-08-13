@@ -1,4 +1,5 @@
 ﻿
+using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -59,7 +60,10 @@ namespace Assets.Scripts.Levels.Commands
             GetSquad().Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
             if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
             {
-                MoveTowardsEnemies();
+                if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                {
+                    MoveTowardsEnemies();
+                }
             }
             else if (_swipeDestination == Vector2.zero)
             {
