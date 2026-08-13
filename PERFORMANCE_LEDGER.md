@@ -71,3 +71,38 @@ Static-only performance audit. Measurements are not claimed where the current en
 **Optimization:** Cache the currently applied flare state and only toggle objects when transitioning between stopped/straight/turn-left/turn-right states.
 **Evidence:** `SetMovementVelocity()` invokes the method unconditionally when `HasRocketFlares`; existing `AreRocketFlaresOutOfSync` already shows the code tracks flare state conceptually, but it still performs the native activation calls each tick.
 **Risk:** Medium. Reset/stop/pool lifecycle must clear cached state so reused ships and resumed movement apply the correct flare visibility immediately.
+
+### PERF-011 — Stop dirtying the HUD layout every visible-clock frame
+**Location:** `Scripts/UI Components/GameHudLayoutGuard.cs` — `LateUpdate()` / `ApplyLayout()`
+**Cost:** While the clock is visible, `LateUpdate()` calls `ApplyLayout()` every frame and rewrites the speed button's `RectTransform.anchoredPosition` even when the clock and control geometry are unchanged, needlessly dirtying UI layout/canvas state.
+**Optimization:** Reapply only when clock visibility or the relevant clock/speed geometry/position changes.
+**Evidence:** The condition `clockVisible != _clockWasVisible || clockVisible` is true on every frame where the clock is visible.
+**Risk:** Low. Dynamic HUD changes must still be detected before the next rendered frame.
+
+### PERF-012 — Avoid redundant custom-animation sprite assignments
+**Location:** `Scripts/Entities/Ships/ShipAnimationController.cs`, `Scripts/Entities/Ships/RemainsAnimationController.cs` — `LateUpdate()`
+**Cost:** When no animation frame swap is requested, custom-colored animated ships/remains repeatedly assign `SpriteRenderer.sprite = CurrentSprite` every `LateUpdate`, even though that is already the current sprite.
+**Optimization:** Assign the renderer only when `ShouldSwapSprite` advances the frame or when activation/reset explicitly restores a sprite.
+**Evidence:** Both controllers retain `CurrentSprite`; their no-swap branches write that same reference every frame.
+**Risk:** Low to medium. Preserve the reason the fallback assignment was added if another Animator can overwrite the sprite between callbacks; verify activation/Animator ordering before removal.
+
+### PERF-013 — Avoid redundant targeting-marker activation calls
+**Location:** `Scripts/Entities/Ships/Weapons/Turret.Aiming.cs` — `MoveTargetingMarker()`
+**Cost:** Every active turret aim tick calls `TargetingMarker.SetActive(true/false)` even when marker visibility has not changed; aiming runs in `FixedUpdate()` for every non-cease-fire turret.
+**Optimization:** Guard `SetActive` with `activeSelf` (or cached state) while continuing to update marker position whenever it is visible.
+**Evidence:** `Turret.FixedUpdate()` calls `Aim()` each physics tick and `Aim()` always calls `MoveTargetingMarker()`.
+**Risk:** Low. Visibility conditions remain unchanged; only redundant hierarchy calls are removed.
+
+### PERF-014 — Compute the mouse-edge pixel threshold once per frame
+**Location:** `Scripts/Levels/LevelInputManager.cs` — `CheckInputs()`
+**Cost:** The same `Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera)` calculation is performed four times per frame. Each call performs two camera world-to-screen projections.
+**Optimization:** Compute the Vector2 threshold once at the start of the edge checks and reuse its x/y values.
+**Evidence:** All four calls use identical inputs within the same `CheckInputs()` invocation.
+**Risk:** Low. Camera/resolution changes are still reflected each frame.
+
+### PERF-015 — Remove square roots from custom-sprite changeable-pixel scanning
+**Location:** `Scripts/Utilities.cs` — `GetChangablePixelsForImage()`
+**Cost:** Custom sprite preparation calls `Vector3.Distance()` for every source-color × texture-pixel pair, paying a square root and reconstructing the target color vector inside the inner loop.
+**Optimization:** Precompute the target RGB vector once per source color and compare squared RGB distance against the squared threshold.
+**Evidence:** The method only tests whether distance is below a fixed threshold; exact distance is never consumed.
+**Risk:** Low. Use the mathematically equivalent squared threshold and retain alpha filtering/pixel order.
