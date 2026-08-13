@@ -63,7 +63,7 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerSavedFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
+        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -72,11 +72,11 @@ namespace Assets.Scripts.Entities.Ships
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
-            LogHitStats(attacker, attackerSavedFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
+            LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
             {
-                target.Kill(attacker, attackerSavedFleetShip, attackerSavedSquad);
+                target.Kill(attacker, attackerFleetShip, attackerSavedSquad);
                 if (attacker != null)
                 {
                     attacker.Level.State.ShipDamageStatuses[attacker.Side - 1]
