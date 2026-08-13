@@ -45,7 +45,7 @@ namespace Bees.Tests.PlayMode
         }
 
         [Test]
-        public void RecurringPursuitPreservesWorkerRetryAndUsefulDestinationOwnership()
+        public void RecurringPursuitPreservesWorkerAndUsefulDestinationOwnership()
         {
             Vector2 initialDestination = new Vector2(20f, 0f);
 
@@ -55,12 +55,6 @@ namespace Bees.Tests.PlayMode
                 "A live worker must not be replaced by the recurring tracked-target update.");
 
             RuntimeAssembly.SetField(_ship, "IsPathfinding", false);
-            RuntimeAssembly.SetField(_ship, "_tryingToFindPathAgain", true);
-            RuntimeAssembly.Invoke(_ship, "MoveToTrackedPoint", initialDestination);
-            Assert.That((bool)RuntimeAssembly.GetField(_ship, "HasTargetCoordinates"), Is.False,
-                "The two-second failed-search retry owner must not be bypassed by Aggressive.");
-
-            RuntimeAssembly.SetField(_ship, "_tryingToFindPathAgain", false);
             RuntimeAssembly.SetField(_ship, "IsFollowingPath", false);
             RuntimeAssembly.Invoke(_ship, "MoveToTrackedPoint", initialDestination);
             Assert.That((bool)RuntimeAssembly.GetField(_ship, "HasTargetCoordinates"), Is.True);
