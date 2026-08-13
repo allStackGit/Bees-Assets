@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
@@ -21,12 +20,17 @@ namespace Assets.Scripts.Entities.Ships
         private static bool _isFriendlyFire;
         private static int[] _initialTsv;
         private static float _percentageTsvDestroyed;
-        private List<Weapon> _weapons;
         private Carrier _nextCarrier;
         private CarrierShip _carrierShip;
         private int _maxLoops;
 
-        public void ClearTargets() => Weapons.ForEach(weapon => weapon.ClearTargets());
+        public void ClearTargets()
+        {
+            for (int i = 0; i < Weapons.Count; i++)
+            {
+                Weapons[i].ClearTargets();
+            }
+        }
 
         private void CombatTimer()
         {
@@ -38,7 +42,7 @@ namespace Assets.Scripts.Entities.Ships
         public void SetCombatTimer()
         {
             if (!Level.Stage.ActivateHiveMind) return;
-            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
+            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimerTimer);
             InCombat = true;
             _combatTimer = true;
             _combatTimerScaledTimer.Reuse(_repeatRate, CombatTimer, true);
@@ -221,11 +225,12 @@ namespace Assets.Scripts.Entities.Ships
         public void KilledShip(Ship victim)
         {
             LastKilled = Time.frameCount;
-            Weapons.ForEach(weapon =>
+            for (int i = 0; i < Weapons.Count; i++)
             {
+                Weapon weapon = Weapons[i];
                 weapon.ShipsWithinRange.Remove(victim.Id);
                 weapon.HasCachedChanged = true;
-            });
+            }
         }
 
         /// <summary>
@@ -238,7 +243,13 @@ namespace Assets.Scripts.Entities.Ships
             Level.CancelTimer(_tryToFindPathAgainTimer);
             Level.CancelTimer(_combatTimerScaledTimer);
             Level.CancelTimer(_showShipStatsTimer);
-            if (HasWeapons) Weapons.ForEach(weapon => weapon.CancelTimer());
+            if (HasWeapons)
+            {
+                for (int i = 0; i < Weapons.Count; i++)
+                {
+                    Weapons[i].CancelTimer();
+                }
+            }
         }
 
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
@@ -261,8 +272,10 @@ namespace Assets.Scripts.Entities.Ships
                 if (HasUserFogOfWarVision) FogOfWarVision.Kill(0, false);
                 if (WeaponsThatHaveUsWithinRange.Count > 0)
                 {
-                    _weapons = WeaponsThatHaveUsWithinRange.ToList();
-                    foreach (Weapon weapon in _weapons) weapon.ShipsWithinRange.Remove(Id);
+                    foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
+                    {
+                        weapon.ShipsWithinRange.Remove(Id);
+                    }
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
                 Squad.HasMovedBox = false;
@@ -274,14 +287,31 @@ namespace Assets.Scripts.Entities.Ships
             Squad.RemoveShip(this);
             if (ShipType == ConfigData.ShipTypes.Carrier)
             {
-                _nextCarrier = (Carrier)Level.State.GetHumanShips().FirstOrDefault(ship => ship.ShipType == ConfigData.ShipTypes.Carrier);
+                _nextCarrier = null;
+                List<Ship> levelShips = Level.State.Ships;
+                for (int i = 0; i < levelShips.Count; i++)
+                {
+                    Ship ship = levelShips[i];
+                    if (ship.Side == Side && ship is Carrier carrier && !carrier.IsDead)
+                    {
+                        _nextCarrier = carrier;
+                        break;
+                    }
+                }
                 if (_nextCarrier != null)
                 {
-                    foreach (Ship ship in Level.State.GetHumanShips())
+                    for (int i = 0; i < levelShips.Count; i++)
                     {
-                        if (!ship.Squad.IsCarrierSquad) continue;
+                        Ship ship = levelShips[i];
+                        if (ship.Side != Side || !ship.Squad.IsCarrierSquad)
+                        {
+                            continue;
+                        }
                         _carrierShip = (CarrierShip)ship;
-                        if (_carrierShip.Carrier == this) _carrierShip.Carrier = _nextCarrier;
+                        if (_carrierShip.Carrier == this)
+                        {
+                            _carrierShip.Carrier = _nextCarrier;
+                        }
                     }
                 }
             }
@@ -309,8 +339,7 @@ namespace Assets.Scripts.Entities.Ships
                 _tempIndex++;
                 if (command.TargetingQueue.Count == 0)
                 {
-                    command.OriginalQueue = new Queue<Ship>(command.MakeTargetingQueue());
-                    command.TargetingQueue = new Queue<Ship>(command.OriginalQueue);
+                    command.RebuildTargetingQueues();
                     if (command.TargetingQueue.Count == 0)
                     {
                         return null;
@@ -321,7 +350,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (TargetEnemyShipToFollow == null || TargetEnemyShipToFollow.IsDead)
                 {
                     TargetEnemyShipToFollow = null;
-                    command.OriginalQueue = new Queue<Ship>(command.MakeTargetingQueue());
+                    command.RebuildOriginalTargetingQueue();
                 }
             }
             return TargetEnemyShipToFollow;
