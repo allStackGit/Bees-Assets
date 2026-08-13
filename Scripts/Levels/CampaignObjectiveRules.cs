@@ -30,6 +30,48 @@ namespace Assets.Scripts.Levels
 
     public partial class Level
     {
+        private List<SavedSquad> _titania1TemporaryPatrolSquads;
+
+        private void Awake()
+        {
+            // Titania I's authored fixed patrols are requested as exact one-ship squads during
+            // SetTriggers(). The old test implementation created such a fleet explicitly, but the
+            // active mission removed that seeding while retaining the exact-squad assumption.
+            // Supply negative-ID encounter records before SetupLevel reaches SetTriggers; they are
+            // removed in Start and therefore can never be written to campaign persistence.
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
+                ConfigData.CurrentShips == null || ConfigData.UserProgressData == null ||
+                ConfigData.Configuration == null ||
+                ConfigData.UserProgressData.GetCurrentLevel(
+                    ConfigData.Configuration.UserSide,
+                    ConfigData.GameModes.Campaign) != 7)
+            {
+                return;
+            }
+
+            _titania1TemporaryPatrolSquads = new List<SavedSquad>();
+            AddTemporaryTitaniaPatrols(_titania1TemporaryPatrolSquads, ConfigData.ShipTypes.Hornet, 8);
+            AddTemporaryTitaniaPatrols(_titania1TemporaryPatrolSquads, ConfigData.ShipTypes.Wasp, 7);
+            AddTemporaryTitaniaPatrols(_titania1TemporaryPatrolSquads, ConfigData.ShipTypes.Leafcutter, 2);
+        }
+
+        private void Start()
+        {
+            if (_titania1TemporaryPatrolSquads == null || ConfigData.CurrentShips == null)
+            {
+                return;
+            }
+
+            // LevelConstructor has already built runtime Squads by the time Start runs. Those
+            // runtime objects retain their SavedSquad references, so removing the setup-only
+            // records here prevents accidental persistence without removing the patrols in play.
+            foreach (SavedSquad patrol in _titania1TemporaryPatrolSquads)
+            {
+                ConfigData.CurrentShips.RemoveSquad(patrol);
+            }
+            _titania1TemporaryPatrolSquads.Clear();
+        }
+
         /// <summary>
         /// Runs Neptune I with a small continuation component for its legacy two-part success
         /// dialogue. The second section is queued after CloseLevel, when normal Level trigger
@@ -84,10 +126,9 @@ namespace Assets.Scripts.Levels
         }
 
         /// <summary>
-        /// Titania I contains fixed one-ship patrols. The old implementation generated and saved
-        /// a special test fleet; the active implementation removed that seeding but still queried
-        /// the persistent fleet for many exact singleton squads. Install temporary encounter-only
-        /// singleton squads for setup, then remove them from persistence immediately after spawn.
+        /// Titania I contains fixed one-ship patrols. This callable wrapper remains useful for
+        /// isolated scenario hosts; normal campaign play receives the same temporary records from
+        /// Awake so the legacy setup method itself can remain catalog-compatible.
         /// </summary>
         public void Titania1MinesweeperWithPatrolCompatibility()
         {
@@ -102,9 +143,6 @@ namespace Assets.Scripts.Levels
             }
             finally
             {
-                // Runtime Squads retain their SavedSquad references after construction. Removing
-                // these negative-ID setup records prevents them from ever being written to the
-                // persistent squad file while leaving the authored encounter intact.
                 foreach (SavedSquad patrol in authoredPatrols)
                 {
                     ConfigData.CurrentShips.RemoveSquad(patrol);
@@ -235,6 +273,68 @@ namespace Assets.Scripts.Levels
             Level.NextTriggers.Remove(continuation);
             continuation.Action();
             enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// Redirects the two affected campaign ending callbacks after ordinary mission setup. This is
+    /// intentionally separate from CampaignMissionCatalog so its authoritative ID/name mapping
+    /// remains unchanged.
+    /// </summary>
+    internal sealed class CampaignCarrierProgressionGuard : MonoBehaviour
+    {
+        private const float ScanInterval = 0.1f;
+        private float _nextScan;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Install()
+        {
+            GameObject host = new GameObject("Campaign Carrier Progression Guard");
+            DontDestroyOnLoad(host);
+            host.AddComponent<CampaignCarrierProgressionGuard>();
+        }
+
+        private void Update()
+        {
+            if (Time.unscaledTime < _nextScan || ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
+                ConfigData.UserProgressData == null || ConfigData.Configuration == null)
+            {
+                return;
+            }
+            _nextScan = Time.unscaledTime + ScanInterval;
+
+            int missionId = ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.UserSide,
+                ConfigData.GameModes.Campaign);
+            if (missionId != 6 && missionId != 8)
+            {
+                return;
+            }
+
+            foreach (Level level in FindObjectsOfType<Level>())
+            {
+                if (level == null || level.Stage == null || level.Stage.CutsceneManager == null)
+                {
+                    continue;
+                }
+
+                Action ending = level.Stage.CutsceneManager.EndDialogueAction;
+                if (ending == null)
+                {
+                    continue;
+                }
+
+                if (missionId == 6 && ending.Method.Name == nameof(Level.Neptune3Ending))
+                {
+                    level.Stage.CutsceneManager.EndDialogueAction = level.Neptune3EndingWithoutCarrier;
+                    level.Stage.CutsceneManager.HasEndDialogueAction = true;
+                }
+                else if (missionId == 8 && ending.Method.Name == nameof(Level.Titania2CampaignEnding))
+                {
+                    level.Stage.CutsceneManager.EndDialogueAction = level.Titania2CampaignEndingWithCarrierUnlock;
+                    level.Stage.CutsceneManager.HasEndDialogueAction = true;
+                }
+            }
         }
     }
 
