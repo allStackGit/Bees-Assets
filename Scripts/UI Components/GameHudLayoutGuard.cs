@@ -16,6 +16,7 @@ namespace Assets.Scripts.UI_Components
 
         private GameMenus _menus;
         private RectTransform _clockRect;
+        private RectTransform _counterRect;
         private RectTransform _speedRect;
         private RectTransform _plutoShieldRect;
         private Vector2 _normalSpeedPosition;
@@ -51,6 +52,9 @@ namespace Assets.Scripts.UI_Components
             }
 
             _clockRect = _menus.Clock.GetComponent<RectTransform>();
+            _counterRect = _menus.Counter != null
+                ? _menus.Counter.GetComponent<RectTransform>()
+                : null;
             _speedRect = _menus.GameSpeedButton.GetComponent<RectTransform>();
             _plutoShieldRect = _menus.PlutoShield != null
                 ? _menus.PlutoShield.GetComponent<RectTransform>()
@@ -94,14 +98,25 @@ namespace Assets.Scripts.UI_Components
                 float y = _clockRect.anchoredPosition.y;
 
                 // Pluto IV uses the whole top row for the planetary shield and mission clock.
-                // Keeping the speed button beside the clock would place it over the shield,
-                // so drop it directly below the shield while preserving the clock-safe X.
+                // Keeping the speed button beside the clock would place it over the shield.
                 if (_plutoShieldRect != null &&
                     _menus.PlutoShield != null &&
                     _menus.PlutoShield.activeInHierarchy)
                 {
-                    y = _plutoShieldRect.anchoredPosition.y -
-                        ((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap;
+                    if (_counterRect != null &&
+                        _menus.Counter != null &&
+                        _menus.Counter.activeInHierarchy)
+                    {
+                        // Align the button's top edge with the evacuation counter's top edge.
+                        y = _counterRect.anchoredPosition.y +
+                            ((_counterRect.rect.height - _speedRect.rect.height) * 0.5f);
+                    }
+                    else
+                    {
+                        // Fallback for any shield-only layout that does not show the counter.
+                        y = _plutoShieldRect.anchoredPosition.y -
+                            ((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap;
+                    }
                 }
 
                 _speedRect.anchoredPosition = new Vector2(x, y);
