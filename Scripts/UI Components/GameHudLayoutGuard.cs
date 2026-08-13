@@ -86,9 +86,13 @@ namespace Assets.Scripts.UI_Components
                 // button immediately to the left of the clock, accounting for both widths.
                 float x = _clockRect.anchoredPosition.x -
                           ((_clockRect.rect.width + _speedRect.rect.width) * 0.5f) - ControlGap;
-                _speedRect.anchoredPosition = new Vector2(x, _clockRect.anchoredPosition.y);
+                Vector2 desiredPosition = new Vector2(x, _clockRect.anchoredPosition.y);
+                if (_speedRect.anchoredPosition != desiredPosition)
+                {
+                    _speedRect.anchoredPosition = desiredPosition;
+                }
             }
-            else if (_clockWasVisible)
+            else if (_clockWasVisible && _speedRect.anchoredPosition != _normalSpeedPosition)
             {
                 _speedRect.anchoredPosition = _normalSpeedPosition;
             }
