@@ -1,5 +1,6 @@
 ﻿
 using System.Collections;
+using System.Linq;
 using System.Security.Cryptography;
 using UnityEngine;
 
@@ -54,15 +55,16 @@ namespace Assets.Scripts.Levels.Commands
                     if (GetSquad().HasReachedDestination)
                     {
                         GetSquad().Status = $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}";
-                        SetAndMove(_timer_position);
                     }
                     else
                     {
                         GetSquad().Status = $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
-                        SetAndMove(_timer_position);
-                        
                     }
 
+                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                    {
+                        SetAndMove(_timer_position);
+                    }
                 }
                 else
                 {
