@@ -296,10 +296,6 @@ namespace Assets.Scripts.Levels
                     LifecycleIds[threadIndex] = p.LifecycleId;
                     BTFindPath(threadIndex);
                 }
-                else if (Totals[threadIndex] != null && Totals[threadIndex].ElapsedMilliseconds > 1000)
-                {
-                    Debug.Log($"Thread #{threadIndex}:{Ships[threadIndex].Name} has been running for {Totals[threadIndex].ElapsedMilliseconds}ms");
-                }
             }
         }
 
