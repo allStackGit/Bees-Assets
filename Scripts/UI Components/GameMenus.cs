@@ -35,6 +35,8 @@ namespace Assets.Scripts.UIComponents
         public bool HoveringOverMiniMapButton;
         public bool IsSquadActionBoxOpen => ActionBox != null && SquadActionBoxUI.activeSelf;
         public bool HasSquadActionBox => !Stage.IsTraining && ActionBox != null && CurrentLevel.CurrentLevelOptions.HasSquadActionBox;
+        private bool IsBeeFreePlaySideAvailable => ConfigData.UserProgressData?.VisibleBeeShipTypes != null &&
+            ConfigData.UserProgressData.VisibleBeeShipTypes.Contains(ConfigData.ShipTypes.Beehive);
 
 
         public void Setup(Stage stage)
@@ -55,6 +57,12 @@ namespace Assets.Scripts.UIComponents
                     SwitchSidesButton.SetActive(false);
                     SaveAsLevelButton.SetActive(false);
                     ExitToMainMenuButton.SetActive(false);
+                }
+                else if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay &&
+                         ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide &&
+                         !IsBeeFreePlaySideAvailable)
+                {
+                    SwitchSidesButton.SetActive(false);
                 }
             }
 
@@ -255,6 +263,13 @@ namespace Assets.Scripts.UIComponents
         public void SwitchSides()
         {
             DeselectButton();
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.FreePlay &&
+                ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide &&
+                !IsBeeFreePlaySideAvailable)
+            {
+                return;
+            }
+
             CurrentLevel.UnPause();
             CurrentLevel.CloseLevel();
             ConfigData.SwapSides();
