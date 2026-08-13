@@ -49,6 +49,7 @@ namespace Assets.Scripts.Levels.Commands
         public ScaledTimer TimeoutTimer = new ScaledTimer();
 
         private List<Ship> _tempShips;
+        private readonly List<Ship> _targetingShips = new List<Ship>();
         private readonly Dictionary<long, float> _targetingDistanceKeys = new Dictionary<long, float>();
 
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
@@ -71,6 +72,7 @@ namespace Assets.Scripts.Levels.Commands
             HasEnemy = false;
             OriginalQueue.Clear();
             TargetingQueue.Clear();
+            _targetingShips.Clear();
             _targetingDistanceKeys.Clear();
             _destinations.Clear();
             IsFinalized = false;
@@ -90,8 +92,7 @@ namespace Assets.Scripts.Levels.Commands
 
             if (EnemySquad != null)
             {
-                OriginalQueue = new Queue<Ship>(MakeTargetingQueue());
-                TargetingQueue = new Queue<Ship>(OriginalQueue);
+                RebuildTargetingQueues();
                 HasEnemy = true;
                 OriginalEnemyId = EnemySquad.ItemId;
             }
@@ -153,7 +154,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public Vector2 GetDestination()
         {
-            return GetDestinations().FirstOrDefault();
+            return _destinations.Count > 0 ? _destinations[0] : Vector2.zero;
         }
         public void SetAndMove(Vector2 destination)
         {
@@ -189,9 +190,31 @@ namespace Assets.Scripts.Levels.Commands
             }
         }
 
+        public void RebuildOriginalTargetingQueue()
+        {
+            List<Ship> orderedShips = MakeTargetingQueue();
+            OriginalQueue.Clear();
+            for (int i = 0; i < orderedShips.Count; i++)
+            {
+                OriginalQueue.Enqueue(orderedShips[i]);
+            }
+        }
+
+        public void RebuildTargetingQueues()
+        {
+            RebuildOriginalTargetingQueue();
+            TargetingQueue.Clear();
+            foreach (Ship ship in OriginalQueue)
+            {
+                TargetingQueue.Enqueue(ship);
+            }
+        }
+
         public List<Ship> MakeTargetingQueue()
         {
-            _tempShips = EnemySquad.GetShips().ToList();
+            _targetingShips.Clear();
+            _targetingShips.AddRange(EnemySquad.GetShips());
+            _tempShips = _targetingShips;
             ConfigData.ShootingStrategyTypes strategy = GetSquad().GetShootingStrategy();
             switch (strategy)
             {
@@ -270,27 +293,33 @@ namespace Assets.Scripts.Levels.Commands
         private Squad _prepareDamage_closestEnemy;
         public void PrepareDamageToSendEntries(int which = 0)
         {
-            if (!GetSquad().IsDefenseless)
+            if (GetSquad().IsDefenseless)
             {
-                _tempShips = new List<Ship>();
+                return;
+            }
 
-                if (which == 1)
+            _tempShips = null;
+            if (which == 1)
+            {
+                _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
+                if (_prepareDamage_closestEnemy != null)
                 {
-                    _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
-                    if (_prepareDamage_closestEnemy != null)
-                    {
-                        _tempShips = _prepareDamage_closestEnemy.GetShips();
-                    }
+                    _tempShips = _prepareDamage_closestEnemy.GetShips();
                 }
-                else if (EnemySquad != null)
-                {
-                    _tempShips = EnemySquad.GetShips();
-                }
+            }
+            else if (EnemySquad != null)
+            {
+                _tempShips = EnemySquad.GetShips();
+            }
 
-                foreach (Ship ship in _tempShips)
-                {
-                    Level.State.GetShipDamageStatus(Side, ship);
-                }
+            if (_tempShips == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _tempShips.Count; i++)
+            {
+                Level.State.GetShipDamageStatus(Side, _tempShips[i]);
             }
         }
 
@@ -333,7 +362,10 @@ namespace Assets.Scripts.Levels.Commands
                 IsDead = true;
 
                 _tempShips = GetSquad().GetShips();
-                _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
+                for (int i = 0; i < _tempShips.Count; i++)
+                {
+                    _tempShips[i].TargetEnemyShipToFollow = null;
+                }
                 Level.State.CommandsToRelease.Add(this);
 
                 if (!GetSquad().IsDead)
