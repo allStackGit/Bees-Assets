@@ -1,5 +1,4 @@
-﻿using System.Collections;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
 {
@@ -41,7 +40,6 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("Reached the specified destination on the map");
                     return;
                 }
-                SetAndMove(Destination);
                 GetSquad().Status = $"Moving to specific destination: {Destination}";
             }
         }
