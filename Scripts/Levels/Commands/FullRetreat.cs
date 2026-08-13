@@ -121,7 +121,7 @@ public class FullRetreat : Command
                 _f_targetPosition = TargetWarpGate.GetPosition() + Utilities.RandomInt(6) * Vector2.one;
                 GetSquad().GetShips().ForEach((ship) =>
                 {
-                    if (_shipIdsWarping.Contains(ship.Id))
+                    if (_shipIdsWarping.Contains(ship.Id) && !ship.IsPathfinding)
                     {
                         ship.MoveToPoint(_f_targetPosition);
                     }
