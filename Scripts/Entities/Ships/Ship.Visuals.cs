@@ -86,13 +86,13 @@ namespace Assets.Scripts.Entities.Ships
 
         private static void SetRocketFlareState(List<GameObject> flares, bool active)
         {
-            flares.ForEach(flare =>
+            foreach (GameObject flare in flares)
             {
                 if (flare.activeSelf != active)
                 {
                     flare.SetActive(active);
                 }
-            });
+            }
         }
 
         public virtual void SetRocketFlares()
