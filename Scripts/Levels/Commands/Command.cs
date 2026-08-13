@@ -18,18 +18,8 @@ namespace Assets.Scripts.Levels.Commands
     public class Command : MonoBehaviour
     {
         public long Age;
-        /// <summary>
-        /// How much TSV has been gained or lost over the lifetime of the command
-        /// </summary>
-        public long Tsv;  
-        /// <summary>
-        /// The Id of this command relative to the server.
-        /// </summary>
-        public long OutcomeId = 0; 
-        /// <summary>
-        /// The enemy squad that this command is attacking, if it has one. Attack commands require an enemy and end when the enemy dies.
-        /// Other commands  may involve attacking but aren't about that and don't require an enemy
-        /// </summary>
+        public long Tsv;
+        public long OutcomeId = 0;
         public Squad EnemySquad;
         private Squad _squad;
         public string Matchup, FinalizationCause;
@@ -43,17 +33,8 @@ namespace Assets.Scripts.Levels.Commands
         public float CommandFrequency = 3;
         public Level Level;
         public int Side;
-        /// <summary>
-        /// The Id of this command relative to the stage. Guarenteed unique for this stage.
-        /// </summary>
         public int ItemId;
-        /// <summary>
-        /// The targeting queue, unmodified from when it was generated, only regenerated when a new ship is added to the enemy squad
-        /// </summary>
         public Queue<Ship> OriginalQueue = new Queue<Ship>();
-        /// <summary>
-        /// The list of ships (in order) that this squad's ships should follow after, modified each time a ship takes an enemy ship off the queue and follows it
-        /// </summary>
         public Queue<Ship> TargetingQueue = new Queue<Ship>();
         public Stage Stage;
 
@@ -62,15 +43,13 @@ namespace Assets.Scripts.Levels.Commands
         public bool IsFinalized;
         public bool IsHiveMindCommand;
         public bool HasStoredOutcomeRecord;
-        /// <summary>
-        /// Keeps the Id of the original enemy squad so we can check if the enemy has died and been respawned as a new squad in between timer() calls
-        /// </summary>
         public int OriginalEnemyId;
 
         public ScaledTimer CommandTimer = new ScaledTimer();
         public ScaledTimer TimeoutTimer = new ScaledTimer();
 
         private List<Ship> _tempShips;
+        private readonly Dictionary<long, float> _targetingDistanceKeys = new Dictionary<long, float>();
 
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
         {
@@ -92,6 +71,7 @@ namespace Assets.Scripts.Levels.Commands
             HasEnemy = false;
             OriginalQueue.Clear();
             TargetingQueue.Clear();
+            _targetingDistanceKeys.Clear();
             _destinations.Clear();
             IsFinalized = false;
             HasStoredOutcomeRecord = false;
@@ -123,8 +103,6 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void SetSquad(Squad squad)
         {
-            // Setup may happen while a command is only being prepared for a scripted queue.
-            // Active ownership begins when execution starts, not when context is attached.
             _squad = squad;
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
@@ -163,7 +141,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void AddDestination(Vector2 destination)
         {
-            _destinations.Add(destination); 
+            _destinations.Add(destination);
         }
         public void ClearDestinations()
         {
@@ -200,10 +178,19 @@ namespace Assets.Scripts.Levels.Commands
             SetFinalize("The command ran out of time");
         }
 
+        private void CacheTargetingDistances()
+        {
+            _targetingDistanceKeys.Clear();
+            Squad squad = GetSquad();
+            for (int i = 0; i < _tempShips.Count; i++)
+            {
+                Ship ship = _tempShips[i];
+                _targetingDistanceKeys[ship.Id] = squad.DistanceToPoint(ship.GetPosition());
+            }
+        }
+
         public List<Ship> MakeTargetingQueue()
         {
-            // Shooting strategies reorder their working list. GetShips() returns the
-            // squad's authoritative internal list, so always sort/shuffle a snapshot.
             _tempShips = EnemySquad.GetShips().ToList();
             ConfigData.ShootingStrategyTypes strategy = GetSquad().GetShootingStrategy();
             switch (strategy)
@@ -232,10 +219,12 @@ namespace Assets.Scripts.Levels.Commands
                     _tempShips.Sort((a, b) => a.Firepower.CompareTo(b.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.Closest:
-                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(a.GetPosition()).CompareTo(GetSquad().DistanceToPoint(b.GetPosition())));
+                    CacheTargetingDistances();
+                    _tempShips.Sort((a, b) => _targetingDistanceKeys[a.Id].CompareTo(_targetingDistanceKeys[b.Id]));
                     break;
                 case ConfigData.ShootingStrategyTypes.Furthest:
-                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(b.GetPosition()).CompareTo(GetSquad().DistanceToPoint(a.GetPosition())));
+                    CacheTargetingDistances();
+                    _tempShips.Sort((a, b) => _targetingDistanceKeys[b.Id].CompareTo(_targetingDistanceKeys[a.Id]));
                     break;
                 case ConfigData.ShootingStrategyTypes.MostRange:
                     _tempShips.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange));
@@ -426,7 +415,7 @@ namespace Assets.Scripts.Levels.Commands
         public override string ToString()
         {
             return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} #[{ItemId}] with Strategy {CommandType} attached to " +
-                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}"; 
+                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}";
         }
 
         public override bool Equals(System.Object obj)
