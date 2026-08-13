@@ -206,6 +206,7 @@ namespace Assets.Scripts.Levels
                 {
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
                     List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
+                    HideTitaniaObstacleDebugBackgrounds(CurrentLevelOptions.Obstacles, obstacles);
                     Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
                     List<MapObject> objects = obstacleContainer.GetComponentsInChildren<MapObject>().ToList();
                     Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
@@ -238,6 +239,32 @@ namespace Assets.Scripts.Levels
                 int spawnRateRange = Math.Max(1, maximumSpawnRate - minimumSpawnRate);
                 _asteroidSpawnTimer.Reuse(minimumSpawnRate + Utilities.RandomInt(spawnRateRange), SpawnAsteroid, true);
                 AddTimer(_asteroidSpawnTimer);
+            }
+        }
+
+        private static void HideTitaniaObstacleDebugBackgrounds(
+            string obstacleName,
+            IEnumerable<StaticObstacle> obstacles)
+        {
+            if (obstacleName != "Minesweeper" && obstacleName != "Bee-noculars")
+            {
+                return;
+            }
+
+            foreach (StaticObstacle obstacle in obstacles)
+            {
+                // _Obstacle Prefab itself has no SpriteRenderer. Titania's authored fields add a
+                // direct opaque pink/white renderer to these roots solely as a layout aid; child
+                // masks and map-object art are separate components and remain untouched.
+                SpriteRenderer debugBackground = obstacle.GetComponent<SpriteRenderer>();
+                if (debugBackground == null)
+                {
+                    continue;
+                }
+
+                Color color = debugBackground.color;
+                color.a = 0f;
+                debugBackground.color = color;
             }
         }
 
