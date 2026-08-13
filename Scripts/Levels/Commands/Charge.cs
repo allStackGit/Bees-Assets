@@ -122,8 +122,9 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool HasTargetsWithinChargingRange(Barge barge)
         {
+            Vector2 levelOffset = Level.GetPosition();
             return barge.Charge.HasTargetShip && Utilities.IsRotatedTowards(barge, barge.GetDegreesTowardsPoint(barge.Charge.TargetShip.GetPosition())) &&
-            !Utilities.HasObstaclesInTheWay(barge.GetPosition(), barge.Charge.TargetShip.GetPosition()) && barge.ShipsWithinRange.Contains(barge.Charge.TargetShip);
+            !Utilities.HasObstaclesInTheWay(barge.GetPosition() + levelOffset, barge.Charge.TargetShip.GetPosition() + levelOffset) && barge.ShipsWithinRange.Contains(barge.Charge.TargetShip);
         }
 
         private List<Barge> _timer_barges;
