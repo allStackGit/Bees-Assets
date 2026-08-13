@@ -133,29 +133,54 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private HashSet<ConfigData.ShipTypes> _banned, _enemyShips;
+        private readonly HashSet<ConfigData.ShipTypes> _banned = new HashSet<ConfigData.ShipTypes>();
+        private readonly HashSet<ConfigData.ShipTypes> _enemyShips = new HashSet<ConfigData.ShipTypes>();
         private string[] _bannedTypes;
+        private readonly List<Ship> _matchupShips = new List<Ship>(64);
+        private readonly char[] _matchupLetters = new char[64];
+
         public List<Ship> GetShipsForMatchup()
         {
-            return GetShips().Take(64).ToList();
+            _matchupShips.Clear();
+            List<Ship> ships = GetShips();
+            int count = Math.Min(64, ships.Count);
+            for (int i = 0; i < count; i++)
+            {
+                _matchupShips.Add(ships[i]);
+            }
+            return _matchupShips;
         }
 
         public void MakeMatchupStrat()
         {
-            _banned = ConfigData.UserProgressData.AllShipTypes;
-
-            if (Side == ConfigData.Configuration.BeeSide)
+            _enemyShips.Clear();
+            int enemySide = Side == ConfigData.Configuration.BeeSide
+                ? ConfigData.Configuration.HumanSide
+                : ConfigData.Configuration.BeeSide;
+            for (int i = 0; i < Level.State.Ships.Count; i++)
             {
-                _enemyShips = Level.State.GetHumanShipTypes();
-                _banned = _banned.Where(type => !_enemyShips.Contains(type)).ToHashSet();
-            }
-            else
-            {
-                _enemyShips = Level.State.GetBeeShipTypes();
-                _banned = _banned.Where(type => !_enemyShips.Contains(type)).ToHashSet();
+                Ship ship = Level.State.Ships[i];
+                if (ship.Side == enemySide)
+                {
+                    _enemyShips.Add(ship.ShipType);
+                }
             }
 
-            _bannedTypes = _banned.Select(ship => $"Type {Utilities.ConvertShipTypeToCharacter[ship]}").ToArray();
+            _banned.Clear();
+            foreach (ConfigData.ShipTypes type in ConfigData.UserProgressData.AllShipTypes)
+            {
+                if (!_enemyShips.Contains(type))
+                {
+                    _banned.Add(type);
+                }
+            }
+
+            _bannedTypes = new string[_banned.Count];
+            int bannedTypeIndex = 0;
+            foreach (ConfigData.ShipTypes shipType in _banned)
+            {
+                _bannedTypes[bannedTypeIndex++] = $"Type {Utilities.ConvertShipTypeToCharacter[shipType]}";
+            }
             ConfigData.Socket.SendRequest(new MatchupStrategyRequest(
                 new GetMatchupStrategy(AddToMatchup(GetShipsForMatchup()), OpponentId, _bannedTypes),
                 this,
@@ -163,17 +188,20 @@ namespace Assets.Scripts.Levels
                 ConfigData.StandardMaxTimeOnQueue));
         }
 
-        private static char[] _letters;
-        public static string AddToMatchup(List<Ship> ships)
+        public string AddToMatchup(List<Ship> ships)
         {
-            _letters = ships.Select(s => Utilities.ConvertShipTypeLetterToCharacter[s.ShipTypeLetter]).ToArray();
-            Array.Sort(_letters);
-            return new string(_letters);
+            int count = Math.Min(ships.Count, _matchupLetters.Length);
+            for (int i = 0; i < count; i++)
+            {
+                _matchupLetters[i] = Utilities.ConvertShipTypeLetterToCharacter[ships[i].ShipTypeLetter];
+            }
+            Array.Sort(_matchupLetters, 0, count);
+            return new string(_matchupLetters, 0, count);
         }
 
         private string _matchup;
         private readonly StringBuilder _sb = new StringBuilder();
-        private HashSet<ConfigData.CommandTypes> _bannedStrats;
+        private readonly HashSet<ConfigData.CommandTypes> _bannedStrats = new HashSet<ConfigData.CommandTypes>();
         private int _comparativeHealth, _friendlySquadCount, _closestFriendlySquadCount;
         private List<Ship> _matchupAllies;
         private List<Ship> _matchupEnemies;
@@ -186,16 +214,29 @@ namespace Assets.Scripts.Levels
                 return 0d;
             }
 
-            return ships.Average(ship => ship.OriginalHealth > 0
-                ? ((double)ship.Health / ship.OriginalHealth) * 100d
-                : 0d);
+            double total = 0d;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (ship.OriginalHealth > 0)
+                {
+                    total += ((double)ship.Health / ship.OriginalHealth) * 100d;
+                }
+            }
+            return total / ships.Count;
         }
 
         public void MakeMatchupAndGetCommand(Squad enemy = null)
         {
-            _bannedStrats = BannedStrats.ToHashSet();
+            _bannedStrats.Clear();
+            foreach (ConfigData.CommandTypes bannedStrat in BannedStrats)
+            {
+                _bannedStrats.Add(bannedStrat);
+            }
+
+            List<Ship> actingShips = GetShipsForMatchup();
             _sb.Clear();
-            _sb.Append(AddToMatchup(GetShipsForMatchup()));
+            _sb.Append(AddToMatchup(actingShips));
 
             if (enemy != null)
             {
@@ -208,8 +249,12 @@ namespace Assets.Scripts.Levels
 
                 _matchupAllies = GetPotentialAllies(enemy);
                 _matchupFriendlyHealthShips.Clear();
-                _matchupFriendlyHealthShips.AddRange(GetShipsForMatchup());
-                _matchupFriendlyHealthShips.AddRange(_matchupAllies.Take(Math.Max(0, 64 - _matchupFriendlyHealthShips.Count)));
+                _matchupFriendlyHealthShips.AddRange(actingShips);
+                int allyHealthLimit = Math.Max(0, 64 - _matchupFriendlyHealthShips.Count);
+                for (int i = 0; i < _matchupAllies.Count && i < allyHealthLimit; i++)
+                {
+                    _matchupFriendlyHealthShips.Add(_matchupAllies[i]);
+                }
                 double friendlyHealth = GetAverageHealthPercentForMatchup(_matchupFriendlyHealthShips);
                 double enemyHealth = GetAverageHealthPercentForMatchup(_matchupEnemies);
                 _comparativeHealth = enemyHealth <= 0d
@@ -244,17 +289,26 @@ namespace Assets.Scripts.Levels
             }
 
             _matchup = _sb.ToString();
-            _closestFriendlySquadCount = Level.State.GetSquadsBySide(Side)
-                .Count(squad => squad?.GetCommand()?.CommandType == ConfigData.CommandTypes.ClosestFriendly);
-            _friendlySquadCount = Level.State.GetSquadsBySide(Side).Count;
+            _closestFriendlySquadCount = 0;
+            _friendlySquadCount = 0;
+            for (int i = 0; i < Level.State.Squads.Count; i++)
+            {
+                Squad friendly = Level.State.Squads[i];
+                if (friendly.Side != Side || friendly.IsDead)
+                {
+                    continue;
+                }
+                _friendlySquadCount++;
+                if (friendly.GetCommand()?.CommandType == ConfigData.CommandTypes.ClosestFriendly)
+                {
+                    _closestFriendlySquadCount++;
+                }
+            }
             if (_friendlySquadCount - 1 <= _closestFriendlySquadCount)
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.ClosestFriendly);
             }
 
-            // These are request-local availability conditions. Do not persist them into
-            // BannedStrats: asteroids, healing capacity, Warp Gates, and squad composition
-            // can change later in the same level.
             if (!Level.ActivateMining || !HasMiningShips || GetNearestMiningAsteroid() == null)
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.Mining);
@@ -267,13 +321,33 @@ namespace Assets.Scripts.Levels
             {
                 _bannedStrats.Add(ConfigData.CommandTypes.Heal);
             }
-            else if (Level.State.GetBeeShips().Count(s => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4) == 0)
+            else
             {
-                _bannedStrats.Add(ConfigData.CommandTypes.Heal);
+                bool hasHealingCapacity = false;
+                for (int i = 0; i < Level.State.Ships.Count; i++)
+                {
+                    Ship ship = Level.State.Ships[i];
+                    if (ship.Side == ConfigData.Configuration.BeeSide && ship.IsBeehive &&
+                        ((Beehive)ship).ShipsHealingHere.Count < 4)
+                    {
+                        hasHealingCapacity = true;
+                        break;
+                    }
+                }
+                if (!hasHealingCapacity)
+                {
+                    _bannedStrats.Add(ConfigData.CommandTypes.Heal);
+                }
             }
 
+            string[] bannedStratNames = new string[_bannedStrats.Count];
+            int bannedStratIndex = 0;
+            foreach (ConfigData.CommandTypes bannedStrat in _bannedStrats)
+            {
+                bannedStratNames[bannedStratIndex++] = Utilities.ConvertCommandTypeToName[bannedStrat];
+            }
             ConfigData.Socket.SendRequest(new CommandRequest(
-                new GetStrategy(_matchup, OpponentId, _bannedStrats.Select(b => Utilities.ConvertCommandTypeToName[b]).ToArray()),
+                new GetStrategy(_matchup, OpponentId, bannedStratNames),
                 this,
                 enemy,
                 Level,
@@ -414,8 +488,6 @@ namespace Assets.Scripts.Levels
 
         public void FinalizeUserCommand()
         {
-            // User override owns the squad now. Disable/refund the scripted queue before
-            // finalizing the active command so its normal finalizer cannot advance the queue.
             if (HasCommandQueue || CommandQueue.Count > 0)
             {
                 CancelScriptedCommandQueue();
@@ -444,10 +516,22 @@ namespace Assets.Scripts.Levels
 
         public MiningAsteroid GetNearestMiningAsteroid()
         {
-            return Level.State.MiningAsteroids
-                .Where(asteroid => asteroid != null && !asteroid.IsDead)
-                .OrderBy(asteroid => DistanceToPoint(asteroid.GetPosition()))
-                .FirstOrDefault();
+            MiningAsteroid closest = null;
+            float closestDistance = float.MaxValue;
+            foreach (MiningAsteroid asteroid in Level.State.MiningAsteroids)
+            {
+                if (asteroid == null || asteroid.IsDead)
+                {
+                    continue;
+                }
+                float distance = DistanceToPoint(asteroid.GetPosition());
+                if (closest == null || distance < closestDistance)
+                {
+                    closest = asteroid;
+                    closestDistance = distance;
+                }
+            }
+            return closest;
         }
     }
 }
