@@ -253,6 +253,8 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(ship, "Side", side);
             RuntimeAssembly.SetField(ship, "IsMobile", isMobile);
             ((IList)RuntimeAssembly.GetField(_state, "Ships")).Add(ship);
+            Array shipsBySide = (Array)RuntimeAssembly.GetField(_state, "ShipsBySide");
+            ((IList)shipsBySide.GetValue(side - 1)).Add(ship);
         }
 
         private Component CreateShipComponent(string name)
