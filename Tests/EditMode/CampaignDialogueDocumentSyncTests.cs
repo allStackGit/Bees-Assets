@@ -12,7 +12,6 @@ namespace Bees.Tests.EditMode
         public void CurrentCampaignDialogueCarriesMissionScriptingRevisions()
         {
             string source = Read("Scripts", "CampaignDialogueOverrides.cs");
-            string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
 
             StringAssert.Contains("Gunship P-4 reporting to command", source);
             StringAssert.Contains("United Fleet airspace", source);
@@ -20,7 +19,6 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Pluto’s full fleet online", source);
             StringAssert.Contains("Heavily.", source);
             StringAssert.Contains("Its weapon has a huge range", source);
-            StringAssert.Contains("They’re… different.", uranusOne);
             StringAssert.Contains("you need to know how the carrier works", source);
         }
 
@@ -89,15 +87,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FritzAndCruisersRemainAnUranusRecruitmentNotASaturnRuntimeFeature()
+        public void StruckUranusCruiserAndFritzSequenceIsNotRun()
         {
             string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
-            string catalog = Read("Scripts", "Levels", "CampaignMissionCatalog.cs");
+            string endings = Read("Scripts", "Levels", "Level.Campaign.Endings.cs");
 
-            StringAssert.Contains("ShipTypes.Cruiser, 2", uranusOne);
-            StringAssert.Contains("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", uranusOne);
-            StringAssert.Contains("They’re… different.", uranusOne);
-            StringAssert.DoesNotContain("Saturn", catalog);
+            StringAssert.DoesNotContain("ShipTypes.Cruiser", uranusOne);
+            StringAssert.DoesNotContain("cruiserTimer", uranusOne);
+            StringAssert.DoesNotContain("They’re… different.", uranusOne);
+            StringAssert.DoesNotContain("GetRange(6, 6)", uranusOne);
+            StringAssert.DoesNotContain("GetRange(18,", uranusOne);
+            StringAssert.Contains("Uranus_OnTheOffensive.GetRange(35, 3)", uranusOne);
+            StringAssert.DoesNotContain("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", endings);
         }
 
         [Test]
