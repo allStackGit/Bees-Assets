@@ -95,19 +95,43 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
+
+            // Normal runtime objects have a stable nonzero gameplay Id, so HashSet.Remove
+            // is O(1). A live pre-Setup object also has a stable Unity instance hash.
+            bool isLiveUnityObject = (UnityEngine.Object)_mapObject != null;
+            if ((_mapObject.Id != 0 || isLiveUnityObject) && visibleObjects.Remove(_mapObject))
+            {
+                return;
+            }
+
+            if (visibleObjects.Count == 0)
+            {
+                return;
+            }
+
+            // Defensive fallback for destroyed/uninitialized Unity wrappers whose hash can no
+            // longer be trusted. Preserve the old reference-based removal semantics only here.
             _visibleSurvivors.Clear();
+            bool foundReference = false;
             foreach (MapObject candidate in visibleObjects)
             {
-                if (!ReferenceEquals(candidate, _mapObject))
+                if (ReferenceEquals(candidate, _mapObject))
+                {
+                    foundReference = true;
+                }
+                else
                 {
                     _visibleSurvivors.Add(candidate);
                 }
             }
 
-            visibleObjects.Clear();
-            for (int i = 0; i < _visibleSurvivors.Count; i++)
+            if (foundReference)
             {
-                visibleObjects.Add(_visibleSurvivors[i]);
+                visibleObjects.Clear();
+                for (int i = 0; i < _visibleSurvivors.Count; i++)
+                {
+                    visibleObjects.Add(_visibleSurvivors[i]);
+                }
             }
             _visibleSurvivors.Clear();
         }
