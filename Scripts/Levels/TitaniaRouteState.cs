@@ -1,158 +1,63 @@
-using Assets.Scripts.Entities;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Assets.Scripts.Levels
 {
+    /// <summary>
+    /// Persists the outcome of Titania I so Titania II can reward a successful route-clearing
+    /// mission without carrying the demolition maze itself into the base-defense battle.
+    /// </summary>
     internal static class TitaniaRouteState
     {
-        private const string ProgressProperty = "TitaniaOpenedBarrierPositions";
-        private const string LegacyKeyPrefix = "bees.titania.route.";
-        private static readonly HashSet<string> OpenedBarrierPositions = new HashSet<string>();
+        private const string ResultProperty = "TitaniaOneWon";
+        private const string LegacyRouteProperty = "TitaniaOpenedBarrierPositions";
+
+        private static bool _titaniaOneWon;
         private static bool _loaded;
 
-        internal static void BeginMinesweeper()
+        internal static bool DidWinTitaniaOne
+        {
+            get
+            {
+                EnsureLoaded();
+                return _titaniaOneWon;
+            }
+        }
+
+        internal static void RecordTitaniaOneResult(bool won)
         {
             _loaded = true;
-            OpenedBarrierPositions.Clear();
-            SaveProgress();
-        }
-
-        internal static void RecordOpenedBarrier(Vector2 localPosition)
-        {
-            EnsureLoaded();
-            if (OpenedBarrierPositions.Add(ToKey(localPosition))) SaveProgress();
-        }
-
-        internal static bool WasBarrierOpened(Vector2 localPosition)
-        {
-            EnsureLoaded();
-            return OpenedBarrierPositions.Contains(ToKey(localPosition));
+            _titaniaOneWon = won;
         }
 
         internal static string AddToPlayerProgressJson(string userProgressJson)
         {
             EnsureLoaded();
             JObject progress = JObject.Parse(userProgressJson);
-            progress[ProgressProperty] = new JArray(OpenedBarrierPositions.OrderBy(key => key));
+
+            // Route geometry was briefly persisted between Titania I and II. Titania II now starts
+            // on a clear battlefield, so remove that legacy payload whenever the profile is saved.
+            progress.Remove(LegacyRouteProperty);
+            progress[ResultProperty] = _titaniaOneWon;
             return progress.ToString(Formatting.None);
         }
 
         internal static void LoadFromPlayerProgress(object loadedProgress)
         {
             _loaded = true;
-            OpenedBarrierPositions.Clear();
-            if (loadedProgress is JObject progress && progress[ProgressProperty] is JArray storedRoute)
-            {
-                foreach (string key in storedRoute.Values<string>())
-                {
-                    if (!string.IsNullOrWhiteSpace(key)) OpenedBarrierPositions.Add(key);
-                }
-                return;
-            }
-
-            string legacy = PlayerPrefs.GetString(LegacyKeyPrefix + ConfigData.GetUserId(), string.Empty);
-            foreach (string key in legacy.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (!string.IsNullOrWhiteSpace(key)) OpenedBarrierPositions.Add(key.Trim());
-            }
+            _titaniaOneWon = loadedProgress is JObject progress &&
+                             progress[ResultProperty] != null &&
+                             progress[ResultProperty].Value<bool>();
         }
 
         private static void EnsureLoaded()
         {
-            if (_loaded || ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded) return;
+            if (_loaded || ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded)
+            {
+                return;
+            }
+
             LoadFromPlayerProgress(ConfigData.UserProgressData.GetDataFile().GetJsonObject());
         }
-
-        private static void SaveProgress()
-        {
-            ConfigData.UserProgressData?.Save();
-        }
-
-        private static string ToKey(Vector2 position)
-        {
-            return $"{Mathf.RoundToInt(position.x * 10f)},{Mathf.RoundToInt(position.y * 10f)}";
-        }
     }
-
-    [DefaultExecutionOrder(1500)]
-    internal sealed class TitaniaMazeContinuityGuard : MonoBehaviour
-    {
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Install()
-        {
-            SceneManager.sceneLoaded -= PrepareLevelOptions;
-            SceneManager.sceneLoaded += PrepareLevelOptions;
-            GameObject host = new GameObject("Titania Maze Continuity Guard");
-            DontDestroyOnLoad(host);
-            host.AddComponent<TitaniaMazeContinuityGuard>();
-        }
-
-        private static void PrepareLevelOptions(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
-        {
-            if (scene.name != "Space" || ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
-                ConfigData.UserProgressData == null || ConfigData.Configuration == null || ConfigData.LevelOptions == null) return;
-
-            int missionId = ConfigData.UserProgressData.GetCurrentLevel(
-                ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign);
-            if (missionId == 8 && ConfigData.LevelOptions.Obstacles == "Bee-noculars")
-                ConfigData.LevelOptions.Obstacles = "Minesweeper";
-        }
-
-        private void Update()
-        {
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign) return;
-
-            foreach (Level level in FindObjectsOfType<Level>())
-            {
-                if (level == null || level.CurrentLevelOptions == null || level.CurrentLevelOptions.Id != 8 ||
-                    level.Map == null || level.Pathfinder == null ||
-                    level.gameObject.GetComponent<TitaniaMazeAppliedMarker>() != null) continue;
-
-                CanisterBomb[] demolitionObjects = level.Map.transform.GetComponentsInChildren<CanisterBomb>(true);
-                if (demolitionObjects.Length == 0) continue;
-
-                List<Obstacle> barriers = level.Map.transform.GetComponentsInChildren<Obstacle>(true)
-                    .Where(obstacle => obstacle != null && !obstacle.IsDead).ToList();
-                HashSet<Transform> assigned = new HashSet<Transform>();
-
-                foreach (CanisterBomb demolitionObject in demolitionObjects)
-                {
-                    if (demolitionObject == null) continue;
-                    Obstacle barrier = barriers
-                        .Where(obstacle => !assigned.Contains(obstacle.transform))
-                        .OrderBy(obstacle => ((Vector2)obstacle.transform.position -
-                                             (Vector2)demolitionObject.transform.position).sqrMagnitude)
-                        .FirstOrDefault();
-                    if (barrier == null)
-                    {
-                        demolitionObject.gameObject.SetActive(false);
-                        continue;
-                    }
-
-                    assigned.Add(barrier.transform);
-                    demolitionObject.TargetObstacle = barrier;
-                    if (TitaniaRouteState.WasBarrierOpened(barrier.transform.localPosition))
-                    {
-                        barrier.Kill();
-                        demolitionObject.gameObject.SetActive(false);
-                    }
-                    else
-                    {
-                        demolitionObject.gameObject.SetActive(true);
-                    }
-                }
-
-                level.CurrentLevelOptions.Obstacles = "Bee-noculars";
-                level.gameObject.AddComponent<TitaniaMazeAppliedMarker>();
-            }
-        }
-    }
-
-    internal sealed class TitaniaMazeAppliedMarker : MonoBehaviour { }
 }
