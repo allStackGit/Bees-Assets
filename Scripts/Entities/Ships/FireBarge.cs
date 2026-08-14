@@ -55,11 +55,11 @@ namespace Assets.Scripts.Entities.Ships
             if (!endKill)
             {
                 Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
-                ExplosionSound = Explosion.GetComponent<AudioSource>();
                 ShipExplosion = Explosion.gameObject;
                 DropExplosionAnimation();
                 if (Level.Stage.ActivateAudio)
                 {
+                    ExplosionSound = Explosion.GetComponent<AudioSource>();
                     ExplosionSound.Play();
                 }
                 Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
