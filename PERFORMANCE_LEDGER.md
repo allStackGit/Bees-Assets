@@ -23,4 +23,11 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** Current `Squad.Commands.cs` unconditionally calls `Debug.Log` in `SetCommand()` and `AddToCommandList()`; current `Command.Finalize()` unconditionally logs each finalization; current `RandomizeOptions()`, `LevelTimeOut()`, and `SaveAndEnd()` contain unguarded informational logs; current `LevelOver()` enters its summary logging branch whenever `!Stage.IsTrainingNueralNetwork`, which includes Hive Mind training.  
 **Risk:** Do not suppress `Debug.LogWarning`/`Debug.LogError`, do not remove command/level counters or data sent to training/storage, and retain an opt-in diagnostic path if operators rely on verbose training traces.
 
+### PERF-009 — Eliminate temporary ship-type lists in random squad generation
+**Location:** `Scripts/Data/SavedSquad.cs/SetupRandomShips()`  
+**Cost:** Every call to `SetupRandomShips()` constructs temporary `List<ConfigData.ShipTypes>` instances inside its size-category `if`/`else if` chain purely to call `Contains(squadType)`. Depending on the chosen type, one to five new lists are allocated before the matching category is found. Hive Mind/random training creates multiple `SavedSquad` objects per side per episode and calls this method for every generated squad, so these short-lived classification lists generate avoidable setup GC at high repetition.  
+**Optimization:** Replace the per-call list literals with a non-allocating classification mechanism: a `switch` on `squadType`, static readonly sets/arrays, or an existing ConfigData category table. Preserve the current ship-count ranges and Unity random-call order exactly.  
+**Evidence:** Current `SetupRandomShips()` has five separate expressions of the form `new List<ConfigData.ShipTypes> { ... }.Contains(squadType)`. Current `Level.RandomSquadSetup.cs/AddRandomSquadsForSetup()` invokes `savedSquad.SetupRandomShips(type)` for every randomly generated squad in repeated training setup.  
+**Risk:** Random draw order is training-behavior-sensitive. Refactoring classification must not add/remove/reorder `Random.Range` calls or change the exact type-to-count bucket assignments.
+
 Clean static passes: 0 / 2.
