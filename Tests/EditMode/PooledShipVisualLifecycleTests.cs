@@ -16,8 +16,8 @@ namespace Bees.Tests.EditMode
 
             StringAssert.Contains("private readonly List<Sprite> _baseColorSprites", source);
             StringAssert.Contains("EnsureBaseColorSprites();", source);
-            StringAssert.Contains("_prefabSprite = _baseColorSprites[_tempIndex];", source);
-            StringAssert.Contains("prefab.GetComponent<SpriteRenderer>().sprite = _baseColorSprites[_tempIndex];", source);
+            StringAssert.Contains("_prefabSprite = _baseColorSprites[i];", source);
+            StringAssert.Contains("ColoredPrefabs[i].GetComponent<SpriteRenderer>().sprite = _baseColorSprites[i];", source);
         }
 
         [Test]
