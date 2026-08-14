@@ -3,7 +3,6 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -60,15 +59,24 @@ namespace Assets.Scripts.Entities
                 IsDead = true;
                 if (!endKill)
                 {
-                    // Command finalization removes squads from SquadsMining, so iterate
-                    // a snapshot rather than mutating the list currently being enumerated.
-                    SquadsMining.ToList().ForEach((squad) =>
+                    while (SquadsMining.Count > 0)
                     {
+                        int lastIndex = SquadsMining.Count - 1;
+                        Squad squad = SquadsMining[lastIndex];
                         if (!squad.IsDead && squad.HasCommand && squad.GetCommand().CommandType == ConfigData.CommandTypes.Mining)
                         {
+                            int previousCount = SquadsMining.Count;
                             squad.GetCommand().SetFinalize("Mining asteroid was destroyed");
+                            if (SquadsMining.Count == previousCount)
+                            {
+                                SquadsMining.RemoveAt(lastIndex);
+                            }
                         }
-                    });
+                        else
+                        {
+                            SquadsMining.RemoveAt(lastIndex);
+                        }
+                    }
                 }
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
