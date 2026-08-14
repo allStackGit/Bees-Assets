@@ -104,6 +104,7 @@ namespace Assets.Scripts.Data
             }
             catch (Exception error)
             {
+                MarkFailedLoadAsUnready();
                 RecoverMalformedData(error);
             }
         }
@@ -123,10 +124,22 @@ namespace Assets.Scripts.Data
             _hasCalledAction = true;
         }
 
+        private void MarkFailedLoadAsUnready()
+        {
+            // UserProgressData's legacy callback marks itself loaded before reading all fields.
+            // If a malformed profile throws later in that callback, clear the flag immediately so
+            // Scene cannot finalize against partially applied progress while recovery is underway.
+            if (filename == ConfigData.UserProgressFilename)
+            {
+                ConfigData.IsUserProgressDataLoaded = false;
+            }
+        }
+
         private void RecoverMalformedData(Exception originalError)
         {
             if (_hasAttemptedMalformedRecovery)
             {
+                MarkFailedLoadAsUnready();
                 if (!_hasLoggedMalformedRecoveryFailure)
                 {
                     _hasLoggedMalformedRecoveryFailure = true;
@@ -143,6 +156,7 @@ namespace Assets.Scripts.Data
             }
             catch (Exception defaultError)
             {
+                MarkFailedLoadAsUnready();
                 Debug.LogError($"Could not create recovery defaults for user data '{filename}'. {defaultError.GetType().Name}: {defaultError.Message}");
                 return;
             }
@@ -153,6 +167,7 @@ namespace Assets.Scripts.Data
             if (string.IsNullOrWhiteSpace(defaults) || defaults == ConfigData.WaitingMessage)
             {
                 _hasAttemptedMalformedRecovery = false;
+                MarkFailedLoadAsUnready();
                 return;
             }
 
@@ -165,6 +180,7 @@ namespace Assets.Scripts.Data
             }
             catch (Exception recoveryError)
             {
+                MarkFailedLoadAsUnready();
                 if (!_hasLoggedMalformedRecoveryFailure)
                 {
                     _hasLoggedMalformedRecoveryFailure = true;
