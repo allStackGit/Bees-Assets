@@ -94,8 +94,13 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.UserSettingsFilename, (json) =>
             {
+                // Recovery can invoke this callback a second time after a partially malformed
+                // settings payload. Rebuild from scratch so partial hotkeys from the failed pass
+                // cannot create duplicate-key exceptions while defaults are applied.
+                HotKeys.Clear();
+                HotKeysByName.Clear();
+
                 //Debug.Log($"Loaded data for {ConfigData.UserSettingsFilename}");
-                ConfigData.IsUserSettingsDataLoaded = true;
                 //Debug.Log("Updated config file");
                 //Debug.Log($"JSON from DataFile: {json}");
                 Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
@@ -116,6 +121,7 @@ namespace Assets.Scripts.Data
                             HeldDownInputActions.Contains(defaultHotKey.Name)));
                     }
                 }
+                ConfigData.IsUserSettingsDataLoaded = true;
             });
 
         }
