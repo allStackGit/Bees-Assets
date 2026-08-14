@@ -79,7 +79,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             Level = Ship.Level;
             Id = Level.State.GetId();
-            Name = $"{Ship.Name}: {Type}";
+            if (!Stage.IsTraining)
+            {
+                Name = $"{Ship.Name}: {Type}";
+            }
             ClearData();
             Activate();
         }
