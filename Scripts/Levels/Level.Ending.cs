@@ -17,7 +17,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void LevelTimeOut()
         {
-            Debug.Log("Level timed out!");
+            if (!Stage.IsTraining) Debug.Log("Level timed out!");
             Stage.DebugLogger.__LevelTimeouts++;
             IsRestarting = true;
             if (ActivateCollisionAsteroids) CancelTimer(_asteroidSpawnTimer);
@@ -36,7 +36,7 @@ namespace Assets.Scripts.Levels
 
         public void SaveAndEnd()
         {
-            Debug.Log("Saving and ending");
+            if (!Stage.IsTraining) Debug.Log("Saving and ending");
             if (Stage.RecordStats && !Stage.IsTraining)
             {
                 for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
