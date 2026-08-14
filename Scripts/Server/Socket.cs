@@ -150,8 +150,6 @@ namespace Assets.Scripts.Server
                     }
                 };
 
-                // WebSocketSharp's Connect() performs blocking handshake I/O. ConnectAsync starts
-                // the same operation without holding Unity's main/render thread.
                 socket.ConnectAsync();
             }
             else
@@ -229,14 +227,29 @@ namespace Assets.Scripts.Server
             HasClosed = true;
         }
 
+        private List<ServerRequest> _standingRequests;
+
+        private List<ServerRequest> SnapshotStandingRequests()
+        {
+            if (_standingRequests == null)
+            {
+                _standingRequests = new List<ServerRequest>();
+            }
+            _standingRequests.Clear();
+            _standingRequests.AddRange(StandingRequests);
+            return _standingRequests;
+        }
+
         private void MarkStrandedRequestsForResending()
         {
-            StandingRequests.ToList().ForEach((sr) =>
+            List<ServerRequest> strandedRequests = SnapshotStandingRequests();
+            for (int i = 0; i < strandedRequests.Count; i++)
             {
+                ServerRequest sr = strandedRequests[i];
                 StandingRequests.Remove(sr);
                 Debug.LogWarning($"Resending #{sr.Hash}");
                 SendRequest(sr, true);
-            });
+            }
         }
 
         private string _f_message;
@@ -324,8 +337,6 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                // NativeWebSocket returns a Task. Preserve the legacy fire-and-forget contract;
-                // production currently uses WebSocketSharp.
                 _nativeWebSocket.SendText(json);
             }
         }
@@ -353,8 +364,6 @@ namespace Assets.Scripts.Server
 
                     try
                     {
-                        // Keep sends serialized, but perform the potentially blocking stream write
-                        // away from Unity's main thread.
                         message.Socket.Send(message.Json);
                     }
                     catch (Exception exception)
@@ -403,7 +412,6 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    // Preserve the legacy malformed/unknown-envelope path and its diagnostics.
                     Message(_update_message);
                 }
                 messagesProcessed++;
@@ -412,7 +420,6 @@ namespace Assets.Scripts.Server
             CheckStandingRequests();
         }
 
-        private List<ServerRequest> _standingRequests;
         private ServerRequest _sr;
         private int _index;
         private int _resends;
@@ -425,10 +432,10 @@ namespace Assets.Scripts.Server
             }
 
             _resends = 0;
-            _standingRequests = StandingRequests.ToList();
-            for (_index = 0; _index < _standingRequests.Count; _index++)
+            List<ServerRequest> standingRequests = SnapshotStandingRequests();
+            for (_index = 0; _index < standingRequests.Count; _index++)
             {
-                _sr = _standingRequests[_index];
+                _sr = standingRequests[_index];
                 if (_sr.HasExceededQueueTimeout(ConfigData.Stopwatch.ElapsedMilliseconds))
                 {
                     StandingRequests.Remove(_sr);
@@ -451,7 +458,7 @@ namespace Assets.Scripts.Server
                 return;
             }
 
-            foreach (ServerRequest request in StandingRequests.ToList())
+            foreach (ServerRequest request in StandingRequests)
             {
                 TryRefreshAuthenticationTicket(request, ticket);
             }
@@ -464,8 +471,10 @@ namespace Assets.Scripts.Server
                 return;
             }
 
-            foreach (ServerRequest request in StandingRequests.ToList())
+            List<ServerRequest> standingRequests = SnapshotStandingRequests();
+            for (int i = 0; i < standingRequests.Count; i++)
             {
+                ServerRequest request = standingRequests[i];
                 if (!HasRefreshableAuthenticationPayload(request))
                 {
                     continue;
@@ -605,7 +614,7 @@ namespace Assets.Scripts.Server
             }
         }
 
-        private readonly List<ServerRequest> _checkStandingRequests_serverRequests = new List<ServerRequest>();
+        private List<ServerRequest> _checkStandingRequests_serverRequests;
         private ServerRequest _checkStandingRequests_currentRequest;
         private DataFileRequest _checkStandingRequests_dataFileRequest;
         private SettingsRequest _checkStandingRequests_settingsRequest;
@@ -617,6 +626,10 @@ namespace Assets.Scripts.Server
                 return;
             }
 
+            if (_checkStandingRequests_serverRequests == null)
+            {
+                _checkStandingRequests_serverRequests = new List<ServerRequest>();
+            }
             _checkStandingRequests_serverRequests.Clear();
             _checkStandingRequests_serverRequests.AddRange(StandingRequests);
             for (_index = 0; _index < _checkStandingRequests_serverRequests.Count; _index++)
@@ -637,7 +650,14 @@ namespace Assets.Scripts.Server
 
         public ServerRequest GetStandingRequest(long hash)
         {
-            return StandingRequests.FirstOrDefault(r => r.Hash == hash);
+            foreach (ServerRequest request in StandingRequests)
+            {
+                if (request.Hash == hash)
+                {
+                    return request;
+                }
+            }
+            return null;
         }
 
         private bool TryClaimResponse(long hash)
@@ -775,7 +795,7 @@ namespace Assets.Scripts.Server
             }
             else
             {
-                Debug.Log($"Standing requests: {Utilities.ListToString(StandingRequests.ToList())}");
+                Debug.Log($"Standing requests: {Utilities.ListToString(SnapshotStandingRequests())}");
                 Debug.LogError($"Couldn't find a matching request for {_settingsResponse_userData.Hash}");
             }
         }
@@ -826,6 +846,7 @@ namespace Assets.Scripts.Server
         private Command _handleStrategicCommandResponse_command;
         private WarpGate _handleStrategicCommandResponse_warpGate;
         private List<Beehive> _beehives;
+        private List<float> _beehiveDistances;
         private Vector2 _handleStrategicCommandResponse_position;
 
         private void HandleStrategicCommandResponse(string message)
@@ -1031,10 +1052,23 @@ namespace Assets.Scripts.Server
                     else if (_tempCommandType == ConfigData.CommandTypes.FullRetreat)
                     {
                         _handleStrategicCommandResponse_position = _tempSquad.GetPosition();
-                        _handleStrategicCommandResponse_warpGate = (WarpGate)_handleStrategicCommandResponse_level.State.GetHumanShips()
-                            .Where((s) => s.IsWarpGate)
-                            .OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position))
-                            .FirstOrDefault();
+                        _handleStrategicCommandResponse_warpGate = null;
+                        float closestWarpGateDistance = float.MaxValue;
+                        List<Ship> humanShips = _handleStrategicCommandResponse_level.State.GetHumanShips();
+                        for (int i = 0; i < humanShips.Count; i++)
+                        {
+                            Ship ship = humanShips[i];
+                            if (!ship.IsWarpGate)
+                            {
+                                continue;
+                            }
+                            float distance = ship.DistanceToPoint(_handleStrategicCommandResponse_position);
+                            if (distance < closestWarpGateDistance)
+                            {
+                                closestWarpGateDistance = distance;
+                                _handleStrategicCommandResponse_warpGate = (WarpGate)ship;
+                            }
+                        }
                         ((FullRetreat)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, _handleStrategicCommandResponse_warpGate);
                     }
                     else if (_tempCommandType == ConfigData.CommandTypes.Hold)
@@ -1044,11 +1078,41 @@ namespace Assets.Scripts.Server
                     else if (_tempCommandType == ConfigData.CommandTypes.Heal)
                     {
                         _handleStrategicCommandResponse_position = _tempSquad.GetPosition();
-                        _beehives = _handleStrategicCommandResponse_level.State.GetBeeShips()
-                            .Where((s) => s.IsBeehive && ((Beehive)s).ShipsHealingHere.Count < 4)
-                            .Select((s) => (Beehive)s)
-                            .OrderBy((s) => s.DistanceToPoint(_handleStrategicCommandResponse_position))
-                            .ToList();
+                        if (_beehives == null)
+                        {
+                            _beehives = new List<Beehive>();
+                            _beehiveDistances = new List<float>();
+                        }
+                        _beehives.Clear();
+                        _beehiveDistances.Clear();
+
+                        List<Ship> beeShips = _handleStrategicCommandResponse_level.State.GetBeeShips();
+                        for (int i = 0; i < beeShips.Count; i++)
+                        {
+                            Ship ship = beeShips[i];
+                            if (!ship.IsBeehive)
+                            {
+                                continue;
+                            }
+                            Beehive beehive = (Beehive)ship;
+                            if (beehive.ShipsHealingHere.Count >= 4)
+                            {
+                                continue;
+                            }
+
+                            float distance = beehive.DistanceToPoint(_handleStrategicCommandResponse_position);
+                            int insertionIndex = _beehives.Count;
+                            for (int j = 0; j < _beehiveDistances.Count; j++)
+                            {
+                                if (distance < _beehiveDistances[j])
+                                {
+                                    insertionIndex = j;
+                                    break;
+                                }
+                            }
+                            _beehives.Insert(insertionIndex, beehive);
+                            _beehiveDistances.Insert(insertionIndex, distance);
+                        }
                         ((Heal)_tempSquad.GetCommand()).Execute(Utilities.ConvertShootingStrategyNameToType[_commandResponse.ShootingStrategyName], _commandResponse.OutcomeId, _commandResponse.ShootingStrategyOutcomeId, _beehives);
                     }
                     else
