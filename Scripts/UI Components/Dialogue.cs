@@ -90,8 +90,11 @@ namespace Assets.Scripts.UI_Components
                     UIAudioController.Instance?.PlayButtonSound();
                 }
 
-                action();
+                // Close the modal before executing its action. Some actions immediately load a new
+                // scene (the Space Cowboy campaign prompt is one example), and an exception or
+                // scene transition inside the action must never leave the old modal blocking input.
                 Hide();
+                action?.Invoke();
             });
             // Dialogue buttons are cloned after the scene-loaded scans, so apply both sound and
             // visual ownership directly when each control is created.
