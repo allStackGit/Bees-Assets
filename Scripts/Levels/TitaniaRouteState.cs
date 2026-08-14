@@ -18,7 +18,7 @@ namespace Assets.Scripts.Levels
 
         internal static void BeginMinesweeper()
         {
-            EnsureLoaded();
+            _loaded = true;
             OpenedBarrierPositions.Clear();
             SaveProgress();
         }
@@ -26,10 +26,7 @@ namespace Assets.Scripts.Levels
         internal static void RecordOpenedBarrier(Vector2 localPosition)
         {
             EnsureLoaded();
-            if (OpenedBarrierPositions.Add(ToKey(localPosition)))
-            {
-                SaveProgress();
-            }
+            if (OpenedBarrierPositions.Add(ToKey(localPosition))) SaveProgress();
         }
 
         internal static bool WasBarrierOpened(Vector2 localPosition)
@@ -46,17 +43,11 @@ namespace Assets.Scripts.Levels
             return progress.ToString(Formatting.None);
         }
 
-        private static void EnsureLoaded()
+        internal static void LoadFromPlayerProgress(object loadedProgress)
         {
-            if (_loaded || ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded)
-            {
-                return;
-            }
-
             _loaded = true;
             OpenedBarrierPositions.Clear();
-            if (ConfigData.UserProgressData.GetDataFile().GetJsonObject() is JObject progress &&
-                progress[ProgressProperty] is JArray storedRoute)
+            if (loadedProgress is JObject progress && progress[ProgressProperty] is JArray storedRoute)
             {
                 foreach (string key in storedRoute.Values<string>())
                 {
@@ -65,12 +56,17 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            // One-time migration for profiles that completed Titania I before this field existed.
             string legacy = PlayerPrefs.GetString(LegacyKeyPrefix + ConfigData.GetUserId(), string.Empty);
             foreach (string key in legacy.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 if (!string.IsNullOrWhiteSpace(key)) OpenedBarrierPositions.Add(key.Trim());
             }
+        }
+
+        private static void EnsureLoaded()
+        {
+            if (_loaded || ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded) return;
+            LoadFromPlayerProgress(ConfigData.UserProgressData.GetDataFile().GetJsonObject());
         }
 
         private static void SaveProgress()
@@ -100,17 +96,12 @@ namespace Assets.Scripts.Levels
         private static void PrepareLevelOptions(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
             if (scene.name != "Space" || ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
-                ConfigData.UserProgressData == null || ConfigData.Configuration == null || ConfigData.LevelOptions == null)
-            {
-                return;
-            }
+                ConfigData.UserProgressData == null || ConfigData.Configuration == null || ConfigData.LevelOptions == null) return;
 
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign);
             if (missionId == 8 && ConfigData.LevelOptions.Obstacles == "Bee-noculars")
-            {
                 ConfigData.LevelOptions.Obstacles = "Minesweeper";
-            }
         }
 
         private void Update()
@@ -121,10 +112,7 @@ namespace Assets.Scripts.Levels
             {
                 if (level == null || level.CurrentLevelOptions == null || level.CurrentLevelOptions.Id != 8 ||
                     level.Map == null || level.Pathfinder == null ||
-                    level.gameObject.GetComponent<TitaniaMazeAppliedMarker>() != null)
-                {
-                    continue;
-                }
+                    level.gameObject.GetComponent<TitaniaMazeAppliedMarker>() != null) continue;
 
                 MapObject[] demolitionObjects = level.Map.transform.GetComponentsInChildren<MapObject>(true);
                 if (demolitionObjects.Length == 0) continue;
