@@ -259,21 +259,29 @@ namespace Assets.Scripts
                 return _userId;
             }
 
-            // Prefer the platform identity whenever Steam is available. The former implementation
-            // returned the local PlayerPrefs ID before this branch, making Steam identity unreachable.
-            if (SteamAPI.Init())
+            // Steam identity is preferred, but Steam is optional for startup. SteamManager owns the
+            // one initialization attempt so a missing client/native library cannot crash or stall
+            // ConfigData while the local identity path remains available.
+            if (SteamManager.Initialized)
             {
-                CSteamID steamID = SteamUser.GetSteamID();
-                if (steamID.m_SteamID != 0)
+                try
                 {
-                    _userId = steamID.m_SteamID;
-                    FirstTimePlaying = !HasPlayedBefore();
-                    return _userId;
+                    CSteamID steamID = SteamUser.GetSteamID();
+                    if (steamID.m_SteamID != 0)
+                    {
+                        _userId = steamID.m_SteamID;
+                        FirstTimePlaying = !HasPlayedBefore();
+                        return _userId;
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogWarning($"Steam identity could not be read; using local fallback identity. {exception.GetType().Name}: {exception.Message}");
                 }
             }
             else
             {
-                Debug.LogWarning("Steam API failed to initialize; using local fallback identity.");
+                Debug.LogWarning("Steam API is unavailable; using local fallback identity.");
             }
 
             int storedUserId = PlayerPrefs.GetInt("user_id");
@@ -296,12 +304,23 @@ namespace Assets.Scripts
 
         public static bool HasPlayedBefore()
         {
-            if (!SteamAPI.IsSteamRunning()) return false;
+            if (!SteamManager.Initialized)
+            {
+                return false;
+            }
 
-            int totalPlaytime;
-            bool hasStats = SteamUserStats.GetStat("total_playtime", out totalPlaytime);
-            Debug.Log($"totalPlaytime {totalPlaytime}");
-            return hasStats && totalPlaytime > 0;
+            try
+            {
+                int totalPlaytime;
+                bool hasStats = SteamUserStats.GetStat("total_playtime", out totalPlaytime);
+                Debug.Log($"totalPlaytime {totalPlaytime}");
+                return hasStats && totalPlaytime > 0;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning($"Steam playtime could not be read; treating this as a local first-run check. {exception.GetType().Name}: {exception.Message}");
+                return false;
+            }
         }
 
         public static void SetupUserProgressData(bool shouldFileExist)
