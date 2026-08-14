@@ -168,8 +168,17 @@ namespace UIComponents
             }
         }
 
-        private void Update()
+        protected override void Update()
         {
+            // Scene.Update owns asynchronous settings/user-data finalization and network lifecycle.
+            // Keep that lifecycle intact while layering Level Intro keyboard handling on top.
+            base.Update();
+
+            if (!IsFinalized)
+            {
+                return;
+            }
+
             // DialogueManager owns Space while dialogue is on screen. Once the intro has ended and
             // its normal Continue button is visible, a fresh Space press should activate that same
             // button instead of forcing the player to switch back to the mouse.
