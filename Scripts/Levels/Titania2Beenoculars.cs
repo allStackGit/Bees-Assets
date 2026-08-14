@@ -100,17 +100,19 @@ namespace Assets.Scripts.Levels
                 }, true);
                 AddTitania2Timer(survivalClock);
 
+                // Approximately 30% fewer Bees than the previous Titania II balance while
+                // preserving the same wave cadence and ship-type mix.
                 AddTitania2BeeWave(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 3, true, true),
                 }, 1f, -0.65f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3, true, true),
                 }, -1f, -0.85f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1, true, true),
                 }, 0.65f, -1f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1, true, true),
                 }, 0.65f, 1f);
 
                 Stage.ActivateHiveMind = true;
@@ -120,8 +122,8 @@ namespace Assets.Scripts.Levels
                 {
                     if (_titania2Resolved) return;
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 3, true, true)
                     }, 1f, -0.7f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
@@ -131,8 +133,8 @@ namespace Assets.Scripts.Levels
                 {
                     if (_titania2Resolved) return;
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 1, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 3, true, true)
                     }, -1f, -0.85f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
@@ -142,8 +144,8 @@ namespace Assets.Scripts.Levels
                 {
                     if (_titania2Resolved) return;
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 3, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true)
                     }, 0.65f, 1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
@@ -153,8 +155,8 @@ namespace Assets.Scripts.Levels
                 {
                     if (_titania2Resolved) return;
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
                     }, 0.55f, -1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
@@ -164,12 +166,12 @@ namespace Assets.Scripts.Levels
                 {
                     if (_titania2Resolved) return;
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 4, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 3, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true)
                     }, 0.7f, 1f);
                     AddTitania2BeeWave(new List<SavedSquad>() {
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 3, true, true),
-                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 6, true, true)
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
+                        ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
                     }, -0.55f, -1f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
