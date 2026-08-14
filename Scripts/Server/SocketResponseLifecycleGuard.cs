@@ -136,7 +136,7 @@ namespace Assets.Scripts.Server
                 return true;
             }
 
-            if (response.Status == 401 && ConfigData.Production)
+            if (response.Status == 401)
             {
                 ServerRequest unauthorizedRequest = socket.GetStandingRequest(response.Hash);
                 if (unauthorizedRequest != null)
