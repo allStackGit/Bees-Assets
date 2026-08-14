@@ -187,8 +187,11 @@ namespace Assets.Scripts.Entities.Ships
             FleetShip = fleetShip;
             OffsetFromCenter = offsetFromCenter;
             Health = OriginalHealth;
-            Name = $"{FleetShip.Type} #{FleetShip.Id}";
-            gameObject.name = Name;
+            if (!Stage.IsTraining)
+            {
+                Name = $"{FleetShip.Type} #{FleetShip.Id}";
+                gameObject.name = Name;
+            }
             ClearData();
             IsSpawnedShip = FleetShip.Id < 0;
 
