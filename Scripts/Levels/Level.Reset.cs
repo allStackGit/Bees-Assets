@@ -149,7 +149,7 @@ namespace Assets.Scripts.Levels
                 Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
             }
 
-            Stage.SetConfigOptionsAndOverrides(this);
+            StageConfigOptions.Apply(Stage, this);
             if (!Stage.IsTraining)
             {
                 Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
