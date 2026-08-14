@@ -112,7 +112,7 @@ namespace Assets.Scripts.Levels.Commands
                     ReturnPoint = GetDestination();
                 }
             }
-            else if (GetSquad().HasReachedDestination)
+            else if (GetSquad().HaveAllShipsReachedDestination())
             {
                 SetFinalize("Returned to starting point");
             }
