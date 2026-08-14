@@ -1,6 +1,4 @@
 ﻿
-using Assets.Scripts.Entities.Ships;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -42,17 +40,10 @@ namespace Assets.Scripts.Levels.Commands
             _lastDestination = Vector2.zero;
         }
 
-        private static bool IsAnyShipPathfinding(Squad squad)
+        private void MoveFormationTracked(Squad squad, Vector2 destination)
         {
-            List<Ship> ships = squad.GetShips();
-            for (int i = 0; i < ships.Count; i++)
-            {
-                if (ships[i].IsPathfinding)
-                {
-                    return true;
-                }
-            }
-            return false;
+            SetDestination(destination);
+            squad.MoveTracked(GetDestination());
         }
 
         private Vector2 _timer_squadPosition;
@@ -73,14 +64,17 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
+            }
             if (!_gotToEnemy && !squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
             {
-                squad.Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
-                if (!IsAnyShipPathfinding(squad))
+                if (!Stage.IsTraining)
                 {
-                    SetAndMove(EnemySquad.GetPosition());
+                    squad.Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
                 }
+                MoveFormationTracked(squad, EnemySquad.GetPosition());
                 return;
             }
 
@@ -102,7 +96,10 @@ namespace Assets.Scripts.Levels.Commands
 
             _timer_angle = EnemySquad.AngleToPoint(_timer_squadPosition);
             _angle = _timer_angle + (.06f * Mathf.PI);
-            squad.Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
+            }
 
             _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
             _timer_loops = 0;
@@ -114,10 +111,7 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             _lastDestination = _timer_destination;
-            if (!IsAnyShipPathfinding(squad))
-            {
-                SetAndMove(_timer_destination);
-            }
+            MoveFormationTracked(squad, _timer_destination);
         }
     }
 }
