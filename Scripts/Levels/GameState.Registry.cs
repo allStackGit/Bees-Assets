@@ -39,6 +39,11 @@ namespace Assets.Scripts.Levels
                 ship.FleetShip.IsLoadedIntoLevel = true;
             }
             Ships.Add(ship);
+            int sideIndex = ship.Side - 1;
+            if (sideIndex >= 0 && sideIndex < ShipsBySide.Length)
+            {
+                ShipsBySide[sideIndex].Add(ship);
+            }
             ShipsById.Add(ship.Id, ship);
             if (ship.IsHiveMindControlled)
             {
@@ -199,6 +204,11 @@ namespace Assets.Scripts.Levels
                 ship.FleetShip.IsLoadedIntoLevel = false;
             }
             Ships.Remove(ship);
+            int shipSideIndex = ship.Side - 1;
+            if (shipSideIndex >= 0 && shipSideIndex < ShipsBySide.Length)
+            {
+                ShipsBySide[shipSideIndex].Remove(ship);
+            }
             MiningShips.Remove(ship);
             ShipsById.Remove(ship.Id);
             if (!ShipsToRelease.Contains(ship))
