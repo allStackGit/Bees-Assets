@@ -20,15 +20,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ShipRemovalToleratesNullSpottedListsDuringEpisodeTeardown()
+        public void ShipRemovalToleratesSpottedStateDuringEpisodeTeardown()
         {
             string resetLevel = ExtractMethodBody(_levelResetSource, "ResetLevel");
             string removeShip = ExtractMethodBody(_registrySource, "RemoveShip");
 
-            Assert.That(resetLevel, Does.Contain("Array.Clear(_reset_spottedShips"),
-                "This regression is relevant while ResetLevel temporarily nulls the per-side spotted lists before EndKill.");
-            Assert.That(removeShip, Does.Contain("if (spotted != null)"));
-            Assert.That(removeShip, Does.Contain("spotted.RemoveAll"));
+            int clearSpotted = resetLevel.IndexOf("State.SpottedShips[_reset_i]?.Clear();", StringComparison.Ordinal);
+            int endKill = resetLevel.IndexOf("_resetShips[_reset_i].EndKill();", StringComparison.Ordinal);
+            Assert.That(clearSpotted, Is.GreaterThanOrEqualTo(0));
+            Assert.That(endKill, Is.GreaterThan(clearSpotted),
+                "ResetLevel should clear the reusable spotting containers before old ships are torn down.");
+            Assert.That(resetLevel, Does.Not.Contain("Array.Clear(_reset_spottedShips"));
+            Assert.That(removeShip, Does.Contain("if (spotted == null)"));
+            Assert.That(removeShip, Does.Contain("for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
