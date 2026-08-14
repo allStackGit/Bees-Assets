@@ -215,11 +215,11 @@ namespace Assets.Scripts.Levels
         public Ship[] Ships = new Ship[ConfigData.MaxThreads];
         public MapNode[][][] GridNodes = new MapNode[ConfigData.MaxThreads][][];
 
-        public class PathWaiting
+        public struct PathWaiting
         {
             public Ship Ship;
             public int Clearance, StartX, StartY, EndX, EndY, RequestId, LifecycleId;
-            public float StartTime = Time.realtimeSinceStartup;
+            public float StartTime;
 
             public PathWaiting(Ship ship, int startX, int startY, int endX, int endY, int clearance, int requestId, int lifecycleId)
             {
@@ -231,6 +231,7 @@ namespace Assets.Scripts.Levels
                 Clearance = clearance;
                 RequestId = requestId;
                 LifecycleId = lifecycleId;
+                StartTime = Time.realtimeSinceStartup;
             }
         }
 
