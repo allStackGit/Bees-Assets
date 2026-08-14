@@ -38,11 +38,12 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("HasCommand = command != null;", _commands);
 
             int queueStart = _commands.IndexOf("public void RunCommandQueue()");
-            int matchupStart = _commands.IndexOf("private HashSet<ConfigData.ShipTypes>", queueStart);
+            int matchupStart = _commands.IndexOf("private readonly HashSet<ConfigData.ShipTypes> _banned", queueStart);
             Assert.That(queueStart, Is.GreaterThanOrEqualTo(0));
             Assert.That(matchupStart, Is.GreaterThan(queueStart));
             string queue = _commands.Substring(queueStart, matchupStart - queueStart);
             StringAssert.DoesNotContain("HasCommand = true", queue);
+            StringAssert.Contains("SetCommand(nextCommand);", queue);
         }
 
         [Test]
