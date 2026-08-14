@@ -35,11 +35,13 @@ namespace Assets.Scripts.Server
                 return false;
             }
 
+            long hash = request.Hash;
             bool removed = base.Remove(request);
-            if (_requestsByHash.TryGetValue(request.Hash, out ServerRequest indexedRequest) &&
-                ReferenceEquals(indexedRequest, request))
+            if (removed)
             {
-                _requestsByHash.Remove(request.Hash);
+                // ServerRequest equality is hash-based, so removing any equal request removes
+                // the one entry owned by this hash regardless of reference identity.
+                _requestsByHash.Remove(hash);
             }
             return removed;
         }
@@ -83,14 +85,15 @@ namespace Assets.Scripts.Server
         {
             if (_requestsByHash.TryGetValue(hash, out request) &&
                 request != null &&
-                request.Hash == hash)
+                request.Hash == hash &&
+                base.Contains(request))
             {
                 return true;
             }
 
             // Defensive fallback for callers/tests that obtained the collection through a base
-            // interface or otherwise bypassed the hidden Add method. Normal production lookups
-            // remain O(1); a fallback lookup repairs the index for subsequent responses.
+            // interface or otherwise bypassed the hidden mutators. A fallback scan repairs the
+            // index, while the normal path remains O(1).
             _requestsByHash.Remove(hash);
             foreach (ServerRequest candidate in this)
             {
