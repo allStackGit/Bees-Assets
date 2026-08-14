@@ -47,6 +47,18 @@ namespace Assets.Scripts.Entities.Ships
             }
             Charge = Weapons.First();
             OriginalPower = Charge.Power;
+
+            if (Stage.IsTraining)
+            {
+                for (int i = 0; i < ChargeRocketFlares.Count; i++)
+                {
+                    Destroy(ChargeRocketFlares[i]);
+                }
+                ChargeRocketFlares.Clear();
+                Destroy(BargeChargeAnimation);
+                Destroy(BargeLoadingChargeAnimation);
+                Destroy(BargeChargeImageAnimation);
+            }
         }
 
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -55,17 +67,6 @@ namespace Assets.Scripts.Entities.Ships
             if (IsUserControlled)
             {
                 ChargingBar.Setup();
-            }
-            if (Stage.IsTraining)
-            {
-                ChargeRocketFlares.ForEach((flare) =>
-                {
-                    Destroy(flare);
-                });
-                ChargeRocketFlares.Clear();
-                Destroy(BargeChargeAnimation);
-                Destroy(BargeLoadingChargeAnimation);
-                Destroy(BargeChargeImageAnimation);
             }
         }
         public override void ClearData()
