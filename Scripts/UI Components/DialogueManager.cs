@@ -45,6 +45,16 @@ public class DialogueManager : MonoBehaviour
 
     public void StartDialogue(List<DialogueLine> lines, bool isLastDialogue)
     {
+        // CutsceneManager.Setup rebuilds the campaign dialogue lists whenever a mission registers
+        // its ending callback. Apply the current Mission Scripting wording at the presentation
+        // boundary so even dialogue started synchronously during level construction (notably
+        // Beenoculars) is updated before any line is enqueued or displayed. GetRange() returns the
+        // same DialogueLine objects, so in-place patches are reflected in the supplied list too.
+        if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && CutsceneManager != null)
+        {
+            CampaignDialogueOverrides.Apply(CutsceneManager);
+        }
+
         _isLastDialogue = isLastDialogue;
         _isAdvancingDialogue = false;
         _playIntercomWhenPresented = false;
