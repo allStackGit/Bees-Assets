@@ -119,6 +119,7 @@ namespace Assets.Scripts.Scenes
 
             //ConfigData.Ships.ReplaceDeadSquadShips();
             UIAudioController.Instance.PlayMusic();
+            ConfigData.IsLoadingUserData = false;
             IsFinalized = true;
         }
 
