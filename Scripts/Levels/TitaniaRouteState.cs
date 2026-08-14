@@ -114,14 +114,14 @@ namespace Assets.Scripts.Levels
                     level.Map == null || level.Pathfinder == null ||
                     level.gameObject.GetComponent<TitaniaMazeAppliedMarker>() != null) continue;
 
-                MapObject[] demolitionObjects = level.Map.transform.GetComponentsInChildren<MapObject>(true);
+                CanisterBomb[] demolitionObjects = level.Map.transform.GetComponentsInChildren<CanisterBomb>(true);
                 if (demolitionObjects.Length == 0) continue;
 
                 List<Obstacle> barriers = level.Map.transform.GetComponentsInChildren<Obstacle>(true)
                     .Where(obstacle => obstacle != null && !obstacle.IsDead).ToList();
                 HashSet<Transform> assigned = new HashSet<Transform>();
 
-                foreach (MapObject demolitionObject in demolitionObjects)
+                foreach (CanisterBomb demolitionObject in demolitionObjects)
                 {
                     if (demolitionObject == null) continue;
                     Obstacle barrier = barriers
@@ -129,12 +129,23 @@ namespace Assets.Scripts.Levels
                         .OrderBy(obstacle => ((Vector2)obstacle.transform.position -
                                              (Vector2)demolitionObject.transform.position).sqrMagnitude)
                         .FirstOrDefault();
-                    if (barrier != null)
+                    if (barrier == null)
                     {
-                        assigned.Add(barrier.transform);
-                        if (TitaniaRouteState.WasBarrierOpened(barrier.transform.localPosition)) barrier.Kill();
+                        demolitionObject.gameObject.SetActive(false);
+                        continue;
                     }
-                    demolitionObject.gameObject.SetActive(false);
+
+                    assigned.Add(barrier.transform);
+                    demolitionObject.TargetObstacle = barrier;
+                    if (TitaniaRouteState.WasBarrierOpened(barrier.transform.localPosition))
+                    {
+                        barrier.Kill();
+                        demolitionObject.gameObject.SetActive(false);
+                    }
+                    else
+                    {
+                        demolitionObject.gameObject.SetActive(true);
+                    }
                 }
 
                 level.CurrentLevelOptions.Obstacles = "Bee-noculars";
