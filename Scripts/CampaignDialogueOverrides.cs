@@ -297,7 +297,7 @@ public static class CampaignDialogueOverrides
 [DefaultExecutionOrder(10000)]
 internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
 {
-    private readonly Dictionary<int, DialogueLine> _appliedMarkers = new Dictionary<int, DialogueLine>();
+    private readonly Dictionary<CutsceneManager, DialogueLine> _appliedMarkers = new Dictionary<CutsceneManager, DialogueLine>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Install()
@@ -322,15 +322,14 @@ internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
             }
 
             DialogueLine marker = manager.PlutoLines_Anomaly[0];
-            int id = manager.GetEntityId();
-            if (_appliedMarkers.TryGetValue(id, out DialogueLine appliedMarker) &&
+            if (_appliedMarkers.TryGetValue(manager, out DialogueLine appliedMarker) &&
                 ReferenceEquals(marker, appliedMarker))
             {
                 continue;
             }
 
             CampaignDialogueOverrides.Apply(manager);
-            _appliedMarkers[id] = marker;
+            _appliedMarkers[manager] = marker;
         }
     }
 }
