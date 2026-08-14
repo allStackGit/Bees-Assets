@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -64,9 +63,9 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Destroy(SortingGroup);
                 Destroy(MiniMapIcon);
-                LeftRocketFlares.ForEach(flare => Destroy(flare));
-                CenterRocketFlares.ForEach(flare => Destroy(flare));
-                RightRocketFlares.ForEach(flare => Destroy(flare));
+                for (int i = 0; i < LeftRocketFlares.Count; i++) Destroy(LeftRocketFlares[i]);
+                for (int i = 0; i < CenterRocketFlares.Count; i++) Destroy(CenterRocketFlares[i]);
+                for (int i = 0; i < RightRocketFlares.Count; i++) Destroy(RightRocketFlares[i]);
                 LeftRocketFlares.Clear();
                 CenterRocketFlares.Clear();
                 RightRocketFlares.Clear();
@@ -78,14 +77,26 @@ namespace Assets.Scripts.Entities.Ships
             ConfigureSpecialRole(shipStats);
             CreateWeapons(shipStats);
 
-            Turrets = Weapons.OfType<Turret>().ToList();
+            Turrets.Clear();
             HasWeapons = Weapons.Count > 0;
+            MaxRange = 0;
+            Firepower = HasWeapons ? 0 : SpecialFirePower;
+            DamagePerSecond = 0;
+            _maxRateOfFire = HasWeapons ? Weapons[0].RateOfFire : 2;
+            for (int i = 0; i < Weapons.Count; i++)
+            {
+                Weapon weapon = Weapons[i];
+                if (weapon is Turret turret)
+                {
+                    Turrets.Add(turret);
+                    DamagePerSecond += turret.DamagePerSecond;
+                }
+                if (weapon.Range > MaxRange) MaxRange = weapon.Range;
+                Firepower += weapon.Firepower;
+                if (weapon.RateOfFire > _maxRateOfFire) _maxRateOfFire = weapon.RateOfFire;
+            }
             HasTurrets = Turrets.Count > 0;
-            MaxRange = HasWeapons ? Weapons.Max(weapon => weapon.Range) : 0;
             HalfMaxRange = MaxRange / 2;
-            Firepower = HasWeapons ? Weapons.Sum(weapon => weapon.Firepower) : SpecialFirePower;
-            DamagePerSecond = Turrets.Sum(turret => turret.DamagePerSecond);
-            _maxRateOfFire = HasWeapons ? Weapons.Max(weapon => weapon.RateOfFire) : 2;
             _repeatRate = Mathf.Clamp(5f, _maxRateOfFire + 1, _maxRateOfFire + 2);
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
             OriginalTsv = Utilities.GetMaxTsv(ShipType);
@@ -179,7 +190,6 @@ namespace Assets.Scripts.Entities.Ships
             Name = $"{FleetShip.Type} #{FleetShip.Id}";
             gameObject.name = Name;
             ClearData();
-            if (IsHiveMindControlled) Level.State.HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());
             IsSpawnedShip = FleetShip.Id < 0;
 
             if (!Level.Stage.IsTraining)
@@ -204,7 +214,7 @@ namespace Assets.Scripts.Entities.Ships
                     ? Squad.Color
                     : ConfigData.GetUIColor(Side == ConfigData.Configuration.HumanSide ? "human" : "bee");
             }
-            Weapons.ForEach(weapon => weapon.Setup());
+            for (int i = 0; i < Weapons.Count; i++) Weapons[i].Setup();
             if (HasRemainsShip) ShipRemains.Setup();
             if ((ConfigData.Configuration.UserSide == Side || !Level.HasPlayer) &&
                 (ShipType == ConfigData.ShipTypes.Factory || ShipType == ConfigData.ShipTypes.CarpenterBee))
@@ -285,11 +295,12 @@ namespace Assets.Scripts.Entities.Ships
             StopAllCoroutines();
             if (HasWeapons)
             {
-                Weapons.ForEach(weapon =>
+                for (int i = 0; i < Weapons.Count; i++)
                 {
+                    Weapon weapon = Weapons[i];
                     weapon.Deactivate();
                     if (IsUserControlled && weapon.HasRangeCircle) weapon.RangeCircle.SetActive(false);
-                });
+                }
             }
             if (!IsUserControlled) HiveMindVision.Deactivate();
             if (HasProximityCollider) ProximityCollider.Deactivate();
@@ -299,9 +310,9 @@ namespace Assets.Scripts.Entities.Ships
                 MiniMapIcon.SetActive(false);
                 if (HasRocketFlares)
                 {
-                    CenterRocketFlares.ForEach(flare => flare.SetActive(false));
-                    RightRocketFlares.ForEach(flare => flare.SetActive(false));
-                    LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                    for (int i = 0; i < CenterRocketFlares.Count; i++) CenterRocketFlares[i].SetActive(false);
+                    for (int i = 0; i < RightRocketFlares.Count; i++) RightRocketFlares[i].SetActive(false);
+                    for (int i = 0; i < LeftRocketFlares.Count; i++) LeftRocketFlares[i].SetActive(false);
                 }
                 if (HasMovementMarker) MovementMarker.SetActive(false);
                 HealthBar.SetActive(false);
@@ -318,7 +329,10 @@ namespace Assets.Scripts.Entities.Ships
             }
             else HiveMindVision.Activate();
             if (HasProximityCollider) ProximityCollider.Activate();
-            if (HasWeapons) Weapons.ForEach(weapon => weapon.Activate());
+            if (HasWeapons)
+            {
+                for (int i = 0; i < Weapons.Count; i++) Weapons[i].Activate();
+            }
             if (Stage.IsRendering) HealthBar.SetActive(true);
             if (!Stage.IsTraining)
             {
