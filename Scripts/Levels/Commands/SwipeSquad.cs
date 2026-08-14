@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -39,16 +40,20 @@ namespace Assets.Scripts.Levels.Commands
             _swipeDestination = Vector2.zero;
         }
 
-        private bool IsAnyShipPathfinding()
+        private bool MoveTowardsEnemiesTracked()
         {
-            foreach (Ship ship in GetSquad().GetShips())
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
             {
-                if (ship.IsPathfinding)
+                Ship ship = ships[i];
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
                 {
-                    return true;
+                    return false;
                 }
+                ship.MoveToTrackedPoint(target.GetPosition());
             }
-            return false;
+            return true;
         }
 
         private Vector2 _enemyPosition;
@@ -71,9 +76,10 @@ namespace Assets.Scripts.Levels.Commands
             squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
             if (!_gotToEnemy && !squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
             {
-                if (!IsAnyShipPathfinding())
+                if (!MoveTowardsEnemiesTracked())
                 {
-                    MoveTowardsEnemies();
+                    SetFinalize("No more enemy ships to target");
+                    return;
                 }
             }
             else if (_swipeDestination == Vector2.zero)
