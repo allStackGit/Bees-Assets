@@ -33,7 +33,9 @@ namespace Bees.Tests.EditMode
                 Assert.That(checkpoint, Does.Contain($"[ConfigData.FleetDataFilenames[{index}]]"));
                 Assert.That(checkpoint, Does.Contain($"[ConfigData.SavedSquadsDataFilenames[{index}]]"));
             }
-            Assert.That(checkpoint, Does.Contain("[ConfigData.UserProgressFilename] = ConfigData.UserProgressData.ToJson()"));
+            Assert.That(checkpoint, Does.Contain("ConfigData.UserProgressData.ToJson()"));
+            Assert.That(checkpoint, Does.Contain("TitaniaRouteState.AddToPlayerProgressJson"));
+            Assert.That(checkpoint, Does.Contain("[ConfigData.UserProgressFilename] = userProgressJson"));
             Assert.That(checkpoint, Does.Contain("ConfigData.IsFleetDataLoaded[i]"));
             Assert.That(checkpoint, Does.Contain("ConfigData.IsSavedSquadsDataLoaded[i]"));
             Assert.That(checkpoint, Does.Contain("ConfigData.SocketManager == null"));
