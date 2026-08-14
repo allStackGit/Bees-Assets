@@ -58,8 +58,10 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
 
             Assert.That(source, Does.Contain("AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry)"));
-            Assert.That(source, Does.Contain("ResendTimer = new Timer(1f, ConfigData.Socket.CheckForResends)"),
+            Assert.That(source, Does.Contain("ResendTimer = new Timer(1f, CheckForResends)"),
                 "Resend polling must be independent of any particular request deadline so per-request timeouts remain meaningful.");
+            Assert.That(source, Does.Contain("_resendRequests.AddRange(socket.StandingRequests);"),
+                "The scene resend poll should reuse its snapshot instead of allocating a request list every second.");
             Assert.That(source, Does.Contain("ConfigData.Socket.KeepClosed"),
                 "Intentional socket shutdowns must not start automatic reconnect attempts.");
             Assert.That(source, Does.Contain("_automaticReconnectAttempts++"),
@@ -107,7 +109,8 @@ namespace Bees.Tests.EditMode
 
             Assert.That(socketSource, Does.Contain("MaxMessagesPerUpdate"));
             Assert.That(socketSource, Does.Contain("messagesProcessed < MaxMessagesPerUpdate"));
-            Assert.That(socketSource, Does.Contain("SocketResponseLifecycleGuard.ShouldSuppressResponse(this, _update_message)"));
+            Assert.That(socketSource, Does.Contain("SocketResponseLifecycleGuard.TryParseResponse(_update_message, out _update_parsedMessage, out _update_response)"));
+            Assert.That(socketSource, Does.Contain("SocketResponseLifecycleGuard.ShouldSuppressResponse(this, _update_response)"));
             Assert.That(guardSource, Does.Not.Contain("while (socket.MessageQueue.TryDequeue"),
                 "The lifecycle guard must not drain and replay the entire response queue every rendered frame.");
         }
