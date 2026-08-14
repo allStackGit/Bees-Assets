@@ -2,13 +2,6 @@
 
 Static-only audit; no runtime measurements are claimed. This ledger contains unresolved validated optimization opportunities only.
 
-### PERF-010 — Collapse Queen minion-wave coroutine fan-out
-**Location:** `Scripts/Entities/Ships/Queen.cs/SpawnMinions()/SpawnMinion()` (secondary constant-wait allocations also exist in `Scripts/Entities/Ships/Barge.cs`)  
-**Cost:** Every Queen minion wave calls `StartCoroutine(SpawnMinion(...))` once per minion. Each coroutine instance allocates its iterator state and immediately allocates a `WaitForSeconds(shipIndex * TimeBetweenMinions)`. The recurring Queen spawn timer can therefore create N coroutine/wait objects per wave, multiplied by the number of live Queens. Barge charge/cooldown coroutines likewise allocate new constant-duration `WaitForSeconds` objects on repeated charges, though at lower fan-out.  
-**Optimization:** Drive a Queen wave with one sequential coroutine/state machine that spawns the first minion immediately and then advances at `TimeBetweenMinions` intervals, or use the existing timer system with persistent state. Avoid per-minion coroutine creation while preserving the current stagger. Cache/reuse constant wait ownership in Barge where safe, or move those phases onto reusable timers.  
-**Evidence:** Current `Queen.SpawnMinions()` loops `MinionCount` times and calls `StartCoroutine(SpawnMinion(...))`; `SpawnMinion()` begins with `yield return new WaitForSeconds(shipIndex * TimeBetweenMinions)`. Current `Barge.ChargeForward()/StopCharge()` construct new waits of 2, 1, and 10 seconds on recurring charge lifecycles.  
-**Risk:** Queen spawn timing/order and random/ID creation order are gameplay/training sensitive. A sequential rewrite must produce the same immediate first spawn and same subsequent stagger, remain cancelable on Queen death/pool reuse, and never allow an old lifecycle to spawn minions after reuse. Barge cooldown/charge semantics must remain scaled-time compatible.
-
 ### PERF-011 — Remove visible map objects without rebuilding the entire set
 **Location:** `Scripts/Entities/Ships/Weapons/MapObjectVisibilityTracker.cs/RemoveFromVisibleSet()`  
 **Cost:** When the last observing `RangeCollider` leaves a map object, and again on tracker disable/destroy, `RemoveFromVisibleSet()` copies every other entry in `GameState.PlayerVisibleMapObjects` to `_visibleSurvivors`, clears the entire `HashSet`, re-adds all survivors, then clears the temporary list. Removing one visible object is therefore O(V) and rewrites the full set. Weapon-range contacts can enter/exit repeatedly as ships move, so the cost scales with both visible-object count and contact churn.  
