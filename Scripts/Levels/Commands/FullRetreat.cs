@@ -146,7 +146,10 @@ public class FullRetreat : Command
                         ship.MoveToTrackedPoint(_f_targetPosition);
                     }
                 }
-                GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+                }
             }
             else
             {
