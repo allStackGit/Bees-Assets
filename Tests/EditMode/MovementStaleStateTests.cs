@@ -52,6 +52,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("MoveInternal(destination, true);", source);
             StringAssert.Contains("ship.MoveToTrackedPoint(shipDestination);", source);
             StringAssert.Contains("ship.MoveToPoint(shipDestination);", source);
+            StringAssert.Contains("public bool HaveAllShipsReachedDestination()", source);
+            StringAssert.Contains("public float GetSlowestShipSpeed()", source);
         }
 
         [Test]
@@ -79,6 +81,43 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ship.MoveToTrackedPoint(ship.TargetEnemyShipToFollow.GetPosition())", bombingRun);
             StringAssert.Contains("ship.MoveToTrackedPoint(_f_targetPosition)", fullRetreat);
             StringAssert.Contains("MoveToTrackedPoint(_destination)", striker);
+        }
+
+        [Test]
+        public void NestedShipAndSquadRangeChecksUseLocalDirectLoops()
+        {
+            string shipGeometry = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Geometry.cs"));
+            string squadGeometry = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.Geometry.cs"));
+
+            StringAssert.Contains("for (int weaponIndex = 0; weaponIndex < Weapons.Count; weaponIndex++)", shipGeometry);
+            StringAssert.Contains("for (int shipIndex = 0; shipIndex < _tempShips.Count; shipIndex++)", shipGeometry);
+            StringAssert.DoesNotContain("_rangeIndex", shipGeometry);
+            StringAssert.DoesNotContain(".All(IsShipWithinRange)", shipGeometry);
+
+            StringAssert.DoesNotContain(".Any(ship =>", squadGeometry);
+            StringAssert.DoesNotContain(".All(ship =>", squadGeometry);
+            StringAssert.Contains("if (!ships[i].IsAnySquadShipWithinRange(squad))", squadGeometry);
+        }
+
+        [Test]
+        public void HotSquadAggregatesUseDirectLoops()
+        {
+            string movement = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.Movement.cs"));
+            string combat = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.Combat.cs"));
+            string aggressive = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Commands", "Aggressive.cs"));
+
+            StringAssert.Contains("bool isDefenseless = true;", movement);
+            StringAssert.Contains("bool hasOnlyBombers = true;", movement);
+            StringAssert.Contains("bool hasOnlyBarges = true;", movement);
+            StringAssert.Contains("public int GetMaximumRange()", combat);
+            StringAssert.Contains("public bool AreAllShipsDefenseless()", combat);
+            StringAssert.Contains("squad.GetMaximumRange()", aggressive);
+            StringAssert.Contains("EnemySquad.AreAllShipsDefenseless()", aggressive);
         }
     }
 }
