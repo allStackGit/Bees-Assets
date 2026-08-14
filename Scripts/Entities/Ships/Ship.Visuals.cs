@@ -31,6 +31,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public virtual void SetColor()
         {
+            if (!Stage.IsRendering)
+            {
+                return;
+            }
+
             EnsureBaseColorSprites();
             if (ColoredPrefabs == null || ReferenceEquals(ColoredPrefabs, OriginalColoredPrefabs))
             {
