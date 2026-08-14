@@ -287,15 +287,6 @@ namespace Assets.Scripts.Data
                 if (activeLevel?.CurrentLevelOptions != null && activeLevel.CurrentLevelOptions.Id >= 0)
                 {
                     int missionId = activeLevel.CurrentLevelOptions.Id;
-
-                    // Beenoculars is a survival objective. Losing Titania does not complete the
-                    // mission, so its failure dialogue must not advance campaign progress.
-                    if (missionId == 8 && activeLevel.WinningSide == ConfigData.Configuration.AISide)
-                    {
-                        Debug.Log("Beenoculars was lost; keeping campaign progress on mission 8.");
-                        return;
-                    }
-
                     int targetLevel = missionId + 1;
                     if (currentLevel >= targetLevel)
                     {
@@ -336,7 +327,7 @@ namespace Assets.Scripts.Data
         }
 
         /// <summary>
-        /// Gets the next incremental Saved Squad Number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
+        /// Gets the next saved squad number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
         /// </summary>
         public int GetNextSavedSquadNumber()
         {
