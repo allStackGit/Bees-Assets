@@ -120,7 +120,7 @@ namespace Assets.Scripts.Levels.Commands
                 _swipeDestination = EnemySquad.CirclePoint(_angle, _distance);
                 SetAndMove(_swipeDestination);
             }
-            else if (squad.HasReachedDestination)
+            else if (squad.HaveAllShipsReachedDestination())
             {
                 SetFinalize("Finished swiping past the enemy");
             }
