@@ -22,7 +22,10 @@ namespace Assets.Scripts.Server
             Request = request;
             Squad = squad;
             Level = level;
-            Squad.Status = $"Requesting matchup strategy";
+            if (!Level.Stage.IsTraining)
+            {
+                Squad.Status = "Requesting matchup strategy";
+            }
             request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
             SquadId = Squad.ItemId;

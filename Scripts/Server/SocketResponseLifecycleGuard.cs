@@ -7,11 +7,13 @@ namespace Assets.Scripts.Server
     internal sealed class SocketResponseLifecycleGuard : MonoBehaviour
     {
         private const float HandledResponseRetentionSeconds = 120f;
+        private const float HandledResponsePruneIntervalSeconds = 1f;
         private const int MaxTrackedHandledResponses = 4096;
 
         private static SocketResponseLifecycleGuard _instance;
         private readonly Dictionary<long, float> _handledAt = new Dictionary<long, float>();
         private readonly List<long> _hashesToRemove = new List<long>();
+        private float _nextPruneAt;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -26,7 +28,12 @@ namespace Assets.Scripts.Server
         {
             CampaignCheckpoint.FlushIfReady();
             if (ConfigData.SocketManager == null) return;
-            PruneHandledResponses(ConfigData.Socket);
+
+            Socket socket = ConfigData.Socket;
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextPruneAt && socket.HandledRequests.Count <= MaxTrackedHandledResponses) return;
+            _nextPruneAt = now + HandledResponsePruneIntervalSeconds;
+            PruneHandledResponses(socket, now);
         }
 
         private static bool IsSuccessfulWriteStatus(int status)
@@ -85,21 +92,41 @@ namespace Assets.Scripts.Server
             return false;
         }
 
-        internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
+        internal static bool TryParseResponse(byte[] bytes, out string json, out ServerResponse response)
         {
+            json = null;
+            response = null;
             if (bytes == null || bytes.Length == 0) return false;
-
-            ServerResponse response;
             try
             {
-                string json = System.Text.Encoding.UTF8.GetString(bytes);
+                json = System.Text.Encoding.UTF8.GetString(bytes);
                 response = JsonUtility.FromJson<ServerResponse>(json);
                 if (response == null || string.IsNullOrEmpty(response.Type) ||
                     !Utilities.ConvertNameToRequestType.TryGetValue(response.Type, out ConfigData.RequestTypes requestType))
+                {
+                    json = null;
+                    response = null;
                     return false;
+                }
                 response.RequestType = requestType;
+                return true;
             }
-            catch { return false; }
+            catch
+            {
+                json = null;
+                response = null;
+                return false;
+            }
+        }
+
+        internal static bool ShouldSuppressResponse(Socket socket, byte[] bytes)
+        {
+            return TryParseResponse(bytes, out _, out ServerResponse response) && ShouldSuppressResponse(socket, response);
+        }
+
+        internal static bool ShouldSuppressResponse(Socket socket, ServerResponse response)
+        {
+            if (response == null) return false;
 
             if (IsStaleSquadResponse(socket, response))
             {
@@ -109,9 +136,6 @@ namespace Assets.Scripts.Server
                 return true;
             }
 
-            // Only a 401 for the currently-owned request may start a credential refresh. After a
-            // refresh Socket rotates auth-bearing request hashes, so delayed 401s from the rejected
-            // credential no longer match a standing request and cannot invalidate the replacement.
             if (response.Status == 401 && ConfigData.Production)
             {
                 ServerRequest unauthorizedRequest = socket.GetStandingRequest(response.Hash);
@@ -173,9 +197,8 @@ namespace Assets.Scripts.Server
             return true;
         }
 
-        private void PruneHandledResponses(Socket socket)
+        private void PruneHandledResponses(Socket socket, float now)
         {
-            float now = Time.realtimeSinceStartup;
             foreach (long hash in socket.HandledRequests)
             {
                 if (!_handledAt.ContainsKey(hash)) _handledAt.Add(hash, now);
@@ -185,19 +208,35 @@ namespace Assets.Scripts.Server
             foreach (KeyValuePair<long, float> entry in _handledAt)
             {
                 if (!socket.HandledRequests.Contains(entry.Key) || now - entry.Value >= HandledResponseRetentionSeconds)
-                    _hashesToRemove.Add(entry.Key);
-            }
-
-            if (_handledAt.Count - _hashesToRemove.Count > MaxTrackedHandledResponses)
-            {
-                foreach (KeyValuePair<long, float> entry in _handledAt)
                 {
-                    if (_hashesToRemove.Contains(entry.Key)) continue;
                     _hashesToRemove.Add(entry.Key);
-                    if (_handledAt.Count - _hashesToRemove.Count <= MaxTrackedHandledResponses) break;
                 }
             }
 
+            RemoveTrackedHashes(socket);
+
+            int excessCount = _handledAt.Count - MaxTrackedHandledResponses;
+            if (excessCount <= 0)
+            {
+                return;
+            }
+
+            _hashesToRemove.Clear();
+            foreach (KeyValuePair<long, float> entry in _handledAt)
+            {
+                _hashesToRemove.Add(entry.Key);
+                excessCount--;
+                if (excessCount == 0)
+                {
+                    break;
+                }
+            }
+
+            RemoveTrackedHashes(socket);
+        }
+
+        private void RemoveTrackedHashes(Socket socket)
+        {
             for (int i = 0; i < _hashesToRemove.Count; i++)
             {
                 long hash = _hashesToRemove[i];

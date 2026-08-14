@@ -7,7 +7,7 @@
 - Fire Tank body sprites are four progressive damage stages per colour variant. Smoke uses five 8x8 frames from `Sprites/Objects/smoke_puff.png` at 5 FPS; plume positions are serialized so visual alignment can be tuned without code changes.
 - Fire Tank destruction flows through `CanisterBomb.Kill()` -> `Obstacle.BreakApart(...)` -> normal `Obstacle.Kill()`.
 - Obstacle debris is cosmetic only: no collider/Rigidbody gameplay interaction. `ObstacleDebrisPiece` owns transform motion/spin/damping/fade and uses deterministic local randomness so cosmetic effects do not advance the global Unity random state.
-- If repeated cosmetic debris becomes a profiling problem, pool `ObstacleDebrisPiece` rather than adding gameplay state to it.
+- Obstacle debris is pooled at Stage scope through `ObstacleDebrisPool`. Pool growth creates one root plus one persistent renderer child per piece; later breakups reuse those objects, reset piece age/state in `Setup`, and return pieces to the pool at lifetime end. Keep gameplay state out of this cosmetic pool and preserve the local deterministic RNG contract.
 
 ## Audio ownership
 

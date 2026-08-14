@@ -67,6 +67,38 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0));
         }
 
+        [Test]
+        public void DisablingVisibleMapObjectRemovesOnlyThatObject()
+        {
+            Fixture first = CreateFixture();
+            Fixture second = CreateFixture();
+            object visibleObjects = RuntimeAssembly.GetField(first.State, "PlayerVisibleMapObjects");
+
+            // Both fixtures need to share the authoritative state for this removal check.
+            RuntimeAssembly.SetField(second.MapObject, "Level", RuntimeAssembly.GetField(first.MapObject, "Level"));
+            RuntimeAssembly.SetField(RuntimeAssembly.GetField(second.Range, "Weapon"), "Ship", RuntimeAssembly.GetField(RuntimeAssembly.GetField(first.Range, "Weapon"), "Ship"));
+
+            RuntimeAssembly.Invoke(first.Range, "OnTriggerEnter2D", first.MapCollider);
+            RuntimeAssembly.Invoke(second.Range, "OnTriggerEnter2D", second.MapCollider);
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(2));
+
+            first.MapObjectGameObject.SetActive(false);
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void DestroyingVisibleMapObjectRemovesItFromVisibleSet()
+        {
+            Fixture fixture = CreateFixture();
+            object visibleObjects = RuntimeAssembly.GetField(fixture.State, "PlayerVisibleMapObjects");
+
+            RuntimeAssembly.Invoke(fixture.Range, "OnTriggerEnter2D", fixture.MapCollider);
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(1));
+
+            Object.DestroyImmediate(fixture.MapObjectGameObject);
+            Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0));
+        }
+
         private Fixture CreateFixture()
         {
             GameObject levelObject = CreateObject("Tracker Level");
@@ -94,7 +126,7 @@ namespace Bees.Tests.EditMode
             mapObjectGameObject.tag = "Object";
             BoxCollider2D mapCollider = mapObjectGameObject.AddComponent<BoxCollider2D>();
             object mapObject = mapObjectGameObject.AddComponent(RuntimeAssembly.GetType("MapObject"));
-            RuntimeAssembly.SetField(mapObject, "Id", 41001);
+            RuntimeAssembly.SetField(mapObject, "Id", 41001 + _objects.Count);
             RuntimeAssembly.SetField(mapObject, "Level", level);
 
             return new Fixture(state, range, mapObjectGameObject, mapObject, mapCollider);

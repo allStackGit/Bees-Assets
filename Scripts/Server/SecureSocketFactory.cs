@@ -53,7 +53,7 @@ namespace Assets.Scripts.Server
             socket.IsOpen = false;
             socket.HasClosed = false;
             socket.KeepClosed = false;
-            socket.StandingRequests = new HashSet<ServerRequest>();
+            socket.StandingRequests = new StandingRequestSet();
             socket.HandledRequests = new HashSet<long>();
             socket.MessageQueue = new ConcurrentQueue<byte[]>();
             socket.OpenLevels = new List<Level>();

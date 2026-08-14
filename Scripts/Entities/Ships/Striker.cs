@@ -6,7 +6,6 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -34,7 +33,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 _indicatorSprite = LoadedIndicator.GetComponent<SpriteRenderer>();
             }
-            Bomb = (Bomb)Weapons.First();
+            Bomb = (Bomb)Weapons[0];
             IsBomber = true;
         }
 
@@ -231,9 +230,9 @@ namespace Assets.Scripts.Entities.Ships
                             ((BombingRun)Squad.GetCommand()).SendShipToTarget(this);
                         }
                     }
-                    else if (!IsPathfinding)
+                    else
                     {
-                        MoveToPoint(_destination);
+                        MoveToTrackedPoint(_destination);
                     }
                 }
             }

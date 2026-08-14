@@ -327,9 +327,13 @@ namespace Assets.Scripts.UI_Components
                     }
                 }
 
-                _speedRect.anchoredPosition = new Vector2(x, y);
+                Vector2 desiredPosition = new Vector2(x, y);
+                if (_speedRect.anchoredPosition != desiredPosition)
+                {
+                    _speedRect.anchoredPosition = desiredPosition;
+                }
             }
-            else if (_clockWasVisible)
+            else if (_clockWasVisible && _speedRect.anchoredPosition != _normalSpeedPosition)
             {
                 _speedRect.anchoredPosition = _normalSpeedPosition;
             }

@@ -21,10 +21,9 @@ namespace Bees.Tests.EditMode
         [SetUp]
         public void SetUp()
         {
-            Type serverRequestType = RuntimeAssembly.GetType("Assets.Scripts.Server.ServerRequest");
             _socket = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.Socket");
             _standingRequests = Activator.CreateInstance(
-                typeof(System.Collections.Generic.HashSet<>).MakeGenericType(serverRequestType));
+                RuntimeAssembly.GetType("Assets.Scripts.Server.StandingRequestSet"));
             RuntimeAssembly.SetField(_socket, "StandingRequests", _standingRequests);
             RuntimeAssembly.SetField(_socket, "HandledRequests", new System.Collections.Generic.HashSet<long>());
             _requestTypes = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+RequestTypes");
@@ -89,6 +88,51 @@ namespace Bees.Tests.EditMode
                 "TakeStandingRequest",
                 9999L,
                 Enum.Parse(_requestTypes, "GetStrategy")), Is.Null);
+        }
+
+        [Test]
+        public void EquivalentRequestRemovalClearsIndexedLookup()
+        {
+            Type serverRequestType = RuntimeAssembly.GetType("Assets.Scripts.Server.ServerRequest");
+            object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            object equivalentRequest = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            SetFieldIncludingBase(request, "Hash", 8101L);
+            SetFieldIncludingBase(equivalentRequest, "Hash", 8101L);
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+
+            MethodInfo remove = _standingRequests.GetType().GetMethod(
+                "Remove",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly,
+                null,
+                new[] { serverRequestType },
+                null);
+
+            Assert.That(remove, Is.Not.Null);
+            Assert.That(remove.Invoke(_standingRequests, new[] { equivalentRequest }), Is.True);
+            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.Zero);
+            Assert.That(RuntimeAssembly.Invoke(_socket, "GetStandingRequest", 8101L), Is.Null);
+        }
+
+        [Test]
+        public void BaseHashSetRemovalCannotLeaveAStaleIndexedLookup()
+        {
+            Type serverRequestType = RuntimeAssembly.GetType("Assets.Scripts.Server.ServerRequest");
+            object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            SetFieldIncludingBase(request, "Hash", 8102L);
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+
+            Type hashSetType = typeof(System.Collections.Generic.HashSet<>).MakeGenericType(serverRequestType);
+            MethodInfo baseRemove = hashSetType.GetMethod(
+                "Remove",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly,
+                null,
+                new[] { serverRequestType },
+                null);
+
+            Assert.That(baseRemove, Is.Not.Null);
+            Assert.That(baseRemove.Invoke(_standingRequests, new[] { request }), Is.True);
+            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.Zero);
+            Assert.That(RuntimeAssembly.Invoke(_socket, "GetStandingRequest", 8102L), Is.Null);
         }
 
         [Test]

@@ -36,6 +36,8 @@ namespace Assets.Scripts.Scenes
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
         private bool _hasShownDeadVersionAlert;
+        private readonly List<ServerRequest> _resendRequests = new List<ServerRequest>();
+        private int _resends;
 
 
         // Start is called before the first frame update
@@ -73,7 +75,7 @@ namespace Assets.Scripts.Scenes
             SocketTimer = new Timer(.1f, ConfigData.Socket.Update);
             // Request deadlines can differ per request and the configured default is not known
             // when the first scene starts. Poll the cheap deadline check independently of either value.
-            ResendTimer = new Timer(1f, ConfigData.Socket.CheckForResends);
+            ResendTimer = new Timer(1f, CheckForResends);
             AutomaticReconnectTimer = new Timer(10f, AutomaticConnectionRetry);
 
             //if (WatchServerRequests)
@@ -167,6 +169,38 @@ namespace Assets.Scripts.Scenes
             progress.SavedSquadId = safeSavedSquadId;
             progress.Save();
         }
+
+        private void CheckForResends()
+        {
+            if (ConfigData.Production && !SteamWebApiAuth.IsReady)
+            {
+                return;
+            }
+
+            Socket socket = ConfigData.Socket;
+            _resends = 0;
+            _resendRequests.Clear();
+            _resendRequests.AddRange(socket.StandingRequests);
+            for (int i = 0; i < _resendRequests.Count; i++)
+            {
+                ServerRequest request = _resendRequests[i];
+                if (!request.HasExceededQueueTimeout(ConfigData.Stopwatch.ElapsedMilliseconds))
+                {
+                    continue;
+                }
+
+                socket.StandingRequests.Remove(request);
+                Debug.LogWarning($"Resending #{request.Hash}:{request.Type} because it's been waiting for more than {request.MaxTimeOnQueue}s");
+                socket.SendRequest(request, true);
+                _resends++;
+            }
+            if (_resends > 0)
+            {
+                Debug.LogWarning($"Resending {_resends} timed-out requests");
+                ConfigData.__TotalResends += _resends;
+            }
+        }
+
         /// <summary>
         /// Tries to reconnect to the server on a timer whenever the socket remains unopened.
         /// This covers both a previously closed connection and an initial connection attempt that

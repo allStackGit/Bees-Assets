@@ -38,8 +38,11 @@ namespace Assets.Scripts.Entities
             ClearData();
             Level = level;
             Id = Level.State.GetId();
-            Name = $"{ObstacleType} #{Id}";
-            gameObject.name = Name;
+            if (!Stage.IsTraining)
+            {
+                Name = $"{ObstacleType} #{Id}";
+                gameObject.name = Name;
+            }
             Health = OriginalHealth;
             gameObject.SetActive(true);
 
@@ -87,6 +90,7 @@ namespace Assets.Scripts.Entities
 
                 int seed = unchecked((Id * 397) ^ explosionPosition.x.GetHashCode() ^ explosionPosition.y.GetHashCode());
                 System.Random random = new System.Random(seed);
+                ObstacleDebrisPool debrisPool = ObstacleDebrisPool.GetOrCreate(Stage);
 
                 for (int i = 0; i < debrisCount; i++)
                 {
@@ -119,13 +123,11 @@ namespace Assets.Scripts.Entities
                     float pieceLifetime = lifetime * Mathf.Lerp(0.8f, 1.2f, NextFloat(random));
                     float scale = Mathf.Lerp(minScale, maxScale, NextFloat(random));
 
-                    GameObject debrisObject = new GameObject("Obstacle Debris");
-                    debrisObject.transform.SetParent(Level.Map.Transform, true);
-                    debrisObject.transform.position = spawnPosition;
-                    debrisObject.transform.rotation = Quaternion.Euler(0f, 0f, NextFloat(random) * 360f);
-
-                    ObstacleDebrisPiece debrisPiece = debrisObject.AddComponent<ObstacleDebrisPiece>();
-                    debrisPiece.Setup(sprite, SpriteRenderer, direction * speed, spin,
+                    ObstacleDebrisPiece debrisPiece = debrisPool.Get();
+                    debrisPiece.transform.SetParent(Level.Map.Transform, true);
+                    debrisPiece.transform.position = spawnPosition;
+                    debrisPiece.transform.rotation = Quaternion.Euler(0f, 0f, NextFloat(random) * 360f);
+                    debrisPiece.Setup(debrisPool, sprite, SpriteRenderer, direction * speed, spin,
                         pieceLifetime, damping, scale);
                 }
             }
@@ -157,14 +159,22 @@ namespace Assets.Scripts.Entities
 
                 // SaveAndEnd owns teardown of the StaticObstacle instances that remain in
                 // ObstacleMap.Obstacles. A destructible static obstacle must leave that list
-                // before Destroy(), otherwise teardown later accesses a destroyed Unity wrapper.
-                if (this is StaticObstacle staticObstacle &&
+                // before removal, otherwise teardown later accesses stale ownership.
+                StaticObstacle staticObstacle = this as StaticObstacle;
+                if (staticObstacle != null &&
                     Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
                 {
                     Level.ObstacleMap.Obstacles.Remove(staticObstacle);
                 }
 
-                Destroy(gameObject);
+                if (staticObstacle != null && staticObstacle.IsPooledStaticLayoutObstacle && Stage != null)
+                {
+                    StaticObstaclePool.GetOrCreate(Stage).ReleaseObstacle(staticObstacle);
+                }
+                else
+                {
+                    Destroy(gameObject);
+                }
             }
             
         }
@@ -208,7 +218,6 @@ namespace Assets.Scripts.Entities
                 return true;
             }
 
-            // If one is null, but not both, return false.
             if (((object)a == null) || ((object)b == null))
             {
                 return false;

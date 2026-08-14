@@ -24,9 +24,10 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
 
             Assert.That(source, Does.Contain("if (Level != null && Level.IsLevelSetupOnServer)"));
-            Assert.That(source, Does.Contain("ConfigData.Socket.StandingRequests.RemoveWhere"));
+            Assert.That(source, Does.Contain("_standingRequestsToRemove.Clear();"));
             Assert.That(source, Does.Contain("commandRequest.SquadId == removedSquadItemId"));
             Assert.That(source, Does.Contain("matchupRequest.SquadId == removedSquadItemId"));
+            Assert.That(source, Does.Contain("ConfigData.Socket.StandingRequests.Remove(_standingRequestsToRemove[requestIndex]);"));
         }
 
         [Test]

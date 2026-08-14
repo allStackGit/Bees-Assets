@@ -1,7 +1,6 @@
 ﻿using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -171,7 +170,10 @@ namespace Assets.Scripts.Entities
                 {
                     if (!HasDroppedDestructionAnimation)
                     {
-                        NearbyShips.ToList().ForEach(ship => ship.LeftNearbyAsteroid(this));
+                        foreach (Ship ship in NearbyShips)
+                        {
+                            ship.LeftNearbyAsteroid(this);
+                        }
                     }
                     SpawnBreakAwayAsteroids();
                 }
@@ -219,13 +221,18 @@ namespace Assets.Scripts.Entities
                 _shardFamily.Add(_asteroidShard);
             }
 
-            _shardFamily.ForEach(shard =>
+            for (int shardIndex = 0; shardIndex < _shardFamily.Count; shardIndex++)
             {
-                shard.ShardFamily = new HashSet<CollisionAsteroid>(
-                    _shardFamily,
-                    ReferenceIdentityComparer<CollisionAsteroid>.Instance);
-                shard.ShardFamily.Remove(shard);
-            });
+                CollisionAsteroid shard = _shardFamily[shardIndex];
+                shard.ShardFamily.Clear();
+                for (int familyIndex = 0; familyIndex < _shardFamily.Count; familyIndex++)
+                {
+                    if (familyIndex != shardIndex)
+                    {
+                        shard.ShardFamily.Add(_shardFamily[familyIndex]);
+                    }
+                }
+            }
 
             for (_loopIndex = 0; _loopIndex < _pieceCount; _loopIndex++)
             {

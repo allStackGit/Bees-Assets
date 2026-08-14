@@ -1,5 +1,6 @@
 ﻿
-using System.Linq;
+using Assets.Scripts.Entities.Ships;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -19,9 +20,6 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            // Command.Setup() built this queue before the newly selected shooting strategy
-            // was installed by base.Execute(). Force first pursuit targeting to use the
-            // current strategy instead of the previous command's ordering.
             OriginalQueue.Clear();
             TargetingQueue.Clear();
 
@@ -59,6 +57,22 @@ namespace Assets.Scripts.Levels.Commands
             HasReachedEnemySquad = false;
         }
 
+        private bool MoveTowardsEnemiesTracked()
+        {
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
+                {
+                    return false;
+                }
+                ship.MoveToTrackedPoint(target.GetPosition());
+            }
+            return true;
+        }
+
         private void InAndOutTimer()
         {
             if (IsDead || GetSquad().IsDead)
@@ -76,22 +90,29 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                 {
-                    GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                    if (!Stage.IsTraining)
                     {
-                        MoveTowardsEnemies();
+                        GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    }
+                    if (!MoveTowardsEnemiesTracked())
+                    {
+                        SetFinalize("No more enemy ships to target");
+                        return;
                     }
                 }
                 else
                 {
                     HasReachedEnemySquad = true;
-                    GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    if (!Stage.IsTraining)
+                    {
+                        GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    }
                     HasReachedReturnPoint = false;
                     SetAndMove(ReturnPoint);
                     ReturnPoint = GetDestination();
                 }
             }
-            else if (GetSquad().HasReachedDestination)
+            else if (GetSquad().HaveAllShipsReachedDestination())
             {
                 SetFinalize("Returned to starting point");
             }

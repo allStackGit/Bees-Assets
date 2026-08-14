@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -32,21 +31,34 @@ namespace Assets.Scripts.Entities.Ships
 
         public virtual void SetColor()
         {
+            if (!Stage.IsRendering)
+            {
+                return;
+            }
+
             EnsureBaseColorSprites();
-            ColoredPrefabs = OriginalColoredPrefabs.ToList();
+            if (ColoredPrefabs == null || ReferenceEquals(ColoredPrefabs, OriginalColoredPrefabs))
+            {
+                ColoredPrefabs = new List<GameObject>(OriginalColoredPrefabs.Count);
+            }
+            else
+            {
+                ColoredPrefabs.Clear();
+            }
+            ColoredPrefabs.AddRange(OriginalColoredPrefabs);
             OriginalSprites.Clear();
             OriginalSprites.AddRange(_baseColorSprites);
 
             if (Squad.HasCustomColor)
             {
                 _colors = ConfigData.ChangeableShipColors.GetValueOrDefault(ShipType);
-                _tempIndex = 0;
-                ColoredPrefabs.ForEach(prefab =>
+                for (int i = 0; i < ColoredPrefabs.Count; i++)
                 {
+                    GameObject prefab = ColoredPrefabs[i];
                     // Always recolor from the immutable prefab-era baseline. Pooled ships can
                     // move between squads/colors, so the currently displayed sprite may already
                     // be recolored from an earlier lifecycle.
-                    _prefabSprite = _baseColorSprites[_tempIndex];
+                    _prefabSprite = _baseColorSprites[i];
                     _setColorSize = new Vector2Int(_prefabSprite.texture.width, _prefabSprite.texture.height);
                     _hasLoadedSprite = false;
 
@@ -54,7 +66,7 @@ namespace Assets.Scripts.Entities.Ships
                     // Always probe the local cache for custom colors; a cache miss is repaired
                     // immediately from the authored sprite instead of trusting that remote flag.
                     _loadedSprite = FleetShip.LoadCachedSprite(
-                        _tempIndex,
+                        i,
                         "ship",
                         _setColorSize,
                         Squad.SavedSquad.Color);
@@ -76,7 +88,7 @@ namespace Assets.Scripts.Entities.Ships
                         try
                         {
                             FleetShip.SaveSpriteToCache(
-                                _tempIndex,
+                                i,
                                 "ship",
                                 _recolored.texture.GetPixels(),
                                 _setColorSize,
@@ -87,17 +99,14 @@ namespace Assets.Scripts.Entities.Ships
                             Debug.LogWarning($"Could not rebuild custom sprite cache for {FleetShip.Name}: {e.Message}");
                         }
                     }
-                    _tempIndex++;
-                });
+                }
             }
             else
             {
-                _tempIndex = 0;
-                ColoredPrefabs.ForEach(prefab =>
+                for (int i = 0; i < ColoredPrefabs.Count; i++)
                 {
-                    prefab.GetComponent<SpriteRenderer>().sprite = _baseColorSprites[_tempIndex];
-                    _tempIndex++;
-                });
+                    ColoredPrefabs[i].GetComponent<SpriteRenderer>().sprite = _baseColorSprites[i];
+                }
             }
         }
 
@@ -107,9 +116,20 @@ namespace Assets.Scripts.Entities.Ships
             gameObject.name = Name;
         }
 
+        private static void SetRocketFlareState(List<GameObject> flares, bool active)
+        {
+            foreach (GameObject flare in flares)
+            {
+                if (flare.activeSelf != active)
+                {
+                    flare.SetActive(active);
+                }
+            }
+        }
+
         public virtual void SetRocketFlares()
         {
-            CenterRocketFlares.ForEach(flare => flare.SetActive(true));
+            SetRocketFlareState(CenterRocketFlares, true);
             if (!HasRightRocketFlares || !HasLeftRocketFlares)
             {
                 return;
@@ -117,26 +137,26 @@ namespace Assets.Scripts.Entities.Ships
 
             if (_differenceInAngleToPoint > 5)
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(true));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(RightRocketFlares, true);
+                SetRocketFlareState(LeftRocketFlares, false);
                 AreRocketFlaresOutOfSync = true;
             }
             else if (_differenceInAngleToPoint < -5)
             {
-                LeftRocketFlares.ForEach(flare => flare.SetActive(true));
-                RightRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(LeftRocketFlares, true);
+                SetRocketFlareState(RightRocketFlares, false);
                 AreRocketFlaresOutOfSync = true;
             }
             else if (!HasOnlySideRocketFlares)
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(true));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(true));
+                SetRocketFlareState(RightRocketFlares, true);
+                SetRocketFlareState(LeftRocketFlares, true);
                 AreRocketFlaresOutOfSync = false;
             }
             else
             {
-                RightRocketFlares.ForEach(flare => flare.SetActive(false));
-                LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                SetRocketFlareState(RightRocketFlares, false);
+                SetRocketFlareState(LeftRocketFlares, false);
             }
         }
 
