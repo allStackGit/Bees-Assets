@@ -168,8 +168,7 @@ namespace Assets.Scripts.Levels
             StaticObstaclePool obstaclePool = GetStaticObstaclePool();
             Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
             ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
-            int obstacleCount = Utilities.RandomInt(10) + 1;
-            for (int i = 0; i < obstacleCount; i++)
+            for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
             {
                 StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
                 if (Utilities.CoinToss())
