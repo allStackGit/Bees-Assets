@@ -52,17 +52,24 @@ namespace Bees.Tests.EditMode
         [Test]
         public void GeneralCampaignAdvancementDoesNotVetoBeenocularsDefeat()
         {
-            string progressSource = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Data",
-                "UserProgressData.cs"));
+            string progressSource = ReadProgressSource();
             string advanceSource = ExtractMethodBody(progressSource, "public void AdvanceToNextLevel()");
 
             StringAssert.DoesNotContain("Beenoculars was lost", advanceSource);
             StringAssert.DoesNotContain("missionId == 8 && activeLevel.WinningSide", advanceSource);
             StringAssert.Contains("int targetLevel = missionId + 1;", advanceSource);
             StringAssert.Contains("SetCurrentLevel(targetLevel);", advanceSource);
+        }
+
+        [Test]
+        public void CampaignAdvancementStopsAtLastAvailableMission()
+        {
+            string progressSource = ReadProgressSource();
+            string advanceSource = ExtractMethodBody(progressSource, "public void AdvanceToNextLevel()");
+
+            StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(targetLevel)", advanceSource);
+            StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel)", advanceSource);
+            StringAssert.Contains("last currently available mission", advanceSource);
         }
 
         private static string ReadBeenocularsSource()
@@ -72,6 +79,15 @@ namespace Bees.Tests.EditMode
                 "Scripts",
                 "Levels",
                 "Titania2Beenoculars.cs"));
+        }
+
+        private static string ReadProgressSource()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Data",
+                "UserProgressData.cs"));
         }
 
         private static string ExtractMethodBody(string source, string signature)
