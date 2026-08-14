@@ -42,7 +42,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("projectile.IsDead || projectile.Shooter != ship", registry);
             StringAssert.Contains("ship.CanReturnToPool()", registry);
             StringAssert.Contains("return ProjectilesInFlight.Count == 0", shipPoolLifecycle);
-            StringAssert.Contains("ShipsToRelease.RemoveAll", registry);
+            StringAssert.Contains("_readyShipSet.Contains(ShipsToRelease[shipIndex])", registry);
+            StringAssert.Contains("ShipsToRelease.RemoveAt(shipIndex)", registry);
         }
     }
 }
