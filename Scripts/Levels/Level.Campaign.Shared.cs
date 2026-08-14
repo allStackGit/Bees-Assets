@@ -202,7 +202,10 @@ namespace Assets.Scripts.Levels
                 ConfigData.UserProgressData != null &&
                 ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign) == 8;
 
-            if (isBeenoculars)
+            // Static route repair exists only for obstacle-bearing Beenoculars variants. The
+            // current campaign mission deliberately clears the battlefield, so no Pathfinder is
+            // constructed and the authored outside -> inside route should pass through unchanged.
+            if (isBeenoculars && HasObstacles && Pathfinder != null)
             {
                 EnsureTitania2ReinforcementRoute(ref startingPosition, ref nextPosition);
             }
