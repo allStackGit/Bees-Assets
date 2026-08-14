@@ -28,32 +28,26 @@ namespace Assets.Scripts.Entities.Ships
         public void RecolorAnimationSprites()
         {
             RecoloredSprites = new Sprite[TotalSprites];
-            if (Ship.FleetShip.HasCachedSprite)
+            int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
+
+            if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
             {
-                int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
-
-                if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
-                {
-                    RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
-                    //Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
-                }
-                else
-                {
-                    for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
-                    {
-                        RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color);
-                    }
-
-                    Ship.Stage.LoadedRemainsSprites[key] = RecoloredSprites;
-                }
-
-                
-                //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
+                RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
+                return;
             }
-            else
+
+            // Custom-color cache files are device-local. Load every frame that exists and leave
+            // missing entries null so LateUpdate can rebuild them from the authored animation.
+            for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
             {
-                Debug.LogError($"Tried to recolor remains but {Ship.FleetShip.Name} doesn't have a cached sprite");
+                RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(
+                    _loopIndex,
+                    "remains",
+                    ConfigData.ShipRemainsSizes[Ship.ShipType],
+                    Ship.Squad.SavedSquad.Color);
             }
+
+            Ship.Stage.LoadedRemainsSprites[key] = RecoloredSprites;
         }
 
         private int _index;
@@ -62,11 +56,30 @@ namespace Assets.Scripts.Entities.Ships
             if (ShouldSwapSprite)
             {
                 _index = SpriteIndex % RecoloredSprites.Length;
-                
-                //Debug.Log($"Recolored index: {_index}");
-                //Debug.Log($"Trying to swap {SpriteRenderer?.sprite?.name} with {RecoloredSprites[_index]?.name}");
-                SpriteRenderer.sprite = RecoloredSprites[_index];
-                CurrentSprite = SpriteRenderer.sprite;
+                Sprite recoloredSprite = RecoloredSprites[_index];
+                if (recoloredSprite == null)
+                {
+                    recoloredSprite = CustomSpriteCacheRepair.RecolorAndCache(
+                        Ship,
+                        SpriteRenderer.sprite,
+                        _index,
+                        "remains");
+                    if (recoloredSprite != null)
+                    {
+                        RecoloredSprites[_index] = recoloredSprite;
+                    }
+                }
+
+                if (recoloredSprite != null)
+                {
+                    SpriteRenderer.sprite = recoloredSprite;
+                    CurrentSprite = recoloredSprite;
+                }
+                else
+                {
+                    CurrentSprite = SpriteRenderer.sprite;
+                }
+
                 SpriteIndex++;
                 ShouldSwapSprite = false;
 
