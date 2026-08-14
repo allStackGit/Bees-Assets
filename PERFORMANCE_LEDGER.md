@@ -23,4 +23,11 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** `Queen.CreateMinionSquad()` and `Scout.CreateMinionSquad()` set `IsMinionSquad = true` and call `Level.State.AddSquad()`. `AddSquad()` runs the LINQ maximum path for those squads. `TransientSquadNumberingTests` already asserts that normal side-1 squad #1 followed by two minion squads produces runtime numbers 2 and 3 without increasing `OriginalSquadCounts`.  
 **Risk:** Preserve side filtering, the empty/default maximum of zero, and the invariant that transient squads do not increment `OriginalSquadCounts` or mark persisted `SavedSquad` ownership.
 
+### PERF-017 — Suppress residual routine runtime logs during training
+**Location:** `Scripts/Entities/MapBorder.cs` (`OnTriggerEnter2D()`), `Scripts/Levels/Commands/Charge.cs` (`Timer()`), `Scripts/Entities/Ships/ShipAnimationController.cs` (`ChangeSpriteLoop()`)  
+**Cost:** These live simulation paths still build interpolated diagnostic strings and call `Debug.Log` during automated training. MapBorder logs every trigger entry plus additional ship/directional messages, Charge logs each Barge transition into its charging run, and Warp Gate animation readiness logs each completed opening sequence. With multiple simultaneous training Levels, these routine messages add managed string work and Unity logging I/O to physics/command/animation callbacks that do not need informational console output.  
+**Optimization:** Guard only these routine informational logs with `!Stage.IsTraining` / `!Ship.Stage.IsTraining`, matching the existing training-log policy elsewhere. Preserve all state changes, warnings, errors, and non-training diagnostics.  
+**Evidence:** The branch implementations contain unconditional `Debug.Log` calls directly in `MapBorder.OnTriggerEnter2D()`, `Charge.Timer()`, and `ShipAnimationController.ChangeSpriteLoop()`. Nearby Barge, Level, environment, and command code already suppresses equivalent informational messages during training, while error diagnostics remain active.  
+**Risk:** Do not guard the surrounding collision, charge, or Warp Gate state transitions. Only the informational log calls/string interpolation should be skipped in training; normal play/editor diagnostics must remain unchanged.
+
 Clean static passes: 0 / 2.
