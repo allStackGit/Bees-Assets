@@ -117,7 +117,17 @@ namespace Bees.Tests.EditMode
 
         public static void AddToCollection(object collection, object value)
         {
-            MethodInfo add = collection.GetType().GetMethod("Add");
+            MethodInfo add = collection.GetType()
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .Where(method => method.Name == "Add")
+                .Where(method =>
+                {
+                    ParameterInfo[] parameters = method.GetParameters();
+                    return parameters.Length == 1 &&
+                        (value == null || parameters[0].ParameterType.IsInstanceOfType(value));
+                })
+                .OrderByDescending(method => method.DeclaringType == collection.GetType())
+                .FirstOrDefault();
             if (add == null)
             {
                 throw new MissingMethodException(collection.GetType().FullName, "Add");
