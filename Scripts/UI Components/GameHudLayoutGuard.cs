@@ -15,6 +15,7 @@ namespace Assets.Scripts.UI_Components
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
         private const float ControlGap = 10f;
+        private const float TitaniaClockGap = 5f;
         private const float DynamicButtonScanInterval = 0.25f;
 
         private GameMenus _menus;
@@ -267,23 +268,48 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        private static int GetCampaignMissionId()
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
+                ConfigData.UserProgressData == null || ConfigData.Configuration == null)
+            {
+                return -1;
+            }
+
+            return ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.UserSide,
+                ConfigData.GameModes.Campaign);
+        }
+
         private void ApplyLayout()
         {
             bool clockVisible = _menus.Clock.activeInHierarchy;
             if (clockVisible)
             {
-                // Both controls are authored in the same HUD coordinate space. Put the speed
-                // button immediately to the left of the clock, accounting for both widths.
+                // Both controls are authored in the same HUD coordinate space. The default timed
+                // mission layout puts the speed button immediately to the left of the clock.
                 float x = _clockRect.anchoredPosition.x -
                           ((_clockRect.rect.width + _speedRect.rect.width) * 0.5f) - ControlGap;
                 float y = _clockRect.anchoredPosition.y;
+                int campaignMissionId = GetCampaignMissionId();
 
-                // Pluto IV uses the whole top row for the planetary shield and mission clock.
-                // Keeping the speed button beside the clock would place it over the shield.
-                if (_plutoShieldRect != null &&
-                    _menus.PlutoShield != null &&
-                    _menus.PlutoShield.activeInHierarchy)
+                if (campaignMissionId == 8)
                 {
+                    // Titania II reuses the shield widget but has no evacuation counter. Keep the
+                    // speed control visually attached to its clock instead of applying Pluto IV's
+                    // shield fallback, which leaves the button floating in the play field.
+                    x = _clockRect.anchoredPosition.x;
+                    y = _clockRect.anchoredPosition.y -
+                        ((_clockRect.rect.height + _speedRect.rect.height) * 0.5f) - TitaniaClockGap;
+                }
+                else if (campaignMissionId == 3 &&
+                         _plutoShieldRect != null &&
+                         _menus.PlutoShield != null &&
+                         _menus.PlutoShield.activeInHierarchy)
+                {
+                    // Pluto IV uses the whole top row for the planetary shield and mission clock.
+                    // Preserve its established evacuation-counter alignment independently of the
+                    // Titania II layout above.
                     if (_counterRect != null &&
                         _menus.Counter != null &&
                         _menus.Counter.activeInHierarchy)
@@ -294,7 +320,7 @@ namespace Assets.Scripts.UI_Components
                     }
                     else
                     {
-                        // Fallback for any shield-only layout that does not show the counter.
+                        // Fallback for Pluto IV before/without the evacuation counter.
                         y = _plutoShieldRect.anchoredPosition.y -
                             ((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap;
                     }
