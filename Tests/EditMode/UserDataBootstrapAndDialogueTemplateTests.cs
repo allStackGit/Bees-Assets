@@ -9,18 +9,19 @@ namespace Bees.Tests.EditMode
     public class UserDataBootstrapAndDialogueTemplateTests
     {
         [Test]
-        public void ServerBackedProfilesAlwaysReadBeforeDefaultsAreCreated()
+        public void ServerBackedProfilesReadBeforeDefaultsExceptForExplicitReset()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Data", "UserData.cs"));
 
-            Assert.That(source, Does.Contain("if (!ConfigData.Configuration.UseLocalStorage)"));
+            Assert.That(source, Does.Contain("!ConfigData.Configuration.UseLocalStorage && !forceCreateDefaults"));
             Assert.That(source, Does.Contain("shouldFileExist = true;"));
             Assert.That(source, Does.Contain("json = file.LoadJsonObject();"));
+            Assert.That(source, Does.Contain("forceCreateDefaults = false"));
         }
 
         [Test]
-        public void RemoteMissingDataCreationIsTrackedSeparatelyFromExistingBlankProfiles()
+        public void RemoteMissingDataCreationIsTrackedAndCompletesWithoutRereadLoop()
         {
             string dataFile = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Data", "DataFile.cs"));
@@ -29,8 +30,25 @@ namespace Bees.Tests.EditMode
 
             Assert.That(dataFile, Does.Contain("WasCreatedFromMissingStorage"));
             Assert.That(dataFile, Does.Contain("_request != null && !_isDataLoaded"));
+            Assert.That(dataFile, Does.Contain("WasCreatedFromMissingStorage && _isDataLoaded"));
+            Assert.That(dataFile, Does.Contain("_request = null;"));
             Assert.That(mainMenu, Does.Contain("progressFile.WasCreatedFromMissingStorage"));
             Assert.That(mainMenu, Does.Contain("CommanderNameDialogue?.SetActive(needsCommanderName);"));
+        }
+
+        [Test]
+        public void MalformedRemoteJsonFallsBackThroughUserDataRecovery()
+        {
+            string dataFile = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "DataFile.cs"));
+            string userData = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "UserData.cs"));
+
+            Assert.That(dataFile, Does.Contain("catch (JsonException exception)"));
+            Assert.That(dataFile, Does.Contain("_jsonObject = null;"));
+            Assert.That(userData, Does.Contain("RecoverMalformedData(error);"));
+            Assert.That(userData, Does.Contain("file.WriteData(defaults);"));
+            Assert.That(userData, Does.Contain("ApplyLoadedData();"));
         }
 
         [Test]
@@ -46,6 +64,21 @@ namespace Bees.Tests.EditMode
             Assert.That(instantiate, Is.GreaterThanOrEqualTo(0));
             Assert.That(hide, Is.GreaterThan(instantiate));
             Assert.That(firstLookup, Is.GreaterThan(hide));
+        }
+
+        [Test]
+        public void DialogueButtonsCloseModalBeforeExecutingSceneChangingAction()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "Dialogue.cs"));
+
+            int listener = source.IndexOf("button.onClick.AddListener");
+            int hide = source.IndexOf("Hide();", listener);
+            int invoke = source.IndexOf("action?.Invoke();", listener);
+
+            Assert.That(listener, Is.GreaterThanOrEqualTo(0));
+            Assert.That(hide, Is.GreaterThan(listener));
+            Assert.That(invoke, Is.GreaterThan(hide));
         }
 
         [Test]
