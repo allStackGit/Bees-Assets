@@ -368,14 +368,14 @@ namespace Assets.Scripts
             return _challengeLevelData;
         }
 
-        public static void SetupChallengeFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips) // [data-file]
+        public static void SetupChallengeFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips, bool forceCreateDefaults = false) // [data-file]
         {
-            _challengeFleetData = new FleetData(shouldFileExist, startingShips, 2);
+            _challengeFleetData = new FleetData(shouldFileExist, startingShips, 2, forceCreateDefaults);
         }
 
-        public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips)
+        public static void SetupCampaignFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips, bool forceCreateDefaults = false)
         {
-            _campaignFleetData = new FleetData(shouldFileExist, startingShips, 1);
+            _campaignFleetData = new FleetData(shouldFileExist, startingShips, 1, forceCreateDefaults);
         }
 
         public static void SetupFleetData(bool shouldFileExist, Dictionary<ShipTypes, int> startingShips)
@@ -403,14 +403,14 @@ namespace Assets.Scripts
             _savedSquadsData = new SavedSquadsData(shouldFileExist, 0);
         }
 
-        public static void SetupCampaignSavedSquadsData(bool shouldFileExist)
+        public static void SetupCampaignSavedSquadsData(bool shouldFileExist, bool forceCreateDefaults = false)
         {
-            _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 1);
+            _campaignSavedSquadsData = new SavedSquadsData(shouldFileExist, 1, forceCreateDefaults);
         }
 
-        public static void SetupChallengeSavedSquadsData(bool shouldFileExist)
+        public static void SetupChallengeSavedSquadsData(bool shouldFileExist, bool forceCreateDefaults = false)
         {
-            _challengeSavedSquadsData = new SavedSquadsData(shouldFileExist, 2);
+            _challengeSavedSquadsData = new SavedSquadsData(shouldFileExist, 2, forceCreateDefaults);
         }
 
         public static SavedSquadsData GetSavedSquadsData()
@@ -418,7 +418,7 @@ namespace Assets.Scripts
             return _savedSquadsData;
         }
 
-        public static SavedSquadsData GetCampaignSavedSquadsData() // [data-file]
+        public static SavedSquadsData GetCampaignSavedSquadsData()
         {
             return _campaignSavedSquadsData;
         }
