@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public override void ClearData()
         {
-            // SpawnMinion uses delayed coroutines. A pooled Queen must never inherit a
+            // Minion waves are delayed coroutines. A pooled Queen must never inherit a
             // suspended spawn from its previous lifecycle.
             StopAllCoroutines();
             base.ClearData();
@@ -103,15 +103,28 @@ namespace Assets.Scripts.Entities.Ships
 
         private void SpawnMinions()
         {
-            // Spawn the minions
-            //Debug.Log($"Spawning {MinionCount} {MinionType}s at {SpawnPoint}");
+            // A wave owns one coroutine rather than one coroutine per minion. Capture the
+            // wave count/gathering point now, matching the old fan-out's fixed ship-index set.
             CurrentMinionSquad = null;
+            int waveMinionCount = MinionCount;
+            Vector2 squadGatheringPoint = GetPosition() + SpawnPoint;
+            StartCoroutine(SpawnMinionWave(waveMinionCount, squadGatheringPoint));
+        }
 
-            for (int shipIndex = 0; shipIndex < MinionCount; shipIndex++)
+        private IEnumerator SpawnMinionWave(int waveMinionCount, Vector2 squadGatheringPoint)
+        {
+            float elapsed = 0f;
+            for (int shipIndex = 0; shipIndex < waveMinionCount; shipIndex++)
             {
-                StartCoroutine(SpawnMinion(shipIndex, GetPosition() + SpawnPoint));
-            }
+                float targetElapsed = shipIndex * TimeBetweenMinions;
+                while (elapsed < targetElapsed)
+                {
+                    yield return null;
+                    elapsed += Time.deltaTime;
+                }
 
+                SpawnMinion(shipIndex, squadGatheringPoint);
+            }
         }
 
         private Squad CreateMinionSquad()
@@ -141,10 +154,8 @@ namespace Assets.Scripts.Entities.Ships
             squad.AddToCommandList();
             return squad;
         }
-        private IEnumerator SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)
+        private void SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)
         {
-            yield return new WaitForSeconds(shipIndex * TimeBetweenMinions);
-
             //Debug.Log($"Spawning minion {MinionType} #{shipIndex}");
             Squad squad = CurrentMinionSquad;
             if (squad == null || squad.IsDead)
@@ -187,8 +198,8 @@ namespace Assets.Scripts.Entities.Ships
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             Level.CancelTimer(_spawnMinionsTimer);
-            // SpawnMinions fans out delayed coroutines. Once this lifecycle dies, none of
-            // those callbacks may create children through a dead or reused Queen wrapper.
+            // Once this lifecycle dies, no active wave may create children through a dead
+            // or subsequently reused Queen wrapper.
             StopAllCoroutines();
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
