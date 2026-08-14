@@ -81,6 +81,24 @@ namespace Bees.Tests.EditMode
                 "The previous full-duration nominal total was 146, so 102 is a 30.1% reduction.");
         }
 
+        [Test]
+        public void TitaniaTwoReinforcementsCannotSpawnFromTopEdge()
+        {
+            string primary = Read("Scripts", "Levels", "Titania2Beenoculars.cs");
+            string entryRouting = ExtractMethodBody(primary, "private void GetTitania2OffMapEntry(");
+
+            StringAssert.Contains("if (!horizontalEntry && normalizedY > 0f)", entryRouting);
+            StringAssert.Contains("normalizedX = requestedSide;", entryRouting);
+            StringAssert.Contains("horizontalEntry = true;", entryRouting);
+
+            StringAssert.DoesNotContain("}, 0.65f, 1f);", primary);
+            StringAssert.DoesNotContain("}, 0.7f, 1f);", primary);
+
+            string mirrored = Read("Scripts", "Levels", "Level.Titania2Enhancements.cs");
+            StringAssert.DoesNotContain("-0.65f, 1f", mirrored);
+            StringAssert.DoesNotContain("-0.7f, 1f", mirrored);
+        }
+
         private static string Read(params string[] parts)
         {
             string path = Application.dataPath;
