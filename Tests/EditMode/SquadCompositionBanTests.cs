@@ -27,9 +27,12 @@ namespace Bees.Tests.EditMode
         {
             string source = File.ReadAllText(MovementSourcePath);
 
-            StringAssert.Contains("if (IsDefenseless)", source);
-            StringAssert.Contains("else if (HasOnlyBombers)", source);
-            StringAssert.Contains("else if (HasOnlyBarges)", source);
+            StringAssert.Contains("bool isDefenseless = true;", source);
+            StringAssert.Contains("bool hasOnlyBombers = true;", source);
+            StringAssert.Contains("bool hasOnlyBarges = true;", source);
+            StringAssert.Contains("if (isDefenseless)", source);
+            StringAssert.Contains("else if (hasOnlyBombers)", source);
+            StringAssert.Contains("else if (hasOnlyBarges)", source);
             StringAssert.Contains("BannedStrats.Add(ConfigData.CommandTypes.Aggressive);", source);
             StringAssert.Contains("BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);", source);
         }
@@ -38,7 +41,7 @@ namespace Bees.Tests.EditMode
         public void BargeBranchBansMovementAttackAliasesButKeepsHoldDistinct()
         {
             string source = File.ReadAllText(MovementSourcePath);
-            int bargeStart = source.IndexOf("else if (HasOnlyBarges)");
+            int bargeStart = source.IndexOf("else if (hasOnlyBarges)");
             const string holdRemoval = "BannedStrats.Remove(ConfigData.CommandTypes.Hold);";
             int bargeEnd = source.IndexOf(holdRemoval, bargeStart);
 
