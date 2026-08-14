@@ -136,27 +136,35 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TitaniaRoutePersistsInPlayerProgressAndIsAppliedToBeenoculars()
+        public void TitaniaOneOutcomePersistsButItsObstacleMazeDoesNotCarryIntoTitaniaTwo()
         {
-            string route = Read("Scripts", "Levels", "TitaniaRouteState.cs");
+            string outcome = Read("Scripts", "Levels", "TitaniaRouteState.cs");
             string userData = Read("Scripts", "Data", "UserData.cs");
             string checkpoint = Read("Scripts", "CampaignCheckpoint.cs");
             string minesweeper = Read("Scripts", "Levels", "Titania1Minesweeper.cs");
+            string beenoculars = Read("Scripts", "Levels", "Titania2Beenoculars.cs");
+            string stageConfiguration = Read("Scripts", "Scenes", "CampaignStageConfiguration.cs");
 
-            StringAssert.Contains("ProgressProperty = \"TitaniaOpenedBarrierPositions\"", route);
-            StringAssert.Contains("progress[ProgressProperty] = new JArray", route);
+            StringAssert.Contains("ResultProperty = \"TitaniaOneWon\"", outcome);
+            StringAssert.Contains("LegacyRouteProperty = \"TitaniaOpenedBarrierPositions\"", outcome);
+            StringAssert.Contains("progress.Remove(LegacyRouteProperty);", outcome);
+            StringAssert.Contains("progress[ResultProperty] = _titaniaOneWon;", outcome);
             StringAssert.Contains("LoadFromPlayerProgress", userData);
             StringAssert.Contains("AddToPlayerProgressJson", userData);
             StringAssert.Contains("TitaniaRouteState.AddToPlayerProgressJson", checkpoint);
-            StringAssert.DoesNotContain("PlayerPrefs.SetString", route);
-            StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"Minesweeper\";", route);
-            StringAssert.Contains("CanisterBomb[] demolitionObjects", route);
-            StringAssert.Contains("demolitionObject.TargetObstacle = barrier;", route);
-            StringAssert.Contains("TitaniaRouteState.WasBarrierOpened", route);
-            StringAssert.Contains("barrier.Kill();", route);
-            StringAssert.Contains("demolitionObject.gameObject.SetActive(true);", route);
-            StringAssert.Contains("BeginTitania1DemolitionTracking();", minesweeper);
-            StringAssert.Contains("TitaniaRouteState.RecordOpenedBarrier", minesweeper);
+            StringAssert.Contains("TitaniaRouteState.RecordTitaniaOneResult(", minesweeper);
+            StringAssert.DoesNotContain("BeginTitania1DemolitionTracking", minesweeper);
+            StringAssert.DoesNotContain("RecordOpenedBarrier", minesweeper);
+            StringAssert.DoesNotContain("WasBarrierOpened", outcome);
+
+            StringAssert.Contains("missionId == 8", stageConfiguration);
+            StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"No\";", stageConfiguration);
+            StringAssert.Contains("ConfigData.LevelOptions.ObstacleList?.Clear();", stageConfiguration);
+            StringAssert.Contains("ConfigData.LevelOptions.AsteroidOption = 0;", stageConfiguration);
+
+            StringAssert.Contains("victorySurvivalDuration = 330f", beenoculars);
+            StringAssert.Contains("defeatSurvivalDuration = 480f", beenoculars);
+            StringAssert.Contains("TitaniaRouteState.DidWinTitaniaOne", beenoculars);
         }
 
         [Test]
