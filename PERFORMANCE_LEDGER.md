@@ -9,13 +9,6 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** Current `GetUIColor()` materializes `Colors.Keys.ToList()` on every invocation. Current `Ship.Visuals.cs/UpdateHealthBar()` calls `GetUIColor("good"/"medium"/"bad")`, and additional squad/UI setup call sites use the same helper.  
 **Risk:** Preserve the current unknown-name error log and `"error"` fallback behavior exactly.
 
-### PERF-004 — Reuse the per-ship colored-prefab working list across pooled setups
-**Location:** `Scripts/Entities/Ships/Ship.Visuals.cs/SetColor()`  
-**Cost:** `SetColor()` begins with `ColoredPrefabs = OriginalColoredPrefabs.ToList();`, allocating a new `List<GameObject>` each time a ship is configured. Ships are pooled and reconfigured across level resets, and the level constructor calls `SetColor()` for each spawned ship, so repeated episodes repeatedly allocate these short-lived lists even when the ship has no custom color.  
-**Optimization:** Keep a ship-owned mutable working list and refill it with `Clear()`/`AddRange(OriginalColoredPrefabs)` (or indexed copy) instead of replacing the list; direct indexed loops can also avoid the `List.ForEach` delegate path while preserving sprite/reset behavior.  
-**Evidence:** Current `Ship.Visuals.cs` performs the `ToList()` unconditionally before checking `Squad.HasCustomColor`; pooled ship setup calls `SetColor()` after each spawn.  
-**Risk:** `ColoredPrefabs` must remain a mutable list distinct from the serialized `OriginalColoredPrefabs` baseline so recoloring/reset logic cannot mutate the authored list or carry a prior pooled lifecycle's sprite state.
-
 ### PERF-005 — Avoid sprite-array allocation when recolor caches hit
 **Location:** `Scripts/Entities/Ships/ShipAnimationController.cs/RecolorAnimationSprites()` and `Scripts/Entities/Ships/RemainsAnimationController.cs/RecolorAnimationSprites()`  
 **Cost:** Both methods allocate `new Sprite[TotalSprites]` before checking the Stage-level recolor cache. On a cache hit, the newly allocated array is immediately discarded and replaced by the cached array. Pooled custom-colour ships can revisit these setup paths across rendered levels, so the cache avoids disk/sprite work but still produces avoidable GC allocations.  
