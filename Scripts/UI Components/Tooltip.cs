@@ -41,6 +41,15 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
+        RectTransform closeRect = CloseButton.GetComponent<RectTransform>();
+        if (closeRect != null)
+        {
+            closeRect.sizeDelta = new Vector2(16f, 16f);
+        }
+        // The superseded HUD workaround enlarged objects named exactly "Close Button". Runtime
+        // references are serialized, so mark this instance after restoring its authored size.
+        CloseButton.name = "Close Button Stable";
+
         EventTrigger trigger = CloseButton.GetComponent<EventTrigger>();
         if (trigger == null)
         {
