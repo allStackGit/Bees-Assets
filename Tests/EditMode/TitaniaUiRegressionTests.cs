@@ -158,9 +158,10 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("WasBarrierOpened", outcome);
 
             StringAssert.Contains("missionId == 8", stageConfiguration);
-            StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"No\";", stageConfiguration);
+            StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"Bee-noculars\";", stageConfiguration);
             StringAssert.Contains("ConfigData.LevelOptions.ObstacleList?.Clear();", stageConfiguration);
             StringAssert.Contains("ConfigData.LevelOptions.AsteroidOption = 0;", stageConfiguration);
+            StringAssert.DoesNotContain("ConfigData.LevelOptions.Obstacles = \"Minesweeper\";", stageConfiguration);
 
             StringAssert.Contains("victorySurvivalDuration = 330f", beenoculars);
             StringAssert.Contains("defeatSurvivalDuration = 480f", beenoculars);
