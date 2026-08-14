@@ -10,6 +10,10 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
+        private readonly Dictionary<CanisterBomb, Vector2> _titania1DemolitionTargets =
+            new Dictionary<CanisterBomb, Vector2>();
+        private readonly ScaledTimer _titania1DemolitionTracker = new ScaledTimer();
+
         /// <summary>
         /// Current campaign implementation for Titania mission 1.
         ///
@@ -31,6 +35,7 @@ namespace Assets.Scripts.Levels
             // Preserve a correct authored layout when one exists, but repair stale links
             // deterministically so each Fire Tank demolishes its own nearby barrier.
             RepairMinesweeperDemolitionTargets(Map.transform);
+            BeginTitania1DemolitionTracking();
 
             // Small patrols already present in the persistent Bee fleet are distributed
             // around the obstacle field. The encounter is intentionally avoidable.
@@ -83,8 +88,6 @@ namespace Assets.Scripts.Levels
             });
             AddTimer(reinforcements);
 
-            // The scripting document establishes discovery of the first Fire Tank as the
-            // mechanic tutorial. This was temporarily disabled only to speed level testing.
             NextTriggers.Add(new Trigger(() => State.PlayerVisibleMapObjects.Any(), () =>
             {
                 var firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
@@ -138,6 +141,8 @@ namespace Assets.Scripts.Levels
                     ? ConfigData.Configuration.AISide
                     : ConfigData.Configuration.UserSide;
 
+                CaptureTitania1DemolitionChoices();
+                CancelTimer(_titania1DemolitionTracker);
                 CancelTimer(reinforcements);
                 CloseLevel();
 
@@ -154,6 +159,33 @@ namespace Assets.Scripts.Levels
             }, "Titania 1 Ending"));
         }
 
+        private void BeginTitania1DemolitionTracking()
+        {
+            _titania1DemolitionTargets.Clear();
+            foreach (CanisterBomb tank in Map.transform.GetComponentsInChildren<CanisterBomb>(true))
+            {
+                if (tank != null && tank.TargetObstacle != null)
+                {
+                    _titania1DemolitionTargets[tank] = tank.TargetObstacle.transform.localPosition;
+                }
+            }
+
+            _titania1DemolitionTracker.Reuse(0.25f, CaptureTitania1DemolitionChoices, true);
+            AddTimer(_titania1DemolitionTracker);
+        }
+
+        private void CaptureTitania1DemolitionChoices()
+        {
+            foreach (KeyValuePair<CanisterBomb, Vector2> target in _titania1DemolitionTargets.ToList())
+            {
+                if (target.Key == null || target.Key.IsDead)
+                {
+                    TitaniaRouteState.RecordOpenedBarrier(target.Value);
+                    _titania1DemolitionTargets.Remove(target.Key);
+                }
+            }
+        }
+
         private static void RepairMinesweeperDemolitionTargets(Transform root)
         {
             if (root == null)
@@ -167,9 +199,6 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            // These prefab components have not run MapObject.Setup yet, so their game IDs
-            // are still zero. Use each target's Transform as stable per-instance identity
-            // rather than MapObject's runtime ID-based equality.
             int distinctAuthoredTargets = fireTanks
                 .Where(tank => tank.TargetObstacle != null)
                 .Select(tank => tank.TargetObstacle.transform)
@@ -204,9 +233,6 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        /// <summary>
-        /// Persistent campaign completion runs only after the ending dialogue completes.
-        /// </summary>
         public void Titania1MinesweeperEnding()
         {
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
