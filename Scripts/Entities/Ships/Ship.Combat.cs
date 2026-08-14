@@ -42,11 +42,14 @@ namespace Assets.Scripts.Entities.Ships
         public void SetCombatTimer()
         {
             if (!Level.Stage.ActivateHiveMind) return;
-            if (_combatTimer) Level.CancelTimer(_combatTimerScaledTimer);
+            bool timerWasActive = _combatTimer && !_combatTimerScaledTimer.IsCanceled;
             InCombat = true;
             _combatTimer = true;
             _combatTimerScaledTimer.Reuse(_repeatRate, CombatTimer, true);
-            Level.AddTimer(_combatTimerScaledTimer);
+            if (!timerWasActive)
+            {
+                Level.AddTimer(_combatTimerScaledTimer);
+            }
         }
 
         public void LogDamage(int damage)
