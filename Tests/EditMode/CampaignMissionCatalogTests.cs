@@ -127,6 +127,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TerminalCampaignAdvancePersistsCompletionSentinel()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "UserProgressData.cs"));
+            string body = ExtractMethodBody(source, "AdvanceToNextLevel");
+
+            Assert.That(Regex.IsMatch(body,
+                @"if\s*\(CampaignMissionCatalog\.IsCampaignComplete\(targetLevel\)\)\s*\{[\s\S]*?SetCurrentLevel\(targetLevel\);[\s\S]*?return;"),
+                Is.True,
+                "The live campaign path must persist the first mission ID beyond the catalog as the completion sentinel.");
+            Assert.That(Regex.IsMatch(body,
+                @"if\s*\(CampaignMissionCatalog\.IsCampaignComplete\(fallbackTargetLevel\)\)\s*\{[\s\S]*?SetCurrentLevel\(fallbackTargetLevel\);[\s\S]*?return;"),
+                Is.True,
+                "The non-scene fallback must persist the same completion sentinel.");
+        }
+
+        [Test]
         public void EveryPostAnomalyMissionHasAnActiveLevelIntroDispatchCase()
         {
             string source = File.ReadAllText(Path.Combine(
