@@ -1,4 +1,3 @@
-using Assets.Scripts.Levels;
 using Assets.Scripts.Server;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -68,7 +67,6 @@ namespace Assets.Scripts
                    ConfigData.GetChallengeFleetData() != null &&
                    ConfigData.GetSavedSquadsData() != null &&
                    ConfigData.GetCampaignSavedSquadsData() != null &&
-                   ConfigData.GetChallengeFleetData() != null &&
                    ConfigData.GetChallengeSavedSquadsData() != null;
         }
 
@@ -82,11 +80,9 @@ namespace Assets.Scripts
                 return;
             }
 
-            string userProgressJson = TitaniaRouteState.AddToPlayerProgressJson(
-                ConfigData.UserProgressData.ToJson());
             JObject checkpoint = new JObject
             {
-                [ConfigData.UserProgressFilename] = userProgressJson,
+                [ConfigData.UserProgressFilename] = ConfigData.UserProgressData.ToJson(),
                 [ConfigData.SavedSquadsDataFilenames[0]] = ConfigData.GetSavedSquadsData().ToJson(),
                 [ConfigData.FleetDataFilenames[0]] = ConfigData.GetFleetData().ToJson(),
                 [ConfigData.SavedSquadsDataFilenames[1]] = ConfigData.GetCampaignSavedSquadsData().ToJson(),
