@@ -75,6 +75,12 @@ namespace Assets.Scripts.Levels
                             ConfigData.Configuration.HumanSide,
                             ShipTypes.Cruiser,
                             2);
+
+                        ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
+                        ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
+                        ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser);
+                        ConfigData.UserProgressData.SetShipTypes();
+
                         LevelConstructor.SpawnShipsAndSquads(
                             new List<SavedSquad>() { cruiserSquad },
                             new Vector2(200, 200),
@@ -86,6 +92,10 @@ namespace Assets.Scripts.Levels
                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
                         }, new Vector2(280, 200), Vector2.zero);
                         AddReinforcementsToHivemindCommandQueue();
+
+                        // User clarification keeps Fritz's introduction on Uranus rather than the
+                        // not-yet-built Saturn sequence. Preserve the current authored wording.
+                        Stage.CutsceneManager.Uranus_OnTheOffensive[10].Text = "They’re… different.";
                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(6, 6));
                     });
                     AddTimer(cruiserTimer);
