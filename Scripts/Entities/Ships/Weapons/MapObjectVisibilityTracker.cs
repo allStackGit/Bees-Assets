@@ -94,44 +94,24 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
+            // Unity objects can enter their special destroyed state before managed teardown
+            // completes. Rebuild the same public set by managed reference identity instead of
+            // relying on Unity equality/hash behavior during disable/destruction. Reuse the
+            // survivor buffer so the robust path does not reintroduce per-removal allocations.
             HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
-
-            // Normal runtime objects have a stable nonzero gameplay Id, so HashSet.Remove
-            // is O(1). A live pre-Setup object also has a stable Unity instance hash.
-            bool isLiveUnityObject = (UnityEngine.Object)_mapObject != null;
-            if ((_mapObject.Id != 0 || isLiveUnityObject) && visibleObjects.Remove(_mapObject))
-            {
-                return;
-            }
-
-            if (visibleObjects.Count == 0)
-            {
-                return;
-            }
-
-            // Defensive fallback for destroyed/uninitialized Unity wrappers whose hash can no
-            // longer be trusted. Preserve the old reference-based removal semantics only here.
             _visibleSurvivors.Clear();
-            bool foundReference = false;
             foreach (MapObject candidate in visibleObjects)
             {
-                if (ReferenceEquals(candidate, _mapObject))
-                {
-                    foundReference = true;
-                }
-                else
+                if (!ReferenceEquals(candidate, _mapObject))
                 {
                     _visibleSurvivors.Add(candidate);
                 }
             }
 
-            if (foundReference)
+            visibleObjects.Clear();
+            for (int i = 0; i < _visibleSurvivors.Count; i++)
             {
-                visibleObjects.Clear();
-                for (int i = 0; i < _visibleSurvivors.Count; i++)
-                {
-                    visibleObjects.Add(_visibleSurvivors[i]);
-                }
+                visibleObjects.Add(_visibleSurvivors[i]);
             }
             _visibleSurvivors.Clear();
         }
