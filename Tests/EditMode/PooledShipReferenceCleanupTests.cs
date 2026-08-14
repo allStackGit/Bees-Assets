@@ -55,10 +55,11 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("List<Ship> levelShips = Level.State.Ships;", source);
-            StringAssert.Contains("candidate.Side == Side", source);
+            StringAssert.Contains("candidate.Side != Side", source);
             StringAssert.DoesNotContain("Level.State.GetHumanShips()", source);
-            StringAssert.Contains("carrierShip.Carrier == this", source);
+            StringAssert.Contains("carrierShip.Carrier != this", source);
             StringAssert.Contains("carrierShip.Carrier = null;", source);
+            StringAssert.Contains("carrierShip.Carrier = replacementCarrier;", source);
         }
 
         [Test]
