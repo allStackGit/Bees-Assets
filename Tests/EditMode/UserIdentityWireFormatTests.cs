@@ -39,21 +39,41 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CurrentIdentitySelectionStillDocumentsDevelopmentOnlySteamBypass()
+        public void IdentitySelectionUsesCentralSteamManagerAndKeepsLocalFallback()
         {
             string source = ReadSource("Scripts", "ConfigData.Runtime.cs");
 
             int methodIndex = source.IndexOf("public static ulong GetUserId()");
-            int steamInitializationIndex = source.IndexOf("SteamAPI.Init()", methodIndex);
-            int prematureReturnIndex = source.IndexOf("return _userId;", methodIndex);
+            int nextMethodIndex = source.IndexOf("public static bool HasPlayedBefore()", methodIndex);
+            string method = source.Substring(methodIndex, nextMethodIndex - methodIndex);
 
-            Assert.That(methodIndex, Is.GreaterThanOrEqualTo(0));
-            Assert.That(steamInitializationIndex, Is.GreaterThan(methodIndex));
+            Assert.That(method, Does.Contain("SteamManager.Initialized"));
+            Assert.That(method, Does.Not.Contain("SteamAPI.Init()"));
+            Assert.That(method, Does.Contain("PlayerPrefs.GetInt(\"user_id\")"));
+            Assert.That(method, Does.Contain("using local fallback identity"));
+        }
 
-            // This assertion intentionally documents the remaining blocker. It should be
-            // inverted/removed when ConfigData.GetUserId is safely patched so non-development
-            // builds reach Steam identity instead of the local PlayerPrefs fallback.
-            Assert.That(prematureReturnIndex, Is.LessThan(steamInitializationIndex));
+        [Test]
+        public void SteamInitializationFailureIsNonFatal()
+        {
+            string source = ReadSource("Scripts", "Steamworks.NET", "SteamManager.cs");
+
+            Assert.That(source, Does.Contain("MarkInitializationFailed"));
+            Assert.That(source, Does.Contain("Continuing without Steam features."));
+            Assert.That(source, Does.Contain("m_bInitialized = SteamAPI.Init();"));
+            Assert.That(source, Does.Not.Contain("Could not load [lib]steam_api.dll/so/dylib"));
+        }
+
+        [Test]
+        public void SteamBuildPackagerRequiresCompleteUnityAndSteamRuntime()
+        {
+            string source = ReadSource("Editor", "SteamBuildPackager.cs");
+
+            Assert.That(source, Does.Contain("UnityPlayer.dll"));
+            Assert.That(source, Does.Contain("MonoBleedingEdge"));
+            Assert.That(source, Does.Contain("GameAssembly.dll"));
+            Assert.That(source, Does.Contain("steam_api64.dll"));
+            Assert.That(source, Does.Contain("Directory.EnumerateFiles(buildRoot, \"*\", SearchOption.AllDirectories)"));
         }
     }
 }
