@@ -47,9 +47,10 @@ namespace Assets.Scripts
         }
 
         /// <summary>
-        /// Prepares the current campaign level and routes to its pre-battle scene.
-        /// In-development missions are under active gameplay testing and skip authored
-        /// pre-level intros; ready missions retain the normal intro-first flow.
+        /// Prepares the current campaign level and routes to its authored pre-battle scene.
+        /// Development/test status must not alter player-facing campaign presentation: intros and
+        /// intermissions are part of the mission flow and are skipped only through the player's
+        /// explicit Skip control inside the Level Intro scene.
         /// </summary>
         public static void LoadLevel()
         {
@@ -57,10 +58,6 @@ namespace Assets.Scripts
             LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone();
 
             int currentLevel = UserProgressData.GetCurrentLevel(Configuration.UserSide);
-            bool skipIntroForTesting = IsTestingLevel ||
-                (CurrentGameMode == GameModes.Campaign &&
-                 !CampaignMissionCatalog.IsCampaignComplete(currentLevel) &&
-                 CampaignMissionCatalog.ShouldSkipPreLevelIntroForTesting(currentLevel));
 
             switch (currentLevel)
             {
@@ -72,7 +69,7 @@ namespace Assets.Scripts
                     break;
 
                 case 1:
-                    if (skipIntroForTesting || HasSeenPreLevelIntro)
+                    if (HasSeenPreLevelIntro)
                     {
                         HasSeenPreLevelIntro = false;
                         SceneManager.LoadSceneAsync("Space", LoadSceneMode.Single);
@@ -93,12 +90,7 @@ namespace Assets.Scripts
                 case 9:
                 case 10:
                 case 11:
-                    if (skipIntroForTesting)
-                    {
-                        HasSeenPreLevelIntro = false;
-                        SceneManager.LoadSceneAsync("Squad Maker", LoadSceneMode.Single);
-                    }
-                    else if (!HasSeenPreLevelIntro)
+                    if (!HasSeenPreLevelIntro)
                     {
                         SceneManager.LoadSceneAsync("Level Intro", LoadSceneMode.Single);
                     }
