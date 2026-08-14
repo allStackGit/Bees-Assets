@@ -27,7 +27,10 @@ namespace Assets.Scripts.Levels.Commands
                 if (_distance < _idealDistance)
                 {
                     _angle = GetSquad().AngleToPoint(_enemyPosition);
-                    GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
+                    if (!Stage.IsTraining)
+                    {
+                        GetSquad().Status = $"Retreating away from {EnemySquad.Name}";
+                    }
                     _position = GetSquad().GetPosition();
                     _retreatPoint = new Vector2((Mathf.Sin(_angle) * (_idealDistance - _distance) + _position.x), (Mathf.Cos(_angle) * (_idealDistance - _distance) + _position.y));
                     SetAndMove(_retreatPoint);
