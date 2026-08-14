@@ -195,7 +195,15 @@ namespace Assets.Scripts.Levels
 
         private void SpawnObstacles()
         {
-            ObstacleMap = new ObstacleMap(1);
+            if (ObstacleMap == null)
+            {
+                ObstacleMap = new ObstacleMap(1);
+            }
+            else
+            {
+                ObstacleMap.Obstacles.Clear();
+                ObstacleMap.ObstacleBackground = null;
+            }
             _usesPooledStaticObstaclePrefabs = false;
             if (CurrentLevelOptions.Obstacles != "No")
             {
