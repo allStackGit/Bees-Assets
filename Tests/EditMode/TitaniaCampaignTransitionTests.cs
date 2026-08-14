@@ -62,14 +62,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CampaignAdvancementStopsAtLastAvailableMission()
+        public void CampaignAdvancementStopsAtCatalogCompletionSentinel()
         {
             string progressSource = ReadProgressSource();
             string advanceSource = ExtractMethodBody(progressSource, "public void AdvanceToNextLevel()");
 
             StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(targetLevel)", advanceSource);
             StringAssert.Contains("CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel)", advanceSource);
-            StringAssert.Contains("last currently available mission", advanceSource);
+            StringAssert.Contains("currently available campaign", advanceSource);
+            StringAssert.Contains("terminal level", advanceSource);
         }
 
         private static string ReadBeenocularsSource()
