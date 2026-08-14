@@ -46,10 +46,9 @@ namespace Assets.Scripts
 
         public static Color GetUIColor(string name)
         {
-            List<string> possibleNames = Colors.Keys.ToList();
-            if (possibleNames.Contains(name))
+            if (Colors.TryGetValue(name, out Color color))
             {
-                return Colors.GetValueOrDefault(name);
+                return color;
             }
 
             Debug.LogError($"Tried to get unknown color name: {name} from list of colors.");
