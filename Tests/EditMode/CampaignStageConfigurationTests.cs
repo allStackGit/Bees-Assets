@@ -54,16 +54,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CampaignTestLevelsKeepTheirAdHocLevelOptions()
+        public void OnlyNegativeIdCampaignTestLevelsKeepTheirAdHocLevelOptions()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Scenes", "CampaignStageConfiguration.cs"));
 
-            Assert.That(source, Does.Contain("if (ConfigData.IsTestingLevel ||"));
-            Assert.That(source, Does.Contain("ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0"));
-            Assert.That(source.IndexOf("if (ConfigData.IsTestingLevel ||", StringComparison.Ordinal),
-                Is.LessThan(source.IndexOf("int missionId = ConfigData.UserProgressData.GetCurrentLevel(", StringComparison.Ordinal)),
-                "Test-mode bypass must happen before persisted campaign mission configuration is applied.");
+            string negativeIdGuard = "if (ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0)";
+            string clearTestingFlag = "ConfigData.IsTestingLevel = false;";
+            string missionLookup = "int missionId = ConfigData.UserProgressData.GetCurrentLevel(";
+
+            Assert.That(source, Does.Contain(negativeIdGuard));
+            Assert.That(source, Does.Not.Contain("if (ConfigData.IsTestingLevel ||"));
+            Assert.That(source, Does.Contain(clearTestingFlag));
+            Assert.That(source.IndexOf(negativeIdGuard, StringComparison.Ordinal),
+                Is.LessThan(source.IndexOf(clearTestingFlag, StringComparison.Ordinal)),
+                "Explicit negative-ID test levels must leave before normal campaign test state is cleared.");
+            Assert.That(source.IndexOf(clearTestingFlag, StringComparison.Ordinal),
+                Is.LessThan(source.IndexOf(missionLookup, StringComparison.Ordinal)),
+                "Persisted campaign missions must clear stale test mode before Stage mission setup.");
         }
     }
 }
