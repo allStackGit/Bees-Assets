@@ -109,6 +109,24 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        public float GetSlowestShipSpeed()
+        {
+            List<Ship> ships = GetShips();
+            if (ships.Count == 0)
+            {
+                return 0;
+            }
+            float slowestSpeed = ships[0].Speed;
+            for (int i = 1; i < ships.Count; i++)
+            {
+                if (ships[i].Speed < slowestSpeed)
+                {
+                    slowestSpeed = ships[i].Speed;
+                }
+            }
+            return slowestSpeed;
+        }
+
         public void StopMoving()
         {
             _tempShips = GetShips();
@@ -215,26 +233,7 @@ namespace Assets.Scripts.Levels
         public void MatchSpeed(float speed = 0)
         {
             IsMatchingSpeed = true;
-            if (speed > 0)
-            {
-                SetSquadSpeed(speed);
-                return;
-            }
-
-            List<Ship> ships = GetShips();
-            if (ships.Count == 0)
-            {
-                return;
-            }
-            float slowestSpeed = ships[0].Speed;
-            for (int i = 1; i < ships.Count; i++)
-            {
-                if (ships[i].Speed < slowestSpeed)
-                {
-                    slowestSpeed = ships[i].Speed;
-                }
-            }
-            SetSquadSpeed(slowestSpeed);
+            SetSquadSpeed(speed > 0 ? speed : GetSlowestShipSpeed());
         }
 
         public void UnmatchSpeed()
