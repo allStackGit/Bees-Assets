@@ -86,10 +86,14 @@ namespace Assets.Scripts.Levels
                 }
 
                 List<SavedSquad> squads = new List<SavedSquad>();
-                foreach ((ConfigData.ShipTypes type, int shipCount) in composition)
+                foreach (var requested in composition)
                 {
-                    squads.Add(ConfigData.CurrentShips.GetSquadByComposition(
-                        this, type, shipCount, true, true));
+                    SavedSquad squad = ConfigData.CurrentShips.GetSquadByComposition(
+                        this, requested.type, requested.shipCount, true, true);
+                    if (squad != null)
+                    {
+                        squads.Add(squad);
+                    }
                 }
 
                 AddTitania2BeeWave(squads, normalizedX, normalizedY);
