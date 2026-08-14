@@ -322,7 +322,7 @@ internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
             }
 
             DialogueLine marker = manager.PlutoLines_Anomaly[0];
-            int id = manager.GetInstanceID();
+            int id = manager.GetEntityId();
             if (_appliedMarkers.TryGetValue(id, out DialogueLine appliedMarker) &&
                 ReferenceEquals(marker, appliedMarker))
             {
