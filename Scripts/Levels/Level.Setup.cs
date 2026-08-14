@@ -1,5 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -11,6 +12,13 @@ namespace Assets.Scripts.Levels
         private ScaledTimer _hivemindTimer = new ScaledTimer();
         private ScaledTimer _checkTriggersTimer = new ScaledTimer();
         private ScaledTimer _initialCommandDelayTimer = new ScaledTimer();
+        private Action _startHivemindTimerCallback;
+
+        private void StartHivemindTimer()
+        {
+            AddTimer(_hivemindTimer);
+        }
+
         public void SetupHivemind()
         {
             CancelTimer(_hivemindTimer);
@@ -28,10 +36,11 @@ namespace Assets.Scripts.Levels
                 }
 
                 _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
-                _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
+                if (_startHivemindTimerCallback == null)
                 {
-                    AddTimer(_hivemindTimer);
-                });
+                    _startHivemindTimerCallback = StartHivemindTimer;
+                }
+                _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, _startHivemindTimerCallback);
                 AddTimer(_initialCommandDelayTimer);
             }
         }
