@@ -11,6 +11,7 @@ namespace Assets.Scripts.Levels
     {
         private void RandomizeOptions()
         {
+            bool logEnvironment = !Stage.IsTraining;
             if (CurrentLevelOptions.MapIndex == -1)
             {
                 CurrentLevelOptions.MapIndex = Utilities.RandomInt(Stage.Prefabs.Maps.Count);
@@ -34,16 +35,19 @@ namespace Assets.Scripts.Levels
             if (useStaticObstacles)
             {
                 HasObstacles = true;
-                Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
+                if (logEnvironment) Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
 
                 bool useAsteroids = hiveMindTraining
                     ? Utilities.CoinToss()
                     : (CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0;
                 SetAsteroidOptionForTraining(hiveMindTraining, useAsteroids);
                 ActivateCollisionAsteroids = useAsteroids;
-                Debug.Log(useAsteroids
-                    ? $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well"
-                    : $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
+                if (logEnvironment)
+                {
+                    Debug.Log(useAsteroids
+                        ? $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well"
+                        : $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
+                }
             }
             else
             {
@@ -55,31 +59,34 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions.Obstacles = "No";
                 ActivateCollisionAsteroids = useAsteroids;
                 HasObstacles = useAsteroids;
-                Debug.Log(useAsteroids
-                    ? "The map has asteroids but not obstacles"
-                    : "The map does not have asteroids or obstacles");
+                if (logEnvironment)
+                {
+                    Debug.Log(useAsteroids
+                        ? "The map has asteroids but not obstacles"
+                        : "The map does not have asteroids or obstacles");
+                }
             }
 
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                Debug.Log("The map has fog of war");
+                if (logEnvironment) Debug.Log("The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                Debug.Log("The map does not have fog of war");
+                if (logEnvironment) Debug.Log("The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1 && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                Debug.Log("The map has mining");
+                if (logEnvironment) Debug.Log("The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                Debug.Log("The map does not have mining");
+                if (logEnvironment) Debug.Log("The map does not have mining");
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements.
@@ -151,16 +158,26 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private List<StaticObstacle> GenerateRandomObstacles()
+        private StaticObstaclePool _staticObstaclePool;
+        private bool _usesPooledStaticObstaclePrefabs;
+
+        private StaticObstaclePool GetStaticObstaclePool()
         {
-            List<StaticObstacle> obstacles = new List<StaticObstacle>();
+            if (_staticObstaclePool == null)
+            {
+                _staticObstaclePool = StaticObstaclePool.GetOrCreate(Stage);
+            }
+            return _staticObstaclePool;
+        }
+
+        private void GenerateRandomObstacles()
+        {
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
             Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
-            GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-            ObstacleMap.ObstacleBackground = obstacleBackground;
+            ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
             for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
             {
-                GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
+                StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
                 if (Utilities.CoinToss())
                 {
                     obstacle.transform.localScale = new Vector2(Utilities.RandomInt(150) + 20, Utilities.RandomInt(50) + 20);
@@ -172,44 +189,54 @@ namespace Assets.Scripts.Levels
                 obstacle.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, maxSpawnDistance - new Vector2(0, obstacle.transform.localScale.y / 2), Vector2.zero);
                 obstacle.Collider.enabled = false;
                 obstacle.Collider.enabled = true;
-                obstacles.Add(obstacle);
+                ObstacleMap.Obstacles.Add(obstacle);
             }
-            return obstacles;
         }
 
         private void SpawnObstacles()
         {
-            ObstacleMap = new ObstacleMap(1);
+            if (ObstacleMap == null)
+            {
+                ObstacleMap = new ObstacleMap(1);
+            }
+            else
+            {
+                ObstacleMap.Obstacles.Clear();
+                ObstacleMap.ObstacleBackground = null;
+            }
+            _usesPooledStaticObstaclePrefabs = false;
             if (CurrentLevelOptions.Obstacles != "No")
             {
                 if (CurrentLevelOptions.Obstacles == "" && CurrentLevelOptions.ObstacleList.Count == 0)
                 {
-                    ObstacleMap.Obstacles = GenerateRandomObstacles();
+                    _usesPooledStaticObstaclePrefabs = true;
+                    GenerateRandomObstacles();
                 }
                 else if (CurrentLevelOptions.ObstacleList.Count > 0)
                 {
-                    GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-                    ObstacleMap.ObstacleBackground = obstacleBackground;
-                    ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList.Select((vectorPair) =>
+                    _usesPooledStaticObstaclePrefabs = true;
+                    StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+                    ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
+                    for (int i = 0; i < CurrentLevelOptions.ObstacleList.Count; i++)
                     {
-                        GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                        StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
+                        (Vector2, Vector2) vectorPair = CurrentLevelOptions.ObstacleList[i];
+                        StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
                         obstacle.transform.localPosition = vectorPair.Item1;
                         obstacle.transform.localScale = vectorPair.Item2;
                         obstacle.Collider.enabled = false;
                         obstacle.Collider.enabled = true;
-                        Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
-                        return obstacle;
-                    }).ToList();
+                        if (!Stage.IsTraining) Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
+                        ObstacleMap.Obstacles.Add(obstacle);
+                    }
                 }
                 else
                 {
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
                     List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
                     HideTitaniaObstacleDebugBackgrounds(CurrentLevelOptions.Obstacles, obstacles);
-                    Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
+                    if (!Stage.IsTraining) Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
                     List<MapObject> objects = obstacleContainer.GetComponentsInChildren<MapObject>().ToList();
-                    Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
+                    if (!Stage.IsTraining) Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
                     objects.ForEach((o) => o.Setup(this));
                     ObstacleMap.Obstacles = obstacles;
                 }
