@@ -12,6 +12,7 @@ namespace Bees.Tests.EditMode
         public void CurrentCampaignDialogueCarriesMissionScriptingRevisions()
         {
             string source = Read("Scripts", "CampaignDialogueOverrides.cs");
+            string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
 
             StringAssert.Contains("Gunship P-4 reporting to command", source);
             StringAssert.Contains("United Fleet airspace", source);
@@ -19,6 +20,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Pluto’s full fleet online", source);
             StringAssert.Contains("Heavily.", source);
             StringAssert.Contains("Its weapon has a huge range", source);
+            StringAssert.Contains("They’re… different.", uranusOne);
             StringAssert.Contains("you need to know how the carrier works", source);
         }
 
@@ -84,8 +86,18 @@ namespace Bees.Tests.EditMode
 
             StringAssert.Contains("ConfigData.UserProgressData.SetCurrentLevel(11);", endings);
             StringAssert.Contains("Uranus_OnTheDefensive.GetRange(14, 3)", uranusOne);
-            StringAssert.DoesNotContain("ShipTypes.Cruiser, 2", uranusOne);
-            StringAssert.DoesNotContain("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", endings);
+        }
+
+        [Test]
+        public void FritzAndCruisersRemainAnUranusRecruitmentNotASaturnRuntimeFeature()
+        {
+            string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
+            string catalog = Read("Scripts", "Levels", "CampaignMissionCatalog.cs");
+
+            StringAssert.Contains("ShipTypes.Cruiser, 2", uranusOne);
+            StringAssert.Contains("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", uranusOne);
+            StringAssert.Contains("They’re… different.", uranusOne);
+            StringAssert.DoesNotContain("Saturn", catalog);
         }
 
         [Test]
