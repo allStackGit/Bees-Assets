@@ -23,6 +23,7 @@ namespace Assets.Scripts.Levels
             Vector2 centerOfTitania = new Vector2(-32, 55);
             HasContinuousTriggers = true;
             Stage.Menus.SetMissionStatus("Reach the center of the map or clear the Bees");
+            TitaniaRouteState.BeginMinesweeper();
 
             Stage.CutsceneManager.Setup(Titania1MinesweeperEnding);
 
