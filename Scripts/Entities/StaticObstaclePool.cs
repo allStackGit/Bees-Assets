@@ -14,9 +14,9 @@ namespace Assets.Scripts.Entities
     {
         private Stage _stage;
         private readonly Stack<StaticObstacle> _inactiveObstacles = new Stack<StaticObstacle>();
-        private readonly HashSet<StaticObstacle> _inactiveObstacleSet = new HashSet<StaticObstacle>();
+        private readonly HashSet<int> _inactiveObstacleIds = new HashSet<int>();
         private readonly Stack<GameObject> _inactiveBackgrounds = new Stack<GameObject>();
-        private readonly HashSet<GameObject> _inactiveBackgroundSet = new HashSet<GameObject>();
+        private readonly HashSet<int> _inactiveBackgroundIds = new HashSet<int>();
 
         public static StaticObstaclePool GetOrCreate(Stage stage)
         {
@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities
                 obstacle = _inactiveObstacles.Pop();
                 if (obstacle != null)
                 {
-                    _inactiveObstacleSet.Remove(obstacle);
+                    _inactiveObstacleIds.Remove(obstacle.GetInstanceID());
                 }
             }
 
@@ -61,7 +61,7 @@ namespace Assets.Scripts.Entities
                 background = _inactiveBackgrounds.Pop();
                 if (background != null)
                 {
-                    _inactiveBackgroundSet.Remove(background);
+                    _inactiveBackgroundIds.Remove(background.GetInstanceID());
                 }
             }
 
@@ -78,7 +78,7 @@ namespace Assets.Scripts.Entities
 
         public void ReleaseObstacle(StaticObstacle obstacle)
         {
-            if (obstacle == null || !_inactiveObstacleSet.Add(obstacle))
+            if (obstacle == null || !_inactiveObstacleIds.Add(obstacle.GetInstanceID()))
             {
                 return;
             }
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Entities
 
         public void ReleaseBackground(GameObject background)
         {
-            if (background == null || !_inactiveBackgroundSet.Add(background))
+            if (background == null || !_inactiveBackgroundIds.Add(background.GetInstanceID()))
             {
                 return;
             }
