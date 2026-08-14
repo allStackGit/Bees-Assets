@@ -14,9 +14,9 @@ namespace Assets.Scripts.Entities
     {
         private Stage _stage;
         private readonly Stack<StaticObstacle> _inactiveObstacles = new Stack<StaticObstacle>();
-        private readonly HashSet<int> _inactiveObstacleIds = new HashSet<int>();
+        private readonly HashSet<EntityId> _inactiveObstacleIds = new HashSet<EntityId>();
         private readonly Stack<GameObject> _inactiveBackgrounds = new Stack<GameObject>();
-        private readonly HashSet<int> _inactiveBackgroundIds = new HashSet<int>();
+        private readonly HashSet<EntityId> _inactiveBackgroundIds = new HashSet<EntityId>();
 
         public static StaticObstaclePool GetOrCreate(Stage stage)
         {
