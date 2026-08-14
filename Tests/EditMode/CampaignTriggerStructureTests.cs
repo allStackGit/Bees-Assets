@@ -49,6 +49,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void Uranus3HiveMindStartupDoesNotRequireCarrierTutorial()
+        {
+            string uranus3 = Read("Level.Campaign.Uranus3.cs");
+
+            StringAssert.Contains(
+                "bool hasCarrierInLevel = State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier);",
+                uranus3);
+            StringAssert.Contains("Level 11 HiveMind activation without Carrier", uranus3);
+            StringAssert.Contains("FinishCarrierIntroduction,", uranus3);
+        }
+
+        [Test]
         public void SupersededMissionImplementationsAreNotCarriedForward()
         {
             string combined = Read("Level.Campaign.Pluto.cs") + Read("Level.Campaign.Neptune.cs") +
