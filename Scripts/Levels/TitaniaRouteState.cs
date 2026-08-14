@@ -1,4 +1,5 @@
 using Assets.Scripts.Entities;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -8,21 +9,64 @@ namespace Assets.Scripts.Levels
 {
     internal static class TitaniaRouteState
     {
+        private const string StoragePrefix = "bees.titania.route.";
         private static readonly HashSet<Vector2Int> OpenedBarrierPositions = new HashSet<Vector2Int>();
+        private static string _loadedStorageKey;
 
         internal static void BeginMinesweeper()
         {
+            _loadedStorageKey = GetStorageKey();
             OpenedBarrierPositions.Clear();
+            PlayerPrefs.DeleteKey(_loadedStorageKey);
+            PlayerPrefs.Save();
         }
 
         internal static void RecordOpenedBarrier(Vector2 localPosition)
         {
-            OpenedBarrierPositions.Add(ToKey(localPosition));
+            EnsureLoaded();
+            if (!OpenedBarrierPositions.Add(ToKey(localPosition)))
+            {
+                return;
+            }
+
+            string serialized = string.Join(";", OpenedBarrierPositions
+                .OrderBy(position => position.x)
+                .ThenBy(position => position.y)
+                .Select(position => $"{position.x},{position.y}"));
+            PlayerPrefs.SetString(_loadedStorageKey, serialized);
+            PlayerPrefs.Save();
         }
 
         internal static bool WasBarrierOpened(Vector2 localPosition)
         {
+            EnsureLoaded();
             return OpenedBarrierPositions.Contains(ToKey(localPosition));
+        }
+
+        private static void EnsureLoaded()
+        {
+            string storageKey = GetStorageKey();
+            if (_loadedStorageKey == storageKey)
+            {
+                return;
+            }
+
+            _loadedStorageKey = storageKey;
+            OpenedBarrierPositions.Clear();
+            string serialized = PlayerPrefs.GetString(storageKey, string.Empty);
+            foreach (string entry in serialized.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] values = entry.Split(',');
+                if (values.Length == 2 && int.TryParse(values[0], out int x) && int.TryParse(values[1], out int y))
+                {
+                    OpenedBarrierPositions.Add(new Vector2Int(x, y));
+                }
+            }
+        }
+
+        private static string GetStorageKey()
+        {
+            return StoragePrefix + ConfigData.GetUserId();
         }
 
         private static Vector2Int ToKey(Vector2 position)
