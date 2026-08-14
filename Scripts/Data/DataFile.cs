@@ -111,11 +111,25 @@ namespace Assets.Scripts.Data
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
                         SetContents(standingRequest.Response.Contents);
                         _isDataLoaded = true;
+                        _request = null;
                         return;
                     }
                     else if (standingRequest.Status == -1)
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
+
+                        // HandleUserDataResponse creates defaults before marking a genuinely missing
+                        // row with Status -1. Profile-member writes are coalesced until every member
+                        // is ready, so re-reading here would ask for the same still-missing row
+                        // forever and prevent the checkpoint from ever becoming flushable. Once the
+                        // fallback is loaded locally, accept it as the terminal read result; the
+                        // completed profile checkpoint will persist it after bootstrap finishes.
+                        if (WasCreatedFromMissingStorage && _isDataLoaded &&
+                            _textContents != ConfigData.WaitingMessage)
+                        {
+                            _request = null;
+                            return;
+                        }
 
                         if (global::HiveMindTrainingBootstrap.IsDedicatedTrainingRuntime && _isDataLoaded)
                         {
@@ -139,9 +153,20 @@ namespace Assets.Scripts.Data
         }
         public void SetContents(string contents)
         {
-            object jsonObject = JsonConvert.DeserializeObject(contents);
             _textContents = contents;
-            _jsonObject = jsonObject;
+            try
+            {
+                _jsonObject = JsonConvert.DeserializeObject(contents);
+            }
+            catch (JsonException exception)
+            {
+                // Server-backed legacy profiles can contain syntactically malformed JSON. Preserve
+                // the raw payload long enough for UserData.WaitForData to classify the file as
+                // incompatible and rebuild it from defaults instead of throwing out of Socket.Update
+                // and leaving the whole main-menu bootstrap permanently unfinished.
+                _jsonObject = null;
+                Debug.LogError($"Stored user data '{Name}' contains malformed JSON and will be recovered. {exception.GetType().Name}: {exception.Message}");
+            }
         }
         public object GetJsonObject()
         {
