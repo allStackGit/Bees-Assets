@@ -49,12 +49,10 @@ namespace Assets.Scripts.Levels
 
         public List<Ship> GetShips(int side = 0)
         {
-            return side switch
-            {
-                1 => Ships.Where(ship => ship.Side == 1).ToList(),
-                2 => Ships.Where(ship => ship.Side == 2).ToList(),
-                _ => Ships
-            };
+            int sideIndex = side - 1;
+            return sideIndex >= 0 && sideIndex < ShipsBySide.Length
+                ? ShipsBySide[sideIndex]
+                : Ships;
         }
 
         public bool RecordHiveMindSighting(Ship observer, Ship spotted)
@@ -98,13 +96,10 @@ namespace Assets.Scripts.Levels
         private HashSet<ConfigData.ShipTypes> GetShipTypes(int side)
         {
             HashSet<ConfigData.ShipTypes> types = new HashSet<ConfigData.ShipTypes>();
-            for (int i = 0; i < Ships.Count; i++)
+            List<Ship> sideShips = GetShips(side);
+            for (int i = 0; i < sideShips.Count; i++)
             {
-                Ship ship = Ships[i];
-                if (ship.Side == side)
-                {
-                    types.Add(ship.ShipType);
-                }
+                types.Add(sideShips[i].ShipType);
             }
             return types;
         }
@@ -200,21 +195,15 @@ namespace Assets.Scripts.Levels
                 return capturedState;
             }
 
-            bool hasShip = false;
-            for (int i = 0; i < Ships.Count; i++)
+            List<Ship> sideShips = GetShips(side);
+            for (int i = 0; i < sideShips.Count; i++)
             {
-                Ship ship = Ships[i];
-                if (ship.Side != side)
-                {
-                    continue;
-                }
-                hasShip = true;
-                if (ship.IsMobile)
+                if (sideShips[i].IsMobile)
                 {
                     return false;
                 }
             }
-            return !hasShip || true;
+            return true;
         }
     }
 }
