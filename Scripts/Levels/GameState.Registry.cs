@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
@@ -56,11 +55,16 @@ namespace Assets.Scripts.Levels
         {
             if (squad.IsMinionSquad)
             {
-                squad.SquadNumber = Squads
-                    .Where(existing => existing.Side == squad.Side)
-                    .Select(existing => existing.SquadNumber)
-                    .DefaultIfEmpty(0)
-                    .Max() + 1;
+                int maximumSquadNumber = 0;
+                for (int i = 0; i < Squads.Count; i++)
+                {
+                    Squad existing = Squads[i];
+                    if (existing.Side == squad.Side && existing.SquadNumber > maximumSquadNumber)
+                    {
+                        maximumSquadNumber = existing.SquadNumber;
+                    }
+                }
+                squad.SquadNumber = maximumSquadNumber + 1;
             }
             else
             {
