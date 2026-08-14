@@ -15,15 +15,16 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             int methodStart = source.IndexOf("public void AddToSquadsAwaitingHiveMindCommands(Squad squad)");
-            int methodEnd = source.IndexOf("public Queue<Squad> GetSquadsAwaitingHiveMindCommands", methodStart);
+            int methodEnd = source.IndexOf("public bool TryDequeueSquadAwaitingHiveMindCommand", methodStart);
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
             Assert.That(methodEnd, Is.GreaterThan(methodStart));
 
             string method = source.Substring(methodStart, methodEnd - methodStart);
             StringAssert.Contains("squad == null", method);
             StringAssert.Contains("squad.IsDead", method);
-            StringAssert.Contains("SquadsAwaitingCommands.Contains(squad)", method);
+            StringAssert.Contains("!_squadsAwaitingCommandSet.Add(squad)", method);
             StringAssert.Contains("SquadsAwaitingCommands.Enqueue(squad)", method);
+            StringAssert.Contains("_squadsAwaitingCommandSet.Remove(squad)", source);
         }
     }
 }
