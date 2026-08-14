@@ -41,7 +41,7 @@ namespace Assets.Scripts.Server
         public bool HasClosed;
         public bool KeepClosed;
         public string Protocol = "ws";
-        public HashSet<ServerRequest> StandingRequests = new HashSet<ServerRequest>();
+        public StandingRequestSet StandingRequests = new StandingRequestSet();
         public HashSet<long> HandledRequests = new HashSet<long>();
         public ConcurrentQueue<byte[]> MessageQueue = new ConcurrentQueue<byte[]>();
         public List<Level> OpenLevels = new List<Level>();
@@ -657,14 +657,7 @@ namespace Assets.Scripts.Server
 
         public ServerRequest GetStandingRequest(long hash)
         {
-            foreach (ServerRequest request in StandingRequests)
-            {
-                if (request.Hash == hash)
-                {
-                    return request;
-                }
-            }
-            return null;
+            return StandingRequests.TryGetByHash(hash, out ServerRequest request) ? request : null;
         }
 
         private bool TryClaimResponse(long hash)
