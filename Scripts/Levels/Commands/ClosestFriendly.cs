@@ -46,9 +46,12 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             _timer_position = _closestFriendlySquad.GetPosition();
-            squad.Status = squad.HasReachedDestination
-                ? $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}"
-                : $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = squad.HasReachedDestination
+                    ? $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}"
+                    : $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
+            }
 
             SetDestination(_timer_position);
             squad.MoveTracked(GetDestination());
