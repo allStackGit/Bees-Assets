@@ -45,7 +45,7 @@ namespace Assets.Scripts.Levels
                 (ConfigData.ShipTypes.Wasp, 3));
             ScheduleTitania2ExtraWave(25f, -0.65f, -1f,
                 (ConfigData.ShipTypes.Honeybee, 1));
-            ScheduleTitania2ExtraWave(30f, -0.65f, 1f,
+            ScheduleTitania2ExtraWave(30f, -1f, 0.65f,
                 (ConfigData.ShipTypes.Leafcutter, 1));
 
             ScheduleTitania2ExtraWave(75f, -1f, -0.7f,
@@ -54,13 +54,13 @@ namespace Assets.Scripts.Levels
             ScheduleTitania2ExtraWave(135f, 1f, -0.85f,
                 (ConfigData.ShipTypes.Honeybee, 1),
                 (ConfigData.ShipTypes.YellowJacket, 3));
-            ScheduleTitania2ExtraWave(225f, -0.65f, 1f,
+            ScheduleTitania2ExtraWave(225f, -1f, 0.65f,
                 (ConfigData.ShipTypes.Leafcutter, 3),
                 (ConfigData.ShipTypes.Hornet, 6));
             ScheduleTitania2ExtraWave(315f, -0.55f, -1f,
                 (ConfigData.ShipTypes.Wasp, 4),
                 (ConfigData.ShipTypes.YellowJacket, 4));
-            ScheduleTitania2ExtraWave(390f, -0.7f, 1f,
+            ScheduleTitania2ExtraWave(390f, -1f, 0.7f,
                 (ConfigData.ShipTypes.Leafcutter, 3),
                 (ConfigData.ShipTypes.Hornet, 6));
             ScheduleTitania2ExtraWave(405f, 0.55f, -1f,
