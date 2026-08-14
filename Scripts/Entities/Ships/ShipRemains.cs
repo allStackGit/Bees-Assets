@@ -80,7 +80,23 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ConfigData.ChangeableShipColors.TryGetValue(Ship.ShipType, out Color[] colors);
                 int[] changeablePixels = Utilities.GetChangablePixelsForImage(colors, _baseSprite);
-                _spriteRenderer.sprite = Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels);
+                Sprite recolored = Utilities.SetImageColor(Ship.Squad.Color, _baseSprite, changeablePixels);
+                _spriteRenderer.sprite = recolored;
+
+                try
+                {
+                    Vector2Int size = new Vector2Int(recolored.texture.width, recolored.texture.height);
+                    Ship.FleetShip.SaveSpriteToCache(
+                        0,
+                        "remains",
+                        recolored.texture.GetPixels(),
+                        size,
+                        Ship.Squad.SavedSquad.Color);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"Could not rebuild remains sprite cache for {Ship.FleetShip.Name}: {e.Message}");
+                }
             }
 
             _killTimer.Reuse(5, Kill);
