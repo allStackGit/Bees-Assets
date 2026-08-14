@@ -1,4 +1,5 @@
 ﻿
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using Newtonsoft.Json.Linq;
 using System;
@@ -80,7 +81,12 @@ namespace Assets.Scripts.Data
                 return;
             }
 
-            GetDataFile().WriteData(ToJson());
+            string data = ToJson();
+            if (filename == ConfigData.UserProgressFilename)
+            {
+                data = TitaniaRouteState.AddToPlayerProgressJson(data);
+            }
+            GetDataFile().WriteData(data);
         }
         public void WaitForData()
         {
@@ -97,7 +103,12 @@ namespace Assets.Scripts.Data
                     // Overlay the existing save onto today's defaults so old saves inherit only
                     // missing properties while preserving every value the user already stored.
                     // Array-rooted formats (fleet/squad lists) intentionally pass through unchanged.
-                    _onceDataIsLoaded(GetLoadedDataWithDefaults());
+                    object loadedData = GetLoadedDataWithDefaults();
+                    if (filename == ConfigData.UserProgressFilename)
+                    {
+                        TitaniaRouteState.LoadFromPlayerProgress(loadedData);
+                    }
+                    _onceDataIsLoaded(loadedData);
                 }
             }
         }
