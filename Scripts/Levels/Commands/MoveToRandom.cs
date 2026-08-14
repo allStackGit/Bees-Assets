@@ -33,7 +33,10 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("Reached the random destination on the map");
                     return;
                 }
-                GetSquad().Status = $"Moving to random destination: {GetDestination()}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to random destination: {GetDestination()}";
+                }
             }
         }
     }
