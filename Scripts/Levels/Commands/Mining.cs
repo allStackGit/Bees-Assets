@@ -97,7 +97,7 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            if (!HasFoundAsteroid)
+            if (!HasFoundAsteroid && !Stage.IsTraining)
             {
                 GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {TargetAstroid.GetPosition()}";
             }
@@ -189,9 +189,6 @@ namespace Assets.Scripts.Levels.Commands
                 Stage.Menus.UpdateMineralsMined(Level.State.PlayerMineralsMined, Level.MaxMinerals);
             }
 
-            // Preserve the complete mined amount in persistent FleetShip accounting. Integer
-            // division alone loses the remainder and makes fleet totals disagree with the
-            // asteroid/command/player counters.
             _baseAmountPerShip = _amountMined / ShipsCurrentlyMining.Count;
             _miningRemainder = _amountMined % ShipsCurrentlyMining.Count;
             for (int i = 0; i < ShipsCurrentlyMining.Count; i++)
