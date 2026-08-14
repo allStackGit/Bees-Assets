@@ -27,15 +27,14 @@ namespace Assets.Scripts.Entities.Ships
         private int _loopIndex;
         public void RecolorAnimationSprites()
         {
-            RecoloredSprites = new Sprite[TotalSprites];
             int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
-
-            if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
+            if (Ship.Stage.LoadedRemainsSprites.TryGetValue(key, out Sprite[] cachedSprites))
             {
-                RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
+                RecoloredSprites = cachedSprites;
                 return;
             }
 
+            RecoloredSprites = new Sprite[TotalSprites];
             // Custom-color cache files are device-local. Load every frame that exists and leave
             // missing entries null so LateUpdate can rebuild them from the authored animation.
             for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
@@ -84,7 +83,7 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = false;
 
             }
-            else if (Ship.Squad.HasCustomColor && CurrentSprite != null)
+            else if (Ship.Squad.HasCustomColor && CurrentSprite != null && SpriteRenderer.sprite != CurrentSprite)
             {
                 SpriteRenderer.sprite = CurrentSprite;
                 //Debug.Log($"Should not swap sprite yet");
