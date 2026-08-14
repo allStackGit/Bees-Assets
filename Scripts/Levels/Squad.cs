@@ -61,6 +61,7 @@ namespace Assets.Scripts.Levels
         public Action CommandQueueEmptyAction;
 
         private readonly List<Ship> _ships = new List<Ship>();
+        private readonly List<(Ship ship, Vector2 position)> _placedFormationSlots = new List<(Ship ship, Vector2 position)>();
         private bool _isInBounds;
         private bool _shouldChase;
         private ConfigData.ShootingStrategyTypes _chosenShootingStrategy;
@@ -118,6 +119,7 @@ namespace Assets.Scripts.Levels
             IsGrowingSquad = false;
             HasCustomColor = false;
             _ships.Clear();
+            _placedFormationSlots.Clear();
             _shouldChase = false;
             Destination = Vector2.zero;
             IsDead = false;
@@ -194,7 +196,11 @@ namespace Assets.Scripts.Levels
         public void SetSquadCeaseFire(bool ceasefire)
         {
             CeaseFire = ceasefire;
-            GetShips().ForEach(ship => ship.IsCeaseFire = CeaseFire);
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                ships[i].IsCeaseFire = CeaseFire;
+            }
         }
 
         private void SetSquadBox()
@@ -398,31 +404,35 @@ namespace Assets.Scripts.Levels
 
         private void PlaceFormationSlotsIndividually(Vector2 requestedCenter)
         {
-            List<(Ship ship, Vector2 position)> placed = new List<(Ship ship, Vector2 position)>();
-            foreach (Ship ship in GetShips())
+            _placedFormationSlots.Clear();
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
             {
+                Ship ship = ships[i];
                 Vector2 requestedSlot = GetFormationSlot(ship, requestedCenter);
-                Vector2 position = FindNearestIndividualFormationSlot(ship, requestedSlot, placed);
+                Vector2 position = FindNearestIndividualFormationSlot(ship, requestedSlot, _placedFormationSlots);
                 ship.transform.localPosition = position;
-                placed.Add((ship, position));
+                _placedFormationSlots.Add((ship, position));
             }
         }
 
         public void SetStartingPosition(Vector2 position)
         {
+            List<Ship> ships = GetShips();
             if (TryFindNearestFormationCenter(position, out Vector2 formationCenter))
             {
-                if (GetShips().Count == 1)
+                if (ships.Count == 1)
                 {
-                    GetShips()[0].transform.localPosition = formationCenter;
+                    ships[0].transform.localPosition = formationCenter;
                     return;
                 }
 
-                GetShips().ForEach(ship =>
+                for (int i = 0; i < ships.Count; i++)
                 {
+                    Ship ship = ships[i];
                     _adjustment = GetFormationAdjustment(ship);
                     ship.transform.localPosition = new Vector2(formationCenter.x + _adjustment.x, formationCenter.y + _adjustment.y);
-                });
+                }
                 return;
             }
 
