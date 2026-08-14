@@ -47,7 +47,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             else
             {
                 IsAimedAtTarget = false;
-                if ((Ship.IsCeaseFire || !HasValidTarget()) && Rotation != Ship.Rotation)
+                if (Rotation != Ship.Rotation && (Ship.IsCeaseFire || !HasValidTarget()))
                 {
                     Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
                 }
