@@ -13,7 +13,10 @@ namespace Assets.Scripts.Levels.Commands
             PrepareDamageToSendEntries();
             TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
             Level.AddTimer(TimeoutTimer);
-            GetSquad().Status = $"Holding this position";
+            if (!Stage.IsTraining)
+            {
+                GetSquad().Status = "Holding this position";
+            }
         }
     }
 }
