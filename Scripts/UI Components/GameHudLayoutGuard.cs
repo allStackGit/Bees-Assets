@@ -295,10 +295,11 @@ namespace Assets.Scripts.UI_Components
 
                 if (campaignMissionId == 8)
                 {
-                    // Titania II reuses the shield widget but has no evacuation counter. Keep the
-                    // speed control visually attached to its clock instead of applying Pluto IV's
-                    // shield fallback, which leaves the button floating in the play field.
-                    x = _clockRect.anchoredPosition.x;
+                    // Titania II has open HUD space on the right beneath the clock. Right-align the
+                    // speed button with the clock so it stays in that column instead of floating
+                    // over the play field or borrowing Pluto IV's shield/counter layout.
+                    x = _clockRect.anchoredPosition.x +
+                        ((_clockRect.rect.width - _speedRect.rect.width) * 0.5f);
                     y = _clockRect.anchoredPosition.y -
                         ((_clockRect.rect.height + _speedRect.rect.height) * 0.5f) - TitaniaClockGap;
                 }
