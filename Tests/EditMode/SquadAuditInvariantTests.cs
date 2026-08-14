@@ -62,8 +62,9 @@ namespace Bees.Tests.EditMode
             string allies = ExtractMethodBody(_squadSource, "GetPotentialAllies");
             Assert.That(enemies, Does.Contain("_enemies.Count < 64"));
             Assert.That(enemies, Does.Not.Contain("_enemies.Count <= 64"));
-            Assert.That(allies, Does.Contain("_tempShips.Count < _limit"));
-            Assert.That(allies, Does.Not.Contain("_tempShips.Count <= _limit"));
+            Assert.That(allies, Does.Contain("if (_allies.Count > _limit)"));
+            Assert.That(allies, Does.Contain("_allies.RemoveRange(_limit, _allies.Count - _limit)"));
+            Assert.That(allies, Does.Not.Contain("_allies.Count <= _limit"));
         }
 
         [Test]
@@ -141,8 +142,9 @@ namespace Bees.Tests.EditMode
             string reload = ExtractMethodBody(_strikerSource, "CheckCarrierReload");
             string returnToCarrier = ExtractMethodBody(_strikerSource, "ReturnToCarrierIfNecessary");
 
-            Assert.That(kill, Does.Contain(".OfType<CarrierShip>()"));
-            Assert.That(kill, Does.Contain(".Where(ship => ship.Carrier == this)"));
+            Assert.That(kill, Does.Contain("List<Ship> levelShips = Level.State.Ships"));
+            Assert.That(kill, Does.Contain("candidate.Side != Side"));
+            Assert.That(kill, Does.Contain("carrierShip.Carrier != this"));
             Assert.That(kill, Does.Contain("carrierShip.Carrier = replacementCarrier"));
             Assert.That(kill, Does.Contain("carrierShip.Carrier = null"));
             Assert.That(kill, Does.Contain("carrierSquad.Carrier = replacementCarrier"));
@@ -172,7 +174,7 @@ namespace Bees.Tests.EditMode
             string execute = ExtractMethodBody(_fullRetreatSource, "Execute");
             string warpKill = ExtractMethodBody(_fullRetreatSource, "WarpKill");
             string gateEnter = ExtractMethodBody(_warpGateSource, "OnTriggerEnter2D");
-            Assert.That(_fullRetreatSource, Does.Contain("private HashSet<long> _shipIdsWarping"));
+            Assert.That(_fullRetreatSource, Does.Contain("private readonly HashSet<long> _shipIdsWarping"));
             Assert.That(execute, Does.Contain("_shipIdsWarping.Add(ship.Id)"));
             Assert.That(warpKill, Does.Contain("_shipIdsWarping.Count == 0"));
             Assert.That(warpKill, Does.Not.Contain("TargetWarpGate.ShipsWarpingHere.Count == 0"));
@@ -211,7 +213,7 @@ namespace Bees.Tests.EditMode
             string execute = ExtractMethodBody(_healSource, "Execute");
             string reached = ExtractMethodBody(_healSource, "ShipReachedBeehive");
             string heal = ExtractMethodBody(_healSource, "HealShips");
-            Assert.That(execute, Does.Contain("s.Health < s.MaxHealth"));
+            Assert.That(execute, Does.Contain("ship.Health < ship.MaxHealth"));
             Assert.That(reached, Does.Contain("ShipsWaitingToHeal.Remove(ship)"));
             Assert.That(reached, Does.Contain("!ShipsHealing.Contains(ship)"));
             Assert.That(heal, Does.Contain("_ship.Health >= _ship.MaxHealth"));
@@ -224,7 +226,7 @@ namespace Bees.Tests.EditMode
             string enter = ExtractMethodBody(_beehiveSource, "OnTriggerEnter2D");
             string kill = ExtractMethodBody(_beehiveSource, "Kill");
             Assert.That(enter, Does.Contain("ShipReachedBeehive(_collidingShip)"));
-            Assert.That(kill, Does.Contain("healCommand.IsShipActivelyHealing(s)"));
+            Assert.That(kill, Does.Contain("healCommand.IsShipActivelyHealing(ship)"));
         }
 
         [Test]
@@ -234,18 +236,20 @@ namespace Bees.Tests.EditMode
             string found = ExtractMethodBody(_miningSource, "FoundAsteroid");
             string mine = ExtractMethodBody(_miningSource, "Mine");
             Assert.That(execute, Does.Contain("ship.IsMiningShip && !ship.IsDead"));
-            Assert.That(execute, Does.Contain("MiningShips.ToList().ForEach"));
+            Assert.That(execute, Does.Contain("for (int i = 0; i < MiningShips.Count; i++)"));
             Assert.That(found, Does.Contain("!ship.IsMiningShip"));
             Assert.That(found, Does.Contain("!MiningShips.Contains(ship)"));
-            Assert.That(mine, Does.Contain("ship != null && !ship.IsDead && ship.IsMiningShip"));
+            Assert.That(mine, Does.Contain("ship == null || ship.IsDead || !ship.IsMiningShip"));
         }
 
         [Test]
-        public void MiningAsteroidFinalizesCommandsFromSnapshot()
+        public void MiningAsteroidFinalizesCommandsWithoutMutatingEnumeration()
         {
             string kill = ExtractMethodBody(_miningAsteroidSource, "Kill");
-            Assert.That(kill, Does.Contain("SquadsMining.ToList().ForEach"));
+            Assert.That(kill, Does.Contain("while (SquadsMining.Count > 0)"));
             Assert.That(kill, Does.Contain("CommandTypes.Mining"));
+            Assert.That(kill, Does.Contain("int previousCount = SquadsMining.Count"));
+            Assert.That(kill, Does.Contain("SquadsMining.RemoveAt(lastIndex)"));
             Assert.That(kill, Does.Not.Contain("SquadsMining.ForEach"));
         }
 
@@ -273,7 +277,7 @@ namespace Bees.Tests.EditMode
             string timer = ExtractMethodBody(_bombingRunSource, "Timer");
             string clear = ExtractMethodBody(_bombingRunSource, "ClearData");
 
-            Assert.That(finished, Does.Contain("_finishingStriker.Carrier == null"));
+            Assert.That(finished, Does.Contain("_finishingStriker.Carrier != null && !_finishingStriker.Carrier.IsDead"));
             Assert.That(timer, Does.Contain("is FireBarge fireBarge && !fireBarge.IsDead"));
             Assert.That(timer, Does.Contain("if (IsDead)"));
             Assert.That(clear, Does.Contain("_timerLoops = 0"));
