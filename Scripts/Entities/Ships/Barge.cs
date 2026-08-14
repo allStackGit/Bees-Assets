@@ -30,6 +30,9 @@ namespace Assets.Scripts.Entities.Ships
         public BargeChargeImageAnimation BargeChargeImageAnimator;
         public List<GameObject> ChargeRocketFlares;
         private int _chargeLifecycleId;
+        private readonly WaitForSeconds _chargeBuildDelay = new WaitForSeconds(2f);
+        private readonly WaitForSeconds _chargeDuration = new WaitForSeconds(1f);
+        private readonly WaitForSeconds _chargeCooldown = new WaitForSeconds(10f);
 
         public override void Create(Stage stage)
         {
@@ -44,6 +47,18 @@ namespace Assets.Scripts.Entities.Ships
             }
             Charge = Weapons.First();
             OriginalPower = Charge.Power;
+
+            if (Stage.IsTraining)
+            {
+                for (int i = 0; i < ChargeRocketFlares.Count; i++)
+                {
+                    Destroy(ChargeRocketFlares[i]);
+                }
+                ChargeRocketFlares.Clear();
+                Destroy(BargeChargeAnimation);
+                Destroy(BargeLoadingChargeAnimation);
+                Destroy(BargeChargeImageAnimation);
+            }
         }
 
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
@@ -52,17 +67,6 @@ namespace Assets.Scripts.Entities.Ships
             if (IsUserControlled)
             {
                 ChargingBar.Setup();
-            }
-            if (Stage.IsTraining)
-            {
-                ChargeRocketFlares.ForEach((flare) =>
-                {
-                    Destroy(flare);
-                });
-                ChargeRocketFlares.Clear();
-                Destroy(BargeChargeAnimation);
-                Destroy(BargeLoadingChargeAnimation);
-                Destroy(BargeChargeImageAnimation);
             }
         }
         public override void ClearData()
@@ -163,7 +167,7 @@ namespace Assets.Scripts.Entities.Ships
                 int damage = math.min(Charge.Power, ship.Health);
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
                 LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this);
-                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+                if (!Stage.IsTraining) Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf)
                 {
@@ -183,19 +187,18 @@ namespace Assets.Scripts.Entities.Ships
                 if (!Stage.IsTraining)
                 {
                     BargeLoadingChargeAnimation.SetActive(true);
+                    Debug.Log($"{Name} is about to charge");
                 }
-
-                Debug.Log($"{Name} is about to charge");
-                yield return new WaitForSeconds(2);
+                yield return _chargeBuildDelay;
 
                 if (IsDead || lifecycleId != _chargeLifecycleId)
                 {
                     yield break;
                 }
 
-                Debug.Log($"{Name} is charging");
                 if (!Stage.IsTraining)
                 {
+                    Debug.Log($"{Name} is charging");
                     BargeLoadingChargeAnimation.SetActive(false);
                     BargeChargeAnimation.SetActive(true);
                     BargeChargeImageAnimation.SetActive(true);
@@ -215,7 +218,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 CannotChangeMovementOrders = true;
 
-                yield return new WaitForSeconds(1);
+                yield return _chargeDuration;
                 if (!IsDead && lifecycleId == _chargeLifecycleId)
                 {
                     StartCoroutine(StopCharge(lifecycleId));
@@ -258,7 +261,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     ChargingBar.DrainBar();
                 }
-                yield return new WaitForSeconds(10);
+                yield return _chargeCooldown;
 
                 if (!IsDead && lifecycleId == _chargeLifecycleId)
                 {

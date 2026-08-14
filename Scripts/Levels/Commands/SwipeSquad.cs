@@ -1,5 +1,6 @@
 ﻿
-using System.Linq;
+using Assets.Scripts.Entities.Ships;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -18,8 +19,6 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            // Command.Setup() built this queue before base.Execute() installed the new
-            // shooting strategy. Discard the stale ordering before pursuit begins.
             OriginalQueue.Clear();
             TargetingQueue.Clear();
 
@@ -41,6 +40,22 @@ namespace Assets.Scripts.Levels.Commands
             _swipeDestination = Vector2.zero;
         }
 
+        private bool MoveTowardsEnemiesTracked()
+        {
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
+                {
+                    return false;
+                }
+                ship.MoveToTrackedPoint(target.GetPosition());
+            }
+            return true;
+        }
+
         private Vector2 _enemyPosition;
         private float _angle, _distance;
 
@@ -57,20 +72,28 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            GetSquad().Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
-            if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+            Squad squad = GetSquad();
+            if (!Stage.IsTraining)
             {
-                if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
+                squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
+            }
+            if (!_gotToEnemy && !squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+            {
+                if (!MoveTowardsEnemiesTracked())
                 {
-                    MoveTowardsEnemies();
+                    SetFinalize("No more enemy ships to target");
+                    return;
                 }
             }
             else if (_swipeDestination == Vector2.zero)
             {
                 _gotToEnemy = true;
-                GetSquad().Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                if (!Stage.IsTraining)
+                {
+                    squad.Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                }
                 _enemyPosition = EnemySquad.GetPosition();
-                _angle = GetSquad().AngleToPoint(_enemyPosition);
+                _angle = squad.AngleToPoint(_enemyPosition);
 
                 if (CommandType == ConfigData.CommandTypes.RightSwipe)
                 {
@@ -90,14 +113,14 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 _distance = EnemySquad.MaxRange * 2f;
-                if (_distance < GetSquad().MaxRange - 2)
+                if (_distance < squad.MaxRange - 2)
                 {
-                    _distance = GetSquad().MaxRange - 2;
+                    _distance = squad.MaxRange - 2;
                 }
                 _swipeDestination = EnemySquad.CirclePoint(_angle, _distance);
                 SetAndMove(_swipeDestination);
             }
-            else if (GetSquad().HasReachedDestination)
+            else if (squad.HaveAllShipsReachedDestination())
             {
                 SetFinalize("Finished swiping past the enemy");
             }

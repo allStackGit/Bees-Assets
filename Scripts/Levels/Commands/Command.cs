@@ -18,18 +18,8 @@ namespace Assets.Scripts.Levels.Commands
     public class Command : MonoBehaviour
     {
         public long Age;
-        /// <summary>
-        /// How much TSV has been gained or lost over the lifetime of the command
-        /// </summary>
-        public long Tsv;  
-        /// <summary>
-        /// The Id of this command relative to the server.
-        /// </summary>
-        public long OutcomeId = 0; 
-        /// <summary>
-        /// The enemy squad that this command is attacking, if it has one. Attack commands require an enemy and end when the enemy dies.
-        /// Other commands  may involve attacking but aren't about that and don't require an enemy
-        /// </summary>
+        public long Tsv;
+        public long OutcomeId = 0;
         public Squad EnemySquad;
         private Squad _squad;
         public string Matchup, FinalizationCause;
@@ -43,17 +33,8 @@ namespace Assets.Scripts.Levels.Commands
         public float CommandFrequency = 3;
         public Level Level;
         public int Side;
-        /// <summary>
-        /// The Id of this command relative to the stage. Guarenteed unique for this stage.
-        /// </summary>
         public int ItemId;
-        /// <summary>
-        /// The targeting queue, unmodified from when it was generated, only regenerated when a new ship is added to the enemy squad
-        /// </summary>
         public Queue<Ship> OriginalQueue = new Queue<Ship>();
-        /// <summary>
-        /// The list of ships (in order) that this squad's ships should follow after, modified each time a ship takes an enemy ship off the queue and follows it
-        /// </summary>
         public Queue<Ship> TargetingQueue = new Queue<Ship>();
         public Stage Stage;
 
@@ -62,15 +43,18 @@ namespace Assets.Scripts.Levels.Commands
         public bool IsFinalized;
         public bool IsHiveMindCommand;
         public bool HasStoredOutcomeRecord;
-        /// <summary>
-        /// Keeps the Id of the original enemy squad so we can check if the enemy has died and been respawned as a new squad in between timer() calls
-        /// </summary>
         public int OriginalEnemyId;
 
         public ScaledTimer CommandTimer = new ScaledTimer();
         public ScaledTimer TimeoutTimer = new ScaledTimer();
 
         private List<Ship> _tempShips;
+        private readonly List<Ship> _targetingShips = new List<Ship>();
+        private readonly Dictionary<long, float> _targetingDistanceKeys = new Dictionary<long, float>();
+        private Comparison<Ship> _compareClosestTargetingShips;
+        private Comparison<Ship> _compareFurthestTargetingShips;
+        private Comparison<Ship> _comparePreferredTargetingType;
+        private ConfigData.ShipTypeLetters _preferredTargetingType;
 
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
         {
@@ -78,6 +62,9 @@ namespace Assets.Scripts.Levels.Commands
             MatchupStrategy = new MatchupStrategy();
             ShootingStrategy = new ShootingStrategy();
             CommandType = commandType;
+            _compareClosestTargetingShips ??= CompareClosestTargetingShips;
+            _compareFurthestTargetingShips ??= CompareFurthestTargetingShips;
+            _comparePreferredTargetingType ??= ComparePreferredTargetingType;
             IsDead = true;
         }
         public virtual void ClearData()
@@ -92,6 +79,8 @@ namespace Assets.Scripts.Levels.Commands
             HasEnemy = false;
             OriginalQueue.Clear();
             TargetingQueue.Clear();
+            _targetingShips.Clear();
+            _targetingDistanceKeys.Clear();
             _destinations.Clear();
             IsFinalized = false;
             HasStoredOutcomeRecord = false;
@@ -110,8 +99,7 @@ namespace Assets.Scripts.Levels.Commands
 
             if (EnemySquad != null)
             {
-                OriginalQueue = new Queue<Ship>(MakeTargetingQueue());
-                TargetingQueue = new Queue<Ship>(OriginalQueue);
+                RebuildTargetingQueues();
                 HasEnemy = true;
                 OriginalEnemyId = EnemySquad.ItemId;
             }
@@ -123,8 +111,6 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void SetSquad(Squad squad)
         {
-            // Setup may happen while a command is only being prepared for a scripted queue.
-            // Active ownership begins when execution starts, not when context is attached.
             _squad = squad;
         }
         public virtual void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, bool noEnemy)
@@ -144,7 +130,10 @@ namespace Assets.Scripts.Levels.Commands
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
                 HasStoredOutcomeRecord = Level.State.AddCommand(this);
-                GetSquad().Status = $"Executing Command #{OutcomeId}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Executing Command #{OutcomeId}";
+                }
             }
             else
             {
@@ -163,7 +152,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void AddDestination(Vector2 destination)
         {
-            _destinations.Add(destination); 
+            _destinations.Add(destination);
         }
         public void ClearDestinations()
         {
@@ -175,7 +164,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public Vector2 GetDestination()
         {
-            return GetDestinations().FirstOrDefault();
+            return _destinations.Count > 0 ? _destinations[0] : Vector2.zero;
         }
         public void SetAndMove(Vector2 destination)
         {
@@ -200,11 +189,65 @@ namespace Assets.Scripts.Levels.Commands
             SetFinalize("The command ran out of time");
         }
 
+        private void CacheTargetingDistances()
+        {
+            _targetingDistanceKeys.Clear();
+            Squad squad = GetSquad();
+            for (int i = 0; i < _tempShips.Count; i++)
+            {
+                Ship ship = _tempShips[i];
+                _targetingDistanceKeys[ship.Id] = squad.DistanceToPoint(ship.GetPosition());
+            }
+        }
+
+        private int CompareClosestTargetingShips(Ship a, Ship b)
+        {
+            return _targetingDistanceKeys[a.Id].CompareTo(_targetingDistanceKeys[b.Id]);
+        }
+
+        private int CompareFurthestTargetingShips(Ship a, Ship b)
+        {
+            return _targetingDistanceKeys[b.Id].CompareTo(_targetingDistanceKeys[a.Id]);
+        }
+
+        private int ComparePreferredTargetingType(Ship a, Ship b)
+        {
+            if (a.ShipTypeLetter == _preferredTargetingType && b.ShipTypeLetter != _preferredTargetingType)
+            {
+                return -1;
+            }
+            if (b.ShipTypeLetter == _preferredTargetingType && a.ShipTypeLetter != _preferredTargetingType)
+            {
+                return 1;
+            }
+            return 0;
+        }
+
+        public void RebuildOriginalTargetingQueue()
+        {
+            List<Ship> orderedShips = MakeTargetingQueue();
+            OriginalQueue.Clear();
+            for (int i = 0; i < orderedShips.Count; i++)
+            {
+                OriginalQueue.Enqueue(orderedShips[i]);
+            }
+        }
+
+        public void RebuildTargetingQueues()
+        {
+            RebuildOriginalTargetingQueue();
+            TargetingQueue.Clear();
+            foreach (Ship ship in OriginalQueue)
+            {
+                TargetingQueue.Enqueue(ship);
+            }
+        }
+
         public List<Ship> MakeTargetingQueue()
         {
-            // Shooting strategies reorder their working list. GetShips() returns the
-            // squad's authoritative internal list, so always sort/shuffle a snapshot.
-            _tempShips = EnemySquad.GetShips().ToList();
+            _targetingShips.Clear();
+            _targetingShips.AddRange(EnemySquad.GetShips());
+            _tempShips = _targetingShips;
             ConfigData.ShootingStrategyTypes strategy = GetSquad().GetShootingStrategy();
             switch (strategy)
             {
@@ -232,10 +275,12 @@ namespace Assets.Scripts.Levels.Commands
                     _tempShips.Sort((a, b) => a.Firepower.CompareTo(b.Firepower));
                     break;
                 case ConfigData.ShootingStrategyTypes.Closest:
-                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(a.GetPosition()).CompareTo(GetSquad().DistanceToPoint(b.GetPosition())));
+                    CacheTargetingDistances();
+                    _tempShips.Sort(_compareClosestTargetingShips);
                     break;
                 case ConfigData.ShootingStrategyTypes.Furthest:
-                    _tempShips.Sort((a, b) => GetSquad().DistanceToPoint(b.GetPosition()).CompareTo(GetSquad().DistanceToPoint(a.GetPosition())));
+                    CacheTargetingDistances();
+                    _tempShips.Sort(_compareFurthestTargetingShips);
                     break;
                 case ConfigData.ShootingStrategyTypes.MostRange:
                     _tempShips.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange));
@@ -258,19 +303,8 @@ namespace Assets.Scripts.Levels.Commands
                 default:
                     if ((int)strategy > 15)
                     {
-                        ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
-                        _tempShips.Sort((a, b) =>
-                        {
-                            if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
-                            {
-                                return -1;
-                            }
-                            else if (b.ShipTypeLetter == type && a.ShipTypeLetter != type)
-                            {
-                                return 1;
-                            }
-                            return 0;
-                        });
+                        _preferredTargetingType = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
+                        _tempShips.Sort(_comparePreferredTargetingType);
                         return _tempShips;
                     }
                     return _tempShips;
@@ -281,27 +315,33 @@ namespace Assets.Scripts.Levels.Commands
         private Squad _prepareDamage_closestEnemy;
         public void PrepareDamageToSendEntries(int which = 0)
         {
-            if (!GetSquad().IsDefenseless)
+            if (GetSquad().IsDefenseless)
             {
-                _tempShips = new List<Ship>();
+                return;
+            }
 
-                if (which == 1)
+            _tempShips = null;
+            if (which == 1)
+            {
+                _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
+                if (_prepareDamage_closestEnemy != null)
                 {
-                    _prepareDamage_closestEnemy = GetSquad().GetClosestEnemySquad();
-                    if (_prepareDamage_closestEnemy != null)
-                    {
-                        _tempShips = _prepareDamage_closestEnemy.GetShips();
-                    }
+                    _tempShips = _prepareDamage_closestEnemy.GetShips();
                 }
-                else if (EnemySquad != null)
-                {
-                    _tempShips = EnemySquad.GetShips();
-                }
+            }
+            else if (EnemySquad != null)
+            {
+                _tempShips = EnemySquad.GetShips();
+            }
 
-                foreach (Ship ship in _tempShips)
-                {
-                    Level.State.GetShipDamageStatus(Side, ship);
-                }
+            if (_tempShips == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _tempShips.Count; i++)
+            {
+                Level.State.GetShipDamageStatus(Side, _tempShips[i]);
             }
         }
 
@@ -330,7 +370,10 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                Debug.Log($"Finalizing Command {this} because of {cause}");
+                if (!Stage.IsTraining)
+                {
+                    Debug.Log($"Finalizing Command {this} because of {cause}");
+                }
                 if (cause == "")
                 {
                     Debug.LogError($"Trying to finalize Command without cause");
@@ -344,7 +387,10 @@ namespace Assets.Scripts.Levels.Commands
                 IsDead = true;
 
                 _tempShips = GetSquad().GetShips();
-                _tempShips.ForEach(ship => ship.TargetEnemyShipToFollow = null);
+                for (int i = 0; i < _tempShips.Count; i++)
+                {
+                    _tempShips[i].TargetEnemyShipToFollow = null;
+                }
                 Level.State.CommandsToRelease.Add(this);
 
                 if (!GetSquad().IsDead)
@@ -426,7 +472,7 @@ namespace Assets.Scripts.Levels.Commands
         public override string ToString()
         {
             return $"Command #{(OutcomeId != 0 ? OutcomeId : "N/A")} #[{ItemId}] with Strategy {CommandType} attached to " +
-                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}"; 
+                $"Squad {GetSquad()} with Enemy Squad: {EnemySquad?.Name}";
         }
 
         public override bool Equals(System.Object obj)

@@ -14,6 +14,11 @@ namespace Assets.Scripts.Levels
     {
         public HashSet<Projectile> Projectiles = new HashSet<Projectile>(ReferenceIdentityComparer<Projectile>.Instance);
         public List<Ship> Ships = new List<Ship>();
+        public readonly List<Ship>[] ShipsBySide =
+        {
+            new List<Ship>(),
+            new List<Ship>()
+        };
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
         public List<Squad> Squads = new List<Squad>();
@@ -60,6 +65,11 @@ namespace Assets.Scripts.Levels
         {
             new List<ShipDamageStatus>(),
             new List<ShipDamageStatus>()
+        };
+        public Dictionary<long, ShipDamageStatus>[] ShipDamageStatusesById =
+        {
+            new Dictionary<long, ShipDamageStatus>(),
+            new Dictionary<long, ShipDamageStatus>()
         };
         public Dictionary<long, int> OutcomeIdToPastCommandIndex = new Dictionary<long, int>();
 
@@ -108,10 +118,19 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                for (int sideIndex = 0; sideIndex < ShipsBySide.Length; sideIndex++)
                 {
-                    List<Ship> sideShips = GetShips(side);
-                    _eliminationSnapshot[side - 1] = sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+                    List<Ship> sideShips = ShipsBySide[sideIndex];
+                    bool hasMobileShip = false;
+                    for (int shipIndex = 0; shipIndex < sideShips.Count; shipIndex++)
+                    {
+                        if (sideShips[shipIndex].IsMobile)
+                        {
+                            hasMobileShip = true;
+                            break;
+                        }
+                    }
+                    _eliminationSnapshot[sideIndex] = !hasMobileShip;
                 }
             }
             _hasEliminationSnapshot = true;
@@ -133,44 +152,42 @@ namespace Assets.Scripts.Levels
         {
             CleanupRuntimeObjectsForReset();
 
-            // Path searches run on background tasks and retain this Pathfinder instance's
-            // worker arrays. Never reinitialize those arrays for the next episode while an
-            // old task may still be using them; detach the old instance so setup creates a
-            // fresh Pathfinder and any late results remain isolated on the retired object.
             if (Level != null)
             {
                 Level.Pathfinder = null;
             }
 
             Ships.Clear();
+            for (int side = 0; side < ShipsBySide.Length; side++)
+            {
+                ShipsBySide[side].Clear();
+            }
             ShipsById.Clear();
             Squads.Clear();
-            SquadsAwaitingCommands.Clear();
+            ClearSquadsAwaitingHiveMindCommands();
             PastCommands.Clear();
             OutcomeIdToPastCommandIndex.Clear();
             SelectedSquads.Clear();
             PlayerVisibleMapObjects.Clear();
             Obstacles.Clear();
             FogOfWarVisions.Clear();
-            SpottedShips = new[] { new List<SpottedShip>(), new List<SpottedShip>() };
-            InitialTsv = new[] { 0, 0 };
-            OriginalSquadCounts = new[] { 0, 0 };
-            HivemindShips = new[]
+            for (int side = 0; side < 2; side++)
             {
-                new Dictionary<long, HashSet<Ship>>(),
-                new Dictionary<long, HashSet<Ship>>()
-            };
-            VisionCache = new[]
-            {
-                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance),
-                new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)
-            };
+                if (SpottedShips[side] == null) SpottedShips[side] = new List<SpottedShip>();
+                else SpottedShips[side].Clear();
+                InitialTsv[side] = 0;
+                OriginalSquadCounts[side] = 0;
+                if (HivemindShips[side] == null) HivemindShips[side] = new Dictionary<long, HashSet<Ship>>();
+                else HivemindShips[side].Clear();
+                if (VisionCache[side] == null) VisionCache[side] = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
+                else VisionCache[side].Clear();
+                ShipDamageStatuses[side].Clear();
+                ShipDamageStatusesById[side].Clear();
+            }
             Deadbodies.Clear();
             FireBargeExplosions.Clear();
             MiningAsteroids.Clear();
             MiningShips.Clear();
-            ShipDamageStatuses[0].Clear();
-            ShipDamageStatuses[1].Clear();
             ShipsToRelease.Clear();
             SquadsToRelease.Clear();
             CommandsToRelease.Clear();

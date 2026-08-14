@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Levels;
 using UnityEngine;
 
@@ -30,8 +29,6 @@ namespace Assets.Scripts.Entities.Ships
 
         public Collider2D GetObstacleInPath(Vector2 destination)
         {
-            // Physics2D queries use world coordinates; Ship/command destinations are Level-local.
-            // Translation does not change the cast direction, angle, size, or distance.
             return GetLiveObstacleFromBoxCast(
                 GetPosition() + Level.GetPosition(),
                 GetSize(),
@@ -112,7 +109,15 @@ namespace Assets.Scripts.Entities.Ships
 
         public bool AreAllSquadShipsWithinRange(Squad squad)
         {
-            return squad.GetShips().All(IsShipWithinRange);
+            _tempShips = squad.GetShips();
+            for (int shipIndex = 0; shipIndex < _tempShips.Count; shipIndex++)
+            {
+                if (!IsShipWithinRange(_tempShips[shipIndex]))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public Vector2 GetSize() => _size;

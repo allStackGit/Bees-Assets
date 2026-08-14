@@ -9,7 +9,7 @@ namespace Assets.Scripts.Entities.Projectiles
     public class RocketExplosion : Projectile
     {
         public bool IsHarmless;
-        public List<Ship> _shipsHit = new List<Ship>();
+        public HashSet<Ship> _shipsHit = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
         private readonly HashSet<Obstacle> _obstaclesHit = new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
         public CircleCollider2D CircleCollider;
 

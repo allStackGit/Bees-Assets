@@ -1,7 +1,6 @@
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Assets.Scripts.Levels.Commands
 {
@@ -31,7 +30,10 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             IsAttacking = true;
-            GetSquad().Status = $"Starting bombing run against {EnemySquad.Name}";
+            if (!Stage.IsTraining)
+            {
+                GetSquad().Status = $"Starting bombing run against {EnemySquad.Name}";
+            }
             PrepareDamageToSendEntries();
             _execute_ships = GetSquad().GetShips();
 
@@ -75,14 +77,26 @@ namespace Assets.Scripts.Levels.Commands
             _timerLoops = 0;
         }
 
+        private static Bomb GetBomb(Ship ship)
+        {
+            for (int i = 0; i < ship.Weapons.Count; i++)
+            {
+                if (ship.Weapons[i] is Bomb bomb)
+                {
+                    return bomb;
+                }
+            }
+            return null;
+        }
+
         public override void SetFinalize(string cause)
         {
             if (!IsDead && GetSquad() != null)
             {
-                foreach (Ship ship in GetSquad().GetShips())
+                List<Ship> ships = GetSquad().GetShips();
+                for (int i = 0; i < ships.Count; i++)
                 {
-                    Bomb bomb = ship.Weapons.OfType<Bomb>().FirstOrDefault();
-                    bomb?.ReleaseTargetReservation();
+                    GetBomb(ships[i])?.ReleaseTargetReservation();
                 }
             }
             base.SetFinalize(cause);
@@ -95,7 +109,12 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool GetTarget(Ship bomber)
         {
-            _getTarget_bomb = (Bomb)bomber.Weapons.First();
+            _getTarget_bomb = GetBomb(bomber);
+            if (_getTarget_bomb == null)
+            {
+                SetFinalize("Bomber does not have a bomb weapon");
+                return false;
+            }
             _getTarget_bomb.HasCachedChanged = true;
             _getTarget_targetingList = _getTarget_bomb.MakeSortedTargetingList(true);
             if (_getTarget_targetingList.Count > 0)
@@ -120,24 +139,28 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool CheckIfStrikersAreDefenseless()
         {
-            if (GetSquad().IsCarrierSquad)
+            if (!GetSquad().IsCarrierSquad)
             {
-                if (GetSquad().GetShips().All((s) =>
+                return false;
+            }
+
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                _checkIfStrikersAreDefenseless_striker = (Striker)ships[i];
+                if (_checkIfStrikersAreDefenseless_striker.IsBombReady || _checkIfStrikersAreDefenseless_striker.Carrier != null)
                 {
-                    _checkIfStrikersAreDefenseless_striker = (Striker)s;
-                    return !_checkIfStrikersAreDefenseless_striker.IsBombReady && _checkIfStrikersAreDefenseless_striker.Carrier == null;
-                }))
-                {
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
-                    GetSquad().BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
-                    SetFinalize("Strikers are defenseless, cancelling bombing run");
-                    return true;
+                    return false;
                 }
             }
-            return false;
+
+            GetSquad().BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
+            GetSquad().BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
+            GetSquad().BannedStrats.Add(ConfigData.CommandTypes.RightSwipe);
+            GetSquad().BannedStrats.Add(ConfigData.CommandTypes.LeftSwipe);
+            GetSquad().BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
+            SetFinalize("Strikers are defenseless, cancelling bombing run");
+            return true;
         }
 
         private bool ShouldShipPursueTarget(Ship ship)
@@ -156,22 +179,28 @@ namespace Assets.Scripts.Levels.Commands
 
         public void SendShipToTarget(Ship ship)
         {
-            // Target-follow timers can run much faster than a difficult A* search. Do not
-            // supersede a live request just to refresh a moving target: invalidation only
-            // discards the result, while the Task.Run worker keeps consuming a path slot.
-            if (!ship.IsPathfinding)
-            {
-                ship.MoveToPoint(ship.TargetEnemyShipToFollow.GetPosition());
-            }
+            ship.MoveToTrackedPoint(ship.TargetEnemyShipToFollow.GetPosition());
         }
 
         private bool AreBombersCloseToEnemyTargets()
         {
-            return GetSquad().GetShips().All((ship) =>
+            List<Ship> ships = GetSquad().GetShips();
+            bool anyNearTarget = false;
+            for (int i = 0; i < ships.Count; i++)
             {
-                return ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow) ||
-                       (ship.ShipType == ConfigData.ShipTypes.Striker && ((Striker)ship).HasCompletedRun);
-            }) && GetSquad().GetShips().Any((ship) => ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow));
+                Ship ship = ships[i];
+                bool isNearTarget = ship.ProximityCollider.NearbyEnemyShips.Contains(ship.TargetEnemyShipToFollow);
+                if (isNearTarget)
+                {
+                    anyNearTarget = true;
+                    continue;
+                }
+                if (ship.ShipType != ConfigData.ShipTypes.Striker || !((Striker)ship).HasCompletedRun)
+                {
+                    return false;
+                }
+            }
+            return anyNearTarget;
         }
 
         private Ship _haveAllShipsFinished_currentShip;
@@ -183,45 +212,57 @@ namespace Assets.Scripts.Levels.Commands
 
         private bool HaveAllShipsFinished(List<Ship> ships)
         {
-            return ships.All((ship) =>
+            for (int i = 0; i < ships.Count; i++)
             {
-                _haveAllShipsFinished_currentShip = ship;
+                _haveAllShipsFinished_currentShip = ships[i];
                 if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     _finishingStriker = (Striker)_haveAllShipsFinished_currentShip;
-                    return _finishingStriker.HasCompletedRun &&
-                           (_finishingStriker.HasReturnedToCarrier || _finishingStriker.Carrier == null || _finishingStriker.Carrier.IsDead);
+                    if (!_finishingStriker.HasCompletedRun ||
+                        (!_finishingStriker.HasReturnedToCarrier && _finishingStriker.Carrier != null && !_finishingStriker.Carrier.IsDead))
+                    {
+                        return false;
+                    }
                 }
-                if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
+                else if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     _haveAllShipsFinished_yellowJacket = (YellowJacket)_haveAllShipsFinished_currentShip;
-                    return _haveAllShipsFinished_yellowJacket.HasCompletedRun;
+                    if (!_haveAllShipsFinished_yellowJacket.HasCompletedRun)
+                    {
+                        return false;
+                    }
                 }
-                if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.FireBarge)
+                else if (_haveAllShipsFinished_currentShip.ShipType == ConfigData.ShipTypes.FireBarge)
                 {
                     return false;
                 }
-                return true;
-            });
+            }
+            return true;
         }
 
         private bool HaveAllShipsBombed(List<Ship> ships)
         {
-            return ships.All((ship) =>
+            for (int i = 0; i < ships.Count; i++)
             {
-                _haveAllShipsBombed_currentShip = ship;
+                _haveAllShipsBombed_currentShip = ships[i];
                 if (_haveAllShipsBombed_currentShip.ShipType == ConfigData.ShipTypes.Striker)
                 {
                     _haveAllShipsBombed_striker = (Striker)_haveAllShipsBombed_currentShip;
-                    return _haveAllShipsBombed_striker.HasCompletedRun;
+                    if (!_haveAllShipsBombed_striker.HasCompletedRun)
+                    {
+                        return false;
+                    }
                 }
-                if (_haveAllShipsBombed_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
+                else if (_haveAllShipsBombed_currentShip.ShipType == ConfigData.ShipTypes.YellowJacket)
                 {
                     _haveAllShipsBombed_yellowJacket = (YellowJacket)_haveAllShipsBombed_currentShip;
-                    return _haveAllShipsBombed_yellowJacket.HasCompletedRun;
+                    if (!_haveAllShipsBombed_yellowJacket.HasCompletedRun)
+                    {
+                        return false;
+                    }
                 }
-                return true;
-            });
+            }
+            return true;
         }
 
         private int _timerLoops;
@@ -248,7 +289,10 @@ namespace Assets.Scripts.Levels.Commands
             if (!EnemySquad.IsDead)
             {
                 _timerLoops++;
-                GetSquad().Status = $"In the middle of bombing run against {EnemySquad.Name}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"In the middle of bombing run against {EnemySquad.Name}";
+                }
                 _timer_ships = GetSquad().GetShips();
                 _timer_FireBargesToDetonate.Clear();
 
@@ -361,9 +405,6 @@ namespace Assets.Scripts.Levels.Commands
                     _endBombingRun_striker.ReturnToCarrierIfNecessary();
                 }
 
-                // A dead target ends the attack phase, but Strikers still need the active
-                // command timer to fly back and reload. Finalizing here stranded them after
-                // a single return-to-carrier movement update.
                 if (!HaveAllShipsFinished(_endBombingRun_ships))
                 {
                     return;

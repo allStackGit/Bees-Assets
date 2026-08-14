@@ -37,14 +37,23 @@ namespace Assets.Scripts.Entities
         protected void OnTriggerEnter2D(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
-            Debug.Log($"{Name} collided with {_collidingThing.name}");
+            if (!Stage.IsTraining)
+            {
+                Debug.Log($"{Name} collided with {_collidingThing.name}");
+            }
             if (_collidingThing.CompareTag("Ship"))
             {
-                Debug.Log($"{Name} Hit by ship");
+                if (!Stage.IsTraining)
+                {
+                    Debug.Log($"{Name} Hit by ship");
+                }
                 _collidingShip = _collidingThing.GetComponent<Ship>();
                 if (_collidingShip.HasTargetDirection)
                 {
-                    Debug.Log($"{Name} hit the map border while moving in a direction");
+                    if (!Stage.IsTraining)
+                    {
+                        Debug.Log($"{Name} hit the map border while moving in a direction");
+                    }
                     if (_collidingShip.ShipType == ConfigData.ShipTypes.Barge)
                     {
                         _collidingBarge = (Barge)_collidingShip;
