@@ -123,7 +123,10 @@ namespace Assets.Scripts.Levels.Commands
                     GetSquad().PastCommands.Add(new StoredCommand(this));
                 }
                 HasStoredOutcomeRecord = Level.State.AddCommand(this);
-                GetSquad().Status = $"Executing Command #{OutcomeId}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Executing Command #{OutcomeId}";
+                }
             }
             else
             {
