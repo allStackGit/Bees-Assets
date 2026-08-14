@@ -2,13 +2,6 @@
 
 Static-only audit; no runtime measurements are claimed. This ledger contains unresolved validated optimization opportunities only.
 
-### PERF-006 — Pool static obstacle hierarchies used by repeated training episodes
-**Location:** `Scripts/Levels/Level.Environment.cs/GenerateRandomObstacles()/SpawnObstacles()` and `Scripts/Levels/Level.Ending.cs/SaveAndEnd()`  
-**Cost:** Hive Mind training deliberately randomizes the static-obstacle dimension. When random static obstacles are selected, `GenerateRandomObstacles()` instantiates a background plus 1–10 `ObstaclePrefab` GameObjects for that episode. Other authored obstacle-list paths also instantiate backgrounds/obstacles or an obstacle container. `SaveAndEnd()` later destroys the static obstacle GameObjects/background. This creates managed/native object and transform/component churn inside repeated level setup/teardown even though ships, projectiles, maps, and moving asteroids are otherwise pooled.  
-**Optimization:** Introduce Stage-owned pooling/reuse for the common static obstacle prefab and obstacle background (and, where practical, authored obstacle containers), resetting transforms/collider state on checkout and returning them on teardown instead of destroying them. Prioritize the random training path first because it is guaranteed to recur across episodes.  
-**Evidence:** Current `RandomizeOptions()` chooses static obstacles with a coin toss for Hive Mind training; an empty random obstacle specification reaches `GenerateRandomObstacles()`, which uses `Instantiate` for the background and each obstacle. Current `SaveAndEnd()` destroys `ObstacleMap.Obstacles` and `ObstacleMap.ObstacleBackground`.  
-**Risk:** Pool reuse must fully reset scale, local position, collider enablement, pathfinder/static-obstacle registration, and any `MapObject` state. Authored obstacle-container ownership is more complex than the common random-obstacle prefab and should not be generalized until lifecycle reset is explicit.
-
 ### PERF-007 — Pool targeting markers and avoid one recurring timer per enemy ship
 **Location:** `Scripts/Levels/Squad.Commands.cs/MarkTargets()` and `Scripts/Levels/TargetingSquadMarker.cs`  
 **Cost:** Every user Aggressive or Bombing Run command instantiates one `TargetingSquadPrefab` GameObject per enemy ship. Each marker then registers its own recurring 0.25-second `ScaledTimer` with the Level for roughly two seconds and destroys its GameObject on expiry. A single command against a multi-ship squad therefore creates a burst of Unity hierarchy/component allocations plus N additions/removals to the central Level timer list.  
