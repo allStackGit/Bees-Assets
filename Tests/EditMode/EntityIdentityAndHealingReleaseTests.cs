@@ -79,7 +79,7 @@ namespace Bees.Tests.EditMode
             int completionCheck = finalize.IndexOf("ShipsWaitingToHeal.Count == 0");
             Assert.That(reassign, Is.GreaterThanOrEqualTo(0));
             Assert.That(completionCheck, Is.GreaterThan(reassign));
-            StringAssert.Contains("_shipsThatNeedBeehive == null || _shipsThatNeedBeehive.Count == 0", finalize);
+            StringAssert.Contains("_shipsThatNeedBeehive.Count == 0", finalize);
         }
     }
 }
