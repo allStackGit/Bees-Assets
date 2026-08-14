@@ -43,7 +43,10 @@ namespace Assets.Scripts.Levels.Commands
                 }
 
                 GuardPosition = GetGuardingSquads().Count % 4;
-                GetSquad().Status = $"Guarding {_guardedSquad.Name}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Guarding {_guardedSquad.Name}";
+                }
 
                 CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                 Level.AddTimer(CommandTimer);
