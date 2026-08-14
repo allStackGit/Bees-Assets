@@ -44,4 +44,18 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** `Socket.Update()` unconditionally calls `CheckStandingRequests()`. The branch implementation snapshots all `StandingRequests` and then has only `GetUserData` and `GetSettings` branches. `DataFile.WaitForResponse()` and `ServerSettings.WaitForResponse()` remove their standing request when resolved and may submit a replacement request on retry; command/matchup requests have no per-frame waiter behavior.  
 **Risk:** Preserve retries that replace a data/settings request while the old one is being polled, and make stale waitable entries self-cleaning if another lifecycle path removes them from `StandingRequests`. Do not change request hashing, response matching, resend timing, authentication refresh, or the canonical standing-request ownership set.
 
+### PERF-020 — Replace per-command `List.ForEach` delegates with direct loops
+**Location:** `Scripts/Levels/Squad.Commands.cs`, `SetShootingStrategy()` / `ClearTargets()`  
+**Cost:** Every successful `Command.Execute()` calls `SetShootingStrategy()` and `ClearTargets()`. Those methods dispatch across the squad's ships through `List<Ship>.ForEach`; `SetShootingStrategy()` uses a lambda that captures the squad instance and therefore introduces avoidable delegate/closure work on a repeated Hive Mind command path, while both methods add delegate invocation overhead for simple in-order field/method updates.  
+**Optimization:** Fetch the squad ship list once in each method and use an indexed loop to apply the same operations in the same order.  
+**Evidence:** `Command.Execute()` calls both methods for every accepted command before storing the outcome. `SetShootingStrategy()` currently executes `GetShips().ForEach(ship => ship.ShootingStrategy = _chosenShootingStrategy)` and `ClearTargets()` executes `GetShips().ForEach(ship => ship.ClearTargets())`; no aggregation or early-exit semantics are involved.  
+**Risk:** Preserve ship iteration order and exactly one update/clear call per current squad member. Do not move either operation relative to command setup/outcome registration.
+
+### PERF-021 — Skip command/request status text construction during training
+**Location:** `Scripts/Levels/Commands/Command.cs`, command subclasses with unguarded start statuses, `Scripts/Server/CommandRequest.cs`, `Scripts/Server/MatchupStrategyRequest.cs`  
+**Cost:** Hive Mind command/request lifecycles still build and assign human-readable `Squad.Status` strings in several unguarded start paths, including the base `Executing Command #...` text and request/command-specific status messages. These strings are UI/debug state and are not needed by dedicated training, where repeated command selection causes recurring formatting/allocation.  
+**Optimization:** Guard only `Squad.Status` assignments with the existing `!Stage.IsTraining` / `!Level.Stage.IsTraining` policy, leaving all command/request state, matching, timers, outcomes, and server payloads unchanged.  
+**Evidence:** Branch code sets status in base `Command.Execute()` and in command/request start paths such as Charge, Retreat, Mining, Guard, Heal, BombingRun, `CommandRequest`, and `MatchupStrategyRequest`; timer-frequency status updates elsewhere are already training-guarded. Repository search shows `Squad.Status` consumed by debug/UI inspection rather than command control flow, and `Ship.Debug` copies it only for diagnostics.  
+**Risk:** Preserve all non-training status text exactly. Guard the assignment itself so interpolation is not evaluated during training; do not alter any surrounding command or request logic.
+
 Clean static passes: 0 / 2.
