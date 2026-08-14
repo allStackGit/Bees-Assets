@@ -27,18 +27,18 @@ namespace Assets.Scripts.Entities.Ships
         private int _loopIndex;
         public void RecolorAnimationSprites()
         {
-            RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
                 int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
 
-                if (Ship.Stage.LoadedRemainsSprites.ContainsKey(key))
+                if (Ship.Stage.LoadedRemainsSprites.TryGetValue(key, out Sprite[] cachedSprites))
                 {
-                    RecoloredSprites = Ship.Stage.LoadedRemainsSprites[key];
+                    RecoloredSprites = cachedSprites;
                     //Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
                 else
                 {
+                    RecoloredSprites = new Sprite[TotalSprites];
                     for (_loopIndex = 0; _loopIndex < RecoloredSprites.Length; _loopIndex++)
                     {
                         RecoloredSprites[_loopIndex] = Ship.FleetShip.LoadCachedSprite(_loopIndex, "remains", ConfigData.ShipRemainsSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color);
@@ -52,6 +52,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             else
             {
+                RecoloredSprites = new Sprite[TotalSprites];
                 Debug.LogError($"Tried to recolor remains but {Ship.FleetShip.Name} doesn't have a cached sprite");
             }
         }
