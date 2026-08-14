@@ -115,14 +115,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TitaniaRoutePersistsAndIsAppliedToBeenoculars()
+        public void TitaniaRoutePersistsInPlayerProgressAndIsAppliedToBeenoculars()
         {
             string route = Read("Scripts", "Levels", "TitaniaRouteState.cs");
+            string userData = Read("Scripts", "Data", "UserData.cs");
+            string checkpoint = Read("Scripts", "CampaignCheckpoint.cs");
             string minesweeper = Read("Scripts", "Levels", "Titania1Minesweeper.cs");
-            StringAssert.Contains("PlayerPrefs.SetString", route);
+
+            StringAssert.Contains("ProgressProperty = \"TitaniaOpenedBarrierPositions\"", route);
+            StringAssert.Contains("progress[ProgressProperty] = new JArray", route);
+            StringAssert.Contains("LoadFromPlayerProgress", userData);
+            StringAssert.Contains("AddToPlayerProgressJson", userData);
+            StringAssert.Contains("TitaniaRouteState.AddToPlayerProgressJson", checkpoint);
+            StringAssert.DoesNotContain("PlayerPrefs.SetString", route);
             StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"Minesweeper\";", route);
             StringAssert.Contains("TitaniaRouteState.WasBarrierOpened", route);
-            StringAssert.Contains("nearestBarrier.Kill();", route);
+            StringAssert.Contains("barrier.Kill();", route);
             StringAssert.Contains("BeginTitania1DemolitionTracking();", minesweeper);
             StringAssert.Contains("TitaniaRouteState.RecordOpenedBarrier", minesweeper);
         }
