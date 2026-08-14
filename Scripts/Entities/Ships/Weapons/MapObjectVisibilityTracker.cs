@@ -72,16 +72,25 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _state = state;
         }
 
-        private void OnDisable()
+        /// <summary>
+        /// Called directly by MapObject's owner lifecycle as well as by this component's Unity
+        /// callbacks. Keeping the owner as an explicit caller makes teardown deterministic in
+        /// EditMode, pooled-object deactivation, and ordinary runtime destruction alike.
+        /// </summary>
+        internal void HandleOwnerUnavailable()
         {
             RemoveFromVisibleSet();
             _sources.Clear();
         }
 
+        private void OnDisable()
+        {
+            HandleOwnerUnavailable();
+        }
+
         private void OnDestroy()
         {
-            RemoveFromVisibleSet();
-            _sources.Clear();
+            HandleOwnerUnavailable();
             _visibleSurvivors.Clear();
             _mapObject = null;
             _state = null;
