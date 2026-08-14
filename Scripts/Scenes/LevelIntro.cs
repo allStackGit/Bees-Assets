@@ -168,6 +168,19 @@ namespace UIComponents
             }
         }
 
+        private void Update()
+        {
+            // DialogueManager owns Space while dialogue is on screen. Once the intro has ended and
+            // its normal Continue button is visible, a fresh Space press should activate that same
+            // button instead of forcing the player to switch back to the mouse.
+            if (ContinueButton != null && ContinueButton.activeInHierarchy &&
+                ContinueButtonAction != null && ContinueButtonAction.interactable &&
+                Input.GetKeyDown(KeyCode.Space))
+            {
+                ContinueButtonAction.onClick.Invoke();
+            }
+        }
+
         private void OnDestroy()
         {
             UIAudioController.Instance?.StopLevelIntroAmbience();
