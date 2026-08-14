@@ -28,7 +28,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                if (GetSquad().HasReachedDestination)
+                if (GetSquad().HaveAllShipsReachedDestination())
                 {
                     SetFinalize("Reached the random destination on the map");
                     return;
