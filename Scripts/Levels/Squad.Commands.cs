@@ -94,7 +94,16 @@ namespace Assets.Scripts.Levels
         {
             if (!_isInBounds)
             {
-                _isInBounds = GetShips().All(s => s.IsInBounds());
+                List<Ship> ships = GetShips();
+                _isInBounds = true;
+                for (int i = 0; i < ships.Count; i++)
+                {
+                    if (!ships[i].IsInBounds())
+                    {
+                        _isInBounds = false;
+                        break;
+                    }
+                }
             }
             return _isInBounds;
         }
