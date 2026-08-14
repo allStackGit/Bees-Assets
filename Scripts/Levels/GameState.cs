@@ -14,6 +14,11 @@ namespace Assets.Scripts.Levels
     {
         public HashSet<Projectile> Projectiles = new HashSet<Projectile>(ReferenceIdentityComparer<Projectile>.Instance);
         public List<Ship> Ships = new List<Ship>();
+        public readonly List<Ship>[] ShipsBySide =
+        {
+            new List<Ship>(),
+            new List<Ship>()
+        };
         public List<Ship> ShipsToRelease = new List<Ship>();
         public Dictionary<long, Ship> ShipsById = new Dictionary<long, Ship>();
         public List<Squad> Squads = new List<Squad>();
@@ -113,10 +118,19 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                for (int side = 1; side <= _eliminationSnapshot.Length; side++)
+                for (int sideIndex = 0; sideIndex < ShipsBySide.Length; sideIndex++)
                 {
-                    List<Ship> sideShips = GetShips(side);
-                    _eliminationSnapshot[side - 1] = sideShips.Count == 0 || !sideShips.Any(ship => ship.IsMobile);
+                    List<Ship> sideShips = ShipsBySide[sideIndex];
+                    bool hasMobileShip = false;
+                    for (int shipIndex = 0; shipIndex < sideShips.Count; shipIndex++)
+                    {
+                        if (sideShips[shipIndex].IsMobile)
+                        {
+                            hasMobileShip = true;
+                            break;
+                        }
+                    }
+                    _eliminationSnapshot[sideIndex] = !hasMobileShip;
                 }
             }
             _hasEliminationSnapshot = true;
@@ -144,6 +158,10 @@ namespace Assets.Scripts.Levels
             }
 
             Ships.Clear();
+            for (int side = 0; side < ShipsBySide.Length; side++)
+            {
+                ShipsBySide[side].Clear();
+            }
             ShipsById.Clear();
             Squads.Clear();
             SquadsAwaitingCommands.Clear();
