@@ -53,9 +53,27 @@ namespace Assets.Scripts.Data
         {
             return Utilities.ConvertShipTypeToSide[Type] == ConfigData.Configuration.UserSide ? $"{Utilities.ConvertShipTypeToName[Type]} {Utilities.ConvertShipTypeToShipTypeLetter[Type]}-{Utilities.RandomInt(100)}" : Utilities.hexidecimalString();
         }
+        private string GetCachedSpritePath(int index, string type, Color squadColor)
+        {
+            return $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+        }
+        private static void DeleteUnreadableCachedSprite(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Could not remove unreadable cached sprite {path}: {e.Message}");
+            }
+        }
         public Sprite LoadCachedSprite(int index, string type, Vector2Int size, Color squadColor)
         {
-            string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
+            string path = GetCachedSpritePath(index, type, squadColor);
             if (!File.Exists(path))
             {
                 return null;
@@ -69,15 +87,14 @@ namespace Assets.Scripts.Data
                 if (!texture.LoadImage(bytes))
                 {
                     UnityEngine.Object.Destroy(texture);
+                    DeleteUnreadableCachedSprite(path);
                     return null;
                 }
-                // Cached sprites are an optimization. Ship.SetColor() deliberately falls
-                // back to live recoloring when this returns null, which is required when a
-                // FleetShip moves to a squad color/index that has not been cached yet.
                 return Sprite.Create(texture, new Rect(0, 0, size.x, size.y), ConfigData.HalfSize, ConfigData.PixelsPerUnit);
             }
             catch (Exception e)
             {
+                DeleteUnreadableCachedSprite(path);
                 Debug.LogWarning($"Could not load cached sprite {path}; falling back to live recoloring. {e.Message}");
                 return null;
             }
@@ -85,8 +102,13 @@ namespace Assets.Scripts.Data
 
         public void SaveSpriteToCache(int index, string type, Color[] pixels, Vector2Int size, Color squadColor)
         {
-            string path = $"{ConfigData.GetCachePath()}{type}_{Type}_{ColorUtility.ToHtmlStringRGB(squadColor)}_{index}.png";
-            //Debug.Log($"Saving {path}");
+            string path = GetCachedSpritePath(index, type, squadColor);
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             if (!File.Exists(path))
             {
                 Texture2D export = new Texture2D(size.x, size.y);
@@ -95,10 +117,6 @@ namespace Assets.Scripts.Data
                 export.Apply();
                 byte[] png = export.EncodeToPNG();
                 UnityEngine.Object.Destroy(export);
-
-                // HasCachedSprite means at least one cache entry is available for this
-                // FleetShip. Individual color/index misses remain valid and fall back to
-                // live recoloring in LoadCachedSprite/Ship.SetColor.
                 File.WriteAllBytes(path, png);
             }
             HasCachedSprite = true;
