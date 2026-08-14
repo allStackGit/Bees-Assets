@@ -47,7 +47,7 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             _destination = GetDestination();
-            if (squad.HasReachedDestination)
+            if (squad.HaveAllShipsReachedDestination())
             {
                 RemoveDestination(_destination);
                 AddDestination(_destination);
