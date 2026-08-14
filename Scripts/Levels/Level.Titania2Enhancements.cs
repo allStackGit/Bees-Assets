@@ -2,6 +2,7 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -15,7 +16,20 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
+            // Titania II owns its own target durability. Pluto IV also uses HumanTarget, so keep
+            // this mission-specific rather than changing the shared prefab or CreateHumanTarget().
+            titania.MaxHealth = 10000;
+            titania.Health = 10000;
+            titania.OriginalHealth = 10000;
+
+            // Reuse the authored Pluto IV shield widget instead of maintaining a second health HUD.
+            // Only the label and fill source change for Titania II; Pluto IV keeps its own setup.
             Stage.Menus.Counter.SetActive(false);
+            TMP_Text healthLabel = Stage.Menus.PlutoShield.GetComponentInChildren<TMP_Text>(true);
+            if (healthLabel != null)
+            {
+                healthLabel.text = "Titania II Health";
+            }
             Stage.Menus.PlutoShield.SetActive(true);
             UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);
 
