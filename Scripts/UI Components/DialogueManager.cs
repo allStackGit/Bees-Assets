@@ -27,6 +27,7 @@ public class DialogueManager : MonoBehaviour
     private bool _isLastDialogue;
     private bool _isAdvancingDialogue;
     private bool _playIntercomWhenPresented;
+    private static bool _disabledLegacyCampaignDialogueGuard;
 
 
     public void Setup(CutsceneManager cutsceneManager)
@@ -53,6 +54,20 @@ public class DialogueManager : MonoBehaviour
         if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign && CutsceneManager != null)
         {
             CampaignDialogueOverrides.Apply(CutsceneManager);
+
+            // The original override guard was introduced before presentation-time application was
+            // available. Once a DialogueManager has taken over that responsibility, disable the
+            // persistent polling component so campaign gameplay does not perform a scene-wide
+            // CutsceneManager search every frame.
+            if (!_disabledLegacyCampaignDialogueGuard)
+            {
+                CampaignDialogueOverrideGuard guard = FindObjectOfType<CampaignDialogueOverrideGuard>();
+                if (guard != null)
+                {
+                    guard.enabled = false;
+                    _disabledLegacyCampaignDialogueGuard = true;
+                }
+            }
         }
 
         _isLastDialogue = isLastDialogue;
