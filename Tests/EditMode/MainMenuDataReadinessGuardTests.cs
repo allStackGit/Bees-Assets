@@ -33,5 +33,24 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("CampaignMissionCatalog.IsCampaignComplete(currentLevel)"));
             Assert.That(source, Does.Contain("!_mainMenu.IsResettingCampaign"));
         }
+
+        [Test]
+        public void CampaignResetBuildsFreshRemoteDefaultsBeforeReenablingPlay()
+        {
+            string mainMenu = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "MainMenu.cs"));
+            string runtime = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "ConfigData.Runtime.cs"));
+            string userData = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "UserData.cs"));
+
+            Assert.That(mainMenu, Does.Contain("SetupCampaignFleetData(false, allCampaignStartingShips, forceCreateDefaults: true)"));
+            Assert.That(mainMenu, Does.Contain("SetupCampaignSavedSquadsData(false, forceCreateDefaults: true)"));
+            Assert.That(mainMenu, Does.Contain("TitaniaRouteState.ResetForCampaignRestart();"));
+            Assert.That(mainMenu, Does.Contain("HumanCampaignModeButton.GetComponent<Button>().enabled = false;"));
+            Assert.That(mainMenu, Does.Contain("HumanCampaignModeButton.GetComponent<Button>().enabled = true;"));
+            Assert.That(runtime, Does.Contain("bool forceCreateDefaults = false"));
+            Assert.That(userData, Does.Contain("!ConfigData.Configuration.UseLocalStorage && !forceCreateDefaults"));
+        }
     }
 }
