@@ -407,14 +407,18 @@ namespace Assets.Scripts.Levels
 
         public void Titania2CampaignEnding()
         {
+            ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
+
             if (WinningSide == ConfigData.Configuration.UserSide)
             {
-                ConfigData.HasSeenPreLevelIntro = false;
-                ConfigData.HasSeenIntermission = false;
                 ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
-                ConfigData.UserProgressData.AdvanceToNextLevel();
-                CampaignCheckpoint.Save();
             }
+
+            // Titania is a fail-forward campaign sequence. Whether the evacuation succeeds or
+            // fails, the surviving fleet continues toward Uranus; victory only controls rewards.
+            ConfigData.UserProgressData.AdvanceToNextLevel();
+            CampaignCheckpoint.Save();
 
             State.GameOver = true;
             Stage.Menus.ShowLevelSummary();
