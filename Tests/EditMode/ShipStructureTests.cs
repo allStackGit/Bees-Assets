@@ -35,10 +35,12 @@ namespace Bees.Tests.EditMode
         public void WeaponRangesAreComputedBeforeHalfRange()
         {
             string lifecycle = File.ReadAllText(Path.Combine(_folder, "Ship.Lifecycle.cs"));
-            int maxRange = lifecycle.IndexOf("MaxRange = HasWeapons");
-            int halfRange = lifecycle.IndexOf("HalfMaxRange = MaxRange / 2");
-            Assert.That(maxRange, Is.GreaterThanOrEqualTo(0));
-            Assert.That(halfRange, Is.GreaterThan(maxRange));
+            int maxRangeReset = lifecycle.IndexOf("MaxRange = 0;");
+            int maxRangeAggregation = lifecycle.IndexOf("if (weapon.Range > MaxRange) MaxRange = weapon.Range;", maxRangeReset);
+            int halfRange = lifecycle.IndexOf("HalfMaxRange = MaxRange / 2;", maxRangeAggregation);
+            Assert.That(maxRangeReset, Is.GreaterThanOrEqualTo(0));
+            Assert.That(maxRangeAggregation, Is.GreaterThan(maxRangeReset));
+            Assert.That(halfRange, Is.GreaterThan(maxRangeAggregation));
         }
 
         [Test]
