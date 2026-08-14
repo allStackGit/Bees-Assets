@@ -51,6 +51,10 @@ namespace Assets.Scripts.Levels.Commands
         private List<Ship> _tempShips;
         private readonly List<Ship> _targetingShips = new List<Ship>();
         private readonly Dictionary<long, float> _targetingDistanceKeys = new Dictionary<long, float>();
+        private Comparison<Ship> _compareClosestTargetingShips;
+        private Comparison<Ship> _compareFurthestTargetingShips;
+        private Comparison<Ship> _comparePreferredTargetingType;
+        private ConfigData.ShipTypeLetters _preferredTargetingType;
 
         public virtual void Create(Stage stage, ConfigData.CommandTypes commandType)
         {
@@ -58,6 +62,9 @@ namespace Assets.Scripts.Levels.Commands
             MatchupStrategy = new MatchupStrategy();
             ShootingStrategy = new ShootingStrategy();
             CommandType = commandType;
+            _compareClosestTargetingShips ??= CompareClosestTargetingShips;
+            _compareFurthestTargetingShips ??= CompareFurthestTargetingShips;
+            _comparePreferredTargetingType ??= ComparePreferredTargetingType;
             IsDead = true;
         }
         public virtual void ClearData()
@@ -193,6 +200,29 @@ namespace Assets.Scripts.Levels.Commands
             }
         }
 
+        private int CompareClosestTargetingShips(Ship a, Ship b)
+        {
+            return _targetingDistanceKeys[a.Id].CompareTo(_targetingDistanceKeys[b.Id]);
+        }
+
+        private int CompareFurthestTargetingShips(Ship a, Ship b)
+        {
+            return _targetingDistanceKeys[b.Id].CompareTo(_targetingDistanceKeys[a.Id]);
+        }
+
+        private int ComparePreferredTargetingType(Ship a, Ship b)
+        {
+            if (a.ShipTypeLetter == _preferredTargetingType && b.ShipTypeLetter != _preferredTargetingType)
+            {
+                return -1;
+            }
+            if (b.ShipTypeLetter == _preferredTargetingType && a.ShipTypeLetter != _preferredTargetingType)
+            {
+                return 1;
+            }
+            return 0;
+        }
+
         public void RebuildOriginalTargetingQueue()
         {
             List<Ship> orderedShips = MakeTargetingQueue();
@@ -246,11 +276,11 @@ namespace Assets.Scripts.Levels.Commands
                     break;
                 case ConfigData.ShootingStrategyTypes.Closest:
                     CacheTargetingDistances();
-                    _tempShips.Sort((a, b) => _targetingDistanceKeys[a.Id].CompareTo(_targetingDistanceKeys[b.Id]));
+                    _tempShips.Sort(_compareClosestTargetingShips);
                     break;
                 case ConfigData.ShootingStrategyTypes.Furthest:
                     CacheTargetingDistances();
-                    _tempShips.Sort((a, b) => _targetingDistanceKeys[b.Id].CompareTo(_targetingDistanceKeys[a.Id]));
+                    _tempShips.Sort(_compareFurthestTargetingShips);
                     break;
                 case ConfigData.ShootingStrategyTypes.MostRange:
                     _tempShips.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange));
@@ -273,19 +303,8 @@ namespace Assets.Scripts.Levels.Commands
                 default:
                     if ((int)strategy > 15)
                     {
-                        ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
-                        _tempShips.Sort((a, b) =>
-                        {
-                            if (a.ShipTypeLetter == type && b.ShipTypeLetter != type)
-                            {
-                                return -1;
-                            }
-                            else if (b.ShipTypeLetter == type && a.ShipTypeLetter != type)
-                            {
-                                return 1;
-                            }
-                            return 0;
-                        });
+                        _preferredTargetingType = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
+                        _tempShips.Sort(_comparePreferredTargetingType);
                         return _tempShips;
                     }
                     return _tempShips;
