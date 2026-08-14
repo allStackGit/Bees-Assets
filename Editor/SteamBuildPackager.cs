@@ -171,7 +171,7 @@ internal static class SteamBuildPackager
             foreach (string file in Directory.EnumerateFiles(buildRoot, "*", SearchOption.AllDirectories))
             {
                 string relativePath = file.Substring(prefix.Length).Replace('\\', '/');
-                ZipArchiveEntry entry = archive.CreateEntry(relativePath, CompressionLevel.Optimal);
+                ZipArchiveEntry entry = archive.CreateEntry(relativePath, System.IO.Compression.CompressionLevel.Optimal);
                 using (Stream input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
                 using (Stream output = entry.Open())
                 {
