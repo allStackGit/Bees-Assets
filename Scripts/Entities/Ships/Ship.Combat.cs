@@ -210,8 +210,14 @@ namespace Assets.Scripts.Entities.Ships
             FleetShip.MineralsMinedThisLevel = 0;
             if (Side == ConfigData.Configuration.UserSide)
             {
-                Level.State.PlayerScore -= FleetShip.GetTsv();
-                Level.State.PlayerShipsLost++;
+                // Campaign base objectives such as Pluto and Titania are represented by a
+                // HumanTarget so the Bees can target them, but they are not player-owned fleet
+                // assets. Their very large synthetic TSV must never become a player score/loss.
+                if (ShipType != ConfigData.ShipTypes.HumanTarget)
+                {
+                    Level.State.PlayerScore -= FleetShip.GetTsv();
+                    Level.State.PlayerShipsLost++;
+                }
             }
             else Level.State.PlayerScore += FleetShip.GetTsv();
         }
@@ -265,8 +271,6 @@ namespace Assets.Scripts.Entities.Ships
                     foreach (Weapon weapon in _weapons) weapon.ShipsWithinRange.Remove(Id);
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
-                Squad.HasMovedBox = false;
-                Squad.MoveSquadBox();
             }
             else if (Side == ConfigData.Configuration.UserSide) Level.State.PlayerShipsReturned++;
 
@@ -287,8 +291,21 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             foreach (Projectile projectile in ProjectilesInFlight) projectile.ShipIsDead = true;
-            if (Squad.GetShips().Count == 0) Squad.Kill(endKill);
-            else Squad.SetOffsets();
+            if (Squad.GetShips().Count == 0)
+            {
+                Squad.Kill(endKill);
+            }
+            else
+            {
+                Squad.SetOffsets();
+                if (!endKill)
+                {
+                    // Recalculate selection bounds only after the casualty has actually been
+                    // removed and the surviving formation offsets have been refreshed.
+                    Squad.HasMovedBox = false;
+                    Squad.MoveSquadBox();
+                }
+            }
             CancelOwnedTimers();
             Deactivate();
         }
