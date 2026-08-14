@@ -94,6 +94,10 @@ namespace Assets.Scripts.Scenes
             else if (IsResettingCampaign)
             {
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
+                {
+                    ConfigData.CurrentShips = ConfigData.CampaignShips;
+                }
                 HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Campaign";
                 HumanCampaignModeButton.GetComponent<Button>().enabled = true;
                 IsResettingCampaign = false;
@@ -120,6 +124,10 @@ namespace Assets.Scripts.Scenes
             else if (IsResettingChallenge)
             {
                 ConfigData.ChallengeModeShips = new Ships(ConfigData.GetChallengeFleetData(), ConfigData.GetChallengeSavedSquadsData());
+                if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+                {
+                    ConfigData.CurrentShips = ConfigData.ChallengeModeShips;
+                }
                 HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Challenge Mode";
                 HumanChallengeModeButton.GetComponent<Button>().enabled = true;
                 IsResettingChallenge = false;
@@ -283,7 +291,6 @@ namespace Assets.Scripts.Scenes
 
         public void ResetCampaign()
         {
-
             Dictionary<ConfigData.ShipTypes, int> allCampaignStartingShips = new Dictionary<ConfigData.ShipTypes, int>();
             ConfigData.StartingSettings.HumanCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
             ConfigData.StartingSettings.BeeCampaignStartingShips.ToList().ForEach((s) => allCampaignStartingShips.Add(s.Key, s.Value));
@@ -291,6 +298,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.HumanCampaignWins = 0;
             ConfigData.UserProgressData.BeeCampaignWins = 0;
             ConfigData.UserProgressData.CurrentHumanCampaignLevel = 0;
+            ConfigData.UserProgressData.CurrentBeeCampaignLevel = 0;
             ConfigData.UserProgressData.HasStartedHumanCampaign = false;
             ConfigData.UserProgressData.HumanCampaignSavedSquadNumber = 0;
             ConfigData.UserProgressData.BeeCampaignSavedSquadNumber = 0;
@@ -299,23 +307,27 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.MinedTSV = 0;
             ConfigData.UserProgressData.CampaignScore = 0;
             ConfigData.UserProgressData.HasPlayedBefore = true;
-            ConfigData.UserProgressData.UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes> {ConfigData.ShipTypes.Scout, ConfigData.ShipTypes.Gunship };
-
+            ConfigData.UserProgressData.UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes> { ConfigData.ShipTypes.Scout, ConfigData.ShipTypes.Gunship };
+            ConfigData.HasSeenPreLevelIntro = false;
+            ConfigData.HasSeenIntermission = false;
+            TitaniaRouteState.ResetForCampaignRestart();
 
             ConfigData.IsSavedSquadsDataLoaded[1] = false;
             ConfigData.IsFleetDataLoaded[1] = false;
             ConfigData.IsLoadingUserData = true;
             IsFinalized = false;
             IsResettingCampaign = true;
+            ConfigData.CampaignShips = null;
 
-            //HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Resetting...";
-            //HumanCampaignModeButton.GetComponent<Button>().enabled = false;
+            HumanCampaignModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Resetting...";
+            HumanCampaignModeButton.GetComponent<Button>().enabled = false;
 
-            ConfigData.SetupCampaignFleetData(false, allCampaignStartingShips);
-            ConfigData.SetupCampaignSavedSquadsData(false);
+            // This is an intentional destructive reset, not startup. Bypass the normal remote-first
+            // protection so the constructors build fresh defaults immediately instead of reading the
+            // old server rows back into the campaign we just reset.
+            ConfigData.SetupCampaignFleetData(false, allCampaignStartingShips, forceCreateDefaults: true);
+            ConfigData.SetupCampaignSavedSquadsData(false, forceCreateDefaults: true);
             ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
-
-
         }
 
         public void ResetChallenge()
@@ -328,6 +340,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.HumanChallengeWins = 0;
             ConfigData.UserProgressData.BeeChallengeWins = 0;
             ConfigData.UserProgressData.CurrentHumanChallengeLevel = 0;
+            ConfigData.UserProgressData.CurrentBeeChallengeLevel = 0;
             ConfigData.UserProgressData.HumanChallengeSavedSquadNumber = 0;
             ConfigData.UserProgressData.BeeChallengeSavedSquadNumber = 0;
             ConfigData.UserProgressData.ChallengeScore = 0;
@@ -338,9 +351,10 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsLoadingUserData = true;
             IsFinalized = false;
             IsResettingChallenge = true;
+            ConfigData.ChallengeModeShips = null;
 
-            ConfigData.SetupChallengeFleetData(false, allChallengeStartingShips);
-            ConfigData.SetupChallengeSavedSquadsData(false);
+            ConfigData.SetupChallengeFleetData(false, allChallengeStartingShips, forceCreateDefaults: true);
+            ConfigData.SetupChallengeSavedSquadsData(false, forceCreateDefaults: true);
             ConfigData.UserProgressData.Save(); // Save this after the others so changes to fleet and squad ID are saved
 
 
