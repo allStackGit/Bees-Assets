@@ -49,20 +49,43 @@ namespace Assets.Scripts.Entities.Ships
                     _prefabSprite = _baseColorSprites[_tempIndex];
                     _setColorSize = new Vector2Int(_prefabSprite.texture.width, _prefabSprite.texture.height);
                     _hasLoadedSprite = false;
-                    if (FleetShip.HasCachedSprite)
+
+                    // The persisted HasCachedSprite flag can outlive the device-local PNG cache.
+                    // Always probe the local cache for custom colors; a cache miss is repaired
+                    // immediately from the authored sprite instead of trusting that remote flag.
+                    _loadedSprite = FleetShip.LoadCachedSprite(
+                        _tempIndex,
+                        "ship",
+                        _setColorSize,
+                        Squad.SavedSquad.Color);
+                    if (_loadedSprite != null)
                     {
-                        _loadedSprite = FleetShip.LoadCachedSprite(_tempIndex, "ship", _setColorSize, Squad.SavedSquad.Color);
-                        if (_loadedSprite != null)
-                        {
-                            prefab.GetComponent<SpriteRenderer>().sprite = _loadedSprite;
-                            _hasLoadedSprite = true;
-                        }
+                        prefab.GetComponent<SpriteRenderer>().sprite = _loadedSprite;
+                        _hasLoadedSprite = true;
                     }
+
                     if (!_hasLoadedSprite)
                     {
                         _changablePixels = Utilities.GetChangablePixelsForImage(_colors, _prefabSprite);
                         _recolored = Utilities.SetImageColor(Squad.Color, _prefabSprite, _changablePixels);
                         prefab.GetComponent<SpriteRenderer>().sprite = _recolored;
+
+                        // A different device may have the squad/color in server-backed save data
+                        // without the generated PNG. Rebuild that local cache while the ship is
+                        // already being recolored so subsequent loads use the normal fast path.
+                        try
+                        {
+                            FleetShip.SaveSpriteToCache(
+                                _tempIndex,
+                                "ship",
+                                _recolored.texture.GetPixels(),
+                                _setColorSize,
+                                Squad.SavedSquad.Color);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogWarning($"Could not rebuild custom sprite cache for {FleetShip.Name}: {e.Message}");
+                        }
                     }
                     _tempIndex++;
                 });
