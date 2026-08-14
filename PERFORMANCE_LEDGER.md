@@ -16,4 +16,11 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** Current `RandomizeOptions()` chooses static obstacles with a coin toss for Hive Mind training; an empty random obstacle specification reaches `GenerateRandomObstacles()`, which uses `Instantiate` for the background and each obstacle. Current `SaveAndEnd()` destroys `ObstacleMap.Obstacles` and `ObstacleMap.ObstacleBackground`.  
 **Risk:** Pool reuse must fully reset scale, local position, collider enablement, pathfinder/static-obstacle registration, and any `MapObject` state. Authored obstacle-container ownership is more complex than the common random-obstacle prefab and should not be generalized until lifecycle reset is explicit.
 
+### PERF-007 — Pool targeting markers and avoid one recurring timer per enemy ship
+**Location:** `Scripts/Levels/Squad.Commands.cs/MarkTargets()` and `Scripts/Levels/TargetingSquadMarker.cs`  
+**Cost:** Every user Aggressive or Bombing Run command instantiates one `TargetingSquadPrefab` GameObject per enemy ship. Each marker then registers its own recurring 0.25-second `ScaledTimer` with the Level for roughly two seconds and destroys its GameObject on expiry. A single command against a multi-ship squad therefore creates a burst of Unity hierarchy/component allocations plus N additions/removals to the central Level timer list.  
+**Optimization:** Reuse targeting marker objects from a Stage- or Level-owned pool. Replace per-marker recurring Level timers with a cheaper lifetime mechanism (for example a marker-local expiry timestamp serviced by one shared marker update/manager), or at minimum use one-shot expiry ownership so markers do not mutate the central timer list every quarter-second.  
+**Evidence:** Current `MarkTargets()` calls `Instantiate(...)` once for every `enemy.GetShips()` entry. `TargetingSquadMarker.Setup()` creates/reuses a marker-owned `ScaledTimer`, adds it to `Level.Timers`, and `Kill()` cancels the timer and calls `Destroy(gameObject)`. The path is reached by both `UserAggressive()` and `UserBombingRun()`.  
+**Risk:** Preserve marker parenting/local position, the approximately two-second visible lifetime, early removal when the target ship dies, teardown cleanup through `GameState.TargetingSquadMarkers`, and correct reset when a pooled marker is reused.
+
 Clean static passes: 0 / 2.
