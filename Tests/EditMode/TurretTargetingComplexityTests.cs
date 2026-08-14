@@ -29,15 +29,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ObstacleLinecastsConvertLevelLocalPositionsToWorldSpace()
+        public void ObstacleLinecastsUseWorldSpaceCoordinates()
         {
-            string turret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
+            string weapon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
             string charge = ReadSource("Scripts", "Levels", "Commands", "Charge.cs");
 
-            Assert.That(turret, Does.Contain("GetPosition() + Level.GetPosition()"));
-            Assert.That(turret, Does.Contain("GetTargetPoint(potentialTargetShip) + Level.GetPosition()"));
+            Assert.That(weapon, Does.Contain("(Vector2)PieceTransform.position"));
+            Assert.That(weapon, Does.Contain("(Vector2)Ship.Transform.position"));
+            Assert.That(weapon, Does.Contain("potentialTargetShip.Collider.ClosestPoint(origin)"));
+            Assert.That(weapon, Does.Contain("Physics2D.Linecast(origin, targetPoint, ConfigData.ObstaclesLayerMask)"));
             Assert.That(charge, Does.Contain("barge.GetPosition() + levelOffset"));
-            Assert.That(charge, Does.Contain("barge.Charge.TargetShip.GetPosition() + levelOffset"));
+            Assert.That(charge, Does.Contain("target.GetPosition() + levelOffset"));
         }
     }
 }
