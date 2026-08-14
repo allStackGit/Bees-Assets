@@ -55,6 +55,16 @@ namespace Assets.Scripts.Scenes
 
             CampaignMissionCatalog.MissionDefinition mission = CampaignMissionCatalog.Get(missionId);
 
+            // Titania II is a base-defense battle, not a continuation of Minesweeper's demolition
+            // maze. Keep the battlefield fully open regardless of legacy/server-authored obstacle
+            // data so the player fleet and attacking Bees both have unobstructed routes to Titania.
+            if (missionId == 8 && ConfigData.LevelOptions != null)
+            {
+                ConfigData.LevelOptions.Obstacles = "No";
+                ConfigData.LevelOptions.ObstacleList?.Clear();
+                ConfigData.LevelOptions.AsteroidOption = 0;
+            }
+
             // Stage's generic fixed-map path uses OverrideMapIndex (default 0/Pluto). Campaign
             // levels instead need to consume their authored LevelOptions values for map, obstacles,
             // asteroids, fog, mining, and enemy setup.
