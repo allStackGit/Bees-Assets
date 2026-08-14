@@ -18,7 +18,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Scouts also come loaded up with five beacons", source);
             StringAssert.Contains("Pluto’s full fleet online", source);
             StringAssert.Contains("Heavily.", source);
-            StringAssert.Contains("They’re… different.", source);
+            StringAssert.Contains("Its weapon has a huge range", source);
             StringAssert.Contains("you need to know how the carrier works", source);
         }
 
@@ -47,12 +47,57 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PhilipBackstoryDoesNotReintroduceConflictingCarrierDeath()
+        public void StruckPhilipExchangeIsRemovedRatherThanRewritten()
         {
             string source = Read("Scripts", "CampaignDialogueOverrides.cs");
 
-            StringAssert.Contains("destroyed Titania’s weapons bay to create the debris field", source);
+            StringAssert.Contains("He blew up the weapons bay to surround the base in junk and experimental explosives", source);
+            StringAssert.DoesNotContain("What about the engineering lead?", source);
             StringAssert.DoesNotContain("He took a Carrier out to draw their fire while we went dark", source);
+        }
+
+        [Test]
+        public void CarrierIsAwardedAfterTitaniaNotNeptune()
+        {
+            string endings = Read("Scripts", "Levels", "Level.Campaign.Endings.cs");
+            string titaniaState = Read("Scripts", "Levels", "TitaniaRouteState.cs");
+
+            StringAssert.DoesNotContain("AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);", endings);
+            StringAssert.Contains("AwardTitaniaCarrier", titaniaState);
+            StringAssert.Contains("AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);", titaniaState);
+            StringAssert.Contains("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier)", titaniaState);
+        }
+
+        [Test]
+        public void NeptuneOneFailureSkipsMiningMission()
+        {
+            string endings = Read("Scripts", "Levels", "Level.Campaign.Endings.cs");
+
+            StringAssert.Contains("ConfigData.UserProgressData.SetCurrentLevel(6);", endings);
+        }
+
+        [Test]
+        public void UranusOneFailureSkipsDefensiveGameplayAndUsesItsPostMissionDialogue()
+        {
+            string endings = Read("Scripts", "Levels", "Level.Campaign.Endings.cs");
+            string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
+
+            StringAssert.Contains("ConfigData.UserProgressData.SetCurrentLevel(11);", endings);
+            StringAssert.Contains("Uranus_OnTheDefensive.GetRange(14, 3)", uranusOne);
+            StringAssert.DoesNotContain("ShipTypes.Cruiser, 2", uranusOne);
+            StringAssert.DoesNotContain("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", endings);
+        }
+
+        [Test]
+        public void RemovedEndMissionButtonIsNotReferencedByPlayableMiningMissions()
+        {
+            string neptune = Read("Scripts", "Levels", "Level.Campaign.Neptune.cs");
+            string uranus = Read("Scripts", "Levels", "Level.Campaign.Uranus2.cs");
+
+            StringAssert.DoesNotContain("End Mission", neptune);
+            StringAssert.DoesNotContain("End Mission", uranus);
+            StringAssert.Contains("green zone", neptune);
+            StringAssert.Contains("green zone", uranus);
         }
 
         [Test]
