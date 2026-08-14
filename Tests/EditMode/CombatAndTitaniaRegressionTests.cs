@@ -45,15 +45,18 @@ namespace Bees.Tests.EditMode
         [Test]
         public void WeaponTargetsAndFiringRequireClearObstacleLineOfSight()
         {
-            string source = Read("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
+            string weapon = Read("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
+            string turret = Read("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
 
-            StringAssert.Contains("HasClearLineOfFire(TargetShip)", source);
-            StringAssert.Contains("HasClearLineOfFire(potentialTargetShip)", source);
+            StringAssert.Contains("HasClearLineOfFire(TargetShip)", weapon);
+            StringAssert.Contains("HasClearLineOfFire(potentialTargetShip)", weapon);
             StringAssert.Contains(
                 "Physics2D.Linecast(origin, targetPoint, ConfigData.ObstaclesLayerMask).collider == null",
-                source);
-            StringAssert.Contains("PieceTransform.position", source);
-            StringAssert.Contains("potentialTargetShip.Collider.ClosestPoint(origin)", source);
+                weapon);
+            StringAssert.Contains("PieceTransform.position", weapon);
+            StringAssert.Contains("potentialTargetShip.Collider.ClosestPoint(origin)", weapon);
+            StringAssert.Contains("HasClearLineOfFire(potentialTargetShip)", turret);
+            StringAssert.DoesNotContain("Utilities.HasObstaclesInTheWay", turret);
         }
 
         [Test]
