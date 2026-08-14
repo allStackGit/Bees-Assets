@@ -138,6 +138,33 @@ namespace Assets.Scripts.Levels
             return closest;
         }
 
+        public int GetMaximumRange()
+        {
+            List<Ship> ships = GetShips();
+            int maximumRange = 0;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].MaxRange > maximumRange)
+                {
+                    maximumRange = ships[i].MaxRange;
+                }
+            }
+            return maximumRange;
+        }
+
+        public bool AreAllShipsDefenseless()
+        {
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].Firepower != 0)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         public List<Ship> GetEnemyShips()
         {
             return Level.State.GetShipsVisibleToHiveMind(Side).ToList();
