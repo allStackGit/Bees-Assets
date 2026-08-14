@@ -286,7 +286,10 @@ namespace Assets.Scripts.Levels.Commands
             if (!EnemySquad.IsDead)
             {
                 _timerLoops++;
-                GetSquad().Status = $"In the middle of bombing run against {EnemySquad.Name}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"In the middle of bombing run against {EnemySquad.Name}";
+                }
                 _timer_ships = GetSquad().GetShips();
                 _timer_FireBargesToDetonate.Clear();
 
