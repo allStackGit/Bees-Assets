@@ -67,29 +67,10 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     Stage.Menus.TogglePausePanel();
-                    ScaledTimer cruiserTimer = new ScaledTimer(5f, () =>
-                    {
-                        ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Cruiser, 2);
-                        SavedSquad cruiserSquad = CurrentShips.BuildNewSquad(
-                            $"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}",
-                            ConfigData.Configuration.HumanSide,
-                            ShipTypes.Cruiser,
-                            2);
-                        LevelConstructor.SpawnShipsAndSquads(
-                            new List<SavedSquad>() { cruiserSquad },
-                            new Vector2(200, 200),
-                            Vector2.zero,
-                            true);
 
-                        AddReinforcementSquads(new List<SavedSquad>()
-                        {
-                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
-                        }, new Vector2(280, 200), Vector2.zero);
-                        AddReinforcementsToHivemindCommandQueue();
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(6, 6));
-                    });
-                    AddTimer(cruiserTimer);
-
+                    // The current mission script strikes the Cruiser survivor/Fritz encounter and
+                    // its recruitment sequence. Uranus I now proceeds directly from its opening
+                    // into the authored Bumblebee discovery and normal battle.
                     Ship bumblebee = State.GetBeeShips().First(ship => ship.ShipType == ConfigData.ShipTypes.Bumblebee);
                     NextTriggers.Add(new Trigger(
                         () => State.GetShips(ConfigData.Configuration.UserSide).Any(ship =>
@@ -117,20 +98,31 @@ namespace Assets.Scripts.Levels
                             WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide)
                                 ? ConfigData.Configuration.AISide
                                 : ConfigData.Configuration.UserSide;
-                            CancelTimer(cruiserTimer);
                             CloseLevel();
+
                             if (WinningSide == ConfigData.Configuration.UserSide)
                             {
-                                Stage.CutsceneManager.PlayDialogueSection(
-                                    Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(
-                                        18,
-                                        ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ? 20 : 17),
-                                    true);
+                                // The old Fritz/Cruiser success conversation is struck. The only
+                                // remaining success dialogue is Wesley's Factory-specific exchange.
+                                if (ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
+                                {
+                                    Stage.CutsceneManager.PlayDialogueSection(
+                                        Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(35, 3),
+                                        true);
+                                }
+                                else
+                                {
+                                    Uranus1Ending();
+                                }
+                                return;
                             }
-                            else
-                            {
-                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(38, 3), true);
-                            }
+
+                            // The authored failure route explicitly skips On the Defensive gameplay
+                            // and jumps to that mission's post-mission exchange before A New Threat.
+                            List<DialogueLine> failureDialogue = new List<DialogueLine>();
+                            failureDialogue.AddRange(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(38, 3));
+                            failureDialogue.AddRange(Stage.CutsceneManager.Uranus_OnTheDefensive.GetRange(14, 3));
+                            Stage.CutsceneManager.PlayDialogueSection(failureDialogue, true);
                         },
                         "Level 9 Ending dialogue"));
                 },
