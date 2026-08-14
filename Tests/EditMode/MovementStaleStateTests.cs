@@ -34,11 +34,47 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TurretTargetsFirstLiveNearbyAsteroid()
+        public void TurretTargetsFirstLiveNearbyAsteroidWithoutLinq()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
             string source = File.ReadAllText(path);
-            StringAssert.Contains("FirstOrDefault(asteroid => asteroid != null && !asteroid.IsDead)", source);
+            StringAssert.Contains("for (int i = 0; i < Ship.NearbyAsteroids.Count; i++)", source);
+            StringAssert.Contains("if (asteroid != null && !asteroid.IsDead)", source);
+            StringAssert.DoesNotContain("FirstOrDefault(asteroid =>", source);
+        }
+
+        [Test]
+        public void TrackedSquadMovementPreservesFormationPlacement()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.Movement.cs");
+            string source = File.ReadAllText(path);
+            StringAssert.Contains("public void MoveTracked(Vector2 destination)", source);
+            StringAssert.Contains("MoveInternal(destination, true);", source);
+            StringAssert.Contains("ship.MoveToTrackedPoint(shipDestination);", source);
+            StringAssert.Contains("ship.MoveToPoint(shipDestination);", source);
+        }
+
+        [Test]
+        public void RecurringFollowerCommandsUseTrackedMovement()
+        {
+            string commandsPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands");
+            string shipsPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships");
+
+            string guard = File.ReadAllText(Path.Combine(commandsPath, "Guard.cs"));
+            string closestFriendly = File.ReadAllText(Path.Combine(commandsPath, "ClosestFriendly.cs"));
+            string inAndOut = File.ReadAllText(Path.Combine(commandsPath, "InAndOut.cs"));
+            string swipe = File.ReadAllText(Path.Combine(commandsPath, "SwipeSquad.cs"));
+            string bombingRun = File.ReadAllText(Path.Combine(commandsPath, "BombingRun.cs"));
+            string fullRetreat = File.ReadAllText(Path.Combine(commandsPath, "FullRetreat.cs"));
+            string striker = File.ReadAllText(Path.Combine(shipsPath, "Striker.cs"));
+
+            StringAssert.Contains("MoveTracked(GetDestination())", guard);
+            StringAssert.Contains("MoveTracked(GetDestination())", closestFriendly);
+            StringAssert.Contains("ship.MoveToTrackedPoint(target.GetPosition())", inAndOut);
+            StringAssert.Contains("ship.MoveToTrackedPoint(target.GetPosition())", swipe);
+            StringAssert.Contains("ship.MoveToTrackedPoint(ship.TargetEnemyShipToFollow.GetPosition())", bombingRun);
+            StringAssert.Contains("ship.MoveToTrackedPoint(_f_targetPosition)", fullRetreat);
+            StringAssert.Contains("MoveToTrackedPoint(_destination)", striker);
         }
     }
 }
