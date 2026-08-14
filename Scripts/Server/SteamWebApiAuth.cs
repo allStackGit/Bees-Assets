@@ -13,18 +13,37 @@ namespace Assets.Scripts.Server
         private static Callback<GetTicketForWebApiResponse_t> _callback;
         private static HAuthTicket _ticketHandle = HAuthTicket.Invalid;
         private static bool _requestPending;
+        private static bool _steamUnavailable;
+        private static bool _loggedSteamUnavailable;
         private static string _ticketHex;
         private static SteamAuthRetryPump _retryPump;
 
         internal static bool IsReady => !string.IsNullOrEmpty(_ticketHex);
+        internal static bool IsUnavailable => _steamUnavailable;
         internal static string TicketHex => _ticketHex;
 
         internal static void EnsureRequested()
         {
-            if (!ConfigData.Production || IsReady || _requestPending)
+            if (!ConfigData.Production || IsReady || _requestPending || _steamUnavailable)
             {
                 return;
             }
+
+            // SteamManager owns SteamAPI initialization. Never call Steam user/auth APIs when that
+            // initialization failed: native-library and client failures are optional platform
+            // failures, not reasons to spin forever or block the rest of game startup.
+            if (!SteamManager.Initialized)
+            {
+                _steamUnavailable = true;
+                if (!_loggedSteamUnavailable)
+                {
+                    _loggedSteamUnavailable = true;
+                    Debug.LogWarning("Steam Web API authentication is unavailable because Steam failed to initialize. Continuing without a Steam authentication ticket.");
+                }
+                StopRetryPump();
+                return;
+            }
+
             EnsureRetryPump();
 
             try
@@ -47,12 +66,19 @@ namespace Assets.Scripts.Server
             }
             catch (Exception exception)
             {
-                Debug.LogError($"Could not request BeesServer Steam authentication ticket: {exception.Message}");
+                _steamUnavailable = true;
+                Debug.LogWarning($"Could not request BeesServer Steam authentication ticket; continuing without Steam authentication. {exception.GetType().Name}: {exception.Message}");
+                StopRetryPump();
             }
         }
 
         internal static void Refresh()
         {
+            if (_steamUnavailable)
+            {
+                return;
+            }
+
             // Several in-flight requests can receive the same 401. One rejected ticket should
             // produce one replacement request, not repeatedly cancel that replacement.
             if (_requestPending && !IsReady)
@@ -73,6 +99,17 @@ namespace Assets.Scripts.Server
             GameObject host = new GameObject("Steam Web API Auth Retry");
             UnityEngine.Object.DontDestroyOnLoad(host);
             _retryPump = host.AddComponent<SteamAuthRetryPump>();
+        }
+
+        private static void StopRetryPump()
+        {
+            if (_retryPump == null)
+            {
+                return;
+            }
+
+            UnityEngine.Object.Destroy(_retryPump.gameObject);
+            _retryPump = null;
         }
 
         private static void OnTicketReceived(GetTicketForWebApiResponse_t response)
@@ -174,7 +211,10 @@ namespace Assets.Scripts.Server
             {
                 try
                 {
-                    SteamUser.CancelAuthTicket(_ticketHandle);
+                    if (SteamManager.Initialized)
+                    {
+                        SteamUser.CancelAuthTicket(_ticketHandle);
+                    }
                 }
                 catch
                 {
@@ -183,11 +223,9 @@ namespace Assets.Scripts.Server
             _ticketHandle = HAuthTicket.Invalid;
             _ticketHex = null;
             _requestPending = false;
-            if (_retryPump != null)
-            {
-                UnityEngine.Object.Destroy(_retryPump.gameObject);
-                _retryPump = null;
-            }
+            _steamUnavailable = false;
+            _loggedSteamUnavailable = false;
+            StopRetryPump();
         }
 
         private sealed class SteamAuthRetryPump : MonoBehaviour
@@ -196,7 +234,7 @@ namespace Assets.Scripts.Server
 
             private void Update()
             {
-                if (IsReady)
+                if (IsReady || IsUnavailable)
                 {
                     Destroy(gameObject);
                     _retryPump = null;
