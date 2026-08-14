@@ -67,10 +67,24 @@ namespace Assets.Scripts.Levels
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(1, 5)));
             AddTimer(_dialogueTimer);
 
-            NextTriggers.Add(new Trigger(
-                () => Stage.CutsceneManager.HitDialogueBreak,
-                SelectedCarrierTrigger,
-                "Level 11 Carrier trigger"));
+            bool hasCarrierInLevel = State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier);
+            if (hasCarrierInLevel)
+            {
+                NextTriggers.Add(new Trigger(
+                    () => Stage.CutsceneManager.HitDialogueBreak,
+                    SelectedCarrierTrigger,
+                    "Level 11 Carrier trigger"));
+            }
+            else
+            {
+                // HiveMind startup is a mission requirement, not a side effect of showing the
+                // optional Carrier tutorial. If no Carrier was brought into Uranus III, release
+                // the same startup gate directly when the opening dialogue section finishes.
+                NextTriggers.Add(new Trigger(
+                    () => Stage.CutsceneManager.HitDialogueBreak,
+                    FinishCarrierIntroduction,
+                    "Level 11 HiveMind activation without Carrier"));
+            }
 
             NextTriggers.Add(new Trigger(
                 () => _hasSeenCarrierIntroIfNeeded,
