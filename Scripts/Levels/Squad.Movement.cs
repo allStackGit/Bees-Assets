@@ -30,12 +30,35 @@ namespace Assets.Scripts.Levels
 
         private void RefreshCompositionCommandBans()
         {
-            if (GetShips().Count == 0)
+            List<Ship> ships = GetShips();
+            if (ships.Count == 0)
             {
                 return;
             }
 
-            if (IsDefenseless)
+            bool isDefenseless = true;
+            bool hasOnlyBombers = true;
+            bool hasOnlyBarges = true;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (ship.Firepower != 0)
+                {
+                    isDefenseless = false;
+                }
+                if (ship.ShipType != ConfigData.ShipTypes.Striker &&
+                    ship.ShipType != ConfigData.ShipTypes.YellowJacket &&
+                    ship.ShipType != ConfigData.ShipTypes.FireBarge)
+                {
+                    hasOnlyBombers = false;
+                }
+                if (ship.ShipType != ConfigData.ShipTypes.Barge)
+                {
+                    hasOnlyBarges = false;
+                }
+            }
+
+            if (isDefenseless)
             {
                 BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -44,7 +67,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
-            else if (HasOnlyBombers)
+            else if (hasOnlyBombers)
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -53,7 +76,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
-            else if (HasOnlyBarges)
+            else if (hasOnlyBarges)
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -71,6 +94,19 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Remove(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Remove(ConfigData.CommandTypes.Hold);
             }
+        }
+
+        public bool HaveAllShipsReachedDestination()
+        {
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!ships[i].HasReachedDestination)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public void StopMoving()
@@ -179,7 +215,26 @@ namespace Assets.Scripts.Levels
         public void MatchSpeed(float speed = 0)
         {
             IsMatchingSpeed = true;
-            SetSquadSpeed(speed > 0 ? speed : SlowestSpeed);
+            if (speed > 0)
+            {
+                SetSquadSpeed(speed);
+                return;
+            }
+
+            List<Ship> ships = GetShips();
+            if (ships.Count == 0)
+            {
+                return;
+            }
+            float slowestSpeed = ships[0].Speed;
+            for (int i = 1; i < ships.Count; i++)
+            {
+                if (ships[i].Speed < slowestSpeed)
+                {
+                    slowestSpeed = ships[i].Speed;
+                }
+            }
+            SetSquadSpeed(slowestSpeed);
         }
 
         public void UnmatchSpeed()
