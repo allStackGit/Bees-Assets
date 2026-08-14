@@ -145,10 +145,12 @@ namespace Bees.Tests.EditMode
             string beenoculars = Read("Scripts", "Levels", "Titania2Beenoculars.cs");
             string stageConfiguration = Read("Scripts", "Scenes", "CampaignStageConfiguration.cs");
 
-            StringAssert.Contains("ResultProperty = \"TitaniaOneWon\"", outcome);
+            StringAssert.Contains("TitaniaOneResultProperty = \"TitaniaOneWon\"", outcome);
+            StringAssert.Contains("TitaniaTwoResultProperty = \"TitaniaTwoWon\"", outcome);
             StringAssert.Contains("LegacyRouteProperty = \"TitaniaOpenedBarrierPositions\"", outcome);
             StringAssert.Contains("progress.Remove(LegacyRouteProperty);", outcome);
-            StringAssert.Contains("progress[ResultProperty] = _titaniaOneWon;", outcome);
+            StringAssert.Contains("progress[TitaniaOneResultProperty] = _titaniaOneWon;", outcome);
+            StringAssert.Contains("progress[TitaniaTwoResultProperty] = _titaniaTwoWon;", outcome);
             StringAssert.Contains("LoadFromPlayerProgress", userData);
             StringAssert.Contains("AddToPlayerProgressJson", userData);
             StringAssert.Contains("TitaniaRouteState.AddToPlayerProgressJson", checkpoint);
