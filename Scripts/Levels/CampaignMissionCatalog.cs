@@ -76,12 +76,13 @@ namespace Assets.Scripts.Levels
         }
 
         /// <summary>
-        /// In-development campaign missions are the missions currently under active gameplay testing.
-        /// They skip the pre-level intro so repeated test runs go straight to squad selection.
+        /// Automated scenario readiness is test-harness metadata only. It must never suppress the
+        /// player-facing pre-level intro for a persisted campaign mission.
         /// </summary>
         public static bool ShouldSkipPreLevelIntroForTesting(int missionId)
         {
-            return Get(missionId).ScenarioStatus == AutomatedScenarioStatus.InDevelopment;
+            Get(missionId); // Preserve explicit validation for unknown campaign IDs.
+            return false;
         }
 
         public static IEnumerable<MissionDefinition> GetAutomatedScenarioDefinitions()
