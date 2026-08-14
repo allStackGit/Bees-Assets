@@ -218,17 +218,14 @@ namespace Assets.Scripts.Levels
             return _f_projectile;
         }
 
-        private Queue<Squad> _hive_squads;
-        private List<Squad> outOfBoundsHiveSquads = new List<Squad>();
+        private readonly List<Squad> outOfBoundsHiveSquads = new List<Squad>();
         private Squad _hive_squad;
         private void GetHiveMindCommands()
         {
             if (!State.IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
             {
-                _hive_squads = State.GetSquadsAwaitingHiveMindCommands();
-                while (_hive_squads.Count > 0)
+                while (State.TryDequeueSquadAwaitingHiveMindCommand(out _hive_squad))
                 {
-                    _hive_squad = _hive_squads.Dequeue();
                     if (!_hive_squad.IsDead)
                     {
                         if (_hive_squad.IsInBounds()) _hive_squad.MakeMatchupStrat();
@@ -249,7 +246,7 @@ namespace Assets.Scripts.Levels
 
         public Vector2 GetPosition() { return transform.localPosition; }
         public Vector3 Get3DPosition() { return transform.localPosition; }
-        public Vector2 ForceBounds(Vector2 point) { return ForceBounds(point.x, point.y); }
+        public Vector2 ForceBounds(Vector2 point) { return ForceBounds(point.x, point.y, MaxX, MaxY, MinX, MinY); }
         public Vector2 ForceBounds(float x, float y) { return Utilities.ForceBounds(x, y, MaxX, MaxY, MinX, MinY); }
         public bool IsPointInBounds(Vector2 point) { return ForceBounds(point) == point; }
         public float DistanceOutOfBounds(Vector2 point) { return Vector2.Distance(point, ForceBounds(point)); }
