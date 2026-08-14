@@ -13,7 +13,7 @@ namespace Assets.Scripts.Levels
     {
         private Stage _stage;
         private readonly Stack<TargetingSquadMarker> _inactive = new Stack<TargetingSquadMarker>();
-        private readonly HashSet<int> _inactiveIds = new HashSet<int>();
+        private readonly HashSet<EntityId> _inactiveIds = new HashSet<EntityId>();
         private readonly List<TargetingSquadMarker> _active = new List<TargetingSquadMarker>();
 
         public static TargetingSquadMarkerPool GetOrCreate(Stage stage)
