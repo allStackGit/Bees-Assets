@@ -53,7 +53,7 @@ namespace Bees.Tests.EditMode
             Assert.That(yellowJacket, Does.Contain("Bomb.ReleaseTargetReservation();"));
             Assert.That(fireBarge, Does.Contain("Bomb.ReleaseTargetReservation();"));
             Assert.That(bombingRun, Does.Contain("public override void SetFinalize(string cause)"));
-            Assert.That(bombingRun, Does.Contain("bomb?.ReleaseTargetReservation();"));
+            Assert.That(bombingRun, Does.Contain("GetBomb(ships[i])?.ReleaseTargetReservation();"));
         }
     }
 }
