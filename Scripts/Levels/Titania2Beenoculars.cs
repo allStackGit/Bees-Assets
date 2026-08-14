@@ -335,7 +335,9 @@ namespace Assets.Scripts.Levels
                 horizontalEntry = true;
             }
 
-            bool positiveEdge = horizontalEntry ? normalizedX >= 0f : normalizedY >= 0f;
+            // Vertical entries are bottom-only for Beenoculars. positiveEdge is therefore used
+            // exclusively to choose between the left and right edges for horizontal arrivals.
+            bool positiveEdge = horizontalEntry && normalizedX >= 0f;
             float normalizedTangent = horizontalEntry ? normalizedY : normalizedX;
             float tangentMin = horizontalEntry ? MinY + tangentMargin : MinX + tangentMargin;
             float tangentMax = horizontalEntry ? MaxY - tangentMargin : MaxX - tangentMargin;
@@ -357,8 +359,8 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                    spawnPoint = new Vector2(tangent, positiveEdge ? MaxY + outsideDistance : MinY - outsideDistance);
-                    entryPoint = new Vector2(tangent, positiveEdge ? MaxY - insideDistance : MinY + insideDistance);
+                    spawnPoint = new Vector2(tangent, MinY - outsideDistance);
+                    entryPoint = new Vector2(tangent, MinY + insideDistance);
                 }
 
                 if (Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask) == null &&
@@ -375,8 +377,8 @@ namespace Assets.Scripts.Levels
             }
             else
             {
-                spawnPoint = new Vector2(preferredTangent, positiveEdge ? MaxY + outsideDistance : MinY - outsideDistance);
-                entryPoint = new Vector2(preferredTangent, positiveEdge ? MaxY - insideDistance : MinY + insideDistance);
+                spawnPoint = new Vector2(preferredTangent, MinY - outsideDistance);
+                entryPoint = new Vector2(preferredTangent, MinY + insideDistance);
             }
             Debug.LogWarning($"Beenoculars could not find a clear obstacle opening near requested lane {normalizedX},{normalizedY}; using {entryPoint}.");
         }
