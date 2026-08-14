@@ -18,7 +18,9 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.LevelsDataFilenames[type], (json) =>
             {
-                ConfigData.IsLevelsDataLoaded[type] = true;
+                // Recovery may invoke the loader again after a partially malformed payload. Clear
+                // any levels appended by the failed pass before applying the fallback/default data.
+                _levels.Clear();
                 List<dynamic> levels = Utilities.JArrayToList<dynamic>(json.Levels);
                 levels.ForEach(level =>
                 {
@@ -35,6 +37,7 @@ namespace Assets.Scripts.Data
                     List<int> enemyExistingSquads = Utilities.JArrayToList<int>(level.EnemyExistingSquads);
                     _levels.Add(new LevelOptions(id, (int)level.Side, (string)level.Name, mapIndex, (string)level.Obstacles, obstacles, (int)level.AsteroidOption, (int)level.FogOfWar, (int)level.Mining, (bool) level.HasPreLevelIntro, (bool) level.HasSquadActionBox, (int)level.SupplyCapacity, (int) level.EnemyReinforcementsOption, (int)level.EnemyReinforcementDelay, 0, 0, enemyReinforcements, enemySquads, enemyExistingSquads, (string) level.EnemyReport, new List<SavedSquad>(), new Vector2((float)level.UserStartingPosition.x, (float)level.UserStartingPosition.y), new Vector2((float)level.AIStartingPosition.x, (float)level.AIStartingPosition.y)));
                 });
+                ConfigData.IsLevelsDataLoaded[type] = true;
             });
 
         }
