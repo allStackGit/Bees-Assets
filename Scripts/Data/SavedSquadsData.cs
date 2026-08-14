@@ -10,7 +10,7 @@ namespace Assets.Scripts.Data
 {
     public class SavedSquadsData : UserData
     {
-        // class that holds and manages storage for user fleet data
+        // class that holds and manages storage for user fleet ships and saved squads
         private List<SavedSquad> _savedSquadsList = new List<SavedSquad>();
         public int Type;
 
@@ -96,15 +96,56 @@ namespace Assets.Scripts.Data
                 return;
             }
 
-            foreach (SquadShip squadShip in squad.GetSquadShips())
+            SavedSquad storedSquad = _savedSquadsList.FirstOrDefault(candidate =>
+                candidate.Id == squad.Id && candidate.Side == squad.Side);
+            if (storedSquad == null)
             {
-                FleetShip fleetShip = squadShip.GetFleetShip();
-                if (fleetShip != null)
-                {
-                    fleetShip.DoesBelongToSavedSquad = false;
-                }
+                return;
             }
-            _savedSquadsList.Remove(squad);
+
+            // A deleted player-created squad is a source of replacement ships before it is a
+            // source of free-fleet ships. Existing squads retain dead SquadShip entries as casualty
+            // slots, so fill matching slots first while preserving their authored formation offsets.
+            // Negative-ID setup/encounter squads are deliberately excluded from this behavior.
+            bool refillCasualtySlots = storedSquad.Id >= 0 && storedSquad.HasBeenSavedToStorage;
+            List<FleetShip> releasedShips = storedSquad.GetSquadShips()
+                .Select(squadShip => squadShip.GetFleetShip())
+                .Where(fleetShip => fleetShip != null)
+                .ToList();
+
+            _savedSquadsList.Remove(storedSquad);
+
+            foreach (FleetShip releasedShip in releasedShips)
+            {
+                if (refillCasualtySlots && releasedShip.IsShipAlive() &&
+                    TryFillCasualtySlot(releasedShip, storedSquad.Side))
+                {
+                    continue;
+                }
+
+                // No surviving squad needs this ship, so it is now genuinely available to the fleet.
+                releasedShip.DoesBelongToSavedSquad = false;
+            }
+        }
+
+        private bool TryFillCasualtySlot(FleetShip releasedShip, int side)
+        {
+            foreach (SavedSquad destinationSquad in _savedSquadsList.Where(candidate => candidate.Side == side))
+            {
+                SquadShip casualtySlot = destinationSquad.GetDeadShips()
+                    .FirstOrDefault(deadShip => deadShip.ShipType == releasedShip.Type);
+                if (casualtySlot == null)
+                {
+                    continue;
+                }
+
+                Vector2 preservedOffset = casualtySlot.Offset;
+                destinationSquad.RemoveShipFromSquad(casualtySlot, false);
+                destinationSquad.AddShipToSquad(new SquadShip(releasedShip, preservedOffset));
+                return true;
+            }
+
+            return false;
         }
         public bool HasSquad(SavedSquad squad)
         {
