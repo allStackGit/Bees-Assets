@@ -24,14 +24,16 @@ namespace Assets.Scripts.Server
 
         internal static void EnsureRequested()
         {
-            if (!ConfigData.Production || IsReady || _requestPending || _steamUnavailable)
+            if (IsReady || _requestPending || _steamUnavailable)
             {
                 return;
             }
 
-            // SteamManager owns SteamAPI initialization. Never call Steam user/auth APIs when that
-            // initialization failed: native-library and client failures are optional platform
-            // failures, not reasons to spin forever or block the rest of game startup.
+            // Production requests acquire a ticket before being sent. Development normally uses
+            // the insecure test server, but a 401 from any secured server can also call this method
+            // and upgrade the existing standing requests without requiring a different client build.
+            // SteamManager owns SteamAPI initialization; never call Steam user/auth APIs when it
+            // failed to initialize.
             if (!SteamManager.Initialized)
             {
                 _steamUnavailable = true;
@@ -133,10 +135,10 @@ namespace Assets.Scripts.Server
             }
             _ticketHex = builder.ToString();
 
-            if (ConfigData.Production)
-            {
-                RefreshStandingAuthenticationRequests(_ticketHex);
-            }
+            // A ticket can be requested proactively by Production or reactively after a 401 from a
+            // secured development server. In either case rotate and resend every auth-bearing
+            // standing request with the newly accepted credential.
+            RefreshStandingAuthenticationRequests(_ticketHex);
 
             ConfigData.LoadSettings();
         }
