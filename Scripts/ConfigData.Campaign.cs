@@ -57,6 +57,15 @@ namespace Assets.Scripts
             UserProgressData.GetCurrentLevelOptions();
             LevelOptions = (LevelOptions)UserProgressData.CurrentLevel.Clone();
 
+            // A stale test-mode flag used to leak from development runs into persisted campaign
+            // missions. Level.SetupLevel treats that flag as a request to skip SetTriggers(), which
+            // removes the mission's authored objectives and dialogue. Only explicit negative-ID
+            // custom/test levels are allowed to keep test mode while loading campaign scenes.
+            if (LevelOptions == null || LevelOptions.Id >= 0)
+            {
+                IsTestingLevel = false;
+            }
+
             int currentLevel = UserProgressData.GetCurrentLevel(Configuration.UserSide);
 
             switch (currentLevel)
