@@ -57,9 +57,6 @@ namespace Assets.Scripts.Levels
         {
             _randomQueenCount = 0;
             bool noVisibleArmedTypes = HasNoVisibleArmedTypes(side);
-            List<ConfigData.ShipTypes> availableTypes = side == ConfigData.Configuration.HumanSide
-                ? Stage.HumanShipTypes
-                : Stage.BeeShipTypes;
 
             for (int option = 0; option < (ActivateLoadingShipsMidLevel ? 2 : 1); option++)
             {
@@ -68,13 +65,19 @@ namespace Assets.Scripts.Levels
 
                 for (int i = 0; i < CurrentLevelOptions.EnemySquadGenerationCount; i++)
                 {
-                    ConfigData.ShipTypes type = availableTypes[Random.Range(0, availableTypes.Count)];
+                    // Preserve the legacy random draw order exactly. Human-side generation first
+                    // consumes a Bee-type draw and then replaces it with the Human-type draw.
+                    ConfigData.ShipTypes type = Stage.BeeShipTypes[Random.Range(0, Stage.BeeShipTypes.Count)];
+                    if (side == ConfigData.Configuration.HumanSide)
+                    {
+                        type = Stage.HumanShipTypes[Random.Range(0, Stage.HumanShipTypes.Count)];
+                    }
                     while (side == ConfigData.Configuration.BeeSide &&
                            type == ConfigData.ShipTypes.Queen &&
-                           availableTypes.Count > 1 &&
+                           Stage.BeeShipTypes.Count > 1 &&
                            (HasObstacles || _randomQueenCount == 2 || Utilities.RandomInt(4) != 3))
                     {
-                        type = availableTypes[Random.Range(0, availableTypes.Count)];
+                        type = Stage.BeeShipTypes[Random.Range(0, Stage.BeeShipTypes.Count)];
                     }
 
                     long squadId = Utilities.GetNegativeSavedSquadId();
