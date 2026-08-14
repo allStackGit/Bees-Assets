@@ -66,7 +66,10 @@ namespace Assets.Scripts.Levels.Commands
                 _position = GetSquad().GetPosition();
                 _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, _ten);
                 SetAndMove(_randomPoint);
-                GetSquad().Status = $"Moving to random destination to look for ships: {_randomPoint}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to random destination to look for ships: {_randomPoint}";
+                }
             }
         }
 
