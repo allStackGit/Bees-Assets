@@ -16,7 +16,7 @@ namespace Bees.Tests.EditMode
 
             StringAssert.Contains("public override void SetFinalize(string cause)", source);
             StringAssert.Contains("GetSquad().SetSquadSpeed(GetSquad().MaxSpeed);", source);
-            StringAssert.Contains("((Guard)guardSquad.GetCommand()).OtherGuardSquads.Remove(GetSquad());", source);
+            StringAssert.Contains("guardCommand.OtherGuardSquads.Remove(GetSquad());", source);
             StringAssert.Contains("base.SetFinalize(cause);", source);
         }
     }
