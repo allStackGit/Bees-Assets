@@ -37,7 +37,7 @@ namespace Assets.Scripts.Entities
                 obstacle = _inactiveObstacles.Pop();
                 if (obstacle != null)
                 {
-                    _inactiveObstacleIds.Remove(obstacle.GetInstanceID());
+                    _inactiveObstacleIds.Remove(obstacle.GetEntityId());
                 }
             }
 
@@ -65,7 +65,7 @@ namespace Assets.Scripts.Entities
                 background = _inactiveBackgrounds.Pop();
                 if (background != null)
                 {
-                    _inactiveBackgroundIds.Remove(background.GetInstanceID());
+                    _inactiveBackgroundIds.Remove(background.GetEntityId());
                 }
             }
 
@@ -85,7 +85,7 @@ namespace Assets.Scripts.Entities
 
         public void ReleaseObstacle(StaticObstacle obstacle)
         {
-            if (obstacle == null || !_inactiveObstacleIds.Add(obstacle.GetInstanceID()))
+            if (obstacle == null || !_inactiveObstacleIds.Add(obstacle.GetEntityId()))
             {
                 return;
             }
@@ -99,7 +99,7 @@ namespace Assets.Scripts.Entities
 
         public void ReleaseBackground(GameObject background)
         {
-            if (background == null || !_inactiveBackgroundIds.Add(background.GetInstanceID()))
+            if (background == null || !_inactiveBackgroundIds.Add(background.GetEntityId()))
             {
                 return;
             }
