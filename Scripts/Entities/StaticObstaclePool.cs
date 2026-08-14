@@ -51,6 +51,9 @@ namespace Assets.Scripts.Entities
             obstacle.ResetForReuse();
             obstacle.IsPooledStaticLayoutObstacle = true;
             obstacle.transform.SetParent(parent, false);
+            obstacle.transform.localPosition = _stage.Prefabs.ObstaclePrefab.transform.localPosition;
+            obstacle.transform.localRotation = _stage.Prefabs.ObstaclePrefab.transform.localRotation;
+            obstacle.transform.localScale = _stage.Prefabs.ObstaclePrefab.transform.localScale;
             return obstacle;
         }
 
@@ -73,6 +76,9 @@ namespace Assets.Scripts.Entities
             }
 
             background.transform.SetParent(parent, false);
+            background.transform.localPosition = _stage.Prefabs.ObstacleBackgroundPrefab.transform.localPosition;
+            background.transform.localRotation = _stage.Prefabs.ObstacleBackgroundPrefab.transform.localRotation;
+            background.transform.localScale = _stage.Prefabs.ObstacleBackgroundPrefab.transform.localScale;
             background.SetActive(true);
             return background;
         }
