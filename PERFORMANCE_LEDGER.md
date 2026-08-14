@@ -4,4 +4,4 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 
 No unresolved validated performance opportunities remain after the current optimization pass.
 
-Clean static passes: 1 / 2.
+Clean static passes: 0 / 2.
