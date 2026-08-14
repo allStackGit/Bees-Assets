@@ -2,7 +2,6 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
 using System.Linq;
-using TMPro;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -16,18 +15,16 @@ namespace Assets.Scripts.Levels
                 return;
             }
 
-            TMP_Text baseHealthText = Stage.Menus.Counter.transform.GetChild(0).GetComponent<TMP_Text>();
-            TMP_Text baseHealthLabel = Stage.Menus.Counter.transform.GetChild(1).GetComponent<TMP_Text>();
-            baseHealthLabel.text = "Base Health";
-            Stage.Menus.Counter.SetActive(true);
-            UpdateTitania2BaseHealth(titania, baseHealthText);
+            Stage.Menus.Counter.SetActive(false);
+            Stage.Menus.PlutoShield.SetActive(true);
+            UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);
 
             ScaledTimer baseHealthTimer = new ScaledTimer();
             baseHealthTimer.Reuse(0.25f, () =>
             {
                 if (!_titania2Resolved && titania != null && !titania.IsDead)
                 {
-                    UpdateTitania2BaseHealth(titania, baseHealthText);
+                    UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);
                 }
             }, true);
             AddTitania2Timer(baseHealthTimer);
@@ -64,12 +61,12 @@ namespace Assets.Scripts.Levels
                 (ConfigData.ShipTypes.YellowJacket, 6));
         }
 
-        private static void UpdateTitania2BaseHealth(HumanTarget titania, TMP_Text text)
+        private static void UpdateTitania2BaseHealth(HumanTarget titania, GameObject healthBar)
         {
             float fraction = titania.MaxHealth <= 0
                 ? 0f
                 : Mathf.Clamp01((float)titania.Health / titania.MaxHealth);
-            text.text = $"{Mathf.CeilToInt(fraction * 100f)}%";
+            healthBar.transform.localScale = new Vector2(fraction * 150f, 1f);
         }
 
         private void ScheduleTitania2ExtraWave(
@@ -134,7 +131,7 @@ namespace Assets.Scripts.Levels
                 {
                     if (level.State.GameOver || !level.IsLevelConnectedToServer)
                     {
-                        level.Stage.Menus.Counter.SetActive(false);
+                        level.Stage.Menus.PlutoShield.SetActive(false);
                     }
                     continue;
                 }
