@@ -64,6 +64,8 @@ namespace Bees.Tests.EditMode
             string closestFriendly = File.ReadAllText(Path.Combine(commandsPath, "ClosestFriendly.cs"));
             string inAndOut = File.ReadAllText(Path.Combine(commandsPath, "InAndOut.cs"));
             string swipe = File.ReadAllText(Path.Combine(commandsPath, "SwipeSquad.cs"));
+            string circle = File.ReadAllText(Path.Combine(commandsPath, "CircleSquad.cs"));
+            string charge = File.ReadAllText(Path.Combine(commandsPath, "Charge.cs"));
             string bombingRun = File.ReadAllText(Path.Combine(commandsPath, "BombingRun.cs"));
             string fullRetreat = File.ReadAllText(Path.Combine(commandsPath, "FullRetreat.cs"));
             string striker = File.ReadAllText(Path.Combine(shipsPath, "Striker.cs"));
@@ -72,6 +74,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("MoveTracked(GetDestination())", closestFriendly);
             StringAssert.Contains("ship.MoveToTrackedPoint(target.GetPosition())", inAndOut);
             StringAssert.Contains("ship.MoveToTrackedPoint(target.GetPosition())", swipe);
+            StringAssert.Contains("squad.MoveTracked(GetDestination())", circle);
+            StringAssert.Contains("ship.MoveToTrackedPoint(target.GetPosition())", charge);
             StringAssert.Contains("ship.MoveToTrackedPoint(ship.TargetEnemyShipToFollow.GetPosition())", bombingRun);
             StringAssert.Contains("ship.MoveToTrackedPoint(_f_targetPosition)", fullRetreat);
             StringAssert.Contains("MoveToTrackedPoint(_destination)", striker);
