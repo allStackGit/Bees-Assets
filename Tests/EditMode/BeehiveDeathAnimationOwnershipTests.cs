@@ -20,7 +20,8 @@ namespace Bees.Tests.EditMode
             Assert.That(shipPoolLifecycle, Does.Contain("return ProjectilesInFlight.Count == 0;"));
             Assert.That(shipPoolLifecycle, Does.Contain("public virtual void PrepareForLevelTeardown()"));
             Assert.That(registry, Does.Contain("ship.PrepareForLevelTeardown();"));
-            Assert.That(registry, Does.Contain("ShipsToRelease.Where(ship => ship.CanReturnToPool())"));
+            Assert.That(registry, Does.Contain("List<Ship> ships = DrainReadyShips();"));
+            Assert.That(registry, Does.Contain("if (ship.CanReturnToPool())"));
         }
 
         [Test]
