@@ -66,36 +66,274 @@ namespace Assets.Scripts.Levels
         private bool _shouldChase;
         private ConfigData.ShootingStrategyTypes _chosenShootingStrategy;
 
-        public int LastKilled => GetShips().Max(s => s.LastKilled);
-        public int DamageDone => GetShips().Sum(s => s.FleetShip.DamageDone);
-        public int Health => GetShips().Sum(s => s.Health);
-        public float Firepower => GetShips().Sum(s => s.Firepower);
-        public int MaxRange => GetShips().Max(s => s.MaxRange);
-        public int MaxSight => GetShips().Max(s => s.Sight);
-        public float TotalSpeed => GetShips().Sum(s => s.Speed);
-        public float MaxSpeed => GetShips().Max(s => s.Speed);
-        public int Tsv => GetShips().Sum(s => s.Tsv);
-        public float SlowestSpeed => GetShips().Min(s => s.Speed);
+        public int LastKilled
+        {
+            get
+            {
+                if (_ships.Count == 0) throw new InvalidOperationException("Sequence contains no elements");
+                int value = _ships[0].LastKilled;
+                for (int i = 1; i < _ships.Count; i++)
+                {
+                    int candidate = _ships[i].LastKilled;
+                    if (candidate > value) value = candidate;
+                }
+                return value;
+            }
+        }
+
+        public int DamageDone
+        {
+            get
+            {
+                int sum = 0;
+                checked
+                {
+                    for (int i = 0; i < _ships.Count; i++) sum += _ships[i].FleetShip.DamageDone;
+                }
+                return sum;
+            }
+        }
+
+        public int Health
+        {
+            get
+            {
+                int sum = 0;
+                checked
+                {
+                    for (int i = 0; i < _ships.Count; i++) sum += _ships[i].Health;
+                }
+                return sum;
+            }
+        }
+
+        public float Firepower
+        {
+            get
+            {
+                double sum = 0;
+                for (int i = 0; i < _ships.Count; i++) sum += _ships[i].Firepower;
+                return (float)sum;
+            }
+        }
+
+        public int MaxRange
+        {
+            get
+            {
+                if (_ships.Count == 0) throw new InvalidOperationException("Sequence contains no elements");
+                int value = _ships[0].MaxRange;
+                for (int i = 1; i < _ships.Count; i++)
+                {
+                    int candidate = _ships[i].MaxRange;
+                    if (candidate > value) value = candidate;
+                }
+                return value;
+            }
+        }
+
+        public int MaxSight
+        {
+            get
+            {
+                if (_ships.Count == 0) throw new InvalidOperationException("Sequence contains no elements");
+                int value = _ships[0].Sight;
+                for (int i = 1; i < _ships.Count; i++)
+                {
+                    int candidate = _ships[i].Sight;
+                    if (candidate > value) value = candidate;
+                }
+                return value;
+            }
+        }
+
+        public float TotalSpeed
+        {
+            get
+            {
+                double sum = 0;
+                for (int i = 0; i < _ships.Count; i++) sum += _ships[i].Speed;
+                return (float)sum;
+            }
+        }
+
+        public float MaxSpeed
+        {
+            get
+            {
+                if (_ships.Count == 0) throw new InvalidOperationException("Sequence contains no elements");
+                float value = _ships[0].Speed;
+                for (int i = 1; i < _ships.Count; i++)
+                {
+                    float candidate = _ships[i].Speed;
+                    if (candidate > value || double.IsNaN(value)) value = candidate;
+                }
+                return value;
+            }
+        }
+
+        public int Tsv
+        {
+            get
+            {
+                int sum = 0;
+                checked
+                {
+                    for (int i = 0; i < _ships.Count; i++) sum += _ships[i].Tsv;
+                }
+                return sum;
+            }
+        }
+
+        public float SlowestSpeed
+        {
+            get
+            {
+                if (_ships.Count == 0) throw new InvalidOperationException("Sequence contains no elements");
+                float value = _ships[0].Speed;
+                for (int i = 1; i < _ships.Count; i++)
+                {
+                    float candidate = _ships[i].Speed;
+                    if (candidate < value || float.IsNaN(candidate)) value = candidate;
+                }
+                return value;
+            }
+        }
+
         public bool HasEnemy => HasCommand && GetCommand() != null && GetCommand().HasEnemy;
         public bool IsAttacking => HasCommand && GetCommand() != null && GetCommand().IsAttacking;
         public Vector2 StartingPosition => Side == ConfigData.Configuration.UserSide
             ? Level.CurrentLevelOptions.UserStartingPosition
             : Level.CurrentLevelOptions.AIStartingPosition;
-        public bool IsDefenseless => GetShips().All(s => s.Firepower == 0);
-        public bool HasMiningShips => GetShips().Any(s => s.IsMiningShip);
+
+        public bool IsDefenseless
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].Firepower != 0) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasMiningShips
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].IsMiningShip) return true;
+                }
+                return false;
+            }
+        }
+
         public bool AttackOnSight => !CeaseFire;
         public bool Holding => !ShouldChase();
-        public bool HasOnlyStrikers => GetShips().All(s => s.ShipType == ConfigData.ShipTypes.Striker);
-        public bool HasOnlyBombers => GetShips().All(s =>
-            s.ShipType == ConfigData.ShipTypes.Striker ||
-            s.ShipType == ConfigData.ShipTypes.YellowJacket ||
-            s.ShipType == ConfigData.ShipTypes.FireBarge);
-        public bool HasOnlyBarges => GetShips().All(s => s.ShipType == ConfigData.ShipTypes.Barge);
-        public bool HasOnlyWarpGates => GetShips().All(s => s.IsWarpGate);
-        public bool HasOnlyBeehives => GetShips().All(s => s.IsBeehive);
-        public bool HasReachedDestination => GetShips().All(s => s.HasReachedDestination);
-        public bool HasDestination => GetShips().Any(s => s.HasTargetCoordinates);
-        public bool InCombat => GetShips().Any(s => s.InCombat);
+
+        public bool HasOnlyStrikers
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].ShipType != ConfigData.ShipTypes.Striker) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasOnlyBombers
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    ConfigData.ShipTypes type = _ships[i].ShipType;
+                    if (type != ConfigData.ShipTypes.Striker &&
+                        type != ConfigData.ShipTypes.YellowJacket &&
+                        type != ConfigData.ShipTypes.FireBarge)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+
+        public bool HasOnlyBarges
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].ShipType != ConfigData.ShipTypes.Barge) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasOnlyWarpGates
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (!_ships[i].IsWarpGate) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasOnlyBeehives
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (!_ships[i].IsBeehive) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasReachedDestination
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (!_ships[i].HasReachedDestination) return false;
+                }
+                return true;
+            }
+        }
+
+        public bool HasDestination
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].HasTargetCoordinates) return true;
+                }
+                return false;
+            }
+        }
+
+        public bool InCombat
+        {
+            get
+            {
+                for (int i = 0; i < _ships.Count; i++)
+                {
+                    if (_ships[i].InCombat) return true;
+                }
+                return false;
+            }
+        }
 
         private List<Ship> _tempShips;
         private Ship _tempShip;
