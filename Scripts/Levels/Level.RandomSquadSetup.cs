@@ -28,7 +28,7 @@ namespace Assets.Scripts.Levels
 
             if (side == ConfigData.Configuration.AISide)
             {
-                List<long> existingSquadIds = CurrentLevelOptions.EnemyExistingSquads;
+                List<int> existingSquadIds = CurrentLevelOptions.EnemyExistingSquads;
                 for (int i = 0; i < existingSquadIds.Count; i++)
                 {
                     SavedSquad existingSquad = ConfigData.CurrentShips.GetSavedSquad(existingSquadIds[i]);
