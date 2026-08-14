@@ -246,7 +246,7 @@ namespace Assets.Scripts.Levels
 
         public Vector2 GetPosition() { return transform.localPosition; }
         public Vector3 Get3DPosition() { return transform.localPosition; }
-        public Vector2 ForceBounds(Vector2 point) { return ForceBounds(point.x, point.y, MaxX, MaxY, MinX, MinY); }
+        public Vector2 ForceBounds(Vector2 point) { return ForceBounds(point.x, point.y); }
         public Vector2 ForceBounds(float x, float y) { return Utilities.ForceBounds(x, y, MaxX, MaxY, MinX, MinY); }
         public bool IsPointInBounds(Vector2 point) { return ForceBounds(point) == point; }
         public float DistanceOutOfBounds(Vector2 point) { return Vector2.Distance(point, ForceBounds(point)); }
