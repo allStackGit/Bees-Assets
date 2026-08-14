@@ -68,10 +68,12 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("private Level _ownerLevel;", source);
+            StringAssert.Contains("private Level _fadeLevel;", source);
             StringAssert.Contains("_ownerLevel = Ship.Level;", source);
-            StringAssert.Contains("Level fadeLevel = _ownerLevel;", source);
-            StringAssert.Contains("fadeLevel.AddTimer(_shrinkVisionStartTimer);", source);
-            StringAssert.Contains("if (_ownerLevel == fadeLevel)", source);
+            StringAssert.Contains("_fadeLevel = _ownerLevel;", source);
+            StringAssert.Contains("_shrinkVisionStartTimer.Reuse(initialDelay, StartShrinkVision);", source);
+            StringAssert.Contains("if (fadeLevel != null && _ownerLevel == fadeLevel)", source);
+            StringAssert.DoesNotContain("_shrinkVisionStartTimer.Reuse(initialDelay, () =>", source);
             StringAssert.DoesNotContain("Ship.Level.AddTimer(_shrinkVisionTimer);", source);
         }
 
