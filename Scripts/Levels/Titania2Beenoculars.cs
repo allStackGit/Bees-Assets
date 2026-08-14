@@ -14,7 +14,11 @@ namespace Assets.Scripts.Levels
 
         public void Titania2BeenocularsCampaign()
         {
-            const float survivalDuration = 450f;
+            const float victorySurvivalDuration = 330f;
+            const float defeatSurvivalDuration = 480f;
+            float survivalDuration = TitaniaRouteState.DidWinTitaniaOne
+                ? victorySurvivalDuration
+                : defeatSurvivalDuration;
 
             _titania2Resolved = false;
             _titania2MissionTimers.Clear();
