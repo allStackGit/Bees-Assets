@@ -27,7 +27,7 @@ namespace Assets.Scripts.Levels
             int triggeredCount = 0;
             for (int i = 0; i < Triggers.Count; i++)
             {
-                LevelTrigger trigger = Triggers[i];
+                Trigger trigger = Triggers[i];
                 if (trigger.Conditional())
                 {
                     trigger.Action();
