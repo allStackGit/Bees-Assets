@@ -38,8 +38,11 @@ namespace Assets.Scripts.Entities
             ClearData();
             Level = level;
             Id = Level.State.GetId();
-            Name = $"{ObstacleType} #{Id}";
-            gameObject.name = Name;
+            if (!Stage.IsTraining)
+            {
+                Name = $"{ObstacleType} #{Id}";
+                gameObject.name = Name;
+            }
             Health = OriginalHealth;
             gameObject.SetActive(true);
 
