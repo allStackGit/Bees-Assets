@@ -33,7 +33,16 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                if (button.gameObject.name == "Close Button")
+                TMP_Text tmpLabel = button.GetComponentInChildren<TMP_Text>(true);
+                Text legacyLabel = button.GetComponentInChildren<Text>(true);
+                bool hasTextLabel =
+                    (tmpLabel != null && !string.IsNullOrWhiteSpace(tmpLabel.text)) ||
+                    (legacyLabel != null && !string.IsNullOrWhiteSpace(legacyLabel.text));
+
+                // The shared image-only X prefab is authored at 16x16. Some unrelated controls,
+                // including the Squad Maker ship-builder CLOSE button, also use the legacy object
+                // name "Close Button" but contain text and must retain their authored dimensions.
+                if (button.gameObject.name == "Close Button" && !hasTextLabel)
                 {
                     RectTransform rect = button.GetComponent<RectTransform>();
                     if (rect != null)
@@ -42,8 +51,7 @@ namespace Assets.Scripts.UI_Components
                     }
                 }
 
-                TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
-                if (label != null && label.text.Trim().ToUpperInvariant() == "COLOR" &&
+                if (tmpLabel != null && tmpLabel.text.Trim().ToUpperInvariant() == "COLOR" &&
                     button.GetComponent<SquadColorButtonInsetMarker>() == null)
                 {
                     RectTransform rect = button.GetComponent<RectTransform>();
