@@ -3,10 +3,10 @@ namespace Assets.Scripts
     public static partial class ConfigData
     {
         /// <summary>
-        /// When enabled, authored dialogue presentation is skipped while dialogue completion
-        /// and break callbacks still execute. This is useful for development/testing without
-        /// bypassing mission state that depends on dialogue progression.
+        /// Development-only switch that suppresses authored dialogue presentation while preserving
+        /// dialogue completion and break callbacks. Player-facing campaign builds keep this disabled
+        /// so all authored intro and in-level dialogue is shown normally.
         /// </summary>
-        public const bool SkipDialogue = true;
+        public const bool SkipDialogue = false;
     }
 }
