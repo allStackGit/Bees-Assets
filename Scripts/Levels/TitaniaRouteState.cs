@@ -50,6 +50,13 @@ namespace Assets.Scripts.Levels
             _titaniaTwoWon = won;
         }
 
+        internal static void ResetForCampaignRestart()
+        {
+            _loaded = true;
+            _titaniaOneWon = false;
+            _titaniaTwoWon = false;
+        }
+
         internal static string AddToPlayerProgressJson(string userProgressJson)
         {
             EnsureLoaded();
