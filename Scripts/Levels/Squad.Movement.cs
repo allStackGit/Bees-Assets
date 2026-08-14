@@ -87,6 +87,16 @@ namespace Assets.Scripts.Levels
 
         public void Move(Vector2 destination)
         {
+            MoveInternal(destination, false);
+        }
+
+        public void MoveTracked(Vector2 destination)
+        {
+            MoveInternal(destination, true);
+        }
+
+        private void MoveInternal(Vector2 destination, bool trackedDestination)
+        {
             if (IsSelected && Level.Stage.Menus.HasSquadActionBox)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
@@ -126,7 +136,14 @@ namespace Assets.Scripts.Levels
             {
                 Ship ship = _mobileShipsForMovement[i];
                 Vector2 shipDestination = Level.ForceBounds(formationCenter + (ship.OffsetFromCenter * formationCompression));
-                ship.MoveToPoint(shipDestination);
+                if (trackedDestination)
+                {
+                    ship.MoveToTrackedPoint(shipDestination);
+                }
+                else
+                {
+                    ship.MoveToPoint(shipDestination);
+                }
             }
             Destination = formationCenter;
         }
