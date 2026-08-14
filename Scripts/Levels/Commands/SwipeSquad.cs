@@ -73,7 +73,10 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             Squad squad = GetSquad();
-            squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Targeting enemy squad {EnemySquad.Name} #{EnemySquad.Id} with {CommandType}";
+            }
             if (!_gotToEnemy && !squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
             {
                 if (!MoveTowardsEnemiesTracked())
@@ -85,7 +88,10 @@ namespace Assets.Scripts.Levels.Commands
             else if (_swipeDestination == Vector2.zero)
             {
                 _gotToEnemy = true;
-                squad.Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                if (!Stage.IsTraining)
+                {
+                    squad.Status = $"Using {CommandType} against enemy squad {EnemySquad.Name} #{EnemySquad.Id}";
+                }
                 _enemyPosition = EnemySquad.GetPosition();
                 _angle = squad.AngleToPoint(_enemyPosition);
 
