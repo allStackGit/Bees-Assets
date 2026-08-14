@@ -1,8 +1,6 @@
 ﻿
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -107,10 +105,8 @@ namespace Assets.Scripts.Levels.Commands
                             break;
                     }
 
-                    if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
-                    {
-                        SetAndMove(_timer_position);
-                    }
+                    SetDestination(_timer_position);
+                    GetSquad().MoveTracked(GetDestination());
                     if (Vector2.Distance(_timer_position, GetSquad().GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
                     {
                         GetSquad().SetSquadSpeed(_guardedSquad.SlowestSpeed);
