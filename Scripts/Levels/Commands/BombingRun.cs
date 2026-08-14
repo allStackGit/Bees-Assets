@@ -176,10 +176,7 @@ namespace Assets.Scripts.Levels.Commands
 
         public void SendShipToTarget(Ship ship)
         {
-            if (!ship.IsPathfinding)
-            {
-                ship.MoveToPoint(ship.TargetEnemyShipToFollow.GetPosition());
-            }
+            ship.MoveToTrackedPoint(ship.TargetEnemyShipToFollow.GetPosition());
         }
 
         private bool AreBombersCloseToEnemyTargets()
