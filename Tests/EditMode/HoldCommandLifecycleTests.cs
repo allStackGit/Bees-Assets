@@ -15,7 +15,8 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("GetSquad().StopMoving();", source);
-            StringAssert.Contains("GetSquad().Status = $\"Holding this position\";", source);
+            StringAssert.Contains("if (!Stage.IsTraining)", source);
+            StringAssert.Contains("GetSquad().Status = \"Holding this position\";", source);
         }
     }
 }
