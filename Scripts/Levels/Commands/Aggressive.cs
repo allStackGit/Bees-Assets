@@ -138,7 +138,8 @@ namespace Assets.Scripts.Levels.Commands
                     return;
                 }
 
-                if (!IsCloseToTarget && squad.DistanceToPoint(EnemySquad.GetPosition()) < squad.MaxRange * 2)
+                int squadMaxRange = squad.GetMaximumRange();
+                if (!IsCloseToTarget && squad.DistanceToPoint(EnemySquad.GetPosition()) < squadMaxRange * 2)
                 {
                     Level.CancelTimer(CommandTimer);
                     CommandFrequency = .25f;
@@ -149,8 +150,9 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
+            int maximumRange = squad.GetMaximumRange();
             bool allWithinRange = squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad);
-            if (allWithinRange && (squad.MaxRange >= 45 || EnemySquad.IsDefenseless))
+            if (allWithinRange && (maximumRange >= 45 || EnemySquad.AreAllShipsDefenseless()))
             {
                 if (!HasTakenPosition)
                 {
