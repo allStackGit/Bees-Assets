@@ -49,6 +49,7 @@ namespace Assets.Scripts.Entities
             }
 
             obstacle.ResetForReuse();
+            obstacle.IsPooledStaticLayoutObstacle = true;
             obstacle.transform.SetParent(parent, false);
             return obstacle;
         }
@@ -84,6 +85,7 @@ namespace Assets.Scripts.Entities
             }
 
             obstacle.gameObject.SetActive(false);
+            obstacle.IsPooledStaticLayoutObstacle = false;
             obstacle.ResetForReuse();
             obstacle.transform.SetParent(transform, false);
             _inactiveObstacles.Push(obstacle);
