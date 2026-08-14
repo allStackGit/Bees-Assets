@@ -156,14 +156,22 @@ namespace Assets.Scripts.Entities
 
                 // SaveAndEnd owns teardown of the StaticObstacle instances that remain in
                 // ObstacleMap.Obstacles. A destructible static obstacle must leave that list
-                // before Destroy(), otherwise teardown later accesses a destroyed Unity wrapper.
-                if (this is StaticObstacle staticObstacle &&
+                // before removal, otherwise teardown later accesses stale ownership.
+                StaticObstacle staticObstacle = this as StaticObstacle;
+                if (staticObstacle != null &&
                     Level.ObstacleMap != null && Level.ObstacleMap.Obstacles != null)
                 {
                     Level.ObstacleMap.Obstacles.Remove(staticObstacle);
                 }
 
-                Destroy(gameObject);
+                if (staticObstacle != null && staticObstacle.IsPooledStaticLayoutObstacle && Stage != null)
+                {
+                    StaticObstaclePool.GetOrCreate(Stage).ReleaseObstacle(staticObstacle);
+                }
+                else
+                {
+                    Destroy(gameObject);
+                }
             }
             
         }
