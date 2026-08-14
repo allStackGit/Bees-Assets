@@ -45,6 +45,8 @@ namespace Assets.Scripts.Server
         public HashSet<long> HandledRequests = new HashSet<long>();
         public ConcurrentQueue<byte[]> MessageQueue = new ConcurrentQueue<byte[]>();
         public List<Level> OpenLevels = new List<Level>();
+        private readonly HashSet<ServerRequest> _waitableRequests = new HashSet<ServerRequest>();
+        private readonly List<ServerRequest> _waitableRequestSnapshot = new List<ServerRequest>();
 
         private ConcurrentQueue<Action> MainThreadActions
         {
@@ -602,6 +604,11 @@ namespace Assets.Scripts.Server
         public void LogRequest(ServerRequest request, bool isResendRequest = false)
         {
             StandingRequests.Add(request);
+            if (request.Type == ConfigData.RequestTypes.GetUserData ||
+                request.Type == ConfigData.RequestTypes.GetSettings)
+            {
+                _waitableRequests.Add(request);
+            }
             ConfigData.__PastServerRequests.Add(request);
             if (isResendRequest)
             {
@@ -614,36 +621,36 @@ namespace Assets.Scripts.Server
             }
         }
 
-        private List<ServerRequest> _checkStandingRequests_serverRequests;
-        private ServerRequest _checkStandingRequests_currentRequest;
-        private DataFileRequest _checkStandingRequests_dataFileRequest;
-        private SettingsRequest _checkStandingRequests_settingsRequest;
-
         private void CheckStandingRequests()
         {
-            if (StandingRequests.Count == 0)
+            if (_waitableRequests.Count == 0)
             {
                 return;
             }
 
-            if (_checkStandingRequests_serverRequests == null)
+            _waitableRequestSnapshot.Clear();
+            _waitableRequestSnapshot.AddRange(_waitableRequests);
+            for (int i = 0; i < _waitableRequestSnapshot.Count; i++)
             {
-                _checkStandingRequests_serverRequests = new List<ServerRequest>();
-            }
-            _checkStandingRequests_serverRequests.Clear();
-            _checkStandingRequests_serverRequests.AddRange(StandingRequests);
-            for (_index = 0; _index < _checkStandingRequests_serverRequests.Count; _index++)
-            {
-                _checkStandingRequests_currentRequest = _checkStandingRequests_serverRequests[_index];
-                if (_checkStandingRequests_currentRequest.Type == ConfigData.RequestTypes.GetUserData)
+                ServerRequest request = _waitableRequestSnapshot[i];
+                if (!StandingRequests.Contains(request))
                 {
-                    _checkStandingRequests_dataFileRequest = (DataFileRequest)_checkStandingRequests_currentRequest;
-                    _checkStandingRequests_dataFileRequest.DataFile.WaitForResponse();
+                    _waitableRequests.Remove(request);
+                    continue;
                 }
-                else if (_checkStandingRequests_currentRequest.Type == ConfigData.RequestTypes.GetSettings)
+
+                if (request is DataFileRequest dataFileRequest)
                 {
-                    _checkStandingRequests_settingsRequest = (SettingsRequest)_checkStandingRequests_currentRequest;
-                    _checkStandingRequests_settingsRequest.Settings.WaitForResponse();
+                    dataFileRequest.DataFile.WaitForResponse();
+                }
+                else if (request is SettingsRequest settingsRequest)
+                {
+                    settingsRequest.Settings.WaitForResponse();
+                }
+
+                if (!StandingRequests.Contains(request))
+                {
+                    _waitableRequests.Remove(request);
                 }
             }
         }
@@ -995,7 +1002,10 @@ namespace Assets.Scripts.Server
                     }
 
                     _tempSquad.SetCommand(_handleStrategicCommandResponse_command);
-                    Debug.Log($"Command response for {_tempSquad} {_handleStrategicCommandResponse_command}");
+                    if (!_handleStrategicCommandResponse_level.Stage.IsTraining)
+                    {
+                        Debug.Log($"Command response for {_tempSquad} {_handleStrategicCommandResponse_command}");
+                    }
 
                     if (_tempCommandType == ConfigData.CommandTypes.Aggressive)
                     {
