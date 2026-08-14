@@ -363,7 +363,11 @@ namespace Assets.Scripts.Levels
 
         public void ClearTargets()
         {
-            GetShips().ForEach(ship => ship.ClearTargets());
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                ships[i].ClearTargets();
+            }
         }
 
         public void SetShootingStrategy(ConfigData.ShootingStrategyTypes strategy)
@@ -373,7 +377,11 @@ namespace Assets.Scripts.Levels
             {
                 GetCommand().ShootingStrategy.ShootingStrategyType = strategy;
             }
-            GetShips().ForEach(ship => ship.ShootingStrategy = _chosenShootingStrategy);
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                ships[i].ShootingStrategy = _chosenShootingStrategy;
+            }
         }
 
         public ConfigData.ShootingStrategyTypes GetShootingStrategy() => _chosenShootingStrategy;
