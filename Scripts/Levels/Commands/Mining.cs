@@ -63,7 +63,10 @@ namespace Assets.Scripts.Levels.Commands
             {
                 _position = TargetAstroid.GetPosition();
                 SetAndMove(_position);
-                GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to {TargetAstroid.Name} to start mining: {_position}";
+                }
             }
 
             CommandTimer.Reuse(CommandFrequency, Timer, true, true);
