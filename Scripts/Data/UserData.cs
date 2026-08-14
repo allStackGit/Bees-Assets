@@ -16,11 +16,13 @@ namespace Assets.Scripts.Data
         protected string defaultJsonData = "";
         private Action<dynamic> _onceDataIsLoaded;
         private bool _hasCalledAction;
+        private bool _hasAttemptedMalformedRecovery;
+        private bool _hasLoggedMalformedRecoveryFailure;
         protected string filename;
         public UserData()
         {
         }
-        protected dynamic SetupFile(bool shouldFileExist, string filename, Action<dynamic> onceDataIsLoaded)
+        protected dynamic SetupFile(bool shouldFileExist, string filename, Action<dynamic> onceDataIsLoaded, bool forceCreateDefaults = false)
         {
             _onceDataIsLoaded = onceDataIsLoaded;
             //Debug.Log("Called setup file");
@@ -28,10 +30,11 @@ namespace Assets.Scripts.Data
             this.file = new DataFile(filename);
 
             // Steam playtime/local first-run state cannot tell us whether a server-backed save
-            // already exists. Always read remote storage first; the get-user-data response path
-            // creates defaults only when the server explicitly reports the file missing. This
-            // prevents an existing remote profile from being overwritten with first-run defaults.
-            if (!ConfigData.Configuration.UseLocalStorage)
+            // already exists. During normal startup always read remote storage first; the
+            // get-user-data response path creates defaults only when the server explicitly reports
+            // the file missing. Intentional reset operations opt out with forceCreateDefaults so
+            // they cannot accidentally reload the remote state they are trying to replace.
+            if (!ConfigData.Configuration.UseLocalStorage && !forceCreateDefaults)
             {
                 shouldFileExist = true;
             }
@@ -90,25 +93,82 @@ namespace Assets.Scripts.Data
         }
         public void WaitForData()
         {
-            if (!IsDataLoaded())
+            if (!IsDataLoaded() || _hasCalledAction)
             {
-                //Debug.Log($"UserData is waiting for data for {filename}");
+                return;
             }
-            if (IsDataLoaded() && !_hasCalledAction)
+
+            try
             {
-                _hasCalledAction = true;
-                if (_onceDataIsLoaded != null)
+                ApplyLoadedData();
+            }
+            catch (Exception error)
+            {
+                RecoverMalformedData(error);
+            }
+        }
+
+        private void ApplyLoadedData()
+        {
+            // Object-rooted save files evolve as new settings/progress fields are added.
+            // Overlay the existing save onto today's defaults so old saves inherit only
+            // missing properties while preserving every value the user already stored.
+            // Array-rooted formats (fleet/squad lists) intentionally pass through unchanged.
+            object loadedData = GetLoadedDataWithDefaults();
+            if (filename == ConfigData.UserProgressFilename)
+            {
+                TitaniaRouteState.LoadFromPlayerProgress(loadedData);
+            }
+            _onceDataIsLoaded?.Invoke(loadedData);
+            _hasCalledAction = true;
+        }
+
+        private void RecoverMalformedData(Exception originalError)
+        {
+            if (_hasAttemptedMalformedRecovery)
+            {
+                if (!_hasLoggedMalformedRecoveryFailure)
                 {
-                    // Object-rooted save files evolve as new settings/progress fields are added.
-                    // Overlay the existing save onto today's defaults so old saves inherit only
-                    // missing properties while preserving every value the user already stored.
-                    // Array-rooted formats (fleet/squad lists) intentionally pass through unchanged.
-                    object loadedData = GetLoadedDataWithDefaults();
-                    if (filename == ConfigData.UserProgressFilename)
-                    {
-                        TitaniaRouteState.LoadFromPlayerProgress(loadedData);
-                    }
-                    _onceDataIsLoaded(loadedData);
+                    _hasLoggedMalformedRecoveryFailure = true;
+                    Debug.LogError($"Could not load repaired user data '{filename}'. Startup will keep the data unavailable instead of applying a partial profile. {originalError.GetType().Name}: {originalError.Message}");
+                }
+                return;
+            }
+
+            _hasAttemptedMalformedRecovery = true;
+            string defaults;
+            try
+            {
+                defaults = GetDefaultJson();
+            }
+            catch (Exception defaultError)
+            {
+                Debug.LogError($"Could not create recovery defaults for user data '{filename}'. {defaultError.GetType().Name}: {defaultError.Message}");
+                return;
+            }
+
+            // Fleet defaults can temporarily depend on user_progress arriving first. In that case
+            // leave recovery eligible for the next readiness pass rather than freezing the file in
+            // a failed state.
+            if (string.IsNullOrWhiteSpace(defaults) || defaults == ConfigData.WaitingMessage)
+            {
+                _hasAttemptedMalformedRecovery = false;
+                return;
+            }
+
+            Debug.LogError($"User data '{filename}' is malformed or incompatible and will be rebuilt from safe defaults. {originalError.GetType().Name}: {originalError.Message}");
+            file.WriteData(defaults);
+
+            try
+            {
+                ApplyLoadedData();
+            }
+            catch (Exception recoveryError)
+            {
+                if (!_hasLoggedMalformedRecoveryFailure)
+                {
+                    _hasLoggedMalformedRecoveryFailure = true;
+                    Debug.LogError($"Default recovery also failed for user data '{filename}'. {recoveryError.GetType().Name}: {recoveryError.Message}");
                 }
             }
         }
