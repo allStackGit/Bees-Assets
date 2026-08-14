@@ -56,7 +56,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (GetSquad().HasReachedDestination)
+            if (GetSquad().HaveAllShipsReachedDestination())
             {
                 SetFinalize("Retreating and got far enough away.");
             }
