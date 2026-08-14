@@ -97,10 +97,7 @@ namespace Assets.Scripts.Levels.Commands
                 SetFinalize("No more enemy ships to target");
                 return false;
             }
-            if (!ship.IsPathfinding)
-            {
-                ship.MoveToPoint(target.GetPosition());
-            }
+            ship.MoveToTrackedPoint(target.GetPosition());
             return true;
         }
 
