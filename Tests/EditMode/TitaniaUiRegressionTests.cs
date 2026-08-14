@@ -57,6 +57,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TitaniaOnePursuitReinforcementsAreIncreasedByHalf()
+        {
+            string source = Read("Scripts", "Levels", "Titania1Minesweeper.cs");
+            StringAssert.Contains("ConfigData.ShipTypes.Hornet, 9, true, true", source);
+            StringAssert.Contains("ConfigData.ShipTypes.Wasp, 6, true, true", source);
+            StringAssert.Contains("ConfigData.ShipTypes.Leafcutter, 3, true, true", source);
+        }
+
+        [Test]
         public void CarrierProgressionMovesFromNeptuneThreeToTitaniaTwo()
         {
             string source = Read("Scripts", "Levels", "CampaignObjectiveRules.cs");
@@ -77,12 +86,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MenuFramesRemainNormalizedButCloseXReturnsToAuthoredSize()
+        public void MenuFramesUseSlicedSpritesButCloseXReturnsToAuthoredSize()
         {
             string frameSource = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
             string sizingSource = Read("Scripts", "UI Components", "UiSizingCompatibilityGuard.cs");
+            string menuButtonMeta = Read("Sprites", "UI", "menu_button.png.meta");
+            string alternateButtonMeta = Read("Sprites", "UI", "menu_button_alt.png.meta");
+            string resetButtonMeta = Read("Sprites", "UI", "menu_button_reset.png.meta");
+
             StringAssert.Contains("image.sprite.name.StartsWith(\"menu_button\")", frameSource);
-            StringAssert.Contains("button.gameObject.AddComponent<Outline>()", frameSource);
+            StringAssert.Contains("image.type = Image.Type.Sliced;", frameSource);
+            StringAssert.DoesNotContain("AddComponent<Outline>()", frameSource);
+            StringAssert.Contains("border: {x: 4, y: 4, z: 4, w: 4}", menuButtonMeta);
+            StringAssert.Contains("border: {x: 4, y: 4, z: 4, w: 4}", alternateButtonMeta);
+            StringAssert.Contains("border: {x: 4, y: 4, z: 4, w: 4}", resetButtonMeta);
             StringAssert.Contains("rect.sizeDelta = new Vector2(16f, 16f);", sizingSource);
             StringAssert.Contains("rect.sizeDelta.x - 4f", sizingSource);
         }
@@ -129,17 +146,23 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("TitaniaRouteState.AddToPlayerProgressJson", checkpoint);
             StringAssert.DoesNotContain("PlayerPrefs.SetString", route);
             StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"Minesweeper\";", route);
+            StringAssert.Contains("CanisterBomb[] demolitionObjects", route);
+            StringAssert.Contains("demolitionObject.TargetObstacle = barrier;", route);
             StringAssert.Contains("TitaniaRouteState.WasBarrierOpened", route);
             StringAssert.Contains("barrier.Kill();", route);
+            StringAssert.Contains("demolitionObject.gameObject.SetActive(true);", route);
             StringAssert.Contains("BeginTitania1DemolitionTracking();", minesweeper);
             StringAssert.Contains("TitaniaRouteState.RecordOpenedBarrier", minesweeper);
         }
 
         [Test]
-        public void TitaniaTwoAddsMirroredIntervalWavesAndBaseHealth()
+        public void TitaniaTwoAddsMirroredIntervalWavesAndPlutoStyleBaseHealth()
         {
             string source = Read("Scripts", "Levels", "Level.Titania2Enhancements.cs");
-            StringAssert.Contains("baseHealthLabel.text = \"Base Health\";", source);
+            StringAssert.Contains("Stage.Menus.PlutoShield.SetActive(true);", source);
+            StringAssert.Contains("UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);", source);
+            StringAssert.Contains("healthBar.transform.localScale = new Vector2(fraction * 150f, 1f);", source);
+            StringAssert.DoesNotContain("baseHealthLabel.text = \"Base Health\";", source);
             StringAssert.Contains("ScheduleTitania2ExtraWave(25f, -0.65f, -1f", source);
             StringAssert.Contains("ScheduleTitania2ExtraWave(315f, -0.55f, -1f", source);
             StringAssert.Contains("AddTitania2BeeWave(squads, normalizedX, normalizedY);", source);
