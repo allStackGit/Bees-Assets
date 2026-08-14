@@ -19,8 +19,6 @@ public class FullRetreat : Command
         {
             TargetWarpGate = warpgate;
 
-            // Snapshot because QueueShipForWarp can immediately warp/kill a touching ship when
-            // the gate is already ready, mutating the squad's live ship list during setup.
             _participantShipsSnapshot.Clear();
             _participantShipsSnapshot.AddRange(GetSquad().GetShips());
             for (int i = 0; i < _participantShipsSnapshot.Count; i++)
@@ -114,7 +112,14 @@ public class FullRetreat : Command
             }
         }
 
-        ShipsWaitingToWarp.RemoveAll(ship => ship == null || ship.IsDead || !_shipIdsWarping.Contains(ship.Id));
+        for (int i = ShipsWaitingToWarp.Count - 1; i >= 0; i--)
+        {
+            Ship ship = ShipsWaitingToWarp[i];
+            if (ship == null || ship.IsDead || !_shipIdsWarping.Contains(ship.Id))
+            {
+                ShipsWaitingToWarp.RemoveAt(i);
+            }
+        }
     }
 
     Vector2 _f_targetPosition;
@@ -136,9 +141,9 @@ public class FullRetreat : Command
                 for (int i = 0; i < ships.Count; i++)
                 {
                     Ship ship = ships[i];
-                    if (_shipIdsWarping.Contains(ship.Id) && !ship.IsPathfinding)
+                    if (_shipIdsWarping.Contains(ship.Id))
                     {
-                        ship.MoveToPoint(_f_targetPosition);
+                        ship.MoveToTrackedPoint(_f_targetPosition);
                     }
                 }
                 GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
