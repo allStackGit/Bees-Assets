@@ -19,10 +19,7 @@ namespace Assets.Scripts.Levels.Commands
         }
         public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId)
         {
-            // MoveToPoint is an override-only command and intentionally bypasses base.Execute,
-            // so it must establish active command ownership itself when execution begins.
             GetSquad().HasCommand = true;
-
             PrepareDamageToSendEntries(1);
             SetAndMove(Destination);
             CommandTimer.Reuse(CommandFrequency, Timer, true, true);
@@ -35,7 +32,7 @@ namespace Assets.Scripts.Levels.Commands
         {
             if (!IsDead)
             {
-                if (GetSquad().HasReachedDestination)
+                if (GetSquad().HaveAllShipsReachedDestination())
                 {
                     SetFinalize("Reached the specified destination on the map");
                     return;
