@@ -1,22 +1,20 @@
 ﻿
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
     public class Bomb : Weapon
     {
         private ShipDamageStatus _reservedDamageStatus;
+        private readonly List<Ship> _targetBuffer = new List<Ship>();
 
         public override void ClearData()
         {
             ReleaseTargetReservation();
+            _targetBuffer.Clear();
             base.ClearData();
         }
 
@@ -27,8 +25,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 IsUsingCachedTargetingQueue = true;
                 return CachedTargetingQueue;
             }
+
             IsUsingCachedTargetingQueue = false;
-            return Ship.Squad.GetCommand().EnemySquad.GetShips().ToList();
+            _targetBuffer.Clear();
+            _targetBuffer.AddRange(Ship.Squad.GetCommand().EnemySquad.GetShips());
+            return _targetBuffer;
         }
 
         /// <summary>

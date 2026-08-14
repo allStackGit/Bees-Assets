@@ -5,7 +5,6 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -18,7 +17,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void LevelTimeOut()
         {
-            Debug.Log("Level timed out!");
+            if (!Stage.IsTraining) Debug.Log("Level timed out!");
             Stage.DebugLogger.__LevelTimeouts++;
             IsRestarting = true;
             if (ActivateCollisionAsteroids) CancelTimer(_asteroidSpawnTimer);
@@ -28,13 +27,16 @@ namespace Assets.Scripts.Levels
         private int _save_i;
         private SavedSquad _save_savedSquad;
         private FleetShip _save_fleetship;
-        private Ship[] _save_ships;
-        private Obstacle[] _save_obstacles;
+        private readonly List<Ship> _save_ships = new List<Ship>();
+        private readonly List<FogOfWarVision> _save_fogOfWarVisions = new List<FogOfWarVision>();
+        private readonly List<TargetingSquadMarker> _save_targetingSquadMarkers = new List<TargetingSquadMarker>();
+        private readonly List<Obstacle> _save_obstacles = new List<Obstacle>();
+        private readonly List<Projectile> _save_projectiles = new List<Projectile>();
         private ScaledTimer _levelEndedDialogueTimer = new ScaledTimer();
 
         public void SaveAndEnd()
         {
-            Debug.Log("Saving and ending");
+            if (!Stage.IsTraining) Debug.Log("Saving and ending");
             if (Stage.RecordStats && !Stage.IsTraining)
             {
                 for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
@@ -61,20 +63,46 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.SaveSquadData();
             }
 
-            _save_ships = State.GetShips().ToArray();
-            for (_save_i = 0; _save_i < _save_ships.Length; _save_i++) _save_ships[_save_i].EndKill();
-            State.FogOfWarVisions.ToList().ForEach(vision => vision.Kill(0, true));
-            State.TargetingSquadMarkers.ToList().ForEach(target => target.Kill());
+            _save_ships.Clear();
+            _save_ships.AddRange(State.GetShips());
+            for (_save_i = 0; _save_i < _save_ships.Count; _save_i++) _save_ships[_save_i].EndKill();
 
-            if (HasObstacles)
+            _save_fogOfWarVisions.Clear();
+            _save_fogOfWarVisions.AddRange(State.FogOfWarVisions);
+            for (_save_i = 0; _save_i < _save_fogOfWarVisions.Count; _save_i++) _save_fogOfWarVisions[_save_i].Kill(0, true);
+
+            _save_targetingSquadMarkers.Clear();
+            _save_targetingSquadMarkers.AddRange(State.TargetingSquadMarkers);
+            for (_save_i = 0; _save_i < _save_targetingSquadMarkers.Count; _save_i++) _save_targetingSquadMarkers[_save_i].Kill();
+
+            if (HasObstacles && ObstacleMap != null)
             {
-                ObstacleMap.Obstacles.ToList().ForEach(obstacle => Destroy(obstacle.gameObject));
-                Destroy(ObstacleMap.ObstacleBackground);
+                if (_usesPooledStaticObstaclePrefabs)
+                {
+                    StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+                    for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                    {
+                        obstaclePool.ReleaseObstacle(ObstacleMap.Obstacles[_save_i]);
+                    }
+                    obstaclePool.ReleaseBackground(ObstacleMap.ObstacleBackground);
+                    ObstacleMap.Obstacles.Clear();
+                    ObstacleMap.ObstacleBackground = null;
+                    _usesPooledStaticObstaclePrefabs = false;
+                }
+                else
+                {
+                    for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                    {
+                        Destroy(ObstacleMap.Obstacles[_save_i].gameObject);
+                    }
+                    Destroy(ObstacleMap.ObstacleBackground);
+                }
             }
             if (State.Obstacles.Count > 0)
             {
-                _save_obstacles = State.Obstacles.ToArray();
-                for (_save_i = 0; _save_i < _save_obstacles.Length; _save_i++)
+                _save_obstacles.Clear();
+                _save_obstacles.AddRange(State.Obstacles);
+                for (_save_i = 0; _save_i < _save_obstacles.Count; _save_i++)
                 {
                     if (_save_obstacles[_save_i].ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid)
                         ((CollisionAsteroid)_save_obstacles[_save_i]).Kill(true);
@@ -86,7 +114,12 @@ namespace Assets.Scripts.Levels
                         Debug.LogError($"{_save_obstacles[_save_i].Name} does not have valid obstacle type: {_save_obstacles[_save_i].ObstacleType}");
                 }
             }
-            if (State.Projectiles.Count > 0) State.Projectiles.ToList().ForEach(projectile => projectile.Kill());
+            if (State.Projectiles.Count > 0)
+            {
+                _save_projectiles.Clear();
+                _save_projectiles.AddRange(State.Projectiles);
+                for (_save_i = 0; _save_i < _save_projectiles.Count; _save_i++) _save_projectiles[_save_i].Kill();
+            }
             while (State.Deadbodies.Count > 0)
             {
                 State.Deadbodies[0].Kill();
@@ -185,17 +218,14 @@ namespace Assets.Scripts.Levels
             return _f_projectile;
         }
 
-        private Queue<Squad> _hive_squads;
-        private List<Squad> outOfBoundsHiveSquads = new List<Squad>();
+        private readonly List<Squad> outOfBoundsHiveSquads = new List<Squad>();
         private Squad _hive_squad;
         private void GetHiveMindCommands()
         {
             if (!State.IsPaused && Stage.ActivateHiveMind && IsLevelSetupOnServer)
             {
-                _hive_squads = State.GetSquadsAwaitingHiveMindCommands();
-                while (_hive_squads.Count > 0)
+                while (State.TryDequeueSquadAwaitingHiveMindCommand(out _hive_squad))
                 {
-                    _hive_squad = _hive_squads.Dequeue();
                     if (!_hive_squad.IsDead)
                     {
                         if (_hive_squad.IsInBounds()) _hive_squad.MakeMatchupStrat();
@@ -206,7 +236,10 @@ namespace Assets.Scripts.Levels
                         }
                     }
                 }
-                outOfBoundsHiveSquads.ForEach(squad => State.AddToSquadsAwaitingHiveMindCommands(squad));
+                for (int i = 0; i < outOfBoundsHiveSquads.Count; i++)
+                {
+                    State.AddToSquadsAwaitingHiveMindCommands(outOfBoundsHiveSquads[i]);
+                }
                 outOfBoundsHiveSquads.Clear();
             }
         }

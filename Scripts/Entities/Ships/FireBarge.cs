@@ -3,8 +3,6 @@ using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
-using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships
@@ -20,7 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Bomb = (Bomb)Weapons.First();
+            Bomb = (Bomb)Weapons[0];
             IsBomber = true;
             Destroy(Bomb.Piece);
         }
@@ -57,11 +55,11 @@ namespace Assets.Scripts.Entities.Ships
             if (!endKill)
             {
                 Explosion = (RocketExplosion)Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.FireBargeExplosion);
-                ExplosionSound = Explosion.GetComponent<AudioSource>();
                 ShipExplosion = Explosion.gameObject;
                 DropExplosionAnimation();
                 if (Level.Stage.ActivateAudio)
                 {
+                    ExplosionSound = Explosion.GetComponent<AudioSource>();
                     ExplosionSound.Play();
                 }
                 Explosion.Setup(Level, Bomb, this, null, GetPosition(), 0, 0, Bomb.Power);
@@ -92,10 +90,9 @@ namespace Assets.Scripts.Entities.Ships
 
                 if (WeaponsThatHaveUsWithinRange.Count > 0)
                 {
-                    List<Weapon> weapons = WeaponsThatHaveUsWithinRange.ToList();
-                    for (int i = 0; i < weapons.Count; i++)
+                    foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
                     {
-                        weapons[i].ShipsWithinRange.Remove(Id);
+                        weapon.ShipsWithinRange.Remove(Id);
                     }
                     WeaponsThatHaveUsWithinRange.Clear();
                 }
@@ -125,8 +122,14 @@ namespace Assets.Scripts.Entities.Ships
             {
                 if (HasRocketFlares)
                 {
-                    RightRocketFlares.ForEach(flare => flare.SetActive(false));
-                    LeftRocketFlares.ForEach(flare => flare.SetActive(false));
+                    for (int i = 0; i < RightRocketFlares.Count; i++)
+                    {
+                        RightRocketFlares[i].SetActive(false);
+                    }
+                    for (int i = 0; i < LeftRocketFlares.Count; i++)
+                    {
+                        LeftRocketFlares[i].SetActive(false);
+                    }
                 }
                 HealthBar.SetActive(false);
 

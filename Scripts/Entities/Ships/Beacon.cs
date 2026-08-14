@@ -33,6 +33,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void SetColor()
         {
+            if (!Stage.IsRendering)
+            {
+                return;
+            }
+
             // Beacon switches between two sprite fields at runtime, so resetting only the
             // renderer is insufficient when the pooled Beacon changes squads/colors.
             if (_originalStandardSprite == null)

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
 using Assets.Scripts.Server;
@@ -13,7 +12,8 @@ namespace Assets.Scripts.Levels
         private readonly List<StoredCommand> _commands = new List<StoredCommand>();
         private readonly List<StoredCommand> _shootingCommands = new List<StoredCommand>();
         private readonly List<StoredCommand> _targetingCommands = new List<StoredCommand>();
-        private List<Squad> _targetedSquads;
+        private readonly List<Squad> _targetedSquads = new List<Squad>();
+        private readonly HashSet<Squad> _squadsAwaitingCommandSet = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
 
         public int AddUserCommand()
         {
@@ -53,11 +53,6 @@ namespace Assets.Scripts.Levels
             return storedCommand != null && storedCommand.OutcomeId == outcomeId;
         }
 
-        /// <summary>
-        /// Adds delayed reward to the stored Hive Mind command that owns an outcome ID.
-        /// Projectile damage can land after that command has finalized and a different
-        /// command has started, while PastCommands remains alive until the level flush.
-        /// </summary>
         public bool AddTsvToStoredCommand(long outcomeId, long tsvDelta)
         {
             if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
@@ -69,11 +64,6 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
-        /// <summary>
-        /// Shooting policy learns from combat-only TSV. Strategic command TSV also includes
-        /// spotting, mining, healing, and other command-specific reward that must not be
-        /// attributed to target-priority selection.
-        /// </summary>
         public bool AddShootingTsvToStoredCommand(long outcomeId, long tsvDelta)
         {
             if (!TryGetStoredCommand(outcomeId, out StoredCommand storedCommand))
@@ -105,11 +95,30 @@ namespace Assets.Scripts.Levels
 
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
+            if (squad == null || squad.IsDead || !_squadsAwaitingCommandSet.Add(squad))
             {
                 return;
             }
             SquadsAwaitingCommands.Enqueue(squad);
+        }
+
+        public bool TryDequeueSquadAwaitingHiveMindCommand(out Squad squad)
+        {
+            if (SquadsAwaitingCommands.Count == 0)
+            {
+                squad = null;
+                return false;
+            }
+
+            squad = SquadsAwaitingCommands.Dequeue();
+            _squadsAwaitingCommandSet.Remove(squad);
+            return true;
+        }
+
+        public void ClearSquadsAwaitingHiveMindCommands()
+        {
+            SquadsAwaitingCommands.Clear();
+            _squadsAwaitingCommandSet.Clear();
         }
 
         public Queue<Squad> GetSquadsAwaitingHiveMindCommands()
@@ -119,12 +128,19 @@ namespace Assets.Scripts.Levels
 
         public List<Squad> GetTargetedSquads(int side)
         {
-            _targetedSquads = new List<Squad>();
-            foreach (Squad squad in GetAllSquads().Where(squad => squad.Side == side))
+            _targetedSquads.Clear();
+            for (int i = 0; i < Squads.Count; i++)
             {
-                if (squad.HasCommand && squad.GetCommand().HasEnemy && !squad.GetCommand().EnemySquad.IsDead)
+                Squad squad = Squads[i];
+                if (squad.Side != side || !squad.HasCommand)
                 {
-                    _targetedSquads.Add(squad.GetCommand().EnemySquad);
+                    continue;
+                }
+
+                Command command = squad.GetCommand();
+                if (command != null && command.HasEnemy && command.EnemySquad != null && !command.EnemySquad.IsDead)
+                {
+                    _targetedSquads.Add(command.EnemySquad);
                 }
             }
             return _targetedSquads;
@@ -133,14 +149,22 @@ namespace Assets.Scripts.Levels
         public void StoreCommands()
         {
             _completes.Clear();
-            _completes.AddRange(PastCommands.Where(command => command.IsHiveMindCommand && command.IsFinalized));
+            for (int i = 0; i < PastCommands.Count; i++)
+            {
+                StoredCommand command = PastCommands[i];
+                if (command.IsHiveMindCommand && command.IsFinalized)
+                {
+                    _completes.Add(command);
+                }
+            }
             if (_completes.Count == 0)
             {
                 return;
             }
 
-            foreach (StoredCommand command in _completes)
+            for (int i = 0; i < _completes.Count; i++)
             {
+                StoredCommand command = _completes[i];
                 OutcomeIdToPastCommandIndex.Remove(command.OutcomeId);
                 _commands.Add(command);
 
@@ -152,10 +176,6 @@ namespace Assets.Scripts.Levels
                     command.CommandType != ConfigData.CommandTypes.Retreat &&
                     CommandUsesSelectedEnemy(command.CommandType))
                 {
-                    // The server shooting key is derived from the selected-enemy matchup.
-                    // Only persist commands whose execution actually uses that enemy context.
-                    // Retreat is temporarily excluded because Socket executes FirstSeen while
-                    // retaining the server-selected shooting outcome ID.
                     _shootingCommands.Add(command);
                 }
 
@@ -163,9 +183,6 @@ namespace Assets.Scripts.Levels
                     command.HasTargetingEnemy &&
                     CommandUsesSelectedEnemy(command.CommandType))
                 {
-                    // The matchup strategy chooses an enemy squad. Do not reward that choice
-                    // for Mining, Heal, Patrol, Scouting, Hold, etc. whose core execution does
-                    // not use the selected enemy; their command TSV is unrelated to target choice.
                     _targetingCommands.Add(command);
                 }
             }

@@ -1,6 +1,6 @@
 using Assets.Scripts.Data;
 using Assets.Scripts.Levels;
-using System.Linq;
+using System.Collections.Generic;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -10,15 +10,26 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!IsDead)
             {
-                Carrier replacementCarrier = Level.State.GetShips(Side)
-                    .OfType<Carrier>()
-                    .FirstOrDefault(carrier => carrier != this && !carrier.IsDead);
-
-                foreach (CarrierShip carrierShip in Level.State.GetShips(Side)
-                    .OfType<CarrierShip>()
-                    .Where(ship => ship.Carrier == this)
-                    .ToList())
+                List<Ship> levelShips = Level.State.Ships;
+                Carrier replacementCarrier = null;
+                for (int i = 0; i < levelShips.Count; i++)
                 {
+                    Ship candidate = levelShips[i];
+                    if (candidate.Side == Side && candidate is Carrier carrier && carrier != this && !carrier.IsDead)
+                    {
+                        replacementCarrier = carrier;
+                        break;
+                    }
+                }
+
+                for (int i = 0; i < levelShips.Count; i++)
+                {
+                    Ship candidate = levelShips[i];
+                    if (candidate.Side != Side || !(candidate is CarrierShip carrierShip) || carrierShip.Carrier != this)
+                    {
+                        continue;
+                    }
+
                     if (replacementCarrier != null)
                     {
                         carrierShip.Carrier = replacementCarrier;

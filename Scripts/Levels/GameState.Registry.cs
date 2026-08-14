@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
@@ -10,6 +9,18 @@ namespace Assets.Scripts.Levels
 {
     public partial class GameState
     {
+        private readonly List<Projectile> _resetProjectiles = new List<Projectile>();
+        private readonly List<Obstacle> _resetObstacles = new List<Obstacle>();
+        private readonly List<Ship> _readyShips = new List<Ship>();
+        private readonly HashSet<Ship> _readyShipSet = new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance);
+        private readonly List<Projectile> _projectilesToRemove = new List<Projectile>();
+        private readonly List<ServerRequest> _standingRequestsToRemove = new List<ServerRequest>();
+        private readonly List<Command> _releaseCommands = new List<Command>();
+        private readonly List<Squad> _releaseSquads = new List<Squad>();
+        private readonly List<CollisionAsteroid> _releaseAsteroids = new List<CollisionAsteroid>();
+        private readonly List<AsteroidPiece> _releaseAsteroidPieces = new List<AsteroidPiece>();
+        private readonly List<MiningAsteroid> _releaseMiningAsteroids = new List<MiningAsteroid>();
+
         public bool CanShipsKeepMining()
         {
             return MiningShips.Count > 0 && MiningAsteroids.Count > 0;
@@ -27,6 +38,11 @@ namespace Assets.Scripts.Levels
                 ship.FleetShip.IsLoadedIntoLevel = true;
             }
             Ships.Add(ship);
+            int sideIndex = ship.Side - 1;
+            if (sideIndex >= 0 && sideIndex < ShipsBySide.Length)
+            {
+                ShipsBySide[sideIndex].Add(ship);
+            }
             ShipsById.Add(ship.Id, ship);
             if (ship.IsHiveMindControlled)
             {
@@ -37,17 +53,18 @@ namespace Assets.Scripts.Levels
 
         public void AddSquad(Squad squad)
         {
-            // Minion/Carrier squads share their parent's SavedSquad identity. They are
-            // transient children and must not claim persisted ownership or change the
-            // player's normal squad-count/hotkey range. Give them a unique runtime number
-            // without treating them as normal selectable squads.
             if (squad.IsMinionSquad)
             {
-                squad.SquadNumber = Squads
-                    .Where(existing => existing.Side == squad.Side)
-                    .Select(existing => existing.SquadNumber)
-                    .DefaultIfEmpty(0)
-                    .Max() + 1;
+                int maximumSquadNumber = 0;
+                for (int i = 0; i < Squads.Count; i++)
+                {
+                    Squad existing = Squads[i];
+                    if (existing.Side == squad.Side && existing.SquadNumber > maximumSquadNumber)
+                    {
+                        maximumSquadNumber = existing.SquadNumber;
+                    }
+                }
+                squad.SquadNumber = maximumSquadNumber + 1;
             }
             else
             {
@@ -64,24 +81,28 @@ namespace Assets.Scripts.Levels
                 squad.SavedSquad.IsLoadedIntoLevel = false;
             }
 
-            // A server response can arrive well after this squad has died. Remove pending
-            // requests while the old ItemId is still authoritative so reconnect/resend logic
-            // cannot keep transmitting work that can only be rejected after pool reuse.
             if (Level != null && Level.IsLevelSetupOnServer)
             {
                 int removedSquadItemId = squad.ItemId;
-                ConfigData.Socket.StandingRequests.RemoveWhere(request =>
-                    (request is CommandRequest commandRequest &&
-                     ReferenceEquals(commandRequest.Squad, squad) &&
-                     commandRequest.SquadId == removedSquadItemId) ||
-                    (request is MatchupStrategyRequest matchupRequest &&
-                     ReferenceEquals(matchupRequest.Squad, squad) &&
-                     matchupRequest.SquadId == removedSquadItemId));
+                _standingRequestsToRemove.Clear();
+                foreach (ServerRequest request in ConfigData.Socket.StandingRequests)
+                {
+                    if ((request is CommandRequest commandRequest &&
+                         ReferenceEquals(commandRequest.Squad, squad) &&
+                         commandRequest.SquadId == removedSquadItemId) ||
+                        (request is MatchupStrategyRequest matchupRequest &&
+                         ReferenceEquals(matchupRequest.Squad, squad) &&
+                         matchupRequest.SquadId == removedSquadItemId))
+                    {
+                        _standingRequestsToRemove.Add(request);
+                    }
+                }
+                for (int requestIndex = 0; requestIndex < _standingRequestsToRemove.Count; requestIndex++)
+                {
+                    ConfigData.Socket.StandingRequests.Remove(_standingRequestsToRemove[requestIndex]);
+                }
             }
 
-            // The ordinary Squad pool is also used for Queen/Scout minion squads. Once all
-            // ownership-sensitive teardown above is complete, clear the transient role so a
-            // later ordinary squad cannot inherit minion persistence/numbering semantics.
             squad.IsMinionSquad = false;
             Squads.Remove(squad);
             SquadsToRelease.Add(squad);
@@ -114,29 +135,36 @@ namespace Assets.Scripts.Levels
                 healCommand.ShipBecameUnavailable(ship);
             }
 
-            // These records retain the live Ship wrapper, whose runtime Id changes when
-            // the object is reused from the pool. Remove them while the old identity is
-            // still authoritative so stale combat/spotting state cannot attach to the
-            // next ship that occupies this wrapper. ResetLevel temporarily clears the
-            // per-side spotted-list slots before killing the old ships, so tolerate that
-            // teardown state; ResetState recreates both lists for the next episode.
-            foreach (List<ShipDamageStatus> statuses in ShipDamageStatuses)
+            for (int sideIndex = 0; sideIndex < ShipDamageStatuses.Length; sideIndex++)
             {
-                if (statuses != null)
+                List<ShipDamageStatus> statuses = ShipDamageStatuses[sideIndex];
+                for (int statusIndex = statuses.Count - 1; statusIndex >= 0; statusIndex--)
                 {
-                    statuses.RemoveAll(status => status == null || status.Ship == null || status.Ship == ship);
+                    ShipDamageStatus status = statuses[statusIndex];
+                    if (status == null || status.Ship == null || status.Ship == ship)
+                    {
+                        statuses.RemoveAt(statusIndex);
+                    }
                 }
+                ShipDamageStatusesById[sideIndex].Remove(ship.Id);
             }
-            foreach (List<SpottedShip> spotted in SpottedShips)
+            for (int sideIndex = 0; sideIndex < SpottedShips.Length; sideIndex++)
             {
-                if (spotted != null)
+                List<SpottedShip> spotted = SpottedShips[sideIndex];
+                if (spotted == null)
                 {
-                    spotted.RemoveAll(entry => entry == null || entry.Ship == null || entry.Ship == ship);
+                    continue;
+                }
+                for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)
+                {
+                    SpottedShip entry = spotted[spottedIndex];
+                    if (entry == null || entry.Ship == null || entry.Ship == ship)
+                    {
+                        spotted.RemoveAt(spottedIndex);
+                    }
                 }
             }
 
-            // Hivemind visibility is live runtime state. Remove this lifecycle both as an
-            // observer and as a seen target before the pooled wrapper receives a new Id.
             int removedObserverSideIndex = ship.IsHiveMindControlled ? ship.Side - 1 : -1;
             foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
             {
@@ -157,10 +185,6 @@ namespace Assets.Scripts.Levels
 
             if (removedObserverSideIndex >= 0 && removedObserverSideIndex < HivemindShips.Length)
             {
-                // The old GetShipsVisibleToHiveMind implementation implicitly rebuilt this set
-                // from live observers on every query. Preserve the same semantics when an
-                // observer dies, but pay that aggregation cost once at the rare lifecycle
-                // boundary instead of once per pairwise sight trigger.
                 HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex];
                 sideCache.Clear();
                 foreach (HashSet<Ship> visibleShips in HivemindShips[removedObserverSideIndex].Values)
@@ -179,14 +203,16 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // Queen/Scout minions and Carrier children intentionally replace their
-            // transient FleetShip with the parent's FleetShip for shared stat accounting.
-            // Their teardown must not mark the still-live parent FleetShip as unloaded.
             if (!ship.IsMinionShip && !ship.IsCarrierShip)
             {
                 ship.FleetShip.IsLoadedIntoLevel = false;
             }
             Ships.Remove(ship);
+            int shipSideIndex = ship.Side - 1;
+            if (shipSideIndex >= 0 && shipSideIndex < ShipsBySide.Length)
+            {
+                ShipsBySide[shipSideIndex].Remove(ship);
+            }
             MiningShips.Remove(ship);
             ShipsById.Remove(ship.Id);
             if (!ShipsToRelease.Contains(ship))
@@ -194,9 +220,6 @@ namespace Assets.Scripts.Levels
                 ShipsToRelease.Add(ship);
             }
 
-            // Drone/Striker pools can serve both ordinary ships and Carrier children, and
-            // spawned ship pools can later serve another lifecycle. Clear role flags only
-            // after ownership-sensitive deregistration has completed.
             ship.IsMinionShip = false;
             ship.IsCarrierShip = false;
         }
@@ -208,18 +231,22 @@ namespace Assets.Scripts.Levels
 
         public void CleanupRuntimeObjectsForReset()
         {
-            // Neural-network ResetLevel bypasses SaveAndEnd. Tear down active transient
-            // objects here before ResetState clears the registries that own them.
-            foreach (Projectile projectile in Projectiles.ToList())
+            _resetProjectiles.Clear();
+            _resetProjectiles.AddRange(Projectiles);
+            for (int i = 0; i < _resetProjectiles.Count; i++)
             {
+                Projectile projectile = _resetProjectiles[i];
                 if (projectile != null && !projectile.IsDead)
                 {
                     projectile.Kill();
                 }
             }
 
-            foreach (Obstacle obstacle in Obstacles.ToList())
+            _resetObstacles.Clear();
+            _resetObstacles.AddRange(Obstacles);
+            for (int i = 0; i < _resetObstacles.Count; i++)
             {
+                Obstacle obstacle = _resetObstacles[i];
                 if (obstacle == null || obstacle.IsDead)
                 {
                     continue;
@@ -244,19 +271,17 @@ namespace Assets.Scripts.Levels
 
         public void Release()
         {
-            // Release() is a teardown boundary. Presentation-only death delays must not retain
-            // or later mutate pooled wrappers after the owning Level is ending/resetting.
             foreach (Ship ship in ShipsToRelease)
             {
                 ship.PrepareForLevelTeardown();
             }
 
-            Ship[] ships = DrainReadyShips();
-            Command[] commands = DrainReleaseQueue(CommandsToRelease);
-            Squad[] squads = DrainReleaseQueue(SquadsToRelease);
-            CollisionAsteroid[] asteroids = DrainReleaseQueue(AsteroidsToRelease);
-            AsteroidPiece[] asteroidPieces = DrainReleaseQueue(AsteroidPiecesToRelease);
-            MiningAsteroid[] miningAsteroids = DrainReleaseQueue(MiningAsteroidsToRelease);
+            List<Ship> ships = DrainReadyShips();
+            List<Command> commands = DrainReleaseQueue(CommandsToRelease, _releaseCommands);
+            List<Squad> squads = DrainReleaseQueue(SquadsToRelease, _releaseSquads);
+            List<CollisionAsteroid> asteroids = DrainReleaseQueue(AsteroidsToRelease, _releaseAsteroids);
+            List<AsteroidPiece> asteroidPieces = DrainReleaseQueue(AsteroidPiecesToRelease, _releaseAsteroidPieces);
+            List<MiningAsteroid> miningAsteroids = DrainReleaseQueue(MiningAsteroidsToRelease, _releaseMiningAsteroids);
 
             foreach (Ship ship in ships)
             {
@@ -284,28 +309,55 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private Ship[] DrainReadyShips()
+        private List<Ship> DrainReadyShips()
         {
+            _readyShips.Clear();
+            _readyShipSet.Clear();
             foreach (Ship ship in ShipsToRelease)
             {
-                ship.ProjectilesInFlight.RemoveWhere(projectile =>
-                    projectile == null || projectile.IsDead || projectile.Shooter != ship);
+                _projectilesToRemove.Clear();
+                foreach (Projectile projectile in ship.ProjectilesInFlight)
+                {
+                    if (projectile == null || projectile.IsDead || projectile.Shooter != ship)
+                    {
+                        _projectilesToRemove.Add(projectile);
+                    }
+                }
+                for (int projectileIndex = 0; projectileIndex < _projectilesToRemove.Count; projectileIndex++)
+                {
+                    ship.ProjectilesInFlight.Remove(_projectilesToRemove[projectileIndex]);
+                }
+
+                if (ship.CanReturnToPool())
+                {
+                    _readyShips.Add(ship);
+                    _readyShipSet.Add(ship);
+                }
             }
 
-            Ship[] ready = ShipsToRelease.Where(ship => ship.CanReturnToPool()).ToArray();
-            if (ready.Length > 0)
+            if (_readyShipSet.Count > 0)
             {
-                HashSet<Ship> readySet = ready.ToHashSet();
-                ShipsToRelease.RemoveAll(readySet.Contains);
+                for (int shipIndex = ShipsToRelease.Count - 1; shipIndex >= 0; shipIndex--)
+                {
+                    if (_readyShipSet.Contains(ShipsToRelease[shipIndex]))
+                    {
+                        ShipsToRelease.RemoveAt(shipIndex);
+                    }
+                }
             }
-            return ready;
+            return _readyShips;
         }
 
-        private static T[] DrainReleaseQueue<T>(List<T> queue)
+        private static List<T> DrainReleaseQueue<T>(List<T> queue, List<T> buffer)
         {
-            T[] items = queue.ToArray();
+            buffer.Clear();
+            if (queue.Count == 0)
+            {
+                return buffer;
+            }
+            buffer.AddRange(queue);
             queue.Clear();
-            return items;
+            return buffer;
         }
     }
 }

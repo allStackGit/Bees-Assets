@@ -44,7 +44,6 @@ public class Pool : MonoBehaviour
     public ObjectPool<YellowJacket> YellowJacketPool;
     public ObjectPool<HumanTarget> HumanTargetPool;
 
-
     public ObjectPool<Assets.Scripts.UI_Components.Map> PlutoMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> NeptuneMapPool;
     public ObjectPool<Assets.Scripts.UI_Components.Map> TitaniaMapPool;
@@ -113,51 +112,51 @@ public class Pool : MonoBehaviour
 
         //BigCollisionAsteroids = Stage.Prefabs.CollisionAsteroidPrefabs.Where((a) => a.GetComponent<CollisionAsteroid>().SizeClass >= 6).ToList();
 
-        BargePool = new ObjectPool<Barge>(CreatePooledBarge, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        BeehivePool = new ObjectPool<Beehive>(CreatePooledBeehive, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        BumblebeePool = new ObjectPool<Bumblebee>(CreatePooledBumblebee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        CarpenterBeePool = new ObjectPool<CarpenterBee>(CreatePooledCarpenterBee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        CarrierPool = new ObjectPool<Carrier>(CreatePooledCarrier, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        CruiserPool = new ObjectPool<Cruiser>(CreatePooledCruiser, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        DreadnoughtPool = new ObjectPool<Dreadnought>(CreatePooledDreadnought, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        DronePool = new ObjectPool<Drone>(CreatePooledDrone, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        FactoryPool = new ObjectPool<Factory>(CreatePooledFactory, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        FireBargePool = new ObjectPool<FireBarge>(CreatePooledFireBarge, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        FlagshipPool = new ObjectPool<Flagship>(CreatePooledFlagship, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        FrigatePool = new ObjectPool<Frigate>(CreatePooledFrigate, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        GunshipPool = new ObjectPool<Gunship>(CreatePooledGunship, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        HoneybeePool = new ObjectPool<Honeybee>(CreatePooledHoneybee, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        HornetPool = new ObjectPool<Hornet>(CreatePooledHornet, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        LeafcutterPool = new ObjectPool<Leafcutter>(CreatePooledLeafcutter, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        QueenPool = new ObjectPool<Queen>(CreatePooledQueen, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        ScoutPool = new ObjectPool<Scout>(CreatePooledScout, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        StrikerPool = new ObjectPool<Striker>(CreatePooledStriker, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, OnTakeShipFromPool, OnReturnShipToPool, null, true);
-        HumanTargetPool = new ObjectPool<HumanTarget>(CreatePooledHumanTarget, OnTakeShipFromPool, OnReturnShipToPool, null, true);
+        BargePool = new ObjectPool<Barge>(CreatePooledBarge, null, null, null, true);
+        BeaconPool = new ObjectPool<Beacon>(CreatePooledBeacon, null, null, null, true);
+        BeehivePool = new ObjectPool<Beehive>(CreatePooledBeehive, null, null, null, true);
+        BumblebeePool = new ObjectPool<Bumblebee>(CreatePooledBumblebee, null, null, null, true);
+        CarpenterBeePool = new ObjectPool<CarpenterBee>(CreatePooledCarpenterBee, null, null, null, true);
+        CarrierPool = new ObjectPool<Carrier>(CreatePooledCarrier, null, null, null, true);
+        CruiserPool = new ObjectPool<Cruiser>(CreatePooledCruiser, null, null, null, true);
+        DreadnoughtPool = new ObjectPool<Dreadnought>(CreatePooledDreadnought, null, null, null, true);
+        DronePool = new ObjectPool<Drone>(CreatePooledDrone, null, null, null, true);
+        FactoryPool = new ObjectPool<Factory>(CreatePooledFactory, null, null, null, true);
+        FireBargePool = new ObjectPool<FireBarge>(CreatePooledFireBarge, null, null, null, true);
+        FlagshipPool = new ObjectPool<Flagship>(CreatePooledFlagship, null, null, null, true);
+        FrigatePool = new ObjectPool<Frigate>(CreatePooledFrigate, null, null, null, true);
+        GunshipPool = new ObjectPool<Gunship>(CreatePooledGunship, null, null, null, true);
+        HoneybeePool = new ObjectPool<Honeybee>(CreatePooledHoneybee, null, null, null, true);
+        HornetPool = new ObjectPool<Hornet>(CreatePooledHornet, null, null, null, true);
+        LeafcutterPool = new ObjectPool<Leafcutter>(CreatePooledLeafcutter, null, null, null, true);
+        QueenPool = new ObjectPool<Queen>(CreatePooledQueen, null, null, null, true);
+        ScoutPool = new ObjectPool<Scout>(CreatePooledScout, null, null, null, true);
+        StrikerPool = new ObjectPool<Striker>(CreatePooledStriker, null, null, null, true);
+        WarpGatePool = new ObjectPool<WarpGate>(CreatePooledWarpGate, null, null, null, true);
+        WaspPool = new ObjectPool<Wasp>(CreatePooledWasp, null, null, null, true);
+        YellowJacketPool = new ObjectPool<YellowJacket>(CreatePooledYellowJacket, null, null, null, true);
+        HumanTargetPool = new ObjectPool<HumanTarget>(CreatePooledHumanTarget, null, null, null, true);
 
         PlutoMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledPlutoMap, null, null, null, true);
         NeptuneMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledNeptuneMap, null, null, null, true);
         TitaniaMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledTitaniaMap, null, null, null, true);
         UranusMapPool = new ObjectPool<Assets.Scripts.UI_Components.Map>(CreatePooledUranusMap, null, null, null, true);
 
-        BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BumblebeeShotProjectilePool = new ObjectPool<Projectile>(CreatePooledBumblebeeShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        FlagshipShotProjectilePool = new ObjectPool<Projectile>(CreatePooledFlagshipShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        RocketProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        HumanSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        HumanMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanMediumProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        BeamProjectilePool = new ObjectPool<Projectile>(CreatePooledBeamProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        SplitShotProjectilePool = new ObjectPool<Projectile>(CreatePooledSplitShotProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        QueenSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenSmallProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        QueenLargeProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenLargeProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        StrikerBombProjectilePool = new ObjectPool<Projectile>(CreatePooledStrikerBombProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        RocketExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        FireBargeExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireBargeExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
-        FireTankExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireTankExplosionProjectile, OnTakeProjectileFromPool, OnReturnProjectileToPool, null, true);
+        BeeSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeSmallProjectile, null, null, null, true);
+        BeeMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledBeeMediumProjectile, null, null, null, true);
+        BumblebeeShotProjectilePool = new ObjectPool<Projectile>(CreatePooledBumblebeeShotProjectile, null, null, null, true);
+        FlagshipShotProjectilePool = new ObjectPool<Projectile>(CreatePooledFlagshipShotProjectile, null, null, null, true);
+        RocketProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketProjectile, null, null, null, true);
+        HumanSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanSmallProjectile, null, null, null, true);
+        HumanMediumProjectilePool = new ObjectPool<Projectile>(CreatePooledHumanMediumProjectile, null, null, null, true);
+        BeamProjectilePool = new ObjectPool<Projectile>(CreatePooledBeamProjectile, null, null, null, true);
+        SplitShotProjectilePool = new ObjectPool<Projectile>(CreatePooledSplitShotProjectile, null, null, null, true);
+        QueenSmallProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenSmallProjectile, null, null, null, true);
+        QueenLargeProjectilePool = new ObjectPool<Projectile>(CreatePooledQueenLargeProjectile, null, null, null, true);
+        StrikerBombProjectilePool = new ObjectPool<Projectile>(CreatePooledStrikerBombProjectile, null, null, null, true);
+        RocketExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledRocketExplosionProjectile, null, null, null, true);
+        FireBargeExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireBargeExplosionProjectile, null, null, null, true);
+        FireTankExplosionProjectilePool = new ObjectPool<Projectile>(CreatePooledFireTankExplosionProjectile, null, null, null, true);
 
         EmptyObstacleListObjectPool = new ObjectPool<ObstacleMap>(CreatePooledEmptyObstacleList, null, null, null, true);
         MazeObstacleListObjectPool = new ObjectPool<ObstacleMap>(CreatePooledMazeObstacleList, null, null, null, true);
@@ -170,26 +169,26 @@ public class Pool : MonoBehaviour
         AsteroidPiecePool = new ObjectPool<AsteroidPiece>(CreatePooledAsteroidPiece, null, null, null, true);
         MiningAsteroidPool = new ObjectPool<MiningAsteroid>(CreatePooledMiningAsteroid, null, null, null, true);
 
-        SquadPool = new ObjectPool<Squad>(CreatePooledSquad, OnTakeSquadFromPool, OnReturnSquadToPool, null, true);
+        SquadPool = new ObjectPool<Squad>(CreatePooledSquad, null, null, null, true);
         CarrierSquadPool = new ObjectPool<CarrierSquad>(CreatePooledCarrierSquad, null, null, null, true);
 
-        AggressiveCommandPool = new ObjectPool<Aggressive>(CreatePooledAggressiveCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        BombingRunCommandPool = new ObjectPool<BombingRun>(CreatePooledBombingRunCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        ChargeCommandPool = new ObjectPool<Charge>(CreatePooledChargeCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        CircleSquadCommandPool = new ObjectPool<CircleSquad>(CreatePooledCircleSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        ClosestFriendlyCommandPool = new ObjectPool<ClosestFriendly>(CreatePooledClosestFriendlyCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        FullRetreatCommandPool = new ObjectPool<FullRetreat>(CreatePooledFullRetreatCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        GuardCommandPool = new ObjectPool<Guard>(CreatePooledGuardCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        InAndOutCommandPool = new ObjectPool<InAndOut>(CreatePooledInAndOutCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        MiningCommandPool = new ObjectPool<Mining>(CreatePooledMiningCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        MoveToRandomCommandPool = new ObjectPool<MoveToRandom>(CreatePooledMoveToRandomCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        PatrolCommandPool = new ObjectPool<Patrol>(CreatePooledPatrolCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        RetreatCommandPool = new ObjectPool<Retreat>(CreatePooledRetreatCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        ScoutingCommandPool = new ObjectPool<Scouting>(CreatePooledScoutingCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        HoldCommandPool = new ObjectPool<Hold>(CreatePooledHoldCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        HealCommandPool = new ObjectPool<Heal>(CreatePooledHealCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
-        MoveToPointCommandPool = new ObjectPool<MoveToPoint>(CreatePooledMoveToPointCommand, OnTakeCommandFromPool, OnReturnCommandToPool, null, true);
+        AggressiveCommandPool = new ObjectPool<Aggressive>(CreatePooledAggressiveCommand, null, null, null, true);
+        BombingRunCommandPool = new ObjectPool<BombingRun>(CreatePooledBombingRunCommand, null, null, null, true);
+        ChargeCommandPool = new ObjectPool<Charge>(CreatePooledChargeCommand, null, null, null, true);
+        CircleSquadCommandPool = new ObjectPool<CircleSquad>(CreatePooledCircleSquadCommand, null, null, null, true);
+        ClosestFriendlyCommandPool = new ObjectPool<ClosestFriendly>(CreatePooledClosestFriendlyCommand, null, null, null, true);
+        FullRetreatCommandPool = new ObjectPool<FullRetreat>(CreatePooledFullRetreatCommand, null, null, null, true);
+        GuardCommandPool = new ObjectPool<Guard>(CreatePooledGuardCommand, null, null, null, true);
+        InAndOutCommandPool = new ObjectPool<InAndOut>(CreatePooledInAndOutCommand, null, null, null, true);
+        MiningCommandPool = new ObjectPool<Mining>(CreatePooledMiningCommand, null, null, null, true);
+        MoveToRandomCommandPool = new ObjectPool<MoveToRandom>(CreatePooledMoveToRandomCommand, null, null, null, true);
+        PatrolCommandPool = new ObjectPool<Patrol>(CreatePooledPatrolCommand, null, null, null, true);
+        RetreatCommandPool = new ObjectPool<Retreat>(CreatePooledRetreatCommand, null, null, null, true);
+        ScoutingCommandPool = new ObjectPool<Scouting>(CreatePooledScoutingCommand, null, null, null, true);
+        SwipeSquadCommandPool = new ObjectPool<SwipeSquad>(CreatePooledSwipeSquadCommand, null, null, null, true);
+        HoldCommandPool = new ObjectPool<Hold>(CreatePooledHoldCommand, null, null, null, true);
+        HealCommandPool = new ObjectPool<Heal>(CreatePooledHealCommand, null, null, null, true);
+        MoveToPointCommandPool = new ObjectPool<MoveToPoint>(CreatePooledMoveToPointCommand, null, null, null, true);
 
         //FillPools();
     }
@@ -326,7 +325,6 @@ public class Pool : MonoBehaviour
     Squad _spawn_squad;
     public Squad CreatePooledSquad()
     {
-        //Debug.Log($"Created pooled squad");
         _spawn_squad = gameObject.AddComponent<Squad>();
         _spawn_squad.Create(Stage);
         return _spawn_squad;
@@ -335,9 +333,6 @@ public class Pool : MonoBehaviour
     AsteroidPiece asteroidPiece;
     public CollisionAsteroid CreatePooledCollisionAsteroid()
     {
-        // [debug]
-        //_spawn_collisionAsteroid = Instantiate(BigCollisionAsteroids[Utilities.RandomInt(BigCollisionAsteroids.Count)]).GetComponent<CollisionAsteroid>();
-
         _spawn_collisionAsteroid = Instantiate(Stage.Prefabs.CollisionAsteroidPrefabs[Utilities.RandomInt(Stage.Prefabs.CollisionAsteroidPrefabs.Count)]).GetComponent<CollisionAsteroid>();
         _spawn_collisionAsteroid.Create(Stage);
         return _spawn_collisionAsteroid;
@@ -393,28 +388,24 @@ public class Pool : MonoBehaviour
                     _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
-
             case 1:
                 Stage.Prefabs.MazePrefabs.ForEach((prefab) =>
                 {
                     _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
-
             case 2:
                 Stage.Prefabs.ThreePathsPrefabs.ForEach((prefab) =>
                 {
                     _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
-
             case 3:
                 Stage.Prefabs.ForestPrefabs.ForEach((prefab) =>
                 {
                     _spawn_obstacleMap.Obstacles.Add(Instantiate(prefab).GetComponent<StaticObstacle>());
                 });
                 break;
-
             case 4:
                 Stage.Prefabs.TheWallPrefabs.ForEach((prefab) =>
                 {
@@ -452,10 +443,8 @@ public class Pool : MonoBehaviour
     private YellowJacket _spawn_yellowJacket;
     private HumanTarget _spawn_humanTarget;
 
-    // Map Fields
     private Assets.Scripts.UI_Components.Map _spawn_map;
 
-    // Projectile Fields
     private Projectile _spawn_beeSmallProjectile;
     private Projectile _spawn_beeMediumProjectile;
     private Projectile _spawn_bumblebeeShotProjectile;
@@ -472,168 +461,144 @@ public class Pool : MonoBehaviour
     private Projectile _spawn_fireBargeExplosionProjectile;
     private Projectile _spawn_fireTankExplosionProjectile;
 
-    // Unit Creation Methods
     public Barge CreatePooledBarge()
     {
         _spawn_barge = Instantiate(Stage.Prefabs.BargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Barge>();
         _spawn_barge.Create(Stage);
         return _spawn_barge;
     }
-
     public Beacon CreatePooledBeacon()
     {
         _spawn_beacon = Instantiate(Stage.Prefabs.BeaconPrefab, Vector2.zero, Quaternion.identity).GetComponent<Beacon>();
         _spawn_beacon.Create(Stage);
         return _spawn_beacon;
     }
-
     public Beehive CreatePooledBeehive()
     {
         _spawn_beehive = Instantiate(Stage.Prefabs.BeehivePrefab, Vector2.zero, Quaternion.identity).GetComponent<Beehive>();
         _spawn_beehive.Create(Stage);
         return _spawn_beehive;
     }
-
     public Bumblebee CreatePooledBumblebee()
     {
         _spawn_bumblebee = Instantiate(Stage.Prefabs.BumblebeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Bumblebee>();
         _spawn_bumblebee.Create(Stage);
         return _spawn_bumblebee;
     }
-
     public CarpenterBee CreatePooledCarpenterBee()
     {
         _spawn_carpenterBee = Instantiate(Stage.Prefabs.CarpenterBeePrefab, Vector2.zero, Quaternion.identity).GetComponent<CarpenterBee>();
         _spawn_carpenterBee.Create(Stage);
         return _spawn_carpenterBee;
     }
-
     public Carrier CreatePooledCarrier()
     {
         _spawn_carrier = Instantiate(Stage.Prefabs.CarrierPrefab, Vector2.zero, Quaternion.identity).GetComponent<Carrier>();
         _spawn_carrier.Create(Stage);
         return _spawn_carrier;
     }
-
     public Cruiser CreatePooledCruiser()
     {
         _spawn_cruiser = Instantiate(Stage.Prefabs.CruiserPrefab, Vector2.zero, Quaternion.identity).GetComponent<Cruiser>();
         _spawn_cruiser.Create(Stage);
         return _spawn_cruiser;
     }
-
     public Dreadnought CreatePooledDreadnought()
     {
         _spawn_dreadnought = Instantiate(Stage.Prefabs.DreadnoughtPrefab, Vector2.zero, Quaternion.identity).GetComponent<Dreadnought>();
         _spawn_dreadnought.Create(Stage);
         return _spawn_dreadnought;
     }
-
     public Drone CreatePooledDrone()
     {
         _spawn_drone = Instantiate(Stage.Prefabs.DronePrefab, Vector2.zero, Quaternion.identity).GetComponent<Drone>();
         _spawn_drone.Create(Stage);
         return _spawn_drone;
     }
-
     public Factory CreatePooledFactory()
     {
         _spawn_factory = Instantiate(Stage.Prefabs.FactoryPrefab, Vector2.zero, Quaternion.identity).GetComponent<Factory>();
         _spawn_factory.Create(Stage);
         return _spawn_factory;
     }
-
     public FireBarge CreatePooledFireBarge()
     {
         _spawn_fireBarge = Instantiate(Stage.Prefabs.FireBargePrefab, Vector2.zero, Quaternion.identity).GetComponent<FireBarge>();
         _spawn_fireBarge.Create(Stage);
         return _spawn_fireBarge;
     }
-
     public Flagship CreatePooledFlagship()
     {
         _spawn_flagship = Instantiate(Stage.Prefabs.FlagshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Flagship>();
         _spawn_flagship.Create(Stage);
         return _spawn_flagship;
     }
-
     public Frigate CreatePooledFrigate()
     {
         _spawn_frigate = Instantiate(Stage.Prefabs.FrigatePrefab, Vector2.zero, Quaternion.identity).GetComponent<Frigate>();
         _spawn_frigate.Create(Stage);
         return _spawn_frigate;
     }
-
     public Gunship CreatePooledGunship()
     {
         _spawn_gunship = Instantiate(Stage.Prefabs.GunshipPrefab, Vector2.zero, Quaternion.identity).GetComponent<Gunship>();
         _spawn_gunship.Create(Stage);
         return _spawn_gunship;
     }
-
     public Honeybee CreatePooledHoneybee()
     {
         _spawn_honeybee = Instantiate(Stage.Prefabs.HoneybeePrefab, Vector2.zero, Quaternion.identity).GetComponent<Honeybee>();
         _spawn_honeybee.Create(Stage);
         return _spawn_honeybee;
     }
-
     public Hornet CreatePooledHornet()
     {
         _spawn_hornet = Instantiate(Stage.Prefabs.HornetPrefab, Vector2.zero, Quaternion.identity).GetComponent<Hornet>();
         _spawn_hornet.Create(Stage);
         return _spawn_hornet;
     }
-
     public Leafcutter CreatePooledLeafcutter()
     {
         _spawn_leafcutter = Instantiate(Stage.Prefabs.LeafcutterPrefab, Vector2.zero, Quaternion.identity).GetComponent<Leafcutter>();
         _spawn_leafcutter.Create(Stage);
         return _spawn_leafcutter;
     }
-
     public Queen CreatePooledQueen()
     {
         _spawn_queen = Instantiate(Stage.Prefabs.QueenPrefab, Vector2.zero, Quaternion.identity).GetComponent<Queen>();
         _spawn_queen.Create(Stage);
         return _spawn_queen;
     }
-
     public Scout CreatePooledScout()
     {
         _spawn_scout = Instantiate(Stage.Prefabs.ScoutPrefab, Vector2.zero, Quaternion.identity).GetComponent<Scout>();
         _spawn_scout.Create(Stage);
         return _spawn_scout;
     }
-
     public Striker CreatePooledStriker()
     {
         _spawn_striker = Instantiate(Stage.Prefabs.StrikerPrefab, Vector2.zero, Quaternion.identity).GetComponent<Striker>();
         _spawn_striker.Create(Stage);
         return _spawn_striker;
     }
-
     public WarpGate CreatePooledWarpGate()
     {
         _spawn_warpGate = Instantiate(Stage.Prefabs.WarpGatePrefab, Vector2.zero, Quaternion.identity).GetComponent<WarpGate>();
         _spawn_warpGate.Create(Stage);
         return _spawn_warpGate;
     }
-
     public Wasp CreatePooledWasp()
     {
         _spawn_wasp = Instantiate(Stage.Prefabs.WaspPrefab, Vector2.zero, Quaternion.identity).GetComponent<Wasp>();
         _spawn_wasp.Create(Stage);
         return _spawn_wasp;
     }
-
     public YellowJacket CreatePooledYellowJacket()
     {
         _spawn_yellowJacket = Instantiate(Stage.Prefabs.YellowJacketPrefab, Vector2.zero, Quaternion.identity).GetComponent<YellowJacket>();
         _spawn_yellowJacket.Create(Stage);
         return _spawn_yellowJacket;
     }
-
     public HumanTarget CreatePooledHumanTarget()
     {
         _spawn_humanTarget = Instantiate(Stage.Prefabs.HumanTargetPrefab, Vector2.zero, Quaternion.identity).GetComponent<HumanTarget>();
@@ -641,12 +606,10 @@ public class Pool : MonoBehaviour
         return _spawn_humanTarget;
     }
 
-    // Map Creation Methods
     public Assets.Scripts.UI_Components.Map CreatePooledPlutoMap()
     {
        return CreatePooledMap(0);
     }
-
     public Assets.Scripts.UI_Components.Map CreatePooledNeptuneMap()
     {
         return CreatePooledMap(1);
@@ -659,115 +622,98 @@ public class Pool : MonoBehaviour
     {
         return CreatePooledMap(3);
     }
-
     public Assets.Scripts.UI_Components.Map CreatePooledMap(int index)
     {
-        // Here the map is instantiated locally because the prefab array is indexed.
         _spawn_map = Instantiate(Stage.Prefabs.Maps[index]).GetComponent<Assets.Scripts.UI_Components.Map>();
         _spawn_map.Create(Stage, index, ItemCount++, ConfigData.Maps[index].Name, ConfigData.Maps[index].UserStartingPosition, ConfigData.Maps[index].AIStartingPosition);
         _spawn_map.name = _spawn_map.Name;
         return _spawn_map;
     }
 
-    // Projectile Creation Methods
     public Projectile CreatePooledBeeSmallProjectile()
     {
         _spawn_beeSmallProjectile = Instantiate(Stage.Prefabs.BeeSmallLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_beeSmallProjectile.Create(Stage);
         return _spawn_beeSmallProjectile;
     }
-
     public Projectile CreatePooledBeeMediumProjectile()
     {
         _spawn_beeMediumProjectile = Instantiate(Stage.Prefabs.BeeMediumLaserShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_beeMediumProjectile.Create(Stage);
         return _spawn_beeMediumProjectile;
     }
-
     public Projectile CreatePooledBumblebeeShotProjectile()
     {
         _spawn_bumblebeeShotProjectile = Instantiate(Stage.Prefabs.BumblebeeShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_bumblebeeShotProjectile.Create(Stage);
         return _spawn_bumblebeeShotProjectile;
     }
-
     public Projectile CreatePooledFlagshipShotProjectile()
     {
         _spawn_flagshipShotProjectile = Instantiate(Stage.Prefabs.FlagshipShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_flagshipShotProjectile.Create(Stage);
         return _spawn_flagshipShotProjectile;
     }
-
     public Projectile CreatePooledRocketProjectile()
     {
         _spawn_rocketProjectile = Instantiate(Stage.Prefabs.RocketPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_rocketProjectile.Create(Stage);
         return _spawn_rocketProjectile;
     }
-
     public Projectile CreatePooledHumanSmallProjectile()
     {
         _spawn_humanSmallProjectile = Instantiate(Stage.Prefabs.HumanSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_humanSmallProjectile.Create(Stage);
         return _spawn_humanSmallProjectile;
     }
-
     public Projectile CreatePooledHumanMediumProjectile()
     {
         _spawn_humanMediumProjectile = Instantiate(Stage.Prefabs.HumanMediumPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_humanMediumProjectile.Create(Stage);
         return _spawn_humanMediumProjectile;
     }
-
     public Projectile CreatePooledBeamProjectile()
     {
         _spawn_beamProjectile = Instantiate(Stage.Prefabs.BeamPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_beamProjectile.Create(Stage);
         return _spawn_beamProjectile;
     }
-
     public Projectile CreatePooledSplitShotProjectile()
     {
         _spawn_splitShotProjectile = Instantiate(Stage.Prefabs.SplitShotPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_splitShotProjectile.Create(Stage);
         return _spawn_splitShotProjectile;
     }
-
     public Projectile CreatePooledQueenSmallProjectile()
     {
         _spawn_queenSmallProjectile = Instantiate(Stage.Prefabs.QueenSmallPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_queenSmallProjectile.Create(Stage);
         return _spawn_queenSmallProjectile;
     }
-
     public Projectile CreatePooledQueenLargeProjectile()
     {
         _spawn_queenLargeProjectile = Instantiate(Stage.Prefabs.QueenLargePrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_queenLargeProjectile.Create(Stage);
         return _spawn_queenLargeProjectile;
     }
-
     public Projectile CreatePooledStrikerBombProjectile()
     {
         _spawn_strikerBombProjectile = Instantiate(Stage.Prefabs.StrikerBombPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_strikerBombProjectile.Create(Stage);
         return _spawn_strikerBombProjectile;
     }
-
     public Projectile CreatePooledRocketExplosionProjectile()
     {
         _spawn_rocketExplosionProjectile = Instantiate(Stage.Prefabs.RocketExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_rocketExplosionProjectile.Create(Stage);
         return _spawn_rocketExplosionProjectile;
     }
-
     public Projectile CreatePooledFireBargeExplosionProjectile()
     {
         _spawn_fireBargeExplosionProjectile = Instantiate(Stage.Prefabs.FireBargeExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
         _spawn_fireBargeExplosionProjectile.Create(Stage);
         return _spawn_fireBargeExplosionProjectile;
     }
-
     public Projectile CreatePooledFireTankExplosionProjectile()
     {
         _spawn_fireTankExplosionProjectile = Instantiate(Stage.Prefabs.FireTankExplosionPrefab, Vector2.zero, Quaternion.identity).GetComponent<Projectile>();
@@ -775,36 +721,17 @@ public class Pool : MonoBehaviour
         return _spawn_fireTankExplosionProjectile;
     }
 
-    public void OnTakeShipFromPool(Ship ship)
-    {
-        //Debug.Log($"{ship.Name} was taken from the pool");
-        //ship.transform.parent = PoolShips.transform;
-        //ship.transform.localPosition = Vector2.zero;
-    }
+    public void OnTakeShipFromPool(Ship ship) { }
+    public void OnReturnShipToPool(Ship ship) { }
+    public void OnTakeProjectileFromPool(Projectile projectile) { }
+    public void OnReturnProjectileToPool(Projectile projectile) { }
 
-    public void OnReturnShipToPool(Ship ship)
-    {
-        //Debug.Log($"{ship.Name} was returned to the pool");
-        //ship.transform.parent = PoolShips.transform;
-        //ship.transform.localPosition = Vector2.zero;
-    }
-
-    public void OnTakeProjectileFromPool(Projectile projectile)
-    {
-        //Debug.Log($"{projectile.Name} was taken from the pool");
-    }
-
-    public void OnReturnProjectileToPool(Projectile projectile)
-    {
-        //Debug.Log($"{projectile.Name} was returned to the pool");
-    }
     public CarrierSquad GetCarrierSquadFromPool()
     {
         return CarrierSquadPool.Get();
     }
     public void ReturnSquadToPool(Squad squad)
     {
-        //Debug.Log($"Returning squad to pool: {squad}");
         if (squad.SquadType != ConfigData.SquadTypes.CarrierSquad)
         {
             SquadPool.Release(squad);
@@ -814,54 +741,32 @@ public class Pool : MonoBehaviour
             CarrierSquadPool.Release((CarrierSquad)squad);
         }
     }
-    public void OnReturnSquadToPool(Squad squad)
-    {
-        //Debug.Log($"Squad was returned to pool: {squad}");
-    }
-    public void OnTakeSquadFromPool(Squad squad)
-    {
-        //Debug.Log($"Squad was taken from pool: {squad}");
-    }
-    public void OnReturnCommandToPool(Command command)
-    {
-        //Debug.Log($"Command was returned to pool: {command}");
-    }
-    public void OnTakeCommandFromPool(Command command)
-    {
-        //Debug.Log($"Command was taken from pool: {command}");
-    }
+    public void OnReturnSquadToPool(Squad squad) { }
+    public void OnTakeSquadFromPool(Squad squad) { }
+    public void OnReturnCommandToPool(Command command) { }
+    public void OnTakeCommandFromPool(Command command) { }
     public Squad GetSquadFromPool()
     {
-        //Debug.Log($"Got squad from pool");
         return SquadPool.Get();
     }
     public void ReturnMiningAsteroidToPool(MiningAsteroid asteroid)
     {
-        //Debug.Log($"Returning mining asteroid {asteroid.Name} to pool");
-        //asteroid.gameObject.SetActive(false);
         MiningAsteroidPool.Release(asteroid);
     }
     public MiningAsteroid GetMiningAsteroidFromPool()
     {
         return MiningAsteroidPool.Get();
     }
-
     public void ReturnCollisionAsteroidToPool(CollisionAsteroid asteroid)
     {
-        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
-        //asteroid.gameObject.SetActive(false);
         CollisionAsteroidPool.Release(asteroid);
     }
     public void ReturnCollisionAsteroidShardToPool(CollisionAsteroid asteroid)
     {
-        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
-        //asteroid.gameObject.SetActive(false);
         CollisionAsteroidShardPool.Release(asteroid);
     }
     public void ReturnAsteroidPieceToPool(AsteroidPiece piece)
     {
-        //Debug.Log($"Returning collision asteroid {asteroid.Name} to pool");
-        //asteroid.gameObject.SetActive(false);
         AsteroidPiecePool.Release(piece);
     }
     public CollisionAsteroid GetCollisionAsteroidFromPool()
@@ -884,28 +789,12 @@ public class Pool : MonoBehaviour
         });
         switch (index)
         {
-            case 0:
-                EmptyObstacleListObjectPool.Release(obstacleMap);
-                break;
-
-            case 1:
-                MazeObstacleListObjectPool.Release(obstacleMap);
-                break;
-
-            case 2:
-                ThreePathsObstacleListObjectPool.Release(obstacleMap);
-                break;
-
-            case 3:
-                ForestObstacleListObjectPool.Release(obstacleMap);
-                break;
-
-            case 4:
-                TheWallObstacleListObjectPool.Release(obstacleMap);
-                break;
-            default:
-                Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
-                break;
+            case 0: EmptyObstacleListObjectPool.Release(obstacleMap); break;
+            case 1: MazeObstacleListObjectPool.Release(obstacleMap); break;
+            case 2: ThreePathsObstacleListObjectPool.Release(obstacleMap); break;
+            case 3: ForestObstacleListObjectPool.Release(obstacleMap); break;
+            case 4: TheWallObstacleListObjectPool.Release(obstacleMap); break;
+            default: Debug.LogError($"The chosen obstacle map index does not match an obstacle map"); break;
         }
     }
     public ObstacleMap GetObstacleMapFromPool(int index)
@@ -914,190 +803,71 @@ public class Pool : MonoBehaviour
         ObstacleMap obstacleMap = null;
         switch (index)
         {
-            case 0:
-                obstacleMap = EmptyObstacleListObjectPool.Get();
-                break;
-
-            case 1:
-                obstacleMap = MazeObstacleListObjectPool.Get();
-                break;
-
-            case 2:
-                obstacleMap = ThreePathsObstacleListObjectPool.Get();
-                break;
-
-            case 3:
-                obstacleMap = ForestObstacleListObjectPool.Get();
-                break;
-
-            case 4:
-                obstacleMap = TheWallObstacleListObjectPool.Get();
-                break;
-
-            default:
-                Debug.LogError($"The chosen obstacle map index does not match an obstacle map");
-                break;
+            case 0: obstacleMap = EmptyObstacleListObjectPool.Get(); break;
+            case 1: obstacleMap = MazeObstacleListObjectPool.Get(); break;
+            case 2: obstacleMap = ThreePathsObstacleListObjectPool.Get(); break;
+            case 3: obstacleMap = ForestObstacleListObjectPool.Get(); break;
+            case 4: obstacleMap = TheWallObstacleListObjectPool.Get(); break;
+            default: Debug.LogError($"The chosen obstacle map index does not match an obstacle map"); break;
         }
-        obstacleMap.Obstacles.ForEach(obstacle =>
-        {
-            obstacle.gameObject.SetActive(true);
-        });
+        obstacleMap.Obstacles.ForEach(obstacle => obstacle.gameObject.SetActive(true));
         return obstacleMap;
     }
 
     public void ReturnShipToPool(Ship ship)
     {
-
         switch (ship.ShipType)
         {
-            case ConfigData.ShipTypes.Barge:
-                BargePool.Release((Barge)ship);
-                break;
-
-            case ConfigData.ShipTypes.Beacon:
-                BeaconPool.Release((Beacon)ship);
-                break;
-
-            case ConfigData.ShipTypes.Beehive:
-                BeehivePool.Release((Beehive)ship);
-                break;
-
-            case ConfigData.ShipTypes.Bumblebee:
-                BumblebeePool.Release((Bumblebee)ship);
-                break;
-
-            case ConfigData.ShipTypes.CarpenterBee:
-                CarpenterBeePool.Release((CarpenterBee)ship);
-                break;
-
-            case ConfigData.ShipTypes.Carrier:
-                CarrierPool.Release((Carrier)ship);
-                break;
-
-            case ConfigData.ShipTypes.Cruiser:
-                CruiserPool.Release((Cruiser)ship);
-                break;
-
-            case ConfigData.ShipTypes.Dreadnought:
-                DreadnoughtPool.Release((Dreadnought)ship);
-                break;
-
-            case ConfigData.ShipTypes.Drone:
-                DronePool.Release((Drone)ship);
-                break;
-
-            case ConfigData.ShipTypes.Factory:
-                FactoryPool.Release((Factory)ship);
-                break;
-
-            case ConfigData.ShipTypes.FireBarge:
-                FireBargePool.Release((FireBarge)ship);
-                break;
-
-            case ConfigData.ShipTypes.Flagship:
-                FlagshipPool.Release((Flagship)ship);
-                break;
-
-            case ConfigData.ShipTypes.Frigate:
-                FrigatePool.Release((Frigate)ship);
-                break;
-
-            case ConfigData.ShipTypes.Gunship:
-                GunshipPool.Release((Gunship)ship);
-                break;
-
-            case ConfigData.ShipTypes.Honeybee:
-                HoneybeePool.Release((Honeybee)ship);
-                break;
-
-            case ConfigData.ShipTypes.Hornet:
-                HornetPool.Release((Hornet)ship);
-                break;
-
-            case ConfigData.ShipTypes.Leafcutter:
-                LeafcutterPool.Release((Leafcutter)ship);
-                break;
-
-            case ConfigData.ShipTypes.Queen:
-                QueenPool.Release((Queen)ship);
-                break;
-
-            case ConfigData.ShipTypes.Scout:
-                ScoutPool.Release((Scout)ship);
-                break;
-
-            case ConfigData.ShipTypes.Striker:
-                StrikerPool.Release((Striker)ship);
-                break;
-
-            case ConfigData.ShipTypes.WarpGate:
-                WarpGatePool.Release((WarpGate)ship);
-                break;
-
-            case ConfigData.ShipTypes.Wasp:
-                WaspPool.Release((Wasp)ship);
-                break;
-
-            case ConfigData.ShipTypes.YellowJacket:
-                YellowJacketPool.Release((YellowJacket)ship);
-                break;
-
-            case ConfigData.ShipTypes.HumanTarget:
-                HumanTargetPool.Release((HumanTarget)ship);
-                break;
-
-            default:
-                Debug.LogError($"The returned ship type {ship.ShipType} does not match a pool");
-                break;
-
-
-
+            case ConfigData.ShipTypes.Barge: BargePool.Release((Barge)ship); break;
+            case ConfigData.ShipTypes.Beacon: BeaconPool.Release((Beacon)ship); break;
+            case ConfigData.ShipTypes.Beehive: BeehivePool.Release((Beehive)ship); break;
+            case ConfigData.ShipTypes.Bumblebee: BumblebeePool.Release((Bumblebee)ship); break;
+            case ConfigData.ShipTypes.CarpenterBee: CarpenterBeePool.Release((CarpenterBee)ship); break;
+            case ConfigData.ShipTypes.Carrier: CarrierPool.Release((Carrier)ship); break;
+            case ConfigData.ShipTypes.Cruiser: CruiserPool.Release((Cruiser)ship); break;
+            case ConfigData.ShipTypes.Dreadnought: DreadnoughtPool.Release((Dreadnought)ship); break;
+            case ConfigData.ShipTypes.Drone: DronePool.Release((Drone)ship); break;
+            case ConfigData.ShipTypes.Factory: FactoryPool.Release((Factory)ship); break;
+            case ConfigData.ShipTypes.FireBarge: FireBargePool.Release((FireBarge)ship); break;
+            case ConfigData.ShipTypes.Flagship: FlagshipPool.Release((Flagship)ship); break;
+            case ConfigData.ShipTypes.Frigate: FrigatePool.Release((Frigate)ship); break;
+            case ConfigData.ShipTypes.Gunship: GunshipPool.Release((Gunship)ship); break;
+            case ConfigData.ShipTypes.Honeybee: HoneybeePool.Release((Honeybee)ship); break;
+            case ConfigData.ShipTypes.Hornet: HornetPool.Release((Hornet)ship); break;
+            case ConfigData.ShipTypes.Leafcutter: LeafcutterPool.Release((Leafcutter)ship); break;
+            case ConfigData.ShipTypes.Queen: QueenPool.Release((Queen)ship); break;
+            case ConfigData.ShipTypes.Scout: ScoutPool.Release((Scout)ship); break;
+            case ConfigData.ShipTypes.Striker: StrikerPool.Release((Striker)ship); break;
+            case ConfigData.ShipTypes.WarpGate: WarpGatePool.Release((WarpGate)ship); break;
+            case ConfigData.ShipTypes.Wasp: WaspPool.Release((Wasp)ship); break;
+            case ConfigData.ShipTypes.YellowJacket: YellowJacketPool.Release((YellowJacket)ship); break;
+            case ConfigData.ShipTypes.HumanTarget: HumanTargetPool.Release((HumanTarget)ship); break;
+            default: Debug.LogError($"The returned ship type {ship.ShipType} does not match a pool"); break;
         }
     }
     public Assets.Scripts.UI_Components.Map GetPooledMap(int index)
     {
-        //Debug.Log($"Getting map from pool");
-
         switch (index)
         {
-            case 0:
-                return PlutoMapPool.Get();
-            case 1:
-                return NeptuneMapPool.Get();
-            case 2:
-                return TitaniaMapPool.Get();
-            case 3:
-                return UranusMapPool.Get();
-            default:
-                Debug.LogError($"Map index is invalid: {index}");
-                break;
+            case 0: return PlutoMapPool.Get();
+            case 1: return NeptuneMapPool.Get();
+            case 2: return TitaniaMapPool.Get();
+            case 3: return UranusMapPool.Get();
+            default: Debug.LogError($"Map index is invalid: {index}"); break;
         }
         Debug.LogError($"Invalid map index: {index}");
         return null;
     }
     public void ReturnMapToPool(Assets.Scripts.UI_Components.Map map)
     {
-        //Debug.Log($"Returning {map.Name} to pool");
         map.gameObject.SetActive(false);
         switch (map.Index)
         {
-            case 0:
-                PlutoMapPool.Release(map);
-                break;
-
-            case 1:
-                NeptuneMapPool.Release(map);
-                break;
-            case 2:
-                TitaniaMapPool.Release(map);
-                break;
-            case 3:
-                UranusMapPool.Release(map);
-                break;
-
-            default:
-                Debug.LogError($"Map index is invalid: {map.Index}");
-                break;
+            case 0: PlutoMapPool.Release(map); break;
+            case 1: NeptuneMapPool.Release(map); break;
+            case 2: TitaniaMapPool.Release(map); break;
+            case 3: UranusMapPool.Release(map); break;
+            default: Debug.LogError($"Map index is invalid: {map.Index}"); break;
         }
     }
 
@@ -1105,220 +875,98 @@ public class Pool : MonoBehaviour
     {
         switch (type)
         {
-            case ConfigData.ProjectileTypes.BeeSmall:
-                return BeeSmallProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.BeeMedium:
-                return BeeMediumProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.BumblebeeShot:
-                return BumblebeeShotProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.FlagshipShot:
-                return FlagshipShotProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.Rocket:
-                return RocketProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.HumanSmall:
-                return HumanSmallProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.HumanMedium:
-                return HumanMediumProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.Beam:
-                return BeamProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.SplitShot:
-                return SplitShotProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.QueenSmall:
-                return QueenSmallProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.QueenLarge:
-                return QueenLargeProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.StrikerBomb:
-                return StrikerBombProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.RocketExplosion:
-                return RocketExplosionProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.FireBargeExplosion:
-                return FireBargeExplosionProjectilePool.Get();
-
-            case ConfigData.ProjectileTypes.FireTankExplosion:
-                return FireTankExplosionProjectilePool.Get();
-
-            default:
-                Debug.LogError($"Projectile type is invalid: {type}");
-                return null;
+            case ConfigData.ProjectileTypes.BeeSmall: return BeeSmallProjectilePool.Get();
+            case ConfigData.ProjectileTypes.BeeMedium: return BeeMediumProjectilePool.Get();
+            case ConfigData.ProjectileTypes.BumblebeeShot: return BumblebeeShotProjectilePool.Get();
+            case ConfigData.ProjectileTypes.FlagshipShot: return FlagshipShotProjectilePool.Get();
+            case ConfigData.ProjectileTypes.Rocket: return RocketProjectilePool.Get();
+            case ConfigData.ProjectileTypes.HumanSmall: return HumanSmallProjectilePool.Get();
+            case ConfigData.ProjectileTypes.HumanMedium: return HumanMediumProjectilePool.Get();
+            case ConfigData.ProjectileTypes.Beam: return BeamProjectilePool.Get();
+            case ConfigData.ProjectileTypes.SplitShot: return SplitShotProjectilePool.Get();
+            case ConfigData.ProjectileTypes.QueenSmall: return QueenSmallProjectilePool.Get();
+            case ConfigData.ProjectileTypes.QueenLarge: return QueenLargeProjectilePool.Get();
+            case ConfigData.ProjectileTypes.StrikerBomb: return StrikerBombProjectilePool.Get();
+            case ConfigData.ProjectileTypes.RocketExplosion: return RocketExplosionProjectilePool.Get();
+            case ConfigData.ProjectileTypes.FireBargeExplosion: return FireBargeExplosionProjectilePool.Get();
+            case ConfigData.ProjectileTypes.FireTankExplosion: return FireTankExplosionProjectilePool.Get();
+            default: Debug.LogError($"Projectile type is invalid: {type}"); return null;
         }
     }
     public void ReturnProjectileToPool(Projectile projectile)
     {
-        //projectile.gameObject.SetActive(false);
         switch (projectile.Type)
         {
-            case ConfigData.ProjectileTypes.BeeSmall:
-                BeeSmallProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.BeeMedium:
-                BeeMediumProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.BumblebeeShot:
-                BumblebeeShotProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.FlagshipShot:
-                FlagshipShotProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.Rocket:
-                RocketProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.HumanSmall:
-                HumanSmallProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.HumanMedium:
-                HumanMediumProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.Beam:
-                BeamProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.SplitShot:
-                SplitShotProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.QueenSmall:
-                QueenSmallProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.QueenLarge:
-                QueenLargeProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.StrikerBomb:
-                StrikerBombProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.RocketExplosion:
-                RocketExplosionProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.FireBargeExplosion:
-                FireBargeExplosionProjectilePool.Release(projectile);
-                break;
-            case ConfigData.ProjectileTypes.FireTankExplosion:
-                FireTankExplosionProjectilePool.Release(projectile);
-                break;
-            default:
-                Debug.LogError($"Projectile type is invalid: {projectile}");
-                break;
+            case ConfigData.ProjectileTypes.BeeSmall: BeeSmallProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.BeeMedium: BeeMediumProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.BumblebeeShot: BumblebeeShotProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.FlagshipShot: FlagshipShotProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.Rocket: RocketProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.HumanSmall: HumanSmallProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.HumanMedium: HumanMediumProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.Beam: BeamProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.SplitShot: SplitShotProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.QueenSmall: QueenSmallProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.QueenLarge: QueenLargeProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.StrikerBomb: StrikerBombProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.RocketExplosion: RocketExplosionProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.FireBargeExplosion: FireBargeExplosionProjectilePool.Release(projectile); break;
+            case ConfigData.ProjectileTypes.FireTankExplosion: FireTankExplosionProjectilePool.Release(projectile); break;
+            default: Debug.LogError($"Projectile type is invalid: {projectile}"); break;
         }
     }
 
     public void ReturnCommandToPool(Command command)
     {
-        //Debug.Log($"Returning command {command.CommandType} to pool");
         switch (command.CommandType)
         {
-            case ConfigData.CommandTypes.Aggressive:
-                AggressiveCommandPool.Release((Aggressive)command);
-                break;
-            case ConfigData.CommandTypes.BombingRun:
-                BombingRunCommandPool.Release((BombingRun)command);
-                break;
-            case ConfigData.CommandTypes.Charge:
-                ChargeCommandPool.Release((Charge)command);
-                break;
-            case ConfigData.CommandTypes.CircleSquad:
-                CircleSquadCommandPool.Release((CircleSquad)command);
-                break;
-            case ConfigData.CommandTypes.ClosestFriendly:
-                ClosestFriendlyCommandPool.Release((ClosestFriendly)command);
-                break;
-            case ConfigData.CommandTypes.FullRetreat:
-                FullRetreatCommandPool.Release((FullRetreat)command);
-                break;
-            case ConfigData.CommandTypes.Guard:
-                GuardCommandPool.Release((Guard)command);
-                break;
-            case ConfigData.CommandTypes.InAndOut:
-                InAndOutCommandPool.Release((InAndOut)command);
-                break;
-            case ConfigData.CommandTypes.Mining:
-                MiningCommandPool.Release((Mining)command);
-                break;
-            case ConfigData.CommandTypes.MoveToRandom:
-                MoveToRandomCommandPool.Release((MoveToRandom)command);
-                break;
-            case ConfigData.CommandTypes.Patrol:
-                PatrolCommandPool.Release((Patrol)command);
-                break;
-            case ConfigData.CommandTypes.Retreat:
-                RetreatCommandPool.Release((Retreat)command);
-                break;
-            case ConfigData.CommandTypes.Scouting:
-                ScoutingCommandPool.Release((Scouting)command);
-                break;
+            case ConfigData.CommandTypes.Aggressive: AggressiveCommandPool.Release((Aggressive)command); break;
+            case ConfigData.CommandTypes.BombingRun: BombingRunCommandPool.Release((BombingRun)command); break;
+            case ConfigData.CommandTypes.Charge: ChargeCommandPool.Release((Charge)command); break;
+            case ConfigData.CommandTypes.CircleSquad: CircleSquadCommandPool.Release((CircleSquad)command); break;
+            case ConfigData.CommandTypes.ClosestFriendly: ClosestFriendlyCommandPool.Release((ClosestFriendly)command); break;
+            case ConfigData.CommandTypes.FullRetreat: FullRetreatCommandPool.Release((FullRetreat)command); break;
+            case ConfigData.CommandTypes.Guard: GuardCommandPool.Release((Guard)command); break;
+            case ConfigData.CommandTypes.InAndOut: InAndOutCommandPool.Release((InAndOut)command); break;
+            case ConfigData.CommandTypes.Mining: MiningCommandPool.Release((Mining)command); break;
+            case ConfigData.CommandTypes.MoveToRandom: MoveToRandomCommandPool.Release((MoveToRandom)command); break;
+            case ConfigData.CommandTypes.Patrol: PatrolCommandPool.Release((Patrol)command); break;
+            case ConfigData.CommandTypes.Retreat: RetreatCommandPool.Release((Retreat)command); break;
+            case ConfigData.CommandTypes.Scouting: ScoutingCommandPool.Release((Scouting)command); break;
             case ConfigData.CommandTypes.LeftSwipe:
-            case ConfigData.CommandTypes.RightSwipe:
-                SwipeSquadCommandPool.Release((SwipeSquad)command);
-                break;
-            case ConfigData.CommandTypes.Hold:
-                HoldCommandPool.Release((Hold)command);
-                break;
-            case ConfigData.CommandTypes.Heal:
-                HealCommandPool.Release((Heal)command);
-                break;
-            case ConfigData.CommandTypes.MoveToPoint:
-                MoveToPointCommandPool.Release((MoveToPoint)command);
-                break;
-            default:
-                Debug.LogError($"Command type is invalid: {command.CommandType}");
-                break;
+            case ConfigData.CommandTypes.RightSwipe: SwipeSquadCommandPool.Release((SwipeSquad)command); break;
+            case ConfigData.CommandTypes.Hold: HoldCommandPool.Release((Hold)command); break;
+            case ConfigData.CommandTypes.Heal: HealCommandPool.Release((Heal)command); break;
+            case ConfigData.CommandTypes.MoveToPoint: MoveToPointCommandPool.Release((MoveToPoint)command); break;
+            default: Debug.LogError($"Command type is invalid: {command.CommandType}"); break;
         }
     }
     public Command GetCommandFromPool(ConfigData.CommandTypes type)
     {
-        //Debug.Log($"Getting command {type} from pool");
         switch (type)
         {
-            case ConfigData.CommandTypes.Aggressive:
-                return AggressiveCommandPool.Get();
-            case ConfigData.CommandTypes.BombingRun:
-                return BombingRunCommandPool.Get();
-            case ConfigData.CommandTypes.Charge:
-                return ChargeCommandPool.Get();
-            case ConfigData.CommandTypes.CircleSquad:
-                return CircleSquadCommandPool.Get();
-            case ConfigData.CommandTypes.ClosestFriendly:
-                return ClosestFriendlyCommandPool.Get();
-            case ConfigData.CommandTypes.FullRetreat:
-                return FullRetreatCommandPool.Get();
-            case ConfigData.CommandTypes.Guard:
-                return GuardCommandPool.Get();
-            case ConfigData.CommandTypes.InAndOut:
-                return InAndOutCommandPool.Get();
-            case ConfigData.CommandTypes.Mining:
-                return MiningCommandPool.Get();
-            case ConfigData.CommandTypes.MoveToRandom:
-                return MoveToRandomCommandPool.Get();
-            case ConfigData.CommandTypes.Patrol:
-                return PatrolCommandPool.Get();
-            case ConfigData.CommandTypes.Retreat:
-                return RetreatCommandPool.Get();
-            case ConfigData.CommandTypes.Scouting:
-                return ScoutingCommandPool.Get();
+            case ConfigData.CommandTypes.Aggressive: return AggressiveCommandPool.Get();
+            case ConfigData.CommandTypes.BombingRun: return BombingRunCommandPool.Get();
+            case ConfigData.CommandTypes.Charge: return ChargeCommandPool.Get();
+            case ConfigData.CommandTypes.CircleSquad: return CircleSquadCommandPool.Get();
+            case ConfigData.CommandTypes.ClosestFriendly: return ClosestFriendlyCommandPool.Get();
+            case ConfigData.CommandTypes.FullRetreat: return FullRetreatCommandPool.Get();
+            case ConfigData.CommandTypes.Guard: return GuardCommandPool.Get();
+            case ConfigData.CommandTypes.InAndOut: return InAndOutCommandPool.Get();
+            case ConfigData.CommandTypes.Mining: return MiningCommandPool.Get();
+            case ConfigData.CommandTypes.MoveToRandom: return MoveToRandomCommandPool.Get();
+            case ConfigData.CommandTypes.Patrol: return PatrolCommandPool.Get();
+            case ConfigData.CommandTypes.Retreat: return RetreatCommandPool.Get();
+            case ConfigData.CommandTypes.Scouting: return ScoutingCommandPool.Get();
             case ConfigData.CommandTypes.LeftSwipe:
-            case ConfigData.CommandTypes.RightSwipe:
-                return SwipeSquadCommandPool.Get();
-            case ConfigData.CommandTypes.Hold:
-                return HoldCommandPool.Get();
-            case ConfigData.CommandTypes.Heal:
-                return HealCommandPool.Get();
-            case ConfigData.CommandTypes.MoveToPoint:
-                return MoveToPointCommandPool.Get();
-            default:
-                Debug.LogError($"Command type is invalid: {type}");
-                return null;
+            case ConfigData.CommandTypes.RightSwipe: return SwipeSquadCommandPool.Get();
+            case ConfigData.CommandTypes.Hold: return HoldCommandPool.Get();
+            case ConfigData.CommandTypes.Heal: return HealCommandPool.Get();
+            case ConfigData.CommandTypes.MoveToPoint: return MoveToPointCommandPool.Get();
+            default: Debug.LogError($"Command type is invalid: {type}"); return null;
         }
     }
-    // Class-level fields for FillPools
+
     private int _fillPool_fillSizeSmall;
     private int _fillPool_fillSizeMedium;
     private int _fillPool_fillSizeLarge;
@@ -1330,16 +978,10 @@ public class Pool : MonoBehaviour
 
     private void FillPools()
     {
-        // Calculate fill sizes based on Levels
         _fillPool_fillSizeSmall = 15 * Stage.LevelCount / 2;
         _fillPool_fillSizeMedium = 10 * Stage.LevelCount / 2;
         _fillPool_fillSizeLarge = 5 * Stage.LevelCount / 2;
 
-        //_fillPool_fillSizeSmall = 70;
-        //_fillPool_fillSizeMedium = 70;
-        //_fillPool_fillSizeLarge = 70;
-
-        // Fill small pool items
         for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeSmall; _fillPool_i++)
         {
             _fillPool_spawnedShips.Add(BeaconPool.Get());
@@ -1349,15 +991,11 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedShips.Add(ScoutPool.Get());
             _fillPool_spawnedShips.Add(StrikerPool.Get());
             _fillPool_spawnedShips.Add(YellowJacketPool.Get());
-
             _fillPool_spawnedProjectiles.Add(BeeSmallProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(HumanSmallProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(QueenSmallProjectilePool.Get());
-
             _fillPool_spawnedSquads.Add(SquadPool.Get());
         }
-
-        // Fill medium pool items
         for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeMedium; _fillPool_i++)
         {
             _fillPool_spawnedShips.Add(BargePool.Get());
@@ -1370,7 +1008,6 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedShips.Add(GunshipPool.Get());
             _fillPool_spawnedShips.Add(LeafcutterPool.Get());
             _fillPool_spawnedShips.Add(WaspPool.Get());
-
             _fillPool_spawnedProjectiles.Add(BeeMediumProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(RocketProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(HumanMediumProjectilePool.Get());
@@ -1378,7 +1015,6 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedProjectiles.Add(StrikerBombProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(RocketExplosionProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(FireTankExplosionProjectilePool.Get());
-
             _fillPool_spawnedCommands.Add(AggressiveCommandPool.Get());
             _fillPool_spawnedCommands.Add(BombingRunCommandPool.Get());
             _fillPool_spawnedCommands.Add(ChargeCommandPool.Get());
@@ -1393,12 +1029,8 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedCommands.Add(RetreatCommandPool.Get());
             _fillPool_spawnedCommands.Add(ScoutingCommandPool.Get());
             _fillPool_spawnedCommands.Add(SwipeSquadCommandPool.Get());
-
             _fillPool_spawnedSquads.Add(CarrierSquadPool.Get());
-
         }
-
-        // Fill large pool items
         for (_fillPool_i = 0; _fillPool_i < _fillPool_fillSizeLarge; _fillPool_i++)
         {
             _fillPool_spawnedShips.Add(BeehivePool.Get());
@@ -1407,48 +1039,25 @@ public class Pool : MonoBehaviour
             _fillPool_spawnedShips.Add(FlagshipPool.Get());
             _fillPool_spawnedShips.Add(QueenPool.Get());
             _fillPool_spawnedShips.Add(WarpGatePool.Get());
-
             _fillPool_spawnedProjectiles.Add(BumblebeeShotProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(FlagshipShotProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(BeamProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(QueenLargeProjectilePool.Get());
             _fillPool_spawnedProjectiles.Add(FireBargeExplosionProjectilePool.Get());
         }
-
-        // Process and return items to their respective pools
-        _fillPool_spawnedShips.ForEach((ship) =>
-        {
-            ReturnShipToPool(ship);
-        });
-
-        _fillPool_spawnedProjectiles.ForEach((projectile) =>
-        {
-            ReturnProjectileToPool(projectile);
-        });
-
-        _fillPool_spawnedCommands.ForEach((command) =>
-        {
-            ReturnCommandToPool(command);
-        });
-
-        _fillPool_spawnedSquads.ForEach((squad) =>
-        {
-            ReturnSquadToPool(squad);
-        });
+        _fillPool_spawnedShips.ForEach(ReturnShipToPool);
+        _fillPool_spawnedProjectiles.ForEach(ReturnProjectileToPool);
+        _fillPool_spawnedCommands.ForEach(ReturnCommandToPool);
+        _fillPool_spawnedSquads.ForEach(ReturnSquadToPool);
     }
 
-    // Class-level field for the asteroid pool
     private List<CollisionAsteroid> _fillPool_spawnedAsteroids = new List<CollisionAsteroid>();
-
     public void FillAsteroidPool()
     {
         for (int _fillPool_i = 0; _fillPool_i < _fillPool_fillSizeSmall; _fillPool_i++)
         {
             _fillPool_spawnedAsteroids.Add(CollisionAsteroidPool.Get());
         }
-        _fillPool_spawnedAsteroids.ForEach((spawnedAsteroid) =>
-        {
-            ReturnCollisionAsteroidToPool(spawnedAsteroid);
-        });
+        _fillPool_spawnedAsteroids.ForEach(ReturnCollisionAsteroidToPool);
     }
 }

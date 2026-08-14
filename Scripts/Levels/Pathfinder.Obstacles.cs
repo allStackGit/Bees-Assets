@@ -9,6 +9,8 @@ namespace Assets.Scripts.Levels
 {
     public partial class Pathfinder
     {
+        private const int StaticDynamicLayerFrame = -2;
+
         public void InitializeMap()
         {
             float start = Time.realtimeSinceStartup;
@@ -92,6 +94,7 @@ namespace Assets.Scripts.Levels
             }
             _staticSignedClearance = BuildStaticSignedClearance(_baseClearance);
             Array.Copy(_baseClearance, _dynamicClearance, _totalNodes);
+            _dynamicLayerFrame = StaticDynamicLayerFrame;
 
             for (int i = 0; i < ConfigData.MaxThreads; i++)
             {
@@ -272,10 +275,10 @@ namespace Assets.Scripts.Levels
 
             if (!Level.ActivateCollisionAsteroids)
             {
-                if (_dynamicLayerFrame != Level.Stage.FixedUpdates)
+                if (_dynamicLayerFrame != StaticDynamicLayerFrame)
                 {
                     Array.Copy(_baseClearance, _dynamicClearance, _totalNodes);
-                    _dynamicLayerFrame = Level.Stage.FixedUpdates;
+                    _dynamicLayerFrame = StaticDynamicLayerFrame;
                 }
                 return;
             }
@@ -382,7 +385,7 @@ namespace Assets.Scripts.Levels
                 Array.Copy(_baseClearance, _threadClearance[i], _totalNodes);
             }
             _staticObstacleLayerDirty = false;
-            _dynamicLayerFrame = -1;
+            _dynamicLayerFrame = Level.ActivateCollisionAsteroids ? -1 : StaticDynamicLayerFrame;
         }
     }
 }

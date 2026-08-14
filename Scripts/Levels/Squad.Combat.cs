@@ -43,9 +43,6 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // Scripted queue objects have already been Setup but are not active commands.
-            // Release them before finalizing the active command so squad death cannot leak
-            // pooled commands or advance campaign scripting after this squad is gone.
             CancelScriptedCommandQueue();
 
             if (HasCommand && GetCommand() != null)
@@ -68,28 +65,104 @@ namespace Assets.Scripts.Levels
 
             Level.CancelTimer(_checkChaseTimer);
             Level.State.RemoveSquad(this);
-            // General minion squads share the ordinary SquadPool. Keep the role intact
-            // through deregistration so GameState can respect its ownership semantics,
-            // then clear it before the wrapper can be reused as a normal squad.
             IsMinionSquad = false;
             enabled = false;
         }
 
         public Squad GetClosestEnemySquad()
         {
-            return Level.State.GetSquadsVisibleToHiveMind(Side)
-                .OrderBy(squad => squad.DistanceToPoint(GetPosition()))
-                .FirstOrDefault();
+            Vector2 origin = GetPosition();
+            Squad closest = null;
+            float closestDistance = float.MaxValue;
+
+            if (Side == ConfigData.Configuration.UserSide && Level.HasPlayer)
+            {
+                List<Squad> squads = Level.State.Squads;
+                for (int i = 0; i < squads.Count; i++)
+                {
+                    Squad squad = squads[i];
+                    if (squad.Side == Side || squad.IsDead)
+                    {
+                        continue;
+                    }
+                    float distance = squad.DistanceToPoint(origin);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closest = squad;
+                    }
+                }
+                return closest;
+            }
+
+            foreach (Ship visibleShip in Level.State.GetShipsVisibleToHiveMind(Side))
+            {
+                Squad squad = visibleShip?.Squad;
+                if (squad == null || squad.IsDead)
+                {
+                    continue;
+                }
+                float distance = squad.DistanceToPoint(origin);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closest = squad;
+                }
+            }
+            return closest;
         }
 
         public Squad GetClosestValidFriendlySquad()
         {
-            _tempSquads = Level.State.GetSquadsBySide(Side)
-                .Where(squad => squad != this &&
-                    (!squad.HasCommand || squad.GetCommand() == null ||
-                     squad.GetCommand().CommandType != ConfigData.CommandTypes.ClosestFriendly))
-                .ToList();
-            return _tempSquads.OrderBy(squad => squad.DistanceToPoint(GetPosition())).FirstOrDefault();
+            Vector2 origin = GetPosition();
+            Squad closest = null;
+            float closestDistance = float.MaxValue;
+            List<Squad> squads = Level.State.Squads;
+            for (int i = 0; i < squads.Count; i++)
+            {
+                Squad squad = squads[i];
+                if (squad.Side != Side || squad.IsDead || squad == this ||
+                    (squad.HasCommand && squad.GetCommand() != null &&
+                     squad.GetCommand().CommandType == ConfigData.CommandTypes.ClosestFriendly))
+                {
+                    continue;
+                }
+
+                float distance = squad.DistanceToPoint(origin);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closest = squad;
+                }
+            }
+            return closest;
+        }
+
+        public int GetMaximumRange()
+        {
+            List<Ship> ships = GetShips();
+            int maximumRange = 0;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].MaxRange > maximumRange)
+                {
+                    maximumRange = ships[i].MaxRange;
+                }
+            }
+            return maximumRange;
+        }
+
+        public bool AreAllShipsDefenseless()
+        {
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].Firepower != 0)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public List<Ship> GetEnemyShips()
@@ -102,25 +175,45 @@ namespace Assets.Scripts.Levels
             return Level.State.GetShips(Side);
         }
 
-        private List<Ship> _enemies;
+        private readonly List<Ship> _potentialEnemyShips = new List<Ship>();
+        private readonly Dictionary<long, float> _combatDistanceKeys = new Dictionary<long, float>();
+        private readonly List<Ship> _enemies = new List<Ship>();
+
+        private int CompareCombatDistance(Ship a, Ship b)
+        {
+            int comparison = _combatDistanceKeys[a.Id].CompareTo(_combatDistanceKeys[b.Id]);
+            if (comparison != 0) return comparison;
+            comparison = a.ShipType.CompareTo(b.ShipType);
+            if (comparison != 0) return comparison;
+            return a.Id.CompareTo(b.Id);
+        }
+
         public List<Ship> GetPotentialEnemies(Squad target)
         {
             Vector2 origin = GetPosition();
-            _tempShips = GetEnemyShips()
-                .OrderBy(ship => ship.DistanceToPoint(origin))
-                .ThenBy(ship => ship.ShipType)
-                .ThenBy(ship => ship.Id)
-                .ToList();
-
-            // GetShipsVisibleToHiveMind is set-backed. Never let its enumeration order
-            // decide which ships enter the 64-ship Hive Mind payload, or equivalent
-            // tactical states can hash to different matchups under high density.
-            _enemies = _tempShips.Where(ship => ship.Squad == target).Take(64).ToList();
-
-            foreach (Ship potentialEnemy in _tempShips)
+            _potentialEnemyShips.Clear();
+            _combatDistanceKeys.Clear();
+            foreach (Ship ship in Level.State.GetShipsVisibleToHiveMind(Side))
             {
-                if (potentialEnemy.Squad != target && _enemies.Count < 64 &&
-                    potentialEnemy.IsAnySquadShipWithinRange(this))
+                _potentialEnemyShips.Add(ship);
+                _combatDistanceKeys[ship.Id] = ship.DistanceToPoint(origin);
+            }
+            _potentialEnemyShips.Sort(CompareCombatDistance);
+
+            _enemies.Clear();
+            for (int i = 0; i < _potentialEnemyShips.Count && _enemies.Count < 64; i++)
+            {
+                Ship ship = _potentialEnemyShips[i];
+                if (ship.Squad == target)
+                {
+                    _enemies.Add(ship);
+                }
+            }
+
+            for (int i = 0; i < _potentialEnemyShips.Count && _enemies.Count < 64; i++)
+            {
+                Ship potentialEnemy = _potentialEnemyShips[i];
+                if (potentialEnemy.Squad != target && potentialEnemy.IsAnySquadShipWithinRange(this))
                 {
                     _enemies.Add(potentialEnemy);
                 }
@@ -129,27 +222,36 @@ namespace Assets.Scripts.Levels
             return _enemies;
         }
 
-        private List<Ship> _allies;
+        private readonly List<Ship> _allies = new List<Ship>();
         private int _limit;
         public List<Ship> GetPotentialAllies(Squad target)
         {
             _limit = Math.Max(0, 64 - GetShipsForMatchup().Count);
+            _allies.Clear();
             if (_limit == 0 || target == null)
             {
-                return new List<Ship>();
+                return _allies;
             }
 
             Vector2 targetOrigin = target.GetPosition();
-            // Take(_limit) enforces the same strict cap as the former _tempShips.Count < _limit loop.
-            _allies = GetFriendlyShips()
-                .Where(potentialAlly => this != potentialAlly.Squad &&
-                    potentialAlly.IsAnySquadShipWithinRange(target))
-                .OrderBy(potentialAlly => potentialAlly.DistanceToPoint(targetOrigin))
-                .ThenBy(potentialAlly => potentialAlly.ShipType)
-                .ThenBy(potentialAlly => potentialAlly.Id)
-                .Take(_limit)
-                .ToList();
-
+            _combatDistanceKeys.Clear();
+            List<Ship> ships = Level.State.Ships;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship potentialAlly = ships[i];
+                if (potentialAlly.Side != Side || this == potentialAlly.Squad ||
+                    !potentialAlly.IsAnySquadShipWithinRange(target))
+                {
+                    continue;
+                }
+                _allies.Add(potentialAlly);
+                _combatDistanceKeys[potentialAlly.Id] = potentialAlly.DistanceToPoint(targetOrigin);
+            }
+            _allies.Sort(CompareCombatDistance);
+            if (_allies.Count > _limit)
+            {
+                _allies.RemoveRange(_limit, _allies.Count - _limit);
+            }
             return _allies;
         }
     }

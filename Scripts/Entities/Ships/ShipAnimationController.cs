@@ -31,15 +31,14 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void RecolorAnimationSprites()
         {
-            RecoloredSprites = new Sprite[TotalSprites];
             int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
-
-            if (Ship.Stage.LoadedShipAnimationSprites.ContainsKey(key))
+            if (Ship.Stage.LoadedShipAnimationSprites.TryGetValue(key, out Sprite[] cachedSprites))
             {
-                RecoloredSprites = Ship.Stage.LoadedShipAnimationSprites[key];
+                RecoloredSprites = cachedSprites;
                 return;
             }
 
+            RecoloredSprites = new Sprite[TotalSprites];
             // The HasCachedSprite bit is persisted with the fleet, while these PNGs live only on
             // the current device. Probe disk directly so transferred saves can discover whatever
             // local frames exist and lazily rebuild the missing ones during animation playback.
@@ -114,7 +113,7 @@ namespace Assets.Scripts.Entities.Ships
                 ShouldSwapSprite = false;
 
             }
-            else if (Ship.Squad.HasCustomColor)
+            else if (Ship.Squad.HasCustomColor && CurrentSprite != null && SpriteRenderer.sprite != CurrentSprite)
             {
                 SpriteRenderer.sprite = CurrentSprite;
                 //Debug.Log($"Should not swap sprite yet");
@@ -186,7 +185,10 @@ namespace Assets.Scripts.Entities.Ships
         /// <param name="skipSprites"></param>
         public void ChangeSpriteLoop()
         {
-            Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
+            if (!Ship.Stage.IsTraining)
+            {
+                Debug.Log($"{Ship.Name} Changing sprite loop, ready to warp");
+            }
             UseSecondaryLoop = true;
             IsReadyToWarp = true; // this is called by the warp gate animation which makes the animation necessary for non-visual reasons
             if (WarpGate.IsAudioLoaded)

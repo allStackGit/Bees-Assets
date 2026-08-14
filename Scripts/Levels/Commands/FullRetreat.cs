@@ -1,16 +1,17 @@
 using Assets.Scripts;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 public class FullRetreat : Command
 {
     public WarpGate TargetWarpGate;
     public List<Ship> ShipsWaitingToWarp = new List<Ship>();
-    private HashSet<long> _shipIdsWarping = new HashSet<long>();
+    private readonly HashSet<long> _shipIdsWarping = new HashSet<long>();
+    private readonly List<long> _shipIdSnapshot = new List<long>();
+    private readonly List<Ship> _participantShipsSnapshot = new List<Ship>();
+    private readonly List<Ship> _waitingShipsSnapshot = new List<Ship>();
 
     public void Execute(ConfigData.ShootingStrategyTypes shootingStrategy, long commandOutcomeId, long shootingStrategyOutcomeId, WarpGate warpgate)
     {
@@ -18,9 +19,11 @@ public class FullRetreat : Command
         {
             TargetWarpGate = warpgate;
 
-            // The ToList() is necessary to prevent errors from warp killing while looping through the list of ships.
-            GetSquad().GetShips().ToList().ForEach((ship) =>
+            _participantShipsSnapshot.Clear();
+            _participantShipsSnapshot.AddRange(GetSquad().GetShips());
+            for (int i = 0; i < _participantShipsSnapshot.Count; i++)
             {
+                Ship ship = _participantShipsSnapshot[i];
                 if (ship.ShipType != ConfigData.ShipTypes.WarpGate)
                 {
                     _shipIdsWarping.Add(ship.Id);
@@ -30,7 +33,7 @@ public class FullRetreat : Command
                         QueueShipForWarp(ship);
                     }
                 }
-            });
+            }
             if (_shipIdsWarping.Count > 0)
             {
                 base.Execute(shootingStrategy, commandOutcomeId, shootingStrategyOutcomeId, true);
@@ -39,8 +42,6 @@ public class FullRetreat : Command
                     return;
                 }
 
-                // A destroyed/unreachable route must not leave the squad permanently owned by
-                // this command after ship pathfinding has exhausted its own retry budget.
                 TimeoutTimer.Reuse(ConfigData.StandardMaxCommandTime, Timeout);
                 Level.AddTimer(TimeoutTimer);
 
@@ -74,6 +75,9 @@ public class FullRetreat : Command
         TargetWarpGate = null;
         ShipsWaitingToWarp.Clear();
         _shipIdsWarping.Clear();
+        _shipIdSnapshot.Clear();
+        _participantShipsSnapshot.Clear();
+        _waitingShipsSnapshot.Clear();
         _isWaitingToWarp = false;
     }
 
@@ -88,8 +92,15 @@ public class FullRetreat : Command
 
     private void RemoveUnavailableWarpParticipants()
     {
-        foreach (long shipId in _shipIdsWarping.ToList())
+        _shipIdSnapshot.Clear();
+        foreach (long shipId in _shipIdsWarping)
         {
+            _shipIdSnapshot.Add(shipId);
+        }
+
+        for (int i = 0; i < _shipIdSnapshot.Count; i++)
+        {
+            long shipId = _shipIdSnapshot[i];
             Ship ship = Level.State.GetShipById(shipId);
             if (ship == null || ship.IsDead)
             {
@@ -101,7 +112,14 @@ public class FullRetreat : Command
             }
         }
 
-        ShipsWaitingToWarp.RemoveAll((ship) => ship == null || ship.IsDead || !_shipIdsWarping.Contains(ship.Id));
+        for (int i = ShipsWaitingToWarp.Count - 1; i >= 0; i--)
+        {
+            Ship ship = ShipsWaitingToWarp[i];
+            if (ship == null || ship.IsDead || !_shipIdsWarping.Contains(ship.Id))
+            {
+                ShipsWaitingToWarp.RemoveAt(i);
+            }
+        }
     }
 
     Vector2 _f_targetPosition;
@@ -119,14 +137,19 @@ public class FullRetreat : Command
                 }
 
                 _f_targetPosition = TargetWarpGate.GetPosition() + Utilities.RandomInt(6) * Vector2.one;
-                GetSquad().GetShips().ForEach((ship) =>
+                List<Ship> ships = GetSquad().GetShips();
+                for (int i = 0; i < ships.Count; i++)
                 {
-                    if (_shipIdsWarping.Contains(ship.Id) && !ship.IsPathfinding)
+                    Ship ship = ships[i];
+                    if (_shipIdsWarping.Contains(ship.Id))
                     {
-                        ship.MoveToPoint(_f_targetPosition);
+                        ship.MoveToTrackedPoint(_f_targetPosition);
                     }
-                });
-                GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+                }
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to {TargetWarpGate.Name} to warp out of the level: {_f_targetPosition}";
+                }
             }
             else
             {
@@ -135,8 +158,7 @@ public class FullRetreat : Command
         }
     }
 
-    private List<Ship> _tempShips;
-    private ScaledTimer _waitToWarpTimer = new ScaledTimer();
+    private readonly ScaledTimer _waitToWarpTimer = new ScaledTimer();
     private bool _isWaitingToWarp = false;
     public void WaitToWarp()
     {
@@ -154,12 +176,13 @@ public class FullRetreat : Command
         {
             _isWaitingToWarp = false;
             Level.CancelTimer(_waitToWarpTimer);
-            _tempShips = ShipsWaitingToWarp.ToList();
+            _waitingShipsSnapshot.Clear();
+            _waitingShipsSnapshot.AddRange(ShipsWaitingToWarp);
             ShipsWaitingToWarp.Clear();
-            _tempShips.ForEach((ship) =>
+            for (int i = 0; i < _waitingShipsSnapshot.Count; i++)
             {
-                WarpKill(ship);
-            });
+                WarpKill(_waitingShipsSnapshot[i]);
+            }
         }
         else if (!_isWaitingToWarp)
         {
@@ -182,7 +205,6 @@ public class FullRetreat : Command
 
         if (!ship.IsDead)
         {
-            // Strikers and drones count as a loss of TSV since nothing is saved by killing them and its not better than killing them in combat, and almost certainly worse.
             if (ship.ShipType == ConfigData.ShipTypes.Striker || ship.ShipType == ConfigData.ShipTypes.Drone)
             {
                 Tsv -= ship.Tsv;
@@ -191,7 +213,7 @@ public class FullRetreat : Command
             {
                 TargetWarpGate.EnteringWarpGateSound.Play();
             }
-            ship.EndKill(); // if this is the last ship, this call could kill the command as well
+            ship.EndKill();
         }
 
         if (!IsDead && _shipIdsWarping.Count == 0)
@@ -204,9 +226,14 @@ public class FullRetreat : Command
     {
         if (TargetWarpGate != null && !TargetWarpGate.IsDead)
         {
-            foreach (long shipId in _shipIdsWarping.ToList())
+            _shipIdSnapshot.Clear();
+            foreach (long shipId in _shipIdsWarping)
             {
-                TargetWarpGate.ShipsWarpingHere.Remove(shipId);
+                _shipIdSnapshot.Add(shipId);
+            }
+            for (int i = 0; i < _shipIdSnapshot.Count; i++)
+            {
+                TargetWarpGate.ShipsWarpingHere.Remove(_shipIdSnapshot[i]);
             }
             _shipIdsWarping.Clear();
             ShipsWaitingToWarp.Clear();

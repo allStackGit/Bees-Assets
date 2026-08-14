@@ -1,6 +1,5 @@
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -10,16 +9,11 @@ namespace Assets.Scripts.Levels
         private const int FormationCompressionSteps = 20;
         private Vector2 _center;
         private bool _preserveAuthoredOffsetsOnNextSetOffsets;
+        private readonly List<Ship> _mobileShipsForMovement = new List<Ship>();
 
         public void SetOffsets()
         {
             RefreshCompositionCommandBans();
-
-            // Ship.Setup() receives the authored SavedSquad/SquadShip offset. The first
-            // SetOffsets call happens immediately after initial spawning; recomputing from
-            // obstacle-adjusted spawn positions here would permanently replace the authored
-            // formation with the temporary placement. Preserve the source formation once,
-            // then allow later lifecycle changes (casualties, detachments, etc.) to recenter it.
             if (_preserveAuthoredOffsetsOnNextSetOffsets)
             {
                 _preserveAuthoredOffsetsOnNextSetOffsets = false;
@@ -36,12 +30,35 @@ namespace Assets.Scripts.Levels
 
         private void RefreshCompositionCommandBans()
         {
-            if (GetShips().Count == 0)
+            List<Ship> ships = GetShips();
+            if (ships.Count == 0)
             {
                 return;
             }
 
-            if (IsDefenseless)
+            bool isDefenseless = true;
+            bool hasOnlyBombers = true;
+            bool hasOnlyBarges = true;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (ship.Firepower != 0)
+                {
+                    isDefenseless = false;
+                }
+                if (ship.ShipType != ConfigData.ShipTypes.Striker &&
+                    ship.ShipType != ConfigData.ShipTypes.YellowJacket &&
+                    ship.ShipType != ConfigData.ShipTypes.FireBarge)
+                {
+                    hasOnlyBombers = false;
+                }
+                if (ship.ShipType != ConfigData.ShipTypes.Barge)
+                {
+                    hasOnlyBarges = false;
+                }
+            }
+
+            if (isDefenseless)
             {
                 BannedStrats.Add(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -50,7 +67,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
-            else if (HasOnlyBombers)
+            else if (hasOnlyBombers)
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -59,7 +76,7 @@ namespace Assets.Scripts.Levels
                 BannedStrats.Add(ConfigData.CommandTypes.InAndOut);
                 BannedStrats.Add(ConfigData.CommandTypes.Hold);
             }
-            else if (HasOnlyBarges)
+            else if (hasOnlyBarges)
             {
                 BannedStrats.Remove(ConfigData.CommandTypes.Aggressive);
                 BannedStrats.Add(ConfigData.CommandTypes.CircleSquad);
@@ -79,6 +96,37 @@ namespace Assets.Scripts.Levels
             }
         }
 
+        public bool HaveAllShipsReachedDestination()
+        {
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!ships[i].HasReachedDestination)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public float GetSlowestShipSpeed()
+        {
+            List<Ship> ships = GetShips();
+            if (ships.Count == 0)
+            {
+                return 0;
+            }
+            float slowestSpeed = ships[0].Speed;
+            for (int i = 1; i < ships.Count; i++)
+            {
+                if (ships[i].Speed < slowestSpeed)
+                {
+                    slowestSpeed = ships[i].Speed;
+                }
+            }
+            return slowestSpeed;
+        }
+
         public void StopMoving()
         {
             _tempShips = GetShips();
@@ -93,29 +141,63 @@ namespace Assets.Scripts.Levels
 
         public void Move(Vector2 destination)
         {
+            MoveInternal(destination, false);
+        }
+
+        public void MoveTracked(Vector2 destination)
+        {
+            MoveInternal(destination, true);
+        }
+
+        private void MoveInternal(Vector2 destination, bool trackedDestination)
+        {
             if (IsSelected && Level.Stage.Menus.HasSquadActionBox)
             {
                 Level.Stage.Menus.ActionBox.HighlightSelectedButtons();
             }
 
-            _tempShips = GetShips().Where(ship => ship.IsMobile).ToList();
+            _mobileShipsForMovement.Clear();
+            int largestClearance = 0;
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (!ship.IsMobile)
+                {
+                    continue;
+                }
+                _mobileShipsForMovement.Add(ship);
+                if (Level.HasObstacles)
+                {
+                    largestClearance = Mathf.Max(largestClearance, ship.GetClearance());
+                }
+            }
+
             Vector2 formationCenter = Level.ForceBounds(destination);
             float formationCompression = 1f;
 
-            if (Level.HasObstacles && _tempShips.Count > 0 && !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+            if (Level.HasObstacles && _mobileShipsForMovement.Count > 0 &&
+                !TryGetFormationCompression(formationCenter, _mobileShipsForMovement, out formationCompression))
             {
-                int largestClearance = _tempShips.Max(ship => ship.GetClearance());
                 if (!Level.Pathfinder.TryFindNearestValidDestination(formationCenter, largestClearance, out formationCenter) ||
-                    !TryGetFormationCompression(formationCenter, _tempShips, out formationCompression))
+                    !TryGetFormationCompression(formationCenter, _mobileShipsForMovement, out formationCompression))
                 {
                     return;
                 }
             }
 
-            foreach (Ship ship in _tempShips)
+            for (int i = 0; i < _mobileShipsForMovement.Count; i++)
             {
+                Ship ship = _mobileShipsForMovement[i];
                 Vector2 shipDestination = Level.ForceBounds(formationCenter + (ship.OffsetFromCenter * formationCompression));
-                ship.MoveToPoint(shipDestination);
+                if (trackedDestination)
+                {
+                    ship.MoveToTrackedPoint(shipDestination);
+                }
+                else
+                {
+                    ship.MoveToPoint(shipDestination);
+                }
             }
             Destination = formationCenter;
         }
@@ -151,7 +233,7 @@ namespace Assets.Scripts.Levels
         public void MatchSpeed(float speed = 0)
         {
             IsMatchingSpeed = true;
-            SetSquadSpeed(speed > 0 ? speed : SlowestSpeed);
+            SetSquadSpeed(speed > 0 ? speed : GetSlowestShipSpeed());
         }
 
         public void UnmatchSpeed()
