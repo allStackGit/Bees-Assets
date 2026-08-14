@@ -35,5 +35,23 @@ namespace Bees.Tests.EditMode
 
             Assert.That(identity, Is.EqualTo("ABC||"));
         }
+
+        [TestCase(null, "ABC||")]
+        [TestCase("", "ABC||")]
+        [TestCase("ABCDEF", "ABC||")]
+        [TestCase("ABCDEF|XYZ", "ABC|XYZ|")]
+        [TestCase("ABCDEF|", "ABC||")]
+        public void ShootingIdentityPreservesLegacyMalformedInputBehavior(string strategicMatchup, string expected)
+        {
+            Type requestType = RuntimeAssembly.GetType("Assets.Scripts.Server.CommandRequest");
+
+            string identity = (string)RuntimeAssembly.InvokeStatic(
+                requestType,
+                "BuildShootingMatchupIdentity",
+                "ABC",
+                strategicMatchup);
+
+            Assert.That(identity, Is.EqualTo(expected));
+        }
     }
 }
