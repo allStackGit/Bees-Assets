@@ -11,6 +11,7 @@ namespace Assets.Scripts.Levels
     {
         private void RandomizeOptions()
         {
+            bool logEnvironment = !Stage.IsTraining;
             if (CurrentLevelOptions.MapIndex == -1)
             {
                 CurrentLevelOptions.MapIndex = Utilities.RandomInt(Stage.Prefabs.Maps.Count);
@@ -34,16 +35,19 @@ namespace Assets.Scripts.Levels
             if (useStaticObstacles)
             {
                 HasObstacles = true;
-                Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
+                if (logEnvironment) Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
 
                 bool useAsteroids = hiveMindTraining
                     ? Utilities.CoinToss()
                     : (CurrentLevelOptions.AsteroidOption == -1 && Utilities.RandomInt(4) == 0) || CurrentLevelOptions.AsteroidOption > 0;
                 SetAsteroidOptionForTraining(hiveMindTraining, useAsteroids);
                 ActivateCollisionAsteroids = useAsteroids;
-                Debug.Log(useAsteroids
-                    ? $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well"
-                    : $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
+                if (logEnvironment)
+                {
+                    Debug.Log(useAsteroids
+                        ? $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well"
+                        : $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
+                }
             }
             else
             {
@@ -55,31 +59,34 @@ namespace Assets.Scripts.Levels
                 CurrentLevelOptions.Obstacles = "No";
                 ActivateCollisionAsteroids = useAsteroids;
                 HasObstacles = useAsteroids;
-                Debug.Log(useAsteroids
-                    ? "The map has asteroids but not obstacles"
-                    : "The map does not have asteroids or obstacles");
+                if (logEnvironment)
+                {
+                    Debug.Log(useAsteroids
+                        ? "The map has asteroids but not obstacles"
+                        : "The map does not have asteroids or obstacles");
+                }
             }
 
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                Debug.Log("The map has fog of war");
+                if (logEnvironment) Debug.Log("The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                Debug.Log("The map does not have fog of war");
+                if (logEnvironment) Debug.Log("The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1 && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                Debug.Log("The map has mining");
+                if (logEnvironment) Debug.Log("The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                Debug.Log("The map does not have mining");
+                if (logEnvironment) Debug.Log("The map does not have mining");
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements.
@@ -210,7 +217,7 @@ namespace Assets.Scripts.Levels
                         obstacle.transform.localScale = vectorPair.Item2;
                         obstacle.Collider.enabled = false;
                         obstacle.Collider.enabled = true;
-                        Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
+                        if (!Stage.IsTraining) Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
                         ObstacleMap.Obstacles.Add(obstacle);
                     }
                 }
@@ -218,9 +225,9 @@ namespace Assets.Scripts.Levels
                 {
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
                     List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
-                    Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
+                    if (!Stage.IsTraining) Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
                     List<MapObject> objects = obstacleContainer.GetComponentsInChildren<MapObject>().ToList();
-                    Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
+                    if (!Stage.IsTraining) Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
                     objects.ForEach((o) => o.Setup(this));
                     ObstacleMap.Obstacles = obstacles;
                 }
