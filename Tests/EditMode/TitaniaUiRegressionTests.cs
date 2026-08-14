@@ -127,8 +127,12 @@ namespace Bees.Tests.EditMode
         {
             string routing = Read("Scripts", "ConfigData.Campaign.cs");
             string guard = Read("Scripts", "Scenes", "CampaignPresentationGuard.cs");
+            string stageConfiguration = Read("Scripts", "Scenes", "CampaignStageConfiguration.cs");
             StringAssert.DoesNotContain("ShouldSkipPreLevelIntroForTesting(currentLevel)", routing);
+            StringAssert.Contains("IsTestingLevel = false;", routing);
             StringAssert.Contains("ConfigData.IsTestingLevel = false;", guard);
+            StringAssert.Contains("ConfigData.IsTestingLevel = false;", stageConfiguration);
+            StringAssert.DoesNotContain("if (ConfigData.IsTestingLevel ||", stageConfiguration);
         }
 
         [Test]
@@ -159,6 +163,11 @@ namespace Bees.Tests.EditMode
         public void TitaniaTwoAddsMirroredIntervalWavesAndPlutoStyleBaseHealth()
         {
             string source = Read("Scripts", "Levels", "Level.Titania2Enhancements.cs");
+            StringAssert.Contains("titania.MaxHealth = 10000;", source);
+            StringAssert.Contains("titania.Health = 10000;", source);
+            StringAssert.Contains("titania.OriginalHealth = 10000;", source);
+            StringAssert.Contains("healthLabel.text = \"Titania II Health\";", source);
+            StringAssert.Contains("Stage.Menus.Counter.SetActive(false);", source);
             StringAssert.Contains("Stage.Menus.PlutoShield.SetActive(true);", source);
             StringAssert.Contains("UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);", source);
             StringAssert.Contains("healthBar.transform.localScale = new Vector2(fraction * 150f, 1f);", source);
@@ -166,6 +175,18 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ScheduleTitania2ExtraWave(25f, -0.65f, -1f", source);
             StringAssert.Contains("ScheduleTitania2ExtraWave(315f, -0.55f, -1f", source);
             StringAssert.Contains("AddTitania2BeeWave(squads, normalizedX, normalizedY);", source);
+        }
+
+        [Test]
+        public void TitaniaTwoAndPlutoFourUseSeparateSpeedButtonLayouts()
+        {
+            string source = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
+            StringAssert.Contains("campaignMissionId == 8", source);
+            StringAssert.Contains("x = _clockRect.anchoredPosition.x;", source);
+            StringAssert.Contains("TitaniaClockGap", source);
+            StringAssert.Contains("campaignMissionId == 3", source);
+            StringAssert.Contains("_counterRect.anchoredPosition.y +", source);
+            StringAssert.Contains("_plutoShieldRect.anchoredPosition.y -", source);
         }
     }
 }
