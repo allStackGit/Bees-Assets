@@ -23,13 +23,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void LiveCampaignStagesReceiveTheSameOverridesAsLevelIntros()
+        public void EveryCampaignDialogueSectionIsPatchedImmediatelyBeforeDisplay()
         {
-            string source = Read("Scripts", "CampaignDialogueOverrides.cs");
+            string manager = Read("Scripts", "UI Components", "DialogueManager.cs");
+            string overrides = Read("Scripts", "CampaignDialogueOverrides.cs");
 
-            StringAssert.Contains("CampaignDialogueOverrideGuard", source);
-            StringAssert.Contains("CampaignDialogueOverrides.Apply(manager);", source);
-            StringAssert.Contains("ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign", source);
+            StringAssert.Contains("CampaignDialogueOverrides.Apply(CutsceneManager);", manager);
+            StringAssert.Contains("ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign", manager);
+            StringAssert.Contains("CampaignDialogueOverrideGuard", overrides);
+            StringAssert.Contains("guard.enabled = false", manager);
         }
 
         [Test]
