@@ -29,11 +29,15 @@ namespace Assets.Scripts.Scenes
 
             // Campaign test mode intentionally uses an ad-hoc negative-ID LevelOptions object.
             // It is not the persisted campaign mission and must retain its selected map/options.
-            if (ConfigData.IsTestingLevel ||
-                (ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0))
+            if (ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0)
             {
                 return;
             }
+
+            // sceneLoaded runs before the normal Stage/Level startup path. Clear any stale testing
+            // state here as a second boundary so direct campaign scene loads cannot reach
+            // Level.SetupLevel with IsTestingLevel=true and silently suppress SetTriggers/dialogue.
+            ConfigData.IsTestingLevel = false;
 
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide,
