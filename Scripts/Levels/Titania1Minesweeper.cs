@@ -84,9 +84,14 @@ namespace Assets.Scripts.Levels
 
             // The scripting document establishes discovery of the first Fire Tank as the
             // mechanic tutorial. This was temporarily disabled only to speed level testing.
-            NextTriggers.Add(new Trigger(() => State.PlayerVisibleMapObjects.Any(), () =>
+            NextTriggers.Add(new Trigger(() => State.PlayerVisibleMapObjects.Count > 0, () =>
             {
-                var firstExplosive = State.PlayerVisibleMapObjects.FirstOrDefault();
+                MapObject firstExplosive = null;
+                foreach (MapObject visibleObject in State.PlayerVisibleMapObjects)
+                {
+                    firstExplosive = visibleObject;
+                    break;
+                }
                 if (firstExplosive == null)
                 {
                     return;
@@ -105,8 +110,7 @@ namespace Assets.Scripts.Levels
             bool exitZoneCreated = false;
             NextTriggers.Add(new Trigger(() =>
             {
-                return !exitZoneCreated && State.GetShips(ConfigData.Configuration.UserSide)
-                    .Any(ship => Vector2.Distance(ship.GetPosition(), centerOfTitania) < 50);
+                return !exitZoneCreated && IsShipOnSideNearPoint(ConfigData.Configuration.UserSide, centerOfTitania, 50f);
             }, () =>
             {
                 exitZoneCreated = true;
@@ -122,7 +126,7 @@ namespace Assets.Scripts.Levels
                         return;
                     }
 
-                    _lastShipRetreated = State.GetShips(ship.Side).Count(candidate => candidate.IsMobile) == 1;
+                    _lastShipRetreated = IsLastMobileShipOnSide(ship.Side);
                     ship.EndKill();
                 };
             }, "Titania 1 Create exit zone"));
@@ -151,6 +155,36 @@ namespace Assets.Scripts.Levels
                         Stage.CutsceneManager.Titania_Minesweeper.GetRange(21, 10), true);
                 }
             }, "Titania 1 Ending"));
+        }
+
+        private bool IsShipOnSideNearPoint(int side, Vector2 point, float distance)
+        {
+            float distanceSquared = distance * distance;
+            List<Ship> ships = State.Ships;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (!ship.IsDead && ship.Side == side && (ship.GetPosition() - point).sqrMagnitude < distanceSquared)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool IsLastMobileShipOnSide(int side)
+        {
+            int mobileShips = 0;
+            List<Ship> ships = State.Ships;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Ship ship = ships[i];
+                if (!ship.IsDead && ship.Side == side && ship.IsMobile && ++mobileShips > 1)
+                {
+                    return false;
+                }
+            }
+            return mobileShips == 1;
         }
 
         private static void RepairMinesweeperDemolitionTargets(Transform root)
