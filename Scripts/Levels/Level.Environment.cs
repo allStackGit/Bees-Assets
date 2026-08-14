@@ -151,16 +151,27 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private List<StaticObstacle> GenerateRandomObstacles()
+        private StaticObstaclePool _staticObstaclePool;
+        private bool _usesPooledStaticObstaclePrefabs;
+
+        private StaticObstaclePool GetStaticObstaclePool()
         {
-            List<StaticObstacle> obstacles = new List<StaticObstacle>();
-            Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
-            GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-            ObstacleMap.ObstacleBackground = obstacleBackground;
-            for (int i = 0; i < Utilities.RandomInt(10) + 1; i++)
+            if (_staticObstaclePool == null)
             {
-                GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
+                _staticObstaclePool = StaticObstaclePool.GetOrCreate(Stage);
+            }
+            return _staticObstaclePool;
+        }
+
+        private void GenerateRandomObstacles()
+        {
+            StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+            Vector2 maxSpawnDistance = new Vector2(MaxX - 150, MaxY - 150);
+            ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
+            int obstacleCount = Utilities.RandomInt(10) + 1;
+            for (int i = 0; i < obstacleCount; i++)
+            {
+                StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
                 if (Utilities.CoinToss())
                 {
                     obstacle.transform.localScale = new Vector2(Utilities.RandomInt(150) + 20, Utilities.RandomInt(50) + 20);
@@ -172,35 +183,37 @@ namespace Assets.Scripts.Levels
                 obstacle.transform.localPosition = Utilities.RandomCoordinate(this, Vector2.zero, maxSpawnDistance - new Vector2(0, obstacle.transform.localScale.y / 2), Vector2.zero);
                 obstacle.Collider.enabled = false;
                 obstacle.Collider.enabled = true;
-                obstacles.Add(obstacle);
+                ObstacleMap.Obstacles.Add(obstacle);
             }
-            return obstacles;
         }
 
         private void SpawnObstacles()
         {
             ObstacleMap = new ObstacleMap(1);
+            _usesPooledStaticObstaclePrefabs = false;
             if (CurrentLevelOptions.Obstacles != "No")
             {
                 if (CurrentLevelOptions.Obstacles == "" && CurrentLevelOptions.ObstacleList.Count == 0)
                 {
-                    ObstacleMap.Obstacles = GenerateRandomObstacles();
+                    _usesPooledStaticObstaclePrefabs = true;
+                    GenerateRandomObstacles();
                 }
                 else if (CurrentLevelOptions.ObstacleList.Count > 0)
                 {
-                    GameObject obstacleBackground = Instantiate(Stage.Prefabs.ObstacleBackgroundPrefab, Map.transform);
-                    ObstacleMap.ObstacleBackground = obstacleBackground;
-                    ObstacleMap.Obstacles = CurrentLevelOptions.ObstacleList.Select((vectorPair) =>
+                    _usesPooledStaticObstaclePrefabs = true;
+                    StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+                    ObstacleMap.ObstacleBackground = obstaclePool.GetBackground(Map.transform);
+                    for (int i = 0; i < CurrentLevelOptions.ObstacleList.Count; i++)
                     {
-                        GameObject obstacleObject = Instantiate(Stage.Prefabs.ObstaclePrefab, Map.transform);
-                        StaticObstacle obstacle = obstacleObject.GetComponent<StaticObstacle>();
+                        (Vector2, Vector2) vectorPair = CurrentLevelOptions.ObstacleList[i];
+                        StaticObstacle obstacle = obstaclePool.GetObstacle(Map.transform);
                         obstacle.transform.localPosition = vectorPair.Item1;
                         obstacle.transform.localScale = vectorPair.Item2;
                         obstacle.Collider.enabled = false;
                         obstacle.Collider.enabled = true;
                         Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
-                        return obstacle;
-                    }).ToList();
+                        ObstacleMap.Obstacles.Add(obstacle);
+                    }
                 }
                 else
                 {
