@@ -34,6 +34,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public Transform PieceTransform;
         public virtual bool ShouldFire => TargetShip != null && !TargetShip.IsDead && !Ship.IsCeaseFire;
 
+        private Comparison<Ship> _compareClosestTargets;
+        private Comparison<Ship> _compareFurthestTargets;
+        private Comparison<Ship> _comparePreferredTargetType;
+        private ConfigData.ShipTypeLetters _preferredTargetType;
+
         public virtual void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType)
         {
@@ -47,6 +52,9 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             RateOfFire = rateOfFire;
             Piece = piece;
             PieceTransform = Piece.transform;
+            _compareClosestTargets ??= CompareClosestTargets;
+            _compareFurthestTargets ??= CompareFurthestTargets;
+            _comparePreferredTargetType ??= ComparePreferredTargetType;
             WeaponsData weaponsData = Piece.GetComponent<WeaponsData>();
             SpriteRenderer = weaponsData.SpriteRenderer;
             if (SpriteRenderer != null && Stage.IsRendering) HasSpriteRenderer = true;
@@ -242,6 +250,23 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
         }
 
+        private int CompareClosestTargets(Ship a, Ship b)
+        {
+            return _targetDistanceKeys[a.Id].CompareTo(_targetDistanceKeys[b.Id]);
+        }
+
+        private int CompareFurthestTargets(Ship a, Ship b)
+        {
+            return _targetDistanceKeys[b.Id].CompareTo(_targetDistanceKeys[a.Id]);
+        }
+
+        private int ComparePreferredTargetType(Ship a, Ship b)
+        {
+            if (a.ShipTypeLetter == _preferredTargetType && b.ShipTypeLetter != _preferredTargetType) return -1;
+            if (b.ShipTypeLetter == _preferredTargetType && a.ShipTypeLetter != _preferredTargetType) return 1;
+            return 0;
+        }
+
         public List<Ship> MakeSortedTargetingList(bool disregardRange)
         {
             _sortedQueue = GetPotentialEnemyTargetShips(disregardRange);
@@ -263,11 +288,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     case ConfigData.ShootingStrategyTypes.LeastPowerful: _sortedQueue.Sort((a, b) => a.Firepower.CompareTo(b.Firepower)); break;
                     case ConfigData.ShootingStrategyTypes.Closest:
                         CacheTargetDistances();
-                        _sortedQueue.Sort((a, b) => _targetDistanceKeys[a.Id].CompareTo(_targetDistanceKeys[b.Id]));
+                        _sortedQueue.Sort(_compareClosestTargets);
                         break;
                     case ConfigData.ShootingStrategyTypes.Furthest:
                         CacheTargetDistances();
-                        _sortedQueue.Sort((a, b) => _targetDistanceKeys[b.Id].CompareTo(_targetDistanceKeys[a.Id]));
+                        _sortedQueue.Sort(_compareFurthestTargets);
                         break;
                     case ConfigData.ShootingStrategyTypes.MostRange: _sortedQueue.Sort((a, b) => b.MaxRange.CompareTo(a.MaxRange)); break;
                     case ConfigData.ShootingStrategyTypes.LeastRange: _sortedQueue.Sort((a, b) => a.MaxRange.CompareTo(b.MaxRange)); break;
@@ -278,13 +303,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     default:
                         if ((int) strategy > 15)
                         {
-                            ConfigData.ShipTypeLetters type = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
-                            _sortedQueue.Sort((a, b) =>
-                            {
-                                if (a.ShipTypeLetter == type && b.ShipTypeLetter != type) return -1;
-                                if (b.ShipTypeLetter == type && a.ShipTypeLetter != type) return 1;
-                                return 0;
-                            });
+                            _preferredTargetType = Utilities.ConvertShipTypeToShipTypeLetter[Utilities.ConvertShootingStrategyToShipType[strategy]];
+                            _sortedQueue.Sort(_comparePreferredTargetType);
                         }
                         break;
                 }
