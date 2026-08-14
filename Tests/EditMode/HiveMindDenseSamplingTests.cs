@@ -15,16 +15,16 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Levels", "Squad.Combat.cs"));
 
             int method = source.IndexOf("GetPotentialEnemies");
-            int order = source.IndexOf("OrderBy(ship => ship.DistanceToPoint(origin))", method);
-            int typeOrder = source.IndexOf("ThenBy(ship => ship.ShipType)", method);
-            int idOrder = source.IndexOf("ThenBy(ship => ship.Id)", method);
-            int cap = source.IndexOf("Take(64)", method);
+            int distanceCache = source.IndexOf("_combatDistanceKeys[ship.Id] = ship.DistanceToPoint(origin);", method);
+            int sort = source.IndexOf("_potentialEnemyShips.Sort(CompareCombatDistance);", method);
+            int cap = source.IndexOf("_enemies.Count < 64", method);
 
-            Assert.That(order, Is.GreaterThan(method));
-            Assert.That(typeOrder, Is.GreaterThan(order));
-            Assert.That(idOrder, Is.GreaterThan(typeOrder));
-            Assert.That(cap, Is.GreaterThan(idOrder),
-                "The set-backed visible-ship collection must be deterministically ordered before applying the 64-ship cap.");
+            Assert.That(distanceCache, Is.GreaterThan(method));
+            Assert.That(sort, Is.GreaterThan(distanceCache));
+            Assert.That(cap, Is.GreaterThan(sort));
+            Assert.That(source, Does.Contain("comparison = a.ShipType.CompareTo(b.ShipType);"));
+            Assert.That(source, Does.Contain("return a.Id.CompareTo(b.Id);"),
+                "The set-backed visible-ship collection must be deterministically ordered by distance, type, and id before applying the 64-ship cap.");
         }
     }
 }
