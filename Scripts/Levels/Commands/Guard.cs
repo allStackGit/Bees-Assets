@@ -109,7 +109,7 @@ namespace Assets.Scripts.Levels.Commands
                     GetSquad().MoveTracked(GetDestination());
                     if (Vector2.Distance(_timer_position, GetSquad().GetPosition()) < ConfigData.CloseEnoughCoordinateVariance)
                     {
-                        GetSquad().SetSquadSpeed(_guardedSquad.SlowestSpeed);
+                        GetSquad().SetSquadSpeed(_guardedSquad.GetSlowestShipSpeed());
                     }
                 }
                 else
