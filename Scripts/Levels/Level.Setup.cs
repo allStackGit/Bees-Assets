@@ -14,7 +14,6 @@ namespace Assets.Scripts.Levels
         public void SetupHivemind()
         {
             CancelTimer(_hivemindTimer);
-            //CancelInvoke(nameof(GetHiveMindCommands));
             if (Stage.ActivateHiveMind)
             {
                 List<Squad> squads = State.GetAllSquads();
@@ -28,7 +27,6 @@ namespace Assets.Scripts.Levels
                     squad.AddToCommandList();
                 }
 
-                //Invoke(nameof(GetHiveMindCommands), Stage.InitialCommandDelay);
                 _hivemindTimer.Reuse(.25f, GetHiveMindCommands, true);
                 _initialCommandDelayTimer.Reuse(Stage.InitialCommandDelay - .25f, () =>
                 {
@@ -46,24 +44,8 @@ namespace Assets.Scripts.Levels
         }
         public void SetupShips()
         {
-            //if (ConfigData.ChooseRandomLevel)
-            //{
-            //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad) && 
-            //    chosenSquad.Side != CurrentLevelOptions.Side).ToList();
-            //    CurrentLevelOptions.EnemySquads.ForEach((enemySquad) =>
-            //    {
-            //        Debug.Log($"Chose {enemySquad.Name} for level");
-            //        ConfigData.SquadsChosenForLevel.Add((SavedSquad)enemySquad.Clone());
-            //    });
-            //}
-            //else
-            //{
-            //    ConfigData.SquadsChosenForLevel = ConfigData.SquadsChosenForLevel.Where((chosenSquad) => !MidLevelSquads[chosenSquad.Side - 1].Contains(chosenSquad)).ToList();
-            //}
-             //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
-            LevelConstructor.SetupShips(ConfigData.Configuration.AISide);
-             //Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
-            LevelConstructor.SetupShips(ConfigData.Configuration.UserSide);
+            SetupShipsForSide(ConfigData.Configuration.AISide);
+            SetupShipsForSide(ConfigData.Configuration.UserSide);
             AssignShipClearancesForSetup();
             if (CurrentLevelOptions.EnemyReinforcementDelay == 0)
             {
@@ -123,8 +105,6 @@ namespace Assets.Scripts.Levels
                 StartingPositions[ConfigData.Configuration.AISide - 1] = Map.AIStartingPosition;
             }
 
-
-            // Setup map bounds
             MapWidth = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.x) + Map.SpriteRenderer.localBounds.max.x);
             MapHeight = (int)(Mathf.Abs(Map.SpriteRenderer.localBounds.min.y) + Map.SpriteRenderer.localBounds.max.y);
             HalfMapWidth = MapWidth / 2;
@@ -140,7 +120,6 @@ namespace Assets.Scripts.Levels
             HalfX = MapX / 2;
             HalfY = MapY / 2;
 
-
             if (!Stage.IsTraining && !Stage.UnlockCamera && Stage.PrimaryLevel == this)
             {
                 Stage.SetupCamera();
@@ -153,15 +132,8 @@ namespace Assets.Scripts.Levels
 
             }
 
-
-
             if (HasObstacles) 
             {
-                //CancelInvoke(nameof(SpawnAsteroid));
-                //CancelInvoke(nameof(SetLocationHistory));
-                //InvokeRepeating(nameof(SetLocationHistory), .5f, .5f);
-
-                //Debug.Log($"");
                 SpawnObstacles();
                 if (Pathfinder != null)
                 {
