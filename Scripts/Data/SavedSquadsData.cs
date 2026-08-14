@@ -15,7 +15,7 @@ namespace Assets.Scripts.Data
         public int Type;
 
 
-        public SavedSquadsData(bool shouldFileExist, int type) : base()
+        public SavedSquadsData(bool shouldFileExist, int type, bool forceCreateDefaults = false) : base()
         {
             Type = type;
             defaultJsonData = "[]";
@@ -23,7 +23,6 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.SavedSquadsDataFilenames[type], (json) =>
             {
-                ConfigData.IsSavedSquadsDataLoaded[type] = true;
                 _savedSquadsList.Clear();
                 //Debug.Log($"Loaded saved squad data for {ConfigData.SavedSquadsDataFilenames[type]}");
                 Utilities.LoadSquadsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents()))).ForEach(s =>
@@ -31,8 +30,9 @@ namespace Assets.Scripts.Data
                     
                     AddSquad(s);
                 });
+                ConfigData.IsSavedSquadsDataLoaded[type] = true;
                 //Debug.Log($"Loaded ships {GetShips().Find((s => s.Id == Utilities.RandomInt(GetShips().Count - 1))).Name}");
-            });
+            }, forceCreateDefaults);
 
         }
         public override bool IsDataLoaded()
