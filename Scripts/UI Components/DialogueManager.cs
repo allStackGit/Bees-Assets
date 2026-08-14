@@ -26,6 +26,7 @@ public class DialogueManager : MonoBehaviour
     private DialogueLine _currentLine;
     private bool _isLastDialogue;
     private bool _isAdvancingDialogue;
+    private bool _playIntercomWhenPresented;
 
 
     public void Setup(CutsceneManager cutsceneManager)
@@ -46,6 +47,7 @@ public class DialogueManager : MonoBehaviour
     {
         _isLastDialogue = isLastDialogue;
         _isAdvancingDialogue = false;
+        _playIntercomWhenPresented = false;
         dialogueLines.Clear();
         _currentLine = null;
 
@@ -84,10 +86,7 @@ public class DialogueManager : MonoBehaviour
             dialogueLines.Enqueue(line);
         }
 
-        if (dialogueLines.Count > 0)
-        {
-            UIAudioController.Instance?.PlayIntercomSound();
-        }
+        _playIntercomWhenPresented = dialogueLines.Count > 0;
 
         DialogueBox.SetActive(true);
         ContinueButton.SetActive(true);
@@ -161,6 +160,19 @@ public class DialogueManager : MonoBehaviour
         int characterIndex = 0;
         bool aOrB = false;
         ToggleContinuePrompt(false);
+
+        if (_playIntercomWhenPresented)
+        {
+            _playIntercomWhenPresented = false;
+            // Campaign dialogue can be queued while the Stage is still constructing its map,
+            // ships, camera, and UI. Wait until that frame has actually rendered before playing
+            // the intercom cue so audio never announces dialogue over the loading transition.
+            yield return new WaitForEndOfFrame();
+            if (DialogueBox != null && DialogueBox.activeInHierarchy)
+            {
+                UIAudioController.Instance?.PlayIntercomSound();
+            }
+        }
 
         foreach (char c in line.Text)
         {
