@@ -30,7 +30,10 @@ namespace Assets.Scripts.Levels.Commands
             }
 
             IsAttacking = true;
-            GetSquad().Status = $"Starting bombing run against {EnemySquad.Name}";
+            if (!Stage.IsTraining)
+            {
+                GetSquad().Status = $"Starting bombing run against {EnemySquad.Name}";
+            }
             PrepareDamageToSendEntries();
             _execute_ships = GetSquad().GetShips();
 
