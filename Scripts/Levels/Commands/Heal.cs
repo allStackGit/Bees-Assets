@@ -73,7 +73,10 @@ namespace Assets.Scripts.Levels.Commands
                     return;
                 }
 
-                GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to {TargetBeehives.Count} beehives to heal";
+                }
                 MoveToBeehives();
                 CommandTimer.Reuse(CommandFrequency, Timer, true, true);
                 Level.AddTimer(CommandTimer);
