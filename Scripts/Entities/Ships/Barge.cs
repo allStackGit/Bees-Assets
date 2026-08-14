@@ -30,6 +30,9 @@ namespace Assets.Scripts.Entities.Ships
         public BargeChargeImageAnimation BargeChargeImageAnimator;
         public List<GameObject> ChargeRocketFlares;
         private int _chargeLifecycleId;
+        private readonly WaitForSeconds _chargeBuildDelay = new WaitForSeconds(2f);
+        private readonly WaitForSeconds _chargeDuration = new WaitForSeconds(1f);
+        private readonly WaitForSeconds _chargeCooldown = new WaitForSeconds(10f);
 
         public override void Create(Stage stage)
         {
@@ -185,7 +188,7 @@ namespace Assets.Scripts.Entities.Ships
                     BargeLoadingChargeAnimation.SetActive(true);
                     Debug.Log($"{Name} is about to charge");
                 }
-                yield return new WaitForSeconds(2);
+                yield return _chargeBuildDelay;
 
                 if (IsDead || lifecycleId != _chargeLifecycleId)
                 {
@@ -214,7 +217,7 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 CannotChangeMovementOrders = true;
 
-                yield return new WaitForSeconds(1);
+                yield return _chargeDuration;
                 if (!IsDead && lifecycleId == _chargeLifecycleId)
                 {
                     StartCoroutine(StopCharge(lifecycleId));
@@ -257,7 +260,7 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     ChargingBar.DrainBar();
                 }
-                yield return new WaitForSeconds(10);
+                yield return _chargeCooldown;
 
                 if (!IsDead && lifecycleId == _chargeLifecycleId)
                 {
