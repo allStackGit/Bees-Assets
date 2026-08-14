@@ -90,6 +90,8 @@ namespace Bees.Tests.EditMode
         public void StruckUranusCruiserAndFritzSequenceIsNotRun()
         {
             string uranusOne = Read("Scripts", "Levels", "Level.Campaign.Uranus1.cs");
+            string uranusTwo = Read("Scripts", "Levels", "Level.Campaign.Uranus2.cs");
+            string uranusThree = Read("Scripts", "Levels", "Level.Campaign.Uranus3.cs");
             string endings = Read("Scripts", "Levels", "Level.Campaign.Endings.cs");
 
             StringAssert.DoesNotContain("ShipTypes.Cruiser", uranusOne);
@@ -99,6 +101,11 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("GetRange(18,", uranusOne);
             StringAssert.Contains("Uranus_OnTheOffensive.GetRange(35, 3)", uranusOne);
             StringAssert.DoesNotContain("UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser)", endings);
+
+            // Legacy Fritz lines later in Uranus are only eligible if an older/future save really
+            // contains a Cruiser; the current campaign route no longer creates one on Uranus I.
+            StringAssert.Contains("HasShipsOfType(ConfigData.ShipTypes.Cruiser)", uranusTwo);
+            StringAssert.Contains("HasShipsOfType(ConfigData.ShipTypes.Cruiser)", uranusThree);
         }
 
         [Test]
