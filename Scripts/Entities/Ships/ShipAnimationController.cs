@@ -31,19 +31,19 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void RecolorAnimationSprites()
         {
-            RecoloredSprites = new Sprite[TotalSprites];
             if (Ship.FleetShip.HasCachedSprite)
             {
 
                 int key = (Ship.ShipType, Ship.Squad.SavedSquad.Color).GetHashCode();
 
-                if (Ship.Stage.LoadedShipAnimationSprites.ContainsKey(key))
+                if (Ship.Stage.LoadedShipAnimationSprites.TryGetValue(key, out Sprite[] cachedSprites))
                 {
-                    RecoloredSprites = Ship.Stage.LoadedShipAnimationSprites[key];
+                    RecoloredSprites = cachedSprites;
                     //Debug.Log($"Loaded cached sprites from Stage instead of Disk for {Ship.ShipType} with {Ship.Squad.SavedSquad.Color}");
                 }
                 else
                 {
+                    RecoloredSprites = new Sprite[TotalSprites];
                     for (int i = 0; i < RecoloredSprites.Length; i++)
                     {
                         RecoloredSprites[i] = Ship.FleetShip.LoadCachedSprite(i + 1, "ship", ConfigData.ShipSizes[Ship.ShipType], Ship.Squad.SavedSquad.Color); // skips the first sprite because that's the base sprite
@@ -56,6 +56,10 @@ namespace Assets.Scripts.Entities.Ships
                 //Debug.Log($"Loaded cached sprites for Ship {Ship.Name}");
 
 
+            }
+            else
+            {
+                RecoloredSprites = new Sprite[TotalSprites];
             }
         }
         //void Update()
