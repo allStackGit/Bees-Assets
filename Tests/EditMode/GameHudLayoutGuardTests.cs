@@ -35,7 +35,9 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_menus.Clock.activeInHierarchy"));
             Assert.That(source, Does.Contain("_clockRect.rect.width + _speedRect.rect.width"));
             Assert.That(source, Does.Contain("ControlGap"));
-            Assert.That(source, Does.Contain("_speedRect.anchoredPosition = new Vector2(x, y);"));
+            Assert.That(source, Does.Contain("Vector2 desiredPosition = new Vector2(x, y);"));
+            Assert.That(source, Does.Contain("_speedRect.anchoredPosition != desiredPosition"));
+            Assert.That(source, Does.Contain("_speedRect.anchoredPosition = desiredPosition;"));
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = _normalSpeedPosition;"));
         }
 
