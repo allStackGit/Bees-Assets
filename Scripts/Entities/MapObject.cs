@@ -77,6 +77,25 @@ public class MapObject : MonoBehaviour
         }
     }
 
+    private void OnDisable()
+    {
+        RemoveVisibilityOwnership();
+    }
+
+    private void OnDestroy()
+    {
+        RemoveVisibilityOwnership();
+    }
+
+    private void RemoveVisibilityOwnership()
+    {
+        MapObjectVisibilityTracker tracker = GetComponent<MapObjectVisibilityTracker>();
+        if (!System.Object.ReferenceEquals(tracker, null))
+        {
+            tracker.HandleOwnerUnavailable();
+        }
+    }
+
     private MapObject _mapObject;
 
     public override bool Equals(System.Object obj)
