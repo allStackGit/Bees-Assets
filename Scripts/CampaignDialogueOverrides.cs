@@ -33,8 +33,8 @@ public static class CampaignDialogueOverrides
 
     public static List<DialogueLine> BuildTitaniaToUranus(bool includeAmi)
     {
-        // Beenoculars success is now persisted so the authored conditional A.M.I. exchange also
-        // survives a scene/device transition. Preserve the parameter for older callers/tests.
+        // Beenoculars success is persisted so the authored conditional A.M.I. exchange survives
+        // a scene/device transition. Preserve the parameter for older callers/tests.
         includeAmi = includeAmi || TitaniaRouteState.DidWinTitaniaTwo;
 
         List<DialogueLine> lines = new List<DialogueLine>
@@ -66,16 +66,9 @@ public static class CampaignDialogueOverrides
             Line("Emilia", "Yeah, it’s all robots driving the little ships!"),
             Line("Alejandra", "And perhaps I can help some with organizing your efforts, as well. I’ve noticed a distinct lack of organization amongst you. For example, your command ship isn’t even in proper formation with the rest-"),
             Line("Marco", "That’s not what we need help with. Maybe use your smarts for some battle tactics and weapons."),
-            Line("Joey", "You said you were the research lead?"),
-            Line("Alejandra", "Yes, Titania is a research and engineering base, after all."),
-            Line("Joey", "What about the engineering lead?"),
 
-            // The document's later claim that Philip died taking a Carrier out conflicts with the
-            // earlier Titania scene, where Philip dies destroying the weapons bay to create the
-            // debris field. The latter is already established in-game, so keep that continuity.
-            Line("Alejandra", "He… is no longer with us after the initial assault. He destroyed Titania’s weapons bay to create the debris field that kept the bees away long enough for us to survive. Emilia is his daughter, and she has been helping me in his stead. She is quite talented, I might add."),
-            Line("Emilia", "…yeah."),
-            Line("Samuel", "I’m so sorry, Emilia."),
+            // The engineering-lead/second Philip exchange is struck through in the authoritative
+            // formatted script. Do not replace it with alternate continuity; skip it entirely.
             Line("Emilia", "Yeah! Let’s take those stupid bees down! Uranus is under new management! Er- well, I guess old management. We’re taking the new management down. Yeah!"),
             Line("Samuel", "The first way sounds cooler, though."),
             Line("Emilia", "Yeah!"),
@@ -183,7 +176,8 @@ public static class CampaignDialogueOverrides
 
     private static void PatchUranusOnTheOffensive(List<DialogueLine> lines)
     {
-        Set(lines, 10, "Samuel", "They’re… different.");
+        // The Cruiser/Fritz encounter and recruitment lines are struck from the current script.
+        // Only active Uranus I lines are patched here; the runtime no longer invokes the struck ranges.
         Set(lines, 15, "Joey", "That’s not gonna be so easy. Its weapon has a huge range from what I can tell.");
         Set(lines, 38, "Samuel", "All of our fleet we sent out is down, commander.");
     }
