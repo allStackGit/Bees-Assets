@@ -64,8 +64,11 @@ namespace Assets.Scripts.Entities.Projectiles
             Range = range;
             Power = power;
             Angle = angle;
-            Name = $"{Shooter.Name}: {Type} - #{Id}";
-            gameObject.name = Name;
+            if (!Stage.IsTraining)
+            {
+                Name = $"{Shooter.Name}: {Type} - #{Id}";
+                gameObject.name = Name;
+            }
             StartingPosition = startingPosition;
             Transform.parent = Level.Map.Transform;
             Transform.localPosition = StartingPosition;
