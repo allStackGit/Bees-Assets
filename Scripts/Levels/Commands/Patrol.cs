@@ -54,7 +54,10 @@ namespace Assets.Scripts.Levels.Commands
                 _destination = GetDestination();
                 squad.Move(_destination);
             }
-            squad.Status = $"Patrolling towards {_destination}";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Patrolling towards {_destination}";
+            }
         }
     }
 }
