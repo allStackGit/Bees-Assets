@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Levels;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections.Generic;
 using System.Linq;
@@ -290,7 +290,11 @@ namespace Assets.Scripts.Data
                     int targetLevel = missionId + 1;
                     if (CampaignMissionCatalog.IsCampaignComplete(targetLevel))
                     {
-                        Debug.Log($"Campaign mission {missionId} is the last currently available mission; keeping campaign progress at {currentLevel}.");
+                        // The first ID beyond the catalog is the persisted completion sentinel.
+                        // MainMenu and the level-end UI use that value to display the completed
+                        // campaign state instead of offering the final mission again.
+                        Debug.Log($"Campaign mission {missionId} completed the currently available campaign; advancing progress to terminal level {targetLevel}.");
+                        SetCurrentLevel(targetLevel);
                         return;
                     }
                     if (currentLevel >= targetLevel)
@@ -309,7 +313,8 @@ namespace Assets.Scripts.Data
                 int fallbackTargetLevel = currentLevel + 1;
                 if (CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel))
                 {
-                    Debug.Log($"Campaign level {currentLevel} is the last currently available mission; not advancing past the mission catalog.");
+                    Debug.Log($"Campaign level {currentLevel} completed the currently available campaign; advancing progress to terminal level {fallbackTargetLevel}.");
+                    SetCurrentLevel(fallbackTargetLevel);
                     return;
                 }
                 SetCurrentLevel(fallbackTargetLevel);
