@@ -94,7 +94,8 @@ namespace Assets.Scripts.Levels
     /// <summary>
     /// Beenoculars resolves its winner before playing the final dialogue and checkpointing the
     /// campaign. Capture that result during the dialogue window so the following Uranus
-    /// intermission can conditionally include A.M.I. exactly as authored.
+    /// intermission can conditionally include A.M.I. exactly as authored. Titania's prototype
+    /// Carrier joins the fleet after the evacuation attempt regardless of whether A.M.I. survives.
     /// </summary>
     [DefaultExecutionOrder(9000)]
     internal sealed class TitaniaOutcomePersistenceGuard : MonoBehaviour
@@ -127,8 +128,38 @@ namespace Assets.Scripts.Levels
 
                 TitaniaRouteState.RecordTitaniaTwoResult(
                     level.WinningSide == ConfigData.Configuration.UserSide);
+                AwardTitaniaCarrier(level);
                 _recordedLevel = level;
             }
+        }
+
+        private static void AwardTitaniaCarrier(Level level)
+        {
+            if (ConfigData.UserProgressData == null || ConfigData.CurrentShips == null)
+            {
+                return;
+            }
+
+            ConfigData.UserProgressData.HasMetAlejandraAndEmilia = true;
+
+            if (!ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Carrier))
+            {
+                ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);
+                ConfigData.CurrentShips.BuildNewSquad(
+                    $"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}",
+                    ConfigData.Configuration.HumanSide,
+                    ConfigData.ShipTypes.Carrier,
+                    1);
+                if (level.State != null)
+                {
+                    level.State.PlayerNewShipsReceived += 1;
+                }
+            }
+
+            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier);
+            ConfigData.UserProgressData.SetShipTypes();
         }
     }
 }
