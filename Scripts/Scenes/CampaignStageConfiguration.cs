@@ -55,12 +55,12 @@ namespace Assets.Scripts.Scenes
 
             CampaignMissionCatalog.MissionDefinition mission = CampaignMissionCatalog.Get(missionId);
 
-            // Titania II is a base-defense battle, not a continuation of Minesweeper's demolition
-            // maze. Keep the battlefield fully open regardless of legacy/server-authored obstacle
-            // data so the player fleet and attacking Bees both have unobstructed routes to Titania.
+            // Titania II has its own authored Bee-noculars battlefield. Titania I's Minesweeper
+            // demolition state must not carry forward, so discard any serialized/custom obstacle
+            // list while explicitly restoring mission 8's independent authored layout.
             if (missionId == 8 && ConfigData.LevelOptions != null)
             {
-                ConfigData.LevelOptions.Obstacles = "No";
+                ConfigData.LevelOptions.Obstacles = "Bee-noculars";
                 ConfigData.LevelOptions.ObstacleList?.Clear();
                 ConfigData.LevelOptions.AsteroidOption = 0;
             }
