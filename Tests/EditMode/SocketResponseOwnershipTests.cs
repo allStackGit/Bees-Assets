@@ -21,10 +21,9 @@ namespace Bees.Tests.EditMode
         [SetUp]
         public void SetUp()
         {
-            Type serverRequestType = RuntimeAssembly.GetType("Assets.Scripts.Server.ServerRequest");
             _socket = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.Socket");
             _standingRequests = Activator.CreateInstance(
-                typeof(System.Collections.Generic.HashSet<>).MakeGenericType(serverRequestType));
+                RuntimeAssembly.GetType("Assets.Scripts.Server.StandingRequestSet"));
             RuntimeAssembly.SetField(_socket, "StandingRequests", _standingRequests);
             RuntimeAssembly.SetField(_socket, "HandledRequests", new System.Collections.Generic.HashSet<long>());
             _requestTypes = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+RequestTypes");
