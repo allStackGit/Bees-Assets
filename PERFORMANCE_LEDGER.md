@@ -2,13 +2,6 @@
 
 Static-only audit; no runtime measurements are claimed. This ledger contains unresolved validated optimization opportunities only.
 
-### PERF-009 — Eliminate temporary ship-type lists in random squad generation
-**Location:** `Scripts/Data/SavedSquad.cs/SetupRandomShips()`  
-**Cost:** Every call to `SetupRandomShips()` constructs temporary `List<ConfigData.ShipTypes>` instances inside its size-category `if`/`else if` chain purely to call `Contains(squadType)`. Depending on the chosen type, one to five new lists are allocated before the matching category is found. Hive Mind/random training creates multiple `SavedSquad` objects per side per episode and calls this method for every generated squad, so these short-lived classification lists generate avoidable setup GC at high repetition.  
-**Optimization:** Replace the per-call list literals with a non-allocating classification mechanism: a `switch` on `squadType`, static readonly sets/arrays, or an existing ConfigData category table. Preserve the current ship-count ranges and Unity random-call order exactly.  
-**Evidence:** Current `SetupRandomShips()` has five separate expressions of the form `new List<ConfigData.ShipTypes> { ... }.Contains(squadType)`. Current `Level.RandomSquadSetup.cs/AddRandomSquadsForSetup()` invokes `savedSquad.SetupRandomShips(type)` for every randomly generated squad in repeated training setup.  
-**Risk:** Random draw order is training-behavior-sensitive. Refactoring classification must not add/remove/reorder `Random.Range` calls or change the exact type-to-count bucket assignments.
-
 ### PERF-010 — Collapse Queen minion-wave coroutine fan-out
 **Location:** `Scripts/Entities/Ships/Queen.cs/SpawnMinions()/SpawnMinion()` (secondary constant-wait allocations also exist in `Scripts/Entities/Ships/Barge.cs`)  
 **Cost:** Every Queen minion wave calls `StartCoroutine(SpawnMinion(...))` once per minion. Each coroutine instance allocates its iterator state and immediately allocates a `WaitForSeconds(shipIndex * TimeBetweenMinions)`. The recurring Queen spawn timer can therefore create N coroutine/wait objects per wave, multiplied by the number of live Queens. Barge charge/cooldown coroutines likewise allocate new constant-duration `WaitForSeconds` objects on repeated charges, though at lower fan-out.  
