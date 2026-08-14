@@ -8,6 +8,15 @@ namespace Assets.Scripts.Levels
 
         private void EnsureTitania2ReinforcementRoute(ref Vector2 startingPosition, ref Vector2 nextPosition)
         {
+            // Beenoculars now deliberately uses a completely clear battlefield. In that setup
+            // Level does not build an obstacle Pathfinder, and the authored off-map -> in-map
+            // reinforcement route needs no static-connectivity repair. Keep this helper strictly
+            // for obstacle-bearing variants and fail open if pathfinding state is unavailable.
+            if (!HasObstacles || Pathfinder == null)
+            {
+                return;
+            }
+
             Vector2 requestedEntry = nextPosition;
 
             if (Pathfinder.CanOccupyDestination(nextPosition, ConfigData.MinimumClearance) &&
