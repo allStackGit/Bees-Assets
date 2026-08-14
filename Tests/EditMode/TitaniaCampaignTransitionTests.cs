@@ -49,6 +49,22 @@ namespace Bees.Tests.EditMode
                 "The fail-forward campaign level must be checkpointed after advancing.");
         }
 
+        [Test]
+        public void GeneralCampaignAdvancementDoesNotVetoBeenocularsDefeat()
+        {
+            string progressSource = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Data",
+                "UserProgressData.cs"));
+            string advanceSource = ExtractMethodBody(progressSource, "public void AdvanceToNextLevel()");
+
+            StringAssert.DoesNotContain("Beenoculars was lost", advanceSource);
+            StringAssert.DoesNotContain("missionId == 8 && activeLevel.WinningSide", advanceSource);
+            StringAssert.Contains("int targetLevel = missionId + 1;", advanceSource);
+            StringAssert.Contains("SetCurrentLevel(targetLevel);", advanceSource);
+        }
+
         private static string ReadBeenocularsSource()
         {
             return File.ReadAllText(Path.Combine(
