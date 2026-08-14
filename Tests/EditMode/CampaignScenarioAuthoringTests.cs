@@ -81,7 +81,7 @@ namespace Bees.Tests.EditMode
         [TestCase(5, "Neptune2OfProduction", "Survive and mine as many minerals as you can", "ExitZonePrefab")]
         [TestCase(6, "Neptune3PressingForwardCampaign", "break through the blockade", "ResolveEliminationWinner")]
         [TestCase(7, "Titania1MinesweeperCampaign", "ExitZonePrefab", "PlayerVisibleMapObjects")]
-        [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "450")]
+        [TestCase(8, "Titania2BeenocularsCampaign", "HumanTarget", "480")]
         [TestCase(9, "Uranus1OnTheOffensive", "Bumblebee", "Cruiser")]
         [TestCase(10, "Uranus2OnTheDefensive", "Survive and mine as many minerals as you can", "CreateCampaignRetreatZone")]
         [TestCase(11, "Uranus3ANewThreat", "Rescue the Barges and destroy all the Bees", "Barge")]
@@ -101,7 +101,9 @@ namespace Bees.Tests.EditMode
             string setup = ExtractMethodBody(_triggerSource, "Titania2BeenocularsCampaign");
             string ending = ExtractMethodBody(_triggerSource, "Titania2CampaignEnding");
 
-            Assert.That(setup, Does.Contain("const float survivalDuration = 450f"));
+            Assert.That(setup, Does.Contain("const float victorySurvivalDuration = 330f"));
+            Assert.That(setup, Does.Contain("const float defeatSurvivalDuration = 480f"));
+            Assert.That(setup, Does.Contain("TitaniaRouteState.DidWinTitaniaOne"));
             Assert.That(setup, Does.Contain("ResolveTitania2(titania, true)"));
             Assert.That(setup, Does.Contain("ResolveTitania2(titania, false)"));
             Assert.That(setup, Does.Not.Contain("timeLeft <= 0 || State.IsSideKilled(ConfigData.Configuration.AISide)"),
@@ -136,8 +138,11 @@ namespace Bees.Tests.EditMode
             Assert.That(_triggerSource, Does.Contain("const float outsideDistance = 80f"));
             Assert.That(_triggerSource, Does.Contain("MaxX + outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MinX - outsideDistance"));
-            Assert.That(_triggerSource, Does.Contain("MaxY + outsideDistance"));
             Assert.That(_triggerSource, Does.Contain("MinY - outsideDistance"));
+            Assert.That(_triggerSource, Does.Not.Contain("positiveEdge ? MaxY + outsideDistance : MinY - outsideDistance"),
+                "Beenoculars must never route Bee reinforcements through the top edge.");
+            Assert.That(_triggerSource, Does.Contain("if (!horizontalEntry && normalizedY > 0f)"),
+                "Future top-edge requests must be remapped to a side lane.");
             Assert.That(_triggerSource, Does.Contain("Physics2D.OverlapCircle(entryPoint, laneClearance, ConfigData.ObstaclesLayerMask)"),
                 "Bee entry lanes must be checked against the authored walls.");
             Assert.That(_triggerSource, Does.Contain("Physics2D.Linecast(spawnPoint, entryPoint, ConfigData.ObstaclesLayerMask)"),
