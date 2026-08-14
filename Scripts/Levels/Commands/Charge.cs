@@ -34,7 +34,10 @@ namespace Assets.Scripts.Levels.Commands
             TargetingQueue.Clear();
 
             IsAttacking = true;
-            GetSquad().Status = $"Starting charging run against {EnemySquad.Name}";
+            if (!Stage.IsTraining)
+            {
+                GetSquad().Status = $"Starting charging run against {EnemySquad.Name}";
+            }
             PrepareDamageToSendEntries();
 
             _execute_ships = GetSquad().GetShips();
@@ -158,7 +161,10 @@ namespace Assets.Scripts.Levels.Commands
                     {
                         if (!ChargingShips.Contains(barge))
                         {
-                            Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
+                            if (!Stage.IsTraining)
+                            {
+                                Debug.Log($"Barge is charging after {barge.Charge.TargetShip} which is within range");
+                            }
                             ChargingShips.Add(barge);
                             IsCharging = true;
                             StartCoroutine(barge.ChargeForward(barge.Charge.TargetShip));
