@@ -16,7 +16,9 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("loadedObject is JObject loaded", source);
             StringAssert.Contains("defaultToken is JObject defaults", source);
             StringAssert.Contains("MergeArrayHandling = MergeArrayHandling.Replace", source);
-            StringAssert.Contains("_onceDataIsLoaded(GetLoadedDataWithDefaults());", source);
+            StringAssert.Contains("object loadedData = GetLoadedDataWithDefaults();", source);
+            StringAssert.Contains("TitaniaRouteState.LoadFromPlayerProgress(loadedData);", source);
+            StringAssert.Contains("_onceDataIsLoaded(loadedData);", source);
         }
 
         [Test]
