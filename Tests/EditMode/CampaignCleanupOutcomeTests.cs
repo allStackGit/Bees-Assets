@@ -46,7 +46,7 @@ namespace Bees.Tests.EditMode
             int capture = state.IndexOf("public void CaptureEliminationState()", StringComparison.Ordinal);
             int winnerCheck = state.IndexOf("Level.WinningSide == ConfigData.Configuration.HumanSide", capture, StringComparison.Ordinal);
             int resolvedOutcome = state.IndexOf("_eliminationSnapshot[side - 1] = side != Level.WinningSide;", winnerCheck, StringComparison.Ordinal);
-            int rawShipFallback = state.IndexOf("List<Ship> sideShips = GetShips(side);", resolvedOutcome, StringComparison.Ordinal);
+            int rawShipFallback = state.IndexOf("List<Ship> sideShips = ShipsBySide[sideIndex];", resolvedOutcome, StringComparison.Ordinal);
 
             Assert.That(winnerCheck, Is.GreaterThan(capture));
             Assert.That(resolvedOutcome, Is.GreaterThan(winnerCheck));
