@@ -17,7 +17,7 @@ namespace Assets.Scripts.Data
         public string Type;
 
 
-        public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type) : base()
+        public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type, bool forceCreateDefaults = false) : base()
         {
             Type = ConfigData.FleetDataFilenames[type];
             _startingShips = startingShips != null
@@ -31,11 +31,12 @@ namespace Assets.Scripts.Data
 
             dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
             {
-                ConfigData.IsFleetDataLoaded[type] = true;
                 //Debug.Log($"Loading ships for {Type}");
+                _shipList.Clear();
                 LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
+                ConfigData.IsFleetDataLoaded[type] = true;
                 //Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)]}");
-            });
+            }, forceCreateDefaults);
 
         }
 
