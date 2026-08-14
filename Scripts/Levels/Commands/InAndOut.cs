@@ -1,5 +1,6 @@
 ﻿
 using Assets.Scripts.Entities.Ships;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -56,16 +57,20 @@ namespace Assets.Scripts.Levels.Commands
             HasReachedEnemySquad = false;
         }
 
-        private bool IsAnyShipPathfinding()
+        private bool MoveTowardsEnemiesTracked()
         {
-            foreach (Ship ship in GetSquad().GetShips())
+            List<Ship> ships = GetSquad().GetShips();
+            for (int i = 0; i < ships.Count; i++)
             {
-                if (ship.IsPathfinding)
+                Ship ship = ships[i];
+                Ship target = ship.SetAndGetTargetEnemy();
+                if (target == null)
                 {
-                    return true;
+                    return false;
                 }
+                ship.MoveToTrackedPoint(target.GetPosition());
             }
-            return false;
+            return true;
         }
 
         private void InAndOutTimer()
@@ -86,9 +91,10 @@ namespace Assets.Scripts.Levels.Commands
                 if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                 {
                     GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
-                    if (!IsAnyShipPathfinding())
+                    if (!MoveTowardsEnemiesTracked())
                     {
-                        MoveTowardsEnemies();
+                        SetFinalize("No more enemy ships to target");
+                        return;
                     }
                 }
                 else
