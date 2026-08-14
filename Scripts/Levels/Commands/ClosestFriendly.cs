@@ -1,5 +1,4 @@
 ﻿
-using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -31,18 +30,6 @@ namespace Assets.Scripts.Levels.Commands
             _closestFriendlySquad = null;
         }
 
-        private bool IsAnyShipPathfinding()
-        {
-            foreach (Ship ship in GetSquad().GetShips())
-            {
-                if (ship.IsPathfinding)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         Vector2 _timer_position;
         private void Timer()
         {
@@ -63,10 +50,8 @@ namespace Assets.Scripts.Levels.Commands
                 ? $"Trying to catch up to friendly squad #{_closestFriendlySquad.SquadNumber}"
                 : $"Following friendly squad #{_closestFriendlySquad.SquadNumber}";
 
-            if (!IsAnyShipPathfinding())
-            {
-                SetAndMove(_timer_position);
-            }
+            SetDestination(_timer_position);
+            squad.MoveTracked(GetDestination());
         }
     }
 }
