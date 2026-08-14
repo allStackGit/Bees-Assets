@@ -75,13 +75,28 @@ namespace Assets.Scripts.Levels
             _save_targetingSquadMarkers.AddRange(State.TargetingSquadMarkers);
             for (_save_i = 0; _save_i < _save_targetingSquadMarkers.Count; _save_i++) _save_targetingSquadMarkers[_save_i].Kill();
 
-            if (HasObstacles)
+            if (HasObstacles && ObstacleMap != null)
             {
-                for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                if (_usesPooledStaticObstaclePrefabs)
                 {
-                    Destroy(ObstacleMap.Obstacles[_save_i].gameObject);
+                    StaticObstaclePool obstaclePool = GetStaticObstaclePool();
+                    for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                    {
+                        obstaclePool.ReleaseObstacle(ObstacleMap.Obstacles[_save_i]);
+                    }
+                    obstaclePool.ReleaseBackground(ObstacleMap.ObstacleBackground);
+                    ObstacleMap.Obstacles.Clear();
+                    ObstacleMap.ObstacleBackground = null;
+                    _usesPooledStaticObstaclePrefabs = false;
                 }
-                Destroy(ObstacleMap.ObstacleBackground);
+                else
+                {
+                    for (_save_i = 0; _save_i < ObstacleMap.Obstacles.Count; _save_i++)
+                    {
+                        Destroy(ObstacleMap.Obstacles[_save_i].gameObject);
+                    }
+                    Destroy(ObstacleMap.ObstacleBackground);
+                }
             }
             if (State.Obstacles.Count > 0)
             {
