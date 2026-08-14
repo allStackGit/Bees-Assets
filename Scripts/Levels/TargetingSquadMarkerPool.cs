@@ -40,7 +40,7 @@ namespace Assets.Scripts.Levels
                 marker = _inactive.Pop();
                 if (marker != null)
                 {
-                    _inactiveIds.Remove(marker.GetInstanceID());
+                    _inactiveIds.Remove(marker.GetEntityId());
                 }
             }
 
@@ -81,7 +81,7 @@ namespace Assets.Scripts.Levels
             }
 
             _active.Remove(marker);
-            if (!_inactiveIds.Add(marker.GetInstanceID()))
+            if (!_inactiveIds.Add(marker.GetEntityId()))
             {
                 return;
             }
