@@ -166,7 +166,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("titania.MaxHealth = 10000;", source);
             StringAssert.Contains("titania.Health = 10000;", source);
             StringAssert.Contains("titania.OriginalHealth = 10000;", source);
-            StringAssert.Contains("healthLabel.text = \"Titania II Health\";", source);
+            StringAssert.DoesNotContain("Titania II Health", source);
             StringAssert.Contains("Stage.Menus.Counter.SetActive(false);", source);
             StringAssert.Contains("Stage.Menus.PlutoShield.SetActive(true);", source);
             StringAssert.Contains("UpdateTitania2BaseHealth(titania, Stage.Menus.PlutoShieldHealthBar);", source);
@@ -182,7 +182,7 @@ namespace Bees.Tests.EditMode
         {
             string source = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
             StringAssert.Contains("campaignMissionId == 8", source);
-            StringAssert.Contains("x = _clockRect.anchoredPosition.x;", source);
+            StringAssert.Contains("((_clockRect.rect.width - _speedRect.rect.width) * 0.5f)", source);
             StringAssert.Contains("TitaniaClockGap", source);
             StringAssert.Contains("campaignMissionId == 3", source);
             StringAssert.Contains("_counterRect.anchoredPosition.y +", source);
