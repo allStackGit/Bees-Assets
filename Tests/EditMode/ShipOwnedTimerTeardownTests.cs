@@ -24,7 +24,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("CancelTimer(_tryToFindPathAgainTimer)", helper);
             StringAssert.Contains("CancelTimer(_combatTimerScaledTimer)", helper);
             StringAssert.Contains("CancelTimer(_showShipStatsTimer)", helper);
-            StringAssert.Contains("Weapons.ForEach(weapon => weapon.CancelTimer())", helper);
+            StringAssert.Contains("for (int i = 0; i < Weapons.Count; i++)", helper);
+            StringAssert.Contains("Weapons[i].CancelTimer();", helper);
 
             int targetStart = source.IndexOf("public Ship SetAndGetTargetEnemy", killStart, System.StringComparison.Ordinal);
             string kill = source.Substring(killStart, targetStart - killStart);
