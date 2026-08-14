@@ -1,4 +1,6 @@
 using Assets.Scripts.Entities;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,32 +11,25 @@ namespace Assets.Scripts.Levels
 {
     internal static class TitaniaRouteState
     {
-        private const string StoragePrefix = "bees.titania.route.";
-        private static readonly HashSet<Vector2Int> OpenedBarrierPositions = new HashSet<Vector2Int>();
-        private static string _loadedStorageKey;
+        private const string ProgressProperty = "TitaniaOpenedBarrierPositions";
+        private const string LegacyKeyPrefix = "bees.titania.route.";
+        private static readonly HashSet<string> OpenedBarrierPositions = new HashSet<string>();
+        private static bool _loaded;
 
         internal static void BeginMinesweeper()
         {
-            _loadedStorageKey = GetStorageKey();
+            EnsureLoaded();
             OpenedBarrierPositions.Clear();
-            PlayerPrefs.DeleteKey(_loadedStorageKey);
-            PlayerPrefs.Save();
+            SaveProgress();
         }
 
         internal static void RecordOpenedBarrier(Vector2 localPosition)
         {
             EnsureLoaded();
-            if (!OpenedBarrierPositions.Add(ToKey(localPosition)))
+            if (OpenedBarrierPositions.Add(ToKey(localPosition)))
             {
-                return;
+                SaveProgress();
             }
-
-            string serialized = string.Join(";", OpenedBarrierPositions
-                .OrderBy(position => position.x)
-                .ThenBy(position => position.y)
-                .Select(position => $"{position.x},{position.y}"));
-            PlayerPrefs.SetString(_loadedStorageKey, serialized);
-            PlayerPrefs.Save();
         }
 
         internal static bool WasBarrierOpened(Vector2 localPosition)
@@ -43,45 +38,52 @@ namespace Assets.Scripts.Levels
             return OpenedBarrierPositions.Contains(ToKey(localPosition));
         }
 
+        internal static string AddToPlayerProgressJson(string userProgressJson)
+        {
+            EnsureLoaded();
+            JObject progress = JObject.Parse(userProgressJson);
+            progress[ProgressProperty] = new JArray(OpenedBarrierPositions.OrderBy(key => key));
+            return progress.ToString(Formatting.None);
+        }
+
         private static void EnsureLoaded()
         {
-            string storageKey = GetStorageKey();
-            if (_loadedStorageKey == storageKey)
+            if (_loaded || ConfigData.UserProgressData == null || !ConfigData.IsUserProgressDataLoaded)
             {
                 return;
             }
 
-            _loadedStorageKey = storageKey;
+            _loaded = true;
             OpenedBarrierPositions.Clear();
-            string serialized = PlayerPrefs.GetString(storageKey, string.Empty);
-            foreach (string entry in serialized.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            if (ConfigData.UserProgressData.GetDataFile().GetJsonObject() is JObject progress &&
+                progress[ProgressProperty] is JArray storedRoute)
             {
-                string[] values = entry.Split(',');
-                if (values.Length == 2 && int.TryParse(values[0], out int x) && int.TryParse(values[1], out int y))
+                foreach (string key in storedRoute.Values<string>())
                 {
-                    OpenedBarrierPositions.Add(new Vector2Int(x, y));
+                    if (!string.IsNullOrWhiteSpace(key)) OpenedBarrierPositions.Add(key);
                 }
+                return;
+            }
+
+            // One-time migration for profiles that completed Titania I before this field existed.
+            string legacy = PlayerPrefs.GetString(LegacyKeyPrefix + ConfigData.GetUserId(), string.Empty);
+            foreach (string key in legacy.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!string.IsNullOrWhiteSpace(key)) OpenedBarrierPositions.Add(key.Trim());
             }
         }
 
-        private static string GetStorageKey()
+        private static void SaveProgress()
         {
-            return StoragePrefix + ConfigData.GetUserId();
+            ConfigData.UserProgressData?.Save();
         }
 
-        private static Vector2Int ToKey(Vector2 position)
+        private static string ToKey(Vector2 position)
         {
-            return new Vector2Int(
-                Mathf.RoundToInt(position.x * 10f),
-                Mathf.RoundToInt(position.y * 10f));
+            return $"{Mathf.RoundToInt(position.x * 10f)},{Mathf.RoundToInt(position.y * 10f)}";
         }
     }
 
-    /// <summary>
-    /// Beenoculars uses the same maze as Minesweeper after the demolition sequence. The authored
-    /// Beenoculars prefab currently has every removable wall already gone, so load the intact maze
-    /// and remove only the wall positions actually opened during the immediately preceding mission.
-    /// </summary>
     [DefaultExecutionOrder(1500)]
     internal sealed class TitaniaMazeContinuityGuard : MonoBehaviour
     {
@@ -90,7 +92,6 @@ namespace Assets.Scripts.Levels
         {
             SceneManager.sceneLoaded -= PrepareLevelOptions;
             SceneManager.sceneLoaded += PrepareLevelOptions;
-
             GameObject host = new GameObject("Titania Maze Continuity Guard");
             DontDestroyOnLoad(host);
             host.AddComponent<TitaniaMazeContinuityGuard>();
@@ -99,15 +100,13 @@ namespace Assets.Scripts.Levels
         private static void PrepareLevelOptions(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
             if (scene.name != "Space" || ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
-                ConfigData.UserProgressData == null || ConfigData.Configuration == null ||
-                ConfigData.LevelOptions == null)
+                ConfigData.UserProgressData == null || ConfigData.Configuration == null || ConfigData.LevelOptions == null)
             {
                 return;
             }
 
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
-                ConfigData.Configuration.UserSide,
-                ConfigData.GameModes.Campaign);
+                ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign);
             if (missionId == 8 && ConfigData.LevelOptions.Obstacles == "Bee-noculars")
             {
                 ConfigData.LevelOptions.Obstacles = "Minesweeper";
@@ -116,10 +115,7 @@ namespace Assets.Scripts.Levels
 
         private void Update()
         {
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
-            {
-                return;
-            }
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign) return;
 
             foreach (Level level in FindObjectsOfType<Level>())
             {
@@ -131,40 +127,25 @@ namespace Assets.Scripts.Levels
                 }
 
                 MapObject[] demolitionObjects = level.Map.transform.GetComponentsInChildren<MapObject>(true);
-                if (demolitionObjects.Length == 0)
-                {
-                    continue;
-                }
+                if (demolitionObjects.Length == 0) continue;
 
                 List<Obstacle> barriers = level.Map.transform.GetComponentsInChildren<Obstacle>(true)
-                    .Where(obstacle => obstacle != null && !obstacle.IsDead)
-                    .ToList();
-                HashSet<Transform> assignedBarriers = new HashSet<Transform>();
+                    .Where(obstacle => obstacle != null && !obstacle.IsDead).ToList();
+                HashSet<Transform> assigned = new HashSet<Transform>();
 
                 foreach (MapObject demolitionObject in demolitionObjects)
                 {
-                    if (demolitionObject == null)
-                    {
-                        continue;
-                    }
-
-                    Obstacle nearestBarrier = barriers
-                        .Where(obstacle => !assignedBarriers.Contains(obstacle.transform))
-                        .OrderBy(obstacle =>
-                            ((Vector2)obstacle.transform.position - (Vector2)demolitionObject.transform.position).sqrMagnitude)
+                    if (demolitionObject == null) continue;
+                    Obstacle barrier = barriers
+                        .Where(obstacle => !assigned.Contains(obstacle.transform))
+                        .OrderBy(obstacle => ((Vector2)obstacle.transform.position -
+                                             (Vector2)demolitionObject.transform.position).sqrMagnitude)
                         .FirstOrDefault();
-                    if (nearestBarrier != null)
+                    if (barrier != null)
                     {
-                        assignedBarriers.Add(nearestBarrier.transform);
-                        if (TitaniaRouteState.WasBarrierOpened(nearestBarrier.transform.localPosition))
-                        {
-                            // Kill through the normal obstacle lifecycle so the Pathfinder removes
-                            // the wall instead of merely hiding its renderer/collider.
-                            nearestBarrier.Kill();
-                        }
+                        assigned.Add(barrier.transform);
+                        if (TitaniaRouteState.WasBarrierOpened(barrier.transform.localPosition)) barrier.Kill();
                     }
-
-                    // Titania II inherits the resulting openings, not the demolition objects.
                     demolitionObject.gameObject.SetActive(false);
                 }
 
@@ -174,7 +155,5 @@ namespace Assets.Scripts.Levels
         }
     }
 
-    internal sealed class TitaniaMazeAppliedMarker : MonoBehaviour
-    {
-    }
+    internal sealed class TitaniaMazeAppliedMarker : MonoBehaviour { }
 }
