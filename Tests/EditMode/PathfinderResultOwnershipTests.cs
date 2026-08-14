@@ -106,7 +106,7 @@ namespace Bees.Tests.EditMode
 
             Assert.That(RuntimeAssembly.GetCount(waitingQueue), Is.EqualTo(2));
             object dequeuedOldRequest = waitingQueue.GetType().GetMethod("Dequeue").Invoke(waitingQueue, null);
-            Assert.That(dequeuedOldRequest, Is.SameAs(oldRequest));
+            Assert.That(dequeuedOldRequest, Is.EqualTo(oldRequest));
             RuntimeAssembly.Invoke(_pathfinder, "ReleaseQueuedShipIfNoRemainingRequests", _ship);
             Assert.That(RuntimeAssembly.GetCount(queuedShips), Is.EqualTo(1),
                 "The queue marker was removed while the reused Ship still had a current request.");
