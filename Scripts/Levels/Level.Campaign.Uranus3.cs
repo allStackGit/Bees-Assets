@@ -119,7 +119,24 @@ namespace Assets.Scripts.Levels
                             }
                             else
                             {
-                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(10, 20), true);
+                                List<DialogueLine> successDialogue = new List<DialogueLine>();
+                                successDialogue.AddRange(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(10, 2));
+
+                                // Fritz is only valid here if he has actually joined the fleet. The
+                                // struck Uranus I Cruiser encounter no longer recruits him, so a
+                                // normal current campaign omits his two legacy Uranus III lines.
+                                if (ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Cruiser))
+                                {
+                                    successDialogue.Add(Stage.CutsceneManager.Uranus_ANewThreat[12]);
+                                }
+
+                                successDialogue.AddRange(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(13, 6));
+                                if (ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Cruiser))
+                                {
+                                    successDialogue.Add(Stage.CutsceneManager.Uranus_ANewThreat[19]);
+                                }
+                                successDialogue.AddRange(Stage.CutsceneManager.Uranus_ANewThreat.GetRange(20, 10));
+                                Stage.CutsceneManager.PlayDialogueSection(successDialogue, true);
                             }
                         },
                         "Level 11 Ending"));
