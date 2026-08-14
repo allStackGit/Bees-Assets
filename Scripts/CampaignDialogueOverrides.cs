@@ -176,8 +176,9 @@ public static class CampaignDialogueOverrides
 
     private static void PatchUranusOnTheOffensive(List<DialogueLine> lines)
     {
-        // The Cruiser/Fritz encounter and recruitment lines are struck from the current script.
-        // Only active Uranus I lines are patched here; the runtime no longer invokes the struck ranges.
+        // User clarification places Fritz's recruitment on Uranus; the duplicate Saturn
+        // introduction is obsolete and Saturn is not yet part of the playable mission catalog.
+        Set(lines, 10, "Samuel", "They’re… different.");
         Set(lines, 15, "Joey", "That’s not gonna be so easy. Its weapon has a huge range from what I can tell.");
         Set(lines, 38, "Samuel", "All of our fleet we sent out is down, commander.");
     }
