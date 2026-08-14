@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections.Generic;
 using UnityEngine;
