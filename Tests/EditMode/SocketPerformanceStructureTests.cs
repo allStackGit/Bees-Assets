@@ -18,11 +18,12 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_standingRequests.Clear();", source);
             StringAssert.Contains("_standingRequests.AddRange(StandingRequests);", source);
             StringAssert.DoesNotContain("StandingRequests.ToList()", source);
-            StringAssert.Contains("if (_checkStandingRequests_serverRequests == null)", source);
+            StringAssert.Contains("_waitableRequestSnapshot.Clear();", source);
+            StringAssert.Contains("_waitableRequestSnapshot.AddRange(_waitableRequests);", source);
         }
 
         [Test]
-        public void StandingRequestLookupUsesDirectSetScan()
+        public void StandingRequestLookupUsesIndexedSetLookup()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "Socket.cs"));
@@ -33,9 +34,9 @@ namespace Bees.Tests.EditMode
             Assert.That(end, Is.GreaterThan(start));
             string method = source.Substring(start, end - start);
 
-            StringAssert.Contains("foreach (ServerRequest request in StandingRequests)", method);
-            StringAssert.Contains("if (request.Hash == hash)", method);
+            StringAssert.Contains("StandingRequests.TryGetByHash(hash, out ServerRequest request)", method);
             StringAssert.DoesNotContain("FirstOrDefault", method);
+            StringAssert.DoesNotContain("foreach", method);
         }
 
         [Test]
