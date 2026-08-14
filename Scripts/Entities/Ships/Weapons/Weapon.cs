@@ -38,7 +38,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public SpriteRenderer SpriteRenderer;
         public Transform PieceTransform;
 
-        public virtual bool ShouldFire => TargetShip != null && !TargetShip.IsDead && !Ship.IsCeaseFire;
+        public virtual bool ShouldFire =>
+            TargetShip != null && !TargetShip.IsDead && !Ship.IsCeaseFire && HasClearLineOfFire(TargetShip);
 
         public virtual void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float specialFirePower, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType)
@@ -209,7 +210,31 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         public virtual bool IsShipValidTarget(Ship potentialTargetShip)
         {
-            return !potentialTargetShip.IsDead && IsShipWithinRange(potentialTargetShip);
+            return potentialTargetShip != null &&
+                   !potentialTargetShip.IsDead &&
+                   IsShipWithinRange(potentialTargetShip) &&
+                   HasClearLineOfFire(potentialTargetShip);
+        }
+
+        /// <summary>
+        /// Static obstacles block weapons just as they block the projectiles themselves. Use
+        /// world-space physics coordinates here because Entity.GetPosition() is map-local.
+        /// </summary>
+        public bool HasClearLineOfFire(Ship potentialTargetShip)
+        {
+            if (potentialTargetShip == null || Level == null || !Level.HasObstacles)
+            {
+                return true;
+            }
+
+            Vector2 origin = PieceTransform != null
+                ? (Vector2)PieceTransform.position
+                : (Vector2)Ship.Transform.position;
+            Vector2 targetPoint = potentialTargetShip.Collider != null
+                ? potentialTargetShip.Collider.ClosestPoint(origin)
+                : (Vector2)potentialTargetShip.Transform.position;
+
+            return Physics2D.Linecast(origin, targetPoint, ConfigData.ObstaclesLayerMask).collider == null;
         }
 
         private List<Ship> _queue;
