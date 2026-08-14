@@ -37,13 +37,17 @@ namespace Bees.Tests.EditMode
             Assert.That(releaseMethod, Is.GreaterThan(start));
 
             string method = source.Substring(start, releaseMethod - start);
-            StringAssert.Contains("Projectiles.ToList()", method);
+            StringAssert.Contains("_resetProjectiles.Clear();", method);
+            StringAssert.Contains("_resetProjectiles.AddRange(Projectiles);", method);
             StringAssert.Contains("projectile.Kill();", method);
-            StringAssert.Contains("Obstacles.ToList()", method);
+            StringAssert.Contains("_resetObstacles.Clear();", method);
+            StringAssert.Contains("_resetObstacles.AddRange(Obstacles);", method);
             StringAssert.Contains("((CollisionAsteroid)obstacle).Kill(true);", method);
             StringAssert.Contains("((MiningAsteroid)obstacle).Kill(true);", method);
             StringAssert.Contains("((AsteroidPiece)obstacle).Kill();", method);
             StringAssert.Contains("Release();", method);
+            StringAssert.DoesNotContain("Projectiles.ToList()", method);
+            StringAssert.DoesNotContain("Obstacles.ToList()", method);
         }
 
         [Test]
