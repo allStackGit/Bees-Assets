@@ -16,4 +16,11 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** `RocketExplosion.ShipCollision()` calls `HasHitShip(ship)` on every queued ship contact; `HasHitShip()` delegates to `_shipsHit.Contains`, while `ContactTarget()` only appends and no runtime consumer depends on hit order. The same class already uses a reference-identity `HashSet<Obstacle>` for identical obstacle duplicate suppression, and repository tests codify reference-identity requirements for cross-frame pooled ship sets.  
 **Risk:** Preserve exactly-once damage semantics and pooled reset behavior. Do not use `Ship.GetHashCode()`/mutable runtime Id equality for the set because pooled ship wrappers change runtime identity across lives.
 
+### PERF-016 — Replace LINQ minion squad numbering with one linear scan
+**Location:** `Scripts/Levels/GameState.Registry.cs`, `AddSquad()`  
+**Cost:** Every transient/minion squad registration calculates the next runtime squad number with `Where(...).Select(...).DefaultIfEmpty(...).Max()`. Queen waves and Scout beacon drops create minion squads during live combat, so each spawn constructs LINQ iterator state and traverses the squad collection through multiple iterator layers solely to find the maximum number for one side.  
+**Optimization:** Scan `Squads` once, track the maximum `SquadNumber` whose `Side` matches the new minion squad, then assign `max + 1`. This removes the LINQ pipeline while keeping the same O(n) ordering-independent result.  
+**Evidence:** `Queen.CreateMinionSquad()` and `Scout.CreateMinionSquad()` set `IsMinionSquad = true` and call `Level.State.AddSquad()`. `AddSquad()` runs the LINQ maximum path for those squads. `TransientSquadNumberingTests` already asserts that normal side-1 squad #1 followed by two minion squads produces runtime numbers 2 and 3 without increasing `OriginalSquadCounts`.  
+**Risk:** Preserve side filtering, the empty/default maximum of zero, and the invariant that transient squads do not increment `OriginalSquadCounts` or mark persisted `SavedSquad` ownership.
+
 Clean static passes: 0 / 2.
