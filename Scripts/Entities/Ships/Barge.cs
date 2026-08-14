@@ -163,7 +163,7 @@ namespace Assets.Scripts.Entities.Ships
                 int damage = math.min(Charge.Power, ship.Health);
                 LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
                 LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this);
-                Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
+                if (!Stage.IsTraining) Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf)
                 {
@@ -183,9 +183,8 @@ namespace Assets.Scripts.Entities.Ships
                 if (!Stage.IsTraining)
                 {
                     BargeLoadingChargeAnimation.SetActive(true);
+                    Debug.Log($"{Name} is about to charge");
                 }
-
-                Debug.Log($"{Name} is about to charge");
                 yield return new WaitForSeconds(2);
 
                 if (IsDead || lifecycleId != _chargeLifecycleId)
@@ -193,9 +192,9 @@ namespace Assets.Scripts.Entities.Ships
                     yield break;
                 }
 
-                Debug.Log($"{Name} is charging");
                 if (!Stage.IsTraining)
                 {
+                    Debug.Log($"{Name} is charging");
                     BargeLoadingChargeAnimation.SetActive(false);
                     BargeChargeAnimation.SetActive(true);
                     BargeChargeImageAnimation.SetActive(true);
