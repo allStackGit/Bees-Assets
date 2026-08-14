@@ -110,7 +110,7 @@ namespace Assets.Scripts.Levels
                 exitZoneCreated = true;
                 GameObject exitBox = Instantiate(Stage.Prefabs.ExitZonePrefab, Map.transform);
                 exitBox.transform.localPosition = centerOfTitania;
-                exitBox.transform.localScale = new Vector2(75, 75);
+                exitBox.transform.localScale = new Vector2(40f, 40f);
                 Zone exitZone = exitBox.GetComponent<Zone>();
 
                 exitZone.OnShipEnter = ship =>
