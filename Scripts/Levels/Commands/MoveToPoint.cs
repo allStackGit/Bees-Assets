@@ -40,7 +40,10 @@ namespace Assets.Scripts.Levels.Commands
                     SetFinalize("Reached the specified destination on the map");
                     return;
                 }
-                GetSquad().Status = $"Moving to specific destination: {Destination}";
+                if (!Stage.IsTraining)
+                {
+                    GetSquad().Status = $"Moving to specific destination: {Destination}";
+                }
             }
         }
     }
