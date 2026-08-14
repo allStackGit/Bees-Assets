@@ -11,6 +11,16 @@ namespace Assets.Scripts.Entities
         private Ship _collidingShip;
         private int _frameCollisions;
         private Barge _barge;
+
+        public void ResetForReuse()
+        {
+            ClearData();
+            _collidingThing = null;
+            _collidingShip = null;
+            _frameCollisions = 0;
+            _barge = null;
+        }
+
         public void Collision(Collider2D collider)
         {
             _collidingThing = collider.gameObject;
