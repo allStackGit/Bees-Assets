@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Reflection;
 using NUnit.Framework;
@@ -35,6 +35,50 @@ namespace Bees.Tests.EditMode
             AssertMap(maps[1], 1, "Neptune", new Vector2(0, -430), new Vector2(0, 430));
             AssertMap(maps[2], 2, "Titania", new Vector2(0, -215), new Vector2(0, 215));
             AssertMap(maps[3], 3, "Uranus", new Vector2(0, -430), new Vector2(0, 430));
+        }
+
+        [Test]
+        public void MissingTitaniaSceneReferenceIsRecoveredFromMapPrefabCatalog()
+        {
+            Type configDataType = FindRuntimeType("Assets.Scripts.ConfigData");
+            Type prefabsType = FindRuntimeType("Assets.Scripts.Levels.Prefabs");
+            IList configuredMaps = (IList)configDataType.GetField("Maps", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            FieldInfo mapsField = prefabsType.GetField("Maps", BindingFlags.Public | BindingFlags.Instance);
+
+            GameObject catalogObject = Resources.Load<GameObject>("Map Prefab Catalog");
+            Assert.That(catalogObject, Is.Not.Null, "The map prefab fallback catalog is not loadable from Resources.");
+
+            Component catalog = catalogObject.GetComponent(prefabsType);
+            Assert.That(catalog, Is.Not.Null, "The map prefab fallback catalog is missing its Prefabs component.");
+            IList catalogMaps = (IList)mapsField.GetValue(catalog);
+            Assert.That(catalogMaps.Count, Is.EqualTo(configuredMaps.Count));
+            AssertMapPrefabOrder(catalogMaps, configuredMaps);
+
+            // Reproduce the stale Hivemind Training scene state: Pluto, Neptune and Uranus,
+            // with Titania omitted. NormalizeMapPrefabs must restore Titania at map index 2.
+            GameObject host = new GameObject("Map Prefab Recovery Test");
+            try
+            {
+                Component runtimePrefabs = host.AddComponent(prefabsType);
+                IList incompleteMaps = (IList)Activator.CreateInstance(mapsField.FieldType);
+                incompleteMaps.Add(catalogMaps[0]);
+                incompleteMaps.Add(catalogMaps[1]);
+                incompleteMaps.Add(catalogMaps[3]);
+                mapsField.SetValue(runtimePrefabs, incompleteMaps);
+
+                MethodInfo normalize = prefabsType.GetMethod("NormalizeMapPrefabs", BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(normalize, Is.Not.Null);
+                normalize.Invoke(runtimePrefabs, null);
+
+                IList repairedMaps = (IList)mapsField.GetValue(runtimePrefabs);
+                Assert.That(repairedMaps.Count, Is.EqualTo(configuredMaps.Count));
+                AssertMapPrefabOrder(repairedMaps, configuredMaps);
+                Assert.That(((GameObject)repairedMaps[2]).name, Is.EqualTo("Titania"));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+            }
         }
 
         [Test]
@@ -96,6 +140,17 @@ namespace Bees.Tests.EditMode
             finally
             {
                 UnityEngine.Object.DestroyImmediate(gameObject);
+            }
+        }
+
+        private static void AssertMapPrefabOrder(IList mapPrefabs, IList configuredMaps)
+        {
+            Assert.That(mapPrefabs.Count, Is.EqualTo(configuredMaps.Count));
+            for (int i = 0; i < configuredMaps.Count; i++)
+            {
+                object configuredMap = configuredMaps[i];
+                string expectedName = (string)configuredMap.GetType().GetField("Name").GetValue(configuredMap);
+                Assert.That(((GameObject)mapPrefabs[i]).name, Is.EqualTo(expectedName), $"Map prefab at index {i} does not match ConfigData.Maps.");
             }
         }
 
