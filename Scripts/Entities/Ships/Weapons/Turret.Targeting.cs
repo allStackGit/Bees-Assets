@@ -68,9 +68,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                    potentialTargetShip.Side != Side &&
                    IsShipWithinRange(potentialTargetShip) &&
                    potentialTargetShip.IsInBounds() &&
-                   (!Level.HasObstacles || !Utilities.HasObstaclesInTheWay(
-                       GetPosition() + Level.GetPosition(),
-                       GetTargetPoint(potentialTargetShip) + Level.GetPosition()));
+                   HasClearLineOfFire(potentialTargetShip);
         }
 
         protected void FireNext()
