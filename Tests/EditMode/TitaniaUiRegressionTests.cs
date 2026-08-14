@@ -77,13 +77,64 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CloseButtonsAndMenuFramesAreNormalized()
+        public void MenuFramesRemainNormalizedButCloseXReturnsToAuthoredSize()
         {
-            string source = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
-            StringAssert.Contains("image.sprite.name.StartsWith(\"menu_button\")", source);
-            StringAssert.Contains("button.gameObject.AddComponent<Outline>()", source);
-            StringAssert.Contains("Mathf.Max(rect.sizeDelta.x, 28f)", source);
-            StringAssert.Contains("UpdateDynamicButtonStyles();", source);
+            string frameSource = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
+            string sizingSource = Read("Scripts", "UI Components", "UiSizingCompatibilityGuard.cs");
+            StringAssert.Contains("image.sprite.name.StartsWith(\"menu_button\")", frameSource);
+            StringAssert.Contains("button.gameObject.AddComponent<Outline>()", frameSource);
+            StringAssert.Contains("rect.sizeDelta = new Vector2(16f, 16f);", sizingSource);
+            StringAssert.Contains("rect.sizeDelta.x - 4f", sizingSource);
+        }
+
+        [Test]
+        public void TooltipAndMissionSummaryCloseOnPointerDown()
+        {
+            string tooltip = Read("Scripts", "UI Components", "Tooltip.cs");
+            string summary = Read("Scripts", "UI Components", "SummaryClosePressGuard.cs");
+            StringAssert.Contains("EventTriggerType.PointerDown", tooltip);
+            StringAssert.Contains("press.callback.AddListener(_ => Hide());", tooltip);
+            StringAssert.Contains("EventTriggerType.PointerDown", summary);
+            StringAssert.Contains("menus.HideMissionSummary();", summary);
+        }
+
+        [Test]
+        public void SquadBoxesUseDeterministicSortingOrder()
+        {
+            string source = Read("Scripts", "Levels", "Squad.UI.cs");
+            StringAssert.Contains("boxRenderer.sortingOrder = SquadNumber > 0 ? SquadNumber : ItemId;", source);
+        }
+
+        [Test]
+        public void CampaignPresentationDoesNotUseMissionDevelopmentStatusToSkipIntros()
+        {
+            string routing = Read("Scripts", "ConfigData.Campaign.cs");
+            string guard = Read("Scripts", "Scenes", "CampaignPresentationGuard.cs");
+            StringAssert.DoesNotContain("ShouldSkipPreLevelIntroForTesting(currentLevel)", routing);
+            StringAssert.Contains("ConfigData.IsTestingLevel = false;", guard);
+        }
+
+        [Test]
+        public void TitaniaRoutePersistsAndIsAppliedToBeenoculars()
+        {
+            string route = Read("Scripts", "Levels", "TitaniaRouteState.cs");
+            string minesweeper = Read("Scripts", "Levels", "Titania1Minesweeper.cs");
+            StringAssert.Contains("PlayerPrefs.SetString", route);
+            StringAssert.Contains("ConfigData.LevelOptions.Obstacles = \"Minesweeper\";", route);
+            StringAssert.Contains("TitaniaRouteState.WasBarrierOpened", route);
+            StringAssert.Contains("nearestBarrier.Kill();", route);
+            StringAssert.Contains("BeginTitania1DemolitionTracking();", minesweeper);
+            StringAssert.Contains("TitaniaRouteState.RecordOpenedBarrier", minesweeper);
+        }
+
+        [Test]
+        public void TitaniaTwoAddsMirroredIntervalWavesAndBaseHealth()
+        {
+            string source = Read("Scripts", "Levels", "Level.Titania2Enhancements.cs");
+            StringAssert.Contains("baseHealthLabel.text = \"Base Health\";", source);
+            StringAssert.Contains("ScheduleTitania2ExtraWave(25f, -0.65f, -1f", source);
+            StringAssert.Contains("ScheduleTitania2ExtraWave(315f, -0.55f, -1f", source);
+            StringAssert.Contains("AddTitania2BeeWave(squads, normalizedX, normalizedY);", source);
         }
     }
 }
