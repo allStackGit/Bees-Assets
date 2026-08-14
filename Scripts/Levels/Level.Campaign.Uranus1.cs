@@ -67,39 +67,10 @@ namespace Assets.Scripts.Levels
                 () =>
                 {
                     Stage.Menus.TogglePausePanel();
-                    ScaledTimer cruiserTimer = new ScaledTimer(5f, () =>
-                    {
-                        ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Cruiser, 2);
-                        SavedSquad cruiserSquad = CurrentShips.BuildNewSquad(
-                            $"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}",
-                            ConfigData.Configuration.HumanSide,
-                            ShipTypes.Cruiser,
-                            2);
 
-                        ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
-                        ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
-                        ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser);
-                        ConfigData.UserProgressData.SetShipTypes();
-
-                        LevelConstructor.SpawnShipsAndSquads(
-                            new List<SavedSquad>() { cruiserSquad },
-                            new Vector2(200, 200),
-                            Vector2.zero,
-                            true);
-
-                        AddReinforcementSquads(new List<SavedSquad>()
-                        {
-                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 8, true, true),
-                        }, new Vector2(280, 200), Vector2.zero);
-                        AddReinforcementsToHivemindCommandQueue();
-
-                        // User clarification keeps Fritz's introduction on Uranus rather than the
-                        // not-yet-built Saturn sequence. Preserve the current authored wording.
-                        Stage.CutsceneManager.Uranus_OnTheOffensive[10].Text = "They’re… different.";
-                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(6, 6));
-                    });
-                    AddTimer(cruiserTimer);
-
+                    // The Cruiser/Fritz encounter and recruitment sequence is struck through in
+                    // the current mission script. Uranus I therefore proceeds directly into the
+                    // Bumblebee encounter after the Carrier introduction.
                     Ship bumblebee = State.GetBeeShips().First(ship => ship.ShipType == ConfigData.ShipTypes.Bumblebee);
                     NextTriggers.Add(new Trigger(
                         () => State.GetShips(ConfigData.Configuration.UserSide).Any(ship =>
@@ -127,15 +98,21 @@ namespace Assets.Scripts.Levels
                             WinningSide = State.IsSideKilled(ConfigData.Configuration.UserSide)
                                 ? ConfigData.Configuration.AISide
                                 : ConfigData.Configuration.UserSide;
-                            CancelTimer(cruiserTimer);
                             CloseLevel();
                             if (WinningSide == ConfigData.Configuration.UserSide)
                             {
-                                Stage.CutsceneManager.PlayDialogueSection(
-                                    Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(
-                                        18,
-                                        ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory) ? 20 : 17),
-                                    true);
+                                // The generic success/Fritz block is struck. The only active
+                                // success dialogue is the Factory-specific three-line exchange.
+                                if (ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory))
+                                {
+                                    Stage.CutsceneManager.PlayDialogueSection(
+                                        Stage.CutsceneManager.Uranus_OnTheOffensive.GetRange(35, 3),
+                                        true);
+                                }
+                                else
+                                {
+                                    Uranus1Ending();
+                                }
                             }
                             else
                             {
