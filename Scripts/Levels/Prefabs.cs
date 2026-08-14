@@ -9,6 +9,8 @@ namespace Assets.Scripts.Levels
 {
     public class Prefabs : MonoBehaviour
     {
+        private const string MapPrefabCatalogResourcePath = "Map Prefab Catalog";
+
         /// <summary>
         /// Level Prefab
         /// </summary>
@@ -142,21 +144,51 @@ namespace Assets.Scripts.Levels
             }
 
             Dictionary<string, GameObject> mapsByName = new Dictionary<string, GameObject>();
-            foreach (GameObject mapPrefab in Maps)
-            {
-                mapsByName[mapPrefab.name] = mapPrefab;
-            }
+            AddMapPrefabsByName(Maps, mapsByName);
 
+            bool loadedFallbackCatalog = false;
             List<GameObject> orderedMaps = new List<GameObject>(ConfigData.Maps.Count);
             foreach (Data.Map mapData in ConfigData.Maps)
             {
                 if (!mapsByName.TryGetValue(mapData.Name, out GameObject mapPrefab))
                 {
-                    throw new System.InvalidOperationException($"Missing map prefab for {mapData.Name}. Map prefab names must match ConfigData.Maps locations.");
+                    if (!loadedFallbackCatalog)
+                    {
+                        loadedFallbackCatalog = true;
+                        GameObject catalogObject = Resources.Load<GameObject>(MapPrefabCatalogResourcePath);
+                        Prefabs catalog = catalogObject != null ? catalogObject.GetComponent<Prefabs>() : null;
+                        if (catalog != null)
+                        {
+                            AddMapPrefabsByName(catalog.Maps, mapsByName);
+                        }
+                    }
+
+                    if (!mapsByName.TryGetValue(mapData.Name, out mapPrefab))
+                    {
+                        throw new System.InvalidOperationException($"Missing map prefab for {mapData.Name}. Map prefab names must match ConfigData.Maps locations.");
+                    }
                 }
                 orderedMaps.Add(mapPrefab);
             }
             Maps = orderedMaps;
+        }
+
+        private static void AddMapPrefabsByName(IEnumerable<GameObject> mapPrefabs, Dictionary<string, GameObject> mapsByName)
+        {
+            if (mapPrefabs == null)
+            {
+                return;
+            }
+
+            foreach (GameObject mapPrefab in mapPrefabs)
+            {
+                if (mapPrefab == null || mapsByName.ContainsKey(mapPrefab.name))
+                {
+                    continue;
+                }
+
+                mapsByName.Add(mapPrefab.name, mapPrefab);
+            }
         }
 
     }
