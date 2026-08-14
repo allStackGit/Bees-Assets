@@ -57,15 +57,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void IntercomPlaysOnlyWhenANewDialogueSectionStarts()
+        public void IntercomPlaysOnlyWhenANewDialogueSectionIsPresented()
         {
             string source = Read("Scripts", "UI Components", "DialogueManager.cs");
             string startDialogue = ExtractMethodBody(source, "StartDialogue");
             string displayNextLine = ExtractMethodBody(source, "DisplayNextLine");
+            string typeLine = ExtractMethodBody(source, "TypeLine");
 
-            Assert.That(startDialogue, Does.Contain("PlayIntercomSound"));
+            Assert.That(startDialogue, Does.Contain("_playIntercomWhenPresented = dialogueLines.Count > 0;"));
             Assert.That(displayNextLine, Does.Not.Contain("PlayIntercomSound"),
                 "Advancing within the same dialogue must not replay the intercom cue.");
+            Assert.That(typeLine, Does.Contain("if (_playIntercomWhenPresented)"));
+            Assert.That(typeLine, Does.Contain("_playIntercomWhenPresented = false;"));
+            Assert.That(typeLine, Does.Contain("yield return new WaitForEndOfFrame();"));
+            Assert.That(typeLine, Does.Contain("PlayIntercomSound"));
         }
 
         [Test]
