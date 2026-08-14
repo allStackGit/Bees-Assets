@@ -59,7 +59,15 @@ namespace Assets.Scripts.Settings
             if (ConfigData.Production && !SteamWebApiAuth.IsReady)
             {
                 SteamWebApiAuth.EnsureRequested();
-                return;
+
+                // When Steam itself is unavailable, do not leave the loading screen permanently
+                // waiting on a ticket that can never exist. Continue through the existing local
+                // identity / unauthenticated request path. Production server policy remains
+                // authoritative and can still reject a request that requires Steam authentication.
+                if (!SteamWebApiAuth.IsUnavailable)
+                {
+                    return;
+                }
             }
 
             _request = new SettingsRequest(new GetUserSettingsData(ConfigData.GetUserId(), Name, ConfigData.Version),
