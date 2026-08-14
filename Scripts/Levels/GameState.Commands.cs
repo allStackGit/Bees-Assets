@@ -13,6 +13,7 @@ namespace Assets.Scripts.Levels
         private readonly List<StoredCommand> _shootingCommands = new List<StoredCommand>();
         private readonly List<StoredCommand> _targetingCommands = new List<StoredCommand>();
         private readonly List<Squad> _targetedSquads = new List<Squad>();
+        private readonly HashSet<Squad> _squadsAwaitingCommandSet = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
 
         public int AddUserCommand()
         {
@@ -94,11 +95,30 @@ namespace Assets.Scripts.Levels
 
         public void AddToSquadsAwaitingHiveMindCommands(Squad squad)
         {
-            if (squad == null || squad.IsDead || SquadsAwaitingCommands.Contains(squad))
+            if (squad == null || squad.IsDead || !_squadsAwaitingCommandSet.Add(squad))
             {
                 return;
             }
             SquadsAwaitingCommands.Enqueue(squad);
+        }
+
+        public bool TryDequeueSquadAwaitingHiveMindCommand(out Squad squad)
+        {
+            if (SquadsAwaitingCommands.Count == 0)
+            {
+                squad = null;
+                return false;
+            }
+
+            squad = SquadsAwaitingCommands.Dequeue();
+            _squadsAwaitingCommandSet.Remove(squad);
+            return true;
+        }
+
+        public void ClearSquadsAwaitingHiveMindCommands()
+        {
+            SquadsAwaitingCommands.Clear();
+            _squadsAwaitingCommandSet.Clear();
         }
 
         public Queue<Squad> GetSquadsAwaitingHiveMindCommands()
