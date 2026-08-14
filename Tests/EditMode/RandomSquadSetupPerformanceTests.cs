@@ -54,5 +54,28 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("LevelConstructor.AddOverrideSquads(side);", source);
             StringAssert.Contains("LevelConstructor.SpawnShipsAndSquads(", source);
         }
+
+        [Test]
+        public void SpawnAndFormationSetupReuseOwnedBuffers()
+        {
+            string constructor = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "LevelConstructor.cs"));
+            string squad = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.cs"));
+
+            StringAssert.Contains("private readonly List<Squad> _setupSquads", constructor);
+            StringAssert.Contains("private readonly List<Ship> _carriers", constructor);
+            StringAssert.Contains("private readonly List<SquadShip> _liveSquadShips", constructor);
+            StringAssert.Contains("_setupSquads.Clear();", constructor);
+            StringAssert.Contains("_carriers.Clear();", constructor);
+            StringAssert.Contains("_liveSquadShips.Clear();", constructor);
+            StringAssert.DoesNotContain(".Where((s) => !s.GetFleetShip().IsDead).ToList()", constructor);
+
+            StringAssert.Contains("private readonly List<(Ship ship, Vector2 position)> _placedFormationSlots", squad);
+            StringAssert.Contains("_placedFormationSlots.Clear();", squad);
+            StringAssert.Contains("_placedFormationSlots.Add((ship, position));", squad);
+            StringAssert.DoesNotContain("List<(Ship ship, Vector2 position)> placed = new", squad);
+            StringAssert.DoesNotContain("GetShips().ForEach(ship =>", squad);
+        }
     }
 }
