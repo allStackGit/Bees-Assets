@@ -123,8 +123,11 @@ namespace Bees.Tests.EditMode
             string authSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "SteamWebApiAuth.cs"));
 
-            Assert.That(guardSource, Does.Contain("response.Status == 401 && ConfigData.Production"));
+            Assert.That(guardSource, Does.Contain("response.Status == 401"));
+            Assert.That(guardSource, Does.Not.Contain("response.Status == 401 && ConfigData.Production"),
+                "A secured development server must be able to challenge a development client and trigger credential recovery.");
             Assert.That(guardSource, Does.Contain("SteamWebApiAuth.Refresh();"));
+            Assert.That(authSource, Does.Not.Contain("!ConfigData.Production || IsReady"));
             Assert.That(authSource, Does.Contain("request.Hash = Utilities.Hash();"),
                 "A replacement credential must use a new retry identity so a delayed 401 from the rejected ticket cannot match it.");
             Assert.That(authSource, Does.Contain("ApplyAuthenticationPayload(request, ticket)"));
