@@ -32,7 +32,10 @@ namespace Assets.Scripts.Levels
 
         public void SetCommand(Command command)
         {
-            Debug.Log($"Setting {this} Command to {command}");
+            if (!Stage.IsTraining)
+            {
+                Debug.Log($"Setting {this} Command to {command}");
+            }
             _command = command;
             HasCommand = command != null;
             ResetCommandCache();
@@ -80,7 +83,10 @@ namespace Assets.Scripts.Levels
 
         public void AddToCommandList()
         {
-            Debug.Log($"Adding {this} to squads awaiting hive mind commands");
+            if (!Stage.IsTraining)
+            {
+                Debug.Log($"Adding {this} to squads awaiting hive mind commands");
+            }
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
 
@@ -446,12 +452,12 @@ namespace Assets.Scripts.Levels
         public void MarkTargets(Squad enemy)
         {
             if (!IsUserControlled || enemy == null) return;
-            enemy.GetShips().ForEach(enemyShip =>
+            TargetingSquadMarkerPool markerPool = TargetingSquadMarkerPool.GetOrCreate(Stage);
+            List<Ship> enemyShips = enemy.GetShips();
+            for (int i = 0; i < enemyShips.Count; i++)
             {
-                GameObject targetingMarker = Instantiate(Stage.Prefabs.TargetingSquadPrefab, enemyShip.transform);
-                targetingMarker.transform.localPosition = Vector2.zero;
-                targetingMarker.GetComponent<TargetingSquadMarker>().Setup(enemyShip);
-            });
+                markerPool.Show(enemyShips[i]);
+            }
         }
 
         public void UserBombingRun(Squad enemy)
