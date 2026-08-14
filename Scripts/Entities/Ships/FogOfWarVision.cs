@@ -13,6 +13,7 @@ namespace Assets.Scripts.Entities.Ships
         private readonly ScaledTimer _shrinkVisionStartTimer = new ScaledTimer();
         private readonly ScaledTimer _shrinkVisionTimer = new ScaledTimer();
         private Level _ownerLevel;
+        private Level _fadeLevel;
 
         public void Create(Ship ship)
         {
@@ -32,9 +33,6 @@ namespace Assets.Scripts.Entities.Ships
 
         public void Activate()
         {
-            // A pooled Ship can be reused on another Level while its old death vision is
-            // still fading. Tear down the previous lifecycle through the Level that actually
-            // owns those timers/registries before adopting the Ship's new Level.
             if (_ownerLevel != null)
             {
                 _ownerLevel.CancelTimer(_shrinkVisionStartTimer);
@@ -42,6 +40,7 @@ namespace Assets.Scripts.Entities.Ships
                 _ownerLevel.State.FogOfWarVisions.Remove(this);
             }
 
+            _fadeLevel = null;
             _ownerLevel = Ship.Level;
             if (!_ownerLevel.State.FogOfWarVisions.Contains(this))
             {
@@ -61,6 +60,7 @@ namespace Assets.Scripts.Entities.Ships
                 _ownerLevel.CancelTimer(_shrinkVisionTimer);
                 _ownerLevel.State.FogOfWarVisions.Remove(this);
             }
+            _fadeLevel = null;
             enabled = false;
             FogIlluminator.enabled = false;
         }
@@ -69,30 +69,31 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (!endKill)
             {
-                // Freeze the death vision at the ship's final position. Ship is pooled
-                // independently and may be reused while this visual fade is still alive.
                 Transform.position = Ship.GetPosition();
                 enabled = false;
-                Level fadeLevel = _ownerLevel;
-                if (fadeLevel == null)
+                _fadeLevel = _ownerLevel;
+                if (_fadeLevel == null)
                 {
                     Deactivate();
                     return;
                 }
 
                 _shrinkVisionTimer.Reuse(.1f, ShrinkVision, true);
-                _shrinkVisionStartTimer.Reuse(initialDelay, () =>
-                {
-                    if (_ownerLevel == fadeLevel)
-                    {
-                        fadeLevel.AddTimer(_shrinkVisionTimer);
-                    }
-                });
-                fadeLevel.AddTimer(_shrinkVisionStartTimer);
+                _shrinkVisionStartTimer.Reuse(initialDelay, StartShrinkVision);
+                _fadeLevel.AddTimer(_shrinkVisionStartTimer);
             }
             else
             {
                 Deactivate();
+            }
+        }
+
+        private void StartShrinkVision()
+        {
+            Level fadeLevel = _fadeLevel;
+            if (fadeLevel != null && _ownerLevel == fadeLevel)
+            {
+                fadeLevel.AddTimer(_shrinkVisionTimer);
             }
         }
 

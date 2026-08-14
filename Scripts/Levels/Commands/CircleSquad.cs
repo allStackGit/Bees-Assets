@@ -1,5 +1,4 @@
 ﻿
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels.Commands
@@ -41,6 +40,12 @@ namespace Assets.Scripts.Levels.Commands
             _lastDestination = Vector2.zero;
         }
 
+        private void MoveFormationTracked(Squad squad, Vector2 destination)
+        {
+            SetDestination(destination);
+            squad.MoveTracked(GetDestination());
+        }
+
         private Vector2 _timer_squadPosition;
         private Vector2 _timer_destination;
         private int _timer_loops;
@@ -48,63 +53,65 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (!GetSquad().IsDead)
+            Squad squad = GetSquad();
+            if (squad.IsDead)
             {
-                if (!EnemySquad.IsDead)
-                {
-                    GetSquad().Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
-                    if (!_gotToEnemy && !GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
-                    {
-                        GetSquad().Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
-                        if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
-                        {
-                            SetAndMove(EnemySquad.GetPosition());
-                        }
-                    }
-                    else
-                    {
-                        _timer_squadPosition = GetSquad().GetPosition();
-                        if (!_hasSetIdealDistance)
-                        {
-                            _idealDistance = Mathf.Max(EnemySquad.DistanceToPoint(_timer_squadPosition), GetSquad().MaxRange * .5f);
-                            _angle = EnemySquad.AngleToPoint(_timer_squadPosition) - (Mathf.PI * .5f);
-                            _hasSetIdealDistance = true;
-                        }
-                        if (!_gotToEnemy)
-                        {
-                            Level.CancelTimer(CommandTimer);
-                            CommandFrequency = .25f;
-                            _gotToEnemy = true;
-                            CommandTimer.Reuse(CommandFrequency, Timer, true);
-                            Level.AddTimer(CommandTimer);
-                        }
-
-                        _timer_angle = EnemySquad.AngleToPoint(_timer_squadPosition);
-                        _angle = _timer_angle + (.06f * Mathf.PI);
-                        GetSquad().Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
-
-                        _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
-                        _timer_loops = 0;
-
-                        while (Vector2.Distance(_timer_destination, _lastDestination) < 1.25f && _timer_loops < 100)
-                        {
-                            _timer_loops++;
-                            _angle += (.06f * Mathf.PI);
-                            _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
-                        }
-
-                        _lastDestination = _timer_destination;
-                        if (!GetSquad().GetShips().Any(ship => ship.IsPathfinding))
-                        {
-                            SetAndMove(_timer_destination);
-                        }
-                    }
-                }
-                else
-                {
-                    SetFinalize("The enemy squad is gone or dead");
-                }
+                return;
             }
+            if (EnemySquad.IsDead)
+            {
+                SetFinalize("The enemy squad is gone or dead");
+                return;
+            }
+
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Moving to circle enemy squad #{EnemySquad.SquadNumber}";
+            }
+            if (!_gotToEnemy && !squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
+            {
+                if (!Stage.IsTraining)
+                {
+                    squad.Status = $"Trying to get to a good circling position against {EnemySquad.Name}";
+                }
+                MoveFormationTracked(squad, EnemySquad.GetPosition());
+                return;
+            }
+
+            _timer_squadPosition = squad.GetPosition();
+            if (!_hasSetIdealDistance)
+            {
+                _idealDistance = Mathf.Max(EnemySquad.DistanceToPoint(_timer_squadPosition), squad.MaxRange * .5f);
+                _angle = EnemySquad.AngleToPoint(_timer_squadPosition) - (Mathf.PI * .5f);
+                _hasSetIdealDistance = true;
+            }
+            if (!_gotToEnemy)
+            {
+                Level.CancelTimer(CommandTimer);
+                CommandFrequency = .25f;
+                _gotToEnemy = true;
+                CommandTimer.Reuse(CommandFrequency, Timer, true);
+                Level.AddTimer(CommandTimer);
+            }
+
+            _timer_angle = EnemySquad.AngleToPoint(_timer_squadPosition);
+            _angle = _timer_angle + (.06f * Mathf.PI);
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Circling enemy squad {EnemySquad.Name} at {_idealDistance} away";
+            }
+
+            _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
+            _timer_loops = 0;
+            while (Vector2.Distance(_timer_destination, _lastDestination) < 1.25f && _timer_loops < 100)
+            {
+                _timer_loops++;
+                _angle += (.06f * Mathf.PI);
+                _timer_destination = EnemySquad.CirclePoint(_angle, _idealDistance);
+            }
+
+            _lastDestination = _timer_destination;
+            MoveFormationTracked(squad, _timer_destination);
         }
     }
 }

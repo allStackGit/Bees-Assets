@@ -1,6 +1,5 @@
 using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Levels
@@ -33,22 +32,70 @@ namespace Assets.Scripts.Levels
 
         public bool IsAnySquadShipWithinRangeOfAnyOfOurSquadShips(Squad enemy)
         {
-            return enemy != null && GetShips().Any(ship => ship.IsAnySquadShipWithinRange(enemy));
+            if (enemy == null)
+            {
+                return false;
+            }
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].IsAnySquadShipWithinRange(enemy))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public bool IsAnySquadShipWithinRangeOfAllOfOurSquadShips(Squad squad)
         {
-            return squad != null && GetShips().Any(ship => ship.AreAllSquadShipsWithinRange(squad));
+            if (squad == null)
+            {
+                return false;
+            }
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (ships[i].AreAllSquadShipsWithinRange(squad))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public bool AreAllSquadShipsWithinRangeOfAllOfOurSquadShips(Squad squad)
         {
-            return squad != null && GetShips().All(ship => ship.AreAllSquadShipsWithinRange(squad));
+            if (squad == null)
+            {
+                return false;
+            }
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!ships[i].AreAllSquadShipsWithinRange(squad))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public bool AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(Squad squad)
         {
-            return squad != null && GetShips().All(ship => ship.IsAnySquadShipWithinRange(squad));
+            if (squad == null)
+            {
+                return false;
+            }
+            List<Ship> ships = GetShips();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!ships[i].IsAnySquadShipWithinRange(squad))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public float DistanceToPoint(Vector2 point)
@@ -102,11 +149,6 @@ namespace Assets.Scripts.Levels
             return new Vector2((left.x + right.x) * 0.5f, (bottom.y + top.y) * 0.5f);
         }
 
-        /// <summary>
-        /// Calculates all four squad bounds in one pass. The old geometry accessors independently
-        /// sorted the same ship list, so one center lookup could perform six list sorts; distance
-        /// based targeting could then invoke that work repeatedly from inside a sort comparator.
-        /// </summary>
         private bool TryGetBounds(out Vector2 left, out Vector2 right, out Vector2 top, out Vector2 bottom)
         {
             List<Ship> ships = GetShips();

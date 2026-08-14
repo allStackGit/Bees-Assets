@@ -12,6 +12,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public sealed class MapObjectVisibilityTracker : MonoBehaviour
     {
         private readonly HashSet<RangeCollider> _sources = new HashSet<RangeCollider>();
+        private readonly List<MapObject> _visibleSurvivors = new List<MapObject>();
         private MapObject _mapObject;
         private GameState _state;
 
@@ -38,8 +39,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            // ResetState or deactivation cleanup clears the authoritative public set.
-            // If this object survives and is observed again, stale ownership must not leak forward.
             if (!_state.PlayerVisibleMapObjects.Contains(_mapObject))
             {
                 _sources.Clear();
@@ -75,19 +74,15 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void OnDisable()
         {
-            // Unity invokes OnDisable as an active object/component leaves service, including
-            // normal destruction and pooling/deactivation. Visibility must be gone at that point;
-            // waiting only for OnDestroy can leave stale Unity-object references in EditMode and
-            // also misses objects that are disabled for reuse rather than destroyed.
             RemoveFromVisibleSet();
             _sources.Clear();
         }
 
         private void OnDestroy()
         {
-            // Idempotent fallback for teardown paths where OnDisable has already run.
             RemoveFromVisibleSet();
             _sources.Clear();
+            _visibleSurvivors.Clear();
             _mapObject = null;
             _state = null;
         }
@@ -99,24 +94,46 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            // Unity objects can enter their special destroyed state before managed teardown
-            // completes. Rebuild the same public HashSet instance by managed reference identity
-            // rather than relying on the object's equality/hash behavior during destruction.
             HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
-            List<MapObject> survivors = new List<MapObject>(visibleObjects.Count);
+
+            // Normal runtime objects have a stable nonzero gameplay Id, so HashSet.Remove
+            // is O(1). A live pre-Setup object also has a stable Unity instance hash.
+            bool isLiveUnityObject = (UnityEngine.Object)_mapObject != null;
+            if ((_mapObject.Id != 0 || isLiveUnityObject) && visibleObjects.Remove(_mapObject))
+            {
+                return;
+            }
+
+            if (visibleObjects.Count == 0)
+            {
+                return;
+            }
+
+            // Defensive fallback for destroyed/uninitialized Unity wrappers whose hash can no
+            // longer be trusted. Preserve the old reference-based removal semantics only here.
+            _visibleSurvivors.Clear();
+            bool foundReference = false;
             foreach (MapObject candidate in visibleObjects)
             {
-                if (!ReferenceEquals(candidate, _mapObject))
+                if (ReferenceEquals(candidate, _mapObject))
                 {
-                    survivors.Add(candidate);
+                    foundReference = true;
+                }
+                else
+                {
+                    _visibleSurvivors.Add(candidate);
                 }
             }
 
-            visibleObjects.Clear();
-            foreach (MapObject survivor in survivors)
+            if (foundReference)
             {
-                visibleObjects.Add(survivor);
+                visibleObjects.Clear();
+                for (int i = 0; i < _visibleSurvivors.Count; i++)
+                {
+                    visibleObjects.Add(_visibleSurvivors[i]);
+                }
             }
+            _visibleSurvivors.Clear();
         }
     }
 }

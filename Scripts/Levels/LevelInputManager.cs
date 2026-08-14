@@ -288,6 +288,7 @@ namespace Assets.Scripts.Levels
         }
 
         private Vector2 _checkInputs_mouse;
+        private Vector2 _checkInputs_edgePixels;
         private RaycastHit2D[] _hasMiningCommandInput_hits;
         private int _hasMiningCommandInput_i;
         private RaycastHit2D _hasMiningCommandInput_hit;
@@ -342,11 +343,12 @@ namespace Assets.Scripts.Levels
             if (Input.GetAxis("Mouse ScrollWheel") > 0) _scrollPositive = true;
             else if (Input.GetAxis("Mouse ScrollWheel") < 0) _scrollNegative = true;
 
-            if (_checkInputs_mouse.x < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x) _mouseAtLeftEdge = true;
-            else if (_checkInputs_mouse.x >= ConfigData.ScreenWidth - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).x) _mouseAtRightEdge = true;
+            _checkInputs_edgePixels = Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera);
+            if (_checkInputs_mouse.x < _checkInputs_edgePixels.x) _mouseAtLeftEdge = true;
+            else if (_checkInputs_mouse.x >= ConfigData.ScreenWidth - _checkInputs_edgePixels.x) _mouseAtRightEdge = true;
 
-            if (_checkInputs_mouse.y < Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y) _mouseAtBottomEdge = true;
-            else if (_checkInputs_mouse.y >= ConfigData.ScreenHeight - Utilities.WorldUnitsToScreenPixels(Stage.MouseScrollDistanceFromEdge, Stage.Camera).y) _mouseAtTopEdge = true;
+            if (_checkInputs_mouse.y < _checkInputs_edgePixels.y) _mouseAtBottomEdge = true;
+            else if (_checkInputs_mouse.y >= ConfigData.ScreenHeight - _checkInputs_edgePixels.y) _mouseAtTopEdge = true;
 
             if (Input.GetMouseButton(LeftClick))
             {

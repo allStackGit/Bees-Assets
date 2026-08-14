@@ -30,5 +30,21 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("private void TargetingSequence()", targeting);
             StringAssert.Contains("protected void TryToFire()", targeting);
         }
+
+        [Test]
+        public void IdleTurretChecksRotationBeforeScanningTargets()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "Turret.Aiming.cs"));
+
+            StringAssert.Contains(
+                "if (Rotation != Ship.Rotation && (Ship.IsCeaseFire || !HasValidTarget()))",
+                source);
+        }
     }
 }

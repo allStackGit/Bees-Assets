@@ -24,7 +24,10 @@ namespace Assets.Scripts.Server
             _enemy = enemy;
             Level = level;
             Matchup = matchup;
-            Squad.Status = $"Requesting full command";
+            if (!Level.Stage.IsTraining)
+            {
+                Squad.Status = "Requesting full command";
+            }
             request.Type = Utilities.ConvertRequestTypeToName[Type];
             request.Hash = Hash;
             SquadId = Squad.ItemId;
@@ -42,9 +45,20 @@ namespace Assets.Scripts.Server
 
         internal static string BuildShootingMatchupIdentity(string actingShips, string strategicMatchup)
         {
-            string[] matchupSegments = (strategicMatchup ?? string.Empty).Split('|');
-            string enemySegment = matchupSegments.Length > 1 ? matchupSegments[1] : string.Empty;
-            return $"{actingShips ?? string.Empty}|{enemySegment}|";
+            string enemySegment = string.Empty;
+            if (!string.IsNullOrEmpty(strategicMatchup))
+            {
+                int firstDelimiter = strategicMatchup.IndexOf('|');
+                if (firstDelimiter >= 0)
+                {
+                    int enemyStart = firstDelimiter + 1;
+                    int secondDelimiter = strategicMatchup.IndexOf('|', enemyStart);
+                    enemySegment = secondDelimiter >= 0
+                        ? strategicMatchup.Substring(enemyStart, secondDelimiter - enemyStart)
+                        : strategicMatchup.Substring(enemyStart);
+                }
+            }
+            return string.Concat(actingShips ?? string.Empty, "|", enemySegment, "|");
         }
 
         public bool HasSameSquad()

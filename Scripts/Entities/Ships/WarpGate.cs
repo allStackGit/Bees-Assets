@@ -2,7 +2,6 @@
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
 using System.Collections.Generic;
-using System.Linq;
 
 using UnityEngine;
 using static Assets.Scripts.ConfigData;
@@ -77,7 +76,21 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
-            if (Level.State.GetHumanShips().Where((s) => s.IsWarpGate).Count() == 1) // check if this is the last warp gate
+            int liveWarpGates = 0;
+            List<Ship> levelShips = Level.State.Ships;
+            for (int i = 0; i < levelShips.Count; i++)
+            {
+                Ship ship = levelShips[i];
+                if (!ship.IsDead && ship.Side == ConfigData.Configuration.HumanSide && ship.IsWarpGate)
+                {
+                    liveWarpGates++;
+                    if (liveWarpGates > 1)
+                    {
+                        break;
+                    }
+                }
+            }
+            if (liveWarpGates == 1)
             {
                 Level.State.HasWarpGates = false;
             }

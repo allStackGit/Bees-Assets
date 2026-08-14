@@ -20,8 +20,8 @@ namespace Bees.Tests.EditMode
             Assert.That(methodEnd, Is.GreaterThan(methodStart));
 
             string method = source.Substring(methodStart, methodEnd - methodStart);
-            int damageCleanup = method.IndexOf("statuses.RemoveAll");
-            int spottedCleanup = method.IndexOf("spotted.RemoveAll");
+            int damageCleanup = method.IndexOf("for (int statusIndex = statuses.Count - 1; statusIndex >= 0; statusIndex--)");
+            int spottedCleanup = method.IndexOf("for (int spottedIndex = spotted.Count - 1; spottedIndex >= 0; spottedIndex--)");
             int releaseQueue = method.IndexOf("ShipsToRelease.Add(ship)");
 
             Assert.That(damageCleanup, Is.GreaterThanOrEqualTo(0));
@@ -29,6 +29,23 @@ namespace Bees.Tests.EditMode
             Assert.That(releaseQueue, Is.GreaterThan(spottedCleanup));
             StringAssert.Contains("status.Ship == ship", method);
             StringAssert.Contains("entry.Ship == ship", method);
+            StringAssert.Contains("ShipsBySide[shipSideIndex].Remove(ship);", method);
+        }
+
+        [Test]
+        public void ShipRegistryMaintainsPerSideIndexes()
+        {
+            string registry = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+            string state = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.cs"));
+            string queries = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.Queries.cs"));
+
+            StringAssert.Contains("ShipsBySide[sideIndex].Add(ship);", registry);
+            StringAssert.Contains("ShipsBySide[shipSideIndex].Remove(ship);", registry);
+            StringAssert.Contains("ShipsBySide[side].Clear();", state);
+            StringAssert.Contains("? ShipsBySide[sideIndex]", queries);
         }
 
         [Test]
@@ -37,9 +54,10 @@ namespace Bees.Tests.EditMode
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Carrier.cs");
             string source = File.ReadAllText(path);
 
-            StringAssert.Contains("Level.State.GetShips(Side)", source);
+            StringAssert.Contains("List<Ship> levelShips = Level.State.Ships;", source);
+            StringAssert.Contains("candidate.Side == Side", source);
             StringAssert.DoesNotContain("Level.State.GetHumanShips()", source);
-            StringAssert.Contains(".Where(ship => ship.Carrier == this)", source);
+            StringAssert.Contains("carrierShip.Carrier == this", source);
             StringAssert.Contains("carrierShip.Carrier = null;", source);
         }
 
@@ -50,10 +68,12 @@ namespace Bees.Tests.EditMode
             string source = File.ReadAllText(path);
 
             StringAssert.Contains("private Level _ownerLevel;", source);
+            StringAssert.Contains("private Level _fadeLevel;", source);
             StringAssert.Contains("_ownerLevel = Ship.Level;", source);
-            StringAssert.Contains("Level fadeLevel = _ownerLevel;", source);
-            StringAssert.Contains("fadeLevel.AddTimer(_shrinkVisionStartTimer);", source);
-            StringAssert.Contains("if (_ownerLevel == fadeLevel)", source);
+            StringAssert.Contains("_fadeLevel = _ownerLevel;", source);
+            StringAssert.Contains("_shrinkVisionStartTimer.Reuse(initialDelay, StartShrinkVision);", source);
+            StringAssert.Contains("if (fadeLevel != null && _ownerLevel == fadeLevel)", source);
+            StringAssert.DoesNotContain("_shrinkVisionStartTimer.Reuse(initialDelay, () =>", source);
             StringAssert.DoesNotContain("Ship.Level.AddTimer(_shrinkVisionTimer);", source);
         }
 

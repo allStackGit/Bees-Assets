@@ -33,5 +33,18 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_shipEnter.IsDead", source);
             StringAssert.Contains("_shipEnter.Side == Ship.Side", source);
         }
+
+        [Test]
+        public void ShipRegistrationOwnsExactlyOneVisibilitySetCreationPath()
+        {
+            string lifecycle = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Lifecycle.cs"));
+            string registry = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+
+            StringAssert.DoesNotContain("HivemindShips[Side - 1].Add(Id, new HashSet<Ship>());", lifecycle);
+            StringAssert.Contains("HivemindShips[ship.Side - 1][ship.Id] =", registry);
+            StringAssert.Contains("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)", registry);
+        }
     }
 }
