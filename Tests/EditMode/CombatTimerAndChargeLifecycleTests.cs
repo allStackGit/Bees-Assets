@@ -27,6 +27,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ActiveCombatTimerRefreshKeepsExistingLevelTimerMembership()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            string source = File.ReadAllText(path);
+
+            int start = source.IndexOf("public void SetCombatTimer()");
+            int end = source.IndexOf("public void LogDamage", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+
+            string method = source.Substring(start, end - start);
+            StringAssert.Contains("bool timerWasActive = _combatTimer && !_combatTimerScaledTimer.IsCanceled;", method);
+            StringAssert.DoesNotContain("Level.CancelTimer(_combatTimerScaledTimer)", method);
+            StringAssert.Contains("if (!timerWasActive)", method);
+        }
+
+        [Test]
         public void CombatTimerTracksHiveMindShipsRegardlessOfPlayerOwnership()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Combat.cs");
