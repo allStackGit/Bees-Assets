@@ -113,7 +113,7 @@ namespace Assets.Scripts.Levels
                 }, 0.65f, -1f);
                 AddTitania2BeeWave(new List<SavedSquad>() {
                     ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 1, true, true),
-                }, 0.65f, 1f);
+                }, 1f, 0.65f);
 
                 Stage.ActivateHiveMind = true;
                 SetupHivemind();
@@ -146,7 +146,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 3, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true)
-                    }, 0.65f, 1f);
+                    }, 1f, 0.65f);
                     AddReinforcementsToHivemindCommandQueue();
                 });
                 AddTitania2Timer(wave3);
@@ -168,7 +168,7 @@ namespace Assets.Scripts.Levels
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 3, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true)
-                    }, 0.7f, 1f);
+                    }, 1f, 0.7f);
                     AddTitania2BeeWave(new List<SavedSquad>() {
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                         ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true)
@@ -323,6 +323,18 @@ namespace Assets.Scripts.Levels
             const int scanSteps = 12;
 
             bool horizontalEntry = Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY);
+            if (!horizontalEntry && normalizedY > 0f)
+            {
+                // Titania occupies the upper approach visually/narratively, so Beenoculars Bees
+                // may enter from the left, right, or bottom edges only. Remap any future top-edge
+                // request to the corresponding upper side lane instead of allowing a top spawn.
+                float requestedSide = normalizedX < 0f ? -1f : 1f;
+                float requestedHeight = Mathf.Clamp(Mathf.Abs(normalizedX), 0.35f, 0.85f);
+                normalizedX = requestedSide;
+                normalizedY = requestedHeight;
+                horizontalEntry = true;
+            }
+
             bool positiveEdge = horizontalEntry ? normalizedX >= 0f : normalizedY >= 0f;
             float normalizedTangent = horizontalEntry ? normalizedY : normalizedX;
             float tangentMin = horizontalEntry ? MinY + tangentMargin : MinX + tangentMargin;
