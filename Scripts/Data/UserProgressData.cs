@@ -288,6 +288,11 @@ namespace Assets.Scripts.Data
                 {
                     int missionId = activeLevel.CurrentLevelOptions.Id;
                     int targetLevel = missionId + 1;
+                    if (CampaignMissionCatalog.IsCampaignComplete(targetLevel))
+                    {
+                        Debug.Log($"Campaign mission {missionId} is the last currently available mission; keeping campaign progress at {currentLevel}.");
+                        return;
+                    }
                     if (currentLevel >= targetLevel)
                     {
                         // Several legacy endings call this method more than once. Advancement is
@@ -301,7 +306,13 @@ namespace Assets.Scripts.Data
                 }
 
                 // Defensive fallback for tooling/non-scene callers that do not own a live Level.
-                SetCurrentLevel(currentLevel + 1);
+                int fallbackTargetLevel = currentLevel + 1;
+                if (CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel))
+                {
+                    Debug.Log($"Campaign level {currentLevel} is the last currently available mission; not advancing past the mission catalog.");
+                    return;
+                }
+                SetCurrentLevel(fallbackTargetLevel);
             }
             else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
             {
