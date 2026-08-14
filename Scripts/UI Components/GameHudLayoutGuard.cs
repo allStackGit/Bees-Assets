@@ -16,7 +16,6 @@ namespace Assets.Scripts.UI_Components
     {
         private const float ControlGap = 10f;
         private const float DynamicButtonScanInterval = 0.25f;
-        private static readonly Color MenuButtonFrameColor = new Color32(55, 148, 110, 255);
 
         private GameMenus _menus;
         private RectTransform _clockRect;
@@ -114,18 +113,13 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // The legacy menu-button art has a four-pixel frame baked into a very wide source
-            // sprite. Stretching it to narrower/taller controls makes the left/right frame almost
-            // disappear. Add a fixed-width outline matching the authored frame color so all four
-            // sides retain comparable visual weight at arbitrary button aspect ratios.
+            // Menu buttons are authored with a four-pixel baked border. Render their imported
+            // sprite border as a nine-slice so narrow/tall controls preserve the same edge weight
+            // without the extra dark-green runtime Outline that previously framed every button.
             if (button.targetGraphic is Image image && image.sprite != null &&
-                image.sprite.name.StartsWith("menu_button") &&
-                button.gameObject.GetComponent<Outline>() == null)
+                image.sprite.name.StartsWith("menu_button"))
             {
-                Outline outline = button.gameObject.AddComponent<Outline>();
-                outline.effectColor = MenuButtonFrameColor;
-                outline.effectDistance = new Vector2(2f, -2f);
-                outline.useGraphicAlpha = false;
+                image.type = Image.Type.Sliced;
             }
 
             // The shared red X is authored at only 16x16. Enlarge the selectable itself so hover
