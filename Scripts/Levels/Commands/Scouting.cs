@@ -61,7 +61,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
-            if (!GetSquad().IsDead && GetSquad().HasReachedDestination)
+            if (!GetSquad().IsDead && GetSquad().HaveAllShipsReachedDestination())
             {
                 _position = GetSquad().GetPosition();
                 _randomPoint = Utilities.RandomCoordinate(Level, _position, Vector2.one * ConfigData.Configuration.AIRandomMovementMaxDistance, _ten);
