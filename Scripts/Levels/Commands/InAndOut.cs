@@ -90,7 +90,10 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (!GetSquad().AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
                 {
-                    GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    if (!Stage.IsTraining)
+                    {
+                        GetSquad().Status = $"Targeting enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    }
                     if (!MoveTowardsEnemiesTracked())
                     {
                         SetFinalize("No more enemy ships to target");
@@ -100,7 +103,10 @@ namespace Assets.Scripts.Levels.Commands
                 else
                 {
                     HasReachedEnemySquad = true;
-                    GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    if (!Stage.IsTraining)
+                    {
+                        GetSquad().Status = $"Retreating away from enemy squad #{EnemySquad.SquadNumber} for In and Out";
+                    }
                     HasReachedReturnPoint = false;
                     SetAndMove(ReturnPoint);
                     ReturnPoint = GetDestination();
