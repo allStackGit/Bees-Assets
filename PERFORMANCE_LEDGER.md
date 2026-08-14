@@ -30,4 +30,11 @@ Static-only audit; no runtime measurements are claimed. This ledger contains unr
 **Evidence:** The branch implementations contain unconditional `Debug.Log` calls directly in `MapBorder.OnTriggerEnter2D()`, `Charge.Timer()`, and `ShipAnimationController.ChangeSpriteLoop()`. Nearby Barge, Level, environment, and command code already suppresses equivalent informational messages during training, while error diagnostics remain active.  
 **Risk:** Do not guard the surrounding collision, charge, or Warp Gate state transitions. Only the informational log calls/string interpolation should be skipped in training; normal play/editor diagnostics must remain unchanged.
 
+### PERF-018 — Skip per-lifecycle pooled obstacle naming during training
+**Location:** `Scripts/Entities/Obstacle.cs`, `Setup()`  
+**Cost:** Every pooled obstacle setup rebuilds an interpolated `ObstacleType #Id` string and writes it to both `Obstacle.Name` and Unity's `gameObject.name`. Collision asteroids can spawn repeatedly throughout a training episode, and destroying one large asteroid can create several pooled asteroid shards plus roughly `1.5 × SizeClass` pooled asteroid pieces, all of which call the same base `Setup()` and pay this diagnostic naming cost despite object reuse.  
+**Optimization:** Preserve per-lifecycle descriptive naming outside training, but skip rebuilding/assigning the name when `Stage.IsTraining`, retaining the stable prefab-era name for diagnostics just as pooled projectiles now do.  
+**Evidence:** `CollisionAsteroid.Setup()` and `AsteroidPiece.Setup()` both call `base.Setup(level)`. `CollisionAsteroid.SpawnBreakAwayAsteroids()` calls `Setup()` for every shard and asteroid piece. Active obstacle collision, pathfinding, registry, and damage logic uses Id/type/collider/object references rather than `Name`; the direct obstacle-name consumers found are diagnostic/debug text.  
+**Risk:** Keep non-training/editor object names unchanged. Do not alter Id assignment, health reset, activation, pathfinder registration, or any randomness/spawn order; training diagnostics may show the stable prefab name instead of a per-lifecycle descriptive name.
+
 Clean static passes: 0 / 2.
