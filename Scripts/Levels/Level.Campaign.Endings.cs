@@ -205,7 +205,18 @@ namespace Assets.Scripts.Levels
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.CarpenterBee);
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             ConfigData.UserProgressData.SetShipTypes();
-            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            // Seize the Means only unlocks Of Production when the mining personnel and their
+            // Factory ships were actually rescued. A defeat follows the authored blockade route
+            // directly to Pressing Forward instead of loading a mining mission without Factories.
+            if (WinningSide == ConfigData.Configuration.UserSide)
+            {
+                ConfigData.UserProgressData.AdvanceToNextLevel();
+            }
+            else
+            {
+                ConfigData.UserProgressData.SetCurrentLevel(6);
+            }
             SaveCampaignProgress();
 
             State.GameOver = true;
@@ -234,17 +245,12 @@ namespace Assets.Scripts.Levels
                     .ForEach(fleetShip => fleetShip.IsDead = true);
             }
 
-            ConfigData.CurrentShips.AddShipsToFleet(ConfigData.ShipTypes.Carrier, 1);
-            CurrentShips.BuildNewSquad($"Squad #{ConfigData.UserProgressData.HumanCampaignSavedSquadNumber++}", ConfigData.Configuration.HumanSide, ShipTypes.Carrier, 1);
-            State.PlayerNewShipsReceived += 1;
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
+            // The Carrier is Philip's Titania prototype. It joins the fleet after Titania,
+            // regardless of the evacuation outcome, rather than being awarded at Neptune.
             ConfigData.UserProgressData.VisibleBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Carrier);
-            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Carrier);
             ConfigData.UserProgressData.SetShipTypes();
             ConfigData.HasSeenPreLevelIntro = false;
             ConfigData.HasSeenIntermission = false;
-            ConfigData.UserProgressData.HasMetAlejandraAndEmilia = true;
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
             ConfigData.UserProgressData.AdvanceToNextLevel();
             SaveCampaignProgress();
@@ -257,13 +263,22 @@ namespace Assets.Scripts.Levels
         {
             Debug.Log("Level 6 complete");
 
-            ConfigData.UserProgressData.VisibleCodexHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
-            ConfigData.UserProgressData.VisibleHumanShipTypes.Add(ConfigData.ShipTypes.Cruiser);
-            ConfigData.UserProgressData.UnlockedCampaignShips.Add(ConfigData.ShipTypes.Cruiser);
+            // The Cruiser/Fritz recruitment sequence is struck from the current mission script,
+            // so Uranus I no longer grants or unlocks Cruisers here.
             ConfigData.UserProgressData.VisibleCodexBeeShipTypes.Add(ConfigData.ShipTypes.Bumblebee);
             ConfigData.UserProgressData.SetShipTypes();
             ConfigData.UserProgressData.CampaignScore += State.PlayerScore;
-            ConfigData.UserProgressData.AdvanceToNextLevel();
+
+            if (WinningSide == ConfigData.Configuration.UserSide)
+            {
+                ConfigData.UserProgressData.AdvanceToNextLevel();
+            }
+            else
+            {
+                // A Uranus I defeat skips On the Defensive gameplay after playing that mission's
+                // post-mission dialogue and proceeds directly to A New Threat.
+                ConfigData.UserProgressData.SetCurrentLevel(11);
+            }
             SaveCampaignProgress();
 
             State.GameOver = true;
