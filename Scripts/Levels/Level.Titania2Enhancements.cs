@@ -37,36 +37,35 @@ namespace Assets.Scripts.Levels
             }, true);
             AddTitania2Timer(baseHealthTimer);
 
-            // Mirror every authored attack after a short interval. These are additional waves,
-            // not replacements: together with Titania2BeenocularsCampaign's original schedule
-            // they exactly double the nominal enemy ship count while avoiding one-frame spikes.
+            // Mirror every authored attack after a short interval. The reduced compositions match
+            // the roughly 30% Titania II difficulty reduction applied to the primary wave schedule.
             ScheduleTitania2ExtraWave(15f, -1f, -0.65f,
-                (ConfigData.ShipTypes.Hornet, 4));
+                (ConfigData.ShipTypes.Hornet, 3));
             ScheduleTitania2ExtraWave(20f, 1f, -0.85f,
-                (ConfigData.ShipTypes.Wasp, 4));
+                (ConfigData.ShipTypes.Wasp, 3));
             ScheduleTitania2ExtraWave(25f, -0.65f, -1f,
-                (ConfigData.ShipTypes.Honeybee, 2));
+                (ConfigData.ShipTypes.Honeybee, 1));
             ScheduleTitania2ExtraWave(30f, -0.65f, 1f,
-                (ConfigData.ShipTypes.Leafcutter, 2));
+                (ConfigData.ShipTypes.Leafcutter, 1));
 
             ScheduleTitania2ExtraWave(75f, -1f, -0.7f,
-                (ConfigData.ShipTypes.Hornet, 6),
-                (ConfigData.ShipTypes.Wasp, 4));
+                (ConfigData.ShipTypes.Hornet, 4),
+                (ConfigData.ShipTypes.Wasp, 3));
             ScheduleTitania2ExtraWave(135f, 1f, -0.85f,
+                (ConfigData.ShipTypes.Honeybee, 1),
+                (ConfigData.ShipTypes.YellowJacket, 3));
+            ScheduleTitania2ExtraWave(225f, -0.65f, 1f,
+                (ConfigData.ShipTypes.Leafcutter, 3),
+                (ConfigData.ShipTypes.Hornet, 6));
+            ScheduleTitania2ExtraWave(315f, -0.55f, -1f,
+                (ConfigData.ShipTypes.Wasp, 4),
+                (ConfigData.ShipTypes.YellowJacket, 4));
+            ScheduleTitania2ExtraWave(390f, -0.7f, 1f,
+                (ConfigData.ShipTypes.Leafcutter, 3),
+                (ConfigData.ShipTypes.Hornet, 6));
+            ScheduleTitania2ExtraWave(405f, 0.55f, -1f,
                 (ConfigData.ShipTypes.Honeybee, 2),
                 (ConfigData.ShipTypes.YellowJacket, 4));
-            ScheduleTitania2ExtraWave(225f, -0.65f, 1f,
-                (ConfigData.ShipTypes.Leafcutter, 4),
-                (ConfigData.ShipTypes.Hornet, 8));
-            ScheduleTitania2ExtraWave(315f, -0.55f, -1f,
-                (ConfigData.ShipTypes.Wasp, 6),
-                (ConfigData.ShipTypes.YellowJacket, 6));
-            ScheduleTitania2ExtraWave(390f, -0.7f, 1f,
-                (ConfigData.ShipTypes.Leafcutter, 4),
-                (ConfigData.ShipTypes.Hornet, 8));
-            ScheduleTitania2ExtraWave(405f, 0.55f, -1f,
-                (ConfigData.ShipTypes.Honeybee, 3),
-                (ConfigData.ShipTypes.YellowJacket, 6));
         }
 
         private static void UpdateTitania2BaseHealth(HumanTarget titania, GameObject healthBar)
