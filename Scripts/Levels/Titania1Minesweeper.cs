@@ -80,9 +80,9 @@ namespace Assets.Scripts.Levels
             ScaledTimer reinforcements = new ScaledTimer(90f, () =>
             {
                 AddReinforcementSquads(new List<SavedSquad>() {
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 6, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
-                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 2, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 9, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 6, true, true),
+                    ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Leafcutter, 3, true, true),
                 }, new Vector2(325, -225), new Vector2(200, -225));
                 AddReinforcementsToHivemindCommandQueue();
             });
