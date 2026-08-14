@@ -113,7 +113,10 @@ namespace Assets.Scripts.Levels.Commands
                 return;
             }
 
-            squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
+            if (!Stage.IsTraining)
+            {
+                squad.Status = $"Targeting enemy squad #{EnemySquad.SquadNumber}";
+            }
             if (!IsComfortablyWithinRange)
             {
                 if (squad.AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips(EnemySquad))
