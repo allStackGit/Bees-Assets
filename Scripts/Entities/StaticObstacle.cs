@@ -11,6 +11,7 @@ namespace Assets.Scripts.Entities
         private Ship _collidingShip;
         private int _frameCollisions;
         private Barge _barge;
+        public bool IsPooledStaticLayoutObstacle { get; set; }
 
         public void ResetForReuse()
         {
