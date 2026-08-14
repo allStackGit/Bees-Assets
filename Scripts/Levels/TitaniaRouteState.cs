@@ -66,7 +66,8 @@ namespace Assets.Scripts.Levels
         internal static void LoadFromPlayerProgress(object loadedProgress)
         {
             _loaded = true;
-            if (loadedProgress is not JObject progress)
+            JObject progress = loadedProgress as JObject;
+            if (progress == null)
             {
                 _titaniaOneWon = false;
                 _titaniaTwoWon = false;
