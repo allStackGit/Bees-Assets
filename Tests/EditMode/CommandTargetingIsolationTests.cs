@@ -25,7 +25,9 @@ namespace Bees.Tests.EditMode
         public void CommandTargetingQueueSortsSnapshotInsteadOfEnemySquadList()
         {
             string method = ExtractMethodBody(_commandSource, "MakeTargetingQueue");
-            Assert.That(method, Does.Contain("EnemySquad.GetShips().ToList()"));
+            Assert.That(method, Does.Contain("_targetingShips.Clear();"));
+            Assert.That(method, Does.Contain("_targetingShips.AddRange(EnemySquad.GetShips());"));
+            Assert.That(method, Does.Contain("_tempShips = _targetingShips;"));
             Assert.That(method, Does.Not.Contain("_tempShips = EnemySquad.GetShips();"));
         }
 
@@ -35,7 +37,9 @@ namespace Bees.Tests.EditMode
             string method = ExtractMethodBody(_commandSource, "MakeTargetingQueue");
             Assert.That(method, Does.Contain("b.Firepower.CompareTo(a.Firepower)"));
             Assert.That(method, Does.Contain("a.Speed.CompareTo(b.Speed)"));
-            Assert.That(method, Does.Contain("DistanceToPoint(a.GetPosition()).CompareTo"));
+            Assert.That(method, Does.Contain("CacheTargetingDistances();"));
+            Assert.That(method, Does.Contain("_tempShips.Sort(_compareClosestTargetingShips);"));
+            Assert.That(_commandSource, Does.Contain("_targetingDistanceKeys[a.Id].CompareTo(_targetingDistanceKeys[b.Id])"));
             Assert.That(method, Does.Not.Contain("(int)(b.Firepower - a.Firepower)"));
             Assert.That(method, Does.Not.Contain("(int)(b.Speed - a.Speed)"));
         }
@@ -44,7 +48,9 @@ namespace Bees.Tests.EditMode
         public void WeaponDisregardRangeTargetingCopiesEnemySquadList()
         {
             string method = ExtractMethodBody(_weaponSource, "GetPotentialEnemyTargetShips");
-            Assert.That(method, Does.Contain("EnemySquad.GetShips().ToList()"));
+            Assert.That(method, Does.Contain("_disregardRangeBuffer.Clear();"));
+            Assert.That(method, Does.Contain("_disregardRangeBuffer.AddRange(Ship.Squad.GetCommand().EnemySquad.GetShips());"));
+            Assert.That(method, Does.Contain("_queue = _disregardRangeBuffer;"));
             Assert.That(method, Does.Not.Contain("_shipQueue = Ship.Squad.GetCommand().EnemySquad.GetShips();"));
         }
 
@@ -54,7 +60,9 @@ namespace Bees.Tests.EditMode
             string method = ExtractMethodBody(_weaponSource, "MakeSortedTargetingList");
             Assert.That(method, Does.Contain("b.Firepower.CompareTo(a.Firepower)"));
             Assert.That(method, Does.Contain("a.Speed.CompareTo(b.Speed)"));
-            Assert.That(method, Does.Contain("DistanceTo(a).CompareTo(DistanceTo(b))"));
+            Assert.That(method, Does.Contain("CacheTargetDistances();"));
+            Assert.That(method, Does.Contain("_sortedQueue.Sort(_compareClosestTargets);"));
+            Assert.That(_weaponSource, Does.Contain("_targetDistanceKeys[a.Id].CompareTo(_targetDistanceKeys[b.Id])"));
             Assert.That(method, Does.Not.Contain("(int) (b.Firepower - a.Firepower)"));
             Assert.That(method, Does.Not.Contain("(int)(a.Speed - b.Speed)"));
         }
@@ -70,18 +78,19 @@ namespace Bees.Tests.EditMode
         [Test]
         public void MatchupDistanceStrategiesDoNotTruncateComparatorDifferences()
         {
-            string method = ExtractMethodBody(_matchupSource, "SortSquads");
-            Assert.That(method, Does.Contain("a.DistanceToPoint(_location).CompareTo(b.DistanceToPoint(_location))"));
-            Assert.That(method, Does.Contain("b.DistanceToPoint(_location).CompareTo(a.DistanceToPoint(_location))"));
-            Assert.That(method, Does.Not.Contain("(int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location))"));
+            string selector = ExtractMethodBody(_matchupSource, "SelectByDistance");
+            Assert.That(selector, Does.Contain("candidateDistance > selectedDistance"));
+            Assert.That(selector, Does.Contain("candidateDistance < selectedDistance"));
+            Assert.That(selector, Does.Not.Contain("(int)(a.DistanceToPoint(_location) - b.DistanceToPoint(_location))"));
         }
 
         [Test]
         public void MatchupTypeStrategiesPreferSquadsContainingMoreOfRequestedType()
         {
-            string method = ExtractMethodBody(_matchupSource, "SortSquads");
-            Assert.That(method, Does.Contain("bShipsOfType.CompareTo(aShipsOfType)"));
-            Assert.That(method, Does.Not.Contain("return a.GetShips().Where(s => s.ShipType == _type).ToList().Count - b.GetShips().Where(s => s.ShipType == _type).ToList().Count"));
+            string selector = ExtractMethodBody(_matchupSource, "SelectByTypeCount");
+            Assert.That(selector, Does.Contain("candidateCount > selectedCount"));
+            Assert.That(selector, Does.Contain("CountShipsOfType(candidate, type)"));
+            Assert.That(_matchupSource, Does.Not.Contain("return a.GetShips().Where(s => s.ShipType == _type).ToList().Count - b.GetShips().Where(s => s.ShipType == _type).ToList().Count"));
         }
 
         private static string ExtractMethodBody(string source, string methodName)
