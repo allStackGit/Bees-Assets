@@ -354,7 +354,8 @@ namespace Assets.Scripts.UI_Components
 
     /// <summary>
     /// Root canvases can be instantiated after SceneManager.sceneLoaded. A lightweight persistent
-    /// host periodically discovers them so every screen-space root gets the same wrapper repair.
+    /// host periodically discovers them so every screen-space root gets the same wrapper and
+    /// final ownership-boundary compatibility passes.
     /// </summary>
     [DefaultExecutionOrder(-950)]
     internal sealed class ResponsiveScreenCanvasDiscovery : MonoBehaviour
@@ -371,6 +372,7 @@ namespace Assets.Scripts.UI_Components
 
             _nextDiscoveryTime = Time.unscaledTime + DiscoveryInterval;
             ResponsiveScreenLayoutGuard.EnsureLiveCanvasGuards();
+            RootCanvasCompatibilityGuard.EnsureLiveCanvasGuards();
         }
     }
 }
