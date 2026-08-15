@@ -31,6 +31,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Generic responsive repair owns viewport/screen-wrapper geometry only. It must not translate arbitrary UI islands or change meaningful sibling relationships. Semantic edge placement belongs to the subsystem that knows the control's intended role.
 - Children driven by a Unity `LayoutGroup` remain under that layout group's geometry ownership. Generic responsive repair must not rewrite their anchors, offsets, positions, or sizes; make the owning screen container responsive instead.
 - Gameplay HUD edge contracts are explicit: squad-number tabs belong at the actual top edge, the selected-squad action box must remain fully visible at bottom-left, and the mini map must remain fully visible at bottom-right.
+- Pluto IV and Titania II share the Planetary Shield HUD and mission clock, so shield/clock/Game Speed layout changes must validate both missions. Pluto IV also displays the Evacuated counter in that cluster, while Titania II intentionally hides the counter.
 - World-space UI is not part of the screen-layout normalization contract and must not be rewritten by screen-space compatibility code.
 
 ## Campaign and persistence
