@@ -1,6 +1,8 @@
 using Assets.Scripts.Scenes;
+using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -20,6 +22,7 @@ namespace Assets.Scripts.UI_Components
         private static readonly Vector2 InputSize = new Vector2(300f, 35f);
         private static readonly Color32 InputBackground = new Color32(30, 207, 136, 255);
         private static readonly Color32 InputForeground = new Color32(34, 62, 53, 255);
+        private Coroutine _focusCoroutine;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -54,6 +57,15 @@ namespace Assets.Scripts.UI_Components
         private void OnEnable()
         {
             PreparePrompt();
+        }
+
+        private void OnDisable()
+        {
+            if (_focusCoroutine != null)
+            {
+                StopCoroutine(_focusCoroutine);
+                _focusCoroutine = null;
+            }
         }
 
         private void PreparePrompt()
@@ -103,6 +115,8 @@ namespace Assets.Scripts.UI_Components
                 {
                     mainMenu.NameInput = input;
                 }
+
+                RequestKeyboardFocus(input);
             }
             else
             {
@@ -239,13 +253,51 @@ namespace Assets.Scripts.UI_Components
                 MakeTextVisible(placeholder, 0.6f);
             }
 
-            // The prompt is only shown when a name is required, so put keyboard focus directly in
-            // the field. The player can type immediately and Confirm continues to call SubmitName.
+            // Request focus immediately as well as at the end of the frame. The immediate request
+            // keeps normal cases responsive; the delayed request below wins over any scene/bootstrap
+            // selectable that assigns itself after this modal's OnEnable callback.
             if (input.gameObject.activeInHierarchy)
             {
                 input.Select();
                 input.ActivateInputField();
             }
+        }
+
+        private void RequestKeyboardFocus(TMP_InputField input)
+        {
+            if (_focusCoroutine != null)
+            {
+                StopCoroutine(_focusCoroutine);
+            }
+            _focusCoroutine = StartCoroutine(FocusNameInputAtEndOfFrame(input));
+        }
+
+        private IEnumerator FocusNameInputAtEndOfFrame(TMP_InputField input)
+        {
+            // SetActive(true) invokes OnEnable synchronously while the rest of the Main Menu
+            // finalization is still running. Waiting until the end of that frame prevents a later
+            // selectable/event-system update from stealing keyboard focus while leaving the caret
+            // visually blinking in this field.
+            yield return new WaitForEndOfFrame();
+
+            if (input == null || !input.gameObject.activeInHierarchy)
+            {
+                _focusCoroutine = null;
+                yield break;
+            }
+
+            Canvas.ForceUpdateCanvases();
+            EventSystem eventSystem = EventSystem.current;
+            if (eventSystem != null)
+            {
+                eventSystem.SetSelectedGameObject(null);
+                eventSystem.SetSelectedGameObject(input.gameObject);
+            }
+
+            input.Select();
+            input.ActivateInputField();
+            input.caretPosition = input.text.Length;
+            _focusCoroutine = null;
         }
 
         private TMP_Text GetText(string path)
