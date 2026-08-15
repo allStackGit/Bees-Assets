@@ -20,6 +20,7 @@ namespace Assets.Scripts.UI_Components
         private const float SquadTabLeftMargin = 10f;
         private const float SquadTabTopMargin = 10f;
         private const float SquadTabGap = 8f;
+        private const float BottomHudMargin = 10f;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private GameMenus _menus;
@@ -30,7 +31,9 @@ namespace Assets.Scripts.UI_Components
         private Vector2 _normalSpeedPosition;
         private bool _clockWasVisible;
         private bool _initialized;
-        private bool _squadTabsNormalized;
+        private bool _actionBoxWasVisible;
+        private bool _actionBoxNeedsClamp = true;
+        private int _normalizedSquadTabCount = -1;
         private float _nextDynamicButtonScan;
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
@@ -209,6 +212,7 @@ namespace Assets.Scripts.UI_Components
                 _lastScreenWidth = Screen.width;
                 _lastScreenHeight = Screen.height;
                 RefreshLiveScreenDimensions();
+                _actionBoxNeedsClamp = true;
             }
 
             NormalizeSquadTabs();
@@ -217,13 +221,19 @@ namespace Assets.Scripts.UI_Components
 
         private void NormalizeSquadTabs()
         {
-            if (_squadTabsNormalized || _menus == null || _menus.Stage == null || _menus.Stage.SquadTabs == null)
+            if (_menus == null || _menus.Stage == null || _menus.Stage.SquadTabs == null)
+            {
+                return;
+            }
+
+            int tabCount = _menus.Stage.SquadTabs.Count;
+            if (tabCount == 0 || tabCount == _normalizedSquadTabCount)
             {
                 return;
             }
 
             float x = SquadTabLeftMargin;
-            for (int i = 0; i < _menus.Stage.SquadTabs.Count; i++)
+            for (int i = 0; i < tabCount; i++)
             {
                 SquadTab tab = _menus.Stage.SquadTabs[i];
                 if (tab == null || tab.Tab == null)
@@ -244,7 +254,7 @@ namespace Assets.Scripts.UI_Components
                 x += rect.rect.width + SquadTabGap;
             }
 
-            _squadTabsNormalized = true;
+            _normalizedSquadTabCount = tabCount;
         }
 
         private void UpdateDynamicButtonStyles()
@@ -265,7 +275,14 @@ namespace Assets.Scripts.UI_Components
 
         private void LateUpdate()
         {
-            if (!_initialized || _menus == null || _menus.Clock == null || _menus.GameSpeedButton == null ||
+            if (!_initialized || _menus == null)
+            {
+                return;
+            }
+
+            KeepActionBoxWithinCanvas();
+
+            if (_menus.Clock == null || _menus.GameSpeedButton == null ||
                 _clockRect == null || _speedRect == null)
             {
                 return;
@@ -276,6 +293,82 @@ namespace Assets.Scripts.UI_Components
             {
                 ApplyLayout();
             }
+        }
+
+        private void KeepActionBoxWithinCanvas()
+        {
+            GameObject actionBox = _menus.SquadActionBoxUI;
+            bool visible = actionBox != null && actionBox.activeInHierarchy;
+            if (!visible)
+            {
+                _actionBoxWasVisible = false;
+                return;
+            }
+
+            if (!_actionBoxWasVisible)
+            {
+                _actionBoxNeedsClamp = true;
+            }
+            _actionBoxWasVisible = true;
+
+            if (!_actionBoxNeedsClamp)
+            {
+                return;
+            }
+
+            RectTransform actionRect = actionBox.GetComponent<RectTransform>();
+            Canvas canvas = actionBox.GetComponentInParent<Canvas>();
+            RectTransform canvasRect = canvas != null ? canvas.transform as RectTransform : null;
+            if (actionRect == null || canvasRect == null)
+            {
+                return;
+            }
+
+            // The legacy level ActionBox is a zero-sized root whose visible child panel is centered
+            // around that root. On some aspect ratios the root sits at the lower-left canvas edge,
+            // which leaves part of the child panel below the screen. Clamp the actual descendant
+            // bounds instead of assuming the root RectTransform describes what the player sees.
+            Canvas.ForceUpdateCanvases();
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, actionRect);
+            if (bounds.size.x < 1f || bounds.size.y < 1f)
+            {
+                // Its layout/scale has not been initialized yet. Try again next LateUpdate.
+                return;
+            }
+
+            Rect available = canvasRect.rect;
+            float minX = available.xMin + BottomHudMargin;
+            float maxX = available.xMax - BottomHudMargin;
+            float minY = available.yMin + BottomHudMargin;
+            float maxY = available.yMax - BottomHudMargin;
+            Vector2 correction = Vector2.zero;
+
+            if (bounds.min.x < minX)
+            {
+                correction.x = minX - bounds.min.x;
+            }
+            else if (bounds.max.x > maxX)
+            {
+                correction.x = maxX - bounds.max.x;
+            }
+
+            if (bounds.min.y < minY)
+            {
+                correction.y = minY - bounds.min.y;
+            }
+            else if (bounds.max.y > maxY)
+            {
+                correction.y = maxY - bounds.max.y;
+            }
+
+            if (correction != Vector2.zero)
+            {
+                Vector3 worldCorrection = canvasRect.TransformVector(
+                    new Vector3(correction.x, correction.y, 0f));
+                actionRect.position += worldCorrection;
+            }
+
+            _actionBoxNeedsClamp = false;
         }
 
         private static int GetCampaignMissionId()
