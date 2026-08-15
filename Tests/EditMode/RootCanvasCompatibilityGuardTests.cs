@@ -177,7 +177,7 @@ namespace Bees.Tests.EditMode
 
                 bool changed = (bool)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
-                    "ClampIslandToCanvas",
+                    "ClampIslandToCanvasWithMargin",
                     button,
                     canvas,
                     15f);
