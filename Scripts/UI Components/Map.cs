@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Entities;
+using Assets.Scripts.Levels;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -48,6 +49,24 @@ namespace Assets.Scripts.UI_Components
         {
             transform.parent = level.transform;
             transform.localPosition = Vector2.zero;
+
+            // Map-border and other map-authored Obstacle components are part of the map prefab,
+            // rather than objects obtained through Pool.Create. Give them their runtime ownership
+            // before activating the map. Without this, MapBorder callbacks dereference a null Stage
+            // on levels without pathfinding, while Pathfinder.Obstacle.Setup fails on the same
+            // borders when a level (such as Pluto III) does initialize an obstacle grid.
+            Obstacle[] mapObstacles = GetComponentsInChildren<Obstacle>(true);
+            for (int i = 0; i < mapObstacles.Length; i++)
+            {
+                Obstacle obstacle = mapObstacles[i];
+                if (obstacle == null)
+                {
+                    continue;
+                }
+                obstacle.Level = level;
+                obstacle.Stage = level.Stage;
+            }
+
             if (!level.Stage.IsTraining && RingSparkle != null)
             {
                 RingSparkle.Setup(level);
