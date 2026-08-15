@@ -135,14 +135,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PlutoShieldHealthFillUsesNormalizedScale()
+        public void PlutoShieldHealthFillUsesClampedSharedScaleConvention()
         {
             string source = ReadPluto4Source();
 
-            Assert.That(source, Does.Contain("Mathf.Clamp01((float)(15 - personnelLost) / 15f)"));
-            Assert.That(source, Does.Contain("new Vector2(shieldHealth, 1f)"));
-            Assert.That(source, Does.Not.Contain("((float)(15 - personnelLost) / 15) * 150"),
-                "The 150-pixel health-bar root must not be scaled up by another factor of 150.");
+            Assert.That(source, Does.Contain("Mathf.Clamp01((float)(15 - personnelLost) / 15f)"),
+                "Pluto shield health must be clamped before it is applied to the shared health-bar UI.");
+            Assert.That(source, Does.Contain("new Vector2(shieldHealth * 150f, 1f)"),
+                "Pluto IV and Titania II share the established 0..150 shield-bar scale convention.");
+            Assert.That(source, Does.Not.Contain("new Vector2(((float)(15 - personnelLost) / 15) * 150, 1)"),
+                "Do not restore the unbounded inline scale expression.");
         }
 
         [Test]
