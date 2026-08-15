@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -55,13 +54,77 @@ namespace Bees.Tests.EditMode
                     child);
 
                 Assert.That(changed, Is.False,
-                    "The compatibility pass must repair the layout owner, not rewrite children driven by that LayoutGroup.");
+                    "The compatibility pass must repair the layout owner, not reanchor children driven by that LayoutGroup.");
                 AssertVector(child.anchorMin, originalAnchorMin);
                 AssertVector(child.anchorMax, originalAnchorMax);
             }
             finally
             {
                 UnityEngine.Object.DestroyImmediate(parent.gameObject);
+            }
+        }
+
+        [Test]
+        public void TallViewportGivesSurplusHeightToDominantContentInsteadOfWhiteBottomStrip()
+        {
+            RectTransform owner = CreateRect("Screen Layout", null, new Vector2(1600f, 900f));
+            VerticalLayoutGroup layout = owner.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = false;
+
+            RectTransform main = CreateRect("Main Container", owner, new Vector2(1600f, 718f));
+            RectTransform footer = CreateRect("Footer", owner, new Vector2(1600f, 50f));
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "FitDominantVerticalLayoutChild",
+                    owner);
+
+                Assert.That(changed, Is.True);
+                Assert.That(main.rect.height, Is.EqualTo(850f).Within(0.01f),
+                    "The main body should absorb the taller viewport while the footer keeps its authored height.");
+                Assert.That(footer.rect.height, Is.EqualTo(50f).Within(0.01f));
+                Assert.That(main.rect.height + footer.rect.height, Is.EqualTo(owner.rect.height).Within(0.01f),
+                    "No unused vertical band should remain for the white root backer to show through.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner.gameObject);
+            }
+        }
+
+        [Test]
+        public void ReferenceHeightPreservesAuthoredMainAndFooterSplit()
+        {
+            RectTransform owner = CreateRect("Screen Layout", null, new Vector2(1366f, 768f));
+            VerticalLayoutGroup layout = owner.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = false;
+
+            RectTransform main = CreateRect("Main Container", owner, new Vector2(1366f, 718f));
+            RectTransform footer = CreateRect("Footer", owner, new Vector2(1366f, 50f));
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "FitDominantVerticalLayoutChild",
+                    owner);
+
+                Assert.That(changed, Is.False,
+                    "The compatibility pass should not perturb the original 1366x768 layout when it already fills the viewport.");
+                Assert.That(main.rect.height, Is.EqualTo(718f).Within(0.01f));
+                Assert.That(footer.rect.height, Is.EqualTo(50f).Within(0.01f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner.gameObject);
             }
         }
 
@@ -123,35 +186,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsRootCanBePinnedToActualCanvasTopLeft()
-        {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
-            RectTransform tabs = CreateRect("Squad Tabs", canvas, new Vector2(300f, 40f));
-            tabs.anchoredPosition = new Vector2(-500f, 250f);
-
-            try
-            {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "PinLayoutRootToCanvasCorner",
-                    tabs,
-                    canvas,
-                    false,
-                    true);
-
-                Bounds after = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, tabs);
-                Assert.That(changed, Is.True);
-                Assert.That(after.min.x, Is.EqualTo(canvas.rect.xMin).Within(0.01f));
-                Assert.That(after.max.y, Is.EqualTo(canvas.rect.yMax).Within(0.01f));
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
-            }
-        }
-
-        [Test]
-        public void RuntimeGuardStaysAtOwnershipBoundaries()
+        public void RuntimeGuardLeavesGameplaySquadTabPlacementToHudOwner()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath,
@@ -163,8 +198,10 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("parent.GetComponent<LayoutGroup>() == null", source);
             StringAssert.Contains("child.GetComponentInChildren<Selectable>(true)", source);
             StringAssert.Contains("ClampDirectInteractiveIslands(_canvasRect", source);
-            StringAssert.Contains("FindNamedRectTransform(_canvasRect, \"Squad Tabs\"", source);
-            StringAssert.Contains("PinLayoutRootToCanvasCorner(_squadTabsRoot, _canvasRect, false, true)", source);
+            StringAssert.Contains("FitDominantVerticalLayoutChild(child);", source);
+            StringAssert.DoesNotContain("FindNamedRectTransform(_canvasRect, \"Squad Tabs\"", source,
+                "The compatibility pass must not fight GameHudLayoutGuard over scoreboard-relative squad-tab placement.");
+            StringAssert.DoesNotContain("PinLayoutRootToCanvasCorner(_squadTabsRoot", source);
             StringAssert.DoesNotContain("Screen.safeArea", source,
                 "Desktop compatibility repair should use the actual root canvas rather than inventing a safe-area inset.");
         }
