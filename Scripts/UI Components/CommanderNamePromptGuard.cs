@@ -15,6 +15,11 @@ namespace Assets.Scripts.UI_Components
     public sealed class CommanderNamePromptGuard : MonoBehaviour
     {
         private const string PromptName = "Choose Commander Name";
+        private static readonly Vector2 InputAnchor = new Vector2(0f, 1f);
+        private static readonly Vector2 InputPosition = new Vector2(175f, -107.5f);
+        private static readonly Vector2 InputSize = new Vector2(300f, 35f);
+        private static readonly Color32 InputBackground = new Color32(30, 207, 136, 255);
+        private static readonly Color32 InputForeground = new Color32(34, 62, 53, 255);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -76,22 +81,32 @@ namespace Assets.Scripts.UI_Components
             }
 
             MainMenu mainMenu = Object.FindObjectOfType<MainMenu>();
-            TMP_InputField input = mainMenu != null && mainMenu.NameInput != null
-                ? mainMenu.NameInput
-                : GetComponentInChildren<TMP_InputField>(true);
+
+            // Resolve the field from the modal hierarchy first. This avoids accidentally repairing
+            // an unrelated TMP_InputField if an older Main Menu scene carried a stale serialized
+            // NameInput reference. The first-run prompt owns exactly one Text Input prefab.
+            TMP_InputField input = GetComponentInChildren<TMP_InputField>(true);
+            if (input == null && mainMenu != null && mainMenu.NameInput != null &&
+                mainMenu.NameInput.transform.IsChildOf(transform))
+            {
+                input = mainMenu.NameInput;
+            }
+
             if (input != null)
             {
-                ActivateBranch(input.transform);
-                input.interactable = true;
-                MakeTextVisible(input.textComponent);
-                if (input.placeholder is TMP_Text placeholder)
+                PrepareNameInput(input);
+
+                // SubmitName reads MainMenu.NameInput.text and then persists it to
+                // UserProgressData.PlayerName. Make the repaired visible field the authoritative
+                // reference so the text the player sees and edits is exactly what gets saved.
+                if (mainMenu != null)
                 {
-                    if (string.IsNullOrWhiteSpace(placeholder.text))
-                    {
-                        placeholder.text = "Commander Name";
-                    }
-                    MakeTextVisible(placeholder, 0.65f);
+                    mainMenu.NameInput = input;
                 }
+            }
+            else
+            {
+                Debug.LogError("Commander-name prompt does not contain a TMP_InputField.");
             }
 
             // Do not activate hidden templates. Repair only buttons already authored as active in
@@ -120,6 +135,84 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        private void PrepareNameInput(TMP_InputField input)
+        {
+            ActivateBranch(input.transform);
+            input.transform.SetAsLastSibling();
+
+            // Main Panel/Text uses a VerticalLayoutGroup for the title and explanation. The
+            // commander-name field is intentionally positioned inside that same text area, so it
+            // must opt out of automatic layout or the layout pass can move it beneath the Buttons
+            // panel, where the panel's opaque background completely hides it.
+            LayoutElement layoutElement = input.GetComponent<LayoutElement>();
+            if (layoutElement == null)
+            {
+                layoutElement = input.gameObject.AddComponent<LayoutElement>();
+            }
+            layoutElement.ignoreLayout = true;
+
+            RectTransform inputRect = input.GetComponent<RectTransform>();
+            if (inputRect != null)
+            {
+                inputRect.anchorMin = InputAnchor;
+                inputRect.anchorMax = InputAnchor;
+                inputRect.pivot = new Vector2(0.5f, 0.5f);
+                inputRect.anchoredPosition = InputPosition;
+                inputRect.sizeDelta = InputSize;
+                inputRect.localScale = Vector3.one;
+            }
+
+            input.enabled = true;
+            input.interactable = true;
+            input.readOnly = false;
+            input.characterLimit = 20;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.contentType = TMP_InputField.ContentType.Standard;
+            input.customCaretColor = true;
+            input.caretColor = InputForeground;
+
+            Graphic targetGraphic = input.targetGraphic;
+            if (targetGraphic != null)
+            {
+                targetGraphic.gameObject.SetActive(true);
+                targetGraphic.enabled = true;
+                targetGraphic.raycastTarget = true;
+                targetGraphic.color = InputBackground;
+            }
+
+            if (input.textViewport != null)
+            {
+                input.textViewport.gameObject.SetActive(true);
+                input.textViewport.localScale = Vector3.one;
+            }
+
+            if (input.textComponent != null)
+            {
+                input.textComponent.enabled = true;
+                input.textComponent.color = InputForeground;
+                MakeTextVisible(input.textComponent);
+            }
+
+            if (input.placeholder is TMP_Text placeholder)
+            {
+                placeholder.enabled = true;
+                if (string.IsNullOrWhiteSpace(placeholder.text))
+                {
+                    placeholder.text = "Enter Name...";
+                }
+                placeholder.color = InputForeground;
+                MakeTextVisible(placeholder, 0.6f);
+            }
+
+            // The prompt is only shown when a name is required, so put keyboard focus directly in
+            // the field. The player can type immediately and Confirm continues to call SubmitName.
+            if (input.gameObject.activeInHierarchy)
+            {
+                input.Select();
+                input.ActivateInputField();
+            }
+        }
+
         private TMP_Text GetText(string path)
         {
             Transform child = transform.Find(path);
@@ -133,9 +226,6 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // NameInput is expected to live inside this modal. If a legacy scene has the serialized
-            // reference elsewhere, make the input itself visible without walking up and activating
-            // unrelated menu containers.
             if (!child.IsChildOf(transform))
             {
                 child.gameObject.SetActive(true);
