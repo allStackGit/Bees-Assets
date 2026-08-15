@@ -47,10 +47,16 @@ namespace Assets.Scripts.Levels
                 {
                     obstacle.Setup(Level);
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
-                    Debug.Log($"Found {obstacleObject.name}: {obstacle?.Name}");
-                    throw e;
+                    Debug.LogError(
+                        $"Pathfinder failed to set up obstacle '{obstacleObject.name}' ({obstacle.GetType().Name}). " +
+                        $"Level assigned: {obstacle.Level != null}; Stage assigned: {obstacle.Stage != null}; " +
+                        $"Collider assigned: {obstacle.Collider != null}; Clearance collider assigned: {obstacle.ClearanceMappingCollider != null}.");
+                    // Preserve the original exception stack. `throw e` reset the stack to this catch
+                    // block, which made the Pluto III failure appear to originate here instead of
+                    // revealing the actual dereference inside Obstacle.Setup.
+                    throw;
                 }
 
                 obstacle.MapPointsIndex = AddObstacle(obstacle);
