@@ -28,7 +28,15 @@ namespace Assets.Scripts.Entities.Ships
 
         public void LateUpdate()
         {
-            Transform.position = Ship.GetPosition();
+            Vector2 shipPosition = Ship.GetPosition();
+            Vector3 currentPosition = Transform.position;
+            if (currentPosition.x != shipPosition.x || currentPosition.y != shipPosition.y || currentPosition.z != 0f)
+            {
+                // SpriteMask transforms can participate in renderer/culling updates. Most ships are
+                // stationary on many frames, so avoid dirtying the transform and mask hierarchy when
+                // the vision object is already exactly where it belongs.
+                Transform.position = shipPosition;
+            }
         }
 
         public void Activate()
