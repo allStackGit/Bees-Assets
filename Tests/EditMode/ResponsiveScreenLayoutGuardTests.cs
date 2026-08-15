@@ -35,6 +35,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Not.Contain("Canvas.allCanvases"),
                 "Canvas.allCanvases is not an available API in the project's Unity version.");
             Assert.That(source, Does.Contain("ResponsiveScreenCanvasDiscovery"));
+            Assert.That(source, Does.Contain("RootCanvasCompatibilityGuard.EnsureLiveCanvasGuards();"),
+                "Late-created root canvases need both wrapper repair and the final ownership-boundary compatibility pass.");
             Assert.That(source, Does.Contain("CanvasScaler.ScaleMode.ScaleWithScreenSize"));
             Assert.That(source, Does.Contain("CanvasScaler.ScreenMatchMode.Expand"));
         }
