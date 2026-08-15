@@ -41,6 +41,12 @@ Level/game/request identifiers and versioned payload shapes are ownership bounda
 
 Do not use `SaveData/`, old JSON, trigger source, or an individual prefab as a sole source of mission truth.
 
+### Screen-space UI
+
+`CanvasScaler/root canvas -> ResponsiveScreenLayoutGuard viewport-wrapper repair -> GameHudLayoutGuard semantic gameplay placement -> RootCanvasCompatibilityGuard final ownership-boundary correction`
+
+`ResponsiveScreenLayoutGuard` owns legacy viewport/screen-wrapper geometry and must not move arbitrary nested UI. `GameHudLayoutGuard` owns known gameplay relationships such as mission-clock/Game Speed and bottom HUD placement. `RootCanvasCompatibilityGuard` is deliberately narrower than the old generic clamping pass: it repairs viewport-level `LayoutGroup` owners/backers, clamps only whole direct root-canvas interactive islands that are actually outside the canvas, and final-pins the legacy Squad Tabs container after layout.
+
 ## Testing architecture
 
 - EditMode tests and PlayMode tests live under `Tests/` and are described by `docs/TESTING.md`.
