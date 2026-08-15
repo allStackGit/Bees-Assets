@@ -25,12 +25,14 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PointerOutsideWindowCannotOwnEdgeScroll()
+        public void EdgeScrollUsesLiveClientDimensionsWithoutMutatingPreference()
         {
             string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "UI Components", "GameHudLayoutGuard.cs"));
-            StringAssert.Contains("mouse.x >= 0f && mouse.x < Screen.width", source);
-            StringAssert.Contains("mouse.y >= 0f && mouse.y < Screen.height", source);
-            StringAssert.Contains("RestoreMouseScrolling();", source);
+            StringAssert.Contains("ConfigData.ScreenWidth = Screen.width;", source);
+            StringAssert.Contains("ConfigData.ScreenHeight = Screen.height;", source);
+            StringAssert.Contains("Screen.width != _lastScreenWidth", source);
+            StringAssert.DoesNotContain("ConfigData.UserProgressData.UseMouseScrolling = false", source,
+                "Display/focus compatibility code must not temporarily rewrite the user's edge-scroll setting.");
         }
 
         [Test]
