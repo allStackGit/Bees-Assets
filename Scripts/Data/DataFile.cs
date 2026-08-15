@@ -109,7 +109,7 @@ namespace Assets.Scripts.Data
                     if (standingRequest.Status == 1)
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
-                        SetContents(standingRequest.Response.Contents);
+                        SetServerContents(standingRequest.Response.Contents);
                         _isDataLoaded = true;
                         _request = null;
                         return;
@@ -151,19 +151,33 @@ namespace Assets.Scripts.Data
         {
             return _request;
         }
+
+        /// <summary>
+        /// Strict replacement used by ordinary local/in-memory callers. Parse before mutating the
+        /// last-good payload so malformed replacement data cannot destroy valid state.
+        /// </summary>
         public void SetContents(string contents)
         {
+            object jsonObject = JsonConvert.DeserializeObject(contents);
             _textContents = contents;
+            _jsonObject = jsonObject;
+        }
+
+        /// <summary>
+        /// Server reads are allowed to surface malformed legacy data as a loaded-but-invalid
+        /// payload so UserData.WaitForData can rebuild that profile member from current defaults.
+        /// This tolerant path is intentionally separate from SetContents' atomic replacement
+        /// contract.
+        /// </summary>
+        private void SetServerContents(string contents)
+        {
             try
             {
-                _jsonObject = JsonConvert.DeserializeObject(contents);
+                SetContents(contents);
             }
             catch (JsonException exception)
             {
-                // Server-backed legacy profiles can contain syntactically malformed JSON. Preserve
-                // the raw payload long enough for UserData.WaitForData to classify the file as
-                // incompatible and rebuild it from defaults instead of throwing out of Socket.Update
-                // and leaving the whole main-menu bootstrap permanently unfinished.
+                _textContents = contents;
                 _jsonObject = null;
                 Debug.LogError($"Stored user data '{Name}' contains malformed JSON and will be recovered. {exception.GetType().Name}: {exception.Message}");
             }
