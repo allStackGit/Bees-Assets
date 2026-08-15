@@ -9,14 +9,18 @@ namespace Assets.Scripts.UI_Components
 {
     /// <summary>
     /// Keeps optional top-level HUD controls from occupying the same screen space and applies
-    /// small scene-wide UI compatibility fixes to legacy controls.
+    /// scene-wide UI compatibility fixes to legacy controls and display configurations.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class GameHudLayoutGuard : MonoBehaviour
     {
         private const float ControlGap = 10f;
         private const float TitaniaClockGap = 5f;
-        private const float DynamicButtonScanInterval = 0.25f;
+        private const float DynamicButtonScanInterval = 1f;
+        private const float SquadTabLeftMargin = 10f;
+        private const float SquadTabTopMargin = 10f;
+        private const float SquadTabGap = 8f;
+        private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private GameMenus _menus;
         private RectTransform _clockRect;
@@ -26,11 +30,10 @@ namespace Assets.Scripts.UI_Components
         private Vector2 _normalSpeedPosition;
         private bool _clockWasVisible;
         private bool _initialized;
-        private bool _mouseScrollSuppressed;
-        private bool _savedStageMouseScrolling;
-        private bool _savedUserMouseScrolling;
-        private Stage _mouseScrollStage;
+        private bool _squadTabsNormalized;
         private float _nextDynamicButtonScan;
+        private int _lastScreenWidth = -1;
+        private int _lastScreenHeight = -1;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -41,6 +44,8 @@ namespace Assets.Scripts.UI_Components
 
         private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
+            RefreshLiveScreenDimensions();
+            ApplyAspectRatioSafeCanvasScaling(scene);
             ApplyReadableInputFieldStyle(scene);
             ApplyButtonInteractionStyle(scene);
 
@@ -52,6 +57,41 @@ namespace Assets.Scripts.UI_Components
 
             GameHudLayoutGuard guard = menus.gameObject.AddComponent<GameHudLayoutGuard>();
             guard.Initialize(menus);
+        }
+
+        private static void RefreshLiveScreenDimensions()
+        {
+            // ConfigData historically captured Screen.width/height once during static initialization.
+            // On macOS/Retina and after resolution or window-size changes that snapshot can differ
+            // from the actual client area, which makes LevelInputManager miss the right/top edge.
+            ConfigData.ScreenWidth = Screen.width;
+            ConfigData.ScreenHeight = Screen.height;
+        }
+
+        private static void ApplyAspectRatioSafeCanvasScaling(UnityEngine.SceneManagement.Scene scene)
+        {
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (CanvasScaler scaler in root.GetComponentsInChildren<CanvasScaler>(true))
+                {
+                    Canvas canvas = scaler.GetComponent<Canvas>();
+                    if (canvas == null || canvas.renderMode == RenderMode.WorldSpace)
+                    {
+                        continue;
+                    }
+
+                    // MatchWidthOrHeight with a width-only match was authored around 1366x768 and
+                    // can crop fixed-position legacy controls on 16:10, ultrawide and tall displays.
+                    // Expand chooses the smaller scale ratio, guaranteeing that the full reference
+                    // rectangle remains available. Proper edge anchors then stay on their edges.
+                    scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                    if (scaler.referenceResolution.x <= 0f || scaler.referenceResolution.y <= 0f)
+                    {
+                        scaler.referenceResolution = DefaultReferenceResolution;
+                    }
+                    scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+                }
+            }
         }
 
         private static void ApplyReadableInputFieldStyle(UnityEngine.SceneManagement.Scene scene)
@@ -140,28 +180,23 @@ namespace Assets.Scripts.UI_Components
         private void Initialize(GameMenus menus)
         {
             _menus = menus;
-            if (_menus.Clock == null || _menus.GameSpeedButton == null)
-            {
-                enabled = false;
-                return;
-            }
-
-            _clockRect = _menus.Clock.GetComponent<RectTransform>();
+            _clockRect = _menus.Clock != null
+                ? _menus.Clock.GetComponent<RectTransform>()
+                : null;
             _counterRect = _menus.Counter != null
                 ? _menus.Counter.GetComponent<RectTransform>()
                 : null;
-            _speedRect = _menus.GameSpeedButton.GetComponent<RectTransform>();
+            _speedRect = _menus.GameSpeedButton != null
+                ? _menus.GameSpeedButton.GetComponent<RectTransform>()
+                : null;
             _plutoShieldRect = _menus.PlutoShield != null
                 ? _menus.PlutoShield.GetComponent<RectTransform>()
                 : null;
 
-            if (_clockRect == null || _speedRect == null)
+            if (_speedRect != null)
             {
-                enabled = false;
-                return;
+                _normalSpeedPosition = _speedRect.anchoredPosition;
             }
-
-            _normalSpeedPosition = _speedRect.anchoredPosition;
             _clockWasVisible = false;
             _initialized = true;
             ApplyLayout();
@@ -169,8 +204,47 @@ namespace Assets.Scripts.UI_Components
 
         private void Update()
         {
-            UpdateMouseScrollOwnership();
+            if (Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight)
+            {
+                _lastScreenWidth = Screen.width;
+                _lastScreenHeight = Screen.height;
+                RefreshLiveScreenDimensions();
+            }
+
+            NormalizeSquadTabs();
             UpdateDynamicButtonStyles();
+        }
+
+        private void NormalizeSquadTabs()
+        {
+            if (_squadTabsNormalized || _menus == null || _menus.Stage == null || _menus.Stage.SquadTabs == null)
+            {
+                return;
+            }
+
+            float x = SquadTabLeftMargin;
+            for (int i = 0; i < _menus.Stage.SquadTabs.Count; i++)
+            {
+                SquadTab tab = _menus.Stage.SquadTabs[i];
+                if (tab == null || tab.Tab == null)
+                {
+                    continue;
+                }
+
+                RectTransform rect = tab.Tab.GetComponent<RectTransform>();
+                if (rect == null)
+                {
+                    continue;
+                }
+
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = new Vector2(0f, 1f);
+                rect.pivot = new Vector2(0f, 1f);
+                rect.anchoredPosition = new Vector2(x, -SquadTabTopMargin);
+                x += rect.rect.width + SquadTabGap;
+            }
+
+            _squadTabsNormalized = true;
         }
 
         private void UpdateDynamicButtonStyles()
@@ -189,74 +263,10 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        private void UpdateMouseScrollOwnership()
-        {
-            Stage stage = _menus != null ? _menus.Stage : null;
-            if (stage == null || ConfigData.UserProgressData == null)
-            {
-                RestoreMouseScrolling();
-                return;
-            }
-
-            Vector3 mouse = Input.mousePosition;
-            bool pointerInsideWindow = Application.isFocused &&
-                                       mouse.x >= 0f && mouse.x < Screen.width &&
-                                       mouse.y >= 0f && mouse.y < Screen.height;
-            if (pointerInsideWindow)
-            {
-                RestoreMouseScrolling();
-                return;
-            }
-
-            if (!_mouseScrollSuppressed || _mouseScrollStage != stage)
-            {
-                RestoreMouseScrolling();
-                _mouseScrollStage = stage;
-                _savedStageMouseScrolling = stage.UseMouseScrolling;
-                _savedUserMouseScrolling = ConfigData.UserProgressData.UseMouseScrolling;
-                _mouseScrollSuppressed = true;
-            }
-
-            // LevelInputManager enables edge scrolling when either of these values is true.
-            // Temporarily suppress both while the pointer is outside the client rectangle so
-            // negative/off-window coordinates cannot masquerade as a screen edge.
-            stage.UseMouseScrolling = false;
-            ConfigData.UserProgressData.UseMouseScrolling = false;
-        }
-
-        private void RestoreMouseScrolling()
-        {
-            if (!_mouseScrollSuppressed)
-            {
-                return;
-            }
-
-            if (_mouseScrollStage != null)
-            {
-                _mouseScrollStage.UseMouseScrolling = _savedStageMouseScrolling;
-            }
-            if (ConfigData.UserProgressData != null)
-            {
-                ConfigData.UserProgressData.UseMouseScrolling = _savedUserMouseScrolling;
-            }
-
-            _mouseScrollStage = null;
-            _mouseScrollSuppressed = false;
-        }
-
-        private void OnDisable()
-        {
-            RestoreMouseScrolling();
-        }
-
-        private void OnDestroy()
-        {
-            RestoreMouseScrolling();
-        }
-
         private void LateUpdate()
         {
-            if (!_initialized || _menus == null || _menus.Clock == null || _menus.GameSpeedButton == null)
+            if (!_initialized || _menus == null || _menus.Clock == null || _menus.GameSpeedButton == null ||
+                _clockRect == null || _speedRect == null)
             {
                 return;
             }
@@ -283,6 +293,12 @@ namespace Assets.Scripts.UI_Components
 
         private void ApplyLayout()
         {
+            if (_menus == null || _menus.Clock == null || _menus.GameSpeedButton == null ||
+                _clockRect == null || _speedRect == null)
+            {
+                return;
+            }
+
             bool clockVisible = _menus.Clock.activeInHierarchy;
             if (clockVisible)
             {
