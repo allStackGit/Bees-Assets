@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -127,6 +128,29 @@ namespace Bees.Tests.EditMode
                 AssertVector(child.anchorMin, new Vector2(0.5f, 0.5f));
                 AssertVector(child.anchorMax, new Vector2(0.5f, 0.5f));
                 AssertVector(child.sizeDelta, new Vector2(800f, 600f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(parent.gameObject);
+            }
+        }
+
+        [Test]
+        public void LayoutGroupOwnedScreenChildKeepsAuthoredLayoutContract()
+        {
+            RectTransform parent = CreateParent();
+            RectTransform child = CreateChild(parent, new Vector2(1366f, 718f));
+            parent.gameObject.AddComponent<VerticalLayoutGroup>();
+
+            try
+            {
+                bool repaired = RepairLegacyScreenRect(child, parent);
+
+                Assert.That(repaired, Is.False,
+                    "LayoutGroup children must remain under Unity layout ownership; reanchoring them can push sibling footers off-screen.");
+                AssertVector(child.anchorMin, new Vector2(0.5f, 0.5f));
+                AssertVector(child.anchorMax, new Vector2(0.5f, 0.5f));
+                AssertVector(child.sizeDelta, new Vector2(1366f, 718f));
             }
             finally
             {
