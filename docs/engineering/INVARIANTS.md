@@ -1,0 +1,58 @@
+# Bees Engineering Invariants
+
+These are cross-cutting rules future changes must preserve. Keep this file concise; detailed implementation knowledge belongs in `docs/DEVELOPMENT_MEMORY.md` and `docs/engineering/SYSTEM_MAP.md`.
+
+## State and lifecycle
+
+- A `Level` owns its runtime `GameState`; mutable battle state must not leak between levels, scenes, or restarted games.
+- Pool reuse creates a new logical lifetime. `ClearData`/setup paths must reset all behaviorally relevant state, including timers, IDs, references, derived collections, async ownership, and flags.
+- Kill/teardown/release paths must be idempotent where duplicate callbacks are possible. Deferred releases must drain exactly once.
+- Static/global state used by tests or scenes must have an explicit ownership/reset strategy.
+
+## Async and ordering
+
+- Delayed/background work may mutate runtime state only after proving it still belongs to the current request and current pooled-object lifecycle.
+- Older path requests must not overwrite newer destinations/results.
+- Cancellation/teardown must not strand worker-slot ownership or let completed stale work publish later.
+- Deterministic evidence must not rely on unordered collection iteration or cosmetic/global random-state side effects.
+
+## Maps, prefabs, scenes, and assets
+
+- Runtime lookup names are contracts. Map locations/configuration and map prefab names must remain deliberately aligned.
+- `Resources` paths, serialized enum/name mappings, scene object references, prefab conversion dictionaries, and pool routing must be validated when renamed or reorganized.
+- Mission-specific obstacle/map prefabs are gameplay, not decoration; pathing, clearance, hazards, visibility, and spawn geometry can alter mission behavior.
+- Unity `.meta`/GUID relationships are asset identity. Remote edits must not casually regenerate or fabricate GUIDs for referenced assets.
+
+## Campaign and persistence
+
+- Campaign mission identity cannot be inferred from a single source. Reconcile mission catalog/intro, current runtime data, trigger/objective code, exact authored assets, mechanics, dialogue/UI, and persistence effects.
+- In-development missions must remain explicitly guarded until their real runtime/persistence dependencies are ready.
+- Persistent fleet/squad/progress/stat data must remain attached to the correct user, mode, level, squad, and ship identity.
+- A write failure or malformed input must not partially mutate a different persistence target.
+
+## Networking
+
+- Request hashes/deduplication are ownership mechanisms; cleanup must remove only hashes belonging to the owning lifecycle/level.
+- Responses must be matched to the correct request type, request hash, level/game, and current pooled object identity before mutation.
+- Reconnect/setup responses must update the level that owns the request, not an unrelated cached/current level.
+- Unity/server protocol or version changes require checking the external BeesServer contract rather than assuming local compatibility.
+
+## Combat/visibility/physics
+
+- Repeated lethal/contact callbacks must not double-count statistics, damage outcomes, deaths, or pool releases.
+- Range/visibility state with multiple observers must use ownership semantics; one observer exiting must not erase another observer's valid visibility/range contribution.
+- Physics- or frame-dependent behavior should be validated in PlayMode when EditMode cannot reproduce the Unity lifecycle contract.
+
+## Testing and regressions
+
+- Tests protect requirements, not implementation accidents.
+- Every behavior change must classify affected tests as still valid, update-required, obsolete-and-replaced, or missing.
+- A reproducible regression should gain a test that would have failed before the fix whenever practical.
+- If automated coverage is impractical, the permanent regression record must explain why and state the strongest manual/system protection.
+- Never treat a targeted green test as evidence that unrelated lifecycle, scene, persistence, network, or campaign contracts remain safe.
+
+## Performance
+
+- Performance improvements must preserve gameplay, cleanup, synchronization/ownership, save/network compatibility, and intended default quality.
+- Prefer stable frame-time and bounded resource use over average-FPS-only wins.
+- Do not introduce unbounded caches, retained pooled state, race conditions, or hidden quality reductions to improve a benchmark.
