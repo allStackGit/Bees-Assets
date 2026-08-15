@@ -9,6 +9,8 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class GameHudLayoutGuardTests
     {
+        private const string GuardTypeName = "Assets.Scripts.UI_Components.GameHudLayoutGuard";
+
         private static string ReadGuardSource()
         {
             return File.ReadAllText(Path.Combine(
@@ -68,43 +70,123 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsLayoutGroupOwnsActualScreenTopLeft()
+        public void SquadTabsUseLiveScoreboardGeometryInsteadOfScreenCornerGuessing()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
-            Assert.That(source, Does.Contain("RectTransform tabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;"));
-            Assert.That(source, Does.Contain("HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();"));
-            Assert.That(source, Does.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
-                "The squad-number row should use the actual screen top-left without inherited 200 px or safe-area padding.");
+            Assert.That(source, Does.Contain("_scoreboardRect"));
+            Assert.That(source, Does.Contain("StretchToRootCanvas(tabsRoot, canvasRect)"),
+                "The legacy 1366x768 Squad Tabs container must become the live root-canvas rectangle before its layout is calculated.");
+            Assert.That(source, Does.Contain("GetSquadTabLeftPadding("));
+            Assert.That(source, Does.Contain("scoreboardBounds.max.x - tabsRoot.rect.xMin + gap"),
+                "The squad row should begin immediately to the right of the visible scoreboard.");
+            Assert.That(source, Does.Contain("layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);"));
             Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
-            Assert.That(source, Does.Contain("layout.spacing = SquadTabGap;"));
-            Assert.That(source, Does.Contain("layout.childForceExpandWidth = false;"));
-            Assert.That(source, Does.Contain("layout.childForceExpandHeight = false;"));
-            Assert.That(source, Does.Contain("LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);"),
-                "A later Unity layout pass must not push the tabs down again.");
-            Assert.That(source, Does.Contain("_normalizedSquadTabCount = -1;"),
-                "Resolution changes must force the tab row layout to be normalized again.");
+            Assert.That(source, Does.Not.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
+                "Zeroing the authored scoreboard reservation caused the squad row to lose its intended relationship to the scoreboard.");
         }
 
         [Test]
-        public void BottomHudIslandsArePinnedToActualCanvasEdges()
+        public void VisibleScoreboardDeterminesSquadTabLeftPadding()
+        {
+            RectTransform tabsRoot = CreateRect("Squad Tabs", null, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", tabsRoot, new Vector2(200f, 60f));
+            scoreboard.anchorMin = new Vector2(0f, 1f);
+            scoreboard.anchorMax = new Vector2(0f, 1f);
+            scoreboard.anchoredPosition = new Vector2(100f, -30f);
+
+            try
+            {
+                int padding = (int)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "GetSquadTabLeftPadding",
+                    tabsRoot,
+                    scoreboard,
+                    8f,
+                    10f);
+
+                Assert.That(padding, Is.EqualTo(208),
+                    "A 200 px scoreboard at the left edge plus an 8 px gap should put the first squad tab at x=208 from the live canvas left.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tabsRoot.gameObject);
+            }
+        }
+
+        [Test]
+        public void HiddenScoreboardUsesSmallVisibleSquadTabMargin()
+        {
+            RectTransform tabsRoot = CreateRect("Squad Tabs", null, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", tabsRoot, new Vector2(200f, 60f));
+            scoreboard.gameObject.SetActive(false);
+
+            try
+            {
+                int padding = (int)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "GetSquadTabLeftPadding",
+                    tabsRoot,
+                    scoreboard,
+                    8f,
+                    10f);
+
+                Assert.That(padding, Is.EqualTo(10));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tabsRoot.gameObject);
+            }
+        }
+
+        [Test]
+        public void EdgeHudControlsReceiveVisibleCanvasInset()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", canvas, new Vector2(200f, 60f));
+            scoreboard.anchorMin = new Vector2(0f, 1f);
+            scoreboard.anchorMax = new Vector2(0f, 1f);
+            scoreboard.anchoredPosition = new Vector2(100f, -30f);
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ClampRectWithinCanvas",
+                    scoreboard,
+                    canvas,
+                    10f);
+
+                Bounds after = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, scoreboard);
+                Assert.That(changed, Is.True);
+                Assert.That(after.min.x, Is.EqualTo(canvas.rect.xMin + 10f).Within(0.01f));
+                Assert.That(after.max.y, Is.EqualTo(canvas.rect.yMax - 10f).Within(0.01f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void BottomHudIslandsUseVisibleInsetInsteadOfTouchingCanvasBoundary()
         {
             string source = ReadGuardSource();
 
+            Assert.That(source, Does.Contain("private const float HudEdgeMargin = 10f;"));
+            Assert.That(source, Does.Contain("private const float BottomHudMargin = HudEdgeMargin;"));
             Assert.That(source, Does.Contain("KeepActionBoxWithinCanvas();"));
             Assert.That(source, Does.Contain("KeepMiniMapWithinCanvas();"));
             Assert.That(source, Does.Contain("_menus.SquadActionBoxUI"));
             Assert.That(source, Does.Contain("_menus.MiniMapOutput"));
             Assert.That(source, Does.Contain("_menus.MiniMapCover"));
-            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot)"),
-                "Zero-sized legacy roots must be positioned from the bounds of their visible descendants.");
             Assert.That(source, Does.Contain("available.xMin + margin - bounds.min.x"),
-                "The Squad Action Box should remain fully visible at bottom-left.");
+                "The Squad Action Box should remain fully visible inside bottom-left.");
             Assert.That(source, Does.Contain("available.xMax - margin - bounds.max.x"),
-                "The Mini Map should remain fully visible at bottom-right.");
+                "The Mini Map should remain fully visible inside bottom-right.");
             Assert.That(source, Does.Contain("available.yMin + margin - bounds.min.y"),
-                "Bottom HUD islands must not be clipped below the canvas.");
+                "Bottom HUD islands must not touch or cross the rendered canvas boundary.");
         }
 
         [Test]
@@ -144,7 +226,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void TimedShieldAlignmentMathPreservesReferenceEdgesAndGap()
         {
-            Type guardType = RuntimeAssembly.GetType("Assets.Scripts.UI_Components.GameHudLayoutGuard");
+            Type guardType = RuntimeAssembly.GetType(GuardTypeName);
 
             float rightAlignedX = (float)RuntimeAssembly.InvokeStatic(
                 guardType, "GetRightAlignedX", 100f, 80f, 20f);
@@ -218,6 +300,23 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("previousButton.SetActive(false);"));
             Assert.That(source, Does.Contain("replacementButton.transform.SetSiblingIndex(siblingIndex);"));
             Assert.That(source, Does.Contain("GameObject.Destroy(previousButton);"));
+        }
+
+        private static RectTransform CreateRect(string name, RectTransform parent, Vector2 size)
+        {
+            GameObject gameObject = new GameObject(name, typeof(RectTransform));
+            RectTransform rect = gameObject.GetComponent<RectTransform>();
+            if (parent != null)
+            {
+                rect.SetParent(parent, false);
+            }
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = size;
+            rect.localScale = Vector3.one;
+            return rect;
         }
     }
 }
