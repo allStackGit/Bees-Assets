@@ -21,6 +21,29 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ObstacleSetupDerivesStageFromOwningLevelForAuthoredLayouts()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Obstacle.cs"));
+
+            int setup = source.IndexOf("public virtual void Setup(Level level)");
+            int levelAssignment = source.IndexOf("Level = level;", setup);
+            int stageAssignment = source.IndexOf("Stage = level.Stage;", setup);
+            int clearData = source.IndexOf("ClearData();", setup);
+            int stageUse = source.IndexOf("if (!Stage.IsTraining)", setup);
+
+            Assert.That(setup, Is.GreaterThanOrEqualTo(0));
+            Assert.That(levelAssignment, Is.GreaterThan(setup));
+            Assert.That(stageAssignment, Is.GreaterThan(levelAssignment));
+            Assert.That(clearData, Is.GreaterThan(stageAssignment),
+                "Derived ClearData implementations must run with valid Level/Stage ownership.");
+            Assert.That(stageUse, Is.GreaterThan(clearData),
+                "Authored obstacle prefabs may serialize Stage as null; Setup must repair ownership before dereferencing it.");
+            Assert.That(source, Does.Contain("if (OriginalHealth <= 0 && Health > 0)"),
+                "Directly instantiated static-obstacle layouts must preserve their authored health even without Create().");
+        }
+
+        [Test]
         public void MapAuthoredObstaclesReceiveRuntimeOwnershipBeforeActivation()
         {
             string source = File.ReadAllText(Path.Combine(
