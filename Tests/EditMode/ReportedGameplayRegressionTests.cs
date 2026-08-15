@@ -52,7 +52,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CommanderNamePromptRepairsInactiveLegacyControlsWhenShown()
+        public void CommanderNamePromptKeepsItsInputVisibleFocusableAndAuthoritative()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "UI Components", "CommanderNamePromptGuard.cs"));
@@ -61,10 +61,36 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("ModalInputBlocker.Ensure(gameObject);"));
             Assert.That(source, Does.Contain("Welcome Commander!"));
             Assert.That(source, Does.Contain("Choose a commander name."));
-            Assert.That(source, Does.Contain("mainMenu.NameInput"));
-            Assert.That(source, Does.Contain("ActivateBranch(input.transform);"));
+            Assert.That(source, Does.Contain("GetComponentInChildren<TMP_InputField>(true)"),
+                "The visible modal must resolve its own text field rather than trust a stale scene reference.");
+            Assert.That(source, Does.Contain("layoutElement.ignoreLayout = true;"),
+                "The Text area's VerticalLayoutGroup must not move the commander input underneath the Buttons panel.");
+            Assert.That(source, Does.Contain("inputRect.anchoredPosition = InputPosition;"));
+            Assert.That(source, Does.Contain("inputRect.sizeDelta = InputSize;"));
+            Assert.That(source, Does.Contain("targetGraphic.color = InputBackground;"));
             Assert.That(source, Does.Contain("input.interactable = true;"));
+            Assert.That(source, Does.Contain("input.readOnly = false;"));
+            Assert.That(source, Does.Contain("input.ActivateInputField();"));
+            Assert.That(source, Does.Contain("mainMenu.NameInput = input;"),
+                "SubmitName must read from the same field that is visible in the modal.");
             Assert.That(source, Does.Contain("label.text = \"Confirm\";"));
+        }
+
+        [Test]
+        public void CommanderNameSubmitPersistsTheTypedPlayerName()
+        {
+            string mainMenu = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "MainMenu.cs"));
+
+            int submit = mainMenu.IndexOf("public void SubmitName()");
+            int nextMethod = mainMenu.IndexOf("public void ShowMenuPanel()", submit);
+            Assert.That(submit, Is.GreaterThanOrEqualTo(0));
+            Assert.That(nextMethod, Is.GreaterThan(submit));
+
+            string submitBody = mainMenu.Substring(submit, nextMethod - submit);
+            Assert.That(submitBody, Does.Contain("string name = NameInput.text;"));
+            Assert.That(submitBody, Does.Contain("ConfigData.UserProgressData.PlayerName = name;"));
+            Assert.That(submitBody, Does.Contain("ConfigData.UserProgressData.Save();"));
         }
     }
 }
