@@ -161,10 +161,43 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void InBoundsInteractiveIslandIsNotMoved()
+        public void ScreenNavigationButtonGetsVisibleMarginEvenWhenAuthoredBarelyInside()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
             RectTransform button = CreateRect("Back Button", canvas, new Vector2(150f, 50f));
+            button.anchorMin = Vector2.zero;
+            button.anchorMax = Vector2.zero;
+            button.anchoredPosition = new Vector2(85f, 35f);
+
+            try
+            {
+                Bounds before = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, button);
+                Assert.That(before.min.x, Is.EqualTo(canvas.rect.xMin + 10f).Within(0.01f));
+                Assert.That(before.min.y, Is.EqualTo(canvas.rect.yMin + 10f).Within(0.01f));
+
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ClampIslandToCanvas",
+                    button,
+                    canvas,
+                    15f);
+
+                Bounds after = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, button);
+                Assert.That(changed, Is.True);
+                Assert.That(after.min.x, Is.EqualTo(canvas.rect.xMin + 15f).Within(0.01f));
+                Assert.That(after.min.y, Is.EqualTo(canvas.rect.yMin + 15f).Within(0.01f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void InBoundsInteractiveIslandIsNotMoved()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform button = CreateRect("Other Button", canvas, new Vector2(150f, 50f));
             button.anchoredPosition = new Vector2(-700f, -400f);
             Vector3 originalPosition = button.position;
 
@@ -197,8 +230,9 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("SceneManager.sceneLoaded", source);
             StringAssert.Contains("parent.GetComponent<LayoutGroup>() == null", source);
             StringAssert.Contains("child.GetComponentInChildren<Selectable>(true)", source);
-            StringAssert.Contains("ClampDirectInteractiveIslands(_canvasRect", source);
             StringAssert.Contains("FitDominantVerticalLayoutChild(child);", source);
+            StringAssert.Contains("NavigationControlMargin = 15f", source);
+            StringAssert.Contains("RequiresNavigationMargin(child)", source);
             StringAssert.DoesNotContain("FindNamedRectTransform(_canvasRect, \"Squad Tabs\"", source,
                 "The compatibility pass must not fight GameHudLayoutGuard over scoreboard-relative squad-tab placement.");
             StringAssert.DoesNotContain("PinLayoutRootToCanvasCorner(_squadTabsRoot", source);
