@@ -144,16 +144,30 @@ namespace Assets.Scripts.UI_Components
                     label.raycastTarget = false;
                 }
 
-                // Keep the serialized listener for backwards compatibility, but also install a
-                // runtime binding. Some legacy prompt instances can retain a visually valid Button
-                // while their persistent SubmitName target is stale. RemoveListener prevents this
-                // repair pass from accumulating duplicate runtime listeners.
-                if (mainMenu != null)
+                // Preserve a healthy serialized listener so SubmitName is invoked only once. If an
+                // older scene/prefab instance lost that persistent target, add a runtime fallback.
+                // RemoveListener prevents repeated repair passes from accumulating fallbacks.
+                if (mainMenu != null && !HasPersistentSubmitListener(button, mainMenu))
                 {
                     button.onClick.RemoveListener(mainMenu.SubmitName);
                     button.onClick.AddListener(mainMenu.SubmitName);
                 }
             }
+        }
+
+        private static bool HasPersistentSubmitListener(Button button, MainMenu mainMenu)
+        {
+            int listenerCount = button.onClick.GetPersistentEventCount();
+            for (int i = 0; i < listenerCount; i++)
+            {
+                if (button.onClick.GetPersistentTarget(i) == mainMenu &&
+                    button.onClick.GetPersistentMethodName(i) == nameof(MainMenu.SubmitName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void PrepareNameInput(TMP_InputField input)
