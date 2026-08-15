@@ -19,6 +19,7 @@ namespace Assets.Scripts.UI_Components
         private const float ScreenCoverageThreshold = 0.90f;
         private const float FullAnchorThreshold = 0.95f;
         private const float FixedAnchorTolerance = 0.001f;
+        private const float NavigationControlMargin = 15f;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
@@ -152,11 +153,6 @@ namespace Assets.Scripts.UI_Components
                         StretchToParent(child);
                         if (layoutOwner)
                         {
-                            // Rebuild once with the live viewport size before distributing any
-                            // surplus height. Legacy full-screen vertical layouts often contain a
-                            // large fixed Main Container followed by a fixed Footer. On taller
-                            // aspect ratios, stretching only the owner leaves the original
-                            // 718+50-ish child heights at the top and exposes the white root backer.
                             LayoutRebuilder.ForceRebuildLayoutImmediate(child);
                             FitDominantVerticalLayoutChild(child);
                             LayoutRebuilder.ForceRebuildLayoutImmediate(child);
@@ -244,8 +240,6 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                // Stretch-height children already follow the viewport and do not need this legacy
-                // fixed-height repair. Resizing them here would fight their anchor contract.
                 if (Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
                 {
                     continue;
@@ -279,7 +273,14 @@ namespace Assets.Scripts.UI_Components
 
             float spacingHeight = layout.spacing * (participatingChildren - 1);
             float fixedOtherHeight = totalChildHeight - dominantHeight;
-            float targetHeight = availableHeight - spacingHeight - fixedOtherHeight;
+            float targetScaledHeight = availableHeight - spacingHeight - fixedOtherHeight;
+            float dominantScale = Mathf.Abs(dominantChild.localScale.y);
+            if (dominantScale <= 0.0001f)
+            {
+                return false;
+            }
+
+            float targetHeight = targetScaledHeight / dominantScale;
             if (targetHeight <= 0f || Mathf.Abs(targetHeight - dominantChild.rect.height) < 0.01f)
             {
                 return false;
@@ -318,11 +319,33 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                ClampIslandToCanvas(child, canvasRect);
+                float margin = RequiresNavigationMargin(child) ? NavigationControlMargin : 0f;
+                ClampIslandToCanvas(child, canvasRect, margin);
             }
         }
 
+        private static bool RequiresNavigationMargin(RectTransform island)
+        {
+            if (island == null)
+            {
+                return false;
+            }
+
+            string objectName = island.gameObject.name;
+            return objectName == "Back Button" ||
+                   objectName == "Continue Button" ||
+                   objectName == "Skip Button";
+        }
+
         internal static bool ClampIslandToCanvas(RectTransform island, RectTransform canvasRect)
+        {
+            return ClampIslandToCanvas(island, canvasRect, 0f);
+        }
+
+        internal static bool ClampIslandToCanvas(
+            RectTransform island,
+            RectTransform canvasRect,
+            float margin)
         {
             if (island == null || canvasRect == null)
             {
@@ -336,29 +359,34 @@ namespace Assets.Scripts.UI_Components
             }
 
             Rect available = canvasRect.rect;
+            float safeMargin = Mathf.Max(0f, margin);
+            float minX = available.xMin + safeMargin;
+            float maxX = available.xMax - safeMargin;
+            float minY = available.yMin + safeMargin;
+            float maxY = available.yMax - safeMargin;
             Vector2 correction = Vector2.zero;
 
-            if (bounds.size.x <= available.width)
+            if (bounds.size.x <= maxX - minX)
             {
-                if (bounds.min.x < available.xMin)
+                if (bounds.min.x < minX)
                 {
-                    correction.x = available.xMin - bounds.min.x;
+                    correction.x = minX - bounds.min.x;
                 }
-                else if (bounds.max.x > available.xMax)
+                else if (bounds.max.x > maxX)
                 {
-                    correction.x = available.xMax - bounds.max.x;
+                    correction.x = maxX - bounds.max.x;
                 }
             }
 
-            if (bounds.size.y <= available.height)
+            if (bounds.size.y <= maxY - minY)
             {
-                if (bounds.min.y < available.yMin)
+                if (bounds.min.y < minY)
                 {
-                    correction.y = available.yMin - bounds.min.y;
+                    correction.y = minY - bounds.min.y;
                 }
-                else if (bounds.max.y > available.yMax)
+                else if (bounds.max.y > maxY)
                 {
-                    correction.y = available.yMax - bounds.max.y;
+                    correction.y = maxY - bounds.max.y;
                 }
             }
 
