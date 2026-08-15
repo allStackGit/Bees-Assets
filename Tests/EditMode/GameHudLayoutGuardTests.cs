@@ -68,22 +68,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsArePinnedToActualScreenTopLeft()
+        public void SquadTabsLayoutGroupOwnsActualScreenTopLeft()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
-            Assert.That(source, Does.Contain("Rect fullRect = canvasRect.rect;"));
-            Assert.That(source, Does.Contain("private const float SquadTabTopMargin = 0f;"),
-                "Squad-number tabs should touch the actual top edge rather than inherit a Mac safe-area inset.");
-            Assert.That(source, Does.Contain("float y = fullRect.yMax - SquadTabTopMargin;"));
-            Assert.That(source, Does.Contain("tabRect.anchorMin = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("tabRect.anchorMax = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("tabRect.pivot = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("tabRect.position = worldPoint;"),
-                "Using anchoredPosition alone leaves the tabs relative to the wrong legacy parent on some aspect ratios.");
+            Assert.That(source, Does.Contain("RectTransform tabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;"));
+            Assert.That(source, Does.Contain("HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();"));
+            Assert.That(source, Does.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
+                "The squad-number row should use the actual screen top-left without inherited 200 px or safe-area padding.");
+            Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
+            Assert.That(source, Does.Contain("layout.spacing = SquadTabGap;"));
+            Assert.That(source, Does.Contain("layout.childForceExpandWidth = false;"));
+            Assert.That(source, Does.Contain("layout.childForceExpandHeight = false;"));
+            Assert.That(source, Does.Contain("LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);"),
+                "A later Unity layout pass must not push the tabs down again.");
             Assert.That(source, Does.Contain("_normalizedSquadTabCount = -1;"),
-                "Resolution changes must force the tab row to be positioned again.");
+                "Resolution changes must force the tab row layout to be normalized again.");
         }
 
         [Test]
