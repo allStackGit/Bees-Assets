@@ -113,7 +113,7 @@ namespace Assets.Scripts.Levels
                                         int secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
                                         personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
                                         float shieldHealth = Mathf.Clamp01((float)(15 - personnelLost) / 15f);
-                                        Stage.Menus.PlutoShieldHealthBar.transform.localScale = new Vector2(shieldHealth, 1f);
+                                        Stage.Menus.PlutoShieldHealthBar.transform.localScale = new Vector2(shieldHealth * 150f, 1f);
 
                                         if (timeLeft <= 0 || personnelLost >= 15)
                                         {
