@@ -126,6 +126,20 @@ namespace Assets.Scripts.UI_Components
 
         private void ActivateBranch(Transform child)
         {
+            if (child == null)
+            {
+                return;
+            }
+
+            // NameInput is expected to live inside this modal. If a legacy scene has the serialized
+            // reference elsewhere, make the input itself visible without walking up and activating
+            // unrelated menu containers.
+            if (!child.IsChildOf(transform))
+            {
+                child.gameObject.SetActive(true);
+                return;
+            }
+
             Transform current = child;
             while (current != null && current != transform)
             {
