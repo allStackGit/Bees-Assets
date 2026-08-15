@@ -35,8 +35,32 @@ namespace Assets.Scripts.Entities
         }
         public virtual void Setup(Level level)
         {
-            ClearData();
+            if (level == null)
+            {
+                throw new System.ArgumentNullException(nameof(level));
+            }
+
+            // Setup already receives the owning Level, so Stage ownership must be derived from it
+            // rather than relying on every spawn path to have called Create first. Authored obstacle
+            // prefabs (for example Pluto III's Pushback layout) are instantiated directly beneath
+            // the map and historically reached Pathfinder.Setup with a null serialized Stage.
             Level = level;
+            Stage = level.Stage;
+            if (Stage == null)
+            {
+                throw new System.InvalidOperationException(
+                    $"Cannot set up obstacle '{gameObject.name}' because its owning level has no Stage.");
+            }
+
+            // Fresh authored StaticObstacle prefabs serialize Health but have OriginalHealth == 0
+            // because they do not pass through the pooled Create lifecycle. Preserve their authored
+            // health before the normal setup reset so they do not become zero-health obstacles.
+            if (OriginalHealth <= 0 && Health > 0)
+            {
+                OriginalHealth = Health;
+            }
+
+            ClearData();
             Id = Level.State.GetId();
             if (!Stage.IsTraining)
             {
