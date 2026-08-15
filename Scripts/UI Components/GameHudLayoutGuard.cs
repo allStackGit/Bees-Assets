@@ -10,8 +10,8 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Applies resolution/aspect-ratio compatibility to every screen-space canvas and keeps the
     /// gameplay HUD controls that have legacy fixed-position authoring attached to their intended
-    /// screen edges. The responsive canvas portion intentionally does not depend on GameMenus so
-    /// Main Menu, Squad Maker, Level Intro and other scenes receive the same treatment.
+    /// screen edges. Generic screen-wrapper conversion is owned by ResponsiveScreenLayoutGuard;
+    /// this component only applies semantic gameplay placement where the authored intent is known.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class GameHudLayoutGuard : MonoBehaviour
@@ -20,12 +20,11 @@ namespace Assets.Scripts.UI_Components
         private const float TitaniaClockGap = 5f;
         private const float DynamicButtonScanInterval = 1f;
         private const float ResponsiveLayoutScanInterval = 0.25f;
-        private const float ResponsiveSafeMargin = 8f;
-        private const float SquadTabLeftMargin = 10f;
-        private const float SquadTabTopMargin = 10f;
         private const float SquadTabGap = 8f;
-        private const float BottomHudMargin = 10f;
-        private const int ResponsiveLayoutMaxDepth = 12;
+        private const float SquadTabLeftMargin = 0f;
+        private const float SquadTabTopMargin = 0f;
+        private const float BottomHudMargin = 0f;
+        private const float PlutoSpeedRightInset = 290f;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private GameMenus _menus;
@@ -48,7 +47,6 @@ namespace Assets.Scripts.UI_Components
         private float _nextResponsiveLayoutScan;
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
-        private Rect _lastSafeArea = new Rect(-1f, -1f, -1f, -1f);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -71,8 +69,7 @@ namespace Assets.Scripts.UI_Components
             }
 
             // The GameMenus object can itself be a Canvas root, in which case the responsive pass
-            // has already added this component. Always initialize the gameplay side as well instead
-            // of treating an existing guard as evidence that initialization is complete.
+            // has already added this component. Always initialize the gameplay side as well.
             GameHudLayoutGuard guard = menus.gameObject.GetComponent<GameHudLayoutGuard>();
             if (guard == null)
             {
@@ -118,9 +115,6 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // Expand uses the smaller width/height scale ratio. Unlike width-only matching, it
-            // guarantees that the complete authored reference rectangle remains representable on
-            // 16:10, 3:2, 4:3 and ultrawide displays rather than sacrificing one axis.
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             if (scaler.referenceResolution.x <= 0f || scaler.referenceResolution.y <= 0f)
             {
@@ -131,9 +125,6 @@ namespace Assets.Scripts.UI_Components
 
         private static void RefreshLiveScreenDimensions()
         {
-            // ConfigData historically captured Screen.width/height once during static initialization.
-            // On macOS/Retina and after resolution or window-size changes that snapshot can differ
-            // from the actual client area, which also makes edge scrolling miss the right/top edge.
             ConfigData.ScreenWidth = Screen.width;
             ConfigData.ScreenHeight = Screen.height;
         }
@@ -221,30 +212,22 @@ namespace Assets.Scripts.UI_Components
             _responsiveLayoutDirty = true;
             _lastScreenWidth = -1;
             _lastScreenHeight = -1;
-            _lastSafeArea = new Rect(-1f, -1f, -1f, -1f);
             ApplyResponsiveCanvasLayout();
         }
 
         private void Initialize(GameMenus menus)
         {
             _menus = menus;
-            _clockRect = _menus.Clock != null
-                ? _menus.Clock.GetComponent<RectTransform>()
-                : null;
-            _counterRect = _menus.Counter != null
-                ? _menus.Counter.GetComponent<RectTransform>()
-                : null;
-            _speedRect = _menus.GameSpeedButton != null
-                ? _menus.GameSpeedButton.GetComponent<RectTransform>()
-                : null;
-            _plutoShieldRect = _menus.PlutoShield != null
-                ? _menus.PlutoShield.GetComponent<RectTransform>()
-                : null;
+            _clockRect = _menus.Clock != null ? _menus.Clock.GetComponent<RectTransform>() : null;
+            _counterRect = _menus.Counter != null ? _menus.Counter.GetComponent<RectTransform>() : null;
+            _speedRect = _menus.GameSpeedButton != null ? _menus.GameSpeedButton.GetComponent<RectTransform>() : null;
+            _plutoShieldRect = _menus.PlutoShield != null ? _menus.PlutoShield.GetComponent<RectTransform>() : null;
 
             if (_speedRect != null)
             {
                 _normalSpeedPosition = _speedRect.anchoredPosition;
             }
+
             _clockWasVisible = false;
             _menuInitialized = true;
             _normalizedSquadTabCount = -1;
@@ -254,14 +237,11 @@ namespace Assets.Scripts.UI_Components
 
         private void Update()
         {
-            bool displayChanged = Screen.width != _lastScreenWidth ||
-                                  Screen.height != _lastScreenHeight ||
-                                  !RectApproximatelyEquals(Screen.safeArea, _lastSafeArea);
+            bool displayChanged = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight;
             if (displayChanged)
             {
                 _lastScreenWidth = Screen.width;
                 _lastScreenHeight = Screen.height;
-                _lastSafeArea = Screen.safeArea;
                 RefreshLiveScreenDimensions();
                 _responsiveLayoutDirty = true;
                 _normalizedSquadTabCount = -1;
@@ -278,14 +258,6 @@ namespace Assets.Scripts.UI_Components
             UpdateDynamicButtonStyles();
         }
 
-        private static bool RectApproximatelyEquals(Rect a, Rect b)
-        {
-            return Mathf.Approximately(a.x, b.x) &&
-                   Mathf.Approximately(a.y, b.y) &&
-                   Mathf.Approximately(a.width, b.width) &&
-                   Mathf.Approximately(a.height, b.height);
-        }
-
         private void ApplyResponsiveCanvasLayout()
         {
             if (_responsiveCanvas == null || _responsiveCanvasRect == null ||
@@ -294,141 +266,11 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            // Do not translate arbitrary UI islands here. Their authored parent/anchor relationships
+            // are significant (Squad Maker level text above START/TEST is one example). Generic
+            // resolution repair is limited to screen-sized wrappers in ResponsiveScreenLayoutGuard.
             ConfigureCanvasScaler(_responsiveScaler);
-            Canvas.ForceUpdateCanvases();
-
-            Rect safeRect = GetSafeCanvasRect(_responsiveCanvasRect, ResponsiveSafeMargin);
-            ClampLayoutChildren(_responsiveCanvasRect, safeRect, 0);
             _responsiveLayoutDirty = false;
-        }
-
-        /// <summary>
-        /// Legacy scenes often put fixed-position UI islands below one or more full-screen/stretched
-        /// containers. Walk through those containers and clamp each fixed island as a unit, using
-        /// the visible descendant bounds so zero-sized legacy roots are handled correctly.
-        /// </summary>
-        private void ClampLayoutChildren(RectTransform parent, Rect safeRect, int depth)
-        {
-            if (parent == null || depth >= ResponsiveLayoutMaxDepth)
-            {
-                return;
-            }
-
-            for (int i = 0; i < parent.childCount; i++)
-            {
-                RectTransform child = parent.GetChild(i) as RectTransform;
-                if (child == null || !child.gameObject.activeInHierarchy)
-                {
-                    continue;
-                }
-
-                Canvas childCanvas = child.GetComponent<Canvas>();
-                if (childCanvas != null && childCanvas != _responsiveCanvas)
-                {
-                    // A nested/root canvas owns its own coordinate system and guard.
-                    continue;
-                }
-
-                if (IsFullScreenContainer(child))
-                {
-                    ClampLayoutChildren(child, safeRect, depth + 1);
-                    continue;
-                }
-
-                ClampVisibleHierarchyToRect(child, _responsiveCanvasRect, safeRect);
-            }
-        }
-
-        private static bool IsFullScreenContainer(RectTransform rect)
-        {
-            Vector2 span = rect.anchorMax - rect.anchorMin;
-            return span.x >= 0.95f && span.y >= 0.95f;
-        }
-
-        private static void ClampVisibleHierarchyToRect(
-            RectTransform layoutRoot,
-            RectTransform canvasRect,
-            Rect available)
-        {
-            if (layoutRoot == null || canvasRect == null)
-            {
-                return;
-            }
-
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
-            if (bounds.size.x < 1f || bounds.size.y < 1f)
-            {
-                return;
-            }
-
-            Vector2 correction = GetBoundsCorrection(bounds, available);
-            if (correction == Vector2.zero)
-            {
-                return;
-            }
-
-            Vector3 worldCorrection = canvasRect.TransformVector(new Vector3(correction.x, correction.y, 0f));
-            layoutRoot.position += worldCorrection;
-        }
-
-        private static Vector2 GetBoundsCorrection(Bounds bounds, Rect available)
-        {
-            Vector2 correction = Vector2.zero;
-
-            // If an island is larger than the available area it cannot be translated fully inside;
-            // leave that dimension alone rather than oscillating between opposite edges.
-            if (bounds.size.x <= available.width)
-            {
-                if (bounds.min.x < available.xMin)
-                {
-                    correction.x = available.xMin - bounds.min.x;
-                }
-                else if (bounds.max.x > available.xMax)
-                {
-                    correction.x = available.xMax - bounds.max.x;
-                }
-            }
-
-            if (bounds.size.y <= available.height)
-            {
-                if (bounds.min.y < available.yMin)
-                {
-                    correction.y = available.yMin - bounds.min.y;
-                }
-                else if (bounds.max.y > available.yMax)
-                {
-                    correction.y = available.yMax - bounds.max.y;
-                }
-            }
-
-            return correction;
-        }
-
-        private static Rect GetSafeCanvasRect(RectTransform canvasRect, float margin)
-        {
-            Rect full = canvasRect.rect;
-            if (Screen.width <= 0 || Screen.height <= 0)
-            {
-                return InsetRect(full, margin);
-            }
-
-            Rect safe = Screen.safeArea;
-            float xMin = Mathf.Lerp(full.xMin, full.xMax, Mathf.Clamp01(safe.xMin / Screen.width));
-            float xMax = Mathf.Lerp(full.xMin, full.xMax, Mathf.Clamp01(safe.xMax / Screen.width));
-            float yMin = Mathf.Lerp(full.yMin, full.yMax, Mathf.Clamp01(safe.yMin / Screen.height));
-            float yMax = Mathf.Lerp(full.yMin, full.yMax, Mathf.Clamp01(safe.yMax / Screen.height));
-            return InsetRect(Rect.MinMaxRect(xMin, yMin, xMax, yMax), margin);
-        }
-
-        private static Rect InsetRect(Rect rect, float margin)
-        {
-            float horizontalMargin = Mathf.Min(margin, rect.width * 0.25f);
-            float verticalMargin = Mathf.Min(margin, rect.height * 0.25f);
-            return Rect.MinMaxRect(
-                rect.xMin + horizontalMargin,
-                rect.yMin + verticalMargin,
-                rect.xMax - horizontalMargin,
-                rect.yMax - verticalMargin);
         }
 
         private void NormalizeSquadTabs(bool force)
@@ -444,32 +286,15 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            Canvas rootCanvas = null;
-            RectTransform canvasRect = null;
-            for (int i = 0; i < tabCount && rootCanvas == null; i++)
-            {
-                SquadTab tab = _menus.Stage.SquadTabs[i];
-                if (tab == null || tab.Tab == null)
-                {
-                    continue;
-                }
-                Canvas canvas = tab.Tab.GetComponentInParent<Canvas>();
-                rootCanvas = canvas != null ? canvas.rootCanvas : null;
-                canvasRect = rootCanvas != null ? rootCanvas.transform as RectTransform : null;
-            }
-
+            RectTransform canvasRect = GetRootCanvasRect(_menus.Stage.SquadTabs, tabCount);
             if (canvasRect == null)
             {
                 return;
             }
 
-            // Scene instances historically override the Squad # prefab to bottom-left anchors and
-            // all tabs live below a separate "Squad Tabs" container. Setting anchoredPosition on
-            // the tab therefore does not mean screen top-left. Place each tab in root-canvas space
-            // so the result is independent of its parent anchors and the display aspect ratio.
-            Rect safeRect = GetSafeCanvasRect(canvasRect, 0f);
-            float x = safeRect.xMin + SquadTabLeftMargin;
-            float y = safeRect.yMax - SquadTabTopMargin;
+            Rect fullRect = canvasRect.rect;
+            float x = fullRect.xMin + SquadTabLeftMargin;
+            float y = fullRect.yMax - SquadTabTopMargin;
 
             for (int i = 0; i < tabCount; i++)
             {
@@ -479,23 +304,43 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                RectTransform rect = tab.Tab.GetComponent<RectTransform>();
-                if (rect == null)
+                RectTransform tabRect = tab.Tab.GetComponent<RectTransform>();
+                if (tabRect == null)
                 {
                     continue;
                 }
 
-                rect.anchorMin = new Vector2(0f, 1f);
-                rect.anchorMax = new Vector2(0f, 1f);
-                rect.pivot = new Vector2(0f, 1f);
-                rect.position = canvasRect.TransformPoint(new Vector3(x, y, 0f));
+                tabRect.anchorMin = new Vector2(0f, 1f);
+                tabRect.anchorMax = new Vector2(0f, 1f);
+                tabRect.pivot = new Vector2(0f, 1f);
 
-                Bounds tabBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, rect);
-                float width = tabBounds.size.x > 0f ? tabBounds.size.x : Mathf.Max(1f, rect.rect.width);
-                x += width + SquadTabGap;
+                Vector3 worldPoint = canvasRect.TransformPoint(new Vector3(x, y, 0f));
+                tabRect.position = worldPoint;
+                x += tabRect.rect.width + SquadTabGap;
             }
 
             _normalizedSquadTabCount = tabCount;
+        }
+
+        private static RectTransform GetRootCanvasRect(System.Collections.Generic.List<SquadTab> tabs, int tabCount)
+        {
+            for (int i = 0; i < tabCount; i++)
+            {
+                SquadTab tab = tabs[i];
+                if (tab == null || tab.Tab == null)
+                {
+                    continue;
+                }
+
+                Canvas canvas = tab.Tab.GetComponentInParent<Canvas>();
+                Canvas rootCanvas = canvas != null ? canvas.rootCanvas : null;
+                if (rootCanvas != null)
+                {
+                    return rootCanvas.transform as RectTransform;
+                }
+            }
+
+            return null;
         }
 
         private void UpdateDynamicButtonStyles()
@@ -504,8 +349,8 @@ namespace Assets.Scripts.UI_Components
             {
                 return;
             }
-            _nextDynamicButtonScan = Time.unscaledTime + DynamicButtonScanInterval;
 
+            _nextDynamicButtonScan = Time.unscaledTime + DynamicButtonScanInterval;
             foreach (Button button in _menus.GetComponentsInChildren<Button>(true))
             {
                 ConfigureButtonStyle(button);
@@ -519,86 +364,19 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            KeepActionBoxWithinCanvas();
-
-            if (_menus.Clock == null || _menus.GameSpeedButton == null ||
-                _clockRect == null || _speedRect == null)
-            {
-                return;
-            }
-
-            bool clockVisible = _menus.Clock.activeInHierarchy;
-            if (clockVisible != _clockWasVisible || clockVisible)
-            {
-                ApplyLayout();
-            }
-        }
-
-        private void KeepActionBoxWithinCanvas()
-        {
-            GameObject actionBox = _menus.SquadActionBoxUI;
-            if (actionBox == null || !actionBox.activeInHierarchy)
-            {
-                return;
-            }
-
-            RectTransform actionRect = actionBox.GetComponent<RectTransform>();
-            Canvas nearestCanvas = actionBox.GetComponentInParent<Canvas>();
-            Canvas rootCanvas = nearestCanvas != null ? nearestCanvas.rootCanvas : null;
-            RectTransform canvasRect = rootCanvas != null ? rootCanvas.transform as RectTransform : null;
-            if (actionRect == null || canvasRect == null)
-            {
-                return;
-            }
-
-            Canvas.ForceUpdateCanvases();
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, actionRect);
-            if (bounds.size.x < 1f || bounds.size.y < 1f)
-            {
-                return;
-            }
-
-            // This HUD is semantically bottom-left, not merely "somewhere on screen". Pin the
-            // visible descendant bounds to that corner every frame. This survives layout rebuilds,
-            // nested legacy parents, Retina scaling and runtime resolution changes.
-            Rect available = GetSafeCanvasRect(canvasRect, BottomHudMargin);
-            Vector2 correction = new Vector2(
-                available.xMin - bounds.min.x,
-                available.yMin - bounds.min.y);
-
-            // If the panel is unexpectedly too large, prefer keeping its right/top edge visible too.
-            if (bounds.size.x <= available.width && bounds.max.x + correction.x > available.xMax)
-            {
-                correction.x += available.xMax - (bounds.max.x + correction.x);
-            }
-            if (bounds.size.y <= available.height && bounds.max.y + correction.y > available.yMax)
-            {
-                correction.y += available.yMax - (bounds.max.y + correction.y);
-            }
-
-            if (correction != Vector2.zero)
-            {
-                Vector3 worldCorrection = canvasRect.TransformVector(new Vector3(correction.x, correction.y, 0f));
-                actionRect.position += worldCorrection;
-            }
-        }
-
-        private static int GetCampaignMissionId()
-        {
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
-                ConfigData.UserProgressData == null || ConfigData.Configuration == null)
-            {
-                return -1;
-            }
-
-            return ConfigData.UserProgressData.GetCurrentLevel(
-                ConfigData.Configuration.UserSide,
-                ConfigData.GameModes.Campaign);
+            ApplyLayout();
         }
 
         private void ApplyLayout()
         {
-            if (_menus == null || _menus.Clock == null || _menus.GameSpeedButton == null ||
+            ApplyClockAndSpeedLayout();
+            KeepActionBoxWithinCanvas();
+            KeepMiniMapWithinCanvas();
+        }
+
+        private void ApplyClockAndSpeedLayout()
+        {
+            if (_menus.Clock == null || _menus.GameSpeedButton == null ||
                 _clockRect == null || _speedRect == null)
             {
                 return;
@@ -614,6 +392,8 @@ namespace Assets.Scripts.UI_Components
 
                 if (campaignMissionId == 8)
                 {
+                    // Titania II intentionally keeps the speed control beneath the clock rather
+                    // than floating to its left/right.
                     x = _clockRect.anchoredPosition.x +
                         ((_clockRect.rect.width - _speedRect.rect.width) * 0.5f);
                     y = _clockRect.anchoredPosition.y -
@@ -624,9 +404,12 @@ namespace Assets.Scripts.UI_Components
                          _menus.PlutoShield != null &&
                          _menus.PlutoShield.activeInHierarchy)
                 {
-                    if (_counterRect != null &&
-                        _menus.Counter != null &&
-                        _menus.Counter.activeInHierarchy)
+                    // Pluto IV's mission code deliberately moves Game Speed away from the
+                    // planetary-shield rectangle. Preserve that horizontal contract instead of
+                    // deriving x from the clock and overlapping the shield at end-of-level states.
+                    x = -PlutoSpeedRightInset;
+
+                    if (_counterRect != null && _menus.Counter != null && _menus.Counter.activeInHierarchy)
                     {
                         y = _counterRect.anchoredPosition.y +
                             ((_counterRect.rect.height - _speedRect.rect.height) * 0.5f);
@@ -650,6 +433,105 @@ namespace Assets.Scripts.UI_Components
             }
 
             _clockWasVisible = clockVisible;
+        }
+
+        private void KeepActionBoxWithinCanvas()
+        {
+            if (_menus.SquadActionBoxUI == null || !_menus.SquadActionBoxUI.activeInHierarchy)
+            {
+                return;
+            }
+
+            RectTransform actionRect = _menus.SquadActionBoxUI.GetComponent<RectTransform>();
+            RectTransform canvasRect = GetRootCanvasRect(actionRect);
+            PinLayoutRootToCorner(actionRect, canvasRect, false, false, BottomHudMargin);
+        }
+
+        private void KeepMiniMapWithinCanvas()
+        {
+            GameObject output = _menus.MiniMapOutput;
+            GameObject cover = _menus.MiniMapCover;
+            if ((output == null || !output.activeInHierarchy) &&
+                (cover == null || !cover.activeInHierarchy))
+            {
+                return;
+            }
+
+            RectTransform outputRect = output != null ? output.GetComponent<RectTransform>() : null;
+            RectTransform coverRect = cover != null ? cover.GetComponent<RectTransform>() : null;
+            RectTransform layoutRoot = GetSharedLayoutRoot(outputRect, coverRect);
+            if (layoutRoot == null)
+            {
+                layoutRoot = coverRect != null ? coverRect : outputRect;
+            }
+
+            RectTransform canvasRect = GetRootCanvasRect(layoutRoot);
+            PinLayoutRootToCorner(layoutRoot, canvasRect, true, false, BottomHudMargin);
+        }
+
+        private static RectTransform GetSharedLayoutRoot(RectTransform first, RectTransform second)
+        {
+            if (first != null && second != null && first.parent == second.parent && first.parent is RectTransform parent)
+            {
+                return parent;
+            }
+
+            return null;
+        }
+
+        private static RectTransform GetRootCanvasRect(RectTransform rect)
+        {
+            if (rect == null)
+            {
+                return null;
+            }
+
+            Canvas canvas = rect.GetComponentInParent<Canvas>();
+            Canvas rootCanvas = canvas != null ? canvas.rootCanvas : null;
+            return rootCanvas != null ? rootCanvas.transform as RectTransform : null;
+        }
+
+        private static void PinLayoutRootToCorner(
+            RectTransform layoutRoot,
+            RectTransform canvasRect,
+            bool pinRight,
+            bool pinTop,
+            float margin)
+        {
+            if (layoutRoot == null || canvasRect == null)
+            {
+                return;
+            }
+
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
+            if (bounds.size.x < 1f || bounds.size.y < 1f)
+            {
+                return;
+            }
+
+            Rect available = canvasRect.rect;
+            float desiredX = pinRight
+                ? available.xMax - margin - bounds.max.x
+                : available.xMin + margin - bounds.min.x;
+            float desiredY = pinTop
+                ? available.yMax - margin - bounds.max.y
+                : available.yMin + margin - bounds.min.y;
+
+            Vector3 correction = canvasRect.TransformVector(new Vector3(desiredX, desiredY, 0f));
+            layoutRoot.position += correction;
+        }
+
+        private static int GetCampaignMissionId()
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
+                ConfigData.UserProgressData == null || ConfigData.Configuration == null)
+            {
+                return -1;
+            }
+
+            return ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.UserSide,
+                ConfigData.GameModes.Campaign);
         }
     }
 }
