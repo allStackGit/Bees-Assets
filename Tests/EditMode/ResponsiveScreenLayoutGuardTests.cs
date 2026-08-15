@@ -144,45 +144,41 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsRepairTheParentLayoutGroupInsteadOfFightingItPerChild()
+        public void WrapperGuardDoesNotOwnSemanticHudPlacement()
         {
             string source = ReadSource();
 
-            Assert.That(source, Does.Contain("RectTransform tabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;"));
-            Assert.That(source, Does.Contain("StretchToParent(tabsRoot);"),
-                "The legacy Squad Tabs wrapper must become the actual display-sized container.");
-            Assert.That(source, Does.Contain("HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();"));
-            Assert.That(source, Does.Contain("layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);"),
-                "The authored fixed left padding must be replaced with safe-area-aware top-left padding.");
-            Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
-            Assert.That(source, Does.Contain("layout.childForceExpandWidth = false;"));
-            Assert.That(source, Does.Contain("layout.childForceExpandHeight = false;"));
-            Assert.That(source, Does.Contain("LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);"));
+            Assert.That(source, Does.Not.Contain("RepairSquadTabs("),
+                "Squad-tab placement belongs to the gameplay HUD guard, not generic wrapper repair.");
+            Assert.That(source, Does.Not.Contain("PinActionBoxToSafeBottomLeft("),
+                "The generic guard must not fight GameHudLayoutGuard over the selected-squad panel.");
+            Assert.That(source, Does.Not.Contain("GameMenus"),
+                "Generic resolution repair should be scene-agnostic and unaware of gameplay UI semantics.");
         }
 
         [Test]
-        public void RuntimeResolutionAndSafeAreaChangesTriggerAnotherRepair()
+        public void WrapperGuardDoesNotTranslateOrdinaryAuthoredIslands()
+        {
+            string source = ReadSource();
+
+            Assert.That(source, Does.Not.Contain("ClampVisibleHierarchyToRect("),
+                "Arbitrary panel translation broke authored relationships such as Squad Maker level text above START/TEST.");
+            Assert.That(source, Does.Not.Contain("Screen.safeArea"),
+                "Screen-wrapper sizing must not introduce an unrelated safe-area translation into desktop layouts.");
+            Assert.That(source, Does.Contain("if (IsFullScreenContainer(child))"));
+            Assert.That(source, Does.Contain("RepairHierarchy(child, referenceResolution, depth + 1);"),
+                "Traversal should continue only through containers that represent the viewport.");
+        }
+
+        [Test]
+        public void RuntimeResolutionChangesTriggerAnotherWrapperRepair()
         {
             string source = ReadSource();
 
             Assert.That(source, Does.Contain("Screen.width != _lastScreenWidth"));
             Assert.That(source, Does.Contain("Screen.height != _lastScreenHeight"));
-            Assert.That(source, Does.Contain("Screen.safeArea"));
             Assert.That(source, Does.Contain("displayChanged || Time.unscaledTime >= _nextRepairTime"));
             Assert.That(source, Does.Contain("RepairLayout();"));
-        }
-
-        [Test]
-        public void SelectedSquadActionBoxIsPinnedAfterLayoutToSafeBottomLeft()
-        {
-            string source = ReadSource();
-
-            Assert.That(source, Does.Contain("private void LateUpdate()"));
-            Assert.That(source, Does.Contain("PinActionBoxToSafeBottomLeft();"));
-            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, actionRect)"));
-            Assert.That(source, Does.Contain("available.xMin - bounds.min.x"));
-            Assert.That(source, Does.Contain("available.yMin - bounds.min.y"));
-            Assert.That(source, Does.Contain("actionRect.position += worldCorrection;"));
         }
 
         private static RectTransform CreateParent()
@@ -210,9 +206,7 @@ namespace Bees.Tests.EditMode
             return child;
         }
 
-        private static bool RepairLegacyScreenRect(
-            RectTransform rect,
-            RectTransform parent)
+        private static bool RepairLegacyScreenRect(RectTransform rect, RectTransform parent)
         {
             Type guardType = RuntimeAssembly.GetType(GuardTypeName);
             return (bool)RuntimeAssembly.InvokeStatic(
