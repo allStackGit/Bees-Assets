@@ -27,6 +27,12 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "UI Components", "GameMenus.cs"));
         }
 
+        private static string ReadPluto4Source()
+        {
+            return File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto4.cs"));
+        }
+
         [Test]
         public void EveryRootScreenSpaceCanvasGetsResolutionIndependentScaling()
         {
@@ -46,68 +52,58 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ResponsiveCanvasesTrackRuntimeResolutionAndMacSafeAreaChanges()
+        public void GenericCanvasPassDoesNotTranslateAuthoredUiIslands()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("Screen.width != _lastScreenWidth"));
             Assert.That(source, Does.Contain("Screen.height != _lastScreenHeight"));
-            Assert.That(source, Does.Contain("Screen.safeArea"),
-                "Notched Mac displays and other inset displays must use the live safe area.");
-            Assert.That(source, Does.Contain("_responsiveLayoutDirty = true;"));
-            Assert.That(source, Does.Contain("ResponsiveLayoutScanInterval"),
-                "Late layout rebuilds must be rechecked instead of relying only on sceneLoaded.");
-            Assert.That(source, Does.Contain("GetSafeCanvasRect(_responsiveCanvasRect, ResponsiveSafeMargin)"));
-            Assert.That(source, Does.Contain("ClampLayoutChildren(_responsiveCanvasRect, safeRect, 0);"));
-            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot)"),
-                "Zero-sized legacy UI roots must be evaluated using the bounds of their visible descendants.");
+            Assert.That(source, Does.Contain("ResponsiveLayoutScanInterval"));
+            Assert.That(source, Does.Not.Contain("ClampLayoutChildren("),
+                "The canvas guard must not move arbitrary panels and break authored sibling relationships.");
+            Assert.That(source, Does.Not.Contain("GetSafeCanvasRect("),
+                "Desktop HUD edge placement is against the actual root canvas, not a safe-area inset that pushes controls inward.");
+            Assert.That(source, Does.Not.Contain("Screen.safeArea"),
+                "The screenshot-defined desktop HUD uses the real display edges.");
         }
 
         [Test]
-        public void FixedUiIslandsAreClampedWithoutMovingFullScreenContainers()
-        {
-            string source = ReadGuardSource();
-
-            Assert.That(source, Does.Contain("IsFullScreenContainer(child)"));
-            Assert.That(source, Does.Contain("span.x >= 0.95f && span.y >= 0.95f"),
-                "Full-screen/stretch containers should remain full-screen while their fixed children are checked independently.");
-            Assert.That(source, Does.Contain("bounds.size.x <= available.width"));
-            Assert.That(source, Does.Contain("bounds.size.y <= available.height"));
-            Assert.That(source, Does.Contain("layoutRoot.position += worldCorrection;"));
-        }
-
-        [Test]
-        public void SquadTabsArePinnedToActualRootCanvasTopLeft()
+        public void SquadTabsArePinnedToActualScreenTopLeft()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
-            Assert.That(source, Does.Contain("rootCanvas = canvas != null ? canvas.rootCanvas : null;"),
-                "The Squad Tabs parent is a legacy intermediate container, so tab placement must use root-canvas coordinates.");
-            Assert.That(source, Does.Contain("Rect safeRect = GetSafeCanvasRect(canvasRect, 0f);"));
-            Assert.That(source, Does.Contain("rect.anchorMin = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("rect.anchorMax = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("rect.pivot = new Vector2(0f, 1f);"));
-            Assert.That(source, Does.Contain("rect.position = canvasRect.TransformPoint(new Vector3(x, y, 0f));"),
-                "Using anchoredPosition alone leaves the tabs relative to the wrong parent on some aspect ratios.");
+            Assert.That(source, Does.Contain("Rect fullRect = canvasRect.rect;"));
+            Assert.That(source, Does.Contain("private const float SquadTabTopMargin = 0f;"),
+                "Squad-number tabs should touch the actual top edge rather than inherit a Mac safe-area inset.");
+            Assert.That(source, Does.Contain("float y = fullRect.yMax - SquadTabTopMargin;"));
+            Assert.That(source, Does.Contain("tabRect.anchorMin = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("tabRect.anchorMax = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("tabRect.pivot = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("tabRect.position = worldPoint;"),
+                "Using anchoredPosition alone leaves the tabs relative to the wrong legacy parent on some aspect ratios.");
             Assert.That(source, Does.Contain("_normalizedSquadTabCount = -1;"),
-                "Resolution/safe-area changes must force the tab row to be positioned again.");
+                "Resolution changes must force the tab row to be positioned again.");
         }
 
         [Test]
-        public void BottomActionBoxIsPinnedToRootCanvasBottomLeft()
+        public void BottomHudIslandsArePinnedToActualCanvasEdges()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("KeepActionBoxWithinCanvas();"));
-            Assert.That(source, Does.Contain("nearestCanvas.rootCanvas"),
-                "The ActionBox must use the display root canvas rather than a nested legacy canvas.");
-            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, actionRect)"),
-                "The ActionBox has a zero-sized root, so its visible descendant bounds must drive placement.");
-            Assert.That(source, Does.Contain("available.xMin - bounds.min.x"));
-            Assert.That(source, Does.Contain("available.yMin - bounds.min.y"),
-                "The visible ActionBox should remain attached to the bottom-left safe corner at every resolution.");
-            Assert.That(source, Does.Contain("actionRect.position += worldCorrection;"));
+            Assert.That(source, Does.Contain("KeepMiniMapWithinCanvas();"));
+            Assert.That(source, Does.Contain("_menus.SquadActionBoxUI"));
+            Assert.That(source, Does.Contain("_menus.MiniMapOutput"));
+            Assert.That(source, Does.Contain("_menus.MiniMapCover"));
+            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot)"),
+                "Zero-sized legacy roots must be positioned from the bounds of their visible descendants.");
+            Assert.That(source, Does.Contain("available.xMin + margin - bounds.min.x"),
+                "The Squad Action Box should remain fully visible at bottom-left.");
+            Assert.That(source, Does.Contain("available.xMax - margin - bounds.max.x"),
+                "The Mini Map should remain fully visible at bottom-right.");
+            Assert.That(source, Does.Contain("available.yMin + margin - bounds.min.y"),
+                "Bottom HUD islands must not be clipped below the canvas.");
         }
 
         [Test]
@@ -119,31 +115,33 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_clockRect.rect.width + _speedRect.rect.width"));
             Assert.That(source, Does.Contain("ControlGap"));
             Assert.That(source, Does.Contain("Vector2 desiredPosition = new Vector2(x, y);"));
-            Assert.That(source, Does.Contain("_speedRect.anchoredPosition != desiredPosition"));
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = desiredPosition;"));
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = _normalSpeedPosition;"));
         }
 
         [Test]
-        public void VisiblePlutoShieldAlignsGameSpeedButtonWithEvacuationCounterTop()
+        public void PlutoShieldStatePreservesMissionSpecificSpeedButtonInset()
         {
             string source = ReadGuardSource();
 
+            Assert.That(source, Does.Contain("private const float PlutoSpeedRightInset = 290f;"));
             Assert.That(source, Does.Contain("_menus.PlutoShield.activeInHierarchy"));
+            Assert.That(source, Does.Contain("x = -PlutoSpeedRightInset;"),
+                "Pluto IV deliberately keeps Game Speed away from the planetary-shield rectangle.");
             Assert.That(source, Does.Contain("_menus.Counter.activeInHierarchy"));
             Assert.That(source, Does.Contain("_counterRect.anchoredPosition.y"));
-            Assert.That(source, Does.Contain("_counterRect.rect.height - _speedRect.rect.height"));
-            Assert.That(source, Does.Contain("((_counterRect.rect.height - _speedRect.rect.height) * 0.5f)"));
+            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
         }
 
         [Test]
-        public void ShieldOnlyLayoutStillPlacesGameSpeedButtonBelowShield()
+        public void PlutoShieldHealthFillUsesNormalizedScale()
         {
-            string source = ReadGuardSource();
+            string source = ReadPluto4Source();
 
-            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
-            Assert.That(source, Does.Contain("_plutoShieldRect.rect.height + _speedRect.rect.height"));
-            Assert.That(source, Does.Contain("((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap"));
+            Assert.That(source, Does.Contain("Mathf.Clamp01((float)(15 - personnelLost) / 15f)"));
+            Assert.That(source, Does.Contain("new Vector2(shieldHealth, 1f)"));
+            Assert.That(source, Does.Not.Contain("((float)(15 - personnelLost) / 15) * 150"),
+                "The 150-pixel health-bar root must not be scaled up by another factor of 150.");
         }
 
         [Test]
