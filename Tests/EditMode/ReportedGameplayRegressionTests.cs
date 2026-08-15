@@ -21,6 +21,40 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void MapAuthoredObstaclesReceiveRuntimeOwnershipBeforeActivation()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "Map.cs"));
+
+            int ownership = source.IndexOf("Obstacle[] mapObstacles = GetComponentsInChildren<Obstacle>(true);");
+            int levelAssignment = source.IndexOf("obstacle.Level = level;", ownership);
+            int stageAssignment = source.IndexOf("obstacle.Stage = level.Stage;", ownership);
+            int activation = source.IndexOf("gameObject.SetActive(true);", ownership);
+
+            Assert.That(ownership, Is.GreaterThanOrEqualTo(0));
+            Assert.That(levelAssignment, Is.GreaterThan(ownership));
+            Assert.That(stageAssignment, Is.GreaterThan(levelAssignment));
+            Assert.That(activation, Is.GreaterThan(stageAssignment),
+                "Map borders must know their Level/Stage before physics or pathfinder setup can touch them.");
+        }
+
+        [Test]
+        public void MapBorderSafelyHandlesChildCollidersAndScriptedMapExits()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "MapBorder.cs"));
+
+            Assert.That(source, Does.Contain("GetComponentInParent<Ship>()"),
+                "A tagged child collider must resolve its owning Ship instead of dereferencing null.");
+            Assert.That(source, Does.Contain("if (_collidingShip.CanOverrideBounds)"),
+                "Scripted ships that deliberately leave the playable map must not be stopped at the border.");
+            Assert.That(source, Does.Contain("Stage.IsFollowingShip && Stage.CameraShip == _collidingShip"));
+            Assert.That(source, Does.Contain("Stage.IsFollowingShip = false;"));
+            Assert.That(source, Does.Contain("Stage.SetupCamera();"),
+                "The camera should release a scripted exiting ship at the border so it can disappear off-screen.");
+        }
+
+        [Test]
         public void EnemyRightClickRoutesBargeOnlySquadsThroughCharge()
         {
             string interaction = File.ReadAllText(Path.Combine(
@@ -86,6 +120,11 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("input.ActivateInputField();"));
             Assert.That(source, Does.Contain("mainMenu.NameInput = input;"),
                 "SubmitName must read from the same field that is visible in the modal.");
+            Assert.That(source, Does.Contain("RequestKeyboardFocus(input);"));
+            Assert.That(source, Does.Contain("yield return new WaitForEndOfFrame();"),
+                "Focus must be reacquired after Main Menu finalization has finished assigning UI selection.");
+            Assert.That(source, Does.Contain("eventSystem.SetSelectedGameObject(input.gameObject);"),
+                "A blinking caret alone is insufficient; the EventSystem must actually select the input field for keyboard events.");
             Assert.That(source, Does.Contain("label.text = \"Confirm\";"));
         }
 
