@@ -28,6 +28,31 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ScreenSpaceCanvasesKeepWholeReferenceAreaAcrossAspectRatios()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("ApplyAspectRatioSafeCanvasScaling(scene);"));
+            Assert.That(source, Does.Contain("CanvasScaler.ScaleMode.ScaleWithScreenSize"));
+            Assert.That(source, Does.Contain("CanvasScaler.ScreenMatchMode.Expand"),
+                "Wide/tall devices must preserve the entire authored UI reference rectangle instead of cropping one axis.");
+            Assert.That(source, Does.Contain("canvas.renderMode == RenderMode.WorldSpace"),
+                "World-space gameplay canvases must not be altered by the screen UI compatibility pass.");
+        }
+
+        [Test]
+        public void SquadTabsArePinnedToTopLeftInListOrder()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
+            Assert.That(source, Does.Contain("rect.anchorMin = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("rect.anchorMax = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("rect.pivot = new Vector2(0f, 1f);"));
+            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(x, -SquadTabTopMargin);"));
+        }
+
+        [Test]
         public void VisibleMissionClockMovesGameSpeedButtonBesideIt()
         {
             string source = ReadGuardSource();
