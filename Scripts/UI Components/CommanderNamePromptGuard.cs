@@ -96,11 +96,13 @@ namespace Assets.Scripts.UI_Components
 
             // Do not activate hidden templates. Repair only buttons already authored as active in
             // the commander prompt and provide a fallback label if an old prefab lost its text.
+            // The serialized submit control can still inherit the name "Button Prefab", so its
+            // active state—not its legacy name—is the reliable distinction.
             Button[] buttons = GetComponentsInChildren<Button>(true);
             for (int i = 0; i < buttons.Length; i++)
             {
                 Button button = buttons[i];
-                if (!button.gameObject.activeSelf || button.gameObject.name == "Button Prefab")
+                if (!button.gameObject.activeSelf)
                 {
                     continue;
                 }
