@@ -22,7 +22,6 @@ namespace Assets.Scripts.UI_Components
         private const float ResponsiveLayoutScanInterval = 0.25f;
         private const float SquadTabGap = 8f;
         private const float BottomHudMargin = 0f;
-        private const float PlutoSpeedRightInset = 290f;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private GameMenus _menus;
@@ -374,28 +373,45 @@ namespace Assets.Scripts.UI_Components
 
                 if (campaignMissionId == 8)
                 {
-                    x = _clockRect.anchoredPosition.x +
-                        ((_clockRect.rect.width - _speedRect.rect.width) * 0.5f);
-                    y = _clockRect.anchoredPosition.y -
-                        ((_clockRect.rect.height + _speedRect.rect.height) * 0.5f) - TitaniaClockGap;
+                    // Titania II has the shared Planetary Shield/clock pair but no counter. Keep
+                    // Game Speed immediately below the clock and aligned to the clock's right edge.
+                    x = GetRightAlignedX(
+                        _clockRect.anchoredPosition.x,
+                        _clockRect.rect.width,
+                        _speedRect.rect.width);
+                    y = GetBelowY(
+                        _clockRect.anchoredPosition.y,
+                        _clockRect.rect.height,
+                        _speedRect.rect.height,
+                        TitaniaClockGap);
                 }
                 else if (campaignMissionId == 3 &&
                          _plutoShieldRect != null &&
                          _menus.PlutoShield != null &&
                          _menus.PlutoShield.activeInHierarchy)
                 {
-                    // Pluto IV deliberately keeps Game Speed away from the planetary-shield frame.
-                    x = -PlutoSpeedRightInset;
+                    // Pluto IV uses the same Planetary Shield/clock pair plus the Evacuated counter.
+                    // Position Game Speed from the live shield/counter geometry instead of a fixed
+                    // screen inset so responsive scaling cannot strand it far to the left.
+                    x = GetRightAlignedX(
+                        _plutoShieldRect.anchoredPosition.x,
+                        _plutoShieldRect.rect.width,
+                        _speedRect.rect.width);
 
                     if (_counterRect != null && _menus.Counter != null && _menus.Counter.activeInHierarchy)
                     {
-                        y = _counterRect.anchoredPosition.y +
-                            ((_counterRect.rect.height - _speedRect.rect.height) * 0.5f);
+                        y = GetTopAlignedY(
+                            _counterRect.anchoredPosition.y,
+                            _counterRect.rect.height,
+                            _speedRect.rect.height);
                     }
                     else
                     {
-                        y = _plutoShieldRect.anchoredPosition.y -
-                            ((_plutoShieldRect.rect.height + _speedRect.rect.height) * 0.5f) - ControlGap;
+                        y = GetBelowY(
+                            _plutoShieldRect.anchoredPosition.y,
+                            _plutoShieldRect.rect.height,
+                            _speedRect.rect.height,
+                            ControlGap);
                     }
                 }
 
@@ -405,12 +421,33 @@ namespace Assets.Scripts.UI_Components
                     _speedRect.anchoredPosition = desiredPosition;
                 }
             }
-            else if (_clockWasVisible && _speedRect.anchoredPosition != _normalSpeedPosition)
+            else if (_speedRect.anchoredPosition != _normalSpeedPosition)
             {
+                // The HUD guard owns final Game Speed placement. Mission setup may still contain
+                // legacy one-off writes, so restore the authored position whenever no timer is shown.
                 _speedRect.anchoredPosition = _normalSpeedPosition;
             }
 
             _clockWasVisible = clockVisible;
+        }
+
+        internal static float GetRightAlignedX(float referenceCenterX, float referenceWidth, float targetWidth)
+        {
+            return referenceCenterX + ((referenceWidth - targetWidth) * 0.5f);
+        }
+
+        internal static float GetTopAlignedY(float referenceCenterY, float referenceHeight, float targetHeight)
+        {
+            return referenceCenterY + ((referenceHeight - targetHeight) * 0.5f);
+        }
+
+        internal static float GetBelowY(
+            float referenceCenterY,
+            float referenceHeight,
+            float targetHeight,
+            float gap)
+        {
+            return referenceCenterY - ((referenceHeight + targetHeight) * 0.5f) - gap;
         }
 
         private void KeepActionBoxWithinCanvas()
