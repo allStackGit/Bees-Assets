@@ -117,21 +117,52 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("ControlGap"));
             Assert.That(source, Does.Contain("Vector2 desiredPosition = new Vector2(x, y);"));
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = desiredPosition;"));
+            Assert.That(source, Does.Contain("else if (_speedRect.anchoredPosition != _normalSpeedPosition)"),
+                "When a mission clock disappears, Game Speed must return to its ordinary authored location even if mission setup moved it first.");
             Assert.That(source, Does.Contain("_speedRect.anchoredPosition = _normalSpeedPosition;"));
         }
 
         [Test]
-        public void PlutoShieldStatePreservesMissionSpecificSpeedButtonInset()
+        public void PlutoShieldStateUsesLiveShieldAndCounterGeometry()
         {
             string source = ReadGuardSource();
 
-            Assert.That(source, Does.Contain("private const float PlutoSpeedRightInset = 290f;"));
             Assert.That(source, Does.Contain("_menus.PlutoShield.activeInHierarchy"));
-            Assert.That(source, Does.Contain("x = -PlutoSpeedRightInset;"),
-                "Pluto IV deliberately keeps Game Speed away from the planetary-shield rectangle.");
+            Assert.That(source, Does.Contain("GetRightAlignedX("));
+            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.x"),
+                "Pluto IV Game Speed should follow the shared shield frame instead of a fixed screen inset.");
             Assert.That(source, Does.Contain("_menus.Counter.activeInHierarchy"));
-            Assert.That(source, Does.Contain("_counterRect.anchoredPosition.y"));
-            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"));
+            Assert.That(source, Does.Contain("GetTopAlignedY("));
+            Assert.That(source, Does.Contain("_counterRect.anchoredPosition.y"),
+                "Pluto IV Game Speed should occupy the row beside the Evacuated counter.");
+            Assert.That(source, Does.Contain("_plutoShieldRect.anchoredPosition.y"),
+                "The no-counter fallback should remain tied to the shield geometry.");
+            Assert.That(source, Does.Not.Contain("PlutoSpeedRightInset"),
+                "A hard-coded Pluto screen inset can strand Game Speed far from the timed shield HUD after responsive scaling.");
+        }
+
+        [Test]
+        public void TimedShieldAlignmentMathPreservesReferenceEdgesAndGap()
+        {
+            Type guardType = RuntimeAssembly.GetType("Assets.Scripts.UI_Components.GameHudLayoutGuard");
+
+            float rightAlignedX = (float)RuntimeAssembly.InvokeStatic(
+                guardType, "GetRightAlignedX", 100f, 80f, 20f);
+            Assert.That(rightAlignedX, Is.EqualTo(130f).Within(0.001f));
+            Assert.That(rightAlignedX + 10f, Is.EqualTo(100f + 40f).Within(0.001f),
+                "The target and reference right edges should coincide.");
+
+            float topAlignedY = (float)RuntimeAssembly.InvokeStatic(
+                guardType, "GetTopAlignedY", 50f, 40f, 10f);
+            Assert.That(topAlignedY, Is.EqualTo(65f).Within(0.001f));
+            Assert.That(topAlignedY + 5f, Is.EqualTo(50f + 20f).Within(0.001f),
+                "The target and reference top edges should coincide.");
+
+            float belowY = (float)RuntimeAssembly.InvokeStatic(
+                guardType, "GetBelowY", 50f, 40f, 10f, 5f);
+            Assert.That(belowY, Is.EqualTo(20f).Within(0.001f));
+            Assert.That((50f - 20f) - (belowY + 5f), Is.EqualTo(5f).Within(0.001f),
+                "Titania II should preserve the requested vertical gap below its clock.");
         }
 
         [Test]
