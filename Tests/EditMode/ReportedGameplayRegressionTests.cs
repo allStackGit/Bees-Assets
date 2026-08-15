@@ -52,6 +52,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void StationaryFogVisionDoesNotDirtyItsTransformEveryFrame()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "Ships", "FogOfWarVision.cs"));
+
+            Assert.That(source, Does.Contain("Vector2 shipPosition = Ship.GetPosition();"));
+            Assert.That(source, Does.Contain("Vector3 currentPosition = Transform.position;"));
+            Assert.That(source, Does.Contain("currentPosition.x != shipPosition.x || currentPosition.y != shipPosition.y"),
+                "Fog SpriteMask transforms should only be rewritten when the owning ship actually changes position.");
+            Assert.That(source, Does.Contain("Transform.position = shipPosition;"));
+        }
+
+        [Test]
         public void CommanderNamePromptKeepsItsInputVisibleFocusableAndAuthoritative()
         {
             string source = File.ReadAllText(Path.Combine(
