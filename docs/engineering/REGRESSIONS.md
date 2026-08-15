@@ -35,4 +35,10 @@ Manual-only protection is acceptable only when the record explains why determini
 
 ## Entries
 
-_No permanent regression entries have been backfilled here yet. Add verified historical regressions incrementally when their root cause and current protection can be confirmed from repository evidence; do not reconstruct them from conversational memory alone._
+### REG-001 — Screen-space UI remained tied to the 1366x768 authoring rectangle
+**Area:** `Scripts/UI Components/ResponsiveScreenLayoutGuard.cs`, root screen-space canvases, large legacy `RectTransform` wrappers, dynamically instantiated UI canvases  
+**Symptom:** UI that was correct at the historic 1366x768/16:9 authoring size remained misplaced or failed to use the available screen correctly on Macs and other displays with different resolutions/aspect ratios.  
+**Root cause:** the first responsive repair recognized only exact reference-sized containers with children. It therefore skipped leaf backers and large screen-relative frames such as 1366x668 layouts, and scene-load-only installation missed root canvases instantiated later. Those objects remained attached to the obsolete reference rectangle even though the root `CanvasScaler` itself was resolution independent.  
+**Permanent protection:** `Tests/EditMode/ResponsiveScreenLayoutGuardTests.cs` now behaviorally exercises full-screen leaf panels, full-width/near-full-height frames with preserved margins, one-axis bars, and ordinary centered panels that must not be stretched. The guard also includes low-frequency discovery for root canvases created after scene load.  
+**Verification:** run the `BeesFoundation` EditMode category to execute the geometry regressions, then perform a representative rendered PlayMode/player check at 16:9, 16:10, 3:2, 4:3 and ultrawide sizes (including the affected Mac display). Runtime execution is still required after this remote change.  
+**Invariant/knowledge:** `docs/engineering/INVARIANTS.md` now defines resolution/aspect-ratio independence, safe-area behavior, late-created root-canvas coverage, and the distinction between viewport-like wrappers and ordinary centered panels.
