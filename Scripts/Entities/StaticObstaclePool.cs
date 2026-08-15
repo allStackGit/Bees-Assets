@@ -45,7 +45,19 @@ namespace Assets.Scripts.Entities
             {
                 GameObject obstacleObject = Instantiate(_stage.Prefabs.ObstaclePrefab, transform);
                 obstacle = obstacleObject.GetComponent<StaticObstacle>();
+                // Obstacle.Setup assumes Create has already established Stage ownership and the
+                // authored baseline health. Pooled layout obstacles bypass the ordinary prefab
+                // creation path, so initialize that lifecycle exactly once when the instance is
+                // first allocated. Without this, Pathfinder.InitializeMap can dereference a null
+                // Obstacle.Stage while setting up a random/saved obstacle layout.
+                obstacle.Create(_stage);
                 obstacleObject.SetActive(false);
+            }
+            else
+            {
+                // The pool is Stage-owned, but restore the owner defensively on checkout in case
+                // an older pooled instance predates Stage initialization or was externally reset.
+                obstacle.Stage = _stage;
             }
 
             obstacle.ResetForReuse();
