@@ -47,7 +47,9 @@ namespace Assets.Scripts.Entities.Ships
                 // Do not perform a whole-map connectivity build here. Right-click is a main-thread
                 // input path, and the previous reachability guard lazily flood-filled the complete
                 // pathfinder grid on its first use, which could itself present as a hard freeze.
-                Level.State.GetSelectedSquads().ForEach(selectedSquad => selectedSquad.UserAggressive(Squad));
+                // Composition-aware dispatch also lets Barge-only squads use their dedicated
+                // Charge command instead of stopping in Aggressive's ranged positioning state.
+                Level.State.GetSelectedSquads().ForEach(selectedSquad => selectedSquad.UserTargetEnemy(Squad));
             }
             else if (IsUserControlled && mouseButton == LevelInputManager.LeftClick && !Squad.IsImmobile)
             {
