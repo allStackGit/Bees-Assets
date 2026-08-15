@@ -23,6 +23,13 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Mission-specific obstacle/map prefabs are gameplay, not decoration; pathing, clearance, hazards, visibility, and spawn geometry can alter mission behavior.
 - Unity `.meta`/GUID relationships are asset identity. Remote edits must not casually regenerate or fabricate GUIDs for referenced assets.
 
+## UI and display layout
+
+- Screen-space UI must remain usable and correctly positioned across reasonable desktop resolutions and aspect ratios, including 16:9, 16:10, 3:2, 4:3 and ultrawide displays; the historic 1366x768 authoring size is a reference, not a required viewport.
+- Root screen-space canvases must use resolution-independent scaling and respect the live safe area. Root canvases created after scene load require the same treatment as scene-authored canvases.
+- Large fixed screen-relative `RectTransform`s must not leave controls attached to an obsolete reference rectangle. Convert viewport-like axes to stretch anchors while preserving intentional authored edge margins; do not stretch ordinary centered panels merely because they are large.
+- World-space UI is not part of the screen-layout normalization contract and must not be rewritten by screen-space compatibility code.
+
 ## Campaign and persistence
 
 - Campaign mission identity cannot be inferred from a single source. Reconcile mission catalog/intro, current runtime data, trigger/objective code, exact authored assets, mechanics, dialogue/UI, and persistence effects.
