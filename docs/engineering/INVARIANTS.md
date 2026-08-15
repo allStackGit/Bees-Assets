@@ -57,6 +57,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - A reproducible regression should gain a test that would have failed before the fix whenever practical.
 - If automated coverage is impractical, the permanent regression record must explain why and state the strongest manual/system protection.
 - Never treat a targeted green test as evidence that unrelated lifecycle, scene, persistence, network, or campaign contracts remain safe.
+- New Unity engine APIs must be verified against the repository's documented Unity version before use. A code path that cannot compile in that version is a failed change even if its intended behavior and source-level tests are otherwise sound.
 
 ## Performance
 
