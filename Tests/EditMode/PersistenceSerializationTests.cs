@@ -2,8 +2,10 @@ using System;
 using System.Collections;
 using System.Globalization;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 using System.Collections.Generic;
 using System.IO;
 
@@ -123,6 +125,18 @@ namespace Bees.Tests.EditMode
             Assert.That(exception.InnerException, Is.Not.Null);
             Assert.That(RuntimeAssembly.Invoke(file, "GetContents"), Is.EqualTo(valid));
             Assert.That(RuntimeAssembly.Invoke(file, "GetJsonObject"), Is.Not.Null);
+        }
+
+        [Test]
+        public void MalformedServerPayloadIsExposedForProfileRecoveryWithoutThrowing()
+        {
+            object file = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.DataFile");
+            const string malformed = "{\"Version\":";
+            LogAssert.Expect(LogType.Error, new Regex("Stored user data .* contains malformed JSON and will be recovered\\."));
+
+            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(file, "SetServerContents", malformed));
+            Assert.That(RuntimeAssembly.Invoke(file, "GetContents"), Is.EqualTo(malformed));
+            Assert.That(RuntimeAssembly.Invoke(file, "GetJsonObject"), Is.Null);
         }
 
         [TestCase(true, false, true, 0, TestName = "LocalPrimaryWritesOnlyLocal")]
