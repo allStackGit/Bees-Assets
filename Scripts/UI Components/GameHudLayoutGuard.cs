@@ -21,8 +21,6 @@ namespace Assets.Scripts.UI_Components
         private const float DynamicButtonScanInterval = 1f;
         private const float ResponsiveLayoutScanInterval = 0.25f;
         private const float SquadTabGap = 8f;
-        private const float SquadTabLeftMargin = 0f;
-        private const float SquadTabTopMargin = 0f;
         private const float BottomHudMargin = 0f;
         private const float PlutoSpeedRightInset = 290f;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
@@ -68,8 +66,6 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // The GameMenus object can itself be a Canvas root, in which case the responsive pass
-            // has already added this component. Always initialize the gameplay side as well.
             GameHudLayoutGuard guard = menus.gameObject.GetComponent<GameHudLayoutGuard>();
             if (guard == null)
             {
@@ -286,16 +282,7 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            RectTransform canvasRect = GetRootCanvasRect(_menus.Stage.SquadTabs, tabCount);
-            if (canvasRect == null)
-            {
-                return;
-            }
-
-            Rect fullRect = canvasRect.rect;
-            float x = fullRect.xMin + SquadTabLeftMargin;
-            float y = fullRect.yMax - SquadTabTopMargin;
-
+            RectTransform firstTabRect = null;
             for (int i = 0; i < tabCount; i++)
             {
                 SquadTab tab = _menus.Stage.SquadTabs[i];
@@ -304,43 +291,38 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                RectTransform tabRect = tab.Tab.GetComponent<RectTransform>();
-                if (tabRect == null)
+                firstTabRect = tab.Tab.GetComponent<RectTransform>();
+                if (firstTabRect != null)
                 {
-                    continue;
+                    break;
                 }
-
-                tabRect.anchorMin = new Vector2(0f, 1f);
-                tabRect.anchorMax = new Vector2(0f, 1f);
-                tabRect.pivot = new Vector2(0f, 1f);
-
-                Vector3 worldPoint = canvasRect.TransformPoint(new Vector3(x, y, 0f));
-                tabRect.position = worldPoint;
-                x += tabRect.rect.width + SquadTabGap;
             }
+
+            RectTransform tabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;
+            if (tabsRoot == null)
+            {
+                return;
+            }
+
+            // The responsive wrapper guard makes the legacy Squad Tabs root fill the display.
+            // Configure the existing layout group to own the row at that root's actual top-left;
+            // otherwise a later Unity layout pass can undo per-tab world positioning.
+            HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null)
+            {
+                layout = tabsRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+            }
+
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = SquadTabGap;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);
 
             _normalizedSquadTabCount = tabCount;
-        }
-
-        private static RectTransform GetRootCanvasRect(System.Collections.Generic.List<SquadTab> tabs, int tabCount)
-        {
-            for (int i = 0; i < tabCount; i++)
-            {
-                SquadTab tab = tabs[i];
-                if (tab == null || tab.Tab == null)
-                {
-                    continue;
-                }
-
-                Canvas canvas = tab.Tab.GetComponentInParent<Canvas>();
-                Canvas rootCanvas = canvas != null ? canvas.rootCanvas : null;
-                if (rootCanvas != null)
-                {
-                    return rootCanvas.transform as RectTransform;
-                }
-            }
-
-            return null;
         }
 
         private void UpdateDynamicButtonStyles()
@@ -392,8 +374,6 @@ namespace Assets.Scripts.UI_Components
 
                 if (campaignMissionId == 8)
                 {
-                    // Titania II intentionally keeps the speed control beneath the clock rather
-                    // than floating to its left/right.
                     x = _clockRect.anchoredPosition.x +
                         ((_clockRect.rect.width - _speedRect.rect.width) * 0.5f);
                     y = _clockRect.anchoredPosition.y -
@@ -404,9 +384,7 @@ namespace Assets.Scripts.UI_Components
                          _menus.PlutoShield != null &&
                          _menus.PlutoShield.activeInHierarchy)
                 {
-                    // Pluto IV's mission code deliberately moves Game Speed away from the
-                    // planetary-shield rectangle. Preserve that horizontal contract instead of
-                    // deriving x from the clock and overlapping the shield at end-of-level states.
+                    // Pluto IV deliberately keeps Game Speed away from the planetary-shield frame.
                     x = -PlutoSpeedRightInset;
 
                     if (_counterRect != null && _menus.Counter != null && _menus.Counter.activeInHierarchy)
