@@ -18,7 +18,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("MergeArrayHandling = MergeArrayHandling.Replace", source);
             StringAssert.Contains("object loadedData = GetLoadedDataWithDefaults();", source);
             StringAssert.Contains("TitaniaRouteState.LoadFromPlayerProgress(loadedData);", source);
-            StringAssert.Contains("_onceDataIsLoaded(loadedData);", source);
+            StringAssert.Contains("_onceDataIsLoaded?.Invoke(loadedData);", source,
+                "Migration must invoke the loader callback with the merged payload while remaining safe for recovery-only data files without a callback.");
         }
 
         [Test]
