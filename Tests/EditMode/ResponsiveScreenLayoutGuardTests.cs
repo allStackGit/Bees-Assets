@@ -25,8 +25,14 @@ namespace Bees.Tests.EditMode
 
             Assert.That(source, Does.Contain("root.GetComponentsInChildren<Canvas>(true)"));
             Assert.That(source, Does.Contain("canvas.renderMode == RenderMode.WorldSpace || !canvas.isRootCanvas"));
-            Assert.That(source, Does.Contain("Canvas.allCanvases"),
-                "Root canvases instantiated after sceneLoaded must receive the responsive guard too.");
+            Assert.That(source, Does.Contain("Object.FindObjectsByType<Canvas>"),
+                "Late-created root canvases must be discovered with a Unity 6 supported object query.");
+            Assert.That(source, Does.Contain("FindObjectsInactive.Include"),
+                "Inactive late-created canvases must be included so they are normalized before activation.");
+            Assert.That(source, Does.Contain("FindObjectsSortMode.None"),
+                "Canvas discovery does not require deterministic ordering and should avoid needless sorting.");
+            Assert.That(source, Does.Not.Contain("Canvas.allCanvases"),
+                "Canvas.allCanvases is not an available API in the project's Unity version.");
             Assert.That(source, Does.Contain("ResponsiveScreenCanvasDiscovery"));
             Assert.That(source, Does.Contain("CanvasScaler.ScaleMode.ScaleWithScreenSize"));
             Assert.That(source, Does.Contain("CanvasScaler.ScreenMatchMode.Expand"));
