@@ -109,20 +109,30 @@ namespace Assets.Scripts.UI_Components
                 Debug.LogError("Commander-name prompt does not contain a TMP_InputField.");
             }
 
-            // Do not activate hidden templates. Repair only buttons already authored as active in
-            // the commander prompt and provide a fallback label if an old prefab lost its text.
-            // The serialized submit control can still inherit the name "Button Prefab", so its
-            // active state—not its legacy name—is the reliable distinction.
+            // Do not activate hidden templates. Repair only buttons that are actually visible in
+            // the commander prompt. In addition to interactable, both the Selectable component and
+            // its target Graphic must be enabled/raycastable or a button can look normal while
+            // silently ignoring pointer input.
             Button[] buttons = GetComponentsInChildren<Button>(true);
             for (int i = 0; i < buttons.Length; i++)
             {
                 Button button = buttons[i];
-                if (!button.gameObject.activeSelf)
+                if (!button.gameObject.activeInHierarchy)
                 {
                     continue;
                 }
 
+                button.enabled = true;
                 button.interactable = true;
+
+                Graphic buttonGraphic = button.targetGraphic;
+                if (buttonGraphic != null)
+                {
+                    buttonGraphic.gameObject.SetActive(true);
+                    buttonGraphic.enabled = true;
+                    buttonGraphic.raycastTarget = true;
+                }
+
                 TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
                 if (label != null)
                 {
@@ -131,6 +141,17 @@ namespace Assets.Scripts.UI_Components
                         label.text = "Confirm";
                     }
                     MakeTextVisible(label);
+                    label.raycastTarget = false;
+                }
+
+                // Keep the serialized listener for backwards compatibility, but also install a
+                // runtime binding. Some legacy prompt instances can retain a visually valid Button
+                // while their persistent SubmitName target is stale. RemoveListener prevents this
+                // repair pass from accumulating duplicate runtime listeners.
+                if (mainMenu != null)
+                {
+                    button.onClick.RemoveListener(mainMenu.SubmitName);
+                    button.onClick.AddListener(mainMenu.SubmitName);
                 }
             }
         }
