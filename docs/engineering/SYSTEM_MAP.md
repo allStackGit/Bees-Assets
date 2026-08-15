@@ -45,7 +45,7 @@ Do not use `SaveData/`, old JSON, trigger source, or an individual prefab as a s
 
 `CanvasScaler/root canvas -> ResponsiveScreenLayoutGuard viewport-wrapper repair -> GameHudLayoutGuard semantic gameplay placement -> RootCanvasCompatibilityGuard final ownership-boundary correction`
 
-`ResponsiveScreenLayoutGuard` owns legacy viewport/screen-wrapper geometry and must not move arbitrary nested UI. `GameHudLayoutGuard` owns known gameplay relationships such as mission-clock/Game Speed and bottom HUD placement. `RootCanvasCompatibilityGuard` is deliberately narrower than the old generic clamping pass: it repairs viewport-level `LayoutGroup` owners/backers, clamps only whole direct root-canvas interactive islands that are actually outside the canvas, and final-pins the legacy Squad Tabs container after layout.
+`ResponsiveScreenLayoutGuard` owns legacy viewport/screen-wrapper geometry and must not move arbitrary nested UI. `GameHudLayoutGuard` owns gameplay semantics: scoreboard and other edge controls receive a small visible inset, the Squad Tabs root is made screen-sized and its row begins from the live scoreboard right edge (or the top-left inset when the scoreboard is hidden), timed mission HUD placement remains mission-aware, and the action box/minimap stay visibly inside the bottom corners. `RootCanvasCompatibilityGuard` does not position Squad Tabs; it repairs viewport-level layout owners/backers, gives taller-display surplus to a dominant fixed-height body when a fixed footer/tool row must remain at the real bottom, and clamps only whole direct root-canvas interactive islands that are actually outside the canvas.
 
 ## Testing architecture
 
