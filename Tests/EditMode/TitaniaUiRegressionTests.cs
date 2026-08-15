@@ -189,15 +189,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TitaniaTwoAndPlutoFourUseSeparateSpeedButtonLayouts()
+        public void TitaniaTwoAndPlutoFourUseSharedShieldAwareSpeedButtonLayouts()
         {
             string source = Read("Scripts", "UI Components", "GameHudLayoutGuard.cs");
+
             StringAssert.Contains("campaignMissionId == 8", source);
-            StringAssert.Contains("((_clockRect.rect.width - _speedRect.rect.width) * 0.5f)", source);
+            StringAssert.Contains("_clockRect.anchoredPosition.x", source);
+            StringAssert.Contains("GetRightAlignedX(", source);
+            StringAssert.Contains("GetBelowY(", source);
             StringAssert.Contains("TitaniaClockGap", source);
+
             StringAssert.Contains("campaignMissionId == 3", source);
-            StringAssert.Contains("_counterRect.anchoredPosition.y +", source);
-            StringAssert.Contains("_plutoShieldRect.anchoredPosition.y -", source);
+            StringAssert.Contains("_plutoShieldRect.anchoredPosition.x", source);
+            StringAssert.Contains("_counterRect.anchoredPosition.y", source);
+            StringAssert.Contains("GetTopAlignedY(", source);
+            StringAssert.DoesNotContain("PlutoSpeedRightInset", source);
         }
     }
 }
