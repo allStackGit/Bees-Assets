@@ -41,15 +41,32 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsArePinnedToTopLeftInListOrder()
+        public void SquadTabsArePinnedToTopLeftInListOrderAndRenormalizedWhenAdded()
         {
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
+            Assert.That(source, Does.Contain("tabCount == _normalizedSquadTabCount"),
+                "Late-created squad tabs must cause the complete tab row to be normalized again.");
             Assert.That(source, Does.Contain("rect.anchorMin = new Vector2(0f, 1f);"));
             Assert.That(source, Does.Contain("rect.anchorMax = new Vector2(0f, 1f);"));
             Assert.That(source, Does.Contain("rect.pivot = new Vector2(0f, 1f);"));
             Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(x, -SquadTabTopMargin);"));
+        }
+
+        [Test]
+        public void BottomActionBoxUsesVisibleDescendantBoundsAndStaysInsideCanvas()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("KeepActionBoxWithinCanvas();"));
+            Assert.That(source, Does.Contain("RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, actionRect)"),
+                "The ActionBox has a legacy zero-sized root, so the guard must clamp its visible descendants rather than its root rect.");
+            Assert.That(source, Does.Contain("available.yMin + BottomHudMargin"));
+            Assert.That(source, Does.Contain("available.yMax - BottomHudMargin"));
+            Assert.That(source, Does.Contain("actionRect.position += worldCorrection;"));
+            Assert.That(source, Does.Contain("_actionBoxNeedsClamp = true;"),
+                "The ActionBox must be checked again when it becomes visible or the resolution changes.");
         }
 
         [Test]
