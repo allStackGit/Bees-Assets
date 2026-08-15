@@ -80,7 +80,9 @@ namespace Assets.Scripts.UI_Components
 
         internal static void EnsureLiveCanvasGuards()
         {
-            Canvas[] canvases = Canvas.allCanvases;
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
             for (int i = 0; i < canvases.Length; i++)
             {
                 EnsureCanvasGuard(canvases[i]);
@@ -637,7 +639,7 @@ namespace Assets.Scripts.UI_Components
 
     /// <summary>
     /// Scene-loaded callbacks do not see root canvases instantiated later by UI prefabs. This tiny
-    /// persistent scanner closes that gap without doing a Canvas.allCanvases walk every frame.
+    /// persistent scanner closes that gap without doing an object search every frame.
     /// </summary>
     [DefaultExecutionOrder(-950)]
     internal sealed class ResponsiveScreenCanvasDiscovery : MonoBehaviour
