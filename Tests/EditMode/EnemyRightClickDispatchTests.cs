@@ -20,7 +20,8 @@ namespace Bees.Tests.EditMode
             Assert.That(interaction, Does.Contain("_lastEnemyRightClickFrame == Time.frameCount"));
             Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("),
                 "Right-click input must not lazily flood-fill the pathfinder grid on Unity's main thread.");
-            Assert.That(interaction, Does.Contain("selectedSquad.UserAggressive(Squad)"));
+            Assert.That(interaction, Does.Contain("selectedSquad.UserTargetEnemy(Squad)"),
+                "Enemy clicks must go through composition-aware dispatch so Barge squads can charge.");
 
             Assert.That(aggressive, Does.Contain("ship.MoveToTrackedPoint(target.GetPosition());"));
             Assert.That(aggressive, Does.Not.Contain("ship.MoveToPoint(target.GetPosition());"));
