@@ -21,7 +21,8 @@ namespace Assets.Scripts.UI_Components
         private const float DynamicButtonScanInterval = 1f;
         private const float ResponsiveLayoutScanInterval = 0.25f;
         private const float SquadTabGap = 8f;
-        private const float BottomHudMargin = 0f;
+        private const float HudEdgeMargin = 10f;
+        private const float BottomHudMargin = HudEdgeMargin;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private GameMenus _menus;
@@ -29,10 +30,14 @@ namespace Assets.Scripts.UI_Components
         private RectTransform _counterRect;
         private RectTransform _speedRect;
         private RectTransform _plutoShieldRect;
+        private RectTransform _scoreboardRect;
+        private RectTransform _squadTabsRoot;
         private Vector2 _normalSpeedPosition;
         private bool _clockWasVisible;
         private bool _menuInitialized;
         private int _normalizedSquadTabCount = -1;
+        private int _lastSquadTabLeftPadding = -1;
+        private int _lastSquadTabTopPadding = -1;
         private float _nextDynamicButtonScan;
 
         // A GameHudLayoutGuard is also attached to every root screen-space Canvas at runtime. These
@@ -217,6 +222,7 @@ namespace Assets.Scripts.UI_Components
             _counterRect = _menus.Counter != null ? _menus.Counter.GetComponent<RectTransform>() : null;
             _speedRect = _menus.GameSpeedButton != null ? _menus.GameSpeedButton.GetComponent<RectTransform>() : null;
             _plutoShieldRect = _menus.PlutoShield != null ? _menus.PlutoShield.GetComponent<RectTransform>() : null;
+            _scoreboardRect = _menus.Scoreboard != null ? _menus.Scoreboard.GetComponent<RectTransform>() : null;
 
             if (_speedRect != null)
             {
@@ -226,8 +232,10 @@ namespace Assets.Scripts.UI_Components
             _clockWasVisible = false;
             _menuInitialized = true;
             _normalizedSquadTabCount = -1;
+            _lastSquadTabLeftPadding = -1;
+            _lastSquadTabTopPadding = -1;
+            _squadTabsRoot = null;
             ApplyLayout();
-            NormalizeSquadTabs(true);
         }
 
         private void Update()
@@ -240,6 +248,8 @@ namespace Assets.Scripts.UI_Components
                 RefreshLiveScreenDimensions();
                 _responsiveLayoutDirty = true;
                 _normalizedSquadTabCount = -1;
+                _lastSquadTabLeftPadding = -1;
+                _lastSquadTabTopPadding = -1;
             }
 
             if (_responsiveCanvas != null &&
@@ -249,7 +259,6 @@ namespace Assets.Scripts.UI_Components
                 _nextResponsiveLayoutScan = Time.unscaledTime + ResponsiveLayoutScanInterval;
             }
 
-            NormalizeSquadTabs(false);
             UpdateDynamicButtonStyles();
         }
 
@@ -276,43 +285,69 @@ namespace Assets.Scripts.UI_Components
             }
 
             int tabCount = _menus.Stage.SquadTabs.Count;
-            if (tabCount == 0 || (!force && tabCount == _normalizedSquadTabCount))
+            if (tabCount == 0)
             {
                 return;
             }
 
-            RectTransform firstTabRect = null;
-            for (int i = 0; i < tabCount; i++)
+            if (_squadTabsRoot == null)
             {
-                SquadTab tab = _menus.Stage.SquadTabs[i];
-                if (tab == null || tab.Tab == null)
+                RectTransform firstTabRect = null;
+                for (int i = 0; i < tabCount; i++)
                 {
-                    continue;
+                    SquadTab tab = _menus.Stage.SquadTabs[i];
+                    if (tab == null || tab.Tab == null)
+                    {
+                        continue;
+                    }
+
+                    firstTabRect = tab.Tab.GetComponent<RectTransform>();
+                    if (firstTabRect != null)
+                    {
+                        break;
+                    }
                 }
 
-                firstTabRect = tab.Tab.GetComponent<RectTransform>();
-                if (firstTabRect != null)
-                {
-                    break;
-                }
+                _squadTabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;
             }
 
-            RectTransform tabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;
+            RectTransform tabsRoot = _squadTabsRoot;
             if (tabsRoot == null)
             {
                 return;
             }
 
-            // The responsive wrapper guard makes the legacy Squad Tabs root fill the display.
-            // Configure the existing layout group to own the row at that root's actual top-left;
-            // otherwise a later Unity layout pass can undo per-tab world positioning.
+            RectTransform canvasRect = GetRootCanvasRect(tabsRoot);
+            bool rootChanged = StretchToRootCanvas(tabsRoot, canvasRect);
+
             HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();
             if (layout == null)
             {
                 layout = tabsRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+                rootChanged = true;
             }
 
-            layout.padding = new RectOffset(0, 0, 0, 0);
+            int leftPadding = GetSquadTabLeftPadding(
+                tabsRoot,
+                _scoreboardRect,
+                SquadTabGap,
+                HudEdgeMargin);
+            int topPadding = Mathf.CeilToInt(HudEdgeMargin);
+
+            bool geometryChanged = force || rootChanged ||
+                                   tabCount != _normalizedSquadTabCount ||
+                                   leftPadding != _lastSquadTabLeftPadding ||
+                                   topPadding != _lastSquadTabTopPadding;
+            if (!geometryChanged)
+            {
+                return;
+            }
+
+            // The authored Space scene reserved 200 px for the scoreboard before the squad tabs.
+            // Preserve that semantic relationship using live geometry rather than a fixed inset so
+            // the row stays immediately to the scoreboard's right at every aspect ratio. When the
+            // scoreboard is hidden, the row falls back to a small visible top-left margin.
+            layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);
             layout.spacing = SquadTabGap;
             layout.childAlignment = TextAnchor.UpperLeft;
             layout.childForceExpandWidth = false;
@@ -322,6 +357,51 @@ namespace Assets.Scripts.UI_Components
             LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);
 
             _normalizedSquadTabCount = tabCount;
+            _lastSquadTabLeftPadding = leftPadding;
+            _lastSquadTabTopPadding = topPadding;
+        }
+
+        internal static int GetSquadTabLeftPadding(
+            RectTransform tabsRoot,
+            RectTransform scoreboard,
+            float gap,
+            float fallbackMargin)
+        {
+            int fallback = Mathf.CeilToInt(Mathf.Max(0f, fallbackMargin));
+            if (tabsRoot == null || scoreboard == null || !scoreboard.gameObject.activeInHierarchy)
+            {
+                return fallback;
+            }
+
+            Bounds scoreboardBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                tabsRoot,
+                scoreboard);
+            float fromRootLeft = scoreboardBounds.max.x - tabsRoot.rect.xMin + gap;
+            return Mathf.CeilToInt(Mathf.Max(fallbackMargin, fromRootLeft));
+        }
+
+        internal static bool StretchToRootCanvas(RectTransform rect, RectTransform canvasRect)
+        {
+            if (rect == null || canvasRect == null || rect.parent != canvasRect ||
+                canvasRect.GetComponent<LayoutGroup>() != null)
+            {
+                return false;
+            }
+
+            bool alreadyFilled = rect.anchorMin == Vector2.zero &&
+                                 rect.anchorMax == Vector2.one &&
+                                 rect.offsetMin == Vector2.zero &&
+                                 rect.offsetMax == Vector2.zero;
+            if (alreadyFilled)
+            {
+                return false;
+            }
+
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            return true;
         }
 
         private void UpdateDynamicButtonStyles()
@@ -350,9 +430,47 @@ namespace Assets.Scripts.UI_Components
 
         private void ApplyLayout()
         {
+            KeepScoreboardWithinCanvas();
             ApplyClockAndSpeedLayout();
+            KeepNormalSpeedButtonWithinCanvas();
+            KeepMissionStatusWithinCanvas();
+            NormalizeSquadTabs(false);
             KeepActionBoxWithinCanvas();
             KeepMiniMapWithinCanvas();
+        }
+
+        private void KeepScoreboardWithinCanvas()
+        {
+            if (_menus.Scoreboard == null || !_menus.Scoreboard.activeInHierarchy || _scoreboardRect == null)
+            {
+                return;
+            }
+
+            ClampRectWithinCanvas(_scoreboardRect, GetRootCanvasRect(_scoreboardRect), HudEdgeMargin);
+        }
+
+        private void KeepNormalSpeedButtonWithinCanvas()
+        {
+            if (_menus.GameSpeedButton == null || !_menus.GameSpeedButton.activeInHierarchy ||
+                _speedRect == null || (_menus.Clock != null && _menus.Clock.activeInHierarchy))
+            {
+                return;
+            }
+
+            ClampRectWithinCanvas(_speedRect, GetRootCanvasRect(_speedRect), HudEdgeMargin);
+        }
+
+        private void KeepMissionStatusWithinCanvas()
+        {
+            if (_menus.MissionStatus == null || !_menus.MissionStatus.activeInHierarchy)
+            {
+                return;
+            }
+
+            RectTransform statusRect = _menus.MissionStatus.GetComponent<RectTransform>();
+            RectTransform layoutRoot = GetCanvasOwnedLayoutRoot(statusRect);
+            RectTransform canvasRect = GetRootCanvasRect(layoutRoot);
+            ClampRectWithinCanvas(layoutRoot, canvasRect, HudEdgeMargin);
         }
 
         private void ApplyClockAndSpeedLayout()
@@ -373,8 +491,6 @@ namespace Assets.Scripts.UI_Components
 
                 if (campaignMissionId == 8)
                 {
-                    // Titania II has the shared Planetary Shield/clock pair but no counter. Keep
-                    // Game Speed immediately below the clock and aligned to the clock's right edge.
                     x = GetRightAlignedX(
                         _clockRect.anchoredPosition.x,
                         _clockRect.rect.width,
@@ -390,9 +506,6 @@ namespace Assets.Scripts.UI_Components
                          _menus.PlutoShield != null &&
                          _menus.PlutoShield.activeInHierarchy)
                 {
-                    // Pluto IV uses the same Planetary Shield/clock pair plus the Evacuated counter.
-                    // Position Game Speed from the live shield/counter geometry instead of a fixed
-                    // screen inset so responsive scaling cannot strand it far to the left.
                     x = GetRightAlignedX(
                         _plutoShieldRect.anchoredPosition.x,
                         _plutoShieldRect.rect.width,
@@ -423,8 +536,6 @@ namespace Assets.Scripts.UI_Components
             }
             else if (_speedRect.anchoredPosition != _normalSpeedPosition)
             {
-                // The HUD guard owns final Game Speed placement. Mission setup may still contain
-                // legacy one-off writes, so restore the authored position whenever no timer is shown.
                 _speedRect.anchoredPosition = _normalSpeedPosition;
             }
 
@@ -494,6 +605,27 @@ namespace Assets.Scripts.UI_Components
             return null;
         }
 
+        private static RectTransform GetCanvasOwnedLayoutRoot(RectTransform rect)
+        {
+            if (rect == null)
+            {
+                return null;
+            }
+
+            RectTransform canvasRect = GetRootCanvasRect(rect);
+            if (canvasRect == null)
+            {
+                return rect;
+            }
+
+            RectTransform current = rect;
+            while (current.parent is RectTransform parent && parent != canvasRect)
+            {
+                current = parent;
+            }
+            return current;
+        }
+
         private static RectTransform GetRootCanvasRect(RectTransform rect)
         {
             if (rect == null)
@@ -504,6 +636,64 @@ namespace Assets.Scripts.UI_Components
             Canvas canvas = rect.GetComponentInParent<Canvas>();
             Canvas rootCanvas = canvas != null ? canvas.rootCanvas : null;
             return rootCanvas != null ? rootCanvas.transform as RectTransform : null;
+        }
+
+        internal static bool ClampRectWithinCanvas(
+            RectTransform layoutRoot,
+            RectTransform canvasRect,
+            float margin)
+        {
+            if (layoutRoot == null || canvasRect == null)
+            {
+                return false;
+            }
+
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
+            if (bounds.size.x < 1f || bounds.size.y < 1f)
+            {
+                return false;
+            }
+
+            Rect available = canvasRect.rect;
+            float safeMargin = Mathf.Max(0f, margin);
+            float minX = available.xMin + safeMargin;
+            float maxX = available.xMax - safeMargin;
+            float minY = available.yMin + safeMargin;
+            float maxY = available.yMax - safeMargin;
+            Vector2 correction = Vector2.zero;
+
+            if (bounds.size.x <= maxX - minX)
+            {
+                if (bounds.min.x < minX)
+                {
+                    correction.x = minX - bounds.min.x;
+                }
+                else if (bounds.max.x > maxX)
+                {
+                    correction.x = maxX - bounds.max.x;
+                }
+            }
+
+            if (bounds.size.y <= maxY - minY)
+            {
+                if (bounds.min.y < minY)
+                {
+                    correction.y = minY - bounds.min.y;
+                }
+                else if (bounds.max.y > maxY)
+                {
+                    correction.y = maxY - bounds.max.y;
+                }
+            }
+
+            if (correction == Vector2.zero)
+            {
+                return false;
+            }
+
+            Vector3 worldCorrection = canvasRect.TransformVector(new Vector3(correction.x, correction.y, 0f));
+            layoutRoot.position += worldCorrection;
+            return true;
         }
 
         private static void PinLayoutRootToCorner(
