@@ -320,7 +320,7 @@ namespace Assets.Scripts.UI_Components
                 }
 
                 float margin = RequiresNavigationMargin(child) ? NavigationControlMargin : 0f;
-                ClampIslandToCanvas(child, canvasRect, margin);
+                ClampIslandToCanvasWithMargin(child, canvasRect, margin);
             }
         }
 
@@ -339,10 +339,10 @@ namespace Assets.Scripts.UI_Components
 
         internal static bool ClampIslandToCanvas(RectTransform island, RectTransform canvasRect)
         {
-            return ClampIslandToCanvas(island, canvasRect, 0f);
+            return ClampIslandToCanvasWithMargin(island, canvasRect, 0f);
         }
 
-        internal static bool ClampIslandToCanvas(
+        internal static bool ClampIslandToCanvasWithMargin(
             RectTransform island,
             RectTransform canvasRect,
             float margin)
