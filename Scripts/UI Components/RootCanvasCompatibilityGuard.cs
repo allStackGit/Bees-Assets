@@ -44,19 +44,38 @@ namespace Assets.Scripts.UI_Components
                 Canvas[] canvases = root.GetComponentsInChildren<Canvas>(true);
                 for (int i = 0; i < canvases.Length; i++)
                 {
-                    Canvas canvas = canvases[i];
-                    if (canvas == null || canvas.renderMode == RenderMode.WorldSpace || !canvas.isRootCanvas)
-                    {
-                        continue;
-                    }
-
-                    RootCanvasCompatibilityGuard guard = canvas.GetComponent<RootCanvasCompatibilityGuard>();
-                    if (guard == null)
-                    {
-                        guard = canvas.gameObject.AddComponent<RootCanvasCompatibilityGuard>();
-                    }
-                    guard.Initialize(canvas);
+                    EnsureCanvasGuard(canvases[i]);
                 }
+            }
+        }
+
+        internal static void EnsureLiveCanvasGuards()
+        {
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                EnsureCanvasGuard(canvases[i]);
+            }
+        }
+
+        private static void EnsureCanvasGuard(Canvas canvas)
+        {
+            if (canvas == null || canvas.renderMode == RenderMode.WorldSpace || !canvas.isRootCanvas)
+            {
+                return;
+            }
+
+            RootCanvasCompatibilityGuard guard = canvas.GetComponent<RootCanvasCompatibilityGuard>();
+            if (guard == null)
+            {
+                guard = canvas.gameObject.AddComponent<RootCanvasCompatibilityGuard>();
+                guard.Initialize(canvas);
+            }
+            else if (guard._canvas != canvas)
+            {
+                guard.Initialize(canvas);
             }
         }
 
