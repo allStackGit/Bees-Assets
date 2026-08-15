@@ -225,6 +225,8 @@ namespace Assets.Scripts.UI_Components
         /// Converts a large fixed screen-relative rectangle to stretch anchors on the axes where it
         /// represents the viewport. This handles leaf backers, 1366x668-style content frames,
         /// full-width bars and full-height side containers while preserving authored margins.
+        /// LayoutGroup-owned children are deliberately excluded: Unity's layout pass owns their
+        /// anchors, positions and sizes, so rewriting them here can invalidate sibling/footer layout.
         /// </summary>
         private static bool RepairLegacyScreenRect(
             RectTransform rect,
@@ -234,6 +236,7 @@ namespace Assets.Scripts.UI_Components
             if (rect == null || parent == null ||
                 referenceResolution.x <= 0f || referenceResolution.y <= 0f ||
                 IsFullScreenContainer(rect) ||
+                parent.GetComponent<LayoutGroup>() != null ||
                 Mathf.Abs(Mathf.DeltaAngle(rect.localEulerAngles.z, 0f)) > RotationToleranceDegrees)
             {
                 return false;
