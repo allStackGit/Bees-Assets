@@ -82,6 +82,10 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(second.Range, "OnTriggerEnter2D", second.MapCollider);
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(2));
 
+            // EditMode does not reliably dispatch MonoBehaviour runtime lifecycle messages for
+            // dynamically constructed fixtures. Invoke the actual owner callback explicitly here;
+            // PlayMode/runtime Unity invokes this same OnDisable method on deactivation.
+            RuntimeAssembly.Invoke(first.MapObject, "OnDisable");
             first.MapObjectGameObject.SetActive(false);
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(1));
         }
@@ -95,6 +99,9 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(fixture.Range, "OnTriggerEnter2D", fixture.MapCollider);
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(1));
 
+            // See the disable test above: execute the runtime owner callback deterministically
+            // before DestroyImmediate removes the managed fixture in EditMode.
+            RuntimeAssembly.Invoke(fixture.MapObject, "OnDestroy");
             Object.DestroyImmediate(fixture.MapObjectGameObject);
             Assert.That(RuntimeAssembly.GetCount(visibleObjects), Is.EqualTo(0));
         }
