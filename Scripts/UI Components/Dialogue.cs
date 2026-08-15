@@ -35,6 +35,10 @@ namespace Assets.Scripts.UI_Components
             // a malformed/stale prefab or unexpected constructor exception can never leave an
             // unconfigured modal blocking the scene. Show() is the only path that makes it visible.
             _dialogue.SetActive(false);
+            // The visible gray panel does not cover the full screen, so without a separate
+            // transparent raycast target buttons around it still receive clicks. Install the
+            // blocker behind the modal content while the clone is hidden.
+            ModalInputBlocker.Ensure(_dialogue);
 
             _titleBox = _dialogue.transform.Find($"Main Panel/Text/Title").gameObject;
             _explanationBox = _dialogue.transform.Find($"Main Panel/Text/Explanation").gameObject;
