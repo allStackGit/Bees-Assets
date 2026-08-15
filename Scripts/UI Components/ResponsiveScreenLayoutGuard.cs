@@ -8,14 +8,13 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Repairs legacy screen-space UI that was authored inside fixed 1366x768-style wrapper
     /// RectTransforms. CanvasScaler alone cannot make those wrappers responsive: on a 16:10,
-    /// 3:2, 4:3 or ultrawide display the root Canvas grows on one axis while the fixed wrapper
-    /// remains centred at the old reference size. Any edge-anchored controls then remain attached
-    /// to the old rectangle rather than to the actual screen edge.
+    /// 3:2, 4:3 or ultrawide display the root Canvas grows on one axis while fixed wrappers remain
+    /// attached to the old reference rectangle.
     ///
-    /// This guard runs after GameHudLayoutGuard so it can convert reference-sized screen wrappers
-    /// into real stretch containers and then let their child layout systems operate in the actual
-    /// root-canvas coordinate space. It is intentionally scene-agnostic and is installed on every
-    /// root screen-space Canvas.
+    /// This guard runs after GameHudLayoutGuard. It converts screen-relative fixed rectangles to
+    /// stretch anchors while preserving their authored edge margins, then lets child layout systems
+    /// operate in the actual root-canvas coordinate space. It is scene-agnostic and is installed on
+    /// every root screen-space Canvas, including canvases instantiated after scene load.
     /// </summary>
     [DefaultExecutionOrder(-900)]
     public sealed class ResponsiveScreenLayoutGuard : MonoBehaviour
@@ -24,12 +23,18 @@ namespace Assets.Scripts.UI_Components
         private const float SafeMargin = 8f;
         private const float ReferenceSizeToleranceFraction = 0.01f;
         private const float MinimumReferenceSizeTolerance = 2f;
+        private const float FullAxisCoverageThreshold = 0.95f;
+        private const float CompanionAxisCoverageThreshold = 0.75f;
+        private const float FixedAnchorTolerance = 0.001f;
+        private const float RotationToleranceDegrees = 0.01f;
         private const float SquadTabLeftMargin = 10f;
         private const float SquadTabTopMargin = 10f;
         private const float SquadTabGap = 8f;
         private const float ActionBoxMargin = 10f;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
+
+        private static ResponsiveScreenCanvasDiscovery _discovery;
 
         private Canvas _canvas;
         private CanvasScaler _scaler;
@@ -45,6 +50,20 @@ namespace Assets.Scripts.UI_Components
         {
             SceneManager.sceneLoaded -= HandleSceneLoaded;
             SceneManager.sceneLoaded += HandleSceneLoaded;
+            EnsureDiscoveryHost();
+        }
+
+        private static void EnsureDiscoveryHost()
+        {
+            if (_discovery != null)
+            {
+                return;
+            }
+
+            GameObject host = new GameObject("Responsive Screen Canvas Discovery");
+            host.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
+            Object.DontDestroyOnLoad(host);
+            _discovery = host.AddComponent<ResponsiveScreenCanvasDiscovery>();
         }
 
         private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
@@ -54,19 +73,36 @@ namespace Assets.Scripts.UI_Components
                 Canvas[] canvases = root.GetComponentsInChildren<Canvas>(true);
                 for (int i = 0; i < canvases.Length; i++)
                 {
-                    Canvas canvas = canvases[i];
-                    if (canvas == null || canvas.renderMode == RenderMode.WorldSpace || !canvas.isRootCanvas)
-                    {
-                        continue;
-                    }
-
-                    ResponsiveScreenLayoutGuard guard = canvas.GetComponent<ResponsiveScreenLayoutGuard>();
-                    if (guard == null)
-                    {
-                        guard = canvas.gameObject.AddComponent<ResponsiveScreenLayoutGuard>();
-                    }
-                    guard.Initialize(canvas);
+                    EnsureCanvasGuard(canvases[i]);
                 }
+            }
+        }
+
+        internal static void EnsureLiveCanvasGuards()
+        {
+            Canvas[] canvases = Canvas.allCanvases;
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                EnsureCanvasGuard(canvases[i]);
+            }
+        }
+
+        private static void EnsureCanvasGuard(Canvas canvas)
+        {
+            if (canvas == null || canvas.renderMode == RenderMode.WorldSpace || !canvas.isRootCanvas)
+            {
+                return;
+            }
+
+            ResponsiveScreenLayoutGuard guard = canvas.GetComponent<ResponsiveScreenLayoutGuard>();
+            if (guard == null)
+            {
+                guard = canvas.gameObject.AddComponent<ResponsiveScreenLayoutGuard>();
+                guard.Initialize(canvas);
+            }
+            else if (guard._canvas != canvas)
+            {
+                guard.Initialize(canvas);
             }
         }
 
@@ -132,6 +168,15 @@ namespace Assets.Scripts.UI_Components
             _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
         }
 
+        private Vector2 GetReferenceResolution()
+        {
+            return _scaler != null &&
+                   _scaler.referenceResolution.x > 0f &&
+                   _scaler.referenceResolution.y > 0f
+                ? _scaler.referenceResolution
+                : DefaultReferenceResolution;
+        }
+
         private void CaptureDisplayState()
         {
             _lastScreenWidth = Screen.width;
@@ -152,9 +197,9 @@ namespace Assets.Scripts.UI_Components
             Canvas.ForceUpdateCanvases();
 
             Rect safeRect = GetSafeCanvasRect(_canvasRect, SafeMargin);
-            RepairHierarchy(_canvasRect, safeRect, 0);
+            RepairHierarchy(_canvasRect, safeRect, GetReferenceResolution(), 0);
 
-            // A stretch conversion changes the coordinate system used by layout groups. Force a
+            // Stretch conversion changes the coordinate system used by layout groups. Force a
             // layout pass before applying semantic corner placement such as the squad-tab row.
             Canvas.ForceUpdateCanvases();
             ResolveMenus();
@@ -162,12 +207,18 @@ namespace Assets.Scripts.UI_Components
             PinActionBoxToSafeBottomLeft();
         }
 
-        private void RepairHierarchy(RectTransform parent, Rect safeRect, int depth)
+        private void RepairHierarchy(
+            RectTransform parent,
+            Rect safeRect,
+            Vector2 referenceResolution,
+            int depth)
         {
             if (parent == null || depth >= MaxHierarchyDepth)
             {
                 return;
             }
+
+            bool parentRepresentsScreen = parent == _canvasRect || IsFullScreenContainer(parent);
 
             for (int i = 0; i < parent.childCount; i++)
             {
@@ -184,17 +235,16 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                if (IsLegacyReferenceContainer(child, parent))
+                bool repairedScreenRect = parentRepresentsScreen &&
+                                          RepairLegacyScreenRect(child, parent, referenceResolution);
+                if (repairedScreenRect)
                 {
-                    StretchToParent(child);
                     LayoutRebuilder.ForceRebuildLayoutImmediate(child);
-                    RepairHierarchy(child, safeRect, depth + 1);
-                    continue;
                 }
 
                 if (IsFullScreenContainer(child))
                 {
-                    RepairHierarchy(child, safeRect, depth + 1);
+                    RepairHierarchy(child, safeRect, referenceResolution, depth + 1);
                     continue;
                 }
 
@@ -202,30 +252,121 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        private bool IsLegacyReferenceContainer(RectTransform rect, RectTransform parent)
+        /// <summary>
+        /// Converts a large fixed screen-relative rectangle to stretch anchors on the axes where it
+        /// represents the viewport. Unlike the old exact 1366x768 test, this also handles leaf
+        /// backers, 1366x668-style content frames, full-width bars and full-height side containers.
+        /// Authored margins are preserved rather than forcing every candidate to become edge-to-edge.
+        /// </summary>
+        private static bool RepairLegacyScreenRect(
+            RectTransform rect,
+            RectTransform parent,
+            Vector2 referenceResolution)
         {
-            if (rect == null || parent == null || rect.childCount == 0 || IsFullScreenContainer(rect))
+            if (rect == null || parent == null ||
+                referenceResolution.x <= 0f || referenceResolution.y <= 0f ||
+                IsFullScreenContainer(rect) ||
+                Mathf.Abs(Mathf.DeltaAngle(rect.localEulerAngles.z, 0f)) > RotationToleranceDegrees)
             {
                 return false;
             }
 
-            Vector2 referenceResolution = _scaler != null &&
-                                          _scaler.referenceResolution.x > 0f &&
-                                          _scaler.referenceResolution.y > 0f
-                ? _scaler.referenceResolution
-                : DefaultReferenceResolution;
             Vector2 size = rect.rect.size;
-            float toleranceX = Mathf.Max(
-                MinimumReferenceSizeTolerance,
-                referenceResolution.x * ReferenceSizeToleranceFraction);
-            float toleranceY = Mathf.Max(
-                MinimumReferenceSizeTolerance,
-                referenceResolution.y * ReferenceSizeToleranceFraction);
+            float coverageX = Mathf.Abs(size.x * rect.localScale.x) / referenceResolution.x;
+            float coverageY = Mathf.Abs(size.y * rect.localScale.y) / referenceResolution.y;
+            bool hasFullScreenAxis = coverageX >= FullAxisCoverageThreshold ||
+                                     coverageY >= FullAxisCoverageThreshold;
+            if (!hasFullScreenAxis)
+            {
+                return false;
+            }
 
-            bool referenceSized = Mathf.Abs(size.x - referenceResolution.x) <= toleranceX &&
-                                  Mathf.Abs(size.y - referenceResolution.y) <= toleranceY;
-            bool parentRepresentsScreen = parent == _canvasRect || IsFullScreenContainer(parent);
-            return referenceSized && parentRepresentsScreen;
+            bool fixedX = Mathf.Abs(rect.anchorMax.x - rect.anchorMin.x) <= FixedAnchorTolerance;
+            bool fixedY = Mathf.Abs(rect.anchorMax.y - rect.anchorMin.y) <= FixedAnchorTolerance;
+            bool stretchX = fixedX &&
+                            Mathf.Approximately(rect.localScale.x, 1f) &&
+                            coverageX >= CompanionAxisCoverageThreshold;
+            bool stretchY = fixedY &&
+                            Mathf.Approximately(rect.localScale.y, 1f) &&
+                            coverageY >= CompanionAxisCoverageThreshold;
+            if (!stretchX && !stretchY)
+            {
+                return false;
+            }
+
+            Rect localRect = rect.rect;
+            float parentReferenceXMin = -parent.pivot.x * referenceResolution.x;
+            float parentReferenceXMax = parentReferenceXMin + referenceResolution.x;
+            float parentReferenceYMin = -parent.pivot.y * referenceResolution.y;
+            float parentReferenceYMax = parentReferenceYMin + referenceResolution.y;
+
+            float anchorReferenceX = Mathf.Lerp(
+                parentReferenceXMin,
+                parentReferenceXMax,
+                rect.anchorMin.x);
+            float anchorReferenceY = Mathf.Lerp(
+                parentReferenceYMin,
+                parentReferenceYMax,
+                rect.anchorMin.y);
+
+            float leftMargin = anchorReferenceX + rect.anchoredPosition.x + localRect.xMin -
+                               parentReferenceXMin;
+            float rightMargin = parentReferenceXMax -
+                                (anchorReferenceX + rect.anchoredPosition.x + localRect.xMax);
+            float bottomMargin = anchorReferenceY + rect.anchoredPosition.y + localRect.yMin -
+                                 parentReferenceYMin;
+            float topMargin = parentReferenceYMax -
+                              (anchorReferenceY + rect.anchoredPosition.y + localRect.yMax);
+
+            if (stretchX)
+            {
+                leftMargin = SnapSmallReferenceMargin(leftMargin, referenceResolution.x);
+                rightMargin = SnapSmallReferenceMargin(rightMargin, referenceResolution.x);
+            }
+            if (stretchY)
+            {
+                bottomMargin = SnapSmallReferenceMargin(bottomMargin, referenceResolution.y);
+                topMargin = SnapSmallReferenceMargin(topMargin, referenceResolution.y);
+            }
+
+            Vector2 anchorMin = rect.anchorMin;
+            Vector2 anchorMax = rect.anchorMax;
+            if (stretchX)
+            {
+                anchorMin.x = 0f;
+                anchorMax.x = 1f;
+            }
+            if (stretchY)
+            {
+                anchorMin.y = 0f;
+                anchorMax.y = 1f;
+            }
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+
+            Vector2 offsetMin = rect.offsetMin;
+            Vector2 offsetMax = rect.offsetMax;
+            if (stretchX)
+            {
+                offsetMin.x = leftMargin;
+                offsetMax.x = -rightMargin;
+            }
+            if (stretchY)
+            {
+                offsetMin.y = bottomMargin;
+                offsetMax.y = -topMargin;
+            }
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
+            return true;
+        }
+
+        private static float SnapSmallReferenceMargin(float margin, float referenceSize)
+        {
+            float tolerance = Mathf.Max(
+                MinimumReferenceSizeTolerance,
+                referenceSize * ReferenceSizeToleranceFraction);
+            return Mathf.Abs(margin) <= tolerance ? 0f : margin;
         }
 
         private static bool IsFullScreenContainer(RectTransform rect)
@@ -322,9 +463,8 @@ namespace Assets.Scripts.UI_Components
             }
 
             // Space.unity's legacy Squad Tabs root is a centred ~1366x768 RectTransform with a
-            // HorizontalLayoutGroup and 200 px left padding. On a non-16:9 Canvas, that makes the
-            // row's "top-left" the top-left of the old 1366x768 rectangle, not the display. Stretch
-            // the parent itself and let its layout group own the children in the real canvas space.
+            // HorizontalLayoutGroup and 200 px left padding. Stretch the parent itself and let its
+            // layout group own the children in the real canvas space.
             StretchToParent(tabsRoot);
 
             HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();
@@ -492,6 +632,28 @@ namespace Assets.Scripts.UI_Components
                    Mathf.Approximately(a.y, b.y) &&
                    Mathf.Approximately(a.width, b.width) &&
                    Mathf.Approximately(a.height, b.height);
+        }
+    }
+
+    /// <summary>
+    /// Scene-loaded callbacks do not see root canvases instantiated later by UI prefabs. This tiny
+    /// persistent scanner closes that gap without doing a Canvas.allCanvases walk every frame.
+    /// </summary>
+    [DefaultExecutionOrder(-950)]
+    internal sealed class ResponsiveScreenCanvasDiscovery : MonoBehaviour
+    {
+        private const float DiscoveryInterval = 0.5f;
+        private float _nextDiscoveryTime;
+
+        private void Update()
+        {
+            if (Time.unscaledTime < _nextDiscoveryTime)
+            {
+                return;
+            }
+
+            _nextDiscoveryTime = Time.unscaledTime + DiscoveryInterval;
+            ResponsiveScreenLayoutGuard.EnsureLiveCanvasGuards();
         }
     }
 }
