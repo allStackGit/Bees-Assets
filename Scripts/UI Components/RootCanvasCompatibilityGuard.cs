@@ -8,8 +8,9 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Final compatibility pass for legacy screen-space UI after responsive wrapper repair and
     /// semantic gameplay HUD layout have run. This guard deliberately operates at ownership
-    /// boundaries only: viewport-level LayoutGroup owners/backers, direct root-canvas interactive
-    /// islands, and the legacy Squad Tabs container. It must not translate arbitrary nested UI.
+    /// boundaries only: viewport-level LayoutGroup owners/backers and direct root-canvas
+    /// interactive islands. It must not translate arbitrary nested UI; gameplay-specific placement
+    /// such as the scoreboard/squad-tab relationship belongs to GameHudLayoutGuard.
     /// </summary>
     [DefaultExecutionOrder(-800)]
     public sealed class RootCanvasCompatibilityGuard : MonoBehaviour
@@ -17,13 +18,13 @@ namespace Assets.Scripts.UI_Components
         private const float RepairInterval = 0.25f;
         private const float ScreenCoverageThreshold = 0.90f;
         private const float FullAnchorThreshold = 0.95f;
+        private const float FixedAnchorTolerance = 0.001f;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
         private Canvas _canvas;
         private RectTransform _canvasRect;
         private CanvasScaler _scaler;
-        private RectTransform _squadTabsRoot;
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
         private float _nextRepairTime;
@@ -63,7 +64,6 @@ namespace Assets.Scripts.UI_Components
             _canvas = canvas;
             _canvasRect = canvas != null ? canvas.transform as RectTransform : null;
             _scaler = canvas != null ? canvas.GetComponent<CanvasScaler>() : null;
-            _squadTabsRoot = null;
             _lastScreenWidth = -1;
             _lastScreenHeight = -1;
             ApplyCompatibilityLayout();
@@ -81,7 +81,6 @@ namespace Assets.Scripts.UI_Components
             {
                 _lastScreenWidth = Screen.width;
                 _lastScreenHeight = Screen.height;
-                _squadTabsRoot = null;
             }
 
             if (!displayChanged && Time.unscaledTime < _nextRepairTime)
@@ -103,7 +102,6 @@ namespace Assets.Scripts.UI_Components
             Canvas.ForceUpdateCanvases();
             RepairViewportOwners(_canvasRect, GetReferenceResolution(), 0);
             ClampDirectInteractiveIslands(_canvasRect, GetReferenceResolution());
-            KeepSquadTabsAtActualTopLeft();
             Canvas.ForceUpdateCanvases();
         }
 
@@ -143,7 +141,8 @@ namespace Assets.Scripts.UI_Components
 
                 if (parentRepresentsViewport && parent.GetComponent<LayoutGroup>() == null)
                 {
-                    bool layoutOwner = child.GetComponent<LayoutGroup>() != null;
+                    LayoutGroup layout = child.GetComponent<LayoutGroup>();
+                    bool layoutOwner = layout != null;
                     bool screenBacker = IsScreenBacker(child);
                     bool looksScreenSized = HasFullStretchAnchors(child) ||
                                             RectCoversReferenceScreen(child, referenceResolution);
@@ -153,6 +152,13 @@ namespace Assets.Scripts.UI_Components
                         StretchToParent(child);
                         if (layoutOwner)
                         {
+                            // Rebuild once with the live viewport size before distributing any
+                            // surplus height. Legacy full-screen vertical layouts often contain a
+                            // large fixed Main Container followed by a fixed Footer. On taller
+                            // aspect ratios, stretching only the owner leaves the original
+                            // 718+50-ish child heights at the top and exposes the white root backer.
+                            LayoutRebuilder.ForceRebuildLayoutImmediate(child);
+                            FitDominantVerticalLayoutChild(child);
                             LayoutRebuilder.ForceRebuildLayoutImmediate(child);
                         }
                     }
@@ -198,6 +204,88 @@ namespace Assets.Scripts.UI_Components
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
+            return true;
+        }
+
+        /// <summary>
+        /// Gives viewport-height surplus to the dominant fixed-height child of a VerticalLayoutGroup.
+        /// This preserves fixed footer/tool rows while making the main screen body absorb the extra
+        /// logical height introduced by CanvasScaler.Expand on taller displays.
+        /// </summary>
+        internal static bool FitDominantVerticalLayoutChild(RectTransform layoutRoot)
+        {
+            if (layoutRoot == null)
+            {
+                return false;
+            }
+
+            VerticalLayoutGroup layout = layoutRoot.GetComponent<VerticalLayoutGroup>();
+            if (layout == null || layout.childControlHeight)
+            {
+                return false;
+            }
+
+            RectTransform dominantChild = null;
+            float dominantHeight = -1f;
+            float totalChildHeight = 0f;
+            int participatingChildren = 0;
+
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (child == null || !child.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                LayoutElement layoutElement = child.GetComponent<LayoutElement>();
+                if (layoutElement != null && layoutElement.ignoreLayout)
+                {
+                    continue;
+                }
+
+                // Stretch-height children already follow the viewport and do not need this legacy
+                // fixed-height repair. Resizing them here would fight their anchor contract.
+                if (Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float height = Mathf.Abs(child.rect.height * child.localScale.y);
+                if (height <= 0f)
+                {
+                    continue;
+                }
+
+                participatingChildren++;
+                totalChildHeight += height;
+                if (height > dominantHeight)
+                {
+                    dominantHeight = height;
+                    dominantChild = child;
+                }
+            }
+
+            if (dominantChild == null || participatingChildren < 2)
+            {
+                return false;
+            }
+
+            float availableHeight = layoutRoot.rect.height - layout.padding.top - layout.padding.bottom;
+            if (availableHeight <= 0f || dominantHeight < availableHeight * 0.5f)
+            {
+                return false;
+            }
+
+            float spacingHeight = layout.spacing * (participatingChildren - 1);
+            float fixedOtherHeight = totalChildHeight - dominantHeight;
+            float targetHeight = availableHeight - spacingHeight - fixedOtherHeight;
+            if (targetHeight <= 0f || Mathf.Abs(targetHeight - dominantChild.rect.height) < 0.01f)
+            {
+                return false;
+            }
+
+            dominantChild.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
             return true;
         }
 
@@ -281,92 +369,6 @@ namespace Assets.Scripts.UI_Components
 
             Vector3 worldCorrection = canvasRect.TransformVector(new Vector3(correction.x, correction.y, 0f));
             island.position += worldCorrection;
-            return true;
-        }
-
-        private void KeepSquadTabsAtActualTopLeft()
-        {
-            if (_squadTabsRoot == null)
-            {
-                _squadTabsRoot = FindNamedRectTransform(_canvasRect, "Squad Tabs", 0);
-            }
-
-            if (_squadTabsRoot == null || !_squadTabsRoot.gameObject.activeInHierarchy)
-            {
-                return;
-            }
-
-            LayoutGroup layout = _squadTabsRoot.GetComponent<LayoutGroup>();
-            if (layout != null)
-            {
-                LayoutRebuilder.ForceRebuildLayoutImmediate(_squadTabsRoot);
-            }
-
-            PinLayoutRootToCanvasCorner(_squadTabsRoot, _canvasRect, false, true);
-        }
-
-        private static RectTransform FindNamedRectTransform(RectTransform parent, string objectName, int depth)
-        {
-            if (parent == null || depth >= MaxHierarchyDepth)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < parent.childCount; i++)
-            {
-                RectTransform child = parent.GetChild(i) as RectTransform;
-                if (child == null)
-                {
-                    continue;
-                }
-
-                if (child.gameObject.name == objectName)
-                {
-                    return child;
-                }
-
-                RectTransform found = FindNamedRectTransform(child, objectName, depth + 1);
-                if (found != null)
-                {
-                    return found;
-                }
-            }
-
-            return null;
-        }
-
-        internal static bool PinLayoutRootToCanvasCorner(
-            RectTransform layoutRoot,
-            RectTransform canvasRect,
-            bool pinRight,
-            bool pinTop)
-        {
-            if (layoutRoot == null || canvasRect == null)
-            {
-                return false;
-            }
-
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
-            if (bounds.size.x < 1f || bounds.size.y < 1f)
-            {
-                return false;
-            }
-
-            Rect available = canvasRect.rect;
-            float correctionX = pinRight
-                ? available.xMax - bounds.max.x
-                : available.xMin - bounds.min.x;
-            float correctionY = pinTop
-                ? available.yMax - bounds.max.y
-                : available.yMin - bounds.min.y;
-
-            if (Mathf.Approximately(correctionX, 0f) && Mathf.Approximately(correctionY, 0f))
-            {
-                return false;
-            }
-
-            Vector3 worldCorrection = canvasRect.TransformVector(new Vector3(correctionX, correctionY, 0f));
-            layoutRoot.position += worldCorrection;
             return true;
         }
 
