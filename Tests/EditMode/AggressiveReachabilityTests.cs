@@ -17,6 +17,8 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Entities", "Ships", "Ship.TrackedMovement.cs"));
             string interaction = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Interaction.cs"));
+            string userTargeting = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Squad.UserTargeting.cs"));
 
             Assert.That(aggressive, Does.Contain("ship.MoveToTrackedPoint(target.GetPosition());"));
             Assert.That(aggressive, Does.Not.Contain("ship.MoveToPoint(target.GetPosition());"));
@@ -26,7 +28,10 @@ namespace Bees.Tests.EditMode
             Assert.That(aggressive, Does.Match(@"if\s*\(IsHiveMindCommand\)\s*\{\s*PrepareDamageToSendEntries\(\);"));
 
             Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("));
-            Assert.That(interaction, Does.Contain("UserAggressive(Squad)"));
+            Assert.That(interaction, Does.Contain("UserTargetEnemy(Squad)"),
+                "Enemy right-clicks now use composition-aware dispatch rather than calling Aggressive directly.");
+            Assert.That(userTargeting, Does.Contain("UserAggressive(enemy);"),
+                "Non-Barge squads must still route through the ordinary Aggressive command.");
         }
     }
 }
