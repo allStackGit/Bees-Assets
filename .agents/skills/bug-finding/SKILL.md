@@ -1,171 +1,118 @@
 ---
 name: bug-finding
-description: Perform a repository-wide static bug audit and repair loop: find and log validated defects, require two consecutive clean full-code passes, fix every ledgered bug, add or update tests when useful for coverage, then repeat until the ledger is empty and two clean passes find nothing. Do not run tests or GitHub Actions unless explicitly requested separately.
+description: Repository-wide static bug audit and repair loop with mandatory repository learning, impact analysis, test-contract review, permanent regression protection, two consecutive clean full-code passes, and checkpoint commits. Do not execute tests/builds/actions unless separately requested.
 ---
 
 # Bug Finding
 
-Perform a repository-wide static bug audit and repair loop. Find, validate, record, and then fix real defects until repeated review no longer reveals any.
+Perform a repository-wide static find/log/fix/review loop until the active bug ledger is empty and two deliberate full-code passes over the post-fix tree find no new validated defects.
 
 ## Setup
 
-1. Read `AGENTS.md` and applicable repository instructions if present.
-2. Fetch the latest `main`.
-3. **Always create and check out a new working branch from the current `main` before making any audit, ledger, test, repository-memory, or production-code changes.** Use a descriptive `bug-audit/...` branch name. Never reuse or overwrite an existing audit branch; if the intended name already exists, choose a new unique name.
-4. **Read and follow `.agents/skills/repo-learning/SKILL.md`. Repository learning is mandatory for this entire workflow, not an optional companion task.** Load the durable repository memory and focused documentation it requires before beginning the audit.
-5. Create or locate `BUG_LEDGER.md` at the repository root. Use that single file for all current findings.
-6. Reconcile the existing ledger against the working tree before beginning:
-   - remove entries that repository evidence shows are already fixed, invalid, obsolete, or unreachable;
-   - retain every still-valid unresolved defect;
-   - ensure retained entries follow the ledger format below.
+1. Read and follow `AGENTS.md` in full.
+2. Fetch the latest `main` and create a new unique `bug-audit/...` branch before changing code, tests, ledgers, or repository memory. Never reuse an old audit branch unless the user explicitly requests it.
+3. Invoke `.agents/skills/repo-learning/SKILL.md` for the entire workflow. Its impact analysis, test classification, regression protection, and knowledge-reconciliation rules are mandatory.
+4. Read `docs/engineering/VALIDATION_POLICY.md`, relevant invariants/system memory, and `docs/engineering/REGRESSIONS.md` before judging behavior/tests.
+5. Reconcile `BUG_LEDGER.md` against the current tree. Remove invalid/already-fixed/obsolete entries; retain every current validated defect.
 
-## Repository Learning Requirement
+## Execution restriction
 
-Use the `repo-learning` skill continuously during every finding pass, repair phase, and post-fix review.
+This skill is static unless the user separately requests runtime validation.
 
-- Use maintained repository memory to reduce redundant reading and to identify known architecture, contracts, pitfalls, and high-value code paths.
-- Revalidate memory against current source whenever correctness depends on a detail that may have changed.
-- When the audit or repairs reveal durable reusable knowledge, update the appropriate repository memory according to the `repo-learning` skill.
-- Replace stale knowledge and consolidate duplicates instead of creating chronological audit notes or overlapping memory files.
-- Include repository-learning updates in the same required checkpoint commits as the audit/repair work that produced them.
+- Do not run tests, Unity, builds, simulations, benchmarks, qualification, executables, or GitHub Actions as part of this skill alone.
+- You may and should add/update tests required to protect fixes; review them statically and report that they were not executed.
+- Runtime inability never excuses missing regression coverage or stale-test review.
 
-Do not postpone repository learning until the end of the audit. Learning and memory maintenance are part of the active workflow throughout.
+## Phase 1 — Find and log
 
-## Restrictions
+Perform complete repository passes, not focused scans. Systematically cover major subsystems, entry points, state/lifecycle transitions, persistence/serialization, configuration, assets/serialized contracts, async/concurrency/ordering, boundary/error paths, and cross-system assumptions.
 
-- Do not run tests.
-- You may create, modify, or extend tests when needed to cover a validated bug, its fix, an important regression case, or a clarified contract.
-- Tests added by this skill must be reviewed statically but must not be executed as part of this workflow.
-- Do not run qualification suites, simulations, benchmarks, builds, or executables.
-- Do not trigger, rerun, or rely on GitHub Actions.
-- Do not log speculative defects.
-- Do not log style issues, refactoring opportunities, theoretical risks, or unusual-looking code unless they cause concrete incorrect behavior.
-- Do not stop after finding or fixing a particular number of bugs.
-- Do not treat a partial review as a full pass.
+For each suspected defect:
 
-This workflow relies on static analysis, code tracing, careful review of the resulting fixes, and static review of any tests added for coverage.
+1. trace the reachable execution/data/state path through callers and callees;
+2. check guards/invariants/alternate paths that could make it harmless;
+3. identify concrete conditions producing incorrect behavior;
+4. check relevant tests/fixtures and whether they still exercise the production contract;
+5. log only defects supported by repository evidence, not style concerns or theoretical risk.
 
-## Core Loop
+Continue until **two separate consecutive complete passes find zero new validated defects**. Any new defect resets the clean-pass count.
 
-Repeat the following cycle until the final stop condition is satisfied.
-
-### Phase 1 — Find and Log Bugs
-
-Perform full repository passes looking for validated defects.
-
-A full pass means systematically covering the entire relevant codebase, including major subsystems, entry points, state transitions, data flows, important call chains, boundary behavior, and cross-system assumptions. Do not count a focused subsystem review or continuation of an incomplete pass as a full pass.
-
-For each potential defect:
-
-1. Identify the suspected incorrect behavior.
-2. Trace the execution path through callers, callees, state, configuration, and data transformations.
-3. Check for guards, invariants, alternate paths, or assumptions that make the suspected issue harmless.
-4. Search references and usages to establish reachability where needed.
-5. Determine the concrete conditions under which incorrect behavior occurs.
-6. Log it only when the code itself provides sufficient evidence that the defect is real.
-
-A bug is validated when incorrect behavior can be demonstrated by reasoning from the code path. Runtime reproduction is not required, but suspicion is insufficient.
-
-Continue performing full passes until **two consecutive full passes find zero new validated defects**.
-
-- If a pass finds one or more new bugs, log all of them, finish that full pass, reset the clean-pass count to zero, and begin another full pass.
-- A clean pass counts only if the entire relevant codebase was reviewed and no new validated defects were found anywhere in that pass.
-- The two clean passes must be separate deliberate passes, not one pass described twice.
-
-Only after two consecutive clean full passes may the workflow move to Phase 2.
-
-### Phase 2 — Fix Every Bug in the Ledger
-
-Process every currently valid bug in `BUG_LEDGER.md`.
+## Phase 2 — Fix every valid ledger entry
 
 For each bug:
 
-1. Reconfirm that the defect still exists in the current working tree.
-2. Trace enough surrounding behavior to understand the intended contract and avoid a narrow fix that breaks another path.
-3. Implement the smallest robust correction that resolves the underlying defect.
-4. Determine whether the defect or corrected contract should be covered by a new or updated automated test. Add or modify tests when doing so provides meaningful regression coverage or protects an important behavior that was previously untested.
-5. Statically review the production change, any test changes, callers/callees, and affected state/data flows for regressions, incorrect assumptions, or incomplete handling. Do not execute the tests.
-6. Once repository evidence shows the defect is resolved, remove its ledger entry. If investigation disproves the entry instead, remove it as invalid.
+1. Reconfirm it on the current tree.
+2. Perform the pre-change impact analysis required by `AGENTS.md`/repo-learning.
+3. Identify the enduring requirement and classify affected tests: still valid, update-required, obsolete-and-replaced, or missing.
+4. Implement the smallest robust fix for the underlying cause, not merely the visible symptom.
+5. **For every reproducible regression, add a focused automated test that would have failed before the fix whenever practical.** The older standard of adding tests only “when useful” is superseded by this permanent-protection requirement.
+6. If automation is genuinely impractical, document why and the strongest repeatable manual/system protection in `docs/engineering/REGRESSIONS.md`.
+7. Statically review the production change, test changes, callers/callees, lifecycle/state flow, and neighboring contracts for regressions.
+8. Update durable repository knowledge/invariants when the root cause reveals a reusable rule.
+9. Remove the bug from `BUG_LEDGER.md` only when repository evidence shows it is fixed/disproved and its permanent protection is accounted for.
 
-Do not create tests merely to inflate coverage or mirror implementation details. Prefer focused regression tests that would fail for the validated defect and pass for the intended behavior.
+Do not weaken/delete a failing test to accommodate the fix without first proving the requirement itself intentionally changed and replacing any enduring protection.
 
-Do not leave a validated bug unfixed merely because it is inconvenient, low severity, or outside the subsystem currently being inspected. Phase 2 is complete only when every ledger entry from that cycle has been resolved or disproved.
+If a fix reveals another validated defect, add it to the active ledger.
 
-If fixing one bug reveals another validated defect, add the new defect to the ledger and continue resolving the existing ledger. The next audit cycle will independently re-examine the full codebase.
+## Phase 3 — Re-audit after fixes
 
-### Phase 3 — Repeat
+Production changes invalidate prior clean passes. After resolving the ledger, reset the clean count and repeat complete finding passes over the modified tree. Fixes can expose or introduce reachable defects elsewhere.
 
-After Phase 2, return to Phase 1 and perform fresh full-code audit passes against the modified codebase.
+## Active bug ledger
 
-Fixes and test additions may expose, introduce, or make other defects reachable, so previous clean passes do not carry forward across a repair phase. The clean-pass count always resets to zero after production code changes.
+`BUG_LEDGER.md` is a current work queue, not permanent history.
 
-Repeat Phases 1 and 2 for as many cycles as necessary.
+Use:
 
-## Bug Ledger
+```markdown
+### BUG-001 — Short issue name
+**Location:** file/class/function or relevant lines  
+**Description:** concrete incorrect behavior, code path, and triggering conditions
+```
 
-Maintain one `BUG_LEDGER.md` containing only currently valid unresolved findings.
+Keep IDs stable while active. Remove entries once fixed, disproved, obsolete, or unreachable.
 
-Each bug must use this format:
+Permanent lessons from fixed regressions belong in `docs/engineering/REGRESSIONS.md`, not in the active ledger.
 
-### BUG-001 — Short Issue Name
-**Location:** `path/to/file.ext`, class/function/method or relevant lines  
-**Description:** Concise explanation of the incorrect behavior, the code path that causes it, and the conditions under which it occurs.
+## Required review angles
 
-New findings should use the next unused sequential identifier. Keep identifiers stable while entries remain in the ledger. If the ledger becomes completely empty, a later cycle may restart at `BUG-001`.
+Across passes pay particular attention to:
 
-The ledger is a current work queue, not permanent history. Remove entries once they are fixed, disproved, obsolete, or no longer reachable. Git history preserves prior findings.
+- lifecycle/reset/pooling/cleanup ownership;
+- stale references and duplicated callbacks;
+- async/concurrency/order/cancellation;
+- persistence/serialization/versioning;
+- configuration and serialized asset/name contracts;
+- boundary/index/null/missing-state/error paths;
+- cross-system and caller/callee assumption mismatches;
+- tests/mocks/fixtures that no longer reach production behavior;
+- previously fixed regression classes that lack protection;
+- interactions introduced by fixes from the prior cycle.
 
-Do not duplicate an existing entry. Multiple manifestations of one underlying defect should normally remain one bug entry.
+The second clean pass must challenge the first rather than repeat the same mechanical order.
 
-## Coverage Discipline
+## Final stop condition
 
-Maintain private working notes or a temporary checklist of areas covered during each pass so a pass genuinely progresses through the entire codebase.
+Stop only when all are true:
 
-Pay particular attention to:
+1. `BUG_LEDGER.md` has no valid unresolved entries.
+2. All production fixes from the cycle are complete.
+3. Affected tests were classified; stale/missing coverage was repaired/replaced.
+4. Reproducible fixed regressions have permanent protection where practical and permanent records/invariants are updated when warranted.
+5. Repository memory was reconciled; stale facts discovered during the audit were corrected or marked.
+6. Two consecutive complete post-fix passes found no new validated defects.
+7. Runtime validation not executed because of this skill's static restriction is stated explicitly.
 
-- core execution paths
-- state machines and lifecycle transitions
-- persistence and serialization
-- configuration handling
-- boundary conditions
-- error and recovery paths
-- ownership and cleanup
-- concurrency and ordering assumptions
-- indexing, ranges, counts, and off-by-one behavior
-- null, missing, and invalid state handling
-- cross-system contracts
-- caller/callee assumption mismatches
-- interactions changed by fixes made in the previous cycle
-- gaps in existing tests that would allow a validated defect to regress unnoticed
+Do not claim mathematical bug-freedom; report exactly what the static audit established.
 
-Use different review angles across passes where useful. The second clean pass should challenge the conclusions of the first rather than mechanically repeating the same inspection order.
+## Git checkpoint discipline
 
-## Final Stop Condition
+Commit accumulated audit changes whenever any trigger occurs:
 
-Stop only when all of the following are simultaneously true:
+1. after the 10th newly validated bug since the prior checkpoint;
+2. immediately before finding -> fixing transition;
+3. after the 10th bug fixed/disproved since the prior checkpoint;
+4. immediately before fixing -> finding transition.
 
-1. `BUG_LEDGER.md` contains no unresolved bugs.
-2. No production-code fixes remain to be made from the previous cycle.
-3. Any tests judged necessary for the fixes have been added or updated and statically reviewed.
-4. Two consecutive, complete, deliberate full-code passes over the current post-fix codebase found zero new validated defects.
-
-If either clean pass finds a defect, log it, reset the clean-pass count, complete the audit phase, fix the resulting ledger, and repeat the cycle.
-
-Do not claim the repository is mathematically bug-free. The completion claim is only that repeated static analysis reached an empty ledger and two consecutive clean full-code passes. Tests created by this skill have not been executed unless the user separately requested test execution.
-
-## Git Discipline
-
-Keep all audit records, fixes, tests, and repository-learning changes on the dedicated working branch unless the user explicitly instructs otherwise.
-
-Commit all accumulated audit/repair changes whenever **any** of these triggers occurs:
-
-1. **10 bugs found:** immediately after the 10th newly validated bug since the previous commit is logged in `BUG_LEDGER.md`. Bugs discovered during a repair phase count as findings too.
-2. **Finding → fixing transition:** immediately before leaving Phase 1 for Phase 2, commit all pending finding/ledger/repository-memory changes even if fewer than 10 bugs were found since the previous commit.
-3. **10 bugs fixed:** immediately after the 10th bug since the previous commit is resolved or disproved and its ledger entry is removed. Include the corresponding production, test, ledger, and repository-memory changes in that commit.
-4. **Fixing → finding transition:** immediately before leaving Phase 2 and returning to Phase 1, commit all pending repair/test/ledger/repository-memory changes even if fewer than 10 bugs were fixed since the previous commit.
-
-Treat each commit as a checkpoint: after committing, restart the found/fixed counters from zero. Do not create an empty commit when a transition occurs with no uncommitted changes. If multiple triggers coincide, one checkpoint commit satisfies all triggers that occurred at that point.
-
-Keep commits coherent and limited to the audit/repair work and repository memory required by it. Do not postpone a required checkpoint merely to finish a pass, subsystem, or additional bug.
-
-Never merge the working branch into `main` as part of this skill unless the user explicitly requests the merge.
+Include ledger, production, test, permanent-regression, and repository-learning changes produced by that work. Reset found/fixed counters after each checkpoint. Do not create empty commits. Never merge into `main` unless the user explicitly requests it.
