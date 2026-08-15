@@ -77,6 +77,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CommanderNamePromptRepairsConfirmButtonAndSubmitBinding()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "CommanderNamePromptGuard.cs"));
+
+            Assert.That(source, Does.Contain("button.enabled = true;"),
+                "A disabled Button component can remain visually normal while ignoring pointer input.");
+            Assert.That(source, Does.Contain("button.interactable = true;"));
+            Assert.That(source, Does.Contain("buttonGraphic.enabled = true;"));
+            Assert.That(source, Does.Contain("buttonGraphic.raycastTarget = true;"),
+                "The confirm graphic must participate in UI raycasting.");
+            Assert.That(source, Does.Contain("HasPersistentSubmitListener(button, mainMenu)"),
+                "A valid serialized SubmitName callback should not be duplicated.");
+            Assert.That(source, Does.Contain("button.onClick.AddListener(mainMenu.SubmitName);"),
+                "Legacy prompt instances with a stale persistent target need a runtime SubmitName fallback.");
+        }
+
+        [Test]
         public void CommanderNameSubmitPersistsTheTypedPlayerName()
         {
             string mainMenu = File.ReadAllText(Path.Combine(
