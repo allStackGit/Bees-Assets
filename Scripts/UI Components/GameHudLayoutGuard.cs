@@ -38,6 +38,7 @@ namespace Assets.Scripts.UI_Components
         private int _normalizedSquadTabCount = -1;
         private int _lastSquadTabLeftPadding = -1;
         private int _lastSquadTabTopPadding = -1;
+        private int _lastSquadTabColumns = -1;
         private float _nextDynamicButtonScan;
 
         // A GameHudLayoutGuard is also attached to every root screen-space Canvas at runtime. These
@@ -239,6 +240,7 @@ namespace Assets.Scripts.UI_Components
             _normalizedSquadTabCount = -1;
             _lastSquadTabLeftPadding = -1;
             _lastSquadTabTopPadding = -1;
+            _lastSquadTabColumns = -1;
             _squadTabsRoot = null;
             ApplyLayout();
         }
@@ -301,6 +303,7 @@ namespace Assets.Scripts.UI_Components
                 _normalizedSquadTabCount = -1;
                 _lastSquadTabLeftPadding = -1;
                 _lastSquadTabTopPadding = -1;
+                _lastSquadTabColumns = -1;
             }
 
             if (_responsiveCanvas != null &&
@@ -341,25 +344,30 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            if (_squadTabsRoot == null)
+            RectTransform firstTabRect = null;
+            for (int i = 0; i < tabCount; i++)
             {
-                RectTransform firstTabRect = null;
-                for (int i = 0; i < tabCount; i++)
+                SquadTab tab = _menus.Stage.SquadTabs[i];
+                if (tab == null || tab.Tab == null)
                 {
-                    SquadTab tab = _menus.Stage.SquadTabs[i];
-                    if (tab == null || tab.Tab == null)
-                    {
-                        continue;
-                    }
-
-                    firstTabRect = tab.Tab.GetComponent<RectTransform>();
-                    if (firstTabRect != null)
-                    {
-                        break;
-                    }
+                    continue;
                 }
 
-                _squadTabsRoot = firstTabRect != null ? firstTabRect.parent as RectTransform : null;
+                firstTabRect = tab.Tab.GetComponent<RectTransform>();
+                if (firstTabRect != null)
+                {
+                    break;
+                }
+            }
+
+            if (firstTabRect == null)
+            {
+                return;
+            }
+
+            if (_squadTabsRoot == null)
+            {
+                _squadTabsRoot = firstTabRect.parent as RectTransform;
             }
 
             RectTransform tabsRoot = _squadTabsRoot;
@@ -371,10 +379,17 @@ namespace Assets.Scripts.UI_Components
             RectTransform canvasRect = GetRootCanvasRect(tabsRoot);
             bool rootChanged = StretchToRootCanvas(tabsRoot, canvasRect);
 
-            HorizontalLayoutGroup layout = tabsRoot.GetComponent<HorizontalLayoutGroup>();
+            HorizontalLayoutGroup horizontalLayout = tabsRoot.GetComponent<HorizontalLayoutGroup>();
+            if (horizontalLayout != null && horizontalLayout.enabled)
+            {
+                horizontalLayout.enabled = false;
+                rootChanged = true;
+            }
+
+            GridLayoutGroup layout = tabsRoot.GetComponent<GridLayoutGroup>();
             if (layout == null)
             {
-                layout = tabsRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+                layout = tabsRoot.gameObject.AddComponent<GridLayoutGroup>();
                 rootChanged = true;
             }
 
@@ -385,31 +400,51 @@ namespace Assets.Scripts.UI_Components
                 HudEdgeMargin);
             int topPadding = Mathf.CeilToInt(HudEdgeMargin);
 
+            RectTransform missionStatusRect = _menus.MissionStatus != null
+                ? _menus.MissionStatus.GetComponent<RectTransform>()
+                : null;
+            float rightBoundary = GetSquadTabRightBoundary(
+                tabsRoot,
+                missionStatusRect,
+                SquadTabGap);
+            Vector2 cellSize = firstTabRect.rect.size;
+            cellSize.x = Mathf.Max(1f, Mathf.Abs(cellSize.x));
+            cellSize.y = Mathf.Max(1f, Mathf.Abs(cellSize.y));
+            float availableWidth = Mathf.Max(cellSize.x, rightBoundary - leftPadding);
+            int columns = CalculateSquadTabColumns(
+                tabCount,
+                availableWidth,
+                cellSize.x,
+                SquadTabGap);
+
             bool geometryChanged = force || rootChanged ||
                                    tabCount != _normalizedSquadTabCount ||
                                    leftPadding != _lastSquadTabLeftPadding ||
-                                   topPadding != _lastSquadTabTopPadding;
+                                   topPadding != _lastSquadTabTopPadding ||
+                                   columns != _lastSquadTabColumns;
             if (!geometryChanged)
             {
                 return;
             }
 
-            // The authored Space scene reserved 200 px for the scoreboard before the squad tabs.
-            // Preserve that semantic relationship using live geometry rather than a fixed inset so
-            // the row stays immediately to the scoreboard's right at every aspect ratio. When the
-            // scoreboard is hidden, the row begins at the live canvas edge.
+            // The first row starts immediately to the right of the scoreboard when it is visible.
+            // A visible mission-objective panel forms the row's right boundary. Grid columns are
+            // chosen from that live width, so up to ten squad tabs remain on one row when they fit
+            // and automatically wrap onto additional rows only when the available width requires it.
             layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);
-            layout.spacing = SquadTabGap;
+            layout.cellSize = cellSize;
+            layout.spacing = new Vector2(SquadTabGap, SquadTabGap);
+            layout.startCorner = GridLayoutGroup.Corner.UpperLeft;
+            layout.startAxis = GridLayoutGroup.Axis.Horizontal;
             layout.childAlignment = TextAnchor.UpperLeft;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = false;
-            layout.childControlHeight = false;
+            layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            layout.constraintCount = columns;
             LayoutRebuilder.ForceRebuildLayoutImmediate(tabsRoot);
 
             _normalizedSquadTabCount = tabCount;
             _lastSquadTabLeftPadding = leftPadding;
             _lastSquadTabTopPadding = topPadding;
+            _lastSquadTabColumns = columns;
         }
 
         internal static int GetSquadTabLeftPadding(
@@ -436,6 +471,54 @@ namespace Assets.Scripts.UI_Components
             }
 
             return Mathf.CeilToInt(Mathf.Max(fallback, fromRootLeft));
+        }
+
+        internal static float GetSquadTabRightBoundary(
+            RectTransform tabsRoot,
+            RectTransform missionStatus,
+            float gap)
+        {
+            if (tabsRoot == null)
+            {
+                return 0f;
+            }
+
+            float fallback = Mathf.Max(0f, tabsRoot.rect.width);
+            if (missionStatus == null || !missionStatus.gameObject.activeInHierarchy)
+            {
+                return fallback;
+            }
+
+            Vector3 missionLeftWorld = missionStatus.TransformPoint(new Vector3(
+                missionStatus.rect.xMin,
+                missionStatus.rect.center.y,
+                0f));
+            float missionLeftInTabs = tabsRoot.InverseTransformPoint(missionLeftWorld).x;
+            float fromRootLeft = missionLeftInTabs - tabsRoot.rect.xMin - Mathf.Max(0f, gap);
+            if (float.IsNaN(fromRootLeft) || float.IsInfinity(fromRootLeft))
+            {
+                return fallback;
+            }
+
+            return Mathf.Clamp(fromRootLeft, 0f, fallback);
+        }
+
+        internal static int CalculateSquadTabColumns(
+            int tabCount,
+            float availableWidth,
+            float cellWidth,
+            float spacing)
+        {
+            if (tabCount <= 0)
+            {
+                return 0;
+            }
+
+            float safeCellWidth = Mathf.Max(1f, Mathf.Abs(cellWidth));
+            float safeSpacing = Mathf.Max(0f, spacing);
+            float step = safeCellWidth + safeSpacing;
+            int columns = Mathf.FloorToInt((Mathf.Max(0f, availableWidth) + safeSpacing) / step);
+            return Mathf.Clamp(columns, 1, tabCount);
         }
 
         internal static bool StretchToRootCanvas(RectTransform rect, RectTransform canvasRect)
@@ -488,6 +571,7 @@ namespace Assets.Scripts.UI_Components
 
         private void ApplyLayout()
         {
+            HideEmptyMissionStatus();
             KeepScoreboardWithinCanvas();
             ApplyClockAndSpeedLayout();
             KeepNormalSpeedButtonWithinCanvas();
@@ -495,6 +579,21 @@ namespace Assets.Scripts.UI_Components
             NormalizeSquadTabs(false);
             KeepActionBoxWithinCanvas();
             KeepMiniMapWithinCanvas();
+        }
+
+        private void HideEmptyMissionStatus()
+        {
+            if (_menus.MissionStatus == null || !_menus.MissionStatus.activeSelf ||
+                _menus.MissionStatusText == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_menus.MissionStatusText.text))
+            {
+                _menus.MissionStatus.SetActive(false);
+                _lastSquadTabColumns = -1;
+            }
         }
 
         private void KeepScoreboardWithinCanvas()
