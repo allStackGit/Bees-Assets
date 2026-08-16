@@ -14,6 +14,7 @@ namespace Bees.Tests.EditMode
         private static readonly string[] RequiredFiles =
         {
             "AGENTS.md",
+            "CLAUDE.md",
             "PROJECT_CONSTITUTION.md",
             "docs/DEVELOPMENT_MEMORY.md",
             "docs/TESTING.md",
@@ -63,6 +64,7 @@ namespace Bees.Tests.EditMode
         public void SelfLearningWorkflowRemainsWired()
         {
             string agents = File.ReadAllText(RepoPath("AGENTS.md"));
+            string claude = File.ReadAllText(RepoPath("CLAUDE.md"));
             string repoLearning = File.ReadAllText(RepoPath(".agents/skills/repo-learning/SKILL.md"));
             string[] requiredLinks =
             {
@@ -77,6 +79,8 @@ namespace Bees.Tests.EditMode
                 StringAssert.Contains(link, agents, "AGENTS.md no longer requires " + link);
                 StringAssert.Contains(link, repoLearning, "repo-learning no longer wires " + link);
             }
+            StringAssert.Contains("docs/engineering/CONTEXT_INDEX.md", claude,
+                "CLAUDE.md no longer routes through the compact context index.");
 
             string learning = File.ReadAllText(RepoPath(".agents/skills/continuous-learning/SKILL.md"));
             foreach (string disposition in new[] { "promote", "refresh", "defer", "reject" })
