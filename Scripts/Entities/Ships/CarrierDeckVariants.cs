@@ -23,21 +23,22 @@ namespace Assets.Scripts.Entities.Ships
         // matching weight, while saturation/value separate neighboring variants with similar hues.
         private static readonly Color32[] MatchColors =
         {
-            new Color32(195, 98, 107, 255),   // red planet
-            new Color32(193, 111, 56, 255),   // orange
-            new Color32(220, 213, 74, 255),   // yellow
-            new Color32(147, 204, 93, 255),   // lime
-            new Color32(68, 137, 108, 255),   // teal green
-            new Color32(79, 180, 79, 255),    // green
-            new Color32(98, 180, 197, 255),   // cyan
-            new Color32(95, 108, 195, 255),   // blue
-            new Color32(155, 124, 171, 255),  // purple
-            new Color32(214, 135, 189, 255),  // pink
-            new Color32(152, 104, 104, 255),  // brown-red
-            new Color32(184, 196, 221, 255),  // pale blue/gray
-            new Color32(105, 168, 63, 255),   // yellow-green
+            new Color32(195, 98, 107, 255),
+            new Color32(193, 111, 56, 255),
+            new Color32(220, 213, 74, 255),
+            new Color32(147, 204, 93, 255),
+            new Color32(68, 137, 108, 255),
+            new Color32(79, 180, 79, 255),
+            new Color32(98, 180, 197, 255),
+            new Color32(95, 108, 195, 255),
+            new Color32(155, 124, 171, 255),
+            new Color32(214, 135, 189, 255),
+            new Color32(152, 104, 104, 255),
+            new Color32(184, 196, 221, 255),
+            new Color32(105, 168, 63, 255),
         };
 
+        private static Texture2D _texture;
         private static Sprite[] _sprites;
         private static bool _loadAttempted;
 
@@ -55,8 +56,6 @@ namespace Assets.Scripts.Entities.Ships
                 float distance;
                 if (anchorSaturation < 0.2f)
                 {
-                    // Hue is unstable for near-neutral colors. Keep the neutral deck's range small
-                    // and based on saturation/value only.
                     float saturationDistance = Mathf.Abs(saturation - anchorSaturation);
                     float valueDistance = Mathf.Abs(value - anchorValue);
                     distance = Mathf.Sqrt(
@@ -128,19 +127,34 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             _loadAttempted = true;
-            Texture2D texture = Resources.Load<Texture2D>(ResourcePath);
-            if (texture == null)
+            TextAsset source = Resources.Load<TextAsset>(ResourcePath);
+            if (source == null)
             {
-                Debug.LogError($"Carrier deck sprite sheet was not found at Resources/{ResourcePath}.");
+                Debug.LogError($"Carrier deck sprite sheet was not found at Resources/{ResourcePath}.bytes.");
+                return;
+            }
+
+            _texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                name = "carrier_alts_deck",
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            if (!ImageConversion.LoadImage(_texture, source.bytes, false))
+            {
+                Debug.LogError("Carrier deck sprite sheet could not be decoded as PNG data.");
+                Object.Destroy(_texture);
+                _texture = null;
                 return;
             }
 
             int requiredWidth = Columns * SpriteWidth;
             int requiredHeight = Rows * SpriteHeight;
-            if (texture.width != requiredWidth || texture.height != requiredHeight)
+            if (_texture.width != requiredWidth || _texture.height != requiredHeight)
             {
                 Debug.LogError(
-                    $"Carrier deck sprite sheet must be {requiredWidth}x{requiredHeight}, but was {texture.width}x{texture.height}.");
+                    $"Carrier deck sprite sheet must be {requiredWidth}x{requiredHeight}, but was {_texture.width}x{_texture.height}.");
+                Object.Destroy(_texture);
+                _texture = null;
                 return;
             }
 
@@ -148,7 +162,7 @@ namespace Assets.Scripts.Entities.Ships
             for (int i = 0; i < DeckCount; i++)
             {
                 _sprites[i] = Sprite.Create(
-                    texture,
+                    _texture,
                     GetSpriteRect(i),
                     new Vector2(0.5f, 0.5f),
                     PixelsPerUnit,
