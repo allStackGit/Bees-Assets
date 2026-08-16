@@ -11,6 +11,10 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
+    private const float DialoguePresentationScale = 1.25f;
+    private const float MinimumDialogueFontSize = 14f;
+    private const float MinimumSpeakerFontSize = 16f;
+
     public CutsceneManager CutsceneManager;
     public GameObject DialogueBox;
     public TMP_Text DialogueText;
@@ -27,12 +31,63 @@ public class DialogueManager : MonoBehaviour
     private bool _isLastDialogue;
     private bool _isAdvancingDialogue;
     private bool _playIntercomWhenPresented;
+    private bool _presentationConfigured;
     private static bool _disabledLegacyCampaignDialogueGuard;
 
 
     public void Setup(CutsceneManager cutsceneManager)
     {
         CutsceneManager = cutsceneManager;
+        ConfigurePresentation();
+    }
+
+    private void ConfigurePresentation()
+    {
+        if (_presentationConfigured)
+        {
+            return;
+        }
+        _presentationConfigured = true;
+
+        if (DialogueText != null)
+        {
+            DialogueText.richText = true;
+            DialogueText.fontSize = Mathf.Max(DialogueText.fontSize, MinimumDialogueFontSize);
+        }
+
+        if (SpeakerName != null)
+        {
+            SpeakerName.richText = true;
+            SpeakerName.fontSize = Mathf.Max(SpeakerName.fontSize, MinimumSpeakerFontSize);
+        }
+
+        RectTransform dialogueRect = DialogueBox != null
+            ? DialogueBox.GetComponent<RectTransform>()
+            : null;
+        if (dialogueRect == null)
+        {
+            return;
+        }
+
+        Vector3 oldScale = dialogueRect.localScale;
+        Vector3 newScale = new Vector3(
+            oldScale.x * DialoguePresentationScale,
+            oldScale.y * DialoguePresentationScale,
+            oldScale.z);
+
+        // The authored dialogue is right-anchored. Preserve its visible right edge while making
+        // the whole panel, portrait, prompt and text proportionally larger so the expanded box
+        // does not simply grow off-screen.
+        if (Mathf.Abs(dialogueRect.anchorMin.x - 1f) < 0.001f &&
+            Mathf.Abs(dialogueRect.anchorMax.x - 1f) < 0.001f)
+        {
+            float visualWidthIncrease = dialogueRect.rect.width * (newScale.x - oldScale.x);
+            Vector2 position = dialogueRect.anchoredPosition;
+            position.x -= visualWidthIncrease * (1f - dialogueRect.pivot.x);
+            dialogueRect.anchoredPosition = position;
+        }
+
+        dialogueRect.localScale = newScale;
     }
 
     public void Update()
@@ -46,6 +101,8 @@ public class DialogueManager : MonoBehaviour
 
     public void StartDialogue(List<DialogueLine> lines, bool isLastDialogue)
     {
+        ConfigurePresentation();
+
         // CutsceneManager.Setup rebuilds the campaign dialogue lists whenever a mission registers
         // its ending callback. Apply the current Mission Scripting wording at the presentation
         // boundary so even dialogue started synchronously during level construction (notably
@@ -178,13 +235,43 @@ public class DialogueManager : MonoBehaviour
         PortraitImage.sprite = sprite;
     }
 
+    internal static string FormatLineText(DialogueLine line)
+    {
+        if (line == null || string.IsNullOrEmpty(line.Text))
+        {
+            return string.Empty;
+        }
+
+        // Action/stage-direction lines are italicized in Mission Scripting. Do not add literal
+        // asterisks around them: TMP rich text should own the visual formatting.
+        return line.Type == DialogueLine.DialogueType.Action
+            ? $"<i>{line.Text}</i>"
+            : line.Text;
+    }
+
+    internal static string FormatInstructionText(string instructionText)
+    {
+        if (string.IsNullOrEmpty(instructionText))
+        {
+            return string.Empty;
+        }
+
+        // Player-facing instruction blocks are the emphasized > blocks in Mission Scripting.
+        return $"<b><i>{instructionText}</i></b>";
+    }
+
     IEnumerator TypeLine(DialogueLine line)
     {
         SpacebarImage.sprite = UnpressedSpacebar;
-        DialogueText.text = "";
-        int characterIndex = 0;
         bool aOrB = false;
         ToggleContinuePrompt(false);
+
+        string formattedLine = FormatLineText(line);
+        DialogueText.richText = true;
+        DialogueText.text = formattedLine;
+        DialogueText.maxVisibleCharacters = 0;
+        DialogueText.ForceMeshUpdate();
+        int visibleCharacterCount = DialogueText.textInfo.characterCount;
 
         if (_playIntercomWhenPresented)
         {
@@ -199,18 +286,11 @@ public class DialogueManager : MonoBehaviour
             }
         }
 
-        foreach (char c in line.Text)
+        for (int characterIndex = 0; characterIndex < visibleCharacterCount; characterIndex++)
         {
             if (Input.GetKey(KeyCode.Space))
             {
-                if (line.Type == DialogueLine.DialogueType.Action)
-                {
-                    DialogueText.text = $"*<i>{line.Text}</i>*";
-                }
-                else
-                {
-                    DialogueText.text = line.Text;
-                }
+                DialogueText.maxVisibleCharacters = int.MaxValue;
                 line.IsSkipped = true;
                 SetPortrait(line.PortraitA);
                 yield return new WaitForSeconds(0.5f);
@@ -218,29 +298,13 @@ public class DialogueManager : MonoBehaviour
                 break;
             }
 
-            if (line.Type == DialogueLine.DialogueType.Action)
-            {
-                if (characterIndex == 0)
-                {
-                    DialogueText.text += "*<i>";
-                }
-            }
-
-            DialogueText.text += c;
-
-            if (line.Type == DialogueLine.DialogueType.Action)
-            {
-                if (characterIndex == line.Text.Length - 1)
-                {
-                    DialogueText.text += "</i>*";
-                }
-            }
-            characterIndex++;
-            if (characterIndex == line.Text.Length || line.Type != DialogueLine.DialogueType.Speaking)
+            DialogueText.maxVisibleCharacters = characterIndex + 1;
+            if (characterIndex == visibleCharacterCount - 1 ||
+                line.Type != DialogueLine.DialogueType.Speaking)
             {
                 SetPortrait(line.PortraitA);
             }
-            else if (characterIndex % 6 == 0)
+            else if ((characterIndex + 1) % 6 == 0)
             {
                 if (aOrB)
                 {
@@ -255,12 +319,15 @@ public class DialogueManager : MonoBehaviour
 
             yield return new WaitForSeconds(0.02f);
         }
+
+        DialogueText.maxVisibleCharacters = int.MaxValue;
         line.IsOver = true;
 
         if (line.HasInstructionText)
         {
             yield return new WaitForSeconds(0.5f);
-            DialogueText.text += $"<br><br>{line.InstructionText}";
+            DialogueText.text = $"{formattedLine}<br><br>{FormatInstructionText(line.InstructionText)}";
+            DialogueText.maxVisibleCharacters = int.MaxValue;
         }
 
         if (line.Type == DialogueLine.DialogueType.Pause)
