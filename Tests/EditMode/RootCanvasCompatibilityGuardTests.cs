@@ -38,6 +38,63 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void InsetFullStretchPanelIsNotClassifiedAsViewport()
+        {
+            RectTransform parent = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform panel = CreateRect("MainPanel", parent, new Vector2(1000f, 800f));
+            panel.anchorMin = Vector2.zero;
+            panel.anchorMax = Vector2.one;
+            panel.offsetMin = new Vector2(300f, 50f);
+            panel.offsetMax = new Vector2(-300f, -50f);
+            panel.gameObject.AddComponent<VerticalLayoutGroup>();
+
+            try
+            {
+                bool representsViewport = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "RectRepresentsViewport",
+                    panel,
+                    parent,
+                    new Vector2(1366f, 768f));
+
+                Assert.That(representsViewport, Is.False,
+                    "A deliberately inset full-stretch menu panel must retain its authored border spacing instead of being expanded to its parent.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(parent.gameObject);
+            }
+        }
+
+        [Test]
+        public void FullStretchOwnerOnSmallerCanvasStillRepresentsViewport()
+        {
+            RectTransform parent = CreateRect("Canvas", null, new Vector2(1024f, 768f));
+            RectTransform owner = CreateRect("Screen Layout", parent, new Vector2(1024f, 768f));
+            owner.anchorMin = Vector2.zero;
+            owner.anchorMax = Vector2.one;
+            owner.offsetMin = Vector2.zero;
+            owner.offsetMax = Vector2.zero;
+
+            try
+            {
+                bool representsViewport = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "RectRepresentsViewport",
+                    owner,
+                    parent,
+                    new Vector2(1366f, 768f));
+
+                Assert.That(representsViewport, Is.True,
+                    "A true full-parent viewport must remain eligible for recursive responsive repair even when the live canvas is narrower than the reference resolution.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(parent.gameObject);
+            }
+        }
+
+        [Test]
         public void LayoutGroupOwnedChildIsNotReanchoredByCompatibilityPass()
         {
             RectTransform parent = CreateRect("Layout Parent", null, new Vector2(1600f, 900f));
@@ -231,6 +288,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("parent.GetComponent<LayoutGroup>() == null", source);
             StringAssert.Contains("child.GetComponentInChildren<Selectable>(true)", source);
             StringAssert.Contains("FitDominantVerticalLayoutChild(child);", source);
+            StringAssert.Contains("RectRepresentsViewport(child, parent, referenceResolution)", source);
+            StringAssert.Contains("ParentViewportCoverageThreshold = 0.99f", source);
             StringAssert.Contains("NavigationControlMargin = 15f", source);
             StringAssert.Contains("RequiresNavigationMargin(child)", source);
             StringAssert.DoesNotContain("FindNamedRectTransform(_canvasRect, \"Squad Tabs\"", source,
