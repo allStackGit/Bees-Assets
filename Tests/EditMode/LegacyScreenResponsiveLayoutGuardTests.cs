@@ -11,11 +11,11 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName = "Assets.Scripts.UI_Components.LegacyScreenResponsiveLayoutGuard";
 
         [Test]
-        public void MainMenuInteractiveBranchExpandsWithoutStretchingBackgroundSibling()
+        public void MainMenuInteractiveBranchExpandsWhilePreservingAuthoredInsets()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
             RectTransform background = CreateRect("Starfield", canvas, new Vector2(2000f, 900f));
-            RectTransform menuRoot = CreateRect("Menu Frame", canvas, new Vector2(1000f, 800f));
+            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
             Vector2 backgroundSize = background.sizeDelta;
 
             for (int i = 0; i < 4; i++)
@@ -33,11 +33,12 @@ namespace Bees.Tests.EditMode
                     canvas);
 
                 Assert.That(changed, Is.True,
-                    "The menu control branch should absorb wide/tall surplus instead of retaining a letterboxed legacy frame.");
+                    "The menu control branch should absorb wide/tall surplus instead of retaining a fixed reference-sized frame.");
                 AssertVector(menuRoot.anchorMin, Vector2.zero);
                 AssertVector(menuRoot.anchorMax, Vector2.one);
-                AssertVector(menuRoot.offsetMin, Vector2.zero);
-                AssertVector(menuRoot.offsetMax, Vector2.zero);
+                AssertVector(menuRoot.offsetMin, new Vector2(0f, 50f),
+                    "The reference scene intentionally leaves 50 units above and below the 1366x668 MainPanel.");
+                AssertVector(menuRoot.offsetMax, new Vector2(0f, -50f));
                 AssertVector(background.sizeDelta, backgroundSize,
                     "The starfield/background sibling is not owned by the menu frame repair.");
             }
