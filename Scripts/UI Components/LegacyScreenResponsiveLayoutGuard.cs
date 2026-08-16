@@ -19,6 +19,9 @@ namespace Assets.Scripts.UI_Components
         private const float StructuralHeightCoverage = 0.20f;
         private const float MainMenuRootMinimumCoverage = 0.45f;
         private const float MainMenuReferenceCoverage = 0.75f;
+        private const float RelaxedHorizontalMinimumCoverage = 0.20f;
+        private const float RelaxedHorizontalDominanceRatio = 1.5f;
+        private const float FixedAnchorTolerance = 0.001f;
         private const int MinimumMainMenuControls = 4;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
@@ -235,6 +238,7 @@ namespace Assets.Scripts.UI_Components
                 LayoutRebuilder.ForceRebuildLayoutImmediate(current);
                 changed |= RootCanvasCompatibilityGuard.FitDominantVerticalLayoutChild(current);
                 changed |= RootCanvasCompatibilityGuard.FitDominantHorizontalLayoutChild(current);
+                changed |= FitDominantStructuralHorizontalChild(current);
                 changed |= RootCanvasCompatibilityGuard.FitLayoutCrossAxisChildren(current);
                 if (changed)
                 {
@@ -262,6 +266,93 @@ namespace Assets.Scripts.UI_Components
             return changed;
         }
 
+        /// <summary>
+        /// The Squad Maker's ultrawide root row contains several fixed-width side regions, so its
+        /// main work region can be clearly dominant without occupying half of the expanded canvas.
+        /// Allow that uniquely dominant region to absorb positive surplus while never shrinking
+        /// siblings or treating equal-width control rows as flexible screen structure.
+        /// </summary>
+        internal static bool FitDominantStructuralHorizontalChild(RectTransform layoutRoot)
+        {
+            if (layoutRoot == null)
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null || layout.childControlWidth)
+            {
+                return false;
+            }
+
+            RectTransform dominantChild = null;
+            float dominantWidth = -1f;
+            float secondWidth = -1f;
+            float totalChildWidth = 0f;
+            int participatingChildren = 0;
+
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (!CanParticipateInManualLayoutSizing(child) ||
+                    Mathf.Abs(child.anchorMax.x - child.anchorMin.x) > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float width = Mathf.Abs(child.rect.width * child.localScale.x);
+                if (width <= 0f)
+                {
+                    continue;
+                }
+
+                participatingChildren++;
+                totalChildWidth += width;
+                if (width > dominantWidth)
+                {
+                    secondWidth = dominantWidth;
+                    dominantWidth = width;
+                    dominantChild = child;
+                }
+                else if (width > secondWidth)
+                {
+                    secondWidth = width;
+                }
+            }
+
+            if (dominantChild == null || participatingChildren < 2)
+            {
+                return false;
+            }
+
+            float availableWidth = layoutRoot.rect.width - layout.padding.left - layout.padding.right;
+            if (availableWidth <= 0f ||
+                dominantWidth < availableWidth * RelaxedHorizontalMinimumCoverage ||
+                (secondWidth > 0f && dominantWidth < secondWidth * RelaxedHorizontalDominanceRatio))
+            {
+                return false;
+            }
+
+            float spacingWidth = layout.spacing * (participatingChildren - 1);
+            float fixedOtherWidth = totalChildWidth - dominantWidth;
+            float targetScaledWidth = availableWidth - spacingWidth - fixedOtherWidth;
+            if (targetScaledWidth <= dominantWidth + 0.01f)
+            {
+                return false;
+            }
+
+            float dominantScale = Mathf.Abs(dominantChild.localScale.x);
+            if (dominantScale <= 0.0001f)
+            {
+                return false;
+            }
+
+            dominantChild.SetSizeWithCurrentAnchors(
+                RectTransform.Axis.Horizontal,
+                targetScaledWidth / dominantScale);
+            return true;
+        }
+
         internal static bool IsStructuralLayout(RectTransform canvasRect, RectTransform layoutRoot)
         {
             if (canvasRect == null || layoutRoot == null || layoutRoot.GetComponent<LayoutGroup>() == null)
@@ -278,6 +369,17 @@ namespace Assets.Scripts.UI_Components
             Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
             return bounds.size.x >= canvasSize.x * StructuralWidthCoverage &&
                    bounds.size.y >= canvasSize.y * StructuralHeightCoverage;
+        }
+
+        private static bool CanParticipateInManualLayoutSizing(RectTransform child)
+        {
+            if (child == null || !child.gameObject.activeSelf)
+            {
+                return false;
+            }
+
+            LayoutElement layoutElement = child.GetComponent<LayoutElement>();
+            return layoutElement == null || !layoutElement.ignoreLayout;
         }
     }
 }
