@@ -70,7 +70,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SquadTabsUseLiveScoreboardGeometryInsteadOfScreenCornerGuessing()
+        public void SquadTabsUseLiveScoreboardAndMissionGeometry()
         {
             string source = ReadGuardSource();
 
@@ -79,17 +79,19 @@ namespace Bees.Tests.EditMode
                 "The gameplay guard must not trust a stale/wrong serialized scoreboard reference when resolving the visible HUD.");
             Assert.That(source, Does.Contain("FindObjectsByType<RectTransform>"),
                 "The scoreboard can live under a different root UI branch from GameMenus, so fallback discovery must cover the active scene.");
-            Assert.That(source, Does.Contain("_scoreboardRect"));
             Assert.That(source, Does.Contain("StretchToRootCanvas(tabsRoot, canvasRect)"),
                 "The legacy 1366x768 Squad Tabs container must become the live root-canvas rectangle before its layout is calculated.");
             Assert.That(source, Does.Contain("GetSquadTabLeftPadding("));
+            Assert.That(source, Does.Contain("GetSquadTabRightBoundary("));
+            Assert.That(source, Does.Contain("CalculateSquadTabColumns("));
+            Assert.That(source, Does.Contain("GetSquadTabPosition("));
+            Assert.That(source, Does.Contain("horizontalLayout.enabled = false;"),
+                "The legacy one-row HorizontalLayoutGroup must stop fighting the responsive wrapped layout.");
+            Assert.That(source, Does.Contain("tabRect.anchorMin = new Vector2(0f, 1f);"));
             Assert.That(source, Does.Contain("scoreboard.TransformPoint("));
-            Assert.That(source, Does.Contain("tabsRoot.InverseTransformPoint(scoreboardRightWorld).x"),
-                "Sibling scoreboard and Squad Tabs geometry must be converted through world space before calculating the row start.");
-            Assert.That(source, Does.Contain("layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);"));
-            Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
-            Assert.That(source, Does.Not.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
-                "Blindly zeroing the scoreboard reservation would put the squad row over the scoreboard.");
+            Assert.That(source, Does.Contain("missionStatus.TransformPoint("));
+            Assert.That(source, Does.Not.Contain("AddComponent<GridLayoutGroup>()"),
+                "Do not add a competing LayoutGroup beside the serialized HorizontalLayoutGroup.");
         }
 
         [Test]
@@ -170,6 +172,85 @@ namespace Bees.Tests.EditMode
             {
                 UnityEngine.Object.DestroyImmediate(canvas.gameObject);
             }
+        }
+
+        [Test]
+        public void VisibleMissionPanelSetsSquadTabRightBoundary()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform tabsRoot = CreateRect("Squad Tabs", canvas, new Vector2(1600f, 900f));
+            RectTransform mission = CreateRect("Mission Status", canvas, new Vector2(400f, 60f));
+            mission.anchoredPosition = new Vector2(500f, 420f);
+
+            try
+            {
+                float boundary = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "GetSquadTabRightBoundary",
+                    tabsRoot,
+                    mission,
+                    8f);
+
+                Assert.That(boundary, Is.EqualTo(1092f).Within(0.01f),
+                    "The squad layout should stop eight units before the visible mission panel's left edge.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void TenSquadTabsStayOnOneRowWhenWidthAllows()
+        {
+            int columns = (int)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateSquadTabColumns",
+                10,
+                500f,
+                30f,
+                8f);
+
+            Assert.That(columns, Is.EqualTo(10));
+        }
+
+        [Test]
+        public void TenSquadTabsWrapWhenMissionPanelReducesAvailableWidth()
+        {
+            Type guardType = RuntimeAssembly.GetType(GuardTypeName);
+            int columns = (int)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateSquadTabColumns",
+                10,
+                280f,
+                30f,
+                8f);
+
+            Assert.That(columns, Is.EqualTo(7));
+
+            Vector2 firstSecondRow = (Vector2)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "GetSquadTabPosition",
+                7,
+                columns,
+                208f,
+                0f,
+                new Vector2(30f, 30f),
+                8f);
+
+            Assert.That(firstSecondRow.x, Is.EqualTo(223f).Within(0.01f));
+            Assert.That(firstSecondRow.y, Is.EqualTo(-53f).Within(0.01f),
+                "The eighth tab should wrap directly below the first tab instead of overlapping the mission panel.");
+        }
+
+        [Test]
+        public void EmptyMissionObjectivePanelIsHidden()
+        {
+            string source = ReadGuardSource();
+
+            Assert.That(source, Does.Contain("HideEmptyMissionStatus();"));
+            Assert.That(source, Does.Contain("string.IsNullOrWhiteSpace(_menus.MissionStatusText.text)"));
+            Assert.That(source, Does.Contain("_menus.MissionStatus.SetActive(false);"));
         }
 
         [Test]
