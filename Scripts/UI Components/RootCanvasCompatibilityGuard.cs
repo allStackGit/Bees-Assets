@@ -17,6 +17,7 @@ namespace Assets.Scripts.UI_Components
     {
         private const float RepairInterval = 0.25f;
         private const float ScreenCoverageThreshold = 0.90f;
+        private const float ParentViewportCoverageThreshold = 0.99f;
         private const float FullAnchorThreshold = 0.95f;
         private const float FixedAnchorTolerance = 0.001f;
         private const float NavigationControlMargin = 15f;
@@ -159,15 +160,14 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
+                bool representsViewport = RectRepresentsViewport(child, parent, referenceResolution);
                 if (parentRepresentsViewport && parent.GetComponent<LayoutGroup>() == null)
                 {
                     LayoutGroup layout = child.GetComponent<LayoutGroup>();
                     bool layoutOwner = layout != null;
                     bool screenBacker = IsScreenBacker(child);
-                    bool looksScreenSized = HasFullStretchAnchors(child) ||
-                                            RectCoversReferenceScreen(child, referenceResolution);
 
-                    if ((layoutOwner || screenBacker) && looksScreenSized)
+                    if ((layoutOwner || screenBacker) && representsViewport)
                     {
                         StretchToParent(child);
                         if (layoutOwner)
@@ -179,11 +179,44 @@ namespace Assets.Scripts.UI_Components
                     }
                 }
 
-                if (HasFullStretchAnchors(child) || RectCoversReferenceScreen(child, referenceResolution))
+                if (representsViewport)
                 {
                     RepairViewportOwners(child, referenceResolution, depth + 1);
                 }
             }
+        }
+
+        internal static bool RectRepresentsViewport(
+            RectTransform rect,
+            RectTransform parent,
+            Vector2 referenceResolution)
+        {
+            if (rect == null)
+            {
+                return false;
+            }
+
+            if (RectCoversReferenceScreen(rect, referenceResolution))
+            {
+                return true;
+            }
+
+            if (parent == null || !HasFullStretchAnchors(rect))
+            {
+                return false;
+            }
+
+            Vector2 parentSize = parent.rect.size;
+            if (parentSize.x <= 0f || parentSize.y <= 0f)
+            {
+                return false;
+            }
+
+            Vector2 size = rect.rect.size;
+            float coverageX = Mathf.Abs(size.x * rect.localScale.x) / parentSize.x;
+            float coverageY = Mathf.Abs(size.y * rect.localScale.y) / parentSize.y;
+            return coverageX >= ParentViewportCoverageThreshold &&
+                   coverageY >= ParentViewportCoverageThreshold;
         }
 
         private static bool IsScreenBacker(RectTransform rect)
