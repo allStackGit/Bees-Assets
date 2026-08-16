@@ -15,12 +15,16 @@ namespace Assets.Scripts.Entities.Ships
         public const int SpriteHeight = 112;
 
         private const float PixelsPerUnit = 100f;
-        private const float MatchThreshold = 0.11f;
+        private const float HueRange = 0.035f;
+        private const float SaturationRange = 0.18f;
+        private const float ValueRange = 0.18f;
+        private const float NeutralSaturationRange = 0.10f;
+        private const float NeutralValueRange = 0.12f;
         private const string ResourcePath = "Sprites/carrier_alts_deck";
 
         // Top row left-to-right, then bottom row left-to-right. The fourteenth sheet cell is blank.
-        // These anchors follow the dominant accent of each authored deck. Hue carries most of the
-        // matching weight, while saturation/value separate neighboring variants with similar hues.
+        // The ranges are deliberately bounded in hue, saturation, and value so discovering a deck
+        // does not require an exact color while unrelated colors still keep the normal carrier deck.
         private static readonly Color32[] MatchColors =
         {
             new Color32(195, 98, 107, 255),
@@ -53,28 +57,31 @@ namespace Assets.Scripts.Entities.Ships
                 Color anchor = MatchColors[i];
                 Color.RGBToHSV(anchor, out float anchorHue, out float anchorSaturation, out float anchorValue);
 
+                float saturationDistance = Mathf.Abs(saturation - anchorSaturation);
+                float valueDistance = Mathf.Abs(value - anchorValue);
                 float distance;
+
                 if (anchorSaturation < 0.2f)
                 {
-                    float saturationDistance = Mathf.Abs(saturation - anchorSaturation);
-                    float valueDistance = Mathf.Abs(value - anchorValue);
-                    distance = Mathf.Sqrt(
-                        saturationDistance * saturationDistance +
-                        valueDistance * valueDistance);
+                    if (saturationDistance > NeutralSaturationRange || valueDistance > NeutralValueRange)
+                    {
+                        continue;
+                    }
+                    distance = saturationDistance + valueDistance;
                 }
                 else
                 {
                     float hueDistance = Mathf.Abs(hue - anchorHue);
                     hueDistance = Mathf.Min(hueDistance, 1f - hueDistance);
-                    float saturationDistance = saturation - anchorSaturation;
-                    float valueDistance = value - anchorValue;
-                    distance = Mathf.Sqrt(
-                        Mathf.Pow(hueDistance * 3.2f, 2f) +
-                        Mathf.Pow(saturationDistance * 0.12f, 2f) +
-                        Mathf.Pow(valueDistance * 0.08f, 2f));
+                    if (hueDistance > HueRange || saturationDistance > SaturationRange || valueDistance > ValueRange)
+                    {
+                        continue;
+                    }
+
+                    distance = hueDistance * 3.2f + saturationDistance * 0.15f + valueDistance * 0.1f;
                 }
 
-                if (distance <= MatchThreshold && distance < bestDistance)
+                if (distance < bestDistance)
                 {
                     bestDistance = distance;
                     deckIndex = i;
