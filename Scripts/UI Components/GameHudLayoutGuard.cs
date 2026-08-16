@@ -21,7 +21,7 @@ namespace Assets.Scripts.UI_Components
         private const float DynamicButtonScanInterval = 1f;
         private const float ResponsiveLayoutScanInterval = 0.25f;
         private const float SquadTabGap = 8f;
-        private const float HudEdgeMargin = 10f;
+        private const float HudEdgeMargin = 0f;
         private const float BottomHudMargin = HudEdgeMargin;
         private static readonly Vector2 DefaultReferenceResolution = new Vector2(1366f, 768f);
 
@@ -346,7 +346,7 @@ namespace Assets.Scripts.UI_Components
             // The authored Space scene reserved 200 px for the scoreboard before the squad tabs.
             // Preserve that semantic relationship using live geometry rather than a fixed inset so
             // the row stays immediately to the scoreboard's right at every aspect ratio. When the
-            // scoreboard is hidden, the row falls back to a small visible top-left margin.
+            // scoreboard is hidden, the row begins at the live canvas edge.
             layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);
             layout.spacing = SquadTabGap;
             layout.childAlignment = TextAnchor.UpperLeft;
@@ -373,11 +373,18 @@ namespace Assets.Scripts.UI_Components
                 return fallback;
             }
 
-            Bounds scoreboardBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
-                tabsRoot,
-                scoreboard);
-            float fromRootLeft = scoreboardBounds.max.x - tabsRoot.rect.xMin + gap;
-            return Mathf.CeilToInt(Mathf.Max(fallbackMargin, fromRootLeft));
+            Vector3 scoreboardRightWorld = scoreboard.TransformPoint(new Vector3(
+                scoreboard.rect.xMax,
+                scoreboard.rect.center.y,
+                0f));
+            float scoreboardRightInTabs = tabsRoot.InverseTransformPoint(scoreboardRightWorld).x;
+            float fromRootLeft = scoreboardRightInTabs - tabsRoot.rect.xMin + Mathf.Max(0f, gap);
+            if (float.IsNaN(fromRootLeft) || float.IsInfinity(fromRootLeft))
+            {
+                return fallback;
+            }
+
+            return Mathf.CeilToInt(Mathf.Max(fallback, fromRootLeft));
         }
 
         internal static bool StretchToRootCanvas(RectTransform rect, RectTransform canvasRect)
@@ -446,7 +453,12 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            ClampRectWithinCanvas(_scoreboardRect, GetRootCanvasRect(_scoreboardRect), HudEdgeMargin);
+            PinLayoutRootToCorner(
+                _scoreboardRect,
+                GetRootCanvasRect(_scoreboardRect),
+                false,
+                true,
+                HudEdgeMargin);
         }
 
         private void KeepNormalSpeedButtonWithinCanvas()
@@ -457,7 +469,12 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            ClampRectWithinCanvas(_speedRect, GetRootCanvasRect(_speedRect), HudEdgeMargin);
+            PinLayoutRootToCorner(
+                _speedRect,
+                GetRootCanvasRect(_speedRect),
+                true,
+                true,
+                HudEdgeMargin);
         }
 
         private void KeepMissionStatusWithinCanvas()
