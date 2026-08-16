@@ -75,6 +75,8 @@ namespace Bees.Tests.EditMode
             string source = ReadGuardSource();
 
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
+            Assert.That(source, Does.Contain("ResolveScoreboardRect(_menus.Scoreboard, scoreboardSearchRoot)"),
+                "The gameplay guard must not trust a stale/wrong serialized scoreboard reference when resolving the visible HUD.");
             Assert.That(source, Does.Contain("_scoreboardRect"));
             Assert.That(source, Does.Contain("StretchToRootCanvas(tabsRoot, canvasRect)"),
                 "The legacy 1366x768 Squad Tabs container must become the live root-canvas rectangle before its layout is calculated.");
@@ -86,6 +88,29 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
             Assert.That(source, Does.Not.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
                 "Blindly zeroing the scoreboard reservation would put the squad row over the scoreboard.");
+        }
+
+        [Test]
+        public void WrongAssignedScoreboardFallsBackToLiveNamedScoreboard()
+        {
+            RectTransform root = CreateRect("Canvas Root", null, new Vector2(1600f, 900f));
+            RectTransform wrongReference = CreateRect("Summary", root, new Vector2(500f, 400f));
+            RectTransform liveScoreboard = CreateRect("Scoreboard", root, new Vector2(200f, 60f));
+
+            try
+            {
+                RectTransform resolved = (RectTransform)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ResolveScoreboardRect",
+                    wrongReference.gameObject,
+                    root);
+
+                Assert.That(resolved, Is.SameAs(liveScoreboard));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root.gameObject);
+            }
         }
 
         [Test]
