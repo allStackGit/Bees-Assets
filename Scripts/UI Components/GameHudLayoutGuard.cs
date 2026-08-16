@@ -222,7 +222,12 @@ namespace Assets.Scripts.UI_Components
             _counterRect = _menus.Counter != null ? _menus.Counter.GetComponent<RectTransform>() : null;
             _speedRect = _menus.GameSpeedButton != null ? _menus.GameSpeedButton.GetComponent<RectTransform>() : null;
             _plutoShieldRect = _menus.PlutoShield != null ? _menus.PlutoShield.GetComponent<RectTransform>() : null;
-            _scoreboardRect = _menus.Scoreboard != null ? _menus.Scoreboard.GetComponent<RectTransform>() : null;
+
+            Canvas menusCanvas = _menus.GetComponentInParent<Canvas>();
+            Transform scoreboardSearchRoot = menusCanvas != null && menusCanvas.rootCanvas != null
+                ? menusCanvas.rootCanvas.transform
+                : _menus.transform.root;
+            _scoreboardRect = ResolveScoreboardRect(_menus.Scoreboard, scoreboardSearchRoot);
 
             if (_speedRect != null)
             {
@@ -236,6 +241,34 @@ namespace Assets.Scripts.UI_Components
             _lastSquadTabTopPadding = -1;
             _squadTabsRoot = null;
             ApplyLayout();
+        }
+
+        internal static RectTransform ResolveScoreboardRect(GameObject assignedScoreboard, Transform searchRoot)
+        {
+            RectTransform assignedRect = assignedScoreboard != null
+                ? assignedScoreboard.GetComponent<RectTransform>()
+                : null;
+            if (assignedRect != null && assignedRect.gameObject.name == "Scoreboard")
+            {
+                return assignedRect;
+            }
+
+            if (searchRoot == null)
+            {
+                return null;
+            }
+
+            RectTransform[] candidates = searchRoot.GetComponentsInChildren<RectTransform>(true);
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                RectTransform candidate = candidates[i];
+                if (candidate != null && candidate.gameObject.name == "Scoreboard")
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private void Update()
@@ -448,7 +481,7 @@ namespace Assets.Scripts.UI_Components
 
         private void KeepScoreboardWithinCanvas()
         {
-            if (_menus.Scoreboard == null || !_menus.Scoreboard.activeInHierarchy || _scoreboardRect == null)
+            if (_scoreboardRect == null || !_scoreboardRect.gameObject.activeInHierarchy)
             {
                 return;
             }
