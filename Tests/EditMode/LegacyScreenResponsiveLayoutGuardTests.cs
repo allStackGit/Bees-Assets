@@ -82,6 +82,39 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void UltrawideMultiColumnLayoutGivesSurplusToUniquelyDominantRegion()
+        {
+            RectTransform row = CreateRect("Squad Maker Columns", null, new Vector2(2000f, 800f));
+            HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = false;
+            layout.childForceExpandWidth = false;
+
+            RectTransform inventory = CreateRect("Inventory", row, new Vector2(250f, 800f));
+            RectTransform workArea = CreateRect("Squad Presets", row, new Vector2(900f, 800f));
+            RectTransform squads = CreateRect("Squads", row, new Vector2(250f, 800f));
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "FitDominantStructuralHorizontalChild",
+                    row);
+
+                Assert.That(changed, Is.True,
+                    "A clear work-area column should absorb ultrawide surplus even when it starts below the generic 50% dominance threshold.");
+                Assert.That(inventory.rect.width, Is.EqualTo(250f).Within(0.01f));
+                Assert.That(workArea.rect.width, Is.EqualTo(1500f).Within(0.01f));
+                Assert.That(squads.rect.width, Is.EqualTo(250f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(row.gameObject);
+            }
+        }
+
+        [Test]
         public void SmallLocalButtonRowIsNotTreatedAsScreenStructure()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
