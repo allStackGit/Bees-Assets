@@ -4,24 +4,45 @@ Compact routing map for agents. Search this before broad repository scans, then 
 
 | Concept / useful aliases | Start with | Current code / assets / symbols to locate | Evidence / related concepts |
 |---|---|---|---|
-| bootstrap, global config, scene startup | `SYSTEM_MAP.md` → Runtime ownership; development memory | `ConfigData`, `Scene`, `Stage` | user-data finalization; socket bootstrap; prefabs |
-| Level state, reset, teardown, pooling | development memory → testing/lifecycle; invariants → State and lifecycle | `Level`, `GameState`, `Pool`, `Setup`, `ClearData`, `Kill` | foundation/soak tests; deferred release |
-| pathfinding, stale paths, obstacles | development memory → Pathfinding and performance qualification | `Pathfinder`, Ship path request state, `Obstacle`, clearance mapping | lifecycle tokens; worker ownership; performance qualification |
-| combat, targeting, range, projectiles | development memory → Combat/targeting | `Squad`, `Ship`, `RangeCollider`, `Weapon`, `Projectile` | CombatLifecycleIntegrationTests; visibility ownership |
-| campaign, mission IDs, triggers, progression | development memory → Campaign qualification/gameplay; system map → Campaign | `CampaignMissionCatalog`, `LevelIntro`, mission trigger/objective code | runtime level data; exact map/obstacle prefab; persistence/dialogue |
-| maps, prefabs, Resources, normalization | invariants → Maps/prefabs/scenes/assets | map prefab normalization, `Resources/Obstacles`, pool/prefab lookup | map/config names; `.meta` GUIDs; campaign identity |
-| Pluto IV, Titania II, shield clock, Game Speed | invariants → UI and display layout; regressions REG-004 | `GameHudLayoutGuard`, Pluto4/Titania2 mission code | shared shield/timer; Pluto Evacuated counter; UI tests |
-| responsive UI, Mac, aspect ratio, white strip | regressions REG-001..REG-003; system map → Screen-space UI | `ResponsiveScreenLayoutGuard`, `GameHudLayoutGuard`, `RootCanvasCompatibilityGuard` | EditMode geometry + rendered PlayMode/platform checks |
-| persistence, user data, server contract | development memory → BeesServer/database contract; system map → Persistence/network | `ConfigData`, `UserData`, `DataFile`, `Socket`, request/response DTOs | BeesServer cross-repo contract; versioning/reconnect |
-| replay, determinism, ordering | development memory → Combat/targeting/replay; invariants → Async/order | replay recorder/player, stable ID sorting, random scopes | unordered collections; cosmetic random isolation |
-| Fire Tank, canister, obstacle destruction | development memory → Fire Tank visuals / Obstacle debris | `CanisterBomb`, `Obstacle.BreakApart`, Fire Tank prefab | pathfinder dirtying; neutral hazard; debris determinism |
-| performance, low-end, frame time, GC | development memory → Pathfinding/performance qualification; performance skill | Update/FixedUpdate hot paths, pools, pathfinding, physics/UI/rendering | `BeesPerformanceQualification`; soak; named hardware |
-| tests, Unity runner, release gate | `docs/TESTING.md`; validation policy | `Tests/EditMode`, `Tests/PlayMode`, `Tools/Run-BeesReleaseGate.ps1` | XML + executed count; PlayMode for frame/physics/scene |
+| bootstrap, global config, scene startup | `SYSTEM_MAP.md` → Runtime ownership | `ConfigData`, `ConfigData.Runtime`, `Scene`, `Stage` | settings/user-data finalization; lazy socket; profile selection |
+| identity namespaces, stale ownership, IDs | `SYSTEM_MAP.md` → Identity boundaries | `FleetShip.Id`, `SavedSquad.Id`, `Squad.ItemId`, `Ship.Id`, request `Hash`, `OutcomeId` | persistent vs pooled lifetime vs request vs learning identity; BeesServer database model |
+| profile persistence, local/server data | `SYSTEM_MAP.md` → Persistence/profile flow | `DataFile`, `UserData`, `ConfigData.Runtime`, `Ships` | missing vs failed read; exact version; local/server/mirror routing |
+| atomic campaign/profile checkpoint | `CampaignCheckpoint`, BeesServer `campaignCheckpoint.js` | `__campaign_checkpoint__`, seven profile documents | coalesced client write; one server transaction; no partial profile commit |
+| Level state, reset, teardown, pooling | `SYSTEM_MAP.md` → Runtime ownership; invariants → State/lifecycle | `Level.Reset`, `GameState`, `GameState.Registry`, `Pool`, `Setup`, `ClearData`, `Kill` | loaded flags; deferred release; request-history pruning; soak tests |
+| persistent fleet/squad ↔ runtime squad/ship | `SYSTEM_MAP.md` → Identity boundaries | `Ships`, `FleetShip`, `SavedSquad`, `SquadShip`, `LevelConstructor`, `Squad`, `Ship.Lifecycle` | negative generated IDs; `DoesBelongToSavedSquad`; `IsLoadedIntoLevel` |
+| pathfinding, worker ownership, stale paths | development memory → Pathfinding/performance; invariants → Async | `Pathfinder`, `Pathfinder.Search`, `Pathfinder.Obstacles`, `Ship.Movement`, `Ship.Lifecycle` | request ID + lifecycle ID + ship reference; Task.Run is not canceled by invalidation |
+| tracked target, attack movement, pathfinding freeze | pathfinding row above | `Ship.TrackedMovement`, `Aggressive`, tracked-target tests | active worker/retry window retain ownership; meaningful-distance/time replans only |
+| static obstacle rebuild, destructible obstacle | pathfinding row above | `Pathfinder.Obstacles`, `Obstacle`, `CanisterBomb`, `MarkStaticObstacleLayerDirty` | base clearance rebuild; Fire Tank/obstacle breakup; Level-scoped obstacle discovery |
+| moving asteroid, dynamic avoidance | pathfinding row above | `CollisionAsteroid`, `Pathfinder.UpdateDynamicObstacleLayer`, `FoundNearbyAsteroid` | per-`Stage.FixedUpdates` snapshot; velocity padding; dynamic qualification tests |
+| clearance, narrow corridor, egress | pathfinding row above | `Pathfinder.Search`, hard/preferred clearance, `FindStaticEgressPath` | ship-size clearance; diagonal corner blocking; deterministic A* tie breaking |
+| combat damage, TSV, delayed projectile attribution | `Ship.Combat`, GameState commands | `LogAttackingDamage`, `CreditAttackerCommandTsv`, `StoredCommand` | projectile may outlive firing command; originating OutcomeId remains owner until flush |
+| targeting, shooting strategy, weapon range | `Weapon`, `RangeCollider` | `ShipsWithinRange`, `MakeSortedTargetingList`, `ShipDamageStatus` | enemy-only physics cache; reverse range ownership; reserved incoming damage |
+| line of fire, physics coordinates | `Weapon.HasClearLineOfFire` | `Physics2D.Linecast`, map-local `Entity.GetPosition` | world-space physics vs Level-local gameplay/pathfinding coordinates |
+| map-object visibility, multiple observers | invariants → Combat/visibility | `RangeCollider`, `MapObjectVisibilityTracker`, `PlayerVisibleMapObjects` | contact counts + source ownership; one exit cannot erase another observer |
+| Hive Mind command request, matchup, banned strategies | `Squad.Commands`, `Socket` | `MakeMatchupStrat`, `MakeMatchupAndGetCommand`, `CommandRequest`, `MatchupStrategyRequest` | acting/enemy/ally composition; availability set affects BeesServer strategic cache key |
+| Hive Mind server Game, concurrent Levels | BeesServer context index → shared Game/reconnect | Unity `SetupLevelRequest`, `ReconnectLevelRequest`, `Level.ServerGameId` | one WebSocket shares one server Game across sibling Levels; Level remains client ownership unit |
+| response lifecycle, stale squad response | `SocketResponseLifecycleGuard`, `StandingRequestSet`, `Socket` | `CanApplySquadResponse`, request `SquadId`, handled hashes | captured pooled lifetime; 401 refresh; 403 terminal; StoreCommands 409 terminal; bounded handled history |
+| reconnect, authentication, resend | `Socket`, `SteamWebApiAuth` | standing requests, auth ticket refresh, `OpenLevels` | server connection Game ownership; stale generation suppression; main-thread dispatch |
+| Hive Mind learning keys/history | BeesServer context index → learning key namespace | targeting/shooting matchup construction and `StoreCommands` | server uses `target-v2:` / `shoot-v2:` history namespaces; strategy IDs are persistent schema |
+| dedicated Hive Mind training, Fish Tank distinction | `HiveMindTrainingBootstrap` | scene `Hivemind Training`, `Stage.IsTrainingHiveMind`, random squads | same scene can be Fish Tank; active training is not the old commented ML-Agents `Brain` path |
+| historical ML-Agents, neural-network experiment | quality ledger; `Brain.cs`, `Training/trainer_config.yaml` | commented Agent callbacks/observations/actions | dormant historical path; do not infer current Hive Mind training behavior from it |
+| campaign, mission IDs, triggers, progression | development memory → Campaign; system map → Campaign | `CampaignMissionCatalog`, `LevelIntro`, mission trigger/objective code | runtime level data; exact map/obstacle prefab; persistence/dialogue |
+| maps, prefabs, Resources, normalization | invariants → Maps/prefabs/scenes/assets | `Prefabs`, map normalization, `Resources/Obstacles`, serialized names/GUIDs | map/config names; `.meta` identity; campaign assets are gameplay |
+| Pluto IV, Titania II, shield clock, Game Speed | invariants → UI layout; regressions REG-004 | `GameHudLayoutGuard`, Pluto4/Titania2 mission code | shared shield/timer; Pluto Evacuated counter; validate both missions |
+| responsive UI, Mac, aspect ratio, white strip | regressions REG-001..REG-003; system map → Screen-space UI | `ResponsiveScreenLayoutGuard`, `GameHudLayoutGuard`, `RootCanvasCompatibilityGuard` | geometry tests + rendered platform validation |
+| Squad Maker, fleet editing, build/level setup | quality ledger; `SquadMaker`, helper classes | saved/chosen squads, build economy, drag/drop, level options, persistence | high-coupling scene controller; persistent fleet/squad identities |
+| replay, determinism, ordering | development memory → replay; invariants → Async/order | replay recorder/player, stable ID sorting, random scopes | unordered collections; cosmetic random isolation |
+| Fire Tank, canister, obstacle destruction | development memory → Fire Tank / debris | `CanisterBomb`, `Obstacle.BreakApart`, Fire Tank prefab | pathfinder dirtying; neutral hazard; deterministic cosmetic debris |
+| performance, low-end, frame time, GC | development memory → performance; performance skill | Update/FixedUpdate hot paths, pools, pathfinding, physics/UI/rendering | performance qualification; dense/dynamic obstacle tests; soak; named hardware |
+| tests, Unity runner, release gate | `docs/TESTING.md`; validation policy | `Tests/EditMode`, `Tests/PlayMode`, `Tools/Run-BeesReleaseGate.ps1` | XML + executed count; PlayMode for frame/physics/scene/real workers |
 | agent learning, context, retrieval | this file; `LEARNING_STATE.md`; repo-learning skill | `.agents/skills/{repo-learning,continuous-learning,search-index,code-quality}` | repeated misses; quality ledger; EngineeringGuardrailTests |
 
 ## Retrieval rules
 
 - Start with the matching row and named document section; do not automatically read all of `docs/DEVELOPMENT_MEMORY.md`.
-- Search exact symbol, asset, scene, prefab or error terms before broad scans.
+- Search exact symbol, asset, scene, prefab, request type or error term before broad scans.
+- For identity bugs, name the namespace first: account/user, persistent fleet/squad, runtime pooled object, request hash, temporary OutcomeId, or database row.
+- For async/lifecycle bugs, trace both the work owner and the publication owner; invalidation often suppresses publication without canceling work already running.
+- For client/server behavior, inspect both repositories before changing a wire, persistence, reconnect, learning-key or identity contract.
 - When one concept repeatedly requires another, add the relationship here rather than copying implementation detail.
 - Update stale routes when touched code/assets move. Material behavior must still be verified from current source/assets/tests.
