@@ -91,6 +91,8 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
+            SetDeckVariantVisible(false);
+
             if (!IsDead)
             {
                 List<Ship> levelShips = Level.State.Ships;
