@@ -1,119 +1,69 @@
 ---
 name: repo-learning
-description: Mandatory repository-learning and change-safety workflow for every development task. Maintain a concise, source-grounded system model; perform impact/test-contract analysis before edits; reconcile stale knowledge and regression protection after edits.
+description: Mandatory context-efficient repository-learning and change-safety workflow for Bees. Load the smallest useful maintained model, verify it against current code/assets/tests, perform impact/test analysis, run touched-code quality review, and reconcile durable learning before completion.
 ---
 
 # Repository Learning
 
-Use this skill continuously for every coding task in the repository, including ordinary fixes that do not explicitly invoke a named skill. Specialized skills that require this skill inherit all requirements below.
+Use this skill for every development task. The objective is not more notes; it is a progressively more accurate model of Bees that is cheaper to reload and harder to misuse.
 
-The objective is not to accumulate notes. The objective is to make each completed task leave a more accurate, safer, cheaper-to-reload model of the repository.
-
-## 1. Load the maintained model
-
-Before changing behavior:
+## 1. Load context efficiently
 
 1. Read `AGENTS.md` and `PROJECT_CONSTITUTION.md`.
-2. Read `docs/DEVELOPMENT_MEMORY.md` and the relevant parts of:
-   - `docs/engineering/INVARIANTS.md`;
-   - `docs/engineering/SYSTEM_MAP.md`;
-   - `docs/engineering/VALIDATION_POLICY.md`;
-   - `docs/engineering/REGRESSIONS.md`;
-   - `docs/TESTING.md`.
-3. Read any focused documents that own the subsystem or contract being changed.
-4. Treat all maintained documents as prior models, not unquestioned truth. Revalidate important facts against current code, assets, configuration, and tests when correctness depends on them.
+2. Read `docs/engineering/CONTEXT_INDEX.md`, `docs/engineering/SYSTEM_MAP.md`, and `docs/engineering/INVARIANTS.md`.
+3. Follow `.agents/skills/search-index/SKILL.md` to select only relevant sections of `docs/DEVELOPMENT_MEMORY.md`, `docs/engineering/VALIDATION_POLICY.md`, `docs/engineering/REGRESSIONS.md`, `docs/TESTING.md`, tests/assets and focused subsystem documents.
+4. Check `docs/engineering/LEARNING_STATE.md` for a retrieval miss, repeated mistake or unresolved candidate relevant to the task.
+5. Broad audits may deliberately load the full maintained model. Focused tasks should not consume unrelated campaign/UI/pathfinding/persistence detail merely because it exists.
 
-If two maintained documents conflict, do not choose whichever is convenient. Resolve the conflict from current authoritative sources and repair the stale document in the same task when possible.
+Maintained knowledge narrows investigation; it never replaces verification of code/assets/tests that can change.
 
-## 2. Build a pre-change impact model
+## 2. Build the pre-change model
 
-Before editing, trace enough of the affected system to answer:
+Before editing, identify the enduring behavior/contract, entrypoints, important callers/callees, state owners/lifecycles, serialized assets, persistence/network boundaries and tests. Consider pooling, async publication, physics/frame ordering, map/prefab/resource contracts, campaign identity, replay/determinism, UI ownership and performance/resource behavior as applicable.
 
-- What enduring behavior/contract is being changed or repaired?
-- Which callers, callees, state owners, lifecycles, assets, persistence/network boundaries, async paths, and user-visible flows depend on it?
-- What looks unusual but is intentional?
-- What apparently local change could leak into another Level, pooled lifetime, scene, request, mission, save, or frame?
-- Which tests currently claim to protect this behavior and are they still reaching the production path?
-- Which validation level would actually expose a regression here?
+Classify affected tests using the four states in `AGENTS.md` before completion. Do not begin with a symptom patch and postpone impact analysis until a test happens to pass.
 
-Classify affected tests using the four states in `AGENTS.md`: still valid, update required, obsolete-and-replaced, or missing.
+## 3. Learn while working
 
-Do not begin with a narrow patch and postpone impact analysis until after the code happens to pass.
+Follow `.agents/skills/continuous-learning/SKILL.md` continuously. Capture candidate lessons when investigation reveals expensive-to-rediscover architecture, ownership/data flow, serialized relationships, recurring traps, cross-system relationships, useful debugging/validation/optimization procedures, stale knowledge, user corrections or retrieval failures.
 
-## 3. Learn during investigation and implementation
+Do not commit every observation. A candidate becomes durable only after source/asset/test verification and classification.
 
-Record reusable knowledge when it is expensive to rediscover and likely to matter again, including:
+## 4. Maintain the model, not a chronology
 
-- architecture and subsystem responsibilities;
-- important entry points, call paths, ownership, lifecycle, and data/state flow;
-- stable contracts and invariants;
-- non-obvious cross-system assumptions;
-- misleading patterns and fragile areas;
-- canonical files, assets, configurations, commands, and validation procedures;
-- concurrency/ordering/pooling/persistence rules;
-- facts that explain why a plausible-looking previous change caused a regression.
+Use the existing owner:
 
-Do not record every file read, command run, bug found, or transient hypothesis.
+- `docs/DEVELOPMENT_MEMORY.md` — detailed current implementation/gameplay knowledge;
+- `docs/engineering/SYSTEM_MAP.md` — concise ownership/call-path orientation;
+- `docs/engineering/INVARIANTS.md` — stable must-preserve rules;
+- `docs/engineering/REGRESSIONS.md` — fixed regression root causes and protection;
+- `docs/engineering/CONTEXT_INDEX.md` — retrieval aliases and links, not detailed truth;
+- `docs/engineering/LEARNING_STATE.md` — unresolved candidates/retrieval misses/curation debt only.
 
-Maintain an explicit distinction between:
+Replace stale statements, consolidate duplicates, distinguish current behavior/history/hypotheses, and change `PROJECT_CONSTITUTION.md` only for deliberate project-definition changes.
 
-- **confirmed current behavior** — verified against present authoritative sources;
-- **historical context** — useful explanation that is no longer the current contract;
-- **hypothesis/uncertainty** — not yet established and therefore not safe to use as an invariant.
+## 5. Regression and user-reminder learning
 
-## 4. Maintain, do not append
+A reproducible regression should leave focused permanent protection and any reusable rule in the correct owner document. If automation is impractical, record why and the strongest repeatable protection.
 
-When durable knowledge changes:
+A lasting user correction/reminder is a learning-system signal: verify it, persist it when appropriate, and if the user had to repeat an already-recorded fact, repair retrieval/index/skill enforcement rather than duplicating the fact.
 
-- update the existing document that owns the topic;
-- replace or remove stale statements rather than appending contradictions;
-- consolidate duplicates;
-- keep entries concise and source-grounded;
-- prefer `docs/DEVELOPMENT_MEMORY.md` for detailed reusable implementation knowledge;
-- prefer `docs/engineering/SYSTEM_MAP.md` for concise ownership/call-path orientation;
-- promote stable must-preserve rules into `docs/engineering/INVARIANTS.md`;
-- change `PROJECT_CONSTITUTION.md` only for deliberate project-definition changes, not to accommodate current implementation;
-- use `docs/engineering/REGRESSIONS.md` for permanent lessons/protection from fixed regressions, not general history.
+## 6. Touched-code quality gate
 
-Dated architectural snapshots may remain as historical references, but the maintained model must clearly prevent stale snapshot claims from outranking current source/tests.
+Before completion, follow `.agents/skills/code-quality/SKILL.md` over every touched implementation/test/tooling/configuration area. Fix clear local defects or clarity problems that are safe and in scope. Route broader validated debt to the appropriate active ledger without turning a narrow change into an uncontrolled refactor.
 
-## 5. User reminders become repository knowledge
-
-When the user supplies a lasting engineering fact, warning, or constraint during development:
-
-1. verify it against the repository when verification is possible;
-2. determine whether it is a project invariant, architecture fact, testing rule, or temporary task constraint;
-3. persist lasting facts in the appropriate maintained repository document during the same task;
-4. do not rely on conversational memory as the only future source.
-
-If the user has to repeat the same lasting reminder, treat that as evidence that the repository knowledge system failed and repair the durable source.
-
-## 6. Regression learning
-
-When a real regression is fixed:
-
-- understand the underlying root cause, not only the immediate bad line;
-- add a focused automated test that would have failed before the fix whenever practical;
-- if automation is impractical, document the concrete manual/system protection and why;
-- add or update the permanent entry in `docs/engineering/REGRESSIONS.md` when the regression carries a reusable lesson;
-- promote any general ownership/lifecycle/architecture rule into the invariant/system map rather than leaving it only in a bug narrative.
-
-A reproducible regression with no permanent protection is unfinished work unless the user explicitly stops the task before that protection can be added.
-
-## 7. Post-change reconciliation
+## 7. Learning transaction and reconciliation
 
 Before completion:
 
-1. Re-read the changed behavior and affected tests from the perspective of a future maintainer.
-2. Confirm the test classification was resolved; do not silently leave a stale test behind.
-3. Widen validation according to `AGENTS.md` and `docs/engineering/VALIDATION_POLICY.md` when execution is permitted.
-4. Review the maintained knowledge used at task start: did any of it prove stale, incomplete, or misleading?
-5. Update/remove stale knowledge and record new durable lessons.
-6. Confirm regression protection and permanent-regression records are complete when applicable.
-7. Report any validation that could not be executed or any unresolved uncertainty explicitly.
+1. Re-read changed behavior/tests/assets from a future-maintainer perspective.
+2. Resolve every candidate lesson as **promote**, **refresh**, **defer**, or **reject** under the continuous-learning skill.
+3. Update the context index when a new alias/relationship would materially shorten future retrieval.
+4. Reconcile stale maintained knowledge and relevant open learning-state items.
+5. Confirm regression protection/test classification and report unexecuted validation/uncertainty.
 
-## Efficiency rule
+A task may legitimately produce no durable lesson, but the learning transaction must still be considered. Never create filler documentation just to prove learning occurred.
 
-Repository memory should reduce future reading without replacing source verification. The desired trend is that future agents can identify the correct subsystem, invariants, tests, and danger surfaces faster while making fewer assumptions.
+## Efficiency target
 
-More documentation is not automatically better. A small maintained map that is correct is better than a large notebook of stale observations.
+The desired trend is that future agents identify the correct subsystem, assets, invariants, tests and danger surfaces with fewer broad reads/searches. If maintained memory itself becomes expensive to load, improve the index/structure and split by ownership rather than accepting permanent context growth.

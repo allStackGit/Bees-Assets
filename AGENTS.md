@@ -1,94 +1,66 @@
 # AGENTS.md
 
-Mandatory engineering rules for every coding agent and every development task in this repository. These rules apply whether or not the user names a skill.
+Mandatory engineering rules for every coding agent and development task in this repository.
 
-## Authority and required reading
+## Authority and context-budgeted required reading
 
 1. Follow the user's explicit request and branch target.
 2. Read `PROJECT_CONSTITUTION.md` before changing behavior.
-3. Read `docs/DEVELOPMENT_MEMORY.md`, `docs/engineering/INVARIANTS.md`, `docs/engineering/SYSTEM_MAP.md`, `docs/engineering/VALIDATION_POLICY.md`, and the relevant parts of `docs/engineering/REGRESSIONS.md`.
-4. Read `docs/TESTING.md` for the current Unity test topology and commands.
-5. Read and follow `.agents/skills/repo-learning/SKILL.md` for the entire task. Named skills do not replace repository learning.
-6. Treat maintained documentation as a source-grounded model, not unquestioned truth. Revalidate facts that matter against current code/assets/tests and repair stale documentation when found.
+3. Read `docs/engineering/CONTEXT_INDEX.md`, `docs/engineering/SYSTEM_MAP.md`, and `docs/engineering/INVARIANTS.md` first. Use them to identify the smallest authoritative context for the task.
+4. Follow `.agents/skills/search-index/SKILL.md` to load only relevant sections of `docs/DEVELOPMENT_MEMORY.md`, `docs/engineering/VALIDATION_POLICY.md`, `docs/engineering/REGRESSIONS.md`, `docs/TESTING.md`, and focused subsystem documents. Broad audits may require full reads; focused work should not preload unrelated memory.
+5. Read and follow `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, `.agents/skills/search-index/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` for the entire task. Named specialist skills do not replace these.
+6. Maintained documentation is a source-grounded model, not unquestioned truth. Revalidate material facts against current code, assets, configuration and tests; repair stale knowledge when found.
 
-If implementation conflicts with the project constitution or a confirmed invariant, implementation is presumed defective unless the project owner explicitly changes the requirement. Existing tests are evidence, not authority: a stale test must be repaired rather than used to redefine intended behavior.
+If implementation conflicts with the constitution or a confirmed invariant, implementation is presumed defective unless the project owner explicitly changes the requirement. Existing tests are evidence, not authority; stale tests must be repaired rather than used to redefine intended behavior.
 
 ## Branch discipline
 
-Respect a branch explicitly named by the user. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialized skills may impose stricter branch/commit rules and those remain in force.
+Respect an explicitly named branch. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialist skills may impose stricter branch/commit rules.
 
-## Mandatory pre-change impact analysis
+## Pre-change impact analysis
 
-Before editing production code, tests, serialized assets, scenes, prefabs, configuration, or persistence data, determine the likely impact surface. Inspect the relevant callers/callees and explicitly consider, as applicable:
+Before editing production code, tests, serialized assets, scenes, prefabs, configuration or persistence data, trace the affected path and important callers/callees. Explicitly consider as applicable:
 
-- user-visible gameplay and campaign behavior;
-- scene/Stage/Level/GameState lifecycle and cleanup;
-- pooling, object reuse, timers, deferred release, and stale state;
-- async pathfinding/work ownership, ordering, cancellation, and lifecycle tokens;
-- physics/collision callbacks and Unity frame/lifecycle ordering;
-- map, obstacle, prefab, resource, scene, and serialized-name contracts;
-- local/server persistence, save compatibility, request/response and deduplication contracts;
+- user-visible gameplay/campaign behavior and mission identity;
+- Scene/Stage/Level/GameState lifecycle, teardown and cleanup;
+- pooling, object reuse, timers, deferred release and stale state;
+- async pathfinding/work ownership, ordering, cancellation and lifecycle tokens;
+- physics/collision/frame ordering;
+- map, obstacle, prefab, Resources, scene and serialized-name/GUID contracts;
+- local/server persistence, save compatibility, request/response, reconnect and deduplication;
 - replay/determinism and stable ordering;
-- UI/dialogue/input ownership;
-- performance/resource behavior and low-end hardware constraints;
-- tests, fixtures, mocks/reflection adapters, manual play tests, and release-gate coverage that encode the affected contract.
+- UI/dialogue/input ownership and resolution/aspect-ratio behavior;
+- frame time, allocations, memory and low-end hardware constraints;
+- tests, fixtures, reflection adapters, manual play tests and release-gate coverage.
 
-A narrow symptom fix is not complete until surrounding assumptions and indirect dependencies have been checked.
+A narrow symptom fix is incomplete until important indirect dependencies are checked.
 
-## Test contract review is part of every change
+## Test contracts and validation
 
-For every behavior-affecting change, classify affected tests before completion:
+For every behavior-affecting change, classify affected tests as **still valid**, **update required**, **obsolete and replaced**, or **missing**. Never delete, skip, weaken, loosen or rewrite a test merely to make a change pass. A reproducible regression should gain focused automated protection that would have caught it whenever practical; otherwise record the strongest repeatable protection in `docs/engineering/REGRESSIONS.md`.
 
-1. **Still valid** — continues to test the intended requirement.
-2. **Must be updated** — requirement remains but setup/assertions are stale.
-3. **Obsolete and must be replaced** — old behavior is intentionally removed; preserve the underlying requirement with replacement coverage when one still exists.
-4. **Missing** — add focused coverage for the newly exposed requirement/regression.
-
-Do not delete, skip, weaken, loosen, or rewrite a failing test merely to make a change pass. Determine first whether production code or the test contract is wrong. When a stale test is removed, identify what requirement it represented and either preserve that requirement elsewhere or document why the requirement itself was deliberately retired.
-
-For a reproducible bug/regression, the fix is incomplete until a focused automated regression test exists that would have caught the defect, unless automation is genuinely impractical. In that exception, record the reason and the strongest practical manual/system-level protection in `docs/engineering/REGRESSIONS.md`.
-
-## Validation ladder
-
-When execution is available and permitted by the active skill, widen validation rather than stopping at the first green test:
+When execution is available, widen evidence appropriately:
 
 `focused reproducer -> affected subsystem/category -> broader correctness suite -> full local release gate -> representative PlayMode/play test/system qualification when risk warrants it`
 
-Use the strongest applicable level. Changes to scenes, prefabs, map/prefab normalization, campaign setup, physics, pooling, async lifecycle, persistence/network contracts, or frame-dependent UI usually require more than an isolated EditMode unit test.
+Scene/prefab/map normalization, pooling/lifecycle, async pathfinding, physics, persistence/network and frame-dependent UI usually require broader-than-unit evidence. Never claim old XML/logs validate changed source.
 
-A specialized static-analysis skill may prohibit executing tests/builds. That restriction does not waive test review, regression-test creation, or reporting that runtime validation remains unexecuted.
+## Continuous learning, retrieval, and quality
 
-Never claim validation from old XML/logs after code has changed. Tie claims to the exact tests/results actually executed for the current change.
+Every substantive task must leave future agents at least as easy to orient as before.
 
-## Regression records
+- Start from `docs/engineering/CONTEXT_INDEX.md`; prefer targeted retrieval over repeated broad scans.
+- Run the continuous-learning transaction from `.agents/skills/continuous-learning/SKILL.md`: candidate lessons must be promoted, refreshed, deferred with evidence needed, or rejected.
+- Update existing owner documents rather than accumulating overlapping notebooks. Replace stale statements and distinguish confirmed current behavior, history and uncertainty.
+- Retrieval misses and unresolved learning candidates belong in `docs/engineering/LEARNING_STATE.md`; it is active control state, not history.
+- Durable architecture/call-path knowledge belongs in development memory/system map; stable rules belong in invariants; fixed regression lessons belong in `REGRESSIONS.md`.
+- Repeated agent mistakes despite existing guidance must trigger review of the relevant skill/index/test guardrail, not another duplicate reminder.
+- Before completion, run the touched-code quality gate in `.agents/skills/code-quality/SKILL.md`. Fix clear local quality problems when safe; route broader maintainability debt to `QUALITY_LEDGER.md`, bugs to `BUG_LEDGER.md`, and performance opportunities to `PERFORMANCE_LEDGER.md` when that ledger exists/should be used by the performance workflow.
 
-`BUG_LEDGER.md` is a temporary queue of current unresolved static findings. It is not permanent history.
-
-`docs/engineering/REGRESSIONS.md` is the permanent protection ledger. When a real regression is fixed, record the root cause and the durable protection that should prevent recurrence. Prefer a focused automated test; also link the invariant or durable-memory update when relevant. A regression is not considered fully closed while its permanent-protection field is empty.
-
-## Repository learning and reminders
-
-Repository knowledge must improve as work proceeds.
-
-- Update an existing owner document instead of appending a new overlapping notebook.
-- Replace/remove stale statements; do not accumulate contradictory history.
-- Distinguish confirmed current behavior, historical context, and unresolved hypotheses.
-- Promote stable architectural rules and repeated pitfalls into `docs/engineering/INVARIANTS.md` or the project constitution when appropriate.
-- Promote durable architecture/call-path knowledge into `docs/DEVELOPMENT_MEMORY.md` or `docs/engineering/SYSTEM_MAP.md`.
-- If the user has to remind an agent of a lasting engineering fact, treat that as a signal that the fact should be persisted in the repository during the same task after verifying it.
-- Never rely on conversational memory as the sole location of an engineering requirement.
+The learning system must reduce future context cost. Do not grow memory or the context index with cheap lookups, transient facts, duplicated statements or unsupported assumptions.
 
 ## Completion gate
 
-Do not call a behavior-affecting task complete until all applicable items are true:
+Do not call a behavior-affecting task complete until applicable items are true: root cause/intent is understood; impact analysis covered important dependencies; tests were classified and stale/missing coverage handled; validation reached the strongest practical level; no test/safety contract was weakened for convenience; touched code passed the quality review; durable knowledge/context index were reconciled; learning candidates were resolved or explicitly deferred; and remaining uncertainty/unexecuted validation is reported.
 
-- the root cause/intent is understood well enough to avoid a symptom-only patch;
-- impact analysis covered important indirect dependencies;
-- affected tests were classified and stale/missing coverage was handled;
-- reproducible regressions received permanent protection where feasible;
-- validation widened to the strongest practical level allowed by the task/environment;
-- no known failing/stale test was hidden or weakened;
-- durable repository knowledge was reconciled and stale facts discovered during the task were corrected or clearly marked;
-- any remaining unexecuted validation, manual-only coverage, or uncertainty is reported explicitly.
-
-The standard is not merely “the requested symptom disappeared.” The standard is evidence that the intended behavior works, surrounding contracts remain intact, and the repository is harder to regress than before the change.
+The standard is evidence that intended behavior works, surrounding contracts remain intact, the repository is harder to regress, and the next agent can understand the affected area with less unnecessary context.
