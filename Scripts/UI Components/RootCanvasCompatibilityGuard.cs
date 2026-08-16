@@ -51,7 +51,7 @@ namespace Assets.Scripts.UI_Components
 
         internal static void EnsureLiveCanvasGuards()
         {
-            Canvas[] canvases = Object.FindObjectsByType<Canvas>(
+            Canvas[] canvases = UnityEngine.Object.FindObjectsByType<Canvas>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None);
             for (int i = 0; i < canvases.Length; i++)
