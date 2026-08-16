@@ -77,6 +77,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_menus.Stage.SquadTabs"));
             Assert.That(source, Does.Contain("ResolveScoreboardRect(_menus.Scoreboard, scoreboardSearchRoot)"),
                 "The gameplay guard must not trust a stale/wrong serialized scoreboard reference when resolving the visible HUD.");
+            Assert.That(source, Does.Contain("FindObjectsByType<RectTransform>"),
+                "The scoreboard can live under a different root UI branch from GameMenus, so fallback discovery must cover the active scene.");
             Assert.That(source, Does.Contain("_scoreboardRect"));
             Assert.That(source, Does.Contain("StretchToRootCanvas(tabsRoot, canvasRect)"),
                 "The legacy 1366x768 Squad Tabs container must become the live root-canvas rectangle before its layout is calculated.");
@@ -91,11 +93,12 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void WrongAssignedScoreboardFallsBackToLiveNamedScoreboard()
+        public void WrongAssignedScoreboardFallsBackAcrossGameplayUiRoots()
         {
-            RectTransform root = CreateRect("Canvas Root", null, new Vector2(1600f, 900f));
-            RectTransform wrongReference = CreateRect("Summary", root, new Vector2(500f, 400f));
-            RectTransform liveScoreboard = CreateRect("Scoreboard", root, new Vector2(200f, 60f));
+            RectTransform menusRoot = CreateRect("UI Manager", null, new Vector2(1600f, 900f));
+            RectTransform wrongReference = CreateRect("Summary", menusRoot, new Vector2(500f, 400f));
+            RectTransform overlayRoot = CreateRect("UI Overlay", null, new Vector2(1600f, 900f));
+            RectTransform liveScoreboard = CreateRect("Scoreboard", overlayRoot, new Vector2(200f, 60f));
 
             try
             {
@@ -103,13 +106,14 @@ namespace Bees.Tests.EditMode
                     RuntimeAssembly.GetType(GuardTypeName),
                     "ResolveScoreboardRect",
                     wrongReference.gameObject,
-                    root);
+                    menusRoot);
 
                 Assert.That(resolved, Is.SameAs(liveScoreboard));
             }
             finally
             {
-                UnityEngine.Object.DestroyImmediate(root.gameObject);
+                UnityEngine.Object.DestroyImmediate(menusRoot.gameObject);
+                UnityEngine.Object.DestroyImmediate(overlayRoot.gameObject);
             }
         }
 
