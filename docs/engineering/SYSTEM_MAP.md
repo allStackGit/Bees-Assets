@@ -8,32 +8,66 @@ Concise, maintained orientation for coding work. This file is intentionally smal
 - `Scene` / `Stage` — scene lifecycle, network/data-readiness pump, shared pools/prefabs/UI/input/audio/camera, and one or more Levels.
 - `Level` — one battle arena: options, map/environment, timers, server game context, objectives, teardown, saving, and the owning `GameState`.
 - `GameState` — authoritative per-Level runtime registries, selections/visibility, commands/outcomes, dynamic state, score/counters, request ownership, and deferred releases.
-- `SavedSquad` / `FleetShip` / `Squad` / `Ship` — persistent-to-runtime fleet construction and combat lifecycle.
+- `SavedSquad` / `FleetShip` / `SquadShip` — persistent fleet/squad identity and statistics. `DoesBelongToSavedSquad` and `IsLoadedIntoLevel` are derived runtime ownership flags rather than serialized truth.
+- `Squad` / `Ship` / `Weapon` / `Command` — pooled runtime lifetimes constructed from persistent data. Their runtime IDs/item IDs are not persistent profile IDs.
 - `Pool` plus object `Setup`/`ClearData`/`Kill` paths — object reuse boundary. Reacquired objects must behave as new lifetimes.
-- `Pathfinder` plus `Ship` path request state — background path search and main-thread publication. Request identity and pooled-lifecycle identity both matter.
-- `RangeCollider` / `Weapon` / `Projectile` — targeting-range ownership, firing, collision, damage, and cleanup.
+- `Pathfinder` plus `Ship` path request state — background path search and main-thread publication. Ship reference, path request identity, and pooled-lifecycle identity all matter.
+- `RangeCollider` / `MapObjectVisibilityTracker` — derived range/visibility ownership. One observer/contact exiting must not erase another live source.
 - campaign mission catalog/intro/trigger/objective code — campaign identity and terminal behavior; serialized map/obstacle assets and persistence data are part of the same contract.
-- `Socket` and request/response DTOs — server transport, resend/deduplication/reconnect, and response dispatch into the owning runtime objects.
+- `Socket`, `StandingRequestSet`, `SocketResponseLifecycleGuard` and request/response DTOs — transport, resend/deduplication/reconnect, response-status policy and publication into the owning runtime objects.
+
+## Identity boundaries
+
+Do not treat all IDs as interchangeable:
+
+- **account/user identity** — Steam/user profile identity used by Unity and BeesServer; the backend preserves Steam64-sized values exactly rather than through JavaScript `Number`;
+- **persistent fleet identity** — `FleetShip.Id`, `SavedSquad.Id`, and `SquadShip.FleetId`; negative IDs identify generated/transient fleet/squad records;
+- **runtime pooled identity** — `Squad.ItemId`, runtime `Ship.Id`, command/weapon/object IDs from `GameState`/`Pool`; valid only for the current Level/object lifetime;
+- **request identity** — request `Hash`, owned by a standing request on Unity and connection-scoped on BeesServer;
+- **learning action identity** — temporary positive `OutcomeId`, owned until durable commit or explicit discard and distinct from database row IDs;
+- **database row identity** — physical SQL row `ID`; never use it as the client/server temporary OutcomeId.
+
+When diagnosing stale-state bugs, first identify which namespace should own the mutation and which lifetime the evidence belongs to.
 
 ## Important data flows
 
 ### Battle
 
-`Scene -> Stage -> Level -> GameState -> SavedSquad/FleetShip -> Squad/Ship`
+`Scene -> Stage -> Level -> GameState -> persistent SavedSquad/FleetShip -> pooled Squad/Ship -> Weapon/Projectile/Command`
 
-Commands and targeting flow through Squad/Ship/Weapon/Projectile, while terminal state flows back through GameState/Level into persistence and cleanup.
+Commands and targeting flow through Squad/Ship/Weapon/Projectile, while terminal state flows back through GameState/Level into persistent statistics/profile data and cleanup.
+
+Delayed projectiles can outlive the command that fired them. Combat attribution therefore carries the originating command OutcomeId so later damage updates the original stored command/shooting outcome rather than whichever command happens to be active at impact.
 
 ### Pathfinding
 
-`Ship request -> Pathfinder queue/worker -> completion -> ownership checks -> current Ship path state`
+`Ship movement order -> Pathfinder request ID + Ship lifecycle ID -> worker slot/Task.Run -> completed-result queue -> ownership checks -> current Ship path state`
 
-Any optimization/refactor must preserve newest-request ownership and pooled-lifecycle isolation.
+Invalidating a request changes publication ownership; it does not cancel a `Task.Run` already executing. Tracked-target movement, dynamic-asteroid refresh, retry backoff, queued replacement requests and pool teardown are designed around that fact.
 
-### Persistence/network
+Static obstacles form the base clearance layer. Moving collision asteroids are overlaid once per `Stage.FixedUpdates` snapshot. Destructible static-obstacle changes dirty and rebuild the base layer, including all worker copies.
 
-`ConfigData/UserData/DataFile <-> local storage and/or Socket <-> BeesServer`
+### Persistence/profile
 
-Level/game/request identifiers and versioned payload shapes are ownership boundaries, not incidental metadata.
+`ConfigData -> UserData/DataFile -> local storage and/or Socket -> BeesServer stored_user_data`
+
+Normal server-backed startup attempts the server read first; missing data and failed reads are different states. The client uses exact settings/version contracts and may rebuild malformed profile documents from current defaults rather than partially applying corrupt state.
+
+Campaign/profile saves can be coalesced through `CampaignCheckpoint`: seven related profile documents are serialized into one reserved `__campaign_checkpoint__` payload, and BeesServer commits the complete profile checkpoint in one transaction. This is the cross-repository atomic profile boundary; ordinary individual file writes still exist for their intended paths.
+
+### Hive Mind request/learning
+
+`Squad matchup construction -> MatchupStrategyRequest/CommandRequest -> Socket standing request -> shared BeesServer connection Game -> strategy response + temporary OutcomeId -> runtime command/shooting behavior -> StoredCommand TSV -> StoreCommands -> durable learning history`
+
+One Unity WebSocket can host multiple Levels that share one backend Hive Mind `Game`; the Unity `Level` remains the local lifecycle owner. Command/matchup responses additionally capture the runtime Squad item ID so a late response cannot mutate a recycled/dead Squad.
+
+Strategic cache availability depends on banned strategies, and corrected targeting/shooting history on BeesServer uses versioned `target-v2:` / `shoot-v2:` key namespaces. Cross-repository changes to matchup construction, banned strategies, response identity or StoreCommands attribution require checking both sides.
+
+### Dedicated Hive Mind training
+
+`Hivemind Training scene + game mode != FishTank -> HiveMindTrainingBootstrap -> Stage training flags -> 16 non-rendered randomized Levels using the real Hive Mind request/learning path`
+
+The same Unity scene can also be player-facing Fish Tank, so the scene name alone does not imply training. Current automated Hive Mind training is separate from the mostly commented historical ML-Agents `Brain` implementation and `Training/trainer_config.yaml` experiment.
 
 ### Campaign
 
@@ -45,13 +79,18 @@ Do not use `SaveData/`, old JSON, trigger source, or an individual prefab as a s
 
 `CanvasScaler/root canvas -> ResponsiveScreenLayoutGuard viewport-wrapper repair -> GameHudLayoutGuard semantic gameplay placement -> RootCanvasCompatibilityGuard final ownership-boundary correction`
 
-`ResponsiveScreenLayoutGuard` owns legacy viewport/screen-wrapper geometry and must not move arbitrary nested UI. `GameHudLayoutGuard` owns gameplay semantics: scoreboard and other edge controls receive a small visible inset, the Squad Tabs root is made screen-sized and its row begins from the live scoreboard right edge (or the top-left inset when the scoreboard is hidden), timed mission HUD placement remains mission-aware, and the action box/minimap stay visibly inside the bottom corners. `RootCanvasCompatibilityGuard` does not position Squad Tabs; it repairs viewport-level layout owners/backers, gives taller-display surplus to a dominant fixed-height body when a fixed footer/tool row must remain at the real bottom, clamps whole direct root-canvas interactive islands that are actually outside the canvas, and gives explicit screen-edge navigation controls such as BACK/CONTINUE/SKIP a small rendering margin.
+`ResponsiveScreenLayoutGuard` owns legacy viewport/screen-wrapper geometry and must not move arbitrary nested UI. `GameHudLayoutGuard` owns gameplay semantics: scoreboard and other edge controls receive a small visible inset, the Squad Tabs root is made screen-sized and its row begins from the live scoreboard right edge (or the top-left inset when the scoreboard is hidden), timed mission HUD placement remains mission-aware, and the action box/minimap stay visibly inside the bottom corners. `RootCanvasCompatibilityGuard` does not position Squad Tabs. It repairs viewport-level layout owners/backers, gives taller-display surplus to a dominant fixed-height body when a fixed footer/tool row must remain at the real bottom, clamps whole direct root-canvas interactive islands that are actually outside the canvas, and gives explicit screen-edge navigation controls such as BACK/CONTINUE/SKIP a small rendering margin.
+
+## Coordinate-space warning
+
+Gameplay/pathfinding positions are commonly Level-local while Unity 2D physics APIs operate in world space. `PathfinderObstacleScope` performs explicit conversion for pathfinding obstacle sampling, while weapon line-of-fire checks use world-space transforms/physics. Before changing geometry code, identify which coordinate space each API expects.
 
 ## Testing architecture
 
 - EditMode tests and PlayMode tests live under `Tests/` and are described by `docs/TESTING.md`.
 - Production gameplay still compiles in Unity's predefined `Assembly-CSharp`; test assemblies use `RuntimeAssembly` reflection adapters where direct references are unavailable.
 - Prefer EditMode for deterministic state/contracts and PlayMode for scene/frame/physics/async Unity behavior.
+- Real-worker pathfinding, dense/static obstacle, dynamic-obstacle, lifecycle soak and hardware/performance qualification live in PlayMode.
 - XML test results plus executed-test counts are authoritative for command-line Unity test runs.
 - The external BeesServer repository has its own tests; Unity changes that alter its protocol still require cross-repository reasoning even though this repository cannot enforce the server suite by itself.
 
@@ -60,15 +99,17 @@ Do not use `SaveData/`, old JSON, trigger source, or an individual prefab as a s
 Inspect broader dependencies before modifying:
 
 - `ConfigData`, `Utilities`, `Level`, `GameState`, `Pool`, `Ship`, `Squad`, `Pathfinder`, `Socket`;
+- persistent FleetShip/SavedSquad identity versus pooled runtime object identity;
+- command/outcome attribution and delayed projectile lifetimes;
 - campaign trigger/catalog/level-data and map/obstacle-prefab wiring;
 - object pooling and cleanup;
-- async/background work;
-- reconnect/deduplication/persistence;
+- async/background work and publication ownership;
+- reconnect/deduplication/persistence/authentication;
 - scene bootstrap and user-data finalization;
-- physics/range/visibility ownership;
+- physics/range/visibility ownership and coordinate spaces;
 - replay/deterministic evidence;
 - performance-sensitive per-frame/per-fixed-step loops.
 
 ## Maintenance rule
 
-This map is navigation, not proof. When a task reveals that ownership, call paths, or canonical sources changed, update this file and/or `docs/DEVELOPMENT_MEMORY.md` in the same task. Remove stale statements rather than leaving multiple contradictory maps.
+This map is navigation, not proof. When a task reveals that ownership, call paths, identity namespaces or canonical sources changed, update this file and/or `docs/DEVELOPMENT_MEMORY.md` in the same task. Remove stale statements rather than leaving multiple contradictory maps.
