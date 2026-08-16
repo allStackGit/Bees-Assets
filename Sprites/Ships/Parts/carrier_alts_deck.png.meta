@@ -1,0 +1,455 @@
+fileFormatVersion: 2
+guid: 1b434be2a3336e941b11ddbd0bcd6c66
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 125969632249004568
+    second: carrier_alts_deck_0
+  - first:
+      213: 6273863828938226372
+    second: carrier_alts_deck_1
+  - first:
+      213: -4543880165549220033
+    second: carrier_alts_deck_2
+  - first:
+      213: -8483006132401204422
+    second: carrier_alts_deck_3
+  - first:
+      213: 1502129910033455309
+    second: carrier_alts_deck_4
+  - first:
+      213: -7322050598305831127
+    second: carrier_alts_deck_5
+  - first:
+      213: -3194362216672074874
+    second: carrier_alts_deck_6
+  - first:
+      213: -4166005765694651842
+    second: carrier_alts_deck_7
+  - first:
+      213: 6461720599359553630
+    second: carrier_alts_deck_8
+  - first:
+      213: 8648348614976225472
+    second: carrier_alts_deck_9
+  - first:
+      213: 4601329497931096931
+    second: carrier_alts_deck_10
+  - first:
+      213: 2132009328178951199
+    second: carrier_alts_deck_11
+  - first:
+      213: -2614801226019128888
+    second: carrier_alts_deck_12
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: carrier_alts_deck_0
+      rect:
+        serializedVersion: 2
+        x: 26
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 81240be86b88fb100800000000000000
+      internalID: 125969632249004568
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_1
+      rect:
+        serializedVersion: 2
+        x: 122
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4caf80d79ed311750800000000000000
+      internalID: 6273863828938226372
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_2
+      rect:
+        serializedVersion: 2
+        x: 218
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f3fde7e5015e0f0c0800000000000000
+      internalID: -4543880165549220033
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_3
+      rect:
+        serializedVersion: 2
+        x: 314
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a3314c21ede464a80800000000000000
+      internalID: -8483006132401204422
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_4
+      rect:
+        serializedVersion: 2
+        x: 410
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dc8980ec133a8d410800000000000000
+      internalID: 1502129910033455309
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_5
+      rect:
+        serializedVersion: 2
+        x: 506
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9276b8456c9d26a90800000000000000
+      internalID: -7322050598305831127
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_6
+      rect:
+        serializedVersion: 2
+        x: 602
+        y: 141
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 683e4570d785ba3d0800000000000000
+      internalID: -3194362216672074874
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_7
+      rect:
+        serializedVersion: 2
+        x: 26
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e328a8b14df5f26c0800000000000000
+      internalID: -4166005765694651842
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_8
+      rect:
+        serializedVersion: 2
+        x: 122
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e5086a246a4aca950800000000000000
+      internalID: 6461720599359553630
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_9
+      rect:
+        serializedVersion: 2
+        x: 218
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0c046619e3b150870800000000000000
+      internalID: 8648348614976225472
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_10
+      rect:
+        serializedVersion: 2
+        x: 314
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 363a5baacc43bdf30800000000000000
+      internalID: 4601329497931096931
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_11
+      rect:
+        serializedVersion: 2
+        x: 410
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f14fce7203b669d10800000000000000
+      internalID: 2132009328178951199
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: carrier_alts_deck_12
+      rect:
+        serializedVersion: 2
+        x: 506
+        y: 29
+        width: 44
+        height: 76
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8c9bfd4832c56bbd0800000000000000
+      internalID: -2614801226019128888
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      carrier_alts_deck_0: 125969632249004568
+      carrier_alts_deck_1: 6273863828938226372
+      carrier_alts_deck_10: 4601329497931096931
+      carrier_alts_deck_11: 2132009328178951199
+      carrier_alts_deck_12: -2614801226019128888
+      carrier_alts_deck_2: -4543880165549220033
+      carrier_alts_deck_3: -8483006132401204422
+      carrier_alts_deck_4: 1502129910033455309
+      carrier_alts_deck_5: -7322050598305831127
+      carrier_alts_deck_6: -3194362216672074874
+      carrier_alts_deck_7: -4166005765694651842
+      carrier_alts_deck_8: 6461720599359553630
+      carrier_alts_deck_9: 8648348614976225472
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
