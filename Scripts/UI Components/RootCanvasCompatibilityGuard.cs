@@ -18,6 +18,7 @@ namespace Assets.Scripts.UI_Components
         private const float RepairInterval = 0.25f;
         private const float ScreenCoverageThreshold = 0.90f;
         private const float FullAnchorThreshold = 0.95f;
+        private const float LayoutCrossAxisCoverageThreshold = 0.75f;
         private const float FixedAnchorTolerance = 0.001f;
         private const float NavigationControlMargin = 15f;
         private const int MaxHierarchyDepth = 16;
@@ -174,6 +175,8 @@ namespace Assets.Scripts.UI_Components
                         {
                             LayoutRebuilder.ForceRebuildLayoutImmediate(child);
                             FitDominantVerticalLayoutChild(child);
+                            FitDominantHorizontalLayoutChild(child);
+                            FitLayoutCrossAxisChildren(child);
                             LayoutRebuilder.ForceRebuildLayoutImmediate(child);
                         }
                     }
@@ -248,18 +251,8 @@ namespace Assets.Scripts.UI_Components
             for (int i = 0; i < layoutRoot.childCount; i++)
             {
                 RectTransform child = layoutRoot.GetChild(i) as RectTransform;
-                if (child == null || !child.gameObject.activeSelf)
-                {
-                    continue;
-                }
-
-                LayoutElement layoutElement = child.GetComponent<LayoutElement>();
-                if (layoutElement != null && layoutElement.ignoreLayout)
-                {
-                    continue;
-                }
-
-                if (Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
+                if (!CanParticipateInManualLayoutSizing(child) ||
+                    Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
                 {
                     continue;
                 }
@@ -307,6 +300,184 @@ namespace Assets.Scripts.UI_Components
 
             dominantChild.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
             return true;
+        }
+
+        /// <summary>
+        /// Horizontal counterpart to FitDominantVerticalLayoutChild. Legacy menu screens often
+        /// have one flexible work area beside one or more fixed-width sidebars. On ultrawide
+        /// displays the work area must absorb surplus width rather than leaving an uncovered strip.
+        /// </summary>
+        internal static bool FitDominantHorizontalLayoutChild(RectTransform layoutRoot)
+        {
+            if (layoutRoot == null)
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null || layout.childControlWidth)
+            {
+                return false;
+            }
+
+            RectTransform dominantChild = null;
+            float dominantWidth = -1f;
+            float totalChildWidth = 0f;
+            int participatingChildren = 0;
+
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (!CanParticipateInManualLayoutSizing(child) ||
+                    Mathf.Abs(child.anchorMax.x - child.anchorMin.x) > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float width = Mathf.Abs(child.rect.width * child.localScale.x);
+                if (width <= 0f)
+                {
+                    continue;
+                }
+
+                participatingChildren++;
+                totalChildWidth += width;
+                if (width > dominantWidth)
+                {
+                    dominantWidth = width;
+                    dominantChild = child;
+                }
+            }
+
+            if (dominantChild == null || participatingChildren < 2)
+            {
+                return false;
+            }
+
+            float availableWidth = layoutRoot.rect.width - layout.padding.left - layout.padding.right;
+            if (availableWidth <= 0f || dominantWidth < availableWidth * 0.5f)
+            {
+                return false;
+            }
+
+            float spacingWidth = layout.spacing * (participatingChildren - 1);
+            float fixedOtherWidth = totalChildWidth - dominantWidth;
+            float targetScaledWidth = availableWidth - spacingWidth - fixedOtherWidth;
+            float dominantScale = Mathf.Abs(dominantChild.localScale.x);
+            if (dominantScale <= 0.0001f)
+            {
+                return false;
+            }
+
+            float targetWidth = targetScaledWidth / dominantScale;
+            if (targetWidth <= 0f || Mathf.Abs(targetWidth - dominantChild.rect.width) < 0.01f)
+            {
+                return false;
+            }
+
+            dominantChild.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetWidth);
+            return true;
+        }
+
+        /// <summary>
+        /// When a viewport-level LayoutGroup is stretched on its cross axis, its large authored
+        /// children can otherwise keep their 1366x718-era cross-axis size. Resize only children
+        /// that already occupy most of that axis, preserving small tool rows/cards while making
+        /// screen columns and body panels fill the live layout owner.
+        /// </summary>
+        internal static bool FitLayoutCrossAxisChildren(RectTransform layoutRoot)
+        {
+            if (layoutRoot == null)
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup horizontal = layoutRoot.GetComponent<HorizontalLayoutGroup>();
+            if (horizontal != null && !horizontal.childControlHeight)
+            {
+                float availableHeight = layoutRoot.rect.height - horizontal.padding.top - horizontal.padding.bottom;
+                return FitChildrenAlongAxis(
+                    layoutRoot,
+                    RectTransform.Axis.Vertical,
+                    availableHeight,
+                    true);
+            }
+
+            VerticalLayoutGroup vertical = layoutRoot.GetComponent<VerticalLayoutGroup>();
+            if (vertical != null && !vertical.childControlWidth)
+            {
+                float availableWidth = layoutRoot.rect.width - vertical.padding.left - vertical.padding.right;
+                return FitChildrenAlongAxis(
+                    layoutRoot,
+                    RectTransform.Axis.Horizontal,
+                    availableWidth,
+                    false);
+            }
+
+            return false;
+        }
+
+        private static bool FitChildrenAlongAxis(
+            RectTransform layoutRoot,
+            RectTransform.Axis axis,
+            float availableSize,
+            bool verticalAxis)
+        {
+            if (availableSize <= 0f)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (!CanParticipateInManualLayoutSizing(child))
+                {
+                    continue;
+                }
+
+                float anchorSpan = verticalAxis
+                    ? Mathf.Abs(child.anchorMax.y - child.anchorMin.y)
+                    : Mathf.Abs(child.anchorMax.x - child.anchorMin.x);
+                if (anchorSpan > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float scale = verticalAxis
+                    ? Mathf.Abs(child.localScale.y)
+                    : Mathf.Abs(child.localScale.x);
+                float currentSize = verticalAxis ? child.rect.height : child.rect.width;
+                float scaledSize = Mathf.Abs(currentSize * scale);
+                if (scale <= 0.0001f ||
+                    scaledSize < availableSize * LayoutCrossAxisCoverageThreshold)
+                {
+                    continue;
+                }
+
+                float targetSize = availableSize / scale;
+                if (Mathf.Abs(targetSize - currentSize) < 0.01f)
+                {
+                    continue;
+                }
+
+                child.SetSizeWithCurrentAnchors(axis, targetSize);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private static bool CanParticipateInManualLayoutSizing(RectTransform child)
+        {
+            if (child == null || !child.gameObject.activeSelf)
+            {
+                return false;
+            }
+
+            LayoutElement layoutElement = child.GetComponent<LayoutElement>();
+            return layoutElement == null || !layoutElement.ignoreLayout;
         }
 
         private static void ClampDirectInteractiveIslands(
