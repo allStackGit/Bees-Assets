@@ -1,6 +1,7 @@
 using System;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -9,7 +10,9 @@ namespace Bees.Tests.EditMode
     public class CarrierDeckVariantsTests
     {
         private const string VariantTypeName = "Assets.Scripts.Entities.Ships.CarrierDeckVariants";
+        private const string PresenterTypeName = "Assets.Scripts.UIComponents.SquadMakerCarrierDeckPresenter";
         private const string ResourcePath = "Sprites/carrier_alts_deck";
+        private const string OverlayObjectName = "Carrier Deck Variant";
 
         [TestCase(195, 98, 107, 0)]
         [TestCase(193, 111, 56, 1)]
@@ -70,6 +73,99 @@ namespace Bees.Tests.EditMode
             Assert.That(sprite.rect.height, Is.EqualTo(112f));
         }
 
+        [Test]
+        public void UiDeckVariantFillsBaseImageAndCanBeHiddenForReuse()
+        {
+            GameObject iconObject = new GameObject(
+                "Carrier Icon",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image));
+
+            try
+            {
+                Image baseImage = iconObject.GetComponent<Image>();
+                Sprite deckSprite = (Sprite)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(VariantTypeName),
+                    "GetDeckSprite",
+                    ColorFromBytes(195, 98, 107));
+
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(VariantTypeName),
+                    "SetUiDeckVariant",
+                    baseImage,
+                    deckSprite);
+
+                Transform overlayTransform = iconObject.transform.Find(OverlayObjectName);
+                Assert.That(overlayTransform, Is.Not.Null);
+                Image overlay = overlayTransform.GetComponent<Image>();
+                Assert.That(overlay, Is.Not.Null);
+                Assert.That(overlay.enabled, Is.True);
+                Assert.That(overlay.sprite, Is.SameAs(deckSprite));
+                Assert.That(overlay.raycastTarget, Is.False);
+                AssertVector(overlay.rectTransform.anchorMin, Vector2.zero);
+                AssertVector(overlay.rectTransform.anchorMax, Vector2.one);
+                AssertVector(overlay.rectTransform.offsetMin, Vector2.zero);
+                AssertVector(overlay.rectTransform.offsetMax, Vector2.zero);
+
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(VariantTypeName),
+                    "SetUiDeckVariant",
+                    baseImage,
+                    null);
+                Assert.That(overlay.enabled, Is.False,
+                    "A reused squad-info/list image must not retain the previous carrier deck.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(iconObject);
+            }
+        }
+
+        [Test]
+        public void SquadMakerPresenterShowsDeckOnlyForMatchingCustomCarrierIcons()
+        {
+            GameObject iconObject = new GameObject(
+                "Squad Icon",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image));
+
+            try
+            {
+                Image image = iconObject.GetComponent<Image>();
+                Type presenterType = RuntimeAssembly.GetType(PresenterTypeName);
+                Color matchingColor = ColorFromBytes(195, 98, 107);
+
+                RuntimeAssembly.InvokeStatic(
+                    presenterType,
+                    "ApplyDeckVariant",
+                    image,
+                    true,
+                    true,
+                    matchingColor);
+
+                Image overlay = iconObject.transform.Find(OverlayObjectName)?.GetComponent<Image>();
+                Assert.That(overlay, Is.Not.Null);
+                Assert.That(overlay.enabled, Is.True);
+                Assert.That(overlay.sprite.name, Is.EqualTo("carrier_alts_deck_0"));
+
+                RuntimeAssembly.InvokeStatic(
+                    presenterType,
+                    "ApplyDeckVariant",
+                    image,
+                    false,
+                    true,
+                    matchingColor);
+                Assert.That(overlay.enabled, Is.False,
+                    "The shared Squad Maker surface must clear a previous carrier overlay when it represents another ship type.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(iconObject);
+            }
+        }
+
         private static int GetDeckIndex(Color color)
         {
             return (int)RuntimeAssembly.InvokeStatic(
@@ -89,6 +185,12 @@ namespace Bees.Tests.EditMode
             Assert.That(rect.y, Is.EqualTo(y));
             Assert.That(rect.width, Is.EqualTo(96f));
             Assert.That(rect.height, Is.EqualTo(112f));
+        }
+
+        private static void AssertVector(Vector2 actual, Vector2 expected)
+        {
+            Assert.That(actual.x, Is.EqualTo(expected.x).Within(0.001f));
+            Assert.That(actual.y, Is.EqualTo(expected.y).Within(0.001f));
         }
     }
 }
