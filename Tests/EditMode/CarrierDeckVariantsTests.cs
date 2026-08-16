@@ -40,12 +40,11 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SheetIsThirteenEqualNinetySixByOneTwelveSprites()
+        public void SheetResourceIsSplitIntoThirteenEqualNinetySixByOneTwelveSprites()
         {
-            Texture2D texture = Resources.Load<Texture2D>(ResourcePath);
-            Assert.That(texture, Is.Not.Null, "Carrier deck sheet must remain runtime-loadable from Resources.");
-            Assert.That(texture.width, Is.EqualTo(672));
-            Assert.That(texture.height, Is.EqualTo(224));
+            TextAsset source = Resources.Load<TextAsset>(ResourcePath);
+            Assert.That(source, Is.Not.Null, "Carrier deck sheet must remain runtime-loadable from Resources.");
+            Assert.That(source.bytes.Length, Is.GreaterThan(0));
 
             Type type = RuntimeAssembly.GetType(VariantTypeName);
             AssertRect((Rect)RuntimeAssembly.InvokeStatic(type, "GetSpriteRect", 0), 0f, 112f);
@@ -55,7 +54,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MatchingColorBuildsOnlyTheSelectedDeckSprite()
+        public void MatchingColorBuildsTheSelectedDeckSpriteFromTheAuthoredSheet()
         {
             Type type = RuntimeAssembly.GetType(VariantTypeName);
             Sprite sprite = (Sprite)RuntimeAssembly.InvokeStatic(
@@ -65,6 +64,8 @@ namespace Bees.Tests.EditMode
 
             Assert.That(sprite, Is.Not.Null);
             Assert.That(sprite.name, Is.EqualTo("carrier_alts_deck_0"));
+            Assert.That(sprite.texture.width, Is.EqualTo(672));
+            Assert.That(sprite.texture.height, Is.EqualTo(224));
             Assert.That(sprite.rect.width, Is.EqualTo(96f));
             Assert.That(sprite.rect.height, Is.EqualTo(112f));
         }
