@@ -253,16 +253,34 @@ namespace Assets.Scripts.UI_Components
                 return assignedRect;
             }
 
-            if (searchRoot == null)
+            if (searchRoot != null)
             {
-                return null;
+                RectTransform[] rootedCandidates = searchRoot.GetComponentsInChildren<RectTransform>(true);
+                for (int i = 0; i < rootedCandidates.Length; i++)
+                {
+                    RectTransform candidate = rootedCandidates[i];
+                    if (candidate != null && candidate.gameObject.name == "Scoreboard")
+                    {
+                        return candidate;
+                    }
+                }
             }
 
-            RectTransform[] candidates = searchRoot.GetComponentsInChildren<RectTransform>(true);
-            for (int i = 0; i < candidates.Length; i++)
+            UnityEngine.SceneManagement.Scene targetScene = assignedScoreboard != null
+                ? assignedScoreboard.scene
+                : default;
+            RectTransform[] sceneCandidates = UnityEngine.Object.FindObjectsByType<RectTransform>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (int i = 0; i < sceneCandidates.Length; i++)
             {
-                RectTransform candidate = candidates[i];
-                if (candidate != null && candidate.gameObject.name == "Scoreboard")
+                RectTransform candidate = sceneCandidates[i];
+                if (candidate == null || candidate.gameObject.name != "Scoreboard")
+                {
+                    continue;
+                }
+
+                if (!targetScene.IsValid() || candidate.gameObject.scene == targetScene)
                 {
                     return candidate;
                 }
