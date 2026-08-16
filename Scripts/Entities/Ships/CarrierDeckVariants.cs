@@ -41,11 +41,11 @@ namespace Assets.Scripts.Entities.Ships
         private static Sprite[] _sprites;
         private static bool _loadAttempted;
 
-        public static bool TryGetDeckIndex(Color color, out int deckIndex)
+        public static int GetDeckIndex(Color color)
         {
             Color.RGBToHSV(color, out float hue, out float saturation, out float value);
             float bestDistance = float.MaxValue;
-            deckIndex = -1;
+            int deckIndex = -1;
 
             for (int i = 0; i < MatchColors.Length; i++)
             {
@@ -82,12 +82,19 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
 
+            return deckIndex;
+        }
+
+        public static bool TryGetDeckIndex(Color color, out int deckIndex)
+        {
+            deckIndex = GetDeckIndex(color);
             return deckIndex >= 0;
         }
 
         public static Sprite GetDeckSprite(Color color)
         {
-            if (!TryGetDeckIndex(color, out int deckIndex))
+            int deckIndex = GetDeckIndex(color);
+            if (deckIndex < 0)
             {
                 return null;
             }
@@ -96,7 +103,7 @@ namespace Assets.Scripts.Entities.Ships
             return _sprites != null ? _sprites[deckIndex] : null;
         }
 
-        internal static Rect GetSpriteRect(int deckIndex, int textureWidth, int textureHeight)
+        internal static Rect GetSpriteRect(int deckIndex)
         {
             if (deckIndex < 0 || deckIndex >= DeckCount)
             {
@@ -142,7 +149,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 _sprites[i] = Sprite.Create(
                     texture,
-                    GetSpriteRect(i, texture.width, texture.height),
+                    GetSpriteRect(i),
                     new Vector2(0.5f, 0.5f),
                     PixelsPerUnit,
                     0,
