@@ -79,19 +79,21 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("StretchToRootCanvas(tabsRoot, canvasRect)"),
                 "The legacy 1366x768 Squad Tabs container must become the live root-canvas rectangle before its layout is calculated.");
             Assert.That(source, Does.Contain("GetSquadTabLeftPadding("));
-            Assert.That(source, Does.Contain("scoreboardBounds.max.x - tabsRoot.rect.xMin + gap"),
-                "The squad row should begin immediately to the right of the visible scoreboard.");
+            Assert.That(source, Does.Contain("scoreboard.TransformPoint("));
+            Assert.That(source, Does.Contain("tabsRoot.InverseTransformPoint(scoreboardRightWorld).x"),
+                "Sibling scoreboard and Squad Tabs geometry must be converted through world space before calculating the row start.");
             Assert.That(source, Does.Contain("layout.padding = new RectOffset(leftPadding, 0, topPadding, 0);"));
             Assert.That(source, Does.Contain("layout.childAlignment = TextAnchor.UpperLeft;"));
             Assert.That(source, Does.Not.Contain("layout.padding = new RectOffset(0, 0, 0, 0);"),
-                "Zeroing the authored scoreboard reservation caused the squad row to lose its intended relationship to the scoreboard.");
+                "Blindly zeroing the scoreboard reservation would put the squad row over the scoreboard.");
         }
 
         [Test]
-        public void VisibleScoreboardDeterminesSquadTabLeftPadding()
+        public void VisibleSiblingScoreboardDeterminesSquadTabLeftPadding()
         {
-            RectTransform tabsRoot = CreateRect("Squad Tabs", null, new Vector2(1600f, 900f));
-            RectTransform scoreboard = CreateRect("Scoreboard", tabsRoot, new Vector2(200f, 60f));
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform tabsRoot = CreateRect("Squad Tabs", canvas, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", canvas, new Vector2(200f, 60f));
             scoreboard.anchorMin = new Vector2(0f, 1f);
             scoreboard.anchorMax = new Vector2(0f, 1f);
             scoreboard.anchoredPosition = new Vector2(100f, -30f);
@@ -104,22 +106,23 @@ namespace Bees.Tests.EditMode
                     tabsRoot,
                     scoreboard,
                     8f,
-                    10f);
+                    0f);
 
                 Assert.That(padding, Is.EqualTo(208),
                     "A 200 px scoreboard at the left edge plus an 8 px gap should put the first squad tab at x=208 from the live canvas left.");
             }
             finally
             {
-                UnityEngine.Object.DestroyImmediate(tabsRoot.gameObject);
+                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
             }
         }
 
         [Test]
-        public void HiddenScoreboardUsesSmallVisibleSquadTabMargin()
+        public void HiddenScoreboardUsesFlushTopLeftSquadTabStart()
         {
-            RectTransform tabsRoot = CreateRect("Squad Tabs", null, new Vector2(1600f, 900f));
-            RectTransform scoreboard = CreateRect("Scoreboard", tabsRoot, new Vector2(200f, 60f));
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform tabsRoot = CreateRect("Squad Tabs", canvas, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", canvas, new Vector2(200f, 60f));
             scoreboard.gameObject.SetActive(false);
 
             try
@@ -130,38 +133,9 @@ namespace Bees.Tests.EditMode
                     tabsRoot,
                     scoreboard,
                     8f,
-                    10f);
+                    0f);
 
-                Assert.That(padding, Is.EqualTo(10));
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(tabsRoot.gameObject);
-            }
-        }
-
-        [Test]
-        public void EdgeHudControlsReceiveVisibleCanvasInset()
-        {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
-            RectTransform scoreboard = CreateRect("Scoreboard", canvas, new Vector2(200f, 60f));
-            scoreboard.anchorMin = new Vector2(0f, 1f);
-            scoreboard.anchorMax = new Vector2(0f, 1f);
-            scoreboard.anchoredPosition = new Vector2(100f, -30f);
-
-            try
-            {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ClampRectWithinCanvas",
-                    scoreboard,
-                    canvas,
-                    10f);
-
-                Bounds after = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, scoreboard);
-                Assert.That(changed, Is.True);
-                Assert.That(after.min.x, Is.EqualTo(canvas.rect.xMin + 10f).Within(0.01f));
-                Assert.That(after.max.y, Is.EqualTo(canvas.rect.yMax - 10f).Within(0.01f));
+                Assert.That(padding, Is.EqualTo(0));
             }
             finally
             {
@@ -170,23 +144,57 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void BottomHudIslandsUseVisibleInsetInsteadOfTouchingCanvasBoundary()
+        public void GameplayCornerControlCanBePinnedFlushToCanvasBoundary()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1600f, 900f));
+            RectTransform scoreboard = CreateRect("Scoreboard", canvas, new Vector2(200f, 60f));
+            scoreboard.anchorMin = new Vector2(0f, 1f);
+            scoreboard.anchorMax = new Vector2(0f, 1f);
+            scoreboard.anchoredPosition = new Vector2(115f, -45f);
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "PinLayoutRootToCorner",
+                    scoreboard,
+                    canvas,
+                    false,
+                    true,
+                    0f);
+
+                Bounds after = RectTransformUtility.CalculateRelativeRectTransformBounds(canvas, scoreboard);
+                Assert.That(after.min.x, Is.EqualTo(canvas.rect.xMin).Within(0.01f));
+                Assert.That(after.max.y, Is.EqualTo(canvas.rect.yMax).Within(0.01f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void GameplayHudUsesCanvasEdgesWithoutInset()
         {
             string source = ReadGuardSource();
 
-            Assert.That(source, Does.Contain("private const float HudEdgeMargin = 10f;"));
+            Assert.That(source, Does.Contain("private const float HudEdgeMargin = 0f;"));
             Assert.That(source, Does.Contain("private const float BottomHudMargin = HudEdgeMargin;"));
+            Assert.That(source, Does.Contain("KeepScoreboardWithinCanvas();"));
+            Assert.That(source, Does.Contain("KeepNormalSpeedButtonWithinCanvas();"));
             Assert.That(source, Does.Contain("KeepActionBoxWithinCanvas();"));
             Assert.That(source, Does.Contain("KeepMiniMapWithinCanvas();"));
+            Assert.That(source, Does.Contain("PinLayoutRootToCorner("));
             Assert.That(source, Does.Contain("_menus.SquadActionBoxUI"));
             Assert.That(source, Does.Contain("_menus.MiniMapOutput"));
             Assert.That(source, Does.Contain("_menus.MiniMapCover"));
             Assert.That(source, Does.Contain("available.xMin + margin - bounds.min.x"),
-                "The Squad Action Box should remain fully visible inside bottom-left.");
+                "The Squad Action Box should be pinned to the bottom-left canvas edge.");
             Assert.That(source, Does.Contain("available.xMax - margin - bounds.max.x"),
-                "The Mini Map should remain fully visible inside bottom-right.");
+                "The Mini Map and right-edge controls should be pinned to the right canvas edge.");
             Assert.That(source, Does.Contain("available.yMin + margin - bounds.min.y"),
-                "Bottom HUD islands must not touch or cross the rendered canvas boundary.");
+                "Bottom HUD islands should be pinned flush to the bottom canvas edge.");
+            Assert.That(source, Does.Not.Contain("private const float HudEdgeMargin = 10f;"));
         }
 
         [Test]
