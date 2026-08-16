@@ -15,8 +15,6 @@ namespace Assets.Scripts.UIComponents
 {
     public class DragIcon
     {
-        private const string CarrierDeckVariantObjectName = "Carrier Deck Variant";
-
         public Vector2 Position => _icon.transform.position;
         public int Id;
         private GameObject _icon;
@@ -24,7 +22,6 @@ namespace Assets.Scripts.UIComponents
         private FleetShip _fleetShip;
         private SquadMaker _scene;
         private int[] _changeablePixels;
-        private Image _carrierDeckVariantImage;
 
         public bool HasDeadShipBox => _deadShipBox != null;
         public DragIcon(SquadMaker scene, GameObject icon, FleetShip fleetShip, string gameObjectName, int id)
@@ -69,75 +66,19 @@ namespace Assets.Scripts.UIComponents
         }
         public void SetColor(Color color)
         {
+            Image image = _icon.GetComponent<Image>();
             if (color.Equals(ConfigData.UnsetColor))
             {
-                SetCarrierDeckVariant(null);
+                CarrierDeckVariants.SetUiDeckVariant(image, null);
                 return;
             }
-            Image image = _icon.GetComponent<Image>();
 
             image.sprite = Utilities.SetImageColor(color, image.sprite, _changeablePixels);
 
-            if (_fleetShip != null && _fleetShip.Type == ConfigData.ShipTypes.Carrier)
-            {
-                SetCarrierDeckVariant(CarrierDeckVariants.GetDeckSprite(color));
-            }
-        }
-
-        private void SetCarrierDeckVariant(Sprite deckSprite)
-        {
-            if (_fleetShip == null || _fleetShip.Type != ConfigData.ShipTypes.Carrier)
-            {
-                return;
-            }
-
-            if (deckSprite == null)
-            {
-                if (_carrierDeckVariantImage != null)
-                {
-                    _carrierDeckVariantImage.enabled = false;
-                }
-                return;
-            }
-
-            EnsureCarrierDeckVariantImage();
-            _carrierDeckVariantImage.sprite = deckSprite;
-            _carrierDeckVariantImage.color = Color.white;
-            _carrierDeckVariantImage.enabled = true;
-        }
-
-        private void EnsureCarrierDeckVariantImage()
-        {
-            if (_carrierDeckVariantImage != null)
-            {
-                return;
-            }
-
-            Transform existing = _icon.transform.Find(CarrierDeckVariantObjectName);
-            if (existing != null)
-            {
-                _carrierDeckVariantImage = existing.GetComponent<Image>();
-            }
-
-            if (_carrierDeckVariantImage == null)
-            {
-                GameObject deckObject = new GameObject(
-                    CarrierDeckVariantObjectName,
-                    typeof(RectTransform),
-                    typeof(CanvasRenderer),
-                    typeof(Image));
-                deckObject.transform.SetParent(_icon.transform, false);
-                _carrierDeckVariantImage = deckObject.GetComponent<Image>();
-            }
-
-            RectTransform rectTransform = _carrierDeckVariantImage.rectTransform;
-            rectTransform.anchorMin = Vector2.zero;
-            rectTransform.anchorMax = Vector2.one;
-            rectTransform.offsetMin = Vector2.zero;
-            rectTransform.offsetMax = Vector2.zero;
-            rectTransform.localScale = Vector3.one;
-            _carrierDeckVariantImage.raycastTarget = false;
-            _carrierDeckVariantImage.preserveAspect = false;
+            Sprite deckSprite = _fleetShip != null && _fleetShip.Type == ConfigData.ShipTypes.Carrier
+                ? CarrierDeckVariants.GetDeckSprite(color)
+                : null;
+            CarrierDeckVariants.SetUiDeckVariant(image, deckSprite);
         }
 
         public void SetDeadShipBox(GameObject deadShipBox)
