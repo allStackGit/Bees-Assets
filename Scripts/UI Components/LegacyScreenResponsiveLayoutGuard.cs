@@ -18,8 +18,10 @@ namespace Assets.Scripts.UI_Components
         private const float StructuralWidthCoverage = 0.20f;
         private const float StructuralHeightCoverage = 0.20f;
         private const float MainMenuRootMinimumCoverage = 0.45f;
+        private const float MainMenuReferenceCoverage = 0.75f;
         private const int MinimumMainMenuControls = 4;
         private const int MaxHierarchyDepth = 16;
+        private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
         private Canvas _canvas;
         private RectTransform _canvasRect;
@@ -124,9 +126,9 @@ namespace Assets.Scripts.UI_Components
 
         /// <summary>
         /// The Main Menu's interactive UI lives under one direct canvas branch. Older authored
-        /// transforms can preserve a fixed aspect-shaped frame, which letterboxes the complete menu
-        /// on wide or tall displays. Expand only the direct branch that owns the menu controls; the
-        /// starfield/background siblings remain untouched.
+        /// transforms can preserve a fixed reference-sized frame, which letterboxes the complete
+        /// menu on wide or tall displays. Convert that branch to stretch anchors while preserving
+        /// the intentional 1366x668 -> 1366x768 reference insets instead of erasing them.
         /// </summary>
         internal static bool ExpandMainMenuInteractiveRoot(RectTransform canvasRect)
         {
@@ -142,7 +144,8 @@ namespace Assets.Scripts.UI_Components
             }
 
             RectTransform candidate = FindDirectCanvasBranch(canvasRect, controls[0].transform as RectTransform);
-            if (candidate == null || candidate == canvasRect)
+            if (candidate == null || candidate == canvasRect || candidate.parent is not RectTransform parent ||
+                parent.GetComponent<LayoutGroup>() != null)
             {
                 return false;
             }
@@ -154,6 +157,11 @@ namespace Assets.Scripts.UI_Components
                 {
                     return false;
                 }
+            }
+
+            if (candidate.anchorMin == Vector2.zero && candidate.anchorMax == Vector2.one)
+            {
+                return false;
             }
 
             Vector2 canvasSize = canvasRect.rect.size;
@@ -171,7 +179,21 @@ namespace Assets.Scripts.UI_Components
                 return false;
             }
 
-            return RootCanvasCompatibilityGuard.StretchToParent(candidate);
+            Vector2 authoredSize = candidate.rect.size;
+            if (authoredSize.x < ReferenceResolution.x * MainMenuReferenceCoverage ||
+                authoredSize.y < ReferenceResolution.y * MainMenuReferenceCoverage)
+            {
+                return false;
+            }
+
+            float horizontalInset = Mathf.Max(0f, (ReferenceResolution.x - authoredSize.x) * 0.5f);
+            float verticalInset = Mathf.Max(0f, (ReferenceResolution.y - authoredSize.y) * 0.5f);
+
+            candidate.anchorMin = Vector2.zero;
+            candidate.anchorMax = Vector2.one;
+            candidate.offsetMin = new Vector2(horizontalInset, verticalInset);
+            candidate.offsetMax = new Vector2(-horizontalInset, -verticalInset);
+            return true;
         }
 
         private static RectTransform FindDirectCanvasBranch(RectTransform canvasRect, RectTransform descendant)
