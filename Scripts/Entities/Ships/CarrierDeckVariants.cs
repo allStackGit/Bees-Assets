@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.Entities.Ships
 {
@@ -21,6 +22,7 @@ namespace Assets.Scripts.Entities.Ships
         private const float NeutralSaturationRange = 0.10f;
         private const float NeutralValueRange = 0.12f;
         private const string ResourcePath = "Sprites/carrier_alts_deck";
+        private const string UiDeckVariantObjectName = "Carrier Deck Variant";
 
         // Top row left-to-right, then bottom row left-to-right. The fourteenth sheet cell is blank.
         // The ranges are deliberately bounded in hue, saturation, and value so discovering a deck
@@ -107,6 +109,55 @@ namespace Assets.Scripts.Entities.Ships
 
             EnsureSpritesLoaded();
             return _sprites != null ? _sprites[deckIndex] : null;
+        }
+
+        /// <summary>
+        /// Applies a carrier-deck overlay to a UI image without changing the base image sprite.
+        /// Passing null hides an existing overlay, allowing recycled/reused UI surfaces to safely
+        /// switch between carrier and non-carrier squads.
+        /// </summary>
+        public static void SetUiDeckVariant(Image baseImage, Sprite deckSprite)
+        {
+            if (baseImage == null)
+            {
+                return;
+            }
+
+            Transform existing = baseImage.transform.Find(UiDeckVariantObjectName);
+            Image overlay = existing != null ? existing.GetComponent<Image>() : null;
+
+            if (deckSprite == null)
+            {
+                if (overlay != null)
+                {
+                    overlay.enabled = false;
+                }
+                return;
+            }
+
+            if (overlay == null)
+            {
+                GameObject deckObject = new GameObject(
+                    UiDeckVariantObjectName,
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(Image));
+                deckObject.transform.SetParent(baseImage.transform, false);
+                overlay = deckObject.GetComponent<Image>();
+            }
+
+            RectTransform rectTransform = overlay.rectTransform;
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.localScale = Vector3.one;
+            overlay.transform.SetAsLastSibling();
+            overlay.sprite = deckSprite;
+            overlay.color = Color.white;
+            overlay.raycastTarget = false;
+            overlay.preserveAspect = false;
+            overlay.enabled = true;
         }
 
         internal static Rect GetSpriteRect(int deckIndex)
