@@ -11,19 +11,14 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName = "Assets.Scripts.UI_Components.LegacyScreenResponsiveLayoutGuard";
 
         [Test]
-        public void MainMenuInteractiveBranchExpandsWhilePreservingAuthoredInsets()
+        public void MainMenuInteractiveBranchDoesNotExpandBeyondReferenceFrameOnWideCanvas()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
             RectTransform background = CreateRect("Starfield", canvas, new Vector2(2000f, 900f));
             RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
             Vector2 backgroundSize = background.sizeDelta;
 
-            for (int i = 0; i < 4; i++)
-            {
-                RectTransform button = CreateRect("Menu Button " + i, menuRoot, new Vector2(400f, 50f));
-                button.gameObject.AddComponent<Image>();
-                button.gameObject.AddComponent<Button>();
-            }
+            AddMainMenuControls(menuRoot);
 
             try
             {
@@ -32,15 +27,52 @@ namespace Bees.Tests.EditMode
                     "ExpandMainMenuInteractiveRoot",
                     canvas);
 
-                Assert.That(changed, Is.True,
-                    "The menu control branch should absorb wide/tall surplus instead of retaining a fixed reference-sized frame.");
-                AssertVector(menuRoot.anchorMin, Vector2.zero);
-                AssertVector(menuRoot.anchorMax, Vector2.one);
-                AssertVector(menuRoot.offsetMin, new Vector2(0f, 50f),
-                    "The reference scene intentionally leaves 50 units above and below the 1366x668 MainPanel.");
-                AssertVector(menuRoot.offsetMax, new Vector2(0f, -50f));
+                Assert.That(changed, Is.False,
+                    "An already-authored reference-sized menu should remain unchanged when the viewport only adds surplus space.");
+                AssertVector(menuRoot.anchorMin, new Vector2(0.5f, 0.5f));
+                AssertVector(menuRoot.anchorMax, new Vector2(0.5f, 0.5f));
+                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f),
+                    "Ultrawide surplus belongs to the surrounding starfield, not the green menu frame.");
                 AssertVector(background.sizeDelta, backgroundSize,
                     "The starfield/background sibling is not owned by the menu frame repair.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void MainMenuInteractiveBranchShrinksUniformlyOnTallCanvasAndRestoresAtReferenceCapacity()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(900f, 2000f));
+            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
+            AddMainMenuControls(menuRoot);
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ExpandMainMenuInteractiveRoot",
+                    canvas);
+
+                float expectedTallHeight = 668f * 900f / 1366f;
+                Assert.That(changed, Is.True);
+                AssertVector(menuRoot.anchorMin, new Vector2(0.5f, 0.5f));
+                AssertVector(menuRoot.anchorMax, new Vector2(0.5f, 0.5f));
+                AssertVector(menuRoot.anchoredPosition, Vector2.zero);
+                AssertVector(menuRoot.sizeDelta, new Vector2(900f, expectedTallHeight),
+                    "A tall/narrow viewport should scale the authored menu frame uniformly rather than stretching it vertically.");
+
+                canvas.sizeDelta = new Vector2(2000f, 900f);
+                changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ExpandMainMenuInteractiveRoot",
+                    canvas);
+
+                Assert.That(changed, Is.True,
+                    "The periodic repair must be able to restore the authored size after a resolution/aspect-ratio change.");
+                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f));
             }
             finally
             {
@@ -151,6 +183,16 @@ namespace Bees.Tests.EditMode
             finally
             {
                 Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        private static void AddMainMenuControls(RectTransform menuRoot)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                RectTransform button = CreateRect("Menu Button " + i, menuRoot, new Vector2(400f, 50f));
+                button.gameObject.AddComponent<Image>();
+                button.gameObject.AddComponent<Button>();
             }
         }
 
