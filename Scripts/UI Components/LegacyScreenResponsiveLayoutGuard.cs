@@ -17,8 +17,6 @@ namespace Assets.Scripts.UI_Components
         private const float RepairInterval = 0.25f;
         private const float StructuralWidthCoverage = 0.20f;
         private const float StructuralHeightCoverage = 0.20f;
-        private const float MainMenuRootMinimumCoverage = 0.45f;
-        private const float MainMenuReferenceCoverage = 0.75f;
         private const float RelaxedHorizontalMinimumCoverage = 0.20f;
         private const float RelaxedHorizontalDominanceRatio = 1.5f;
         private const float FixedAnchorTolerance = 0.001f;
@@ -128,10 +126,11 @@ namespace Assets.Scripts.UI_Components
         }
 
         /// <summary>
-        /// The Main Menu's interactive UI lives under one direct canvas branch. Older authored
-        /// transforms can preserve a fixed reference-sized frame, which letterboxes the complete
-        /// menu on wide or tall displays. Convert that branch to stretch anchors while preserving
-        /// the intentional 1366x668 -> 1366x768 reference insets instead of erasing them.
+        /// The Main Menu's interactive UI lives under one direct canvas branch authored for the
+        /// 1366x768 reference frame. Keep that branch centered and no larger than its authored
+        /// reference size. On narrower/shorter canvases it scales down uniformly to fit; on
+        /// ultrawide or very tall canvases the extra viewport remains available to the starfield
+        /// instead of stretching the green menu frame to fill it.
         /// </summary>
         internal static bool ExpandMainMenuInteractiveRoot(RectTransform canvasRect)
         {
@@ -162,41 +161,60 @@ namespace Assets.Scripts.UI_Components
                 }
             }
 
-            if (candidate.anchorMin == Vector2.zero && candidate.anchorMax == Vector2.one)
-            {
-                return false;
-            }
-
             Vector2 canvasSize = canvasRect.rect.size;
-            if (canvasSize.x <= 0f || canvasSize.y <= 0f)
+            Vector2 currentSize = candidate.rect.size;
+            if (canvasSize.x <= 0f || canvasSize.y <= 0f || currentSize.x <= 0f || currentSize.y <= 0f)
             {
                 return false;
             }
 
-            Bounds candidateBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, candidate);
-            float widthCoverage = candidateBounds.size.x / canvasSize.x;
-            float heightCoverage = candidateBounds.size.y / canvasSize.y;
-            if (widthCoverage < MainMenuRootMinimumCoverage ||
-                heightCoverage < MainMenuRootMinimumCoverage)
+            float authoredAspect = currentSize.x / currentSize.y;
+            Vector2 availableSize = new Vector2(
+                Mathf.Min(canvasSize.x, ReferenceResolution.x),
+                Mathf.Min(canvasSize.y, ReferenceResolution.y));
+            Vector2 targetSize = FitAspectInside(availableSize, authoredAspect);
+            if (targetSize.x <= 0f || targetSize.y <= 0f)
             {
                 return false;
             }
 
-            Vector2 authoredSize = candidate.rect.size;
-            if (authoredSize.x < ReferenceResolution.x * MainMenuReferenceCoverage ||
-                authoredSize.y < ReferenceResolution.y * MainMenuReferenceCoverage)
+            Vector2 centeredAnchor = new Vector2(0.5f, 0.5f);
+            bool changed = !Approximately(candidate.anchorMin, centeredAnchor) ||
+                           !Approximately(candidate.anchorMax, centeredAnchor) ||
+                           !Approximately(candidate.pivot, centeredAnchor) ||
+                           !Approximately(candidate.anchoredPosition, Vector2.zero) ||
+                           !Approximately(candidate.sizeDelta, targetSize);
+
+            candidate.anchorMin = centeredAnchor;
+            candidate.anchorMax = centeredAnchor;
+            candidate.pivot = centeredAnchor;
+            candidate.anchoredPosition = Vector2.zero;
+            candidate.sizeDelta = targetSize;
+            return changed;
+        }
+
+        private static Vector2 FitAspectInside(Vector2 availableSize, float aspect)
+        {
+            if (availableSize.x <= 0f || availableSize.y <= 0f || aspect <= 0f)
             {
-                return false;
+                return Vector2.zero;
             }
 
-            float horizontalInset = Mathf.Max(0f, (ReferenceResolution.x - authoredSize.x) * 0.5f);
-            float verticalInset = Mathf.Max(0f, (ReferenceResolution.y - authoredSize.y) * 0.5f);
+            float width = availableSize.x;
+            float height = width / aspect;
+            if (height > availableSize.y)
+            {
+                height = availableSize.y;
+                width = height * aspect;
+            }
 
-            candidate.anchorMin = Vector2.zero;
-            candidate.anchorMax = Vector2.one;
-            candidate.offsetMin = new Vector2(horizontalInset, verticalInset);
-            candidate.offsetMax = new Vector2(-horizontalInset, -verticalInset);
-            return true;
+            return new Vector2(width, height);
+        }
+
+        private static bool Approximately(Vector2 left, Vector2 right)
+        {
+            return Mathf.Abs(left.x - right.x) <= 0.01f &&
+                   Mathf.Abs(left.y - right.y) <= 0.01f;
         }
 
         private static RectTransform FindDirectCanvasBranch(RectTransform canvasRect, RectTransform descendant)
