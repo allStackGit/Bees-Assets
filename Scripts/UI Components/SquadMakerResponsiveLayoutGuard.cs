@@ -2,15 +2,14 @@ using Assets.Scripts.Scenes;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Keeps the Squad Maker's hover-only START/TEST help text from participating in layout
-    /// only while hovered. The legacy scene toggles those GameObjects active/inactive from
-    /// pointer callbacks; inside a LayoutGroup that changes the right column's measured height
-    /// and makes the controls jump. This guard keeps the active mode's description in the layout
-    /// and changes only CanvasGroup visibility.
+    /// Keeps the Squad Maker's hover-only START/TEST help text from changing the right column's
+    /// measured layout. START and TEST can both be active, so their description objects remain
+    /// available for hover visibility without reserving LayoutGroup rows.
     /// </summary>
     [DefaultExecutionOrder(-700)]
     public sealed class SquadMakerResponsiveLayoutGuard : MonoBehaviour
@@ -75,8 +74,9 @@ namespace Assets.Scripts.UI_Components
 
         private void LateUpdate()
         {
-            // The authored pointer-exit callbacks still call SetActive(false). Restore the stable
-            // layout slot in LateUpdate, before Unity's canvas/layout rebuild for this frame.
+            // The authored pointer-exit callbacks still call SetActive(false). Restore the
+            // description object before Unity's canvas/layout rebuild for this frame, while its
+            // LayoutElement keeps it out of the measured column.
             StabilizeHoverDescriptions();
         }
 
@@ -107,8 +107,6 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // START and TEST are mutually exclusive modes. Only the active mode reserves a
-            // description row, otherwise two invisible descriptions could themselves add space.
             if (!button.activeSelf)
             {
                 if (description.activeSelf)
@@ -138,6 +136,16 @@ namespace Assets.Scripts.UI_Components
             {
                 return;
             }
+
+            // These are overlays, not structural rows. Keeping them active avoids hover-time
+            // layout rebuilds; ignoring them in LayoutGroups prevents one or two invisible help
+            // objects from consuming the space needed by the level title/details.
+            LayoutElement layoutElement = description.GetComponent<LayoutElement>();
+            if (layoutElement == null)
+            {
+                layoutElement = description.AddComponent<LayoutElement>();
+            }
+            layoutElement.ignoreLayout = true;
 
             if (!description.activeSelf)
             {
