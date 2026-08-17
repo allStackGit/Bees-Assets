@@ -1,67 +1,80 @@
 ---
 name: continuous-learning
-description: Closed-loop repository learning for every substantive Bees task. Extract candidate lessons, verify and classify them, promote only durable knowledge, record unresolved retrieval/learning failures, curate stale knowledge, and improve agent procedures when mistakes repeat.
+description: Closed-loop Bees learning that improves routing and reduces rediscovery. Verify candidate lessons, promote only durable high-ROI knowledge, and prefer compression or route repair over documentation growth.
 ---
 
 # Continuous Learning
 
-The goal is measurable reduction in future rediscovery and repeated mistakes, not accumulation of notes.
+The goal is measurable reduction in future rediscovery and repeated mistakes. Documentation growth is not success by itself.
 
 ## Candidate triggers
 
-Maintain a small working set of candidate lessons when:
+Maintain a small working set only when:
 
-- an important relationship, call path, lifecycle/ownership boundary or serialized contract was expensive to rediscover;
-- current code/assets/tests disprove or materially refine maintained documentation;
+- an important relationship, ownership/lifecycle boundary, serialized contract, or procedure was expensive to rediscover;
+- current code/assets/tests disprove maintained guidance;
 - the user corrects or repeats a lasting engineering fact;
-- a plausible approach fails for a reusable reason;
+- a reusable approach fails for a reason future agents are likely to repeat;
 - a regression exposes a general rule or missing protection;
-- a debugging, validation or optimization procedure proves reliably useful;
-- the search/index path fails and broad scanning was required;
-- the same agent mistake/friction recurs despite existing guidance;
-- touched-code review exposes recurring maintainability debt.
+- the context index fails and broader searching was required;
+- the same workflow friction recurs despite existing guidance.
 
-Transient task facts, cheap lookups, speculative hypotheses and command history are not durable lessons.
+Transient task facts, cheap lookups, speculative hypotheses, command history, and details already easy to reach are not durable lessons.
 
-## Verify before promotion
+## Verify and score context ROI
 
-For each candidate, identify supporting current source, serialized asset/configuration and/or test evidence. Do not promote a hypothesis into an invariant. For campaign/UI/network behavior, verify the relevant multi-source contract rather than trusting a single stale file.
+Before promotion, verify the lesson from current source/assets/configuration/tests. Then ask whether keeping it will reduce future work more than it increases mandatory or likely reading.
 
-## End-of-task learning transaction
+A candidate should normally be rejected or compressed unless it does at least one of these:
+
+- replaces a recurring broad search with a precise route;
+- prevents a likely repeated defect or invalid assumption;
+- captures an expensive-to-reconstruct cross-system relationship;
+- corrects stale guidance that would otherwise send agents down the wrong path.
+
+Never solve a local retrieval miss by making another document mandatory for every task.
+
+## End-of-task transaction
 
 Every candidate ends in one state:
 
-- **promote** — verified new durable knowledge is written to its owner document/test/index;
-- **refresh** — existing knowledge is corrected, compressed, relocated or de-duplicated;
-- **defer** — potentially important but not sufficiently verified; add a concise item to `docs/engineering/LEARNING_STATE.md` with evidence still needed;
-- **reject** — transient, disproved, redundant, too cheap to rediscover or unsafe to generalize; do not persist it.
+- **promote** — verified, durable, positive-context-ROI knowledge is added to the proper owner;
+- **refresh** — existing guidance is corrected, compressed, relocated, de-duplicated, or made easier to route to;
+- **defer** — potentially useful but not yet verified; record only the evidence still needed in `docs/engineering/LEARNING_STATE.md`;
+- **reject** — transient, redundant, too cheap to rediscover, insufficiently verified, or context-negative.
 
-A task with no worthwhile candidates requires no documentation change.
+A task with no worthwhile candidate requires no learning-document change.
 
-## Destination rules
+## Destination priority
 
-- architecture, gameplay/system data flow, important asset relationships -> `docs/DEVELOPMENT_MEMORY.md`;
-- concise ownership/navigation -> `docs/engineering/SYSTEM_MAP.md`;
+Prefer the smallest durable mechanism that solves the future problem:
+
+1. focused automated test/guardrail when recurrence should be executable;
+2. compact `CONTEXT_INDEX.md` alias/cross-link when the problem is retrieval;
+3. refresh an existing owner statement;
+4. add new owner-document detail only when the relationship cannot be represented compactly.
+
+Owners:
+
+- architecture/gameplay/system detail -> `docs/DEVELOPMENT_MEMORY.md`;
+- concise ownership/call-path orientation -> `docs/engineering/SYSTEM_MAP.md`;
 - stable must-preserve rule -> `docs/engineering/INVARIANTS.md`;
-- fixed regression -> focused test plus `docs/engineering/REGRESSIONS.md` when reusable;
+- fixed reusable regression -> test plus `docs/engineering/REGRESSIONS.md`;
 - retrieval alias/cross-link -> `docs/engineering/CONTEXT_INDEX.md`;
-- unresolved candidate/retrieval miss/repeated agent failure -> `docs/engineering/LEARNING_STATE.md`;
-- maintainability debt outside safe task scope -> `QUALITY_LEDGER.md`; actual defects/performance opportunities use their dedicated workflows/ledgers.
+- unresolved retrieval/candidate state -> `docs/engineering/LEARNING_STATE.md`.
 
-Do not create a second owner for the same fact.
+Do not create a second owner for the same fact. Git history stores chronology.
 
 ## Retrieval-miss feedback
 
-Treat these as index/learning failures: the user had to point to an already-known location; the correct subsystem required repeated repository-wide searches; an existing durable fact was missed because its retrieval path was unclear; or an agent repeated a documented mistake.
+If the user had to identify an already-known location, the correct subsystem required repeated broad searches, or an existing fact was missed because it was buried, treat that as a learning-system defect. Repair the smallest cause: route, alias, section structure, stale owner text, skill wording, or guardrail.
 
-After resolving the task, repair the smallest cause: add/adjust a context-index alias, restructure an overgrown memory section, strengthen a skill/guardrail, or correct stale knowledge. Do not merely add another copy of the fact.
+If a frequently used owner document grows large enough that agents routinely load mostly irrelevant content, split or restructure it behind the index rather than accepting permanent context growth.
 
-## Skill evolution and curation
+## Skill evolution
 
-When the same class of agent mistake or workflow friction recurs despite existing guidance, inspect why the guidance failed. If a general procedural change is justified, update the relevant skill and guardrail test. Skill changes remain Git-versioned/reviewable and may not weaken gameplay, tests, safety or evidence requirements.
-
-Curate when `LEARNING_STATE.md` accumulates related items, a retrieval miss repeats, an owner document develops duplicate/stale sections, or the context index becomes noisy. Prefer deletion, consolidation and better links over growth. Git history holds chronology.
+When workflow guidance itself causes repeated context bloat, delays, or missed facts, change the workflow. New mandatory reads require exceptional justification and should replace a greater recurring cost than they introduce.
 
 ## Success criterion
 
-Over repeated tasks, agents should need fewer broad reads/searches, recover important cross-system connections earlier, repeat fewer mistakes and make more Bees-specific suggestions. Current source/assets/tests remain mandatory verification for changed facts.
+Over repeated tasks, agents should reach the right Bees-specific source and evidence with fewer reads/searches and repeat fewer mistakes. If accumulated learning makes a small task slower, the learning system must be compressed or rerouted.
