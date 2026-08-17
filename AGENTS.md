@@ -5,7 +5,7 @@ Mandatory engineering rules for every coding agent and development task in this 
 ## Minimum bootstrap and context budget
 
 1. Follow the user's explicit request and branch target.
-2. This root `AGENTS.md` is the only unconditional repository read after it is fetched.
+2. After this file, the only unconditional repository read is `docs/engineering/CONTEXT_INDEX.md`.
 3. Read `docs/engineering/CONTEXT_INDEX.md` as the compact router. Start with the row that best matches the task and inspect the named current source/assets/tests before expanding.
 4. For a focused task, load only the relevant owner-document section(s), current implementation/assets, and focused evidence identified by the router. **Do not preload** `PROJECT_CONSTITUTION.md`, all of `SYSTEM_MAP.md`, all of `INVARIANTS.md`, `DEVELOPMENT_MEMORY.md`, validation/regression history, or the generic skill stack merely because they exist.
 5. Read `PROJECT_CONSTITUTION.md` when the task can change gameplay/product meaning, persistence/network contracts, lifecycle/ownership semantics, evidence/validation rules, required quality, or another project-definition boundary.
