@@ -61,5 +61,42 @@ namespace Assets.Scripts.Server
             socket.MakeSocket();
             return socket;
         }
+
+        /// <summary>
+        /// Creates the browser WebGL connection without invoking the legacy constructor, which
+        /// would otherwise start an insecure ws:// connection before it could be replaced.
+        /// NativeWebSocket is required in the browser; desktop/editor callers continue to use
+        /// their existing WebSocketSharp path.
+        /// </summary>
+        internal static Socket CreateWebGl(int port, string hostname, string websocketUrl)
+        {
+            if (string.IsNullOrWhiteSpace(websocketUrl) ||
+                !Uri.TryCreate(websocketUrl, UriKind.Absolute, out Uri uri) ||
+                !string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("WebGL WebSocket URL must be an absolute wss:// URL.", nameof(websocketUrl));
+            }
+
+            Socket socket = (Socket)FormatterServices.GetUninitializedObject(typeof(Socket));
+            ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            HostnameField.SetValue(socket, hostname);
+            PortField.SetValue(socket, port);
+            UseWebSocketSharpField.SetValue(socket, false);
+            WebSocketUrlField.SetValue(socket, websocketUrl);
+
+            socket.Protocol = "wss";
+            socket.IsSecured = true;
+            socket.IsOpen = false;
+            socket.HasClosed = false;
+            socket.KeepClosed = false;
+            socket.StandingRequests = new StandingRequestSet();
+            socket.HandledRequests = new HashSet<long>();
+            socket.MessageQueue = new ConcurrentQueue<byte[]>();
+            socket.OpenLevels = new List<Level>();
+
+            socket.MakeSocket();
+            return socket;
+        }
     }
 }
