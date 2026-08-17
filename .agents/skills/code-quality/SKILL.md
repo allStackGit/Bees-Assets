@@ -1,54 +1,40 @@
 ---
 name: code-quality
-description: Mandatory touched-code quality gate for Bees. Review every modified implementation/test/tooling/configuration area for correctness, clarity, maintainability, performance hazards and testability; fix safe local issues and route broader validated debt without uncontrolled refactoring.
+description: Proportionate touched-code quality gate for Bees. Review modified code and only the immediate interfaces needed to judge it; do not expand a narrow change into an unrelated repository audit.
 ---
 
 # Code Quality
 
-Apply this gate to every code-bearing file touched by a task and the immediate interfaces/ownership assumptions needed to judge it.
+Use this skill when a task changes code-bearing implementation, tests, tooling, or configuration. Pure documentation/agent-skill changes do not require a production-code quality scan unless they directly change a code-quality guardrail.
+
+Apply the gate to every touched code-bearing file and the smallest set of immediate interfaces/ownership assumptions needed to judge it.
 
 ## Review dimensions
 
-Check for:
+Check as applicable for:
 
 - correctness, edge cases, failure behavior and invariant preservation;
 - clear ownership, lifecycle, state mutation, pooling/reuse and cleanup;
 - async publication/cancellation and Unity frame/physics ordering;
-- serialized names/Resources/GUID/prefab/scene contracts and misleading asset assumptions;
-- unnecessary complexity, deeply coupled flow, duplication and hidden temporal dependencies;
+- serialized names/Resources/GUID/prefab/scene contracts;
+- unnecessary complexity, duplication and hidden temporal dependencies;
 - names/types/APIs that make incorrect use easy or obscure intent;
-- comments that contradict code or explain mechanics instead of the non-obvious reason/contract;
-- testability and tests that exercise real Unity/game behavior instead of fragile implementation text when practical;
+- comments that contradict code or obscure the real contract;
+- testability and focused protection of the enduring behavior;
 - avoidable per-frame/per-fixed-step allocations, hierarchy lookups, scans, synchronization, pathfinding/physics/render/UI work and memory retention;
 - deterministic ordering and persistence/network compatibility;
-- dead code, stale compatibility paths or abstractions made misleading by the change.
+- dead or misleading compatibility paths exposed by the change.
+
+Do not inspect unrelated modules merely to search for generic cleanup opportunities. Expand only when an immediate dependency is needed to establish correctness or the touched code exposes a concrete wider defect.
 
 ## Action rule
 
-Fix a quality problem immediately when the improvement is clearly correct, local, low-risk, behavior-preserving (unless behavior change is the task) and proportionate to the touched area. Add/update tests when the improvement changes a protected contract.
+Fix a quality problem immediately when it is clearly correct, local, low-risk, proportionate, and behavior-preserving unless behavior change is the task. Add/update tests when the improvement changes a protected contract.
 
-Do not turn a narrow fix into a repository-wide cleanup. If a valuable improvement requires broader redesign, serialized migration, profiling, play testing or independent validation, record a concise validated entry in `QUALITY_LEDGER.md`.
-
-Route findings by nature:
-
-- incorrect behavior -> `BUG_LEDGER.md` / normal bug rules;
-- plausible performance opportunity -> performance workflow/ledger;
-- maintainability/clarity debt with no current behavioral defect -> `QUALITY_LEDGER.md`.
+Do not turn a narrow fix into repository-wide cleanup. Route broader validated debt to `QUALITY_LEDGER.md`, actual defects to the bug workflow/ledger, and plausible performance opportunities to the performance workflow/ledger.
 
 Do not log cosmetic preferences, formatting churn or speculative refactors.
 
-## Quality ledger format
-
-Use `QUALITY_LEDGER.md` only for current unresolved high-value maintainability work:
-
-`### QUAL-001 — Short title`
-`**Location:** path/symbol`
-`**Problem:** concrete readability/complexity/ownership/testability cost`
-`**Improvement:** bounded proposed direction`
-`**Why deferred:** why it is unsafe or disproportionate in the current task`
-
-Remove resolved/disproved entries; Git history preserves history.
-
 ## Completion
 
-Re-read the final diff as a future human/agent maintainer. Changed code should be no harder to understand, should expose important assumptions rather than hide them, and should not introduce avoidable performance/defect risk. Feed recurring misunderstandings into continuous learning rather than relying on the current conversation.
+Re-read the final diff as a future maintainer. Changed code should be no harder to understand and should not introduce avoidable defect/performance risk. If a misunderstanding recurs, feed it into the routing/continuous-learning system instead of expanding this quality gate's mandatory scope.
