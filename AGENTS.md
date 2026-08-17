@@ -2,65 +2,56 @@
 
 Mandatory engineering rules for every coding agent and development task in this repository.
 
-## Authority and context-budgeted required reading
+## Minimum bootstrap and context budget
 
 1. Follow the user's explicit request and branch target.
-2. Read `PROJECT_CONSTITUTION.md` before changing behavior.
-3. Read `docs/engineering/CONTEXT_INDEX.md`, `docs/engineering/SYSTEM_MAP.md`, and `docs/engineering/INVARIANTS.md` first. Use them to identify the smallest authoritative context for the task.
-4. Follow `.agents/skills/search-index/SKILL.md` to load only relevant sections of `docs/DEVELOPMENT_MEMORY.md`, `docs/engineering/VALIDATION_POLICY.md`, `docs/engineering/REGRESSIONS.md`, `docs/TESTING.md`, and focused subsystem documents. Broad audits may require full reads; focused work should not preload unrelated memory.
-5. Read and follow `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, `.agents/skills/search-index/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` for the entire task. Named specialist skills do not replace these.
-6. Maintained documentation is a source-grounded model, not unquestioned truth. Revalidate material facts against current code, assets, configuration and tests; repair stale knowledge when found.
+2. This root `AGENTS.md` is the only unconditional repository read after it is fetched.
+3. Read `docs/engineering/CONTEXT_INDEX.md` as the compact router. Start with the row that best matches the task and inspect the named current source/assets/tests before expanding.
+4. For a focused task, load only the relevant owner-document section(s), current implementation/assets, and focused evidence identified by the router. **Do not preload** `PROJECT_CONSTITUTION.md`, all of `SYSTEM_MAP.md`, all of `INVARIANTS.md`, `DEVELOPMENT_MEMORY.md`, validation/regression history, or the generic skill stack merely because they exist.
+5. Read `PROJECT_CONSTITUTION.md` when the task can change gameplay/product meaning, persistence/network contracts, lifecycle/ownership semantics, evidence/validation rules, required quality, or another project-definition boundary.
+6. Read the relevant sections of `SYSTEM_MAP.md` and/or `INVARIANTS.md` when the change crosses ownership/lifecycle boundaries, touches a high-risk system, or the context index routes there. Read a specialist skill only when the task actually invokes that procedure. Generic skills are reference procedures, not mandatory startup payload.
+7. Broad audits, architecture work, unfamiliar cross-cutting changes, or unresolved focused investigations may deliberately widen to the full maintained model.
 
-If implementation conflicts with the constitution or a confirmed invariant, implementation is presumed defective unless the project owner explicitly changes the requirement. Existing tests are evidence, not authority; stale tests must be repaired rather than used to redefine intended behavior.
+### Retrieval stop rule
+
+Once you can name the affected contract, current symbols/assets, important caller/callee or owner boundary, and the evidence needed to validate the change, **stop loading context**. Expand only for a concrete unresolved dependency, contradiction, retrieval miss, or failed hypothesis.
+
+For documentation/skill/agent-workflow-only changes, the normal fast path is: `AGENTS.md -> CONTEXT_INDEX.md -> affected docs/skills -> any guardrail tests that directly enforce them`. Do not load gameplay architecture simply because the repository contains it.
+
+Maintained documentation is a source-grounded navigation model, not unquestioned truth. Revalidate material facts against current code, assets, configuration and tests when correctness depends on them; repair stale knowledge when found.
 
 ## Branch discipline
 
-Respect an explicitly named branch. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialist skills may impose stricter branch/commit rules.
+Respect an explicitly named branch. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialist skills may impose stricter rules.
 
-## Pre-change impact analysis
+## Change safety
 
-Before editing production code, tests, serialized assets, scenes, prefabs, configuration or persistence data, trace the affected path and important callers/callees. Explicitly consider as applicable:
+Before a behavior-affecting edit, trace the affected path far enough to understand the enduring contract, important callers/callees, state/lifecycle ownership, serialized assets, persistence/network boundaries, UI/frame/physics behavior, and performance implications that are actually relevant. A narrow symptom fix is incomplete if a known indirect dependency can invalidate it, but this is not permission for an unrelated repository-wide scan.
 
-- user-visible gameplay/campaign behavior and mission identity;
-- Scene/Stage/Level/GameState lifecycle, teardown and cleanup;
-- pooling, object reuse, timers, deferred release and stale state;
-- async pathfinding/work ownership, ordering, cancellation and lifecycle tokens;
-- physics/collision/frame ordering;
-- map, obstacle, prefab, Resources, scene and serialized-name/GUID contracts;
-- local/server persistence, save compatibility, request/response, reconnect and deduplication;
-- replay/determinism and stable ordering;
-- UI/dialogue/input ownership and resolution/aspect-ratio behavior;
-- frame time, allocations, memory and low-end hardware constraints;
-- tests, fixtures, reflection adapters, manual play tests and release-gate coverage.
-
-A narrow symptom fix is incomplete until important indirect dependencies are checked.
-
-## Test contracts and validation
+If implementation conflicts with the constitution or a confirmed invariant, implementation is presumed defective unless the project owner explicitly changes the requirement.
 
 For every behavior-affecting change, classify affected tests as **still valid**, **update required**, **obsolete and replaced**, or **missing**. Never delete, skip, weaken, loosen or rewrite a test merely to make a change pass. A reproducible regression should gain focused automated protection that would have caught it whenever practical; otherwise record the strongest repeatable protection in `docs/engineering/REGRESSIONS.md`.
 
-When execution is available, widen evidence appropriately:
+When execution is available, widen evidence proportionally:
 
-`focused reproducer -> affected subsystem/category -> broader correctness suite -> full local release gate -> representative PlayMode/play test/system qualification when risk warrants it`
+`focused reproducer -> affected subsystem/category -> broader correctness suite -> full local release gate -> representative PlayMode/play/system validation when risk warrants it`
 
-Scene/prefab/map normalization, pooling/lifecycle, async pathfinding, physics, persistence/network and frame-dependent UI usually require broader-than-unit evidence. Never claim old XML/logs validate changed source.
+Never claim old XML/logs validate changed source.
 
-## Continuous learning, retrieval, and quality
+## Repository learning must make future work cheaper
 
-Every substantive task must leave future agents at least as easy to orient as before.
+Use `.agents/skills/search-index/SKILL.md`, `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` when their procedures are needed; do not preload them all at task start.
 
-- Start from `docs/engineering/CONTEXT_INDEX.md`; prefer targeted retrieval over repeated broad scans.
-- Run the continuous-learning transaction from `.agents/skills/continuous-learning/SKILL.md`: candidate lessons must be promoted, refreshed, deferred with evidence needed, or rejected.
-- Update existing owner documents rather than accumulating overlapping notebooks. Replace stale statements and distinguish confirmed current behavior, history and uncertainty.
-- Retrieval misses and unresolved learning candidates belong in `docs/engineering/LEARNING_STATE.md`; it is active control state, not history.
-- Durable architecture/call-path knowledge belongs in development memory/system map; stable rules belong in invariants; fixed regression lessons belong in `REGRESSIONS.md`.
-- Repeated agent mistakes despite existing guidance must trigger review of the relevant skill/index/test guardrail, not another duplicate reminder.
-- Before completion, run the touched-code quality gate in `.agents/skills/code-quality/SKILL.md`. Fix clear local quality problems when safe; route broader maintainability debt to `QUALITY_LEDGER.md`, bugs to `BUG_LEDGER.md`, and performance opportunities to `PERFORMANCE_LEDGER.md` when that ledger exists/should be used by the performance workflow.
-
-The learning system must reduce future context cost. Do not grow memory or the context index with cheap lookups, transient facts, duplicated statements or unsupported assumptions.
+- `CONTEXT_INDEX.md` is the primary reusable routing layer. Prefer improving a route over adding another mandatory document.
+- Persist only verified knowledge that was expensive to rediscover, prevents a likely repeated mistake, or materially shortens future retrieval.
+- A new durable note, index entry, or required read should have positive context ROI: it should remove more future searching/reading than it adds.
+- Update existing owner documents rather than accumulating overlapping notebooks. Replace stale statements; Git history already stores chronology.
+- Retrieval misses or repeated agent mistakes should trigger the smallest routing/skill/test guardrail repair that prevents recurrence.
+- A task may legitimately produce no documentation change. Do not create filler learning artifacts.
+- Code-quality review is scoped to touched code and the immediate interfaces needed to judge it; documentation-only tasks do not require a code-quality scan.
 
 ## Completion gate
 
-Do not call a behavior-affecting task complete until applicable items are true: root cause/intent is understood; impact analysis covered important dependencies; tests were classified and stale/missing coverage handled; validation reached the strongest practical level; no test/safety contract was weakened for convenience; touched code passed the quality review; durable knowledge/context index were reconciled; learning candidates were resolved or explicitly deferred; and remaining uncertainty/unexecuted validation is reported.
+Do not call a behavior-affecting task complete until applicable items are true: root cause/intent is understood; important indirect dependencies were checked; affected tests were classified and stale/missing coverage handled; validation reached the strongest practical level; no safety/test contract was weakened for convenience; touched code received proportionate quality review; any durable learning/retrieval miss was reconciled; and remaining uncertainty or unexecuted validation is reported.
 
-The standard is evidence that intended behavior works, surrounding contracts remain intact, the repository is harder to regress, and the next agent can understand the affected area with less unnecessary context.
+The target is evidence that intended behavior works and that the next similar task requires **less** context, not more.
