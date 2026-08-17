@@ -2,6 +2,10 @@
 
 Mandatory engineering rules for every coding agent and development task in this repository.
 
+## Optional cold-start primer
+
+`PROJECT_PRIMER.md` is deliberately excluded from normal required reading. Read it only when the user explicitly requests cold-start onboarding, broad re-orientation, or use of the primer. Do not preload or refresh it as part of routine development tasks. Routine learning belongs in the smaller owner documents and context index below; refresh the primer only during an explicit curation/onboarding task or when the user specifically requests it.
+
 ## Minimum bootstrap and context budget
 
 1. Follow the user's explicit request and branch target.
