@@ -76,7 +76,7 @@ namespace Bees.Tests.EditMode
 
             foreach (string link in requiredLinks)
             {
-                StringAssert.Contains(link, agents, "AGENTS.md no longer requires " + link);
+                StringAssert.Contains(link, agents, "AGENTS.md no longer routes to " + link);
                 StringAssert.Contains(link, repoLearning, "repo-learning no longer wires " + link);
             }
             StringAssert.Contains("docs/engineering/CONTEXT_INDEX.md", claude,
@@ -87,6 +87,31 @@ namespace Bees.Tests.EditMode
             {
                 StringAssert.Contains(disposition, learning, "continuous-learning lost " + disposition + " disposition");
             }
+        }
+
+        [Test]
+        public void ContextLoadingRemainsTaskProportional()
+        {
+            string agents = File.ReadAllText(RepoPath("AGENTS.md"));
+            string claude = File.ReadAllText(RepoPath("CLAUDE.md"));
+            string repoLearning = File.ReadAllText(RepoPath(".agents/skills/repo-learning/SKILL.md"));
+            string searchIndex = File.ReadAllText(RepoPath(".agents/skills/search-index/SKILL.md"));
+            string continuousLearning = File.ReadAllText(RepoPath(".agents/skills/continuous-learning/SKILL.md"));
+
+            StringAssert.Contains("only unconditional repository read", agents,
+                "AGENTS.md no longer protects the minimal bootstrap.");
+            StringAssert.Contains("stop loading context", agents.ToLowerInvariant(),
+                "AGENTS.md no longer defines the retrieval stop rule.");
+            StringAssert.Contains("positive context ROI", agents,
+                "AGENTS.md no longer requires accumulated knowledge to reduce future work.");
+            StringAssert.Contains("do **not** independently preload", claude.ToLowerInvariant(),
+                "CLAUDE.md reintroduced broad startup loading.");
+            StringAssert.Contains("Stop condition", repoLearning,
+                "repo-learning no longer bounds focused retrieval.");
+            StringAssert.Contains("Stop rule", searchIndex,
+                "search-index no longer stops after sufficient evidence is found.");
+            StringAssert.Contains("context ROI", continuousLearning,
+                "continuous-learning no longer rejects context-negative knowledge growth.");
         }
 
         [Test]
