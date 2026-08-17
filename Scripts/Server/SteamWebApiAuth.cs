@@ -1,7 +1,9 @@
+#if !UNITY_WEBGL
 using System;
 using System.Linq;
 using System.Text;
 using Steamworks;
+#endif
 using UnityEngine;
 
 namespace Assets.Scripts.Server
@@ -10,6 +12,34 @@ namespace Assets.Scripts.Server
     {
         internal const string Identity = "bees-server";
 
+#if UNITY_WEBGL
+        private static bool _loggedSteamUnavailable;
+
+        internal static bool IsReady => false;
+        internal static bool IsUnavailable => true;
+        internal static string TicketHex => null;
+
+        internal static void EnsureRequested()
+        {
+            if (_loggedSteamUnavailable)
+            {
+                return;
+            }
+
+            _loggedSteamUnavailable = true;
+            Debug.LogWarning("Steam Web API authentication is unavailable on WebGL. Continuing without a Steam authentication ticket.");
+        }
+
+        internal static void Refresh()
+        {
+            EnsureRequested();
+        }
+
+        internal static void Reset()
+        {
+            _loggedSteamUnavailable = false;
+        }
+#else
         private static Callback<GetTicketForWebApiResponse_t> _callback;
         private static HAuthTicket _ticketHandle = HAuthTicket.Invalid;
         private static bool _requestPending;
@@ -250,5 +280,6 @@ namespace Assets.Scripts.Server
                 EnsureRequested();
             }
         }
+#endif
     }
 }
