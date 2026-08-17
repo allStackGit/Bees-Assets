@@ -1,69 +1,76 @@
 ---
 name: repo-learning
-description: Mandatory context-efficient repository-learning and change-safety workflow for Bees. Load the smallest useful maintained model, verify it against current code/assets/tests, perform impact/test analysis, run touched-code quality review, and reconcile durable learning before completion.
+description: Context-efficient Bees repository learning. Route first, verify current code/assets/tests, widen only on evidence, and persist only knowledge that reduces future retrieval or repeated mistakes.
 ---
 
 # Repository Learning
 
-Use this skill for every development task. The objective is not more notes; it is a progressively more accurate model of Bees that is cheaper to reload and harder to misuse.
+The objective is a progressively more accurate model of Bees that becomes **cheaper** to use over time. Repository learning is successful only when similar future tasks need fewer searches, fewer broad reads, and fewer reminders.
 
-## 1. Load context efficiently
+## 1. Route before reading
 
-1. Read `AGENTS.md` and `PROJECT_CONSTITUTION.md`.
-2. Read `docs/engineering/CONTEXT_INDEX.md`, `docs/engineering/SYSTEM_MAP.md`, and `docs/engineering/INVARIANTS.md`.
-3. Follow `.agents/skills/search-index/SKILL.md` to select only relevant sections of `docs/DEVELOPMENT_MEMORY.md`, `docs/engineering/VALIDATION_POLICY.md`, `docs/engineering/REGRESSIONS.md`, `docs/TESTING.md`, tests/assets and focused subsystem documents.
-4. Check `docs/engineering/LEARNING_STATE.md` for a retrieval miss, repeated mistake or unresolved candidate relevant to the task.
-5. Broad audits may deliberately load the full maintained model. Focused tasks should not consume unrelated campaign/UI/pathfinding/persistence detail merely because it exists.
+1. Start from the already-fetched root `AGENTS.md`.
+2. Read `docs/engineering/CONTEXT_INDEX.md` and choose the closest task concept/alias.
+3. Inspect the named current source/assets/tests and only the owner-document section(s) needed to understand the contract.
+4. Load `PROJECT_CONSTITUTION.md`, `SYSTEM_MAP.md`, `INVARIANTS.md`, validation/regression history, or specialist skills only when the task/routing/risk requires them.
+5. Do not read unrelated maintained memory merely to become generally familiar with the repository.
 
-Maintained knowledge narrows investigation; it never replaces verification of code/assets/tests that can change.
+### Task scopes
 
-## 2. Build the pre-change model
+- **Focused/local** — one subsystem, symptom, asset, UI control, test, or small refactor. Default to the index row, exact implementation, focused evidence, and at most the directly relevant owner-document section unless blocked.
+- **Cross-cutting** — multiple ownership/lifecycle/protocol/persistence/UI boundaries. Load the additional routed owner/invariant sections that define those boundaries.
+- **Broad/audit/architecture** — repository-wide reasoning is the task; deliberate broad loading is appropriate.
 
-Before editing, identify the enduring behavior/contract, entrypoints, important callers/callees, state owners/lifecycles, serialized assets, persistence/network boundaries and tests. Consider pooling, async publication, physics/frame ordering, map/prefab/resource contracts, campaign identity, replay/determinism, UI ownership and performance/resource behavior as applicable.
+### Stop condition
 
-Classify affected tests using the four states in `AGENTS.md` before completion. Do not begin with a symptom patch and postpone impact analysis until a test happens to pass.
+Stop retrieving once you can state: the enduring contract, affected current symbols/assets, important ownership/call-path dependency, and validation target. Widen only because a specific fact remains unresolved, sources contradict, a search misses, or the first hypothesis fails.
+
+Maintained knowledge narrows investigation; it never replaces verification of changed facts against current code/assets/tests.
+
+## 2. Build only the necessary pre-change model
+
+Before editing behavior, identify the relevant contract, entrypoint, important callers/callees, owner/lifecycle, serialized/persistence/network boundary, and tests. Consider pooling, async publication, physics/frame ordering, map/prefab/resource contracts, campaign identity, replay/determinism, UI ownership, and performance only when they are on the actual impact path.
+
+Classify affected tests under `AGENTS.md`. Do not use “impact analysis” as justification for an unrelated repository scan.
 
 ## 3. Learn while working
 
-Follow `.agents/skills/continuous-learning/SKILL.md` continuously. Capture candidate lessons when investigation reveals expensive-to-rediscover architecture, ownership/data flow, serialized relationships, recurring traps, cross-system relationships, useful debugging/validation/optimization procedures, stale knowledge, user corrections or retrieval failures.
+Treat something as a candidate lesson when it was materially expensive to rediscover, corrected stale maintained knowledge, exposed a recurring trap, revealed a reusable cross-system relationship, or showed that routing failed.
 
-Do not commit every observation. A candidate becomes durable only after source/asset/test verification and classification.
+Cheap lookups, command history, transient task state, and facts already easy to reach are not durable learning.
 
-## 4. Maintain the model, not a chronology
+## 4. Persist with positive context ROI
 
-Use the existing owner:
+Before promoting a lesson, ask:
 
-- `docs/DEVELOPMENT_MEMORY.md` — detailed current implementation/gameplay knowledge;
+1. Is it verified from current source/assets/tests?
+2. Is it likely to matter again?
+3. Will storing/routing it eliminate more future searching or reading than the added text costs?
+4. Can an existing route or owner statement be refreshed instead of adding another fact?
+
+Prefer, in order: correct a stale route; add a compact alias/cross-link; refresh/compress an owner statement; add new detail only when necessary. Never create another mandatory startup read to solve a local retrieval problem.
+
+Owner documents remain:
+
+- `docs/engineering/CONTEXT_INDEX.md` — compact routing/aliases;
 - `docs/engineering/SYSTEM_MAP.md` — concise ownership/call-path orientation;
 - `docs/engineering/INVARIANTS.md` — stable must-preserve rules;
-- `docs/engineering/REGRESSIONS.md` — fixed regression root causes and protection;
-- `docs/engineering/CONTEXT_INDEX.md` — retrieval aliases and links, not detailed truth;
-- `docs/engineering/LEARNING_STATE.md` — unresolved candidates/retrieval misses/curation debt only.
+- `docs/DEVELOPMENT_MEMORY.md` — detailed current implementation/gameplay knowledge;
+- `docs/engineering/REGRESSIONS.md` — reusable fixed-regression lessons/protection;
+- `docs/engineering/LEARNING_STATE.md` — unresolved retrieval misses/candidates only.
 
-Replace stale statements, consolidate duplicates, distinguish current behavior/history/hypotheses, and change `PROJECT_CONSTITUTION.md` only for deliberate project-definition changes.
+Git history stores chronology. Replace stale/duplicate statements instead of appending them.
 
-## 5. Regression and user-reminder learning
+## 5. Retrieval failures are learning-system defects
 
-A reproducible regression should leave focused permanent protection and any reusable rule in the correct owner document. If automation is impractical, record why and the strongest repeatable protection.
+If the user supplies a location that should have been routable, a known fact is repeatedly missed, or broad searching was required for a recurring area, fix the smallest cause: index alias, stale route, overgrown owner section, skill wording, or test guardrail. Do not duplicate the fact in several documents.
 
-A lasting user correction/reminder is a learning-system signal: verify it, persist it when appropriate, and if the user had to repeat an already-recorded fact, repair retrieval/index/skill enforcement rather than duplicating the fact.
+## 6. Completion transaction
 
-## 6. Touched-code quality gate
+Before completion, consider each candidate as **promote**, **refresh**, **defer**, or **reject**. Update durable knowledge only when justified. A task with no worthwhile lesson should leave no learning-document churn.
 
-Before completion, follow `.agents/skills/code-quality/SKILL.md` over every touched implementation/test/tooling/configuration area. Fix clear local defects or clarity problems that are safe and in scope. Route broader validated debt to the appropriate active ledger without turning a narrow change into an uncontrolled refactor.
+For code-bearing changes, apply `.agents/skills/code-quality/SKILL.md` only to touched code and immediate interfaces. For pure documentation/skill changes, review the changed guidance directly; no production-code quality scan is required.
 
-## 7. Learning transaction and reconciliation
+## Success metric
 
-Before completion:
-
-1. Re-read changed behavior/tests/assets from a future-maintainer perspective.
-2. Resolve every candidate lesson as **promote**, **refresh**, **defer**, or **reject** under the continuous-learning skill.
-3. Update the context index when a new alias/relationship would materially shorten future retrieval.
-4. Reconcile stale maintained knowledge and relevant open learning-state items.
-5. Confirm regression protection/test classification and report unexecuted validation/uncertainty.
-
-A task may legitimately produce no durable lesson, but the learning transaction must still be considered. Never create filler documentation just to prove learning occurred.
-
-## Efficiency target
-
-The desired trend is that future agents identify the correct subsystem, assets, invariants, tests and danger surfaces with fewer broad reads/searches. If maintained memory itself becomes expensive to load, improve the index/structure and split by ownership rather than accepting permanent context growth.
+After repeated work in an area, a new agent should reach the correct current implementation and evidence faster than before. If the maintained model causes increasingly large startup reads, the learning system is failing and should be compressed or rerouted.
