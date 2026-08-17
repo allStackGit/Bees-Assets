@@ -4,15 +4,12 @@ Guidance for Claude Code and other agents that automatically read this file.
 
 **Read and follow `AGENTS.md` before making any repository change.** It is the mandatory workflow for ordinary fixes as well as named skills.
 
-Do not independently preload the older full documentation list. Follow the context-budgeted loading order in `AGENTS.md`:
+After `AGENTS.md`, use `docs/engineering/CONTEXT_INDEX.md` as the compact router. Do **not** independently preload the constitution, system map, invariants, development memory, regression/testing history, or generic skill stack. Load only the current source/assets/tests and owner-document sections that the task, router, or a concrete unresolved dependency requires.
 
-1. `PROJECT_CONSTITUTION.md` for stable project meaning.
-2. `docs/engineering/CONTEXT_INDEX.md`, `docs/engineering/SYSTEM_MAP.md`, and `docs/engineering/INVARIANTS.md` for compact orientation.
-3. `.agents/skills/search-index/SKILL.md` to select only task-relevant detailed memory, testing/regression material, source, assets and tests.
-4. `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` for the entire task.
+For focused work, stop expanding context once the affected contract, current symbols/assets, important dependency, and validation evidence are identified. Broad audits and architecture work may intentionally widen to the full maintained model.
 
-Broad audits may intentionally load the full maintained model. Focused work should not repeatedly digest unrelated `docs/DEVELOPMENT_MEMORY.md` sections.
+Specialist and generic skills are on-demand procedures. Use `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, `.agents/skills/search-index/SKILL.md`, `.agents/skills/code-quality/SKILL.md`, or another specialist skill when its procedure is actually relevant; their requirements that matter globally are already summarized in `AGENTS.md`.
 
-Durable knowledge belongs in the existing owner documents. Retrieval misses/unresolved candidates belong in `docs/engineering/LEARNING_STATE.md`; high-value deferred maintainability debt belongs in `QUALITY_LEDGER.md`. Repair stale facts and retrieval routes rather than adding overlapping notebooks.
+Durable repository knowledge should make future tasks cheaper. Prefer precise context-index routes and refreshed owner statements over new startup reading. Repair stale facts and retrieval routes rather than adding overlapping notebooks. Retrieval misses/unresolved candidates belong in `docs/engineering/LEARNING_STATE.md`; high-value deferred maintainability debt belongs in `QUALITY_LEDGER.md`.
 
-Tests are part of the change contract. Do not weaken/delete a failing test merely to make a change pass; classify it as still valid, update-required, obsolete-and-replaced, or missing according to `AGENTS.md`. A reproducible regression should receive focused permanent protection whenever practical.
+Tests are part of the change contract. Do not weaken/delete a failing test merely to make a change pass; classify affected tests according to `AGENTS.md`. A reproducible regression should receive focused permanent protection whenever practical.
