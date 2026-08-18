@@ -117,5 +117,20 @@ namespace Bees.Tests.EditMode
             Assert.That(guard, Does.Contain("PlayerSettings.WebGL.webAssemblyTable = false"),
                 "The WebAssembly function-table mode must remain disabled until the Unity/NativeWebSocket compatibility boundary is upgraded.");
         }
+
+        [Test]
+        public void WebGlRequestTrackingAvoidsHashTableComparerDispatchOnIl2Cpp()
+        {
+            string requestSet = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "StandingRequestSet.cs"));
+
+            Assert.That(requestSet, Does.Not.Contain("Dictionary<"),
+                "The development WebGL trace crashed in Dictionary.TryInsert while Socket.LogRequest tracked Configuration.");
+            Assert.That(requestSet, Does.Not.Contain("HashSet<"),
+                "Request tracking must not reintroduce the comparer path that already failed under IL2CPP/WebGL.");
+            Assert.That(requestSet, Does.Contain("List<ServerRequest>"));
+            Assert.That(requestSet, Does.Contain("request.Hash == hash"),
+                "Transport hash must remain the request identity contract after removing hash tables.");
+        }
     }
 }
