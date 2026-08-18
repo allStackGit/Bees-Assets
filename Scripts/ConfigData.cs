@@ -144,7 +144,7 @@ namespace Assets.Scripts
         public static System.Diagnostics.Stopwatch Stopwatch;
         public static UIAudioController UIAudioController;
 
-        public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
+        public static ServerRequestSet __PastServerRequests = new ServerRequestSet();
         public static int __TotalResends;
         public static int __TotalRequests;
         public static double __AverageTimeOnQueue;
