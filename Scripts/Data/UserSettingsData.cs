@@ -1,6 +1,5 @@
 ﻿using Assets.Scripts.Levels;
-using System;
-using System.Collections;
+using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -63,12 +62,8 @@ namespace Assets.Scripts.Data
             new HotKey("Move Camera Left", new List<KeyCode>{KeyCode.A}),
             new HotKey("Move Camera Down", new List<KeyCode>{KeyCode.S}),
             new HotKey("Move Camera Right", new List<KeyCode>{KeyCode.D}),
-            
         };
 
-        /// <summary>
-        /// The Ids of actions that have continuous input
-        /// </summary>
         public HashSet<string> ContinuousInputActions = new HashSet<string>
         {
             "Move Camera Up",
@@ -77,9 +72,6 @@ namespace Assets.Scripts.Data
             "Move Camera Right",
         };
 
-        /// <summary>
-        /// The Ids of actions that must be held down to work
-        /// </summary>
         public HashSet<string> HeldDownInputActions = new HashSet<string>
         {
             "Show Ranges",
@@ -87,26 +79,25 @@ namespace Assets.Scripts.Data
             "Show Ranges + Manual Fire"
         };
 
-
         public UserSettingsData(bool shouldFileExist) : base()
         {
             defaultJsonData = DefaultJson();
 
-            dynamic json = SetupFile(shouldFileExist, ConfigData.UserSettingsFilename, (json) =>
+            SetupFile(shouldFileExist, ConfigData.UserSettingsFilename, loadedData =>
             {
-                // Recovery can invoke this callback a second time after a partially malformed
-                // settings payload. Rebuild from scratch so partial hotkeys from the failed pass
-                // cannot create duplicate-key exceptions while defaults are applied.
                 HotKeys.Clear();
                 HotKeysByName.Clear();
 
-                //Debug.Log($"Loaded data for {ConfigData.UserSettingsFilename}");
-                //Debug.Log("Updated config file");
-                //Debug.Log($"JSON from DataFile: {json}");
-                Dictionary<string, int[]> hotKeys = Utilities.JArrayToDictionary<string, int[]>(json.HotKeys);
-                hotKeys.Keys.ToList().ForEach((hotKeyName) => {
-                    AddHotKey(new HotKey(hotKeyName, hotKeys[hotKeyName].Select((k) => (KeyCode)k).ToList(), ContinuousInputActions.Contains(hotKeyName), HeldDownInputActions.Contains(hotKeyName)));
-                });
+                JObject json = AotJson.RequireObject(loadedData, ConfigData.UserSettingsFilename);
+                Dictionary<string, int[]> hotKeys = AotJson.ParseStringIntArrayDictionary(json["HotKeys"]);
+                foreach (string hotKeyName in hotKeys.Keys)
+                {
+                    AddHotKey(new HotKey(
+                        hotKeyName,
+                        hotKeys[hotKeyName].Select(k => (KeyCode)k).ToList(),
+                        ContinuousInputActions.Contains(hotKeyName),
+                        HeldDownInputActions.Contains(hotKeyName)));
+                }
 
                 // Saved settings are user overrides, not the complete schema. When a newer
                 // build adds an action, older save files must inherit its default binding.
@@ -123,7 +114,6 @@ namespace Assets.Scripts.Data
                 }
                 ConfigData.IsUserSettingsDataLoaded = true;
             });
-
         }
 
         private void AddHotKey(HotKey hotKey)
@@ -134,14 +124,7 @@ namespace Assets.Scripts.Data
 
         public void SetKey(string keyName, List<KeyCode> keys)
         {
-            //HotKey key = FindKey(keyName);
-            //int index = HotKeys.IndexOf(key);
-            //HotKey indexKey = HotKeys[index];
-            //key.Keys = keys;
-            //Debug.Log($"{key} keys are set to {Utilities.ListToString(keys)} at index #{index} with HotKey {indexKey}");
-
             FindKey(keyName).SetKeyCombination(keys);
-
         }
 
         public HotKey FindKey(string name)
@@ -149,9 +132,9 @@ namespace Assets.Scripts.Data
             return HotKeysByName[name];
         }
 
-        public HotKey FindKeyByKeyString(string keyString) 
-        { 
-            return HotKeys.FirstOrDefault(k => k.KeyString == keyString); 
+        public HotKey FindKeyByKeyString(string keyString)
+        {
+            return HotKeys.FirstOrDefault(k => k.KeyString == keyString);
         }
 
         public string DefaultJson()
@@ -171,13 +154,11 @@ namespace Assets.Scripts.Data
             }
 
             json += "]}";
-            //Debug.Log(json);
             return json;
         }
 
         public override string ToJson()
         {
-            //Debug.Log(HotKeys[0].ToJson());
             string json = "{\"HotKeys\": [";
 
             for (int i = 0; i < HotKeys.Count; i++)
@@ -191,7 +172,6 @@ namespace Assets.Scripts.Data
                     json += HotKeys[i].ToJson();
                 }
             }
-            //Debug.Log(json);
             json += "]}";
             return json;
         }
