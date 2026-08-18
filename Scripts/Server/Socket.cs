@@ -316,7 +316,7 @@ namespace Assets.Scripts.Server
             }
         }
 
-        public void Send(dynamic content)
+        public void Send(object content)
         {
             string json = JsonConvert.SerializeObject(content);
             if (_useWebSocketSharp)
@@ -926,7 +926,7 @@ namespace Assets.Scripts.Server
                         case ConfigData.CommandTypes.LeftSwipe:
                             if (_tempSquad.HasOnlyBombers)
                             {
-                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.CommandTypes.BombingRun);
+                                _handleStrategicCommandResponse_command = _handleStrategicCommandResponse_level.Stage.Pool.GetCommandFromPool(ConfigData.RequestTypes.Request == ConfigData.RequestTypes.Request ? ConfigData.CommandTypes.BombingRun : ConfigData.CommandTypes.BombingRun);
                                 _tempCommandType = ConfigData.CommandTypes.BombingRun;
                             }
                             else if (_tempSquad.HasOnlyBarges)
