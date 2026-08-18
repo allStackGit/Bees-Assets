@@ -7,9 +7,9 @@ namespace Assets.Scripts.Server
     /// <summary>
     /// Request collection keyed by the request's long transport hash without hash-table
     /// comparer dispatch. Unity WebGL/IL2CPP has failed both ServerRequest-keyed HashSet
-    /// comparers and Dictionary<long, ServerRequest> insertion during startup, so this
-    /// deliberately uses a small linear collection. Standing request counts are low and
-    /// request-hash identity remains the contract.
+    /// comparers and generic dictionary insertion during startup, so this deliberately uses
+    /// a small linear collection. Standing request counts are low and request-hash identity
+    /// remains the contract.
     /// </summary>
     public class ServerRequestSet : IEnumerable<ServerRequest>
     {
