@@ -1,5 +1,4 @@
-﻿
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System.IO;
 using Assets.Scripts.Server;
 using Assets.Scripts.Scenes;
@@ -31,9 +30,9 @@ namespace Assets.Scripts.Data
 
         public DataFile(string name)
         {
-            this.Name = name;
-            this.Path = ConfigData.GetBasePath();
-            this.FullPath = System.IO.Path.Combine(Path, Name + Extension);
+            Name = name;
+            Path = ConfigData.GetBasePath();
+            FullPath = System.IO.Path.Combine(Path, Name + Extension);
             _userId = ConfigData.GetUserId();
         }
 
@@ -54,6 +53,7 @@ namespace Assets.Scripts.Data
             _userId = userId;
             _serverWriterOverride = serverWriter;
         }
+
         private void MakeFileIfNecessary()
         {
             Directory.CreateDirectory(Path);
@@ -63,6 +63,7 @@ namespace Assets.Scripts.Data
                 fs.Close();
             }
         }
+
         private string ReadContents()
         {
             string contents = "";
@@ -85,10 +86,11 @@ namespace Assets.Scripts.Data
                 ConfigData.Socket.SendRequest(_request);
                 contents = ConfigData.WaitingMessage;
             }
-            
+
             SetContents(contents);
             return contents;
         }
+
         private object ReadJsonObject()
         {
             string contents = ReadContents();
@@ -143,10 +145,12 @@ namespace Assets.Scripts.Data
                 }
             }
         }
+
         public string GetContents()
         {
             return _textContents;
         }
+
         public DataFileRequest GetRequest()
         {
             return _request;
@@ -182,11 +186,13 @@ namespace Assets.Scripts.Data
                 Debug.LogError($"Stored user data '{Name}' contains malformed JSON and will be recovered. {exception.GetType().Name}: {exception.Message}");
             }
         }
+
         public object GetJsonObject()
         {
             return _jsonObject;
         }
-        public dynamic LoadJsonObject()
+
+        public object LoadJsonObject()
         {
             _jsonObject = ReadJsonObject();
             if (ConfigData.Configuration.UseLocalStorage)
@@ -195,21 +201,21 @@ namespace Assets.Scripts.Data
             }
             return _jsonObject;
         }
+
         public bool IsDataLoaded()
         {
             return _isDataLoaded && _textContents != ConfigData.WaitingMessage;
         }
+
         public bool Exists()
-        {   
+        {
             if (ConfigData.Configuration.UseLocalStorage)
             {
                 return File.Exists(FullPath);
             }
-            else
-            {
-                return true;
-            }
+            return true;
         }
+
         public void WriteServerData(string data)
         {
             if (_serverWriterOverride != null)
@@ -227,11 +233,13 @@ namespace Assets.Scripts.Data
             ConfigData.Socket.SendRequest(new StoreUserDataRequest(new StoreUserData(_userId, Name, data),
                 ConfigData.StandardMaxTimeOnQueue));
         }
+
         public void WriteLocalData(string data)
         {
             MakeFileIfNecessary();
             File.WriteAllText(FullPath, data);
         }
+
         public object WriteData(string data)
         {
             if (data == ConfigData.WaitingMessage)
