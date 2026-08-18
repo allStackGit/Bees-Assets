@@ -1,14 +1,5 @@
-using Assets.Scripts.Scenes;
-using Assets.Scripts.Settings;
-
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
-using UnityEngine.Rendering.Universal;
 
 namespace Assets.Scripts.Settings
 {
@@ -19,26 +10,43 @@ namespace Assets.Scripts.Settings
         public ShipStats(ulong userId) : base("ship-stats", userId)
         {
         }
+
         protected override void ProcessData(string contents)
         {
-            //Debug.Log(contents);
-            Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(contents)).ForEach((ship) =>
+            JArray ships = JArray.Parse(contents);
+            foreach (JObject ship in ships.Children<JObject>())
             {
+                ConfigData.ShipTypes shipType = Utilities.ConvertShipNameToShipType[ship.Value<string>("ShipType")];
+                List<int> range = ship["Range"].ToObject<List<int>>();
+                List<int> power = ship["Power"].ToObject<List<int>>();
+                List<float> projectileValue = ship["ProjectileValue"].ToObject<List<float>>();
+                List<float> rateOfFire = ship["RateOfFire"].ToObject<List<float>>();
+                List<float> rotationRates = ship["RotationRates"].ToObject<List<float>>();
 
-                List<int> range = Utilities.JArrayToList<int>(ship.Range);
-                List<int> power = Utilities.JArrayToList<int>(ship.Power);
-                List<float> ProjectileValue = Utilities.JArrayToList<float>(ship.ProjectileValue);
-                List<float> rateOfFire = Utilities.JArrayToList<float>(ship.RateOfFire);
-                List<float> rotationRates = Utilities.JArrayToList<float>(ship.RotationRates);
-                List<ConfigData.WeaponTypes> weaponTypes = Utilities.JArrayToWeaponTypes(ship.WeaponTypes);
-                List<ConfigData.WeaponSoundTypes> weaponSoundTypes = Utilities.JArrayToWeaponSoundTypes(ship.WeaponSoundTypes);
-                List<ConfigData.ProjectileTypes> projectileTypes = Utilities.JArrayToProjectileTypes(ship.ProjectileTypes);
+                List<string> weaponTypeNames = ship["WeaponTypes"].ToObject<List<string>>();
+                List<ConfigData.WeaponTypes> weaponTypes = weaponTypeNames.ConvertAll(name => Utilities.ConvertWeaponNameToType[name]);
+                List<string> weaponSoundTypeNames = ship["WeaponSoundTypes"].ToObject<List<string>>();
+                List<ConfigData.WeaponSoundTypes> weaponSoundTypes = weaponSoundTypeNames.ConvertAll(name => Utilities.ConvertWeaponSoundNameToType[name]);
+                List<string> projectileTypeNames = ship["ProjectileTypes"].ToObject<List<string>>();
+                List<ConfigData.ProjectileTypes> projectileTypes = projectileTypeNames.ConvertAll(name => Utilities.ConvertProjectileNameToType[name]);
 
-                ShipStatsList.Add(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], new ShipStatBlock(Utilities.ConvertShipNameToShipType[(string) ship.ShipType], (string)ship.Description, (string)ship.CodexDescription, (int)ship.Health,
-                    range, power, (int)ship.Sight, (int)ship.Tsv, ProjectileValue,
-                    rateOfFire, rotationRates, (float)ship.Speed, weaponTypes, weaponSoundTypes, projectileTypes));
-                 
-            });
+                ShipStatsList.Add(shipType, new ShipStatBlock(
+                    shipType,
+                    ship.Value<string>("Description"),
+                    ship.Value<string>("CodexDescription"),
+                    ship.Value<int>("Health"),
+                    range,
+                    power,
+                    ship.Value<int>("Sight"),
+                    ship.Value<int>("Tsv"),
+                    projectileValue,
+                    rateOfFire,
+                    rotationRates,
+                    ship.Value<float>("Speed"),
+                    weaponTypes,
+                    weaponSoundTypes,
+                    projectileTypes));
+            }
         }
     }
 }
