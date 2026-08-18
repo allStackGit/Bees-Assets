@@ -7,7 +7,7 @@ namespace Assets.Scripts.Data
 {
     /// <summary>
     /// Explicit Newtonsoft token parsing for data loaded during IL2CPP/WebGL bootstrap.
-    /// C# dynamic dispatch requires runtime code generation and is not available under IL2CPP.
+    /// Runtime-bound member dispatch requires code generation that is unavailable under IL2CPP.
     /// </summary>
     internal static class AotJson
     {
