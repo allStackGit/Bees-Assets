@@ -59,5 +59,34 @@ namespace Bees.Tests.EditMode
                     $"{file} should parse startup JSON through explicit Newtonsoft token types.");
             }
         }
+
+        [Test]
+        public void ProfileBootstrapParsingAvoidsDynamicDispatchOnIl2Cpp()
+        {
+            string[] dataFiles =
+            {
+                "DataFile.cs",
+                "UserData.cs",
+                "UserProgressData.cs",
+                "FleetData.cs",
+                "SavedSquadsData.cs",
+                "LevelData.cs",
+                "UserSettingsData.cs",
+                "AotJson.cs",
+            };
+
+            foreach (string file in dataFiles)
+            {
+                string source = File.ReadAllText(Path.Combine(
+                    Application.dataPath, "Scripts", "Data", file));
+
+                Assert.That(source, Does.Not.Contain("dynamic"),
+                    $"{file} participates in WebGL profile bootstrap and must not use C# dynamic dispatch under IL2CPP.");
+            }
+
+            string parser = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "AotJson.cs"));
+            Assert.That(parser, Does.Contain("JObject").And.Contain("JArray").And.Contain("JToken"));
+        }
     }
 }
