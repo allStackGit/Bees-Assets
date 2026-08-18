@@ -73,12 +73,19 @@ namespace Assets.Scripts.Server
         }
 
         public Socket(int port, string hostname, bool useWebSocketSharp)
+            : this(port, hostname, useWebSocketSharp, $"ws://{hostname}:{port}", secured: false)
+        {
+        }
+
+        internal Socket(int port, string hostname, bool useWebSocketSharp, string websocketUrl, bool secured)
         {
             ConfigData.Stopwatch = System.Diagnostics.Stopwatch.StartNew();
             _hostname = hostname;
             _port = port;
             _useWebSocketSharp = useWebSocketSharp;
-            _websocketURL = $"{Protocol}://{_hostname}:{_port}";
+            _websocketURL = websocketUrl;
+            IsSecured = secured;
+            Protocol = secured ? "wss" : "ws";
             Debug.Log($"Trying to connect to {_websocketURL}");
             MakeSocket();
         }
