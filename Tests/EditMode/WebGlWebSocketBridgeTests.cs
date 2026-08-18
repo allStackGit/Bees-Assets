@@ -88,5 +88,20 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Data", "AotJson.cs"));
             Assert.That(parser, Does.Contain("JObject").And.Contain("JArray").And.Contain("JToken"));
         }
+
+        [Test]
+        public void WebGlRequestSerializationAvoidsDynamicDispatchOnIl2Cpp()
+        {
+            string socket = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+            string request = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "ServerRequest.cs"));
+
+            Assert.That(socket, Does.Contain("public void Send(object content)"));
+            Assert.That(socket, Does.Not.Contain("public void Send(dynamic content)"),
+                "Every startup settings request passes through Socket.Send, so the serialization boundary must remain AOT-safe.");
+            Assert.That(request, Does.Not.Contain("public dynamic Request"),
+                "The base request payload placeholder must not reintroduce runtime-bound dispatch on WebGL.");
+        }
     }
 }
