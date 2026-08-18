@@ -1,10 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
-using Newtonsoft.Json;
-using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using System.Linq;
-using Assets.Scripts.Scenes;
 
 namespace Assets.Scripts.Settings
 {
@@ -16,27 +12,45 @@ namespace Assets.Scripts.Settings
         public Dictionary<ConfigData.ShipTypes, int> BeeCampaignStartingShips;
         public Dictionary<ConfigData.ShipTypes, int> HumanChallengeStartingShips;
         public Dictionary<ConfigData.ShipTypes, int> BeeChallengeStartingShips;
-        public List<int> SupplyCapacity; 
-        public List<ConfigData.ShipTypes> HumanShipTypes => HumanStartingShips.Keys.ToList(); // Barge, Carrier, Cruiser, Dreadnought, Drone, Factory, Fire Barge, Frigate, Gunship, Scout, Striker, Warp Gate
-        public List<ConfigData.ShipTypes> BeeShipTypes => BeeStartingShips.Keys.ToList(); // Beehive, Bumblebee, Carpenter Bee, Honeybee, Hornet, Leafcutter, Queen, Wasp, Yellow Jacket
+        public List<int> SupplyCapacity;
+        public List<ConfigData.ShipTypes> HumanShipTypes => HumanStartingShips.Keys.ToList();
+        public List<ConfigData.ShipTypes> BeeShipTypes => BeeStartingShips.Keys.ToList();
 
         public StartingSettings(ulong userId) : base("starting-settings", userId)
         {
         }
+
         protected override void ProcessData(string contents)
         {
-            dynamic so = JsonConvert.DeserializeObject(contents);
+            JObject settings = JObject.Parse(contents);
 
-            SupplyCapacity = Utilities.JArrayToList<int>(so.SupplyCapacity);
-            
-            HumanStartingShips = Utilities.JArrayToShipTypeDictionary(so.HumanStartingShips);
-            BeeStartingShips = Utilities.JArrayToShipTypeDictionary(so.BeeStartingShips);
+            SupplyCapacity = settings["SupplyCapacity"].ToObject<List<int>>();
+            HumanStartingShips = ParseShipCounts(settings["HumanStartingShips"] as JArray);
+            BeeStartingShips = ParseShipCounts(settings["BeeStartingShips"] as JArray);
+            HumanCampaignStartingShips = ParseShipCounts(settings["HumanCampaignStartingShips"] as JArray);
+            BeeCampaignStartingShips = ParseShipCounts(settings["BeeCampaignStartingShips"] as JArray);
+            HumanChallengeStartingShips = ParseShipCounts(settings["HumanChallengeStartingShips"] as JArray);
+            BeeChallengeStartingShips = ParseShipCounts(settings["BeeChallengeStartingShips"] as JArray);
+        }
 
-            HumanCampaignStartingShips = Utilities.JArrayToShipTypeDictionary(so.HumanCampaignStartingShips);
-            BeeCampaignStartingShips = Utilities.JArrayToShipTypeDictionary(so.BeeCampaignStartingShips);
+        private static Dictionary<ConfigData.ShipTypes, int> ParseShipCounts(JArray entries)
+        {
+            Dictionary<ConfigData.ShipTypes, int> result = new Dictionary<ConfigData.ShipTypes, int>();
+            if (entries == null)
+            {
+                return result;
+            }
 
-            HumanChallengeStartingShips = Utilities.JArrayToShipTypeDictionary(so.HumanChallengeStartingShips);
-            BeeChallengeStartingShips = Utilities.JArrayToShipTypeDictionary(so.BeeChallengeStartingShips);
+            foreach (JObject entry in entries.Children<JObject>())
+            {
+                foreach (JProperty property in entry.Properties())
+                {
+                    result.Add(
+                        Utilities.ConvertShipNameToShipType[property.Name],
+                        property.Value.Value<int>());
+                }
+            }
+            return result;
         }
     }
 }
