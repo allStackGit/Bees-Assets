@@ -132,5 +132,23 @@ namespace Bees.Tests.EditMode
             Assert.That(requestSet, Does.Contain("request.Hash == hash"),
                 "Transport hash must remain the request identity contract after removing hash tables.");
         }
+
+        [Test]
+        public void WebGlSocketFactoryRunsNormalSocketFieldInitialization()
+        {
+            string factory = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SecureSocketFactory.cs"));
+            string socket = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+
+            Assert.That(factory, Does.Not.Contain("GetUninitializedObject"),
+                "Formatter-style allocation skips Socket field initializers and leaves request/update collections null.");
+            Assert.That(factory, Does.Not.Contain("FormatterServices"));
+            Assert.That(factory, Does.Contain("websocketUrl: websocketUrl"));
+            Assert.That(factory, Does.Contain("secured: true"));
+            Assert.That(socket, Does.Contain("internal Socket(int port, string hostname, bool useWebSocketSharp, string websocketUrl, bool secured)"));
+            Assert.That(socket, Does.Contain("_waitableRequests = new ServerRequestSet()"));
+            Assert.That(socket, Does.Contain("_waitableRequestSnapshot = new List<ServerRequest>()"));
+        }
     }
 }
