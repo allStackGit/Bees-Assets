@@ -14,6 +14,7 @@ namespace Assets.Scripts.Server
     public class ServerRequestSet : IEnumerable<ServerRequest>
     {
         private readonly List<ServerRequest> _requests = new List<ServerRequest>();
+        private readonly List<long> _intersectionHashes = new List<long>();
 
         public int Count => _requests.Count;
 
@@ -76,27 +77,29 @@ namespace Assets.Scripts.Server
                 throw new ArgumentNullException(nameof(requests));
             }
 
-            List<long> retainedHashes = new List<long>();
+            _intersectionHashes.Clear();
             foreach (ServerRequest request in requests)
             {
-                if (request != null && !ContainsHash(retainedHashes, request.Hash))
+                if (request != null && !ContainsHash(_intersectionHashes, request.Hash))
                 {
-                    retainedHashes.Add(request.Hash);
+                    _intersectionHashes.Add(request.Hash);
                 }
             }
 
             for (int i = _requests.Count - 1; i >= 0; i--)
             {
-                if (!ContainsHash(retainedHashes, _requests[i].Hash))
+                if (!ContainsHash(_intersectionHashes, _requests[i].Hash))
                 {
                     _requests.RemoveAt(i);
                 }
             }
+            _intersectionHashes.Clear();
         }
 
         public void Clear()
         {
             _requests.Clear();
+            _intersectionHashes.Clear();
         }
 
         public bool TryGetByHash(long hash, out ServerRequest request)
