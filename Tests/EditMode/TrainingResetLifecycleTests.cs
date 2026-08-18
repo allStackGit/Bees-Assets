@@ -60,6 +60,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("OrderByDescending(request => request.StartTime)", source);
             StringAssert.Contains("Take(StaleSquadRequestHistoryLimit)", source);
             StringAssert.Contains("ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);", source);
+            StringAssert.DoesNotContain(".ToHashSet()", source);
             StringAssert.DoesNotContain("ConfigData.__PastServerRequests.Clear();", source);
         }
     }
