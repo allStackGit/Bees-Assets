@@ -5,38 +5,49 @@ using System.Collections.Generic;
 namespace Assets.Scripts.Server
 {
     /// <summary>
-    /// Request collection keyed directly by the request's long transport hash.
-    /// Avoiding HashSet&lt;ServerRequest&gt; keeps IL2CPP/WebGL from routing request tracking
-    /// through a generated IEqualityComparer&lt;ServerRequest&gt; implementation while preserving
-    /// the existing hash-based set semantics.
+    /// Request collection keyed by the request's long transport hash without hash-table
+    /// comparer dispatch. Unity WebGL/IL2CPP has failed both ServerRequest-keyed HashSet
+    /// comparers and Dictionary<long, ServerRequest> insertion during startup, so this
+    /// deliberately uses a small linear collection. Standing request counts are low and
+    /// request-hash identity remains the contract.
     /// </summary>
     public class ServerRequestSet : IEnumerable<ServerRequest>
     {
-        private readonly Dictionary<long, ServerRequest> _requestsByHash = new Dictionary<long, ServerRequest>();
-        private readonly List<long> _removeHashBuffer = new List<long>();
-        private readonly HashSet<long> _intersectionHashes = new HashSet<long>();
+        private readonly List<ServerRequest> _requests = new List<ServerRequest>();
 
-        public int Count => _requestsByHash.Count;
+        public int Count => _requests.Count;
 
         public bool Add(ServerRequest request)
         {
-            if (request == null || _requestsByHash.ContainsKey(request.Hash))
+            if (request == null || FindIndexByHash(request.Hash) >= 0)
             {
                 return false;
             }
 
-            _requestsByHash.Add(request.Hash, request);
+            _requests.Add(request);
             return true;
         }
 
         public bool Remove(ServerRequest request)
         {
-            return request != null && _requestsByHash.Remove(request.Hash);
+            if (request == null)
+            {
+                return false;
+            }
+
+            int index = FindIndexByHash(request.Hash);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            _requests.RemoveAt(index);
+            return true;
         }
 
         public bool Contains(ServerRequest request)
         {
-            return request != null && _requestsByHash.ContainsKey(request.Hash);
+            return request != null && FindIndexByHash(request.Hash) >= 0;
         }
 
         public int RemoveWhere(Predicate<ServerRequest> match)
@@ -46,21 +57,15 @@ namespace Assets.Scripts.Server
                 throw new ArgumentNullException(nameof(match));
             }
 
-            _removeHashBuffer.Clear();
-            foreach (KeyValuePair<long, ServerRequest> entry in _requestsByHash)
+            int removed = 0;
+            for (int i = _requests.Count - 1; i >= 0; i--)
             {
-                if (match(entry.Value))
+                if (match(_requests[i]))
                 {
-                    _removeHashBuffer.Add(entry.Key);
+                    _requests.RemoveAt(i);
+                    removed++;
                 }
             }
-
-            int removed = _removeHashBuffer.Count;
-            for (int i = 0; i < _removeHashBuffer.Count; i++)
-            {
-                _requestsByHash.Remove(_removeHashBuffer[i]);
-            }
-            _removeHashBuffer.Clear();
             return removed;
         }
 
@@ -71,47 +76,70 @@ namespace Assets.Scripts.Server
                 throw new ArgumentNullException(nameof(requests));
             }
 
-            _intersectionHashes.Clear();
+            List<long> retainedHashes = new List<long>();
             foreach (ServerRequest request in requests)
             {
-                if (request != null)
+                if (request != null && !ContainsHash(retainedHashes, request.Hash))
                 {
-                    _intersectionHashes.Add(request.Hash);
+                    retainedHashes.Add(request.Hash);
                 }
             }
 
-            _removeHashBuffer.Clear();
-            foreach (long hash in _requestsByHash.Keys)
+            for (int i = _requests.Count - 1; i >= 0; i--)
             {
-                if (!_intersectionHashes.Contains(hash))
+                if (!ContainsHash(retainedHashes, _requests[i].Hash))
                 {
-                    _removeHashBuffer.Add(hash);
+                    _requests.RemoveAt(i);
                 }
             }
-
-            for (int i = 0; i < _removeHashBuffer.Count; i++)
-            {
-                _requestsByHash.Remove(_removeHashBuffer[i]);
-            }
-            _removeHashBuffer.Clear();
-            _intersectionHashes.Clear();
         }
 
         public void Clear()
         {
-            _requestsByHash.Clear();
-            _removeHashBuffer.Clear();
-            _intersectionHashes.Clear();
+            _requests.Clear();
         }
 
         public bool TryGetByHash(long hash, out ServerRequest request)
         {
-            return _requestsByHash.TryGetValue(hash, out request);
+            int index = FindIndexByHash(hash);
+            if (index >= 0)
+            {
+                request = _requests[index];
+                return true;
+            }
+
+            request = null;
+            return false;
+        }
+
+        private int FindIndexByHash(long hash)
+        {
+            for (int i = 0; i < _requests.Count; i++)
+            {
+                ServerRequest request = _requests[i];
+                if (request != null && request.Hash == hash)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static bool ContainsHash(List<long> hashes, long hash)
+        {
+            for (int i = 0; i < hashes.Count; i++)
+            {
+                if (hashes[i] == hash)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public IEnumerator<ServerRequest> GetEnumerator()
         {
-            return _requestsByHash.Values.GetEnumerator();
+            return _requests.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
