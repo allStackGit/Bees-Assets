@@ -103,5 +103,19 @@ namespace Bees.Tests.EditMode
             Assert.That(request, Does.Not.Contain("public dynamic Request"),
                 "The base request payload placeholder must not reintroduce runtime-bound dispatch on WebGL.");
         }
+
+        [Test]
+        public void WebBuildDisablesWasm2023CallTableMode()
+        {
+            string guard = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Editor", "WebGlCompatibilityBuildGuard.cs"));
+
+            Assert.That(guard, Does.Contain("BuildTarget.WebGL"),
+                "The compatibility override must stay scoped to Web builds.");
+            Assert.That(guard, Does.Contain("PlayerSettings.WebGL.wasm2023 = false"),
+                "Unity 6000.5 Web builds must avoid the affected WebAssembly 2023 mode.");
+            Assert.That(guard, Does.Contain("PlayerSettings.WebGL.webAssemblyTable = false"),
+                "The WebAssembly function-table mode must remain disabled until the Unity/NativeWebSocket compatibility boundary is upgraded.");
+        }
     }
 }
