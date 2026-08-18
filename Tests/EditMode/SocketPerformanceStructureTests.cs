@@ -40,6 +40,28 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ServerRequestTrackingAvoidsGenericHashSetComparers()
+        {
+            string standingSetSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "StandingRequestSet.cs"));
+            string socketSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+            string configSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "ConfigData.cs"));
+            string resetSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Reset.cs"));
+
+            StringAssert.Contains("Dictionary<long, ServerRequest> _requestsByHash", standingSetSource);
+            StringAssert.Contains("ServerRequestSet _waitableRequests", socketSource);
+            StringAssert.Contains("ServerRequestSet __PastServerRequests", configSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", standingSetSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", socketSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", configSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", resetSource);
+            StringAssert.DoesNotContain(".ToHashSet()", resetSource);
+        }
+
+        [Test]
         public void StrategicTargetDiscoveryAvoidsLinqMaterialization()
         {
             string source = File.ReadAllText(Path.Combine(
