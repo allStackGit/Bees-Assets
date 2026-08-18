@@ -37,5 +37,27 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("onMessage: null"));
             Assert.That(source, Does.Not.Contain("onMesssage"));
         }
+
+        [Test]
+        public void StartupServerSettingsParsingAvoidsDynamicDispatchOnIl2Cpp()
+        {
+            string[] settingsFiles =
+            {
+                "ShipStats.cs",
+                "Configuration.cs",
+                "StartingSettings.cs",
+            };
+
+            foreach (string file in settingsFiles)
+            {
+                string source = File.ReadAllText(Path.Combine(
+                    Application.dataPath, "Scripts", "Settings", file));
+
+                Assert.That(source, Does.Not.Contain("dynamic"),
+                    $"{file} is part of WebGL startup and must not use C# dynamic dispatch under IL2CPP.");
+                Assert.That(source, Does.Contain("JObject").Or.Contain("JArray"),
+                    $"{file} should parse startup JSON through explicit Newtonsoft token types.");
+            }
+        }
     }
 }
