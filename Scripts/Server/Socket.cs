@@ -45,7 +45,7 @@ namespace Assets.Scripts.Server
         public HashSet<long> HandledRequests = new HashSet<long>();
         public ConcurrentQueue<byte[]> MessageQueue = new ConcurrentQueue<byte[]>();
         public List<Level> OpenLevels = new List<Level>();
-        private readonly HashSet<ServerRequest> _waitableRequests = new HashSet<ServerRequest>();
+        private readonly ServerRequestSet _waitableRequests = new ServerRequestSet();
         private readonly List<ServerRequest> _waitableRequestSnapshot = new List<ServerRequest>();
 
         private ConcurrentQueue<Action> MainThreadActions
