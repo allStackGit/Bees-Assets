@@ -23,7 +23,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void StandingRequestLookupUsesIndexedSetLookup()
+        public void StandingRequestLookupUsesEncapsulatedHashLookup()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "Socket.cs"));
@@ -40,7 +40,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ServerRequestTrackingAvoidsGenericHashSetComparers()
+        public void ServerRequestTrackingAvoidsIl2CppHashTableComparerDispatch()
         {
             string standingSetSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "StandingRequestSet.cs"));
@@ -51,9 +51,11 @@ namespace Bees.Tests.EditMode
             string resetSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Levels", "Level.Reset.cs"));
 
-            StringAssert.Contains("Dictionary<long, ServerRequest> _requestsByHash", standingSetSource);
+            StringAssert.Contains("List<ServerRequest> _requests", standingSetSource);
+            StringAssert.Contains("request.Hash == hash", standingSetSource);
             StringAssert.Contains("ServerRequestSet _waitableRequests", socketSource);
             StringAssert.Contains("ServerRequestSet __PastServerRequests", configSource);
+            StringAssert.DoesNotContain("Dictionary<", standingSetSource);
             StringAssert.DoesNotContain("HashSet<ServerRequest>", standingSetSource);
             StringAssert.DoesNotContain("HashSet<ServerRequest>", socketSource);
             StringAssert.DoesNotContain("HashSet<ServerRequest>", configSource);
