@@ -5,7 +5,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+#if !UNITY_WEBGL
 using Steamworks;
+#endif
 
 namespace Assets.Scripts
 {
@@ -259,6 +261,7 @@ namespace Assets.Scripts
                 return _userId;
             }
 
+#if !UNITY_WEBGL
             // Steam identity is preferred, but Steam is optional for startup. SteamManager owns the
             // one initialization attempt so a missing client/native library cannot crash or stall
             // ConfigData while the local identity path remains available.
@@ -283,6 +286,7 @@ namespace Assets.Scripts
             {
                 Debug.LogWarning("Steam API is unavailable; using local fallback identity.");
             }
+#endif
 
             int storedUserId = PlayerPrefs.GetInt("user_id");
             bool hadStoredIdentity = storedUserId != 0;
@@ -304,6 +308,9 @@ namespace Assets.Scripts
 
         public static bool HasPlayedBefore()
         {
+#if UNITY_WEBGL
+            return false;
+#else
             if (!SteamManager.Initialized)
             {
                 return false;
@@ -321,6 +328,7 @@ namespace Assets.Scripts
                 Debug.LogWarning($"Steam playtime could not be read; treating this as a local first-run check. {exception.GetType().Name}: {exception.Message}");
                 return false;
             }
+#endif
         }
 
         public static void SetupUserProgressData(bool shouldFileExist)

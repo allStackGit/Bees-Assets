@@ -2,8 +2,6 @@
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Linq;
-using Assets.Scripts.Scenes;
-using UnityEngine;
 
 namespace Assets.Scripts.Data
 {
@@ -15,7 +13,6 @@ namespace Assets.Scripts.Data
         private List<FleetShip> _shipList = new List<FleetShip>();
         private readonly Dictionary<ConfigData.ShipTypes, int> _startingShips;
         public string Type;
-
 
         public FleetData(bool shouldFileExist, Dictionary<ConfigData.ShipTypes, int> startingShips, int type, bool forceCreateDefaults = false) : base()
         {
@@ -29,15 +26,16 @@ namespace Assets.Scripts.Data
             // the fallback only if it is actually needed and the allocator has been synchronized.
             defaultJsonData = "";
 
-            dynamic json = SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], (json) =>
+            SetupFile(shouldFileExist, ConfigData.FleetDataFilenames[type], loadedData =>
             {
-                //Debug.Log($"Loading ships for {Type}");
                 _shipList.Clear();
-                LoadShipsFromJson(Utilities.JArrayToList<dynamic>((JArray)JsonConvert.DeserializeObject(file.GetContents())));
+                JArray json = AotJson.RequireArray(loadedData, ConfigData.FleetDataFilenames[type]);
+                foreach (FleetShip ship in AotJson.ParseFleetShips(json))
+                {
+                    AddShipToFleet(ship);
+                }
                 ConfigData.IsFleetDataLoaded[type] = true;
-                //Debug.Log($"Loaded {GetShips().Count} ships: {GetShips()[Utilities.RandomInt(GetShips().Count-1)]}");
             }, forceCreateDefaults);
-
         }
 
         public override string GetDefaultJson()
@@ -80,8 +78,6 @@ namespace Assets.Scripts.Data
                 return true;
             }
 
-            // If the callback already ran, the strongly typed field is authoritative even when
-            // tooling supplied the data without retaining a JObject.
             return ConfigData.IsUserProgressDataLoaded;
         }
 
@@ -89,9 +85,8 @@ namespace Assets.Scripts.Data
         {
             List<ConfigData.ShipTypes> shipTypes = startingShips.Keys.ToList();
             int id;
-            shipTypes.ForEach((shipType) =>
+            shipTypes.ForEach(shipType =>
             {
-                
                 int shipCount = startingShips.GetValueOrDefault(shipType);
                 int side = ConfigData.Configuration.HumanSide;
 
@@ -102,54 +97,45 @@ namespace Assets.Scripts.Data
                 for (int i = 0; i < shipCount; i++)
                 {
                     id = ConfigData.UserProgressData.GetNextFleetId();
-
                     AddShipToFleet(new FleetShip(id, shipType, false, false, 0, 0, 0, 0, 0, 0, 0));
                 }
             });
             string json = ToJson();
-            //Debug.Log($"JSON for {Type} starting ships {GetShips().Count}, {GetShips().First().Name}");
-            //Debug.Log(json);
             ClearFleet();
             return json;
         }
-        private void LoadShipsFromJson(List<dynamic> jsonShips)
-        {
-            //Debug.Log($"About to load {jsonShips.Count} ships for {Type}");
-            jsonShips.ForEach((ship) =>
-            {
-                int mineralsMined = ship.m != null ? (int)ship.m : 0;
-                string name = ship.n != null ? (string)ship.n : "";
-                AddShipToFleet(new FleetShip((int) ship.i, (ConfigData.ShipTypes) ship.t, ((int)ship.s == 1 ? true : false), ((int)ship.d == 1 ? true : false), (int) ship.f, (int) ship.dd, (int) ship.r, (int) ship.k, (int) ship.b, (int) ship.w, mineralsMined, name));
-            });
-        }
+
         public List<FleetShip> GetShips()
         {
             return _shipList;
         }
+
         public FleetShip GetFleetShip(long id)
         {
-            return GetShips().Find((ship) => ship.Id == id);
+            return GetShips().Find(ship => ship.Id == id);
         }
+
         public void AddShipToFleet(FleetShip ship)
         {
-            if (!_shipList.Contains(ship)) {
+            if (!_shipList.Contains(ship))
+            {
                 _shipList.Add(ship);
             }
             else
             {
-                Debug.LogWarning($"Could not add fleetship to fleet because the Id already exists: {ship}");
+                UnityEngine.Debug.LogWarning($"Could not add fleetship to fleet because the Id already exists: {ship}");
             }
-            
         }
+
         public void ClearFleet()
         {
             _shipList.Clear();
         }
+
         public override string ToJson()
         {
             return new JArray(GetShips().Select(ship => JToken.Parse(ship.ToJson())))
                 .ToString(Formatting.None);
-
         }
     }
 }

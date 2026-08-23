@@ -23,7 +23,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void StandingRequestLookupUsesIndexedSetLookup()
+        public void StandingRequestLookupUsesEncapsulatedHashLookup()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Server", "Socket.cs"));
@@ -37,6 +37,30 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("StandingRequests.TryGetByHash(hash, out ServerRequest request)", method);
             StringAssert.DoesNotContain("FirstOrDefault", method);
             StringAssert.DoesNotContain("foreach", method);
+        }
+
+        [Test]
+        public void ServerRequestTrackingAvoidsIl2CppHashTableComparerDispatch()
+        {
+            string standingSetSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "StandingRequestSet.cs"));
+            string socketSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+            string configSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "ConfigData.cs"));
+            string resetSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Reset.cs"));
+
+            StringAssert.Contains("List<ServerRequest> _requests", standingSetSource);
+            StringAssert.Contains("request.Hash == hash", standingSetSource);
+            StringAssert.Contains("ServerRequestSet _waitableRequests", socketSource);
+            StringAssert.Contains("ServerRequestSet __PastServerRequests", configSource);
+            StringAssert.DoesNotContain("Dictionary<", standingSetSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", standingSetSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", socketSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", configSource);
+            StringAssert.DoesNotContain("HashSet<ServerRequest>", resetSource);
+            StringAssert.DoesNotContain(".ToHashSet()", resetSource);
         }
 
         [Test]
