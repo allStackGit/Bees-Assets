@@ -299,11 +299,11 @@ namespace Assets.Scripts.Levels
             // prove that such a response belonged to a retired Squad lifecycle. Preserve only the
             // newest bounded set of request types needed for that ownership check; discard all
             // unrelated debug history as before so normal play does not accumulate it indefinitely.
-            HashSet<ServerRequest> staleResponseHistory = ConfigData.__PastServerRequests
+            List<ServerRequest> staleResponseHistory = ConfigData.__PastServerRequests
                 .Where(request => request is CommandRequest || request is MatchupStrategyRequest)
                 .OrderByDescending(request => request.StartTime)
                 .Take(StaleSquadRequestHistoryLimit)
-                .ToHashSet();
+                .ToList();
             ConfigData.__PastServerRequests.IntersectWith(staleResponseHistory);
         }
 

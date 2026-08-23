@@ -23,6 +23,7 @@ namespace Assets.Scripts
         public const string TestServerHostname = GlobalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
         public const string ProductionServerHostname = GlobalServerHostname;
+        public const string DevelopmentWebGlWebSocketURL = "wss://clashofempire.net/bees-ws/";
         public const int DevelopmentPort = 7146;
         public const int TestPort = 7143;
         public const int ProductionPort = 7144;
@@ -65,7 +66,14 @@ namespace Assets.Scripts
                     }
                     else if (Development)
                     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                        _socket = SecureSocketFactory.CreateWebGl(
+                            DevelopmentPort,
+                            DevelopmentServerHostname,
+                            DevelopmentWebGlWebSocketURL);
+#else
                         _socket = new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+#endif
                     }
                     else
                     {
@@ -136,7 +144,7 @@ namespace Assets.Scripts
         public static System.Diagnostics.Stopwatch Stopwatch;
         public static UIAudioController UIAudioController;
 
-        public static HashSet<ServerRequest> __PastServerRequests = new HashSet<ServerRequest>();
+        public static ServerRequestSet __PastServerRequests = new ServerRequestSet();
         public static int __TotalResends;
         public static int __TotalRequests;
         public static double __AverageTimeOnQueue;

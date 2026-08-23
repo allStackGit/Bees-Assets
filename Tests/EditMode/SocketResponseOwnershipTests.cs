@@ -102,7 +102,7 @@ namespace Bees.Tests.EditMode
 
             MethodInfo remove = _standingRequests.GetType().GetMethod(
                 "Remove",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly,
+                BindingFlags.Instance | BindingFlags.Public,
                 null,
                 new[] { serverRequestType },
                 null);
@@ -114,25 +114,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void BaseHashSetRemovalCannotLeaveAStaleIndexedLookup()
+        public void EquivalentRequestHashCannotCreateDuplicateStandingEntry()
         {
-            Type serverRequestType = RuntimeAssembly.GetType("Assets.Scripts.Server.ServerRequest");
             object request = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
+            object equivalentRequest = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Server.CommandRequest");
             SetFieldIncludingBase(request, "Hash", 8102L);
+            SetFieldIncludingBase(equivalentRequest, "Hash", 8102L);
+
             RuntimeAssembly.AddToCollection(_standingRequests, request);
+            RuntimeAssembly.AddToCollection(_standingRequests, equivalentRequest);
 
-            Type hashSetType = typeof(System.Collections.Generic.HashSet<>).MakeGenericType(serverRequestType);
-            MethodInfo baseRemove = hashSetType.GetMethod(
-                "Remove",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly,
-                null,
-                new[] { serverRequestType },
-                null);
-
-            Assert.That(baseRemove, Is.Not.Null);
-            Assert.That(baseRemove.Invoke(_standingRequests, new[] { request }), Is.True);
-            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.Zero);
-            Assert.That(RuntimeAssembly.Invoke(_socket, "GetStandingRequest", 8102L), Is.Null);
+            Assert.That(RuntimeAssembly.GetCount(_standingRequests), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.Invoke(_socket, "GetStandingRequest", 8102L), Is.SameAs(request),
+                "A resend or duplicate request hash replaced the original standing-request owner.");
         }
 
         [Test]

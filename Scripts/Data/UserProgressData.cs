@@ -2,7 +2,6 @@ using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Remoting.Messaging;
 using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -12,18 +11,11 @@ namespace Assets.Scripts.Data
     // class that holds and manages storage for user progress data
     public class UserProgressData : UserData
     {
-        public int CurrentHumanCampaignLevel = -1; // a level of -1 indicates that the level data hasn't been loaded yet
-        public int CurrentBeeCampaignLevel = -1; 
-        public int CurrentHumanChallengeLevel = -1; 
+        public int CurrentHumanCampaignLevel = -1;
+        public int CurrentBeeCampaignLevel = -1;
+        public int CurrentHumanChallengeLevel = -1;
         public int CurrentBeeChallengeLevel = -1;
-        /// <summary>
-        /// The current global fleet Id of the next ship. Every fleet ship of every game type gets its fleet Id from here unless it's not being saved and has a negative Id
-        /// </summary>
         public int FleetId = -1;
-
-        /// <summary>
-        ///  The current global saved squad Id of the next saved squad. Every saved squad of every game type gets its saved squad Id from here unless it's not being saved and has a negative Id
-        /// </summary>
         public int SavedSquadId = -1;
         public int HumanCampaignSavedSquadNumber = -1;
         public int BeeCampaignSavedSquadNumber = -1;
@@ -31,23 +23,16 @@ namespace Assets.Scripts.Data
         public int BeeChallengeSavedSquadNumber = -1;
         public int HumanFreePlaySavedSquadNumber = -1;
         public int BeeFreePlaySavedSquadNumber = -1;
-        /// <summary>
-        /// How much TSV the user has mined, less whatever the user has spent
-        /// </summary>
         public int MinedTSV = 0;
-        /// <summary>
-        /// How much TSV the AI has mined, less whatever the AI has spent
-        /// </summary>
         public int HivemindMinedTSV = 0;
         public int CampaignScore = 0;
         public int ChallengeScore = 0;
 
-        public int HumanCampaignWins, BeeCampaignWins; 
+        public int HumanCampaignWins, BeeCampaignWins;
         public int HumanChallengeWins, BeeChallengeWins;
         public int HumanFreePlayWins, BeeFreePlayWins;
         public int HumanFishTankWins, BeeFishTankWins;
 
-        // Unlockables
         public bool HasStartedHumanCampaign = false;
         public bool IsBeeCampaignUnlocked = false;
         public bool IsHumanChallengeUnlocked = false;
@@ -63,7 +48,6 @@ namespace Assets.Scripts.Data
         public bool ShowToolTips = true;
         public bool UseMouseScrolling = false;
 
-        // Ship types that the user has unlocked and can see in the codex or in the game
         public HashSet<ConfigData.ShipTypes> VisibleBeeShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleHumanShipTypes;
         public HashSet<ConfigData.ShipTypes> VisibleCodexBeeShipTypes;
@@ -74,68 +58,68 @@ namespace Assets.Scripts.Data
         public HashSet<ConfigData.ShipTypes> UnlockedCampaignShips;
 
         public string PlayerName;
-
         public LevelOptions CurrentLevel;
 
-        public UserProgressData(bool shouldFileExist): base()
+        public UserProgressData(bool shouldFileExist) : base()
         {
             defaultJsonData = "{" +
                 "\"CurrentHumanCampaignLevel\": 0, \"CurrentBeeCampaignLevel\": 0, \"CurrentHumanChallengeLevel\": 0, \"CurrentBeeChallengeLevel\": 0, \"FleetId\": 1521, \"SavedSquadId\": -1, \"HumanCampaignSavedSquadNumber\": 0, \"BeeCampaignSavedSquadNumber\": 0, \"HumanChallengeSavedSquadNumber\": 0, \"BeeChallengeSavedSquadNumber\": 0, \"HumanFreePlaySavedSquadNumber\": 0, \"BeeFreePlaySavedSquadNumber\": 0, \"MinedTSV\": 0, \"HivemindMinedTSV\": 0, \"CampaignScore\": 0, \"ChallengeScore\": 0, \"HumanCampaignWins\": 0, \"BeeCampaignWins\": 0, \"HumanChallengeWins\": 0, \"BeeChallengeWins\": 0, \"HumanFreePlayWins\": 0, \"BeeFreePlayWins\": 0, \"HumanFishTankWins\": 0, \"BeeFishTankWins\": 0, \"HasStartedHumanCampaign\": false, \"IsBeeCampaignUnlocked\": false, \"IsHumanChallengeUnlocked\": false, \"IsBeeChallengeUnlocked\": false, \"IsHumanFreePlayUnlocked\": false, \"IsBeeFreePlayUnlocked\": false, \"IsFishTankUnlocked\": false, \"HasMetAlejandraAndEmilia\": false, \"HasSeenBuildInterface\": false, \"HasSeenCarrierIntro\": false, \"HasPlayedBefore\": false, \"ShowToolTips\": true, \"UseMouseScrolling\": true, \"VisibleBeeShipTypes\": [\"Honeybee\"], \"VisibleHumanShipTypes\": [\"Scout\", \"Gunship\"], \"UnlockedCampaignShips\": [\"Scout\", \"Gunship\"], \"VisibleCodexBeeShipTypes\": [], \"VisibleCodexHumanShipTypes\": [\"Scout\", \"Gunship\"], \"PlayerName\": \"\"" +
-            "}";
-            
-            dynamic json = SetupFile(shouldFileExist, ConfigData.UserProgressFilename, (json) =>
+                "}";
+
+            SetupFile(shouldFileExist, ConfigData.UserProgressFilename, loadedData =>
             {
+                JObject json = AotJson.RequireObject(loadedData, ConfigData.UserProgressFilename);
                 ConfigData.IsUserProgressDataLoaded = true;
-                CurrentHumanCampaignLevel = json.CurrentHumanCampaignLevel;
-                CurrentBeeCampaignLevel = json.CurrentBeeCampaignLevel;
-                CurrentHumanChallengeLevel = json.CurrentHumanChallengeLevel;
-                CurrentBeeChallengeLevel = json.CurrentBeeChallengeLevel;
-                FleetId = json.FleetId;
+                CurrentHumanCampaignLevel = json.Value<int>("CurrentHumanCampaignLevel");
+                CurrentBeeCampaignLevel = json.Value<int>("CurrentBeeCampaignLevel");
+                CurrentHumanChallengeLevel = json.Value<int>("CurrentHumanChallengeLevel");
+                CurrentBeeChallengeLevel = json.Value<int>("CurrentBeeChallengeLevel");
+                FleetId = json.Value<int>("FleetId");
 
-                SavedSquadId = json.SavedSquadId;
-                HumanCampaignSavedSquadNumber = json.HumanCampaignSavedSquadNumber;
-                BeeCampaignSavedSquadNumber = json.BeeCampaignSavedSquadNumber;
-                HumanChallengeSavedSquadNumber = json.HumanChallengeSavedSquadNumber;
-                BeeChallengeSavedSquadNumber = json.BeeChallengeSavedSquadNumber;
-                HumanFreePlaySavedSquadNumber = json.HumanFreePlaySavedSquadNumber;
-                BeeFreePlaySavedSquadNumber = json.BeeFreePlaySavedSquadNumber;
+                SavedSquadId = json.Value<int>("SavedSquadId");
+                HumanCampaignSavedSquadNumber = json.Value<int>("HumanCampaignSavedSquadNumber");
+                BeeCampaignSavedSquadNumber = json.Value<int>("BeeCampaignSavedSquadNumber");
+                HumanChallengeSavedSquadNumber = json.Value<int>("HumanChallengeSavedSquadNumber");
+                BeeChallengeSavedSquadNumber = json.Value<int>("BeeChallengeSavedSquadNumber");
+                HumanFreePlaySavedSquadNumber = json.Value<int>("HumanFreePlaySavedSquadNumber");
+                BeeFreePlaySavedSquadNumber = json.Value<int>("BeeFreePlaySavedSquadNumber");
 
-                MinedTSV = json.MinedTSV;
-                HivemindMinedTSV = json.HivemindMinedTSV;
-                CampaignScore = json.CampaignScore != null ? json.CampaignScore : 0;
-                ChallengeScore = json.ChallengeScore != null ? json.ChallengeScore : 0;
+                MinedTSV = json.Value<int>("MinedTSV");
+                HivemindMinedTSV = json.Value<int>("HivemindMinedTSV");
+                CampaignScore = json["CampaignScore"]?.Value<int>() ?? 0;
+                ChallengeScore = json["ChallengeScore"]?.Value<int>() ?? 0;
 
-                HasStartedHumanCampaign = json.HasStartedHumanCampaign;
-                IsBeeCampaignUnlocked = json.IsBeeCampaignUnlocked;
-                IsHumanChallengeUnlocked = json.IsHumanChallengeUnlocked;
-                IsBeeChallengeUnlocked = json.IsBeeChallengeUnlocked;
-                IsHumanFreePlayUnlocked = json.IsHumanFreePlayUnlocked;
-                IsBeeFreePlayUnlocked = json.IsBeeFreePlayUnlocked;
-                IsFishTankUnlocked = json.IsFishTankUnlocked;
+                HasStartedHumanCampaign = json.Value<bool>("HasStartedHumanCampaign");
+                IsBeeCampaignUnlocked = json.Value<bool>("IsBeeCampaignUnlocked");
+                IsHumanChallengeUnlocked = json.Value<bool>("IsHumanChallengeUnlocked");
+                IsBeeChallengeUnlocked = json.Value<bool>("IsBeeChallengeUnlocked");
+                IsHumanFreePlayUnlocked = json.Value<bool>("IsHumanFreePlayUnlocked");
+                IsBeeFreePlayUnlocked = json.Value<bool>("IsBeeFreePlayUnlocked");
+                IsFishTankUnlocked = json.Value<bool>("IsFishTankUnlocked");
 
-                HasMetAlejandraAndEmilia = json.HasMetAlejandraAndEmilia;
-                HasSeenBuildInterface = json.HasSeenBuildInterface;
-                HasSeenCarrierIntro = json.HasSeenCarrierIntro;
-                HasPlayedBefore = json.HasPlayedBefore != null ? json.HasPlayedBefore : false;
-                ShowToolTips = json.ShowToolTips != null ? json.ShowToolTips : true;
-                UseMouseScrolling = json.UseMouseScrolling != null ? json.UseMouseScrolling : true;
+                HasMetAlejandraAndEmilia = json.Value<bool>("HasMetAlejandraAndEmilia");
+                HasSeenBuildInterface = json.Value<bool>("HasSeenBuildInterface");
+                HasSeenCarrierIntro = json.Value<bool>("HasSeenCarrierIntro");
+                HasPlayedBefore = json["HasPlayedBefore"]?.Value<bool>() ?? false;
+                ShowToolTips = json["ShowToolTips"]?.Value<bool>() ?? true;
+                UseMouseScrolling = json["UseMouseScrolling"]?.Value<bool>() ?? true;
 
-                HumanCampaignWins = json.HumanCampaignWins;
-                BeeCampaignWins = json.BeeCampaignWins;
-                HumanChallengeWins = json.HumanChallengeWins;
-                BeeChallengeWins = json.BeeChallengeWins;
-                HumanFreePlayWins = json.HumanFreePlayWins;
-                BeeFreePlayWins = json.BeeFreePlayWins;
-                HumanFishTankWins = json.HumanFishTankWins;
-                BeeFishTankWins = json.BeeFishTankWins;
+                HumanCampaignWins = json.Value<int>("HumanCampaignWins");
+                BeeCampaignWins = json.Value<int>("BeeCampaignWins");
+                HumanChallengeWins = json.Value<int>("HumanChallengeWins");
+                BeeChallengeWins = json.Value<int>("BeeChallengeWins");
+                HumanFreePlayWins = json.Value<int>("HumanFreePlayWins");
+                BeeFreePlayWins = json.Value<int>("BeeFreePlayWins");
+                HumanFishTankWins = json.Value<int>("HumanFishTankWins");
+                BeeFishTankWins = json.Value<int>("BeeFishTankWins");
 
-                PlayerName = json.PlayerName;
+                PlayerName = json.Value<string>("PlayerName");
 
-                VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleBeeShipTypes));
-                VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleHumanShipTypes));
-                VisibleCodexBeeShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexBeeShipTypes));
-                VisibleCodexHumanShipTypes = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.VisibleCodexHumanShipTypes));
-                UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes>(Utilities.JArrayToShipTypes(json.UnlockedCampaignShips));
+                VisibleBeeShipTypes = new HashSet<ConfigData.ShipTypes>(AotJson.ParseShipTypes(json["VisibleBeeShipTypes"]));
+                VisibleHumanShipTypes = new HashSet<ConfigData.ShipTypes>(AotJson.ParseShipTypes(json["VisibleHumanShipTypes"]));
+                VisibleCodexBeeShipTypes = new HashSet<ConfigData.ShipTypes>(AotJson.ParseShipTypes(json["VisibleCodexBeeShipTypes"]));
+                VisibleCodexHumanShipTypes = new HashSet<ConfigData.ShipTypes>(AotJson.ParseShipTypes(json["VisibleCodexHumanShipTypes"]));
+                UnlockedCampaignShips = new HashSet<ConfigData.ShipTypes>(AotJson.ParseShipTypes(json["UnlockedCampaignShips"]));
 
                 SetShipTypes();
             });
@@ -148,9 +132,6 @@ namespace Assets.Scripts.Data
             ConfigData.BeeShipTypes = VisibleBeeShipTypes;
             ConfigData.HumanShipTypes = VisibleHumanShipTypes;
 
-            // Strategy availability is a property of the complete strategy catalog, not of
-            // the player's current unlocks. Rebuild this whenever visibility changes so Hive
-            // Mind type-target bans always cover every type strategy the server can select.
             AllShipTypes = ConfigData.TypesOfShootingStrategies
                 .Where(strategy => (int)strategy > 15)
                 .Select(strategy => Utilities.ConvertShootingStrategyToShipType[strategy])
@@ -264,7 +245,7 @@ namespace Assets.Scripts.Data
                 }
                 return CurrentBeeCampaignLevel;
             }
-            else if (gameMode == ConfigData.GameModes.Challenge)
+            if (gameMode == ConfigData.GameModes.Challenge)
             {
                 if (side == ConfigData.Configuration.HumanSide)
                 {
@@ -290,17 +271,12 @@ namespace Assets.Scripts.Data
                     int targetLevel = missionId + 1;
                     if (CampaignMissionCatalog.IsCampaignComplete(targetLevel))
                     {
-                        // The first ID beyond the catalog is the persisted completion sentinel.
-                        // MainMenu and the level-end UI use that value to display the completed
-                        // campaign state instead of offering the final mission again.
                         Debug.Log($"Campaign mission {missionId} completed the currently available campaign; advancing progress to terminal level {targetLevel}.");
                         SetCurrentLevel(targetLevel);
                         return;
                     }
                     if (currentLevel >= targetLevel)
                     {
-                        // Several legacy endings call this method more than once. Advancement is
-                        // mission-idempotent so a duplicate call cannot skip the next mission.
                         return;
                     }
 
@@ -309,7 +285,6 @@ namespace Assets.Scripts.Data
                     return;
                 }
 
-                // Defensive fallback for tooling/non-scene callers that do not own a live Level.
                 int fallbackTargetLevel = currentLevel + 1;
                 if (CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel))
                 {
@@ -334,17 +309,11 @@ namespace Assets.Scripts.Data
             }
         }
 
-        /// <summary>
-        /// Gets the next incremental Fleet Id. Does not save the data to "disk"
-        /// </summary>
         public int GetNextFleetId()
         {
             return ++FleetId;
         }
 
-        /// <summary>
-        /// Gets the next saved squad number for naming purposes. Does not save the data to "disk". Should only be used when creating the user's squads.
-        /// </summary>
         public int GetNextSavedSquadNumber()
         {
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
@@ -355,7 +324,7 @@ namespace Assets.Scripts.Data
                 }
                 return BeeCampaignSavedSquadNumber++;
             }
-            else if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
+            if (ConfigData.CurrentGameMode == ConfigData.GameModes.Challenge)
             {
                 if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
                 {
@@ -363,19 +332,14 @@ namespace Assets.Scripts.Data
                 }
                 return BeeChallengeSavedSquadNumber++;
             }
-            else
+
+            if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
             {
-                if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
-                {
-                    return HumanFreePlaySavedSquadNumber++;
-                }
-                return BeeFreePlaySavedSquadNumber++;
+                return HumanFreePlaySavedSquadNumber++;
             }
+            return BeeFreePlaySavedSquadNumber++;
         }
 
-        /// <summary>
-        /// Returns the next saved squad id. Used for uniquely identifying every saved squad regardless of game mode
-        /// </summary>
         public int GetNextSavedSquadId()
         {
             return ++SavedSquadId;

@@ -21,7 +21,7 @@ namespace Assets.Scripts.Server
         public int MaxTimeOnQueue; // s
         public int Resends = 0;
         public long Hash = Utilities.Hash();
-        public dynamic Request;
+        public object Request;
 
         public ServerRequest(int maxTimeOnQueue)
         {
@@ -47,7 +47,6 @@ namespace Assets.Scripts.Server
                 return false;
             }
 
-            // If parameter cannot be cast to class return false.
             _request = obj as ServerRequest;
             if (_request == null)
             {
@@ -69,13 +68,11 @@ namespace Assets.Scripts.Server
 
         public static bool operator ==(ServerRequest a, ServerRequest b)
         {
-            // If both are null, or both are same instance, return true.
             if (System.Object.ReferenceEquals(a, b))
             {
                 return true;
             }
 
-            // If one is null, but not both, return false.
             if (((object)a == null) || ((object)b == null))
             {
                 return false;
@@ -88,6 +85,7 @@ namespace Assets.Scripts.Server
         {
             return !(a == b);
         }
+
         public override string ToString()
         {
             return $"SR #{Hash}:{Type}";

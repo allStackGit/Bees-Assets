@@ -1,112 +1,160 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace Assets.Scripts.Server
 {
     /// <summary>
-    /// HashSet-compatible standing-request collection with a hash index for response lookup.
-    /// The public set semantics are preserved because several runtime and test paths enumerate
-    /// or directly add/remove requests through Socket.StandingRequests.
+    /// Request collection keyed by the request's long transport hash without hash-table
+    /// comparer dispatch. Unity WebGL/IL2CPP has failed both ServerRequest-keyed HashSet
+    /// comparers and generic dictionary insertion during startup, so this deliberately uses
+    /// a small linear collection. Standing request counts are low and request-hash identity
+    /// remains the contract.
     /// </summary>
-    public sealed class StandingRequestSet : HashSet<ServerRequest>
+    public class ServerRequestSet : IEnumerable<ServerRequest>
     {
-        private readonly Dictionary<long, ServerRequest> _requestsByHash = new Dictionary<long, ServerRequest>();
-        private readonly List<ServerRequest> _removeBuffer = new List<ServerRequest>();
+        private readonly List<ServerRequest> _requests = new List<ServerRequest>();
+        private readonly List<long> _intersectionHashes = new List<long>();
 
-        public new bool Add(ServerRequest request)
+        public int Count => _requests.Count;
+
+        public bool Add(ServerRequest request)
+        {
+            if (request == null || FindIndexByHash(request.Hash) >= 0)
+            {
+                return false;
+            }
+
+            _requests.Add(request);
+            return true;
+        }
+
+        public bool Remove(ServerRequest request)
         {
             if (request == null)
             {
                 return false;
             }
 
-            bool added = base.Add(request);
-            if (added)
-            {
-                _requestsByHash[request.Hash] = request;
-            }
-            return added;
-        }
-
-        public new bool Remove(ServerRequest request)
-        {
-            if (request == null)
+            int index = FindIndexByHash(request.Hash);
+            if (index < 0)
             {
                 return false;
             }
 
-            long hash = request.Hash;
-            bool removed = base.Remove(request);
-            if (removed)
-            {
-                // ServerRequest equality is hash-based, so removing any equal request removes
-                // the one entry owned by this hash regardless of reference identity.
-                _requestsByHash.Remove(hash);
-            }
-            return removed;
+            _requests.RemoveAt(index);
+            return true;
         }
 
-        public new int RemoveWhere(Predicate<ServerRequest> match)
+        public bool Contains(ServerRequest request)
+        {
+            return request != null && FindIndexByHash(request.Hash) >= 0;
+        }
+
+        public int RemoveWhere(Predicate<ServerRequest> match)
         {
             if (match == null)
             {
                 throw new ArgumentNullException(nameof(match));
             }
 
-            _removeBuffer.Clear();
-            foreach (ServerRequest request in this)
-            {
-                if (match(request))
-                {
-                    _removeBuffer.Add(request);
-                }
-            }
-
             int removed = 0;
-            for (int i = 0; i < _removeBuffer.Count; i++)
+            for (int i = _requests.Count - 1; i >= 0; i--)
             {
-                if (Remove(_removeBuffer[i]))
+                if (match(_requests[i]))
                 {
+                    _requests.RemoveAt(i);
                     removed++;
                 }
             }
-            _removeBuffer.Clear();
             return removed;
         }
 
-        public new void Clear()
+        public void IntersectWith(IEnumerable<ServerRequest> requests)
         {
-            base.Clear();
-            _requestsByHash.Clear();
-            _removeBuffer.Clear();
+            if (requests == null)
+            {
+                throw new ArgumentNullException(nameof(requests));
+            }
+
+            _intersectionHashes.Clear();
+            foreach (ServerRequest request in requests)
+            {
+                if (request != null && !ContainsHash(_intersectionHashes, request.Hash))
+                {
+                    _intersectionHashes.Add(request.Hash);
+                }
+            }
+
+            for (int i = _requests.Count - 1; i >= 0; i--)
+            {
+                if (!ContainsHash(_intersectionHashes, _requests[i].Hash))
+                {
+                    _requests.RemoveAt(i);
+                }
+            }
+            _intersectionHashes.Clear();
+        }
+
+        public void Clear()
+        {
+            _requests.Clear();
+            _intersectionHashes.Clear();
         }
 
         public bool TryGetByHash(long hash, out ServerRequest request)
         {
-            if (_requestsByHash.TryGetValue(hash, out request) &&
-                request != null &&
-                request.Hash == hash &&
-                base.Contains(request))
+            int index = FindIndexByHash(hash);
+            if (index >= 0)
             {
+                request = _requests[index];
                 return true;
-            }
-
-            // Defensive fallback for callers/tests that obtained the collection through a base
-            // interface or otherwise bypassed the hidden mutators. A fallback scan repairs the
-            // index, while the normal path remains O(1).
-            _requestsByHash.Remove(hash);
-            foreach (ServerRequest candidate in this)
-            {
-                if (candidate != null && candidate.Hash == hash)
-                {
-                    _requestsByHash[hash] = candidate;
-                    request = candidate;
-                    return true;
-                }
             }
 
             request = null;
             return false;
         }
+
+        private int FindIndexByHash(long hash)
+        {
+            for (int i = 0; i < _requests.Count; i++)
+            {
+                ServerRequest request = _requests[i];
+                if (request != null && request.Hash == hash)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static bool ContainsHash(List<long> hashes, long hash)
+        {
+            for (int i = 0; i < hashes.Count; i++)
+            {
+                if (hashes[i] == hash)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public IEnumerator<ServerRequest> GetEnumerator()
+        {
+            return _requests.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    /// <summary>
+    /// Named standing-request collection retained for Socket's public API and tests.
+    /// </summary>
+    public sealed class StandingRequestSet : ServerRequestSet
+    {
     }
 }

@@ -1,11 +1,7 @@
-﻿
-using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Levels;
 using Assets.Scripts.Scenes;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Assets.Scripts.Settings
@@ -25,14 +21,14 @@ namespace Assets.Scripts.Settings
         public int BeeSide;
 
         public bool DoesUserHaveController;
-        public int StorageChunkSize; // how many commands to complete before storing them in the server
-        public int StandardMaxTimeOnQueue; // default maximum time in seconds before a server request is eligible for resend
+        public int StorageChunkSize;
+        public int StandardMaxTimeOnQueue;
         public float TimeScale;
-        public float AISquadPatrolTime; // how many seconds a patrol should last for the AI
+        public float AISquadPatrolTime;
         public int AIPatrolMaxSize;
         public int AIRandomMovementMaxDistance = 256;
-        public float AISquadGuardTime; // how many seconds a guard command should last for the AI
-        public float AISquadFollowingTime; // how many seconds a squad should follow the closest friendly squad
+        public float AISquadGuardTime;
+        public float AISquadFollowingTime;
         public int CarrierCarryDroneMax;
         public int CarrierCarryStrikerMax;
         public int CarrierSquadCount;
@@ -64,12 +60,10 @@ namespace Assets.Scripts.Settings
         public string SquadSavingStatusAlert;
         public string CannotDuplicateSquadAlert;
 
-
         public int AISide;
         public int UserSide;
         public int SquadMakerFirstSide;
         public int SquadMakerSecondSide;
-
 
         public bool MirrorLocalStorageToServer => UseLocalStorage && MirrorStorage;
         public bool MirrorServerStorageToLocal => !UseLocalStorage && MirrorStorage;
@@ -82,69 +76,65 @@ namespace Assets.Scripts.Settings
                 return configuration.StandardMaxTimeOnQueue;
             }
 
-            // Configuration itself must be fetched before the server-owned value is known.
             return ConfigData.StandardMaxTimeOnQueue;
         }
 
         public Configuration(ulong userId) : base("configuration", userId)
         {
         }
+
         protected override void ProcessData(string contents)
         {
-            dynamic so = JsonConvert.DeserializeObject(contents);
+            JObject settings = JObject.Parse(contents);
 
-            IsDeadVersion = (bool)so.IsDeadVersion;
-            UseLocalStorage = (bool)so.UseLocalStorage;
-            MirrorStorage = (bool)so.MirrorStorage;
-            MaxSquadSize = (int)so.MaxSquadSize;
-            MaxSquadWidth = (int)so.MaxSquadWidth;
-            MaxSquadHeight = (int)so.MaxSquadHeight;
-            RotationMultiplier = (int)so.RotationMultiplier;
-            HumanSide = (int)so.HumanSide;
-            BeeSide = (int)so.BeeSide;
-            DoesUserHaveController = (bool)so.DoesUserHaveController;
-            StorageChunkSize = (int)so.StorageChunkSize;
-            StandardMaxTimeOnQueue = (int)so.StandardMaxTimeOnQueue;
-            TimeScale = (int)so.TimeScale;
-            AISquadPatrolTime = (int)so.AISquadPatrolTime;
-            AIPatrolMaxSize = (int)so.AIPatrolMaxSize;
-            AIRandomMovementMaxDistance = (int)so.AIRandomMovementMaxDistance;
-            AISquadGuardTime = (int)so.AISquadGuardTime;
-            AISquadFollowingTime = (int)so.AISquadFollowingTime;
-            CarrierCarryDroneMax = (int)so.CarrierCarryDroneMax;
-            CarrierCarryStrikerMax = (int)so.CarrierCarryStrikerMax;
-            CarrierSquadCount = (int)so.CarrierSquadCount;
+            IsDeadVersion = settings.Value<bool>("IsDeadVersion");
+            UseLocalStorage = settings.Value<bool>("UseLocalStorage");
+            MirrorStorage = settings.Value<bool>("MirrorStorage");
+            MaxSquadSize = settings.Value<int>("MaxSquadSize");
+            MaxSquadWidth = settings.Value<int>("MaxSquadWidth");
+            MaxSquadHeight = settings.Value<int>("MaxSquadHeight");
+            RotationMultiplier = settings.Value<int>("RotationMultiplier");
+            HumanSide = settings.Value<int>("HumanSide");
+            BeeSide = settings.Value<int>("BeeSide");
+            DoesUserHaveController = settings.Value<bool>("DoesUserHaveController");
+            StorageChunkSize = settings.Value<int>("StorageChunkSize");
+            StandardMaxTimeOnQueue = settings.Value<int>("StandardMaxTimeOnQueue");
+            TimeScale = settings.Value<int>("TimeScale");
+            AISquadPatrolTime = settings.Value<int>("AISquadPatrolTime");
+            AIPatrolMaxSize = settings.Value<int>("AIPatrolMaxSize");
+            AIRandomMovementMaxDistance = settings.Value<int>("AIRandomMovementMaxDistance");
+            AISquadGuardTime = settings.Value<int>("AISquadGuardTime");
+            AISquadFollowingTime = settings.Value<int>("AISquadFollowingTime");
+            CarrierCarryDroneMax = settings.Value<int>("CarrierCarryDroneMax");
+            CarrierCarryStrikerMax = settings.Value<int>("CarrierCarryStrikerMax");
+            CarrierSquadCount = settings.Value<int>("CarrierSquadCount");
 
-            // The version-5 database dump advertises TotalLevels=10 while the same database
-            // contains campaign IDs 0-11. Runtime completion must follow the missions this client
-            // actually knows how to configure, not stale/inconsistent server metadata.
             TotalLevels = CampaignMissionCatalog.Definitions.Count;
 
-            Yes = (string)so.Yes;
-            No = (string)so.No;
-            OK = (string)so.OK;
-            AreYouSure = (string)so.AreYouSure;
-            AreYouSureExit = (string)so.AreYouSureExit;
-            LevelProgressLost = (string)so.LevelProgressLost;
-            DeleteSquadConfirmation = (string)so.DeleteSquadConfirmation;
-            ClearSquadConfirmation = (string)so.ClearSquadConfirmation;
-            LoadSquadConfirmation = (string)so.LoadSquadConfirmation;
-            ChooseSquadConfirmation = (string)so.ChooseSquadConfirmation;
-            UnchooseSquadConfirmation = (string)so.UnchooseSquadConfirmation;
-            GoBackConfirmation = (string)so.GoBackConfirmation;
-            OverCapacityAlertTitle = (string)so.OverCapacityAlertTitle;
-            NoChosenSquadsAlertTitle = (string)so.NoChosenSquadsAlertTitle;
-            ChoosingUnsavedSquadAlertTitle = (string)so.ChoosingUnsavedSquadAlertTitle;
-            ChoosingDeadSquadAlertTitle = (string)so.ChoosingDeadSquadAlertTitle;
-            SquadSavingStatusAlertTitle = (string)so.SquadSavingStatusAlertTitle;
+            Yes = settings.Value<string>("Yes");
+            No = settings.Value<string>("No");
+            OK = settings.Value<string>("OK");
+            AreYouSure = settings.Value<string>("AreYouSure");
+            AreYouSureExit = settings.Value<string>("AreYouSureExit");
+            LevelProgressLost = settings.Value<string>("LevelProgressLost");
+            DeleteSquadConfirmation = settings.Value<string>("DeleteSquadConfirmation");
+            ClearSquadConfirmation = settings.Value<string>("ClearSquadConfirmation");
+            LoadSquadConfirmation = settings.Value<string>("LoadSquadConfirmation");
+            ChooseSquadConfirmation = settings.Value<string>("ChooseSquadConfirmation");
+            UnchooseSquadConfirmation = settings.Value<string>("UnchooseSquadConfirmation");
+            GoBackConfirmation = settings.Value<string>("GoBackConfirmation");
+            OverCapacityAlertTitle = settings.Value<string>("OverCapacityAlertTitle");
+            NoChosenSquadsAlertTitle = settings.Value<string>("NoChosenSquadsAlertTitle");
+            ChoosingUnsavedSquadAlertTitle = settings.Value<string>("ChoosingUnsavedSquadAlertTitle");
+            ChoosingDeadSquadAlertTitle = settings.Value<string>("ChoosingDeadSquadAlertTitle");
+            SquadSavingStatusAlertTitle = settings.Value<string>("SquadSavingStatusAlertTitle");
             CannotDuplicateSquadAlertTitle = "Cannot Duplicate Squad";
-            OverCapacityAlert = (string)so.OverCapacityAlert;
-            NoChosenSquadsAlert = (string)so.NoChosenSquadsAlert;
-            ChoosingUnsavedSquadAlert = (string)so.ChoosingUnsavedSquadAlert;
-            ChoosingDeadSquadAlert = (string)so.ChoosingDeadSquadAlert;
-            SquadSavingStatusAlert = (string)so.SquadSavingStatusAlert;
+            OverCapacityAlert = settings.Value<string>("OverCapacityAlert");
+            NoChosenSquadsAlert = settings.Value<string>("NoChosenSquadsAlert");
+            ChoosingUnsavedSquadAlert = settings.Value<string>("ChoosingUnsavedSquadAlert");
+            ChoosingDeadSquadAlert = settings.Value<string>("ChoosingDeadSquadAlert");
+            SquadSavingStatusAlert = settings.Value<string>("SquadSavingStatusAlert");
             CannotDuplicateSquadAlert = "There are not enough ships in the fleet to duplicate this squad";
-
 
             if (MaxSquadWidth == -1)
             {
@@ -161,46 +151,32 @@ namespace Assets.Scripts.Settings
                 AISquadFollowingTime = AISquadPatrolTime;
             }
 
-            if ((string)so.AISide == "BeeSide")
-            {
-                AISide = BeeSide;
-            }
-            else
-            {
-                AISide = HumanSide;
-            }
+            AISide = settings.Value<string>("AISide") == "BeeSide" ? BeeSide : HumanSide;
+            UserSide = settings.Value<string>("UserSide") == "BeeSide" ? BeeSide : HumanSide;
+            SquadMakerFirstSide = settings.Value<string>("SquadMakerFirstSide") == "BeeSide" ? BeeSide : HumanSide;
+            SquadMakerSecondSide = settings.Value<string>("SquadMakerSecondSide") == "BeeSide" ? BeeSide : HumanSide;
 
-            if ((string) so.UserSide == "BeeSide")
-            {
-                UserSide = BeeSide;
-            }
-            else
-            {
-                UserSide = HumanSide;
-            }
-
-            if ((string)so.SquadMakerFirstSide == "BeeSide")
-            {
-                SquadMakerFirstSide = BeeSide;
-            }
-            else
-            {
-                SquadMakerFirstSide = HumanSide;
-            }
-
-            if ((string)so.SquadMakerSecondSide == "BeeSide")
-            {
-                SquadMakerSecondSide = BeeSide;
-            }
-            else
-            {
-                SquadMakerSecondSide = HumanSide;
-            }
-
-            CensoredWords = new HashSet<string>(Utilities.JArrayToList<string>(so.CensoredWords));
-            Tooltips = Utilities.JArrayToDictionary<string, string>(so.Tooltips);
+            CensoredWords = new HashSet<string>(settings["CensoredWords"].ToObject<List<string>>());
+            Tooltips = ParseStringDictionary(settings["Tooltips"] as JArray);
             ConfigData.ShipTurningRadius = (360.0f / RotationMultiplier) / (2 * Mathf.PI);
+        }
 
+        private static Dictionary<string, string> ParseStringDictionary(JArray entries)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            if (entries == null)
+            {
+                return result;
+            }
+
+            foreach (JObject entry in entries.Children<JObject>())
+            {
+                foreach (JProperty property in entry.Properties())
+                {
+                    result.Add(property.Name, property.Value.Value<string>());
+                }
+            }
+            return result;
         }
     }
 }
