@@ -22,7 +22,6 @@ namespace Assets.Scripts.UI_Components
         private const float FixedAnchorTolerance = 0.001f;
         private const int MinimumMainMenuControls = 4;
         private const int MaxHierarchyDepth = 16;
-        private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
         private static readonly Vector2 MainMenuReferenceSize = new Vector2(1366f, 668f);
 
         private Canvas _canvas;
