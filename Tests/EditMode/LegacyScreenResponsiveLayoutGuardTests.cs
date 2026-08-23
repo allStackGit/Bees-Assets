@@ -81,6 +81,59 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void MainMenuInteractiveBranchIgnoresTransientRuntimeAspectAcrossResolutionChanges()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(900f, 2000f));
+            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
+            AddMainMenuControls(menuRoot);
+
+            try
+            {
+                // ResponsiveScreenLayoutGuard can temporarily stretch this branch before the
+                // Main Menu ownership pass runs. That transient shape must never become the next
+                // authored baseline or repeated resolution changes will compound the distortion.
+                menuRoot.sizeDelta = new Vector2(900f, 1900f);
+
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ExpandMainMenuInteractiveRoot",
+                    canvas);
+
+                float expectedTallHeight = 668f * 900f / 1366f;
+                Assert.That(changed, Is.True);
+                AssertVector(menuRoot.sizeDelta, new Vector2(900f, expectedTallHeight),
+                    "A transient runtime stretch must be discarded in favor of the authored 1366x668 aspect.");
+
+                canvas.sizeDelta = new Vector2(2000f, 900f);
+                menuRoot.sizeDelta = new Vector2(2000f, 800f);
+                changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ExpandMainMenuInteractiveRoot",
+                    canvas);
+
+                Assert.That(changed, Is.True);
+                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f),
+                    "Returning to a large viewport must restore the authored frame even after another external runtime stretch.");
+
+                canvas.sizeDelta = new Vector2(800f, 1600f);
+                menuRoot.sizeDelta = new Vector2(800f, 1500f);
+                changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ExpandMainMenuInteractiveRoot",
+                    canvas);
+
+                float expectedNarrowHeight = 668f * 800f / 1366f;
+                Assert.That(changed, Is.True);
+                AssertVector(menuRoot.sizeDelta, new Vector2(800f, expectedNarrowHeight),
+                    "Repeated resolution changes must remain idempotent instead of progressively shrinking the menu frame.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
         public void NestedStructuralLayoutFillsItsAllocatedCrossAxis()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
