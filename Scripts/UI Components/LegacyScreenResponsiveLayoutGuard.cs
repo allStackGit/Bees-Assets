@@ -23,6 +23,7 @@ namespace Assets.Scripts.UI_Components
         private const int MinimumMainMenuControls = 4;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
+        private static readonly Vector2 MainMenuReferenceSize = new Vector2(1366f, 668f);
 
         private Canvas _canvas;
         private RectTransform _canvasRect;
@@ -127,7 +128,7 @@ namespace Assets.Scripts.UI_Components
 
         /// <summary>
         /// The Main Menu's interactive UI lives under one direct canvas branch authored for the
-        /// 1366x768 reference frame. Keep that branch centered and no larger than its authored
+        /// 1366x668 presentation frame. Keep that branch centered and no larger than its authored
         /// reference size. On narrower/shorter canvases it scales down uniformly to fit; on
         /// ultrawide or very tall canvases the extra viewport remains available to the starfield
         /// instead of stretching the green menu frame to fill it.
@@ -162,16 +163,19 @@ namespace Assets.Scripts.UI_Components
             }
 
             Vector2 canvasSize = canvasRect.rect.size;
-            Vector2 currentSize = candidate.rect.size;
-            if (canvasSize.x <= 0f || canvasSize.y <= 0f || currentSize.x <= 0f || currentSize.y <= 0f)
+            if (canvasSize.x <= 0f || canvasSize.y <= 0f)
             {
                 return false;
             }
 
-            float authoredAspect = currentSize.x / currentSize.y;
+            // Do not infer the authored aspect from candidate.rect here. The generic responsive
+            // wrapper can temporarily stretch this same legacy branch before this late ownership
+            // pass runs. Treating that transient runtime size as the new authored baseline makes
+            // repeated resolution changes progressively distort and shrink the menu presentation.
+            float authoredAspect = MainMenuReferenceSize.x / MainMenuReferenceSize.y;
             Vector2 availableSize = new Vector2(
-                Mathf.Min(canvasSize.x, ReferenceResolution.x),
-                Mathf.Min(canvasSize.y, ReferenceResolution.y));
+                Mathf.Min(canvasSize.x, MainMenuReferenceSize.x),
+                Mathf.Min(canvasSize.y, MainMenuReferenceSize.y));
             Vector2 targetSize = FitAspectInside(availableSize, authoredAspect);
             if (targetSize.x <= 0f || targetSize.y <= 0f)
             {
