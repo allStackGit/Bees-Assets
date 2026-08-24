@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -84,32 +85,83 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MainMenuPanelKeepsAuthoredSizeInsteadOfReceivingSecondScale()
+        public void MainMenuPreserveAspectPanelUsesRenderedWidthInsteadOf1366ArtboardWidth()
         {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
-            RectTransform panel = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
+            RectTransform panel = CreateRect("MainPanel", null, new Vector2(1366f, 668f));
+            Texture2D texture = null;
+            Sprite sprite = null;
 
             try
             {
-                bool changed = ApplyReferenceGeometry(
-                    panel,
-                    canvas.rect.size,
-                    new Vector2(0.5f, 0.5f),
-                    new Vector2(0.5f, 0.5f),
-                    Vector2.zero,
-                    new Vector2(1366f, 668f));
+                texture = new Texture2D(560, 668, TextureFormat.RGBA32, false);
+                sprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, 560f, 668f),
+                    new Vector2(0.5f, 0.5f));
 
-                Assert.That(changed, Is.False,
-                    "CanvasScaler.Expand already supplies uniform physical scaling; the menu root must not be scaled a second time.");
-                AssertVector(panel.anchorMin, new Vector2(0.5f, 0.5f));
-                AssertVector(panel.anchorMax, new Vector2(0.5f, 0.5f));
-                AssertVector(panel.sizeDelta, new Vector2(1366f, 668f));
-                Assert.That(panel.localScale, Is.EqualTo(Vector3.one));
+                Image image = panel.gameObject.AddComponent<Image>();
+                image.sprite = sprite;
+                image.preserveAspect = true;
+
+                Vector2 visualSize = (Vector2)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateCenteredVisualSizeForTest",
+                    panel);
+
+                Assert.That(visualSize.x, Is.EqualTo(560f).Within(0.01f),
+                    "Responsive fitting must use the preserve-aspect image that is actually drawn, not MainPanel's unused 1366-wide RectTransform.");
+                Assert.That(visualSize.y, Is.EqualTo(668f).Within(0.01f));
             }
             finally
             {
-                Object.DestroyImmediate(canvas.gameObject);
+                Object.DestroyImmediate(panel.gameObject);
+                if (sprite != null)
+                {
+                    Object.DestroyImmediate(sprite);
+                }
+                if (texture != null)
+                {
+                    Object.DestroyImmediate(texture);
+                }
             }
+        }
+
+        [Test]
+        public void PortraitCanvasExpandsMainMenuUntilVisibleContentFitsWidth()
+        {
+            Vector2 portraitLogicalCanvas = new Vector2(1366f, 3686f);
+            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+
+            float scale = CalculateMainMenuScale(portraitLogicalCanvas, centeredVisualContent);
+            float expectedWidthLimitedScale = (1366f - 48f) / 660f;
+
+            Assert.That(scale, Is.EqualTo(expectedWidthLimitedScale).Within(0.001f));
+            Assert.That(scale, Is.GreaterThan(1f),
+                "A tall/narrow Expand canvas has abundant vertical room. The menu must grow inside the virtual canvas instead of inheriting the tiny width-driven CanvasScaler scale.");
+        }
+
+        [Test]
+        public void FourByThreeCanvasUsesExtraHeightWithoutChangingMenuComposition()
+        {
+            Vector2 fourByThreeLogicalCanvas = new Vector2(1366f, 1024f);
+            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+
+            float scale = CalculateMainMenuScale(fourByThreeLogicalCanvas, centeredVisualContent);
+
+            Assert.That(scale, Is.EqualTo(1024f / 768f).Within(0.001f),
+                "At moderate tall aspect ratios the presentation should continue tracking viewport height until its visible content actually reaches an edge.");
+        }
+
+        [Test]
+        public void UltrawideCanvasDoesNotEnlargeMainMenuBeyondReferenceHeight()
+        {
+            Vector2 ultrawideLogicalCanvas = new Vector2(1908f, 768f);
+            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+
+            float scale = CalculateMainMenuScale(ultrawideLogicalCanvas, centeredVisualContent);
+
+            Assert.That(scale, Is.EqualTo(1f).Within(0.001f),
+                "Horizontal surplus belongs to the starfield. Matching the reference height must keep the authored Main Menu presentation scale.");
         }
 
         [Test]
@@ -204,6 +256,15 @@ namespace Bees.Tests.EditMode
             {
                 Object.DestroyImmediate(canvas.gameObject);
             }
+        }
+
+        private static float CalculateMainMenuScale(Vector2 canvasSize, Vector2 visualSize)
+        {
+            return (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateMainMenuPresentationScale",
+                canvasSize,
+                visualSize);
         }
 
         private static bool ApplyReferenceGeometry(
