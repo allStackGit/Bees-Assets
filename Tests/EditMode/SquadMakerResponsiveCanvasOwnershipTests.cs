@@ -12,7 +12,7 @@ namespace Bees.Tests.EditMode
         private const string SquadMakerTypeName = "Assets.Scripts.Scenes.SquadMaker";
 
         [Test]
-        public void ResolverUsesSerializedSquadUiCanvasWhenControllerLivesOutsideCanvas()
+        public void GuardInitializesAgainstSerializedSquadUiCanvasWhenControllerLivesOutsideCanvas()
         {
             GameObject manager = new GameObject("UI Manager");
             GameObject canvasObject = new GameObject(
@@ -34,13 +34,11 @@ namespace Bees.Tests.EditMode
                 Assert.That(manager.GetComponentInParent<Canvas>(), Is.Null,
                     "The regression requires the controller to remain outside the visible UI Canvas, matching Squad Maker.unity.");
 
-                object resolved = RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ResolveOwnedCanvas",
-                    squadMaker);
+                Component guard = manager.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+                object resolvedCanvas = RuntimeAssembly.GetField(guard, "_canvas");
 
-                Assert.That(resolved, Is.SameAs(expectedCanvas),
-                    "Responsive ownership must come from the serialized Squad Maker UI hierarchy rather than the UI Manager transform ancestry.");
+                Assert.That(resolvedCanvas, Is.SameAs(expectedCanvas),
+                    "The specialized Squad Maker guard must initialize against the Canvas that owns its serialized UI, not the UI Manager transform ancestry.");
             }
             finally
             {
