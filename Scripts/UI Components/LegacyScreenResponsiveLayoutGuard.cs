@@ -8,10 +8,10 @@ namespace Assets.Scripts.UI_Components
 {
     /// <summary>
     /// Preserves the authored composition of the legacy Main Menu and Squad Maker while adapting
-    /// their root presentation to the live viewport. The 1366x768 authoring rectangle is still the
-    /// coordinate reference, but it is not itself the visible content boundary. In particular the
-    /// Main Menu's 1366-wide MainPanel renders a much narrower preserve-aspect background, so narrow
-    /// displays must fit the actual rendered presentation rather than shrinking the entire artboard.
+    /// their root presentation to the live viewport. The 1366x768 authoring rectangle remains the
+    /// coordinate reference, but it is not itself the visible content boundary. Main Menu sizing is
+    /// therefore driven by its interactive composition rather than by the mostly-empty 1366-wide
+    /// MainPanel RectTransform.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class LegacyScreenResponsiveLayoutGuard : MonoBehaviour
@@ -21,7 +21,14 @@ namespace Assets.Scripts.UI_Components
         private const string SquadMakerSceneName = "Squad Maker";
         private const float RepairInterval = 0.25f;
         private const float AnchorTolerance = 0.001f;
-        private const float MainMenuHorizontalMargin = 24f;
+        private const float MainMenuViewportHorizontalMargin = 24f;
+
+        // The interactive rows describe the useful Main Menu width, but the authored green panel
+        // deliberately leaves breathing room around them and its planet can protrude slightly past
+        // the panel edge. Keep that authored breathing room without letting decorative full-width
+        // graphics force portrait displays to fit an otherwise empty 1366-wide artboard.
+        private const float MainMenuFunctionalHorizontalPadding = 240f;
+
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
         private sealed class RectGeometry
@@ -41,7 +48,7 @@ namespace Assets.Scripts.UI_Components
             public readonly List<RectGeometry> Descendants = new List<RectGeometry>();
             public bool IsBackdrop;
             public bool ScaleMainMenuVisuals;
-            public Vector2 CenteredVisualSize;
+            public Vector2 MainMenuPresentationSize;
         }
 
         private Canvas _canvas;
@@ -208,13 +215,13 @@ namespace Assets.Scripts.UI_Components
 
                 if (IsMainMenuPresentationRoot(child))
                 {
-                    Vector2 visualSize = CalculateCenteredVisualSize(child);
-                    if (visualSize.x > 0f && visualSize.y > 0f)
+                    Vector2 presentationSize = CalculateMainMenuPresentationSize(child);
+                    if (presentationSize.x > 0f && presentationSize.y > 0f)
                     {
                         branch.ScaleMainMenuVisuals = true;
-                        branch.CenteredVisualSize = new Vector2(
-                            visualSize.x * Mathf.Abs(rootGeometry.LocalScale.x),
-                            visualSize.y * Mathf.Abs(rootGeometry.LocalScale.y));
+                        branch.MainMenuPresentationSize = new Vector2(
+                            presentationSize.x * Mathf.Abs(rootGeometry.LocalScale.x),
+                            presentationSize.y * Mathf.Abs(rootGeometry.LocalScale.y));
                     }
                 }
 
@@ -347,7 +354,7 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            float multiplier = CalculateMainMenuPresentationScale(canvasSize, branch.CenteredVisualSize);
+            float multiplier = CalculateMainMenuPresentationScale(canvasSize, branch.MainMenuPresentationSize);
             Vector3 authoredScale = branch.Root.LocalScale;
             branch.Root.Rect.localScale = new Vector3(
                 authoredScale.x * multiplier,
@@ -356,35 +363,39 @@ namespace Assets.Scripts.UI_Components
         }
 
         /// <summary>
-        /// Expand keeps the complete 1366x768 artboard visible, which is correct for root coordinate
-        /// mapping but makes portrait UI scale from 1366 pixels of mostly empty horizontal artboard.
-        /// Main Menu presentation scale instead follows available height until the actual centered
-        /// visual content reaches the horizontal or vertical viewport boundary.
+        /// CanvasScaler.Expand keeps the complete 1366x768 authoring frame visible. That is useful
+        /// for coordinate mapping, but on portrait displays it also makes the Main Menu inherit a
+        /// width-driven scale from hundreds of units of empty horizontal artboard. Grow the menu
+        /// uniformly inside that logical canvas until either its functional width, its authored
+        /// height, or reference-height tracking reaches a viewport boundary.
         /// </summary>
         internal static float CalculateMainMenuPresentationScale(
             Vector2 canvasSize,
-            Vector2 centeredVisualSize)
+            Vector2 presentationSize)
         {
             if (canvasSize.x <= 0f || canvasSize.y <= 0f ||
-                centeredVisualSize.x <= 0f || centeredVisualSize.y <= 0f)
+                presentationSize.x <= 0f || presentationSize.y <= 0f)
             {
                 return 1f;
             }
 
-            float availableWidth = Mathf.Max(1f, canvasSize.x - MainMenuHorizontalMargin * 2f);
+            float availableWidth = Mathf.Max(1f, canvasSize.x - MainMenuViewportHorizontalMargin * 2f);
             float heightTrackingScale = canvasSize.y / ReferenceResolution.y;
-            float widthFitScale = availableWidth / centeredVisualSize.x;
-            float heightFitScale = canvasSize.y / centeredVisualSize.y;
+            float widthFitScale = availableWidth / presentationSize.x;
+            float heightFitScale = canvasSize.y / presentationSize.y;
             return Mathf.Max(0.01f, Mathf.Min(heightTrackingScale, widthFitScale, heightFitScale));
         }
 
         /// <summary>
-        /// Returns the visual extent around the root pivot rather than the root RectTransform size.
-        /// This matters for MainPanel: its RectTransform is 1366x668, while its preserve-aspect image
-        /// renders as a much narrower centered panel. Child graphics such as the logo and planet are
-        /// included so narrow-screen fitting protects the complete visible composition.
+        /// Measures the Main Menu from controls, not from decorative Graphics. MainPanel's
+        /// RectTransform is 1366 units wide and some sprites can also contain transparent/full-width
+        /// padding, so either would reproduce the portrait-thumbnail bug if used as the fitting
+        /// boundary. Selectables capture the functional composition reliably, while fixed authored
+        /// padding preserves the surrounding green panel/decorative breathing room. Vertical sizing
+        /// remains the authored MainPanel height so the composition never grows just because its
+        /// buttons occupy only the middle portion of the panel.
         /// </summary>
-        private static Vector2 CalculateCenteredVisualSize(RectTransform root)
+        private static Vector2 CalculateMainMenuPresentationSize(RectTransform root)
         {
             if (root == null)
             {
@@ -397,28 +408,6 @@ namespace Assets.Scripts.UI_Components
             float minY = 0f;
             float maxY = 0f;
 
-            Graphic[] graphics = root.GetComponentsInChildren<Graphic>(true);
-            for (int i = 0; i < graphics.Length; i++)
-            {
-                Graphic graphic = graphics[i];
-                if (graphic == null || graphic.rectTransform == null)
-                {
-                    continue;
-                }
-
-                EncapsulateRect(
-                    root,
-                    graphic.rectTransform,
-                    GetRenderedGraphicRect(graphic),
-                    ref hasBounds,
-                    ref minX,
-                    ref maxX,
-                    ref minY,
-                    ref maxY);
-            }
-
-            // A Selectable can remain meaningful even if its target Graphic is temporarily disabled.
-            // Include its authored hit rectangle so responsive fitting never clips an interactive state.
             Selectable[] selectables = root.GetComponentsInChildren<Selectable>(true);
             for (int i = 0; i < selectables.Length; i++)
             {
@@ -441,57 +430,20 @@ namespace Assets.Scripts.UI_Components
                     ref maxY);
             }
 
+            float authoredHeight = Mathf.Abs(root.rect.height);
             if (!hasBounds)
             {
-                return root.rect.size;
+                return new Vector2(Mathf.Abs(root.rect.width), authoredHeight);
             }
 
-            float halfWidth = Mathf.Max(Mathf.Abs(minX), Mathf.Abs(maxX));
-            float halfHeight = Mathf.Max(Mathf.Abs(minY), Mathf.Abs(maxY));
-            return new Vector2(halfWidth * 2f, halfHeight * 2f);
+            float halfFunctionalWidth = Mathf.Max(Mathf.Abs(minX), Mathf.Abs(maxX));
+            float functionalWidth = halfFunctionalWidth * 2f + MainMenuFunctionalHorizontalPadding;
+            return new Vector2(functionalWidth, authoredHeight);
         }
 
-        internal static Vector2 CalculateCenteredVisualSizeForTest(RectTransform root)
+        internal static Vector2 CalculateMainMenuPresentationSizeForTest(RectTransform root)
         {
-            return CalculateCenteredVisualSize(root);
-        }
-
-        private static Rect GetRenderedGraphicRect(Graphic graphic)
-        {
-            RectTransform rectTransform = graphic.rectTransform;
-            Rect rect = rectTransform.rect;
-            if (graphic is not Image image ||
-                !image.preserveAspect ||
-                image.sprite == null ||
-                (image.type != Image.Type.Simple && image.type != Image.Type.Filled))
-            {
-                return rect;
-            }
-
-            Vector2 spriteSize = image.sprite.rect.size;
-            if (spriteSize.x <= 0f || spriteSize.y <= 0f || rect.width <= 0f || rect.height <= 0f)
-            {
-                return rect;
-            }
-
-            float spriteRatio = spriteSize.x / spriteSize.y;
-            float rectRatio = rect.width / rect.height;
-            if (spriteRatio > rectRatio)
-            {
-                float oldHeight = rect.height;
-                float newHeight = rect.width / spriteRatio;
-                rect.y += (oldHeight - newHeight) * rectTransform.pivot.y;
-                rect.height = newHeight;
-            }
-            else
-            {
-                float oldWidth = rect.width;
-                float newWidth = rect.height * spriteRatio;
-                rect.x += (oldWidth - newWidth) * rectTransform.pivot.x;
-                rect.width = newWidth;
-            }
-
-            return rect;
+            return CalculateMainMenuPresentationSize(root);
         }
 
         private static void EncapsulateRect(
