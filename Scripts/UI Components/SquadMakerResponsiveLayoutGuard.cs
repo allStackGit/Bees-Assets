@@ -9,25 +9,32 @@ namespace Assets.Scripts.UI_Components
 {
     /// <summary>
     /// Owns Squad Maker-specific responsive behavior. The authored Squad Maker is a 1366x768
-    /// composition made from several independent direct Canvas branches rather than one reliable
-    /// full-screen wrapper. At non-16:9 sizes those branches must keep their authored normalized
-    /// positions and extents across the live viewport; fitting the entire 1366x768 composition
-    /// inside the viewport merely produces a centered 16:9 island and blank bands.
+    /// composition whose MainPanel is screen-sized but whose Main Container, Footer and main
+    /// columns are fixed-size children driven by LayoutGroups. At non-16:9 sizes those structural
+    /// regions must be resized from their immutable authored geometry rather than recursively
+    /// guessed from whatever sizes the previous responsive pass happened to leave behind.
     ///
     /// The SquadMaker controller lives on the scene's separate UI Manager root, not beneath the
     /// visible Squad Maker Canvas. Canvas ownership therefore comes from a serialized UI reference
     /// (ChosenSquadList) rather than from the controller's transform ancestry.
     ///
-    /// This guard snapshots the authored direct-branch geometry plus the fixed sizes of children
-    /// owned by screen-scale structural LayoutGroups. Every responsive pass restores those canonical
-    /// structural sizes before deriving the live allocation, so a previously repaired narrow/tall
-    /// viewport can never become the baseline for the next resize. START/TEST hover descriptions
-    /// remain visual overlays and never participate in structural layout measurement.
+    /// Direct root-canvas branches still map from the 1366x768 reference plane. The real Squad Maker
+    /// hierarchy then receives an explicit layout contract: Main Container absorbs viewport surplus
+    /// above the fixed Footer; Ship Selector and Squads retain their authored widths; Squad Maker
+    /// Column absorbs horizontal surplus; and the direct Squads subcolumns absorb vertical surplus.
+    /// Every pass derives from captured authored sizes, so repeated aspect changes are reversible.
+    /// START/TEST hover descriptions remain visual overlays and never participate in layout.
     /// </summary>
     [DefaultExecutionOrder(-700)]
     public sealed class SquadMakerResponsiveLayoutGuard : MonoBehaviour
     {
         private const string SquadMakerSceneName = "Squad Maker";
+        private const string MainPanelName = "MainPanel";
+        private const string MainContainerName = "Main Container";
+        private const string FooterName = "Footer";
+        private const string ShipSelectorColumnName = "Ship Selector Column";
+        private const string SquadMakerColumnName = "Squad Maker Column";
+        private const string SquadsColumnName = "Squads Column";
         private const float RepairInterval = 0.25f;
         private const float StructuralWidthCoverage = 0.20f;
         private const float StructuralHeightCoverage = 0.20f;
@@ -51,7 +58,24 @@ namespace Assets.Scripts.UI_Components
         private sealed class StructuralChildReferenceGeometry
         {
             public RectTransform Rect;
-            public Vector2 SizeDelta;
+            public Vector2 Size;
+        }
+
+        private sealed class SquadMakerLayoutReferenceGeometry
+        {
+            public RectTransform MainPanel;
+            public RectTransform MainContainer;
+            public RectTransform Footer;
+            public RectTransform ShipSelectorColumn;
+            public RectTransform SquadMakerColumn;
+            public RectTransform SquadsColumn;
+            public Vector2 MainContainerSize;
+            public Vector2 FooterSize;
+            public Vector2 ShipSelectorColumnSize;
+            public Vector2 SquadMakerColumnSize;
+            public Vector2 SquadsColumnSize;
+            public readonly List<StructuralChildReferenceGeometry> SquadsColumnChildren =
+                new List<StructuralChildReferenceGeometry>();
         }
 
         private SquadMaker _squadMaker;
@@ -64,6 +88,7 @@ namespace Assets.Scripts.UI_Components
             new List<DirectBranchReferenceGeometry>();
         private readonly List<StructuralChildReferenceGeometry> _structuralChildReferences =
             new List<StructuralChildReferenceGeometry>();
+        private SquadMakerLayoutReferenceGeometry _layoutReference;
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
         private float _nextRepairTime;
@@ -71,8 +96,8 @@ namespace Assets.Scripts.UI_Components
         private bool _structuralReferenceGeometryCaptured;
 
         // Subscribe before the generic BeforeSceneLoad responsive guards. The specialized Squad
-        // Maker owner must capture its canonical layout sizes before a generic compatibility pass
-        // has any opportunity to resize those same structural children.
+        // Maker owner must capture canonical layout sizes before a generic compatibility pass has
+        // any opportunity to resize those same structural children.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
         {
@@ -161,6 +186,7 @@ namespace Assets.Scripts.UI_Components
             _nextRepairTime = 0f;
             _referenceGeometryCaptured = false;
             _structuralReferenceGeometryCaptured = false;
+            _layoutReference = null;
 
             PrepareReferenceGeometry();
             StabilizeHoverDescriptions();
@@ -218,7 +244,7 @@ namespace Assets.Scripts.UI_Components
             // LegacyScreenResponsiveLayoutGuard also subscribes before the generic guards and may
             // already have mapped direct branches into a centered reference artboard. Undo that one
             // mapping before capturing the real authored geometry. Nested structural sizes remain
-            // canonical because both specialized owners run before the generic compatibility passes.
+            // canonical because both specialized owners run before generic compatibility passes.
             LegacyScreenResponsiveLayoutGuard legacy =
                 _canvas.GetComponent<LegacyScreenResponsiveLayoutGuard>();
             if (legacy != null)
@@ -232,6 +258,7 @@ namespace Assets.Scripts.UI_Components
             Canvas.ForceUpdateCanvases();
             CaptureDirectReferenceBranches();
             CaptureStructuralChildReferenceGeometry();
+            CaptureSquadMakerLayoutReferenceGeometry();
             _referenceGeometryCaptured = _referenceBranches.Count > 0;
         }
 
@@ -337,7 +364,7 @@ namespace Assets.Scripts.UI_Components
                     _structuralChildReferences.Add(new StructuralChildReferenceGeometry
                     {
                         Rect = child,
-                        SizeDelta = child.sizeDelta
+                        Size = child.rect.size
                     });
                 }
             }
@@ -375,8 +402,62 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
-                geometry.Rect.sizeDelta = geometry.SizeDelta;
+                SetRectSize(geometry.Rect, geometry.Size);
             }
+        }
+
+        private void CaptureSquadMakerLayoutReferenceGeometry()
+        {
+            _layoutReference = null;
+            if (_canvasRect == null)
+            {
+                return;
+            }
+
+            RectTransform mainPanel = FindDescendantByName(_canvasRect, MainPanelName);
+            RectTransform mainContainer = FindOwnedChild(mainPanel, MainContainerName);
+            RectTransform footer = FindOwnedChild(mainPanel, FooterName);
+            RectTransform shipSelectorColumn = FindOwnedChild(mainContainer, ShipSelectorColumnName);
+            RectTransform squadMakerColumn = FindOwnedChild(mainContainer, SquadMakerColumnName);
+            RectTransform squadsColumn = FindOwnedChild(mainContainer, SquadsColumnName);
+
+            if (mainPanel == null || mainContainer == null || footer == null ||
+                shipSelectorColumn == null || squadMakerColumn == null || squadsColumn == null)
+            {
+                return;
+            }
+
+            SquadMakerLayoutReferenceGeometry reference = new SquadMakerLayoutReferenceGeometry
+            {
+                MainPanel = mainPanel,
+                MainContainer = mainContainer,
+                Footer = footer,
+                ShipSelectorColumn = shipSelectorColumn,
+                SquadMakerColumn = squadMakerColumn,
+                SquadsColumn = squadsColumn,
+                MainContainerSize = mainContainer.rect.size,
+                FooterSize = footer.rect.size,
+                ShipSelectorColumnSize = shipSelectorColumn.rect.size,
+                SquadMakerColumnSize = squadMakerColumn.rect.size,
+                SquadsColumnSize = squadsColumn.rect.size
+            };
+
+            for (int i = 0; i < squadsColumn.childCount; i++)
+            {
+                RectTransform child = squadsColumn.GetChild(i) as RectTransform;
+                if (child == null || IgnoresLayout(child))
+                {
+                    continue;
+                }
+
+                reference.SquadsColumnChildren.Add(new StructuralChildReferenceGeometry
+                {
+                    Rect = child,
+                    Size = child.rect.size
+                });
+            }
+
+            _layoutReference = reference;
         }
 
         private void ApplyViewportFill()
@@ -392,11 +473,10 @@ namespace Assets.Scripts.UI_Components
             }
 
             // Never let the result of a previous responsive pass become input to the next pass.
-            // The fitting helpers intentionally inspect current child sizes to identify dominant
-            // regions, so restoring canonical structural sizes is what makes resize behavior
-            // reversible and prevents progressive shrink after repeated aspect changes.
+            // The authored structural geometry is restored before any live viewport delta is applied.
             RestoreStructuralChildReferenceGeometry();
             Canvas.ForceUpdateCanvases();
+
             for (int i = 0; i < _referenceBranches.Count; i++)
             {
                 DirectBranchReferenceGeometry branch = _referenceBranches[i];
@@ -416,8 +496,164 @@ namespace Assets.Scripts.UI_Components
             }
 
             Canvas.ForceUpdateCanvases();
-            RepairNestedStructuralLayouts(_canvasRect, _canvasRect, 0);
+
+            // The real scene has a known serialized owner hierarchy. Use an exact allocation there;
+            // retain the old structural helper only for isolated/non-authored fixtures where that
+            // hierarchy is absent.
+            if (!ApplySquadMakerLayoutContract())
+            {
+                RepairNestedStructuralLayouts(_canvasRect, _canvasRect, 0);
+            }
+
             Canvas.ForceUpdateCanvases();
+        }
+
+        private bool ApplySquadMakerLayoutContract()
+        {
+            if (_canvasRect == null)
+            {
+                return false;
+            }
+
+            if (_layoutReference == null)
+            {
+                CaptureSquadMakerLayoutReferenceGeometry();
+            }
+
+            SquadMakerLayoutReferenceGeometry reference = _layoutReference;
+            if (reference == null || reference.MainPanel == null || reference.MainContainer == null ||
+                reference.Footer == null || reference.ShipSelectorColumn == null ||
+                reference.SquadMakerColumn == null || reference.SquadsColumn == null)
+            {
+                return false;
+            }
+
+            Vector2 canvasSize = _canvasRect.rect.size;
+            if (canvasSize.x <= 0f || canvasSize.y <= 0f)
+            {
+                return false;
+            }
+
+            float widthDelta = canvasSize.x - ReferenceResolution.x;
+            float heightDelta = canvasSize.y - ReferenceResolution.y;
+
+            Vector2 mainContainerSize = new Vector2(
+                Mathf.Max(1f, reference.MainContainerSize.x + widthDelta),
+                Mathf.Max(1f, reference.MainContainerSize.y + heightDelta));
+            Vector2 footerSize = new Vector2(
+                Mathf.Max(1f, reference.FooterSize.x + widthDelta),
+                Mathf.Max(1f, reference.FooterSize.y));
+            Vector2 shipSelectorSize = new Vector2(
+                Mathf.Max(1f, reference.ShipSelectorColumnSize.x),
+                Mathf.Max(1f, reference.ShipSelectorColumnSize.y + heightDelta));
+            Vector2 squadMakerSize = new Vector2(
+                Mathf.Max(1f, reference.SquadMakerColumnSize.x + widthDelta),
+                Mathf.Max(1f, reference.SquadMakerColumnSize.y + heightDelta));
+            Vector2 squadsSize = new Vector2(
+                Mathf.Max(1f, reference.SquadsColumnSize.x),
+                Mathf.Max(1f, reference.SquadsColumnSize.y + heightDelta));
+
+            bool changed = false;
+            changed |= SetRectSize(reference.MainContainer, mainContainerSize);
+            changed |= SetRectSize(reference.Footer, footerSize);
+            changed |= SetRectSize(reference.ShipSelectorColumn, shipSelectorSize);
+            changed |= SetRectSize(reference.SquadMakerColumn, squadMakerSize);
+            changed |= SetRectSize(reference.SquadsColumn, squadsSize);
+
+            for (int i = 0; i < reference.SquadsColumnChildren.Count; i++)
+            {
+                StructuralChildReferenceGeometry childReference = reference.SquadsColumnChildren[i];
+                if (childReference == null || childReference.Rect == null)
+                {
+                    continue;
+                }
+
+                Vector2 targetSize = new Vector2(
+                    Mathf.Max(1f, childReference.Size.x),
+                    Mathf.Max(1f, childReference.Size.y + heightDelta));
+                changed |= SetRectSize(childReference.Rect, targetSize);
+            }
+
+            // These LayoutGroups own child positions. Rebuild only the explicitly owned hierarchy;
+            // do not recursively reinterpret unrelated nested panels as viewport structure.
+            LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainPanel);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadsColumn);
+            return changed;
+        }
+
+        private static RectTransform FindOwnedChild(RectTransform owner, string name)
+        {
+            if (owner == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < owner.childCount; i++)
+            {
+                RectTransform child = owner.GetChild(i) as RectTransform;
+                if (child != null && child.name == name)
+                {
+                    return child;
+                }
+            }
+
+            return FindDescendantByName(owner, name);
+        }
+
+        private static RectTransform FindDescendantByName(RectTransform root, string name)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            if (root.name == name)
+            {
+                return root;
+            }
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                RectTransform child = root.GetChild(i) as RectTransform;
+                if (child == null)
+                {
+                    continue;
+                }
+
+                RectTransform found = FindDescendantByName(child, name);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IgnoresLayout(RectTransform rect)
+        {
+            if (rect == null)
+            {
+                return true;
+            }
+
+            LayoutElement layoutElement = rect.GetComponent<LayoutElement>();
+            return layoutElement != null && layoutElement.ignoreLayout;
+        }
+
+        private static bool SetRectSize(RectTransform rect, Vector2 targetSize)
+        {
+            if (rect == null)
+            {
+                return false;
+            }
+
+            Vector2 currentSize = rect.rect.size;
+            bool changed = !Approximately(currentSize, targetSize);
+            rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetSize.x);
+            rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetSize.y);
+            return changed;
         }
 
         /// <summary>
