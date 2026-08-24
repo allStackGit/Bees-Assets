@@ -12,7 +12,7 @@ namespace Bees.Tests.EditMode
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
         [Test]
-        public void RepeatedAspectChangesRebuildTheAuthoredSquadMakerHierarchyWithoutDrift()
+        public void AuthoredHierarchyUsesNativeLayoutsAndTilesViewportAcrossRepeatedAspectChanges()
         {
             RectTransform canvas = CreateRect("Canvas", null, ReferenceResolution);
             RectTransform mainPanel = CreateRect("MainPanel", canvas, Vector2.zero);
@@ -21,18 +21,25 @@ namespace Bees.Tests.EditMode
             mainPanel.anchoredPosition = Vector2.zero;
             mainPanel.sizeDelta = Vector2.zero;
 
+            // Match the serialized Squad Maker scene before the responsive owner changes it.
             VerticalLayoutGroup panelLayout = mainPanel.gameObject.AddComponent<VerticalLayoutGroup>();
+            panelLayout.padding = new RectOffset(0, 0, 0, 0);
+            panelLayout.spacing = 0f;
+            panelLayout.childAlignment = TextAnchor.UpperLeft;
             panelLayout.childControlWidth = false;
             panelLayout.childControlHeight = false;
-            panelLayout.childForceExpandWidth = false;
+            panelLayout.childForceExpandWidth = true;
             panelLayout.childForceExpandHeight = false;
 
             RectTransform mainContainer = CreateRect("Main Container", mainPanel, new Vector2(1366f, 718f));
             HorizontalLayoutGroup mainLayout = mainContainer.gameObject.AddComponent<HorizontalLayoutGroup>();
+            mainLayout.padding = new RectOffset(0, 0, 0, 0);
+            mainLayout.spacing = 0f;
+            mainLayout.childAlignment = TextAnchor.UpperLeft;
             mainLayout.childControlWidth = false;
             mainLayout.childControlHeight = false;
-            mainLayout.childForceExpandWidth = false;
-            mainLayout.childForceExpandHeight = false;
+            mainLayout.childForceExpandWidth = true;
+            mainLayout.childForceExpandHeight = true;
 
             RectTransform footer = CreateRect("Footer", mainPanel, new Vector2(1366f, 51f));
             RectTransform shipSelector = CreateRect("Ship Selector Column", mainContainer, new Vector2(262f, 718f));
@@ -40,10 +47,13 @@ namespace Bees.Tests.EditMode
             RectTransform squads = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
 
             HorizontalLayoutGroup squadsLayout = squads.gameObject.AddComponent<HorizontalLayoutGroup>();
+            squadsLayout.padding = new RectOffset(0, 0, 0, 0);
+            squadsLayout.spacing = 0f;
+            squadsLayout.childAlignment = TextAnchor.UpperLeft;
             squadsLayout.childControlWidth = false;
             squadsLayout.childControlHeight = false;
-            squadsLayout.childForceExpandWidth = false;
-            squadsLayout.childForceExpandHeight = false;
+            squadsLayout.childForceExpandWidth = true;
+            squadsLayout.childForceExpandHeight = true;
 
             RectTransform savedSquads = CreateRect("Saved Squads Column", squads, new Vector2(262f, 718f));
             RectTransform chosenSquads = CreateRect("Chosen Squads Column", squads, new Vector2(222f, 718f));
@@ -56,90 +66,11 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.Invoke(guard, "CaptureDirectReferenceBranches");
                 RuntimeAssembly.SetField(guard, "_referenceGeometryCaptured", true);
 
-                ApplyAndAssert(
-                    guard,
-                    canvas,
-                    new Vector2(2000f, 768f),
-                    mainContainer,
-                    footer,
-                    shipSelector,
-                    squadMaker,
-                    squads,
-                    savedSquads,
-                    chosenSquads,
-                    new Vector2(2000f, 718f),
-                    new Vector2(2000f, 51f),
-                    new Vector2(262f, 718f),
-                    new Vector2(1254f, 718f),
-                    new Vector2(484f, 718f),
-                    new Vector2(262f, 718f),
-                    new Vector2(222f, 718f));
-
-                // A periodic repair at an unchanged aspect must remain on the explicit owner path.
-                // Falling back to the generic vertical fitting pass here would shave the authored
-                // one-unit body/footer overlap and reintroduce cumulative geometry drift.
-                ApplyAndAssert(
-                    guard,
-                    canvas,
-                    new Vector2(2000f, 768f),
-                    mainContainer,
-                    footer,
-                    shipSelector,
-                    squadMaker,
-                    squads,
-                    savedSquads,
-                    chosenSquads,
-                    new Vector2(2000f, 718f),
-                    new Vector2(2000f, 51f),
-                    new Vector2(262f, 718f),
-                    new Vector2(1254f, 718f),
-                    new Vector2(484f, 718f),
-                    new Vector2(262f, 718f),
-                    new Vector2(222f, 718f));
-
-                ApplyAndAssert(
-                    guard,
-                    canvas,
-                    new Vector2(1366f, 1000f),
-                    mainContainer,
-                    footer,
-                    shipSelector,
-                    squadMaker,
-                    squads,
-                    savedSquads,
-                    chosenSquads,
-                    new Vector2(1366f, 950f),
-                    new Vector2(1366f, 51f),
-                    new Vector2(262f, 950f),
-                    new Vector2(620f, 950f),
-                    new Vector2(484f, 950f),
-                    new Vector2(262f, 950f),
-                    new Vector2(222f, 950f));
-
-                // Revisit a prior aspect after a different allocation. This catches stateful drift.
-                ApplyAndAssert(
-                    guard,
-                    canvas,
-                    new Vector2(2000f, 768f),
-                    mainContainer,
-                    footer,
-                    shipSelector,
-                    squadMaker,
-                    squads,
-                    savedSquads,
-                    chosenSquads,
-                    new Vector2(2000f, 718f),
-                    new Vector2(2000f, 51f),
-                    new Vector2(262f, 718f),
-                    new Vector2(1254f, 718f),
-                    new Vector2(484f, 718f),
-                    new Vector2(262f, 718f),
-                    new Vector2(222f, 718f));
-
-                ApplyAndAssert(
+                ApplyAndAssertCoverage(
                     guard,
                     canvas,
                     ReferenceResolution,
+                    mainPanel,
                     mainContainer,
                     footer,
                     shipSelector,
@@ -147,13 +78,97 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    new Vector2(1366f, 718f),
-                    new Vector2(1366f, 51f),
-                    new Vector2(262f, 718f),
-                    new Vector2(620f, 718f),
-                    new Vector2(484f, 718f),
-                    new Vector2(262f, 718f),
-                    new Vector2(222f, 718f));
+                    expectedCenterWidth: 620f,
+                    expectedBodyHeight: 717f);
+
+                AssertNativeOwnership(
+                    panelLayout,
+                    mainLayout,
+                    squadsLayout,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads);
+
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    new Vector2(2000f, 768f),
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    expectedCenterWidth: 1254f,
+                    expectedBodyHeight: 717f);
+
+                // Periodic repair at the same aspect must remain idempotent.
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    new Vector2(2000f, 768f),
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    expectedCenterWidth: 1254f,
+                    expectedBodyHeight: 717f);
+
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    new Vector2(1366f, 1000f),
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    expectedCenterWidth: 620f,
+                    expectedBodyHeight: 949f);
+
+                // Revisit the previous aspect, then return to reference, to catch stateful drift.
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    new Vector2(2000f, 768f),
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    expectedCenterWidth: 1254f,
+                    expectedBodyHeight: 717f);
+
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    ReferenceResolution,
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    expectedCenterWidth: 620f,
+                    expectedBodyHeight: 717f);
             }
             finally
             {
@@ -161,10 +176,49 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        private static void ApplyAndAssert(
+        private static void AssertNativeOwnership(
+            VerticalLayoutGroup panelLayout,
+            HorizontalLayoutGroup mainLayout,
+            HorizontalLayoutGroup squadsLayout,
+            RectTransform mainContainer,
+            RectTransform footer,
+            RectTransform shipSelector,
+            RectTransform squadMaker,
+            RectTransform squads,
+            RectTransform savedSquads,
+            RectTransform chosenSquads)
+        {
+            Assert.That(panelLayout.childControlWidth, Is.True);
+            Assert.That(panelLayout.childControlHeight, Is.True);
+            Assert.That(panelLayout.childForceExpandWidth, Is.True);
+            Assert.That(panelLayout.childForceExpandHeight, Is.False);
+
+            Assert.That(mainLayout.childControlWidth, Is.True);
+            Assert.That(mainLayout.childControlHeight, Is.True);
+            Assert.That(mainLayout.childForceExpandWidth, Is.False);
+            Assert.That(mainLayout.childForceExpandHeight, Is.True);
+
+            Assert.That(squadsLayout.childControlWidth, Is.True);
+            Assert.That(squadsLayout.childControlHeight, Is.True);
+            Assert.That(squadsLayout.childForceExpandWidth, Is.False);
+            Assert.That(squadsLayout.childForceExpandHeight, Is.True);
+
+            AssertLayoutElement(mainContainer, flexibleWidth: 1f, flexibleHeight: 1f);
+            AssertLayoutElement(footer, flexibleWidth: 1f, flexibleHeight: 0f);
+            Assert.That(footer.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(51f).Within(0.01f));
+
+            AssertLayoutElement(shipSelector, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertLayoutElement(squadMaker, flexibleWidth: 1f, flexibleHeight: 1f);
+            AssertLayoutElement(squads, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertLayoutElement(savedSquads, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertLayoutElement(chosenSquads, flexibleWidth: 0f, flexibleHeight: 1f);
+        }
+
+        private static void ApplyAndAssertCoverage(
             Component guard,
             RectTransform canvas,
             Vector2 canvasSize,
+            RectTransform mainPanel,
             RectTransform mainContainer,
             RectTransform footer,
             RectTransform shipSelector,
@@ -172,24 +226,65 @@ namespace Bees.Tests.EditMode
             RectTransform squads,
             RectTransform savedSquads,
             RectTransform chosenSquads,
-            Vector2 expectedMainContainer,
-            Vector2 expectedFooter,
-            Vector2 expectedShipSelector,
-            Vector2 expectedSquadMaker,
-            Vector2 expectedSquads,
-            Vector2 expectedSavedSquads,
-            Vector2 expectedChosenSquads)
+            float expectedCenterWidth,
+            float expectedBodyHeight)
         {
             canvas.sizeDelta = canvasSize;
             RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
 
-            AssertSize(mainContainer, expectedMainContainer);
-            AssertSize(footer, expectedFooter);
-            AssertSize(shipSelector, expectedShipSelector);
-            AssertSize(squadMaker, expectedSquadMaker);
-            AssertSize(squads, expectedSquads);
-            AssertSize(savedSquads, expectedSavedSquads);
-            AssertSize(chosenSquads, expectedChosenSquads);
+            AssertSize(mainPanel, canvasSize.x, canvasSize.y);
+            AssertSize(mainContainer, canvasSize.x, expectedBodyHeight);
+            AssertSize(footer, canvasSize.x, 51f);
+            AssertSize(shipSelector, 262f, expectedBodyHeight);
+            AssertSize(squadMaker, expectedCenterWidth, expectedBodyHeight);
+            AssertSize(squads, 484f, expectedBodyHeight);
+            AssertSize(savedSquads, 262f, expectedBodyHeight);
+            AssertSize(chosenSquads, 222f, expectedBodyHeight);
+
+            AssertTilesHorizontally(mainContainer, shipSelector, squadMaker, squads);
+            AssertTilesHorizontally(squads, savedSquads, chosenSquads);
+            AssertTilesVertically(mainPanel, mainContainer, footer);
+        }
+
+        private static void AssertTilesHorizontally(RectTransform parent, params RectTransform[] children)
+        {
+            float expectedLeft = parent.rect.xMin;
+            for (int i = 0; i < children.Length; i++)
+            {
+                Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(parent, children[i]);
+                Assert.That(bounds.min.x, Is.EqualTo(expectedLeft).Within(0.01f),
+                    children[i].name + " must start where the previous structural region ended");
+                expectedLeft = bounds.max.x;
+            }
+
+            Assert.That(expectedLeft, Is.EqualTo(parent.rect.xMax).Within(0.01f),
+                parent.name + " children must cover the full horizontal region without a gutter");
+        }
+
+        private static void AssertTilesVertically(
+            RectTransform parent,
+            RectTransform body,
+            RectTransform footer)
+        {
+            Bounds bodyBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(parent, body);
+            Bounds footerBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(parent, footer);
+
+            Assert.That(bodyBounds.max.y, Is.EqualTo(parent.rect.yMax).Within(0.01f));
+            Assert.That(bodyBounds.min.y, Is.EqualTo(footerBounds.max.y).Within(0.01f),
+                "Body and footer must meet without exposing the viewport backer.");
+            Assert.That(footerBounds.min.y, Is.EqualTo(parent.rect.yMin).Within(0.01f));
+        }
+
+        private static void AssertLayoutElement(
+            RectTransform rect,
+            float flexibleWidth,
+            float flexibleHeight)
+        {
+            LayoutElement element = rect.GetComponent<LayoutElement>();
+            Assert.That(element, Is.Not.Null, rect.name + " must expose sizing intent to its LayoutGroup owner");
+            Assert.That(element.ignoreLayout, Is.False);
+            Assert.That(element.flexibleWidth, Is.EqualTo(flexibleWidth).Within(0.01f));
+            Assert.That(element.flexibleHeight, Is.EqualTo(flexibleHeight).Within(0.01f));
         }
 
         private static RectTransform CreateRect(string name, RectTransform parent, Vector2 size)
@@ -210,10 +305,10 @@ namespace Bees.Tests.EditMode
             return rect;
         }
 
-        private static void AssertSize(RectTransform rect, Vector2 expected)
+        private static void AssertSize(RectTransform rect, float expectedWidth, float expectedHeight)
         {
-            Assert.That(rect.rect.width, Is.EqualTo(expected.x).Within(0.01f), rect.name + " width");
-            Assert.That(rect.rect.height, Is.EqualTo(expected.y).Within(0.01f), rect.name + " height");
+            Assert.That(rect.rect.width, Is.EqualTo(expectedWidth).Within(0.01f), rect.name + " width");
+            Assert.That(rect.rect.height, Is.EqualTo(expectedHeight).Within(0.01f), rect.name + " height");
         }
     }
 }
