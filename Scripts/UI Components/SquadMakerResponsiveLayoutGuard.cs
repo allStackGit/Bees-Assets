@@ -14,6 +14,10 @@ namespace Assets.Scripts.UI_Components
     /// positions and extents across the live viewport; fitting the entire 1366x768 composition
     /// inside the viewport merely produces a centered 16:9 island and blank bands.
     ///
+    /// The SquadMaker controller lives on the scene's separate UI Manager root, not beneath the
+    /// visible Squad Maker Canvas. Canvas ownership therefore comes from a serialized UI reference
+    /// (ChosenSquadList) rather than from the controller's transform ancestry.
+    ///
     /// This guard snapshots the authored direct-branch geometry plus the fixed sizes of children
     /// owned by screen-scale structural LayoutGroups. Every responsive pass restores those canonical
     /// structural sizes before deriving the live allocation, so a previously repaired narrow/tall
@@ -111,6 +115,31 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        internal static Canvas ResolveOwnedCanvas(SquadMaker squadMaker)
+        {
+            if (squadMaker == null)
+            {
+                return null;
+            }
+
+            // In the authored Squad Maker scene the controller is an added component on the
+            // top-level UI Manager prefab, while ChosenSquadList is inside the IntroPopup Canvas.
+            // Looking upward from the controller therefore returns no Canvas and makes the entire
+            // specialized responsive pass a no-op. Resolve from a stable serialized UI anchor.
+            Canvas localCanvas = squadMaker.ChosenSquadList != null
+                ? squadMaker.ChosenSquadList.GetComponentInParent<Canvas>()
+                : null;
+
+            // Retain the hierarchy lookup as a fallback for isolated test fixtures or future scenes
+            // that intentionally place the controller beneath its UI Canvas.
+            if (localCanvas == null)
+            {
+                localCanvas = squadMaker.GetComponentInParent<Canvas>();
+            }
+
+            return localCanvas != null ? localCanvas.rootCanvas : null;
+        }
+
         private void Initialize(SquadMaker squadMaker)
         {
             _squadMaker = squadMaker;
@@ -119,8 +148,7 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            Canvas localCanvas = _squadMaker.GetComponentInParent<Canvas>();
-            _canvas = localCanvas != null ? localCanvas.rootCanvas : null;
+            _canvas = ResolveOwnedCanvas(_squadMaker);
             _canvasRect = _canvas != null ? _canvas.transform as RectTransform : null;
             _scaler = _canvas != null ? _canvas.GetComponent<CanvasScaler>() : null;
             if (_canvas != null && _scaler == null)
@@ -145,8 +173,7 @@ namespace Assets.Scripts.UI_Components
 
             if (_canvas == null || _canvasRect == null)
             {
-                Canvas localCanvas = _squadMaker != null ? _squadMaker.GetComponentInParent<Canvas>() : null;
-                _canvas = localCanvas != null ? localCanvas.rootCanvas : null;
+                _canvas = ResolveOwnedCanvas(_squadMaker);
                 _canvasRect = _canvas != null ? _canvas.transform as RectTransform : null;
                 _scaler = _canvas != null ? _canvas.GetComponent<CanvasScaler>() : null;
                 if (_canvasRect == null)
