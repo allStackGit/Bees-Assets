@@ -1,6 +1,5 @@
 using NUnit.Framework;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -10,31 +9,102 @@ namespace Bees.Tests.EditMode
     {
         private const string GuardTypeName = "Assets.Scripts.UI_Components.LegacyScreenResponsiveLayoutGuard";
 
-        [Test]
-        public void MainMenuInteractiveBranchDoesNotExpandBeyondReferenceFrameOnWideCanvas()
+        [TestCase("Main Menu", true)]
+        [TestCase("Squad Maker", true)]
+        [TestCase("Space", false)]
+        public void FixedReferencePolicyIsLimitedToLegacyPresentationScenes(string sceneName, bool expected)
         {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
-            RectTransform background = CreateRect("Starfield", canvas, new Vector2(2000f, 900f));
-            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
-            Vector2 backgroundSize = background.sizeDelta;
+            bool actual = (bool)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "IsFixedReferencePresentationScene",
+                sceneName);
 
-            AddMainMenuControls(menuRoot);
+            Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void UltrawideCanvasKeepsFullReferenceRootAt1366By768()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform root = CreateRect("Main Container", canvas, Vector2.zero);
+            root.anchorMin = Vector2.zero;
+            root.anchorMax = Vector2.one;
+            root.sizeDelta = Vector2.zero;
 
             try
             {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
+                bool changed = ApplyReferenceGeometry(
+                    root,
+                    canvas.rect.size,
+                    Vector2.zero,
+                    Vector2.one,
+                    Vector2.zero,
+                    Vector2.zero);
+
+                Assert.That(changed, Is.True);
+                Assert.That(root.rect.width, Is.EqualTo(1366f).Within(0.01f));
+                Assert.That(root.rect.height, Is.EqualTo(768f).Within(0.01f));
+                Assert.That(root.rect.center.x, Is.EqualTo(0f).Within(0.01f));
+                Assert.That(root.rect.center.y, Is.EqualTo(0f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void TallCanvasKeepsFullReferenceRootAt1366By768()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1366f, 1794f));
+            RectTransform root = CreateRect("Main Container", canvas, Vector2.zero);
+            root.anchorMin = Vector2.zero;
+            root.anchorMax = Vector2.one;
+            root.sizeDelta = Vector2.zero;
+
+            try
+            {
+                ApplyReferenceGeometry(
+                    root,
+                    canvas.rect.size,
+                    Vector2.zero,
+                    Vector2.one,
+                    Vector2.zero,
+                    Vector2.zero);
+
+                Assert.That(root.rect.width, Is.EqualTo(1366f).Within(0.01f));
+                Assert.That(root.rect.height, Is.EqualTo(768f).Within(0.01f));
+                Assert.That(root.rect.center.x, Is.EqualTo(0f).Within(0.01f));
+                Assert.That(root.rect.center.y, Is.EqualTo(0f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void MainMenuPanelKeepsAuthoredSizeInsteadOfReceivingSecondScale()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform panel = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
+
+            try
+            {
+                bool changed = ApplyReferenceGeometry(
+                    panel,
+                    canvas.rect.size,
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    Vector2.zero,
+                    new Vector2(1366f, 668f));
 
                 Assert.That(changed, Is.False,
-                    "An already-authored reference-sized menu should remain unchanged when the viewport only adds surplus space.");
-                AssertVector(menuRoot.anchorMin, new Vector2(0.5f, 0.5f));
-                AssertVector(menuRoot.anchorMax, new Vector2(0.5f, 0.5f));
-                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f),
-                    "Ultrawide surplus belongs to the surrounding starfield, not the green menu frame.");
-                AssertVector(background.sizeDelta, backgroundSize,
-                    "The starfield/background sibling is not owned by the menu frame repair.");
+                    "CanvasScaler.Expand already supplies uniform physical scaling; the menu root must not be scaled a second time.");
+                AssertVector(panel.anchorMin, new Vector2(0.5f, 0.5f));
+                AssertVector(panel.anchorMax, new Vector2(0.5f, 0.5f));
+                AssertVector(panel.sizeDelta, new Vector2(1366f, 668f));
+                Assert.That(panel.localScale, Is.EqualTo(Vector3.one));
             }
             finally
             {
@@ -43,36 +113,32 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MainMenuInteractiveBranchShrinksUniformlyOnTallCanvasAndRestoresAtReferenceCapacity()
+        public void EdgeAnchoredFooterTracksReferenceFrameRatherThanLiveCanvasEdge()
         {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(900f, 2000f));
-            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
-            AddMainMenuControls(menuRoot);
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform backButton = CreateRect("Back", canvas, new Vector2(200f, 50f));
+            Vector2 authoredAnchor = Vector2.zero;
+            Vector2 authoredPosition = new Vector2(110f, 30f);
+            backButton.anchorMin = authoredAnchor;
+            backButton.anchorMax = authoredAnchor;
+            backButton.anchoredPosition = authoredPosition;
 
             try
             {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
+                ApplyReferenceGeometry(
+                    backButton,
+                    canvas.rect.size,
+                    authoredAnchor,
+                    authoredAnchor,
+                    authoredPosition,
+                    new Vector2(200f, 50f));
 
-                float expectedTallHeight = 668f * 900f / 1366f;
-                Assert.That(changed, Is.True);
-                AssertVector(menuRoot.anchorMin, new Vector2(0.5f, 0.5f));
-                AssertVector(menuRoot.anchorMax, new Vector2(0.5f, 0.5f));
-                AssertVector(menuRoot.anchoredPosition, Vector2.zero);
-                AssertVector(menuRoot.sizeDelta, new Vector2(900f, expectedTallHeight),
-                    "A tall/narrow viewport should scale the authored menu frame uniformly rather than stretching it vertically.");
-
-                canvas.sizeDelta = new Vector2(2000f, 900f);
-                changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
-
-                Assert.That(changed, Is.True,
-                    "The periodic repair must be able to restore the authored size after a resolution/aspect-ratio change.");
-                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f));
+                float expectedReferenceLeft = -(1366f * 0.5f);
+                float actualLeft = backButton.anchoredPosition.x +
+                                   backButton.anchorMin.x * canvas.rect.width -
+                                   canvas.rect.width * 0.5f;
+                Assert.That(actualLeft, Is.EqualTo(expectedReferenceLeft + authoredPosition.x).Within(0.01f),
+                    "Footer/navigation controls must remain attached to the legacy artboard, not drift to an ultrawide physical edge.");
             }
             finally
             {
@@ -81,51 +147,31 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MainMenuInteractiveBranchIgnoresTransientRuntimeAspectAcrossResolutionChanges()
+        public void RepeatedAspectChangesRestoreCanonicalGeometryWithoutAccumulatingDrift()
         {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(900f, 2000f));
-            RectTransform menuRoot = CreateRect("MainPanel", canvas, new Vector2(1366f, 668f));
-            AddMainMenuControls(menuRoot);
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform root = CreateRect("Main Container", canvas, Vector2.zero);
+            Vector2 authoredMin = Vector2.zero;
+            Vector2 authoredMax = Vector2.one;
 
             try
             {
-                // ResponsiveScreenLayoutGuard can temporarily stretch this branch before the
-                // Main Menu ownership pass runs. That transient shape must never become the next
-                // authored baseline or repeated resolution changes will compound the distortion.
-                menuRoot.sizeDelta = new Vector2(900f, 1900f);
+                ApplyReferenceGeometry(root, canvas.rect.size, authoredMin, authoredMax, Vector2.zero, Vector2.zero);
+                Assert.That(root.rect.width, Is.EqualTo(1366f).Within(0.01f));
 
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
+                canvas.sizeDelta = new Vector2(1366f, 1794f);
+                root.anchorMin = new Vector2(0.2f, 0.2f);
+                root.anchorMax = new Vector2(0.8f, 0.8f);
+                root.sizeDelta = new Vector2(500f, 500f);
+                ApplyReferenceGeometry(root, canvas.rect.size, authoredMin, authoredMax, Vector2.zero, Vector2.zero);
+                Assert.That(root.rect.width, Is.EqualTo(1366f).Within(0.01f));
+                Assert.That(root.rect.height, Is.EqualTo(768f).Within(0.01f));
 
-                float expectedTallHeight = 668f * 900f / 1366f;
-                Assert.That(changed, Is.True);
-                AssertVector(menuRoot.sizeDelta, new Vector2(900f, expectedTallHeight),
-                    "A transient runtime stretch must be discarded in favor of the authored 1366x668 aspect.");
-
-                canvas.sizeDelta = new Vector2(2000f, 900f);
-                menuRoot.sizeDelta = new Vector2(2000f, 800f);
-                changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
-
-                Assert.That(changed, Is.True);
-                AssertVector(menuRoot.sizeDelta, new Vector2(1366f, 668f),
-                    "Returning to a large viewport must restore the authored frame even after another external runtime stretch.");
-
-                canvas.sizeDelta = new Vector2(800f, 1600f);
-                menuRoot.sizeDelta = new Vector2(800f, 1500f);
-                changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "ExpandMainMenuInteractiveRoot",
-                    canvas);
-
-                float expectedNarrowHeight = 668f * 800f / 1366f;
-                Assert.That(changed, Is.True);
-                AssertVector(menuRoot.sizeDelta, new Vector2(800f, expectedNarrowHeight),
-                    "Repeated resolution changes must remain idempotent instead of progressively shrinking the menu frame.");
+                canvas.sizeDelta = new Vector2(1908f, 768f);
+                root.sizeDelta = new Vector2(250f, 250f);
+                ApplyReferenceGeometry(root, canvas.rect.size, authoredMin, authoredMax, Vector2.zero, Vector2.zero);
+                Assert.That(root.rect.width, Is.EqualTo(1366f).Within(0.01f));
+                Assert.That(root.rect.height, Is.EqualTo(768f).Within(0.01f));
             }
             finally
             {
@@ -134,31 +180,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void NestedStructuralLayoutFillsItsAllocatedCrossAxis()
+        public void ViewportBackdropStillFillsAspectRatioSurplus()
         {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
-            RectTransform region = CreateRect("Squad Presets Region", canvas, new Vector2(1000f, 800f));
-            VerticalLayoutGroup layout = region.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(0, 0, 0, 0);
-            layout.spacing = 0f;
-            layout.childControlWidth = false;
-            layout.childForceExpandWidth = false;
-
-            RectTransform body = CreateRect("Body", region, new Vector2(800f, 700f));
-            RectTransform toolbar = CreateRect("Toolbar", region, new Vector2(800f, 100f));
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform backdrop = CreateRect("Background", canvas, new Vector2(1366f, 768f));
 
             try
             {
                 bool changed = (bool)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
-                    "RepairNestedStructuralLayouts",
-                    canvas,
-                    canvas,
-                    0);
+                    "StretchBackdrop",
+                    backdrop);
 
                 Assert.That(changed, Is.True);
-                Assert.That(body.rect.width, Is.EqualTo(1000f).Within(0.01f));
-                Assert.That(toolbar.rect.width, Is.EqualTo(1000f).Within(0.01f));
+                AssertVector(backdrop.anchorMin, Vector2.zero);
+                AssertVector(backdrop.anchorMax, Vector2.one);
+                AssertVector(backdrop.offsetMin, Vector2.zero);
+                AssertVector(backdrop.offsetMax, Vector2.zero);
+                Assert.That(backdrop.rect.width, Is.EqualTo(1908f).Within(0.01f));
+                Assert.That(backdrop.rect.height, Is.EqualTo(768f).Within(0.01f));
             }
             finally
             {
@@ -166,184 +206,23 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        [Test]
-        public void UltrawideMultiColumnLayoutGivesSurplusToUniquelyDominantRegion()
+        private static bool ApplyReferenceGeometry(
+            RectTransform rect,
+            Vector2 canvasSize,
+            Vector2 authoredMin,
+            Vector2 authoredMax,
+            Vector2 authoredPosition,
+            Vector2 authoredSize)
         {
-            RectTransform row = CreateRect("Squad Maker Columns", null, new Vector2(2000f, 800f));
-            HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(0, 0, 0, 0);
-            layout.spacing = 0f;
-            layout.childControlWidth = false;
-            layout.childForceExpandWidth = false;
-
-            RectTransform inventory = CreateRect("Inventory", row, new Vector2(250f, 800f));
-            RectTransform workArea = CreateRect("Squad Presets", row, new Vector2(900f, 800f));
-            RectTransform squads = CreateRect("Squads", row, new Vector2(250f, 800f));
-
-            try
-            {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "FitDominantStructuralHorizontalChild",
-                    row);
-
-                Assert.That(changed, Is.True,
-                    "A clear work-area column should absorb ultrawide surplus even when it starts below the generic 50% dominance threshold.");
-                Assert.That(inventory.rect.width, Is.EqualTo(250f).Within(0.01f));
-                Assert.That(workArea.rect.width, Is.EqualTo(1500f).Within(0.01f));
-                Assert.That(squads.rect.width, Is.EqualTo(250f).Within(0.01f));
-            }
-            finally
-            {
-                Object.DestroyImmediate(row.gameObject);
-            }
-        }
-
-        [Test]
-        public void SquadMakerMainContainerConsumesWideSurplusWithoutFlexibleCellGutters()
-        {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
-            RectTransform mainContainer = CreateRect("Main Container", canvas, new Vector2(2000f, 800f));
-            HorizontalLayoutGroup layout = mainContainer.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(0, 0, 0, 0);
-            layout.spacing = 0f;
-            layout.childControlWidth = false;
-            layout.childForceExpandWidth = true;
-            layout.childControlHeight = false;
-            layout.childForceExpandHeight = true;
-
-            RectTransform inventory = CreateRect("Ship Selector Column", mainContainer, new Vector2(262f, 718f));
-            RectTransform workArea = CreateRect("Squad Maker Column", mainContainer, new Vector2(620f, 718f));
-            RectTransform squads = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
-
-            try
-            {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "RepairSquadMakerMainContainer",
-                    mainContainer);
-
-                Assert.That(changed, Is.True);
-                Assert.That(layout.childForceExpandWidth, Is.False,
-                    "The real scene's force-expand/no-control combination creates invisible flexible cells between fixed-width columns.");
-                Assert.That(inventory.rect.width, Is.EqualTo(262f).Within(0.01f));
-                Assert.That(workArea.rect.width, Is.EqualTo(1254f).Within(0.01f));
-                Assert.That(squads.rect.width, Is.EqualTo(484f).Within(0.01f));
-                Assert.That(inventory.rect.width + workArea.rect.width + squads.rect.width,
-                    Is.EqualTo(mainContainer.rect.width).Within(0.01f),
-                    "All horizontal surplus must become usable Squad Maker work area rather than exposed Main Container backer.");
-
-                mainContainer.sizeDelta = new Vector2(1366f, 800f);
-                changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "RepairSquadMakerMainContainer",
-                    mainContainer);
-
-                Assert.That(changed, Is.True,
-                    "Returning from an ultrawide viewport must shrink the work column back instead of retaining the previous runtime width.");
-                Assert.That(workArea.rect.width, Is.EqualTo(620f).Within(0.01f));
-            }
-            finally
-            {
-                Object.DestroyImmediate(canvas.gameObject);
-            }
-        }
-
-        [Test]
-        public void TallSquadMakerStructuralColumnsFillTheirLiveCrossAxis()
-        {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1366f, 1600f));
-            RectTransform mainContainer = CreateRect("Main Container", canvas, new Vector2(1366f, 1500f));
-            HorizontalLayoutGroup layout = mainContainer.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(0, 0, 0, 0);
-            layout.spacing = 0f;
-            layout.childControlWidth = false;
-            layout.childForceExpandWidth = false;
-            layout.childControlHeight = false;
-            layout.childForceExpandHeight = true;
-
-            RectTransform inventory = CreateRect("Ship Selector Column", mainContainer, new Vector2(262f, 718f));
-            RectTransform workArea = CreateRect("Squad Maker Column", mainContainer, new Vector2(620f, 718f));
-            RectTransform squads = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
-            HorizontalLayoutGroup squadsLayout = squads.gameObject.AddComponent<HorizontalLayoutGroup>();
-            squadsLayout.padding = new RectOffset(0, 0, 0, 0);
-            squadsLayout.spacing = 0f;
-            squadsLayout.childControlWidth = false;
-            squadsLayout.childForceExpandWidth = false;
-            squadsLayout.childControlHeight = false;
-            squadsLayout.childForceExpandHeight = true;
-            RectTransform savedSquads = CreateRect("Saved Squads Column", squads, new Vector2(262f, 718f));
-            RectTransform chosenSquads = CreateRect("Chosen Squads Column", squads, new Vector2(222f, 718f));
-
-            try
-            {
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "RepairSquadMakerMainContainer",
-                    mainContainer);
-
-                Assert.That(changed, Is.True);
-                Assert.That(inventory.rect.height, Is.EqualTo(1500f).Within(0.01f));
-                Assert.That(workArea.rect.height, Is.EqualTo(1500f).Within(0.01f));
-                Assert.That(squads.rect.height, Is.EqualTo(1500f).Within(0.01f));
-                Assert.That(savedSquads.rect.height, Is.EqualTo(1500f).Within(0.01f));
-                Assert.That(chosenSquads.rect.height, Is.EqualTo(1500f).Within(0.01f),
-                    "Nested screen columns must keep filling a tall structural owner even after their authored 718px height falls below the generic live-size coverage threshold.");
-            }
-            finally
-            {
-                Object.DestroyImmediate(canvas.gameObject);
-            }
-        }
-
-        [Test]
-        public void SmallLocalButtonRowIsNotTreatedAsScreenStructure()
-        {
-            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
-            RectTransform row = CreateRect("Save Buttons", canvas, new Vector2(600f, 60f));
-            HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.childControlWidth = false;
-            layout.childForceExpandWidth = false;
-
-            RectTransform buttonA = CreateRect("Save", row, new Vector2(250f, 50f));
-            RectTransform buttonB = CreateRect("Delete", row, new Vector2(250f, 50f));
-            Vector2 originalA = buttonA.sizeDelta;
-            Vector2 originalB = buttonB.sizeDelta;
-
-            try
-            {
-                bool structural = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "IsStructuralLayout",
-                    canvas,
-                    row);
-
-                bool changed = (bool)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "RepairNestedStructuralLayouts",
-                    canvas,
-                    canvas,
-                    0);
-
-                Assert.That(structural, Is.False);
-                Assert.That(changed, Is.False);
-                AssertVector(buttonA.sizeDelta, originalA);
-                AssertVector(buttonB.sizeDelta, originalB);
-            }
-            finally
-            {
-                Object.DestroyImmediate(canvas.gameObject);
-            }
-        }
-
-        private static void AddMainMenuControls(RectTransform menuRoot)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                RectTransform button = CreateRect("Menu Button " + i, menuRoot, new Vector2(400f, 50f));
-                button.gameObject.AddComponent<Image>();
-                button.gameObject.AddComponent<Button>();
-            }
+            return (bool)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "ApplyReferenceGeometryForTest",
+                rect,
+                canvasSize,
+                authoredMin,
+                authoredMax,
+                authoredPosition,
+                authoredSize);
         }
 
         private static RectTransform CreateRect(string name, RectTransform parent, Vector2 size)
@@ -364,10 +243,10 @@ namespace Bees.Tests.EditMode
             return rect;
         }
 
-        private static void AssertVector(Vector2 actual, Vector2 expected, string message = null)
+        private static void AssertVector(Vector2 actual, Vector2 expected)
         {
-            Assert.That(actual.x, Is.EqualTo(expected.x).Within(0.01f), message);
-            Assert.That(actual.y, Is.EqualTo(expected.y).Within(0.01f), message);
+            Assert.That(actual.x, Is.EqualTo(expected.x).Within(0.01f));
+            Assert.That(actual.y, Is.EqualTo(expected.y).Within(0.01f));
         }
     }
 }
