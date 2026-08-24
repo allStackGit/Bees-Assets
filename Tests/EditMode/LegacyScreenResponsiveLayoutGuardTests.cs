@@ -224,24 +224,98 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [TestCase(1908f, 768f, 1908f / 768f)]
+        [TestCase(1366f, 3686f, 3686f / 1366f)]
+        public void PreserveAspectBackdropCoverScaleEnvelopesExtremeViewport(
+            float viewportWidth,
+            float viewportHeight,
+            float expectedScale)
+        {
+            float scale = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateBackdropCoverScale",
+                new Vector2(viewportWidth, viewportHeight),
+                new Vector2(1024f, 1024f));
+
+            Assert.That(scale, Is.EqualTo(expectedScale).Within(0.001f));
+        }
+
         [Test]
-        public void ViewportBackdropStillFillsAspectRatioSurplus()
+        public void ViewportBackdropRenderedGraphicCoversUltrawideCanvas()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
-            RectTransform backdrop = CreateRect("Background", canvas, new Vector2(1366f, 768f));
+            RectTransform backdrop = CreateRect("PanelBacker", canvas, new Vector2(1366f, 768f));
+            backdrop.localScale = new Vector3(2f, 2f, 2f);
+            Texture2D texture = null;
+            Sprite sprite = null;
 
             try
             {
+                texture = new Texture2D(64, 64, TextureFormat.RGBA32, false);
+                sprite = Sprite.Create(texture, new Rect(0f, 0f, 64f, 64f), new Vector2(0.5f, 0.5f));
+                Image image = backdrop.gameObject.AddComponent<Image>();
+                image.sprite = sprite;
+                image.preserveAspect = true;
+
                 bool changed = (bool)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
                     "StretchBackdrop",
                     backdrop);
 
+                float expectedCoverScale = 1908f / 768f;
                 Assert.That(changed, Is.True);
                 AssertVector(backdrop.anchorMin, Vector2.zero);
                 AssertVector(backdrop.anchorMax, Vector2.one);
                 AssertVector(backdrop.offsetMin, Vector2.zero);
                 AssertVector(backdrop.offsetMax, Vector2.zero);
+                Assert.That(backdrop.localScale.x, Is.EqualTo(expectedCoverScale).Within(0.001f));
+                Assert.That(backdrop.localScale.y, Is.EqualTo(expectedCoverScale).Within(0.001f));
+
+                // A square preserve-aspect Image inside a 1908x768 rect first renders at 768x768.
+                // The backdrop transform must then enlarge that rendered square to at least 1908
+                // pixels in both axes, otherwise the old black side bars return.
+                float containedGraphicSize = Mathf.Min(canvas.rect.width, canvas.rect.height);
+                Assert.That(containedGraphicSize * backdrop.localScale.x,
+                    Is.GreaterThanOrEqualTo(canvas.rect.width - 0.01f));
+                Assert.That(containedGraphicSize * backdrop.localScale.y,
+                    Is.GreaterThanOrEqualTo(canvas.rect.height - 0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+                if (sprite != null)
+                {
+                    Object.DestroyImmediate(sprite);
+                }
+                if (texture != null)
+                {
+                    Object.DestroyImmediate(texture);
+                }
+            }
+        }
+
+        [Test]
+        public void NonPreserveBackdropUsesExactViewportWithoutOverscan()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1908f, 768f));
+            RectTransform backdrop = CreateRect("Background", canvas, new Vector2(1366f, 768f));
+            backdrop.localScale = new Vector3(2f, 2f, 2f);
+            Image image = backdrop.gameObject.AddComponent<Image>();
+            image.preserveAspect = false;
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "StretchBackdrop",
+                    backdrop);
+
+                AssertVector(backdrop.anchorMin, Vector2.zero);
+                AssertVector(backdrop.anchorMax, Vector2.one);
+                AssertVector(backdrop.offsetMin, Vector2.zero);
+                AssertVector(backdrop.offsetMax, Vector2.zero);
+                Assert.That(backdrop.localScale.x, Is.EqualTo(1f).Within(0.001f));
+                Assert.That(backdrop.localScale.y, Is.EqualTo(1f).Within(0.001f));
                 Assert.That(backdrop.rect.width, Is.EqualTo(1908f).Within(0.01f));
                 Assert.That(backdrop.rect.height, Is.EqualTo(768f).Within(0.01f));
             }
