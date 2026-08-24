@@ -7,19 +7,21 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Keeps the legacy Main Menu and Squad Maker composed against the 1366x768 artboard they were
-    /// authored for. These screens are not fluid dashboards: stretching their internal layout groups
-    /// changes relative proportions, opens filler regions and separates controls. CanvasScaler.Expand
-    /// provides uniform physical scaling, while this guard maps only the root presentation anchors
-    /// into a centered 1366x768 virtual frame and leaves the authored child geometry intact.
+    /// Preserves the authored composition of the legacy Main Menu and Squad Maker while adapting
+    /// their root presentation to the live viewport. The 1366x768 authoring rectangle is still the
+    /// coordinate reference, but it is not itself the visible content boundary. In particular the
+    /// Main Menu's 1366-wide MainPanel renders a much narrower preserve-aspect background, so narrow
+    /// displays must fit the actual rendered presentation rather than shrinking the entire artboard.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class LegacyScreenResponsiveLayoutGuard : MonoBehaviour
     {
         private const string MainMenuSceneName = "Main Menu";
+        private const string MainMenuPanelName = "MainPanel";
         private const string SquadMakerSceneName = "Squad Maker";
         private const float RepairInterval = 0.25f;
         private const float AnchorTolerance = 0.001f;
+        private const float MainMenuHorizontalMargin = 24f;
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
         private sealed class RectGeometry
@@ -38,6 +40,8 @@ namespace Assets.Scripts.UI_Components
             public RectGeometry Root;
             public readonly List<RectGeometry> Descendants = new List<RectGeometry>();
             public bool IsBackdrop;
+            public bool ScaleMainMenuVisuals;
+            public Vector2 CenteredVisualSize;
         }
 
         private Canvas _canvas;
@@ -107,6 +111,7 @@ namespace Assets.Scripts.UI_Components
 
             _sceneName = sceneName;
             ConfigureScaler();
+            Canvas.ForceUpdateCanvases();
             CaptureAuthoredBranches();
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
@@ -193,14 +198,35 @@ namespace Assets.Scripts.UI_Components
                     continue;
                 }
 
+                RectGeometry rootGeometry = CaptureGeometry(child);
                 PresentationBranch branch = new PresentationBranch
                 {
-                    Root = CaptureGeometry(child),
+                    Root = rootGeometry,
                     IsBackdrop = IsViewportBackdrop(child)
                 };
                 CaptureDescendants(child, branch.Descendants);
+
+                if (IsMainMenuPresentationRoot(child))
+                {
+                    Vector2 visualSize = CalculateCenteredVisualSize(child);
+                    if (visualSize.x > 0f && visualSize.y > 0f)
+                    {
+                        branch.ScaleMainMenuVisuals = true;
+                        branch.CenteredVisualSize = new Vector2(
+                            visualSize.x * Mathf.Abs(rootGeometry.LocalScale.x),
+                            visualSize.y * Mathf.Abs(rootGeometry.LocalScale.y));
+                    }
+                }
+
                 _branches.Add(branch);
             }
+        }
+
+        private bool IsMainMenuPresentationRoot(RectTransform rect)
+        {
+            return string.Equals(_sceneName, MainMenuSceneName, StringComparison.Ordinal) &&
+                   rect != null &&
+                   string.Equals(rect.gameObject.name, MainMenuPanelName, StringComparison.Ordinal);
         }
 
         private bool IsAlreadyCaptured(RectTransform rect)
@@ -299,6 +325,10 @@ namespace Assets.Scripts.UI_Components
                 else
                 {
                     ApplyReferenceRootGeometry(branch.Root, canvasSize);
+                    if (branch.ScaleMainMenuVisuals)
+                    {
+                        ApplyMainMenuVisualScale(branch, canvasSize);
+                    }
                 }
 
                 if (branch.Root.Rect.GetComponent<LayoutGroup>() != null)
@@ -308,6 +338,206 @@ namespace Assets.Scripts.UI_Components
             }
 
             Canvas.ForceUpdateCanvases();
+        }
+
+        private static void ApplyMainMenuVisualScale(PresentationBranch branch, Vector2 canvasSize)
+        {
+            if (branch == null || branch.Root == null || branch.Root.Rect == null)
+            {
+                return;
+            }
+
+            float multiplier = CalculateMainMenuPresentationScale(canvasSize, branch.CenteredVisualSize);
+            Vector3 authoredScale = branch.Root.LocalScale;
+            branch.Root.Rect.localScale = new Vector3(
+                authoredScale.x * multiplier,
+                authoredScale.y * multiplier,
+                authoredScale.z);
+        }
+
+        /// <summary>
+        /// Expand keeps the complete 1366x768 artboard visible, which is correct for root coordinate
+        /// mapping but makes portrait UI scale from 1366 pixels of mostly empty horizontal artboard.
+        /// Main Menu presentation scale instead follows available height until the actual centered
+        /// visual content reaches the horizontal or vertical viewport boundary.
+        /// </summary>
+        internal static float CalculateMainMenuPresentationScale(
+            Vector2 canvasSize,
+            Vector2 centeredVisualSize)
+        {
+            if (canvasSize.x <= 0f || canvasSize.y <= 0f ||
+                centeredVisualSize.x <= 0f || centeredVisualSize.y <= 0f)
+            {
+                return 1f;
+            }
+
+            float availableWidth = Mathf.Max(1f, canvasSize.x - MainMenuHorizontalMargin * 2f);
+            float heightTrackingScale = canvasSize.y / ReferenceResolution.y;
+            float widthFitScale = availableWidth / centeredVisualSize.x;
+            float heightFitScale = canvasSize.y / centeredVisualSize.y;
+            return Mathf.Max(0.01f, Mathf.Min(heightTrackingScale, widthFitScale, heightFitScale));
+        }
+
+        /// <summary>
+        /// Returns the visual extent around the root pivot rather than the root RectTransform size.
+        /// This matters for MainPanel: its RectTransform is 1366x668, while its preserve-aspect image
+        /// renders as a much narrower centered panel. Child graphics such as the logo and planet are
+        /// included so narrow-screen fitting protects the complete visible composition.
+        /// </summary>
+        private static Vector2 CalculateCenteredVisualSize(RectTransform root)
+        {
+            if (root == null)
+            {
+                return Vector2.zero;
+            }
+
+            bool hasBounds = false;
+            float minX = 0f;
+            float maxX = 0f;
+            float minY = 0f;
+            float maxY = 0f;
+
+            Graphic[] graphics = root.GetComponentsInChildren<Graphic>(true);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                Graphic graphic = graphics[i];
+                if (graphic == null || graphic.rectTransform == null)
+                {
+                    continue;
+                }
+
+                EncapsulateRect(
+                    root,
+                    graphic.rectTransform,
+                    GetRenderedGraphicRect(graphic),
+                    ref hasBounds,
+                    ref minX,
+                    ref maxX,
+                    ref minY,
+                    ref maxY);
+            }
+
+            // A Selectable can remain meaningful even if its target Graphic is temporarily disabled.
+            // Include its authored hit rectangle so responsive fitting never clips an interactive state.
+            Selectable[] selectables = root.GetComponentsInChildren<Selectable>(true);
+            for (int i = 0; i < selectables.Length; i++)
+            {
+                RectTransform selectableRect = selectables[i] != null
+                    ? selectables[i].transform as RectTransform
+                    : null;
+                if (selectableRect == null)
+                {
+                    continue;
+                }
+
+                EncapsulateRect(
+                    root,
+                    selectableRect,
+                    selectableRect.rect,
+                    ref hasBounds,
+                    ref minX,
+                    ref maxX,
+                    ref minY,
+                    ref maxY);
+            }
+
+            if (!hasBounds)
+            {
+                return root.rect.size;
+            }
+
+            float halfWidth = Mathf.Max(Mathf.Abs(minX), Mathf.Abs(maxX));
+            float halfHeight = Mathf.Max(Mathf.Abs(minY), Mathf.Abs(maxY));
+            return new Vector2(halfWidth * 2f, halfHeight * 2f);
+        }
+
+        internal static Vector2 CalculateCenteredVisualSizeForTest(RectTransform root)
+        {
+            return CalculateCenteredVisualSize(root);
+        }
+
+        private static Rect GetRenderedGraphicRect(Graphic graphic)
+        {
+            RectTransform rectTransform = graphic.rectTransform;
+            Rect rect = rectTransform.rect;
+            if (graphic is not Image image ||
+                !image.preserveAspect ||
+                image.sprite == null ||
+                (image.type != Image.Type.Simple && image.type != Image.Type.Filled))
+            {
+                return rect;
+            }
+
+            Vector2 spriteSize = image.sprite.rect.size;
+            if (spriteSize.x <= 0f || spriteSize.y <= 0f || rect.width <= 0f || rect.height <= 0f)
+            {
+                return rect;
+            }
+
+            float spriteRatio = spriteSize.x / spriteSize.y;
+            float rectRatio = rect.width / rect.height;
+            if (spriteRatio > rectRatio)
+            {
+                float oldHeight = rect.height;
+                float newHeight = rect.width / spriteRatio;
+                rect.y += (oldHeight - newHeight) * rectTransform.pivot.y;
+                rect.height = newHeight;
+            }
+            else
+            {
+                float oldWidth = rect.width;
+                float newWidth = rect.height * spriteRatio;
+                rect.x += (oldWidth - newWidth) * rectTransform.pivot.x;
+                rect.width = newWidth;
+            }
+
+            return rect;
+        }
+
+        private static void EncapsulateRect(
+            RectTransform root,
+            RectTransform rectTransform,
+            Rect localRect,
+            ref bool hasBounds,
+            ref float minX,
+            ref float maxX,
+            ref float minY,
+            ref float maxY)
+        {
+            EncapsulatePoint(root, rectTransform, new Vector2(localRect.xMin, localRect.yMin),
+                ref hasBounds, ref minX, ref maxX, ref minY, ref maxY);
+            EncapsulatePoint(root, rectTransform, new Vector2(localRect.xMin, localRect.yMax),
+                ref hasBounds, ref minX, ref maxX, ref minY, ref maxY);
+            EncapsulatePoint(root, rectTransform, new Vector2(localRect.xMax, localRect.yMin),
+                ref hasBounds, ref minX, ref maxX, ref minY, ref maxY);
+            EncapsulatePoint(root, rectTransform, new Vector2(localRect.xMax, localRect.yMax),
+                ref hasBounds, ref minX, ref maxX, ref minY, ref maxY);
+        }
+
+        private static void EncapsulatePoint(
+            RectTransform root,
+            RectTransform rectTransform,
+            Vector2 localPoint,
+            ref bool hasBounds,
+            ref float minX,
+            ref float maxX,
+            ref float minY,
+            ref float maxY)
+        {
+            Vector3 worldPoint = rectTransform.TransformPoint(new Vector3(localPoint.x, localPoint.y, 0f));
+            Vector3 rootPoint = root.InverseTransformPoint(worldPoint);
+            if (!hasBounds)
+            {
+                minX = maxX = rootPoint.x;
+                minY = maxY = rootPoint.y;
+                hasBounds = true;
+                return;
+            }
+
+            minX = Mathf.Min(minX, rootPoint.x);
+            maxX = Mathf.Max(maxX, rootPoint.x);
+            minY = Mathf.Min(minY, rootPoint.y);
+            maxY = Mathf.Max(maxY, rootPoint.y);
         }
 
         private static void RestoreGeometry(RectGeometry geometry)
