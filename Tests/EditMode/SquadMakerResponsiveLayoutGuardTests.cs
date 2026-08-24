@@ -236,6 +236,53 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void RepeatedResolutionChangesRestoreStructuralChildBaselineInsteadOfCompoundingShrink()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, ReferenceResolution);
+            RectTransform region = CreateRect("Squad Maker Main Region", canvas, ReferenceResolution);
+            VerticalLayoutGroup layout = region.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = false;
+            layout.childForceExpandWidth = false;
+
+            RectTransform body = CreateRect("Dominant Body", region, new Vector2(1366f, 668f));
+            RectTransform footer = CreateRect("Footer", region, new Vector2(1366f, 100f));
+            Component guard = region.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            try
+            {
+                RuntimeAssembly.SetField(guard, "_canvasRect", canvas);
+                RuntimeAssembly.Invoke(guard, "CaptureDirectReferenceBranches");
+                RuntimeAssembly.SetField(guard, "_referenceGeometryCaptured", true);
+
+                RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
+                Assert.That(body.rect.height, Is.EqualTo(668f).Within(0.01f));
+                Assert.That(footer.rect.height, Is.EqualTo(100f).Within(0.01f));
+
+                canvas.sizeDelta = new Vector2(1366f, 400f);
+                RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
+                Assert.That(body.rect.height, Is.EqualTo(300f).Within(0.01f));
+
+                canvas.sizeDelta = new Vector2(1366f, 250f);
+                RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
+                Assert.That(body.rect.height, Is.EqualTo(150f).Within(0.01f));
+
+                canvas.sizeDelta = ReferenceResolution;
+                RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
+                Assert.That(body.rect.height, Is.EqualTo(668f).Within(0.01f),
+                    "Returning to the authored viewport must rebuild from canonical geometry rather than the previously shrunken runtime size.");
+                Assert.That(footer.rect.height, Is.EqualTo(100f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
         public void SmallLocalButtonRowIsNotTreatedAsScreenStructure()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
