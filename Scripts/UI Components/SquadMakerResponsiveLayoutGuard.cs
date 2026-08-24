@@ -115,7 +115,12 @@ namespace Assets.Scripts.UI_Components
                 }
             }
 
-            TakeViewportOwnership();
+            LegacyScreenResponsiveLayoutGuard legacy =
+                _canvas.GetComponent<LegacyScreenResponsiveLayoutGuard>();
+            if (!_legacyReferenceMappingRestored || (legacy != null && legacy.enabled))
+            {
+                TakeViewportOwnership();
+            }
 
             bool displayChanged = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight;
             if (displayChanged)
@@ -158,17 +163,23 @@ namespace Assets.Scripts.UI_Components
                 }
             }
 
-            // These installers are idempotent and also cover canvases created after scene load.
-            ResponsiveScreenLayoutGuard.EnsureLiveCanvasGuards();
-            RootCanvasCompatibilityGuard.EnsureLiveCanvasGuards();
-
             ResponsiveScreenLayoutGuard responsive = _canvas.GetComponent<ResponsiveScreenLayoutGuard>();
+            if (responsive == null)
+            {
+                ResponsiveScreenLayoutGuard.EnsureLiveCanvasGuards();
+                responsive = _canvas.GetComponent<ResponsiveScreenLayoutGuard>();
+            }
             if (responsive != null)
             {
                 responsive.enabled = true;
             }
 
             RootCanvasCompatibilityGuard compatibility = _canvas.GetComponent<RootCanvasCompatibilityGuard>();
+            if (compatibility == null)
+            {
+                RootCanvasCompatibilityGuard.EnsureLiveCanvasGuards();
+                compatibility = _canvas.GetComponent<RootCanvasCompatibilityGuard>();
+            }
             if (compatibility != null)
             {
                 compatibility.enabled = true;
