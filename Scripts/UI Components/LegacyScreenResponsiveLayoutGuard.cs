@@ -7,18 +7,16 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Preserves the authored composition of the legacy Main Menu and Squad Maker while adapting
-    /// their root presentation to the live viewport. The 1366x768 authoring rectangle remains the
-    /// coordinate reference, but it is not itself the visible content boundary. Main Menu sizing is
-    /// therefore driven by its interactive composition rather than by the mostly-empty 1366-wide
-    /// MainPanel RectTransform.
+    /// Preserves the authored composition of the legacy Main Menu while adapting its root
+    /// presentation to the live viewport. Squad Maker has a separate responsive owner because its
+    /// structural work regions must consume viewport surplus instead of remaining inside a bounded
+    /// 1366x768 presentation frame.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
     public sealed class LegacyScreenResponsiveLayoutGuard : MonoBehaviour
     {
         private const string MainMenuSceneName = "Main Menu";
         private const string MainMenuPanelName = "MainPanel";
-        private const string SquadMakerSceneName = "Squad Maker";
         private const float RepairInterval = 0.25f;
         private const float AnchorTolerance = 0.001f;
         private const float MainMenuViewportHorizontalMargin = 24f;
@@ -102,8 +100,7 @@ namespace Assets.Scripts.UI_Components
 
         internal static bool IsFixedReferencePresentationScene(string sceneName)
         {
-            return string.Equals(sceneName, MainMenuSceneName, StringComparison.Ordinal) ||
-                   string.Equals(sceneName, SquadMakerSceneName, StringComparison.Ordinal);
+            return string.Equals(sceneName, MainMenuSceneName, StringComparison.Ordinal);
         }
 
         private void Initialize(Canvas canvas, string sceneName)
