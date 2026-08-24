@@ -85,54 +85,47 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MainMenuPreserveAspectPanelUsesRenderedWidthInsteadOf1366ArtboardWidth()
+        public void MainMenuPresentationWidthUsesControlsAndIgnoresDecorativeFullWidthGraphics()
         {
             RectTransform panel = CreateRect("MainPanel", null, new Vector2(1366f, 668f));
-            Texture2D texture = null;
-            Sprite sprite = null;
+            RectTransform primary = CreateRect("Campaign", panel, new Vector2(300f, 50f));
+            primary.anchoredPosition = new Vector2(-60f, 0f);
+            primary.gameObject.AddComponent<Button>();
+
+            RectTransform reset = CreateRect("Reset Progress", panel, new Vector2(100f, 50f));
+            reset.anchoredPosition = new Vector2(160f, 0f);
+            reset.gameObject.AddComponent<Button>();
+
+            RectTransform decoration = CreateRect("Decorative Full Width Image", panel, new Vector2(1366f, 668f));
+            decoration.gameObject.AddComponent<Image>();
 
             try
             {
-                texture = new Texture2D(560, 668, TextureFormat.RGBA32, false);
-                sprite = Sprite.Create(
-                    texture,
-                    new Rect(0f, 0f, 560f, 668f),
-                    new Vector2(0.5f, 0.5f));
-
-                Image image = panel.gameObject.AddComponent<Image>();
-                image.sprite = sprite;
-                image.preserveAspect = true;
-
-                Vector2 visualSize = (Vector2)RuntimeAssembly.InvokeStatic(
+                Vector2 presentationSize = (Vector2)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
-                    "CalculateCenteredVisualSizeForTest",
+                    "CalculateMainMenuPresentationSizeForTest",
                     panel);
 
-                Assert.That(visualSize.x, Is.EqualTo(560f).Within(0.01f),
-                    "Responsive fitting must use the preserve-aspect image that is actually drawn, not MainPanel's unused 1366-wide RectTransform.");
-                Assert.That(visualSize.y, Is.EqualTo(668f).Within(0.01f));
+                // The controls extend to +/-210 around the panel center. The responsive contract
+                // then adds 240 authored units of breathing room, producing a 660-wide fitting box.
+                Assert.That(presentationSize.x, Is.EqualTo(660f).Within(0.01f));
+                Assert.That(presentationSize.y, Is.EqualTo(668f).Within(0.01f));
+                Assert.That(presentationSize.x, Is.LessThan(1366f),
+                    "A decorative/full-width Graphic must not make portrait screens fit the empty 1366-wide authoring frame again.");
             }
             finally
             {
                 Object.DestroyImmediate(panel.gameObject);
-                if (sprite != null)
-                {
-                    Object.DestroyImmediate(sprite);
-                }
-                if (texture != null)
-                {
-                    Object.DestroyImmediate(texture);
-                }
             }
         }
 
         [Test]
-        public void PortraitCanvasExpandsMainMenuUntilVisibleContentFitsWidth()
+        public void PortraitCanvasExpandsMainMenuUntilFunctionalPresentationFitsWidth()
         {
             Vector2 portraitLogicalCanvas = new Vector2(1366f, 3686f);
-            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+            Vector2 presentationSize = new Vector2(660f, 668f);
 
-            float scale = CalculateMainMenuScale(portraitLogicalCanvas, centeredVisualContent);
+            float scale = CalculateMainMenuScale(portraitLogicalCanvas, presentationSize);
             float expectedWidthLimitedScale = (1366f - 48f) / 660f;
 
             Assert.That(scale, Is.EqualTo(expectedWidthLimitedScale).Within(0.001f));
@@ -144,21 +137,21 @@ namespace Bees.Tests.EditMode
         public void FourByThreeCanvasUsesExtraHeightWithoutChangingMenuComposition()
         {
             Vector2 fourByThreeLogicalCanvas = new Vector2(1366f, 1024f);
-            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+            Vector2 presentationSize = new Vector2(660f, 668f);
 
-            float scale = CalculateMainMenuScale(fourByThreeLogicalCanvas, centeredVisualContent);
+            float scale = CalculateMainMenuScale(fourByThreeLogicalCanvas, presentationSize);
 
             Assert.That(scale, Is.EqualTo(1024f / 768f).Within(0.001f),
-                "At moderate tall aspect ratios the presentation should continue tracking viewport height until its visible content actually reaches an edge.");
+                "At moderate tall aspect ratios the presentation should continue tracking viewport height until its functional content actually reaches an edge.");
         }
 
         [Test]
         public void UltrawideCanvasDoesNotEnlargeMainMenuBeyondReferenceHeight()
         {
             Vector2 ultrawideLogicalCanvas = new Vector2(1908f, 768f);
-            Vector2 centeredVisualContent = new Vector2(660f, 700f);
+            Vector2 presentationSize = new Vector2(660f, 668f);
 
-            float scale = CalculateMainMenuScale(ultrawideLogicalCanvas, centeredVisualContent);
+            float scale = CalculateMainMenuScale(ultrawideLogicalCanvas, presentationSize);
 
             Assert.That(scale, Is.EqualTo(1f).Within(0.001f),
                 "Horizontal surplus belongs to the starfield. Matching the reference height must keep the authored Main Menu presentation scale.");
@@ -258,13 +251,13 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        private static float CalculateMainMenuScale(Vector2 canvasSize, Vector2 visualSize)
+        private static float CalculateMainMenuScale(Vector2 canvasSize, Vector2 presentationSize)
         {
             return (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
                 "CalculateMainMenuPresentationScale",
                 canvasSize,
-                visualSize);
+                presentationSize);
         }
 
         private static bool ApplyReferenceGeometry(
