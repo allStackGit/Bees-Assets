@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, viewport-fit=cover">
+  <title>{{{ PRODUCT_NAME }}}</title>
+
+  <!-- BEES_FULLSCREEN_VIEWPORT_BEGIN -->
+  <style id="bees-fullscreen-webgl">
+    html,
+    body {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: #000;
+    }
+
+    #unity-container {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      aspect-ratio: auto !important;
+      transform: none !important;
+    }
+
+    #unity-canvas {
+      position: absolute !important;
+      inset: 0 !important;
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      aspect-ratio: auto !important;
+      object-fit: fill !important;
+    }
+  </style>
+  <!-- BEES_FULLSCREEN_VIEWPORT_END -->
+
+  <!-- BEES_FULLSCREEN_HOST_BEGIN -->
+  <script id="bees-fullscreen-host">
+    (function () {
+      function setImportant(style, property, value) {
+        style.setProperty(property, value, 'important');
+      }
+
+      function fillViewport() {
+        var root = document.documentElement;
+        var body = document.body;
+        var container = document.getElementById('unity-container');
+        var canvas = document.getElementById('unity-canvas');
+
+        if (root) {
+          setImportant(root.style, 'width', '100%');
+          setImportant(root.style, 'height', '100%');
+          setImportant(root.style, 'margin', '0');
+          setImportant(root.style, 'overflow', 'hidden');
+        }
+        if (body) {
+          setImportant(body.style, 'width', '100%');
+          setImportant(body.style, 'height', '100%');
+          setImportant(body.style, 'margin', '0');
+          setImportant(body.style, 'overflow', 'hidden');
+        }
+        if (container) {
+          setImportant(container.style, 'position', 'fixed');
+          setImportant(container.style, 'inset', '0');
+          setImportant(container.style, 'width', '100vw');
+          setImportant(container.style, 'height', '100vh');
+          setImportant(container.style, 'max-width', 'none');
+          setImportant(container.style, 'max-height', 'none');
+          setImportant(container.style, 'aspect-ratio', 'auto');
+          setImportant(container.style, 'transform', 'none');
+        }
+        if (canvas) {
+          setImportant(canvas.style, 'position', 'absolute');
+          setImportant(canvas.style, 'inset', '0');
+          setImportant(canvas.style, 'width', '100%');
+          setImportant(canvas.style, 'height', '100%');
+          setImportant(canvas.style, 'max-width', 'none');
+          setImportant(canvas.style, 'max-height', 'none');
+          setImportant(canvas.style, 'aspect-ratio', 'auto');
+          setImportant(canvas.style, 'object-fit', 'fill');
+        }
+
+        try {
+          var frame = window.frameElement;
+          if (frame) {
+            setImportant(frame.style, 'position', 'fixed');
+            setImportant(frame.style, 'inset', '0');
+            setImportant(frame.style, 'width', '100vw');
+            setImportant(frame.style, 'height', '100vh');
+            setImportant(frame.style, 'max-width', 'none');
+            setImportant(frame.style, 'max-height', 'none');
+            setImportant(frame.style, 'aspect-ratio', 'auto');
+            setImportant(frame.style, 'transform', 'none');
+
+            var hostDocument = frame.ownerDocument;
+            if (hostDocument && hostDocument.documentElement) {
+              setImportant(hostDocument.documentElement.style, 'width', '100%');
+              setImportant(hostDocument.documentElement.style, 'height', '100%');
+              setImportant(hostDocument.documentElement.style, 'margin', '0');
+              setImportant(hostDocument.documentElement.style, 'overflow', 'hidden');
+            }
+            if (hostDocument && hostDocument.body) {
+              setImportant(hostDocument.body.style, 'width', '100%');
+              setImportant(hostDocument.body.style, 'height', '100%');
+              setImportant(hostDocument.body.style, 'margin', '0');
+              setImportant(hostDocument.body.style, 'overflow', 'hidden');
+            }
+          }
+        } catch (_) {
+          // A cross-origin embedding page must own its iframe dimensions.
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', fillViewport, { once: true });
+      } else {
+        fillViewport();
+      }
+      window.addEventListener('resize', fillViewport);
+    })();
+  </script>
+  <!-- BEES_FULLSCREEN_HOST_END -->
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+  </div>
+
+  <script>
+    var canvas = document.querySelector('#unity-canvas');
+    var buildUrl = 'Build';
+    var loaderUrl = buildUrl + '/{{{ LOADER_FILENAME }}}';
+    var config = {
+      dataUrl: buildUrl + '/{{{ DATA_FILENAME }}}',
+      frameworkUrl: buildUrl + '/{{{ FRAMEWORK_FILENAME }}}',
+      codeUrl: buildUrl + '/{{{ CODE_FILENAME }}}',
+      streamingAssetsUrl: 'StreamingAssets',
+      companyName: '{{{ COMPANY_NAME }}}',
+      productName: '{{{ PRODUCT_NAME }}}',
+      productVersion: '{{{ PRODUCT_VERSION }}}',
+      matchWebGLToCanvasSize: true
+    };
+
+    var script = document.createElement('script');
+    script.src = loaderUrl;
+    script.onload = function () {
+      createUnityInstance(canvas, config, function () {});
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
