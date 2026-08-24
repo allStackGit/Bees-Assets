@@ -1,4 +1,7 @@
+using System;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
@@ -12,6 +15,25 @@ namespace Bees.Tests.EditMode
         private static string ReadBridge()
         {
             return File.ReadAllText(Path.Combine(Application.dataPath, "Plugins", "WebSocket.jslib"));
+        }
+
+        private static string PatchWebGlIndex(string html)
+        {
+            Assembly editorAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(assembly => assembly.GetName().Name == "Assembly-CSharp-Editor");
+            Assert.That(editorAssembly, Is.Not.Null,
+                "The predefined Editor assembly must be loaded during EditMode tests.");
+
+            Type guardType = editorAssembly.GetType("WebGlResponsiveViewportBuildGuard");
+            Assert.That(guardType, Is.Not.Null,
+                "The WebGL post-build viewport guard must remain in the Editor assembly.");
+
+            MethodInfo patchMethod = guardType.GetMethod(
+                "PatchWebGlIndex",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(patchMethod, Is.Not.Null);
+
+            return (string)patchMethod.Invoke(null, new object[] { html });
         }
 
         [Test]
@@ -116,6 +138,52 @@ namespace Bees.Tests.EditMode
                 "Unity 6000.5 Web builds must avoid the affected WebAssembly 2023 mode.");
             Assert.That(guard, Does.Contain("PlayerSettings.WebGL.webAssemblyTable = false"),
                 "The WebAssembly function-table mode must remain disabled until the Unity/NativeWebSocket compatibility boundary is upgraded.");
+        }
+
+        [Test]
+        public void WebGlGeneratedPlayerShellFillsBrowserViewportInsteadOfPreservingDesktopAspect()
+        {
+            const string generatedIndex = @"<!doctype html>
+<html>
+<head>
+<style>
+#unity-container.unity-desktop { left: 50%; top: 50%; transform: translate(-50%, -50%); aspect-ratio: 16 / 9; }
+#unity-container.unity-desktop #unity-canvas { width: 960px; height: 540px; max-width: 100%; max-height: 100%; object-fit: contain; }
+</style>
+</head>
+<body>
+<div id=""unity-container"" class=""unity-desktop""><canvas id=""unity-canvas""></canvas></div>
+<script>
+var canvas = document.querySelector(""#unity-canvas"");
+var config = { matchWebGLToCanvasSize: false };
+createUnityInstance(canvas, config, (progress) => {});
+</script>
+</body>
+</html>";
+
+            string patched = PatchWebGlIndex(generatedIndex);
+
+            Assert.That(patched, Does.Contain("BEES_FULLSCREEN_VIEWPORT_BEGIN"));
+            Assert.That(patched, Does.Contain("position: fixed !important;"),
+                "The Unity container must be owned by the browser viewport, not a centered desktop rectangle.");
+            Assert.That(patched, Does.Contain("width: 100vw !important;"));
+            Assert.That(patched, Does.Contain("height: 100vh !important;"));
+            Assert.That(patched, Does.Contain("transform: none !important;"));
+            Assert.That(patched, Does.Contain("aspect-ratio: auto !important;"));
+            Assert.That(patched, Does.Contain("object-fit: fill !important;"),
+                "A browser-level contain rule must not preserve a 16:9 render island inside the live canvas box.");
+            Assert.That(patched, Does.Contain("config.matchWebGLToCanvasSize = true;"),
+                "Unity must resize its drawing buffer to the live CSS canvas so Screen.width/height see the real viewport.");
+            Assert.That(
+                patched.IndexOf("config.matchWebGLToCanvasSize = true;", StringComparison.Ordinal),
+                Is.LessThan(patched.IndexOf("createUnityInstance(canvas, config", StringComparison.Ordinal)));
+
+            string patchedAgain = PatchWebGlIndex(patched);
+            Assert.That(patchedAgain, Is.EqualTo(patched),
+                "The post-build patch must be idempotent if another build/deployment step invokes it again.");
+            Assert.That(
+                Regex.Matches(patched, "BEES_FULLSCREEN_VIEWPORT_BEGIN").Count,
+                Is.EqualTo(1));
         }
 
         [Test]
