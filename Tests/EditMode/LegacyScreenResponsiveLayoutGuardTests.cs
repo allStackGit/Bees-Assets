@@ -11,16 +11,17 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName = "Assets.Scripts.UI_Components.LegacyScreenResponsiveLayoutGuard";
 
         [TestCase("Main Menu", true)]
-        [TestCase("Squad Maker", true)]
+        [TestCase("Squad Maker", false)]
         [TestCase("Space", false)]
-        public void FixedReferencePolicyIsLimitedToLegacyPresentationScenes(string sceneName, bool expected)
+        public void FixedReferencePolicyIsLimitedToMainMenu(string sceneName, bool expected)
         {
             bool actual = (bool)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
                 "IsFixedReferencePresentationScene",
                 sceneName);
 
-            Assert.That(actual, Is.EqualTo(expected));
+            Assert.That(actual, Is.EqualTo(expected),
+                "Squad Maker must not be owned by the bounded 1366x768 legacy presentation guard; its dedicated responsive guard owns viewport fill.");
         }
 
         [Test]
