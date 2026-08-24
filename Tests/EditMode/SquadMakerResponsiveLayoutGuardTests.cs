@@ -65,28 +65,36 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [TestCase(2047f, 266f)]
+        [TestCase(574f, 1594f)]
         [TestCase(2000f, 900f)]
-        [TestCase(900f, 2000f)]
-        public void ReferenceSizedStructuralRootFillsEntireLiveViewport(float width, float height)
+        public void CenteredReferenceCompositionMapsToEntireViewportAtAnyAspect(float width, float height)
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(width, height));
-            RectTransform root = CreateRect("Squad Maker Screen", canvas, ReferenceResolution);
-            root.gameObject.AddComponent<HorizontalLayoutGroup>();
+            RectTransform root = CreateRect("Squad Maker Reference Composition", canvas, ReferenceResolution);
 
             try
             {
                 bool changed = (bool)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
-                    "StretchReferenceViewportBranches",
-                    canvas);
+                    "ApplyReferenceProportionalGeometry",
+                    root,
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    Vector2.zero,
+                    ReferenceResolution,
+                    Vector3.one);
 
                 Assert.That(changed, Is.True);
                 AssertVector(root.anchorMin, Vector2.zero);
                 AssertVector(root.anchorMax, Vector2.one);
-                AssertVector(root.offsetMin, Vector2.zero);
-                AssertVector(root.offsetMax, Vector2.zero);
-                Assert.That(root.rect.width, Is.EqualTo(width).Within(0.01f));
-                Assert.That(root.rect.height, Is.EqualTo(height).Within(0.01f));
+                AssertVector(root.anchoredPosition, Vector2.zero);
+                AssertVector(root.sizeDelta, Vector2.zero);
+                Assert.That(root.rect.width, Is.EqualTo(width).Within(0.01f),
+                    "The full reference composition must span the live width instead of remaining a fitted 16:9 island.");
+                Assert.That(root.rect.height, Is.EqualTo(height).Within(0.01f),
+                    "The full reference composition must span the live height instead of remaining a fitted 16:9 island.");
             }
             finally
             {
@@ -95,7 +103,46 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FixedArtboardAnchorMappingIsReversedBeforeViewportLayoutTakesOwnership()
+        public void CenterAnchoredReferenceBranchCarriesPositionAndExtentProportionally()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
+            RectTransform branch = CreateRect("Reference Branch", canvas, new Vector2(600f, 100f));
+            Vector2 authoredAnchor = new Vector2(0.5f, 0.5f);
+            Vector2 authoredPosition = new Vector2(-110f, 230f);
+            branch.anchoredPosition = authoredPosition;
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "ApplyReferenceProportionalGeometry",
+                    branch,
+                    authoredAnchor,
+                    authoredAnchor,
+                    new Vector2(0.5f, 0.5f),
+                    authoredPosition,
+                    new Vector2(600f, 100f),
+                    Vector3.one);
+
+                Vector2 expectedMin = new Vector2(273f / 1366f, 564f / 768f);
+                Vector2 expectedMax = new Vector2(873f / 1366f, 664f / 768f);
+                AssertVector(branch.anchorMin, expectedMin);
+                AssertVector(branch.anchorMax, expectedMax);
+                AssertVector(branch.anchoredPosition, Vector2.zero);
+                AssertVector(branch.sizeDelta, Vector2.zero);
+                Assert.That(branch.rect.width,
+                    Is.EqualTo(2000f * 600f / 1366f).Within(0.01f));
+                Assert.That(branch.rect.height,
+                    Is.EqualTo(900f * 100f / 768f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void FixedArtboardAnchorMappingIsReversedBeforeReferenceGeometryIsCaptured()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
             RectTransform branch = CreateRect("Squad Maker Branch", canvas, new Vector2(400f, 300f));
