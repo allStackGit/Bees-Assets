@@ -200,6 +200,103 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void SquadMakerMainContainerConsumesWideSurplusWithoutFlexibleCellGutters()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));
+            RectTransform mainContainer = CreateRect("Main Container", canvas, new Vector2(2000f, 800f));
+            HorizontalLayoutGroup layout = mainContainer.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = false;
+            layout.childForceExpandWidth = true;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = true;
+
+            RectTransform inventory = CreateRect("Ship Selector Column", mainContainer, new Vector2(262f, 718f));
+            RectTransform workArea = CreateRect("Squad Maker Column", mainContainer, new Vector2(620f, 718f));
+            RectTransform squads = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "RepairSquadMakerMainContainer",
+                    mainContainer);
+
+                Assert.That(changed, Is.True);
+                Assert.That(layout.childForceExpandWidth, Is.False,
+                    "The real scene's force-expand/no-control combination creates invisible flexible cells between fixed-width columns.");
+                Assert.That(inventory.rect.width, Is.EqualTo(262f).Within(0.01f));
+                Assert.That(workArea.rect.width, Is.EqualTo(1254f).Within(0.01f));
+                Assert.That(squads.rect.width, Is.EqualTo(484f).Within(0.01f));
+                Assert.That(inventory.rect.width + workArea.rect.width + squads.rect.width,
+                    Is.EqualTo(mainContainer.rect.width).Within(0.01f),
+                    "All horizontal surplus must become usable Squad Maker work area rather than exposed Main Container backer.");
+
+                mainContainer.sizeDelta = new Vector2(1366f, 800f);
+                changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "RepairSquadMakerMainContainer",
+                    mainContainer);
+
+                Assert.That(changed, Is.True,
+                    "Returning from an ultrawide viewport must shrink the work column back instead of retaining the previous runtime width.");
+                Assert.That(workArea.rect.width, Is.EqualTo(620f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void TallSquadMakerStructuralColumnsFillTheirLiveCrossAxis()
+        {
+            RectTransform canvas = CreateRect("Canvas", null, new Vector2(1366f, 1600f));
+            RectTransform mainContainer = CreateRect("Main Container", canvas, new Vector2(1366f, 1500f));
+            HorizontalLayoutGroup layout = mainContainer.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = false;
+            layout.childForceExpandWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = true;
+
+            RectTransform inventory = CreateRect("Ship Selector Column", mainContainer, new Vector2(262f, 718f));
+            RectTransform workArea = CreateRect("Squad Maker Column", mainContainer, new Vector2(620f, 718f));
+            RectTransform squads = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
+            HorizontalLayoutGroup squadsLayout = squads.gameObject.AddComponent<HorizontalLayoutGroup>();
+            squadsLayout.padding = new RectOffset(0, 0, 0, 0);
+            squadsLayout.spacing = 0f;
+            squadsLayout.childControlWidth = false;
+            squadsLayout.childForceExpandWidth = false;
+            squadsLayout.childControlHeight = false;
+            squadsLayout.childForceExpandHeight = true;
+            RectTransform savedSquads = CreateRect("Saved Squads Column", squads, new Vector2(262f, 718f));
+            RectTransform chosenSquads = CreateRect("Chosen Squads Column", squads, new Vector2(222f, 718f));
+
+            try
+            {
+                bool changed = (bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "RepairSquadMakerMainContainer",
+                    mainContainer);
+
+                Assert.That(changed, Is.True);
+                Assert.That(inventory.rect.height, Is.EqualTo(1500f).Within(0.01f));
+                Assert.That(workArea.rect.height, Is.EqualTo(1500f).Within(0.01f));
+                Assert.That(squads.rect.height, Is.EqualTo(1500f).Within(0.01f));
+                Assert.That(savedSquads.rect.height, Is.EqualTo(1500f).Within(0.01f));
+                Assert.That(chosenSquads.rect.height, Is.EqualTo(1500f).Within(0.01f),
+                    "Nested screen columns must keep filling a tall structural owner even after their authored 718px height falls below the generic live-size coverage threshold.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
         public void SmallLocalButtonRowIsNotTreatedAsScreenStructure()
         {
             RectTransform canvas = CreateRect("Canvas", null, new Vector2(2000f, 900f));

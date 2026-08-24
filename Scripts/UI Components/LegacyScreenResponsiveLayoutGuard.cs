@@ -22,10 +22,13 @@ namespace Assets.Scripts.UI_Components
         private const float FixedAnchorTolerance = 0.001f;
         private const int MinimumMainMenuControls = 4;
         private const int MaxHierarchyDepth = 16;
+        private const string SquadMakerMainContainerName = "Main Container";
+        private const string SquadMakerWorkColumnName = "Squad Maker Column";
         private static readonly Vector2 MainMenuReferenceSize = new Vector2(1366f, 668f);
 
         private Canvas _canvas;
         private RectTransform _canvasRect;
+        private RectTransform _squadMakerMainContainer;
         private string _sceneName;
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
@@ -79,6 +82,9 @@ namespace Assets.Scripts.UI_Components
             _canvas = canvas;
             _canvasRect = canvas != null ? canvas.transform as RectTransform : null;
             _sceneName = sceneName;
+            _squadMakerMainContainer = string.Equals(sceneName, "Squad Maker", StringComparison.Ordinal)
+                ? FindDescendantByName(_canvasRect, SquadMakerMainContainerName)
+                : null;
             _lastScreenWidth = -1;
             _lastScreenHeight = -1;
             ApplyResponsiveRepair();
@@ -119,6 +125,10 @@ namespace Assets.Scripts.UI_Components
             if (string.Equals(_sceneName, "Main Menu", StringComparison.Ordinal))
             {
                 ExpandMainMenuInteractiveRoot(_canvasRect);
+            }
+            else if (string.Equals(_sceneName, "Squad Maker", StringComparison.Ordinal))
+            {
+                RepairSquadMakerMainContainer(_squadMakerMainContainer);
             }
 
             RepairNestedStructuralLayouts(_canvasRect, _canvasRect, 0);
@@ -196,6 +206,61 @@ namespace Assets.Scripts.UI_Components
             return changed;
         }
 
+        /// <summary>
+        /// The Squad Maker's top-level row is authored as three fixed-width columns whose widths
+        /// total 1366. Its HorizontalLayoutGroup also has childForceExpandWidth enabled while
+        /// childControlWidth is disabled. Unity therefore expands the invisible layout cells but
+        /// leaves the visible columns at their old widths, exposing equal strips of the blue Main
+        /// Container between them on wide displays. Normalize that contradictory ownership and
+        /// assign all live horizontal surplus (or deficit) to the central Squad Maker work column.
+        /// The root columns and the direct Squads sub-columns also fill the live height so 718px
+        /// authored regions do not detach from their owners on very tall displays.
+        /// </summary>
+        internal static bool RepairSquadMakerMainContainer(RectTransform mainContainer)
+        {
+            if (mainContainer == null ||
+                !string.Equals(mainContainer.gameObject.name, SquadMakerMainContainerName, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup layout = mainContainer.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null || layout.childControlWidth)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            if (layout.childForceExpandWidth)
+            {
+                layout.childForceExpandWidth = false;
+                changed = true;
+            }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(mainContainer);
+            changed |= FitNamedHorizontalLayoutChild(mainContainer, SquadMakerWorkColumnName);
+            changed |= FitStructuralHorizontalCrossAxisChildren(mainContainer);
+
+            // The scene's right-hand Squads Column is itself a direct horizontal structural row
+            // (Saved Squads + Chosen Squads). Repair only direct child rows here rather than scanning
+            // the entire UI hierarchy every quarter second.
+            for (int i = 0; i < mainContainer.childCount; i++)
+            {
+                RectTransform child = mainContainer.GetChild(i) as RectTransform;
+                if (child != null && child.GetComponent<HorizontalLayoutGroup>() != null)
+                {
+                    changed |= FitStructuralHorizontalCrossAxisChildren(child);
+                }
+            }
+
+            if (changed)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(mainContainer);
+            }
+
+            return changed;
+        }
+
         private static Vector2 FitAspectInside(Vector2 availableSize, float aspect)
         {
             if (availableSize.x <= 0f || availableSize.y <= 0f || aspect <= 0f)
@@ -234,6 +299,31 @@ namespace Assets.Scripts.UI_Components
             }
 
             return current.parent == canvasRect ? current : null;
+        }
+
+        private static RectTransform FindDescendantByName(RectTransform root, string objectName)
+        {
+            if (root == null || string.IsNullOrEmpty(objectName))
+            {
+                return null;
+            }
+
+            if (string.Equals(root.gameObject.name, objectName, StringComparison.Ordinal))
+            {
+                return root;
+            }
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                RectTransform child = root.GetChild(i) as RectTransform;
+                RectTransform match = FindDescendantByName(child, objectName);
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -372,6 +462,134 @@ namespace Assets.Scripts.UI_Components
                 RectTransform.Axis.Horizontal,
                 targetScaledWidth / dominantScale);
             return true;
+        }
+
+        /// <summary>
+        /// Sizes one explicitly owned horizontal work region to the space left after its fixed
+        /// siblings. Unlike the generic dominance heuristic, this works in both directions so a
+        /// column enlarged on an ultrawide display returns to its authored width when the viewport
+        /// returns to 16:9.
+        /// </summary>
+        internal static bool FitNamedHorizontalLayoutChild(RectTransform layoutRoot, string childName)
+        {
+            if (layoutRoot == null || string.IsNullOrEmpty(childName))
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null || layout.childControlWidth)
+            {
+                return false;
+            }
+
+            RectTransform flexibleChild = null;
+            float fixedOtherWidth = 0f;
+            int participatingChildren = 0;
+
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (!CanParticipateInManualLayoutSizing(child) ||
+                    Mathf.Abs(child.anchorMax.x - child.anchorMin.x) > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float scale = Mathf.Abs(child.localScale.x);
+                float width = Mathf.Abs(child.rect.width * scale);
+                if (scale <= 0.0001f || width <= 0f)
+                {
+                    continue;
+                }
+
+                participatingChildren++;
+                if (string.Equals(child.gameObject.name, childName, StringComparison.Ordinal))
+                {
+                    flexibleChild = child;
+                }
+                else
+                {
+                    fixedOtherWidth += width;
+                }
+            }
+
+            if (flexibleChild == null || participatingChildren < 2)
+            {
+                return false;
+            }
+
+            float availableWidth = layoutRoot.rect.width - layout.padding.left - layout.padding.right;
+            float spacingWidth = layout.spacing * (participatingChildren - 1);
+            float targetScaledWidth = availableWidth - spacingWidth - fixedOtherWidth;
+            float flexibleScale = Mathf.Abs(flexibleChild.localScale.x);
+            if (targetScaledWidth <= 0f || flexibleScale <= 0.0001f)
+            {
+                return false;
+            }
+
+            float targetWidth = targetScaledWidth / flexibleScale;
+            if (Mathf.Abs(targetWidth - flexibleChild.rect.width) < 0.01f)
+            {
+                return false;
+            }
+
+            flexibleChild.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetWidth);
+            return true;
+        }
+
+        /// <summary>
+        /// Structural horizontal rows represent screen columns, not local cards. Once their owner
+        /// receives additional height on a tall display, every participating fixed-anchor column
+        /// must fill that live cross-axis. Comparing an old 718px child against the already-expanded
+        /// parent would otherwise stop recognizing it on sufficiently tall viewports.
+        /// </summary>
+        internal static bool FitStructuralHorizontalCrossAxisChildren(RectTransform layoutRoot)
+        {
+            if (layoutRoot == null)
+            {
+                return false;
+            }
+
+            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null || layout.childControlHeight)
+            {
+                return false;
+            }
+
+            float availableHeight = layoutRoot.rect.height - layout.padding.top - layout.padding.bottom;
+            if (availableHeight <= 0f)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            for (int i = 0; i < layoutRoot.childCount; i++)
+            {
+                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
+                if (!CanParticipateInManualLayoutSizing(child) ||
+                    Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
+                {
+                    continue;
+                }
+
+                float scale = Mathf.Abs(child.localScale.y);
+                if (scale <= 0.0001f)
+                {
+                    continue;
+                }
+
+                float targetHeight = availableHeight / scale;
+                if (Mathf.Abs(targetHeight - child.rect.height) < 0.01f)
+                {
+                    continue;
+                }
+
+                child.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
+                changed = true;
+            }
+
+            return changed;
         }
 
         internal static bool IsStructuralLayout(RectTransform canvasRect, RectTransform layoutRoot)
