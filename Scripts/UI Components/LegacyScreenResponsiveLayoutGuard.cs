@@ -564,6 +564,25 @@ namespace Assets.Scripts.UI_Components
             return changed;
         }
 
+        internal static float CalculateBackdropCoverScale(Vector2 viewportSize, Vector2 sourceSize)
+        {
+            if (viewportSize.x <= 0f || viewportSize.y <= 0f ||
+                sourceSize.x <= 0f || sourceSize.y <= 0f)
+            {
+                return 1f;
+            }
+
+            float viewportAspect = viewportSize.x / viewportSize.y;
+            float sourceAspect = sourceSize.x / sourceSize.y;
+            return Mathf.Max(1f, Mathf.Max(viewportAspect / sourceAspect, sourceAspect / viewportAspect));
+        }
+
+        /// <summary>
+        /// A viewport backdrop must cover with the rendered graphic, not merely with its
+        /// RectTransform. Unity Image.preserveAspect uses contain semantics, which letterboxes a
+        /// square starfield inside ultrawide or portrait canvases even after the RectTransform is
+        /// stretched. Scale preserve-aspect Images just enough to envelope the viewport instead.
+        /// </summary>
         internal static bool StretchBackdrop(RectTransform rect)
         {
             if (rect == null)
@@ -571,14 +590,26 @@ namespace Assets.Scripts.UI_Components
                 return false;
             }
 
+            RectTransform parent = rect.parent as RectTransform;
+            Vector2 viewportSize = parent != null ? parent.rect.size : rect.rect.size;
+            float coverScale = 1f;
+            Image image = rect.GetComponent<Image>();
+            if (image != null && image.preserveAspect && image.sprite != null)
+            {
+                coverScale = CalculateBackdropCoverScale(viewportSize, image.sprite.rect.size);
+            }
+
+            Vector3 targetScale = new Vector3(coverScale, coverScale, 1f);
             bool changed = !Approximately(rect.anchorMin, Vector2.zero) ||
                            !Approximately(rect.anchorMax, Vector2.one) ||
                            !Approximately(rect.offsetMin, Vector2.zero) ||
-                           !Approximately(rect.offsetMax, Vector2.zero);
+                           !Approximately(rect.offsetMax, Vector2.zero) ||
+                           !Approximately(rect.localScale, targetScale);
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
+            rect.localScale = targetScale;
             return changed;
         }
 
