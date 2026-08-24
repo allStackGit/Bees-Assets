@@ -75,6 +75,28 @@ namespace Bees.Tests.EditMode
                     new Vector2(262f, 718f),
                     new Vector2(222f, 718f));
 
+                // A periodic repair at an unchanged aspect must remain on the explicit owner path.
+                // Falling back to the generic vertical fitting pass here would shave the authored
+                // one-unit body/footer overlap and reintroduce cumulative geometry drift.
+                ApplyAndAssert(
+                    guard,
+                    canvas,
+                    new Vector2(2000f, 768f),
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
+                    new Vector2(2000f, 718f),
+                    new Vector2(2000f, 51f),
+                    new Vector2(262f, 718f),
+                    new Vector2(1254f, 718f),
+                    new Vector2(484f, 718f),
+                    new Vector2(262f, 718f),
+                    new Vector2(222f, 718f));
+
                 ApplyAndAssert(
                     guard,
                     canvas,
