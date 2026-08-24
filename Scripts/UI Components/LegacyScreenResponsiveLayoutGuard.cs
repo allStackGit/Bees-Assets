@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -6,35 +7,52 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Scene-scoped responsive repair for legacy menu screens whose nested layout regions were
-    /// authored at 1366x768. RootCanvasCompatibilityGuard owns root viewport/scaler compatibility;
-    /// this pass handles nested layout groups that receive a larger allocation from an expanded
-    /// root layout but keep reference-sized descendants inside that allocation.
+    /// Keeps the legacy Main Menu and Squad Maker composed against the 1366x768 artboard they were
+    /// authored for. These screens are not fluid dashboards: stretching their internal layout groups
+    /// changes relative proportions, opens filler regions and separates controls. CanvasScaler.Expand
+    /// provides uniform physical scaling, while this guard maps only the root presentation anchors
+    /// into a centered 1366x768 virtual frame and leaves the authored child geometry intact.
     /// </summary>
-    [DefaultExecutionOrder(-750)]
+    [DefaultExecutionOrder(-1000)]
     public sealed class LegacyScreenResponsiveLayoutGuard : MonoBehaviour
     {
+        private const string MainMenuSceneName = "Main Menu";
+        private const string SquadMakerSceneName = "Squad Maker";
         private const float RepairInterval = 0.25f;
-        private const float StructuralWidthCoverage = 0.20f;
-        private const float StructuralHeightCoverage = 0.20f;
-        private const float RelaxedHorizontalMinimumCoverage = 0.20f;
-        private const float RelaxedHorizontalDominanceRatio = 1.5f;
-        private const float FixedAnchorTolerance = 0.001f;
-        private const int MinimumMainMenuControls = 4;
-        private const int MaxHierarchyDepth = 16;
-        private const string SquadMakerMainContainerName = "Main Container";
-        private const string SquadMakerWorkColumnName = "Squad Maker Column";
-        private static readonly Vector2 MainMenuReferenceSize = new Vector2(1366f, 668f);
+        private const float AnchorTolerance = 0.001f;
+        private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
+
+        private sealed class RectGeometry
+        {
+            public RectTransform Rect;
+            public Vector2 AnchorMin;
+            public Vector2 AnchorMax;
+            public Vector2 Pivot;
+            public Vector2 AnchoredPosition;
+            public Vector2 SizeDelta;
+            public Vector3 LocalScale;
+        }
+
+        private sealed class PresentationBranch
+        {
+            public RectGeometry Root;
+            public readonly List<RectGeometry> Descendants = new List<RectGeometry>();
+            public bool IsBackdrop;
+        }
 
         private Canvas _canvas;
+        private CanvasScaler _scaler;
         private RectTransform _canvasRect;
-        private RectTransform _squadMakerMainContainer;
         private string _sceneName;
+        private readonly List<PresentationBranch> _branches = new List<PresentationBranch>();
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
         private float _nextRepairTime;
+        private bool _restoredAfterCompetingInitialization;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        // Subscribe before the generic BeforeSceneLoad installers. This lets us snapshot the actual
+        // authored RectTransform data before any compatibility guard has a chance to rewrite it.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
         {
             SceneManager.sceneLoaded -= HandleSceneLoaded;
@@ -43,7 +61,7 @@ namespace Assets.Scripts.UI_Components
 
         private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            if (!IsSupportedScene(scene.name))
+            if (!IsFixedReferencePresentationScene(scene.name))
             {
                 return;
             }
@@ -71,49 +89,180 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        private static bool IsSupportedScene(string sceneName)
+        internal static bool IsFixedReferencePresentationScene(string sceneName)
         {
-            return string.Equals(sceneName, "Squad Maker", StringComparison.Ordinal) ||
-                   string.Equals(sceneName, "Main Menu", StringComparison.Ordinal);
+            return string.Equals(sceneName, MainMenuSceneName, StringComparison.Ordinal) ||
+                   string.Equals(sceneName, SquadMakerSceneName, StringComparison.Ordinal);
         }
 
         private void Initialize(Canvas canvas, string sceneName)
         {
             _canvas = canvas;
             _canvasRect = canvas != null ? canvas.transform as RectTransform : null;
+            _scaler = canvas != null ? canvas.GetComponent<CanvasScaler>() : null;
+            if (_canvas != null && _scaler == null)
+            {
+                _scaler = _canvas.gameObject.AddComponent<CanvasScaler>();
+            }
+
             _sceneName = sceneName;
-            _squadMakerMainContainer = string.Equals(sceneName, "Squad Maker", StringComparison.Ordinal)
-                ? FindDescendantByName(_canvasRect, SquadMakerMainContainerName)
-                : null;
-            _lastScreenWidth = -1;
-            _lastScreenHeight = -1;
-            ApplyResponsiveRepair();
+            ConfigureScaler();
+            CaptureAuthoredBranches();
+            _lastScreenWidth = Screen.width;
+            _lastScreenHeight = Screen.height;
+            _restoredAfterCompetingInitialization = false;
+            ApplyReferencePresentation(restoreDescendants: false);
         }
 
-        private void LateUpdate()
+        private void Update()
         {
             if (_canvas == null || _canvasRect == null)
             {
                 return;
             }
 
+            DisableCompetingGeometryGuards();
+            ConfigureScaler();
+
             bool displayChanged = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight;
             if (displayChanged)
             {
                 _lastScreenWidth = Screen.width;
                 _lastScreenHeight = Screen.height;
+                ConfigData.ScreenWidth = Screen.width;
+                ConfigData.ScreenHeight = Screen.height;
             }
 
-            if (!displayChanged && Time.unscaledTime < _nextRepairTime)
+            bool firstStableFrame = !_restoredAfterCompetingInitialization;
+            if (!firstStableFrame && !displayChanged && Time.unscaledTime < _nextRepairTime)
             {
                 return;
             }
 
             _nextRepairTime = Time.unscaledTime + RepairInterval;
-            ApplyResponsiveRepair();
+            CaptureNewDirectBranches();
+            ApplyReferencePresentation(firstStableFrame);
+            _restoredAfterCompetingInitialization = true;
         }
 
-        private void ApplyResponsiveRepair()
+        private void ConfigureScaler()
+        {
+            if (_scaler == null)
+            {
+                return;
+            }
+
+            _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            _scaler.referenceResolution = ReferenceResolution;
+            _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        }
+
+        private void DisableCompetingGeometryGuards()
+        {
+            ResponsiveScreenLayoutGuard responsive = _canvas.GetComponent<ResponsiveScreenLayoutGuard>();
+            if (responsive != null && responsive.enabled)
+            {
+                responsive.enabled = false;
+            }
+
+            RootCanvasCompatibilityGuard compatibility = _canvas.GetComponent<RootCanvasCompatibilityGuard>();
+            if (compatibility != null && compatibility.enabled)
+            {
+                compatibility.enabled = false;
+            }
+        }
+
+        private void CaptureAuthoredBranches()
+        {
+            _branches.Clear();
+            CaptureNewDirectBranches();
+        }
+
+        private void CaptureNewDirectBranches()
+        {
+            if (_canvasRect == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _canvasRect.childCount; i++)
+            {
+                RectTransform child = _canvasRect.GetChild(i) as RectTransform;
+                if (child == null || IsAlreadyCaptured(child))
+                {
+                    continue;
+                }
+
+                PresentationBranch branch = new PresentationBranch
+                {
+                    Root = CaptureGeometry(child),
+                    IsBackdrop = IsViewportBackdrop(child)
+                };
+                CaptureDescendants(child, branch.Descendants);
+                _branches.Add(branch);
+            }
+        }
+
+        private bool IsAlreadyCaptured(RectTransform rect)
+        {
+            for (int i = 0; i < _branches.Count; i++)
+            {
+                if (_branches[i].Root.Rect == rect)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static RectGeometry CaptureGeometry(RectTransform rect)
+        {
+            return new RectGeometry
+            {
+                Rect = rect,
+                AnchorMin = rect.anchorMin,
+                AnchorMax = rect.anchorMax,
+                Pivot = rect.pivot,
+                AnchoredPosition = rect.anchoredPosition,
+                SizeDelta = rect.sizeDelta,
+                LocalScale = rect.localScale
+            };
+        }
+
+        private static void CaptureDescendants(RectTransform parent, List<RectGeometry> destination)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                RectTransform child = parent.GetChild(i) as RectTransform;
+                if (child == null)
+                {
+                    continue;
+                }
+
+                destination.Add(CaptureGeometry(child));
+                CaptureDescendants(child, destination);
+            }
+        }
+
+        private static bool IsViewportBackdrop(RectTransform branch)
+        {
+            if (branch == null || branch.GetComponentInChildren<Selectable>(true) != null ||
+                branch.GetComponentInChildren<LayoutGroup>(true) != null)
+            {
+                return false;
+            }
+
+            string objectName = branch.gameObject.name;
+            bool namedBackdrop = objectName.IndexOf("background", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 objectName.IndexOf("backer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 objectName.IndexOf("starfield", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool fullStretch = Approximately(branch.anchorMin, Vector2.zero) &&
+                               Approximately(branch.anchorMax, Vector2.one);
+            return namedBackdrop || fullStretch;
+        }
+
+        private void ApplyReferencePresentation(bool restoreDescendants)
         {
             if (_canvasRect == null)
             {
@@ -121,504 +270,147 @@ namespace Assets.Scripts.UI_Components
             }
 
             Canvas.ForceUpdateCanvases();
-
-            if (string.Equals(_sceneName, "Main Menu", StringComparison.Ordinal))
+            Vector2 canvasSize = _canvasRect.rect.size;
+            if (canvasSize.x <= 0f || canvasSize.y <= 0f)
             {
-                ExpandMainMenuInteractiveRoot(_canvasRect);
-            }
-            else if (string.Equals(_sceneName, "Squad Maker", StringComparison.Ordinal))
-            {
-                RepairSquadMakerMainContainer(_squadMakerMainContainer);
+                return;
             }
 
-            RepairNestedStructuralLayouts(_canvasRect, _canvasRect, 0);
+            for (int i = 0; i < _branches.Count; i++)
+            {
+                PresentationBranch branch = _branches[i];
+                if (branch.Root.Rect == null)
+                {
+                    continue;
+                }
+
+                if (restoreDescendants)
+                {
+                    for (int j = 0; j < branch.Descendants.Count; j++)
+                    {
+                        RestoreGeometry(branch.Descendants[j]);
+                    }
+                }
+
+                if (branch.IsBackdrop)
+                {
+                    StretchBackdrop(branch.Root.Rect);
+                }
+                else
+                {
+                    ApplyReferenceRootGeometry(branch.Root, canvasSize);
+                }
+
+                if (branch.Root.Rect.GetComponent<LayoutGroup>() != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(branch.Root.Rect);
+                }
+            }
+
             Canvas.ForceUpdateCanvases();
         }
 
-        /// <summary>
-        /// The Main Menu's interactive UI lives under one direct canvas branch authored for the
-        /// 1366x668 presentation frame. Keep that branch centered and no larger than its authored
-        /// reference size. On narrower/shorter canvases it scales down uniformly to fit; on
-        /// ultrawide or very tall canvases the extra viewport remains available to the starfield
-        /// instead of stretching the green menu frame to fill it.
-        /// </summary>
-        internal static bool ExpandMainMenuInteractiveRoot(RectTransform canvasRect)
+        private static void RestoreGeometry(RectGeometry geometry)
         {
-            if (canvasRect == null)
+            if (geometry == null || geometry.Rect == null)
             {
-                return false;
+                return;
             }
 
-            Selectable[] controls = canvasRect.GetComponentsInChildren<Selectable>(true);
-            if (controls.Length < MinimumMainMenuControls)
+            geometry.Rect.anchorMin = geometry.AnchorMin;
+            geometry.Rect.anchorMax = geometry.AnchorMax;
+            geometry.Rect.pivot = geometry.Pivot;
+            geometry.Rect.anchoredPosition = geometry.AnchoredPosition;
+            geometry.Rect.sizeDelta = geometry.SizeDelta;
+            geometry.Rect.localScale = geometry.LocalScale;
+        }
+
+        private static void ApplyReferenceRootGeometry(RectGeometry geometry, Vector2 canvasSize)
+        {
+            if (geometry == null || geometry.Rect == null)
             {
-                return false;
+                return;
             }
 
-            RectTransform candidate = FindDirectCanvasBranch(canvasRect, controls[0].transform as RectTransform);
-            if (candidate == null || candidate == canvasRect || candidate.parent is not RectTransform parent ||
-                parent.GetComponent<LayoutGroup>() != null)
-            {
-                return false;
-            }
+            geometry.Rect.anchorMin = MapReferenceAnchor(geometry.AnchorMin, canvasSize);
+            geometry.Rect.anchorMax = MapReferenceAnchor(geometry.AnchorMax, canvasSize);
+            geometry.Rect.pivot = geometry.Pivot;
+            geometry.Rect.anchoredPosition = geometry.AnchoredPosition;
+            geometry.Rect.sizeDelta = geometry.SizeDelta;
+            geometry.Rect.localScale = geometry.LocalScale;
+        }
 
-            for (int i = 1; i < controls.Length; i++)
-            {
-                Transform controlTransform = controls[i] != null ? controls[i].transform : null;
-                if (controlTransform != null && !controlTransform.IsChildOf(candidate))
-                {
-                    return false;
-                }
-            }
-
-            Vector2 canvasSize = canvasRect.rect.size;
+        internal static Vector2 MapReferenceAnchor(Vector2 authoredAnchor, Vector2 canvasSize)
+        {
             if (canvasSize.x <= 0f || canvasSize.y <= 0f)
             {
-                return false;
+                return authoredAnchor;
             }
 
-            // Do not infer the authored aspect from candidate.rect here. The generic responsive
-            // wrapper can temporarily stretch this same legacy branch before this late ownership
-            // pass runs. Treating that transient runtime size as the new authored baseline makes
-            // repeated resolution changes progressively distort and shrink the menu presentation.
-            float authoredAspect = MainMenuReferenceSize.x / MainMenuReferenceSize.y;
-            Vector2 availableSize = new Vector2(
-                Mathf.Min(canvasSize.x, MainMenuReferenceSize.x),
-                Mathf.Min(canvasSize.y, MainMenuReferenceSize.y));
-            Vector2 targetSize = FitAspectInside(availableSize, authoredAspect);
-            if (targetSize.x <= 0f || targetSize.y <= 0f)
+            Vector2 referenceOrigin = (canvasSize - ReferenceResolution) * 0.5f;
+            return new Vector2(
+                (referenceOrigin.x + authoredAnchor.x * ReferenceResolution.x) / canvasSize.x,
+                (referenceOrigin.y + authoredAnchor.y * ReferenceResolution.y) / canvasSize.y);
+        }
+
+        internal static bool ApplyReferenceGeometryForTest(
+            RectTransform rect,
+            Vector2 canvasSize,
+            Vector2 authoredAnchorMin,
+            Vector2 authoredAnchorMax,
+            Vector2 authoredPosition,
+            Vector2 authoredSize)
+        {
+            if (rect == null)
             {
                 return false;
             }
 
-            Vector2 centeredAnchor = new Vector2(0.5f, 0.5f);
-            bool changed = !Approximately(candidate.anchorMin, centeredAnchor) ||
-                           !Approximately(candidate.anchorMax, centeredAnchor) ||
-                           !Approximately(candidate.pivot, centeredAnchor) ||
-                           !Approximately(candidate.anchoredPosition, Vector2.zero) ||
-                           !Approximately(candidate.sizeDelta, targetSize);
+            Vector2 mappedMin = MapReferenceAnchor(authoredAnchorMin, canvasSize);
+            Vector2 mappedMax = MapReferenceAnchor(authoredAnchorMax, canvasSize);
+            bool changed = !Approximately(rect.anchorMin, mappedMin) ||
+                           !Approximately(rect.anchorMax, mappedMax) ||
+                           !Approximately(rect.anchoredPosition, authoredPosition) ||
+                           !Approximately(rect.sizeDelta, authoredSize) ||
+                           !Approximately(rect.localScale, Vector3.one);
 
-            candidate.anchorMin = centeredAnchor;
-            candidate.anchorMax = centeredAnchor;
-            candidate.pivot = centeredAnchor;
-            candidate.anchoredPosition = Vector2.zero;
-            candidate.sizeDelta = targetSize;
+            rect.anchorMin = mappedMin;
+            rect.anchorMax = mappedMax;
+            rect.anchoredPosition = authoredPosition;
+            rect.sizeDelta = authoredSize;
+            rect.localScale = Vector3.one;
             return changed;
         }
 
-        /// <summary>
-        /// The Squad Maker's top-level row is authored as three fixed-width columns whose widths
-        /// total 1366. Its HorizontalLayoutGroup also has childForceExpandWidth enabled while
-        /// childControlWidth is disabled. Unity therefore expands the invisible layout cells but
-        /// leaves the visible columns at their old widths, exposing equal strips of the blue Main
-        /// Container between them on wide displays. Normalize that contradictory ownership and
-        /// assign all live horizontal surplus (or deficit) to the central Squad Maker work column.
-        /// The root columns and the direct Squads sub-columns also fill the live height so 718px
-        /// authored regions do not detach from their owners on very tall displays.
-        /// </summary>
-        internal static bool RepairSquadMakerMainContainer(RectTransform mainContainer)
+        internal static bool StretchBackdrop(RectTransform rect)
         {
-            if (mainContainer == null ||
-                !string.Equals(mainContainer.gameObject.name, SquadMakerMainContainerName, StringComparison.Ordinal))
+            if (rect == null)
             {
                 return false;
             }
 
-            HorizontalLayoutGroup layout = mainContainer.GetComponent<HorizontalLayoutGroup>();
-            if (layout == null || layout.childControlWidth)
-            {
-                return false;
-            }
-
-            bool changed = false;
-            if (layout.childForceExpandWidth)
-            {
-                layout.childForceExpandWidth = false;
-                changed = true;
-            }
-
-            LayoutRebuilder.ForceRebuildLayoutImmediate(mainContainer);
-            changed |= FitNamedHorizontalLayoutChild(mainContainer, SquadMakerWorkColumnName);
-            changed |= FitStructuralHorizontalCrossAxisChildren(mainContainer);
-
-            // The scene's right-hand Squads Column is itself a direct horizontal structural row
-            // (Saved Squads + Chosen Squads). Repair only direct child rows here rather than scanning
-            // the entire UI hierarchy every quarter second.
-            for (int i = 0; i < mainContainer.childCount; i++)
-            {
-                RectTransform child = mainContainer.GetChild(i) as RectTransform;
-                if (child != null && child.GetComponent<HorizontalLayoutGroup>() != null)
-                {
-                    changed |= FitStructuralHorizontalCrossAxisChildren(child);
-                }
-            }
-
-            if (changed)
-            {
-                LayoutRebuilder.ForceRebuildLayoutImmediate(mainContainer);
-            }
-
+            bool changed = !Approximately(rect.anchorMin, Vector2.zero) ||
+                           !Approximately(rect.anchorMax, Vector2.one) ||
+                           !Approximately(rect.offsetMin, Vector2.zero) ||
+                           !Approximately(rect.offsetMax, Vector2.zero);
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
             return changed;
-        }
-
-        private static Vector2 FitAspectInside(Vector2 availableSize, float aspect)
-        {
-            if (availableSize.x <= 0f || availableSize.y <= 0f || aspect <= 0f)
-            {
-                return Vector2.zero;
-            }
-
-            float width = availableSize.x;
-            float height = width / aspect;
-            if (height > availableSize.y)
-            {
-                height = availableSize.y;
-                width = height * aspect;
-            }
-
-            return new Vector2(width, height);
         }
 
         private static bool Approximately(Vector2 left, Vector2 right)
         {
-            return Mathf.Abs(left.x - right.x) <= 0.01f &&
-                   Mathf.Abs(left.y - right.y) <= 0.01f;
+            return Mathf.Abs(left.x - right.x) <= AnchorTolerance &&
+                   Mathf.Abs(left.y - right.y) <= AnchorTolerance;
         }
 
-        private static RectTransform FindDirectCanvasBranch(RectTransform canvasRect, RectTransform descendant)
+        private static bool Approximately(Vector3 left, Vector3 right)
         {
-            if (canvasRect == null || descendant == null || !descendant.IsChildOf(canvasRect))
-            {
-                return null;
-            }
-
-            RectTransform current = descendant;
-            while (current.parent is RectTransform parent && parent != canvasRect)
-            {
-                current = parent;
-            }
-
-            return current.parent == canvasRect ? current : null;
-        }
-
-        private static RectTransform FindDescendantByName(RectTransform root, string objectName)
-        {
-            if (root == null || string.IsNullOrEmpty(objectName))
-            {
-                return null;
-            }
-
-            if (string.Equals(root.gameObject.name, objectName, StringComparison.Ordinal))
-            {
-                return root;
-            }
-
-            for (int i = 0; i < root.childCount; i++)
-            {
-                RectTransform child = root.GetChild(i) as RectTransform;
-                RectTransform match = FindDescendantByName(child, objectName);
-                if (match != null)
-                {
-                    return match;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Runs the existing dominant-axis/cross-axis compatibility rules on nested structural
-        /// LayoutGroups as well as root viewport owners. Small local rows are filtered out using
-        /// their size relative to the root canvas, so button strips are not treated as screen
-        /// structure.
-        /// </summary>
-        internal static bool RepairNestedStructuralLayouts(
-            RectTransform canvasRect,
-            RectTransform current,
-            int depth)
-        {
-            if (canvasRect == null || current == null || depth >= MaxHierarchyDepth)
-            {
-                return false;
-            }
-
-            bool changed = false;
-            LayoutGroup layout = current.GetComponent<LayoutGroup>();
-            if (layout != null && IsStructuralLayout(canvasRect, current))
-            {
-                LayoutRebuilder.ForceRebuildLayoutImmediate(current);
-                changed |= RootCanvasCompatibilityGuard.FitDominantVerticalLayoutChild(current);
-                changed |= RootCanvasCompatibilityGuard.FitDominantHorizontalLayoutChild(current);
-                changed |= FitDominantStructuralHorizontalChild(current);
-                changed |= RootCanvasCompatibilityGuard.FitLayoutCrossAxisChildren(current);
-                if (changed)
-                {
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(current);
-                }
-            }
-
-            for (int i = 0; i < current.childCount; i++)
-            {
-                RectTransform child = current.GetChild(i) as RectTransform;
-                if (child == null)
-                {
-                    continue;
-                }
-
-                Canvas nestedCanvas = child.GetComponent<Canvas>();
-                if (nestedCanvas != null && nestedCanvas.transform != canvasRect && nestedCanvas.isRootCanvas)
-                {
-                    continue;
-                }
-
-                changed |= RepairNestedStructuralLayouts(canvasRect, child, depth + 1);
-            }
-
-            return changed;
-        }
-
-        /// <summary>
-        /// The Squad Maker's ultrawide root row contains several fixed-width side regions, so its
-        /// main work region can be clearly dominant without occupying half of the expanded canvas.
-        /// Allow that uniquely dominant region to absorb positive surplus while never shrinking
-        /// siblings or treating equal-width control rows as flexible screen structure.
-        /// </summary>
-        internal static bool FitDominantStructuralHorizontalChild(RectTransform layoutRoot)
-        {
-            if (layoutRoot == null)
-            {
-                return false;
-            }
-
-            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
-            if (layout == null || layout.childControlWidth)
-            {
-                return false;
-            }
-
-            RectTransform dominantChild = null;
-            float dominantWidth = -1f;
-            float secondWidth = -1f;
-            float totalChildWidth = 0f;
-            int participatingChildren = 0;
-
-            for (int i = 0; i < layoutRoot.childCount; i++)
-            {
-                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
-                if (!CanParticipateInManualLayoutSizing(child) ||
-                    Mathf.Abs(child.anchorMax.x - child.anchorMin.x) > FixedAnchorTolerance)
-                {
-                    continue;
-                }
-
-                float width = Mathf.Abs(child.rect.width * child.localScale.x);
-                if (width <= 0f)
-                {
-                    continue;
-                }
-
-                participatingChildren++;
-                totalChildWidth += width;
-                if (width > dominantWidth)
-                {
-                    secondWidth = dominantWidth;
-                    dominantWidth = width;
-                    dominantChild = child;
-                }
-                else if (width > secondWidth)
-                {
-                    secondWidth = width;
-                }
-            }
-
-            if (dominantChild == null || participatingChildren < 2)
-            {
-                return false;
-            }
-
-            float availableWidth = layoutRoot.rect.width - layout.padding.left - layout.padding.right;
-            if (availableWidth <= 0f ||
-                dominantWidth < availableWidth * RelaxedHorizontalMinimumCoverage ||
-                (secondWidth > 0f && dominantWidth < secondWidth * RelaxedHorizontalDominanceRatio))
-            {
-                return false;
-            }
-
-            float spacingWidth = layout.spacing * (participatingChildren - 1);
-            float fixedOtherWidth = totalChildWidth - dominantWidth;
-            float targetScaledWidth = availableWidth - spacingWidth - fixedOtherWidth;
-            if (targetScaledWidth <= dominantWidth + 0.01f)
-            {
-                return false;
-            }
-
-            float dominantScale = Mathf.Abs(dominantChild.localScale.x);
-            if (dominantScale <= 0.0001f)
-            {
-                return false;
-            }
-
-            dominantChild.SetSizeWithCurrentAnchors(
-                RectTransform.Axis.Horizontal,
-                targetScaledWidth / dominantScale);
-            return true;
-        }
-
-        /// <summary>
-        /// Sizes one explicitly owned horizontal work region to the space left after its fixed
-        /// siblings. Unlike the generic dominance heuristic, this works in both directions so a
-        /// column enlarged on an ultrawide display returns to its authored width when the viewport
-        /// returns to 16:9.
-        /// </summary>
-        internal static bool FitNamedHorizontalLayoutChild(RectTransform layoutRoot, string childName)
-        {
-            if (layoutRoot == null || string.IsNullOrEmpty(childName))
-            {
-                return false;
-            }
-
-            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
-            if (layout == null || layout.childControlWidth)
-            {
-                return false;
-            }
-
-            RectTransform flexibleChild = null;
-            float fixedOtherWidth = 0f;
-            int participatingChildren = 0;
-
-            for (int i = 0; i < layoutRoot.childCount; i++)
-            {
-                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
-                if (!CanParticipateInManualLayoutSizing(child) ||
-                    Mathf.Abs(child.anchorMax.x - child.anchorMin.x) > FixedAnchorTolerance)
-                {
-                    continue;
-                }
-
-                float scale = Mathf.Abs(child.localScale.x);
-                float width = Mathf.Abs(child.rect.width * scale);
-                if (scale <= 0.0001f || width <= 0f)
-                {
-                    continue;
-                }
-
-                participatingChildren++;
-                if (string.Equals(child.gameObject.name, childName, StringComparison.Ordinal))
-                {
-                    flexibleChild = child;
-                }
-                else
-                {
-                    fixedOtherWidth += width;
-                }
-            }
-
-            if (flexibleChild == null || participatingChildren < 2)
-            {
-                return false;
-            }
-
-            float availableWidth = layoutRoot.rect.width - layout.padding.left - layout.padding.right;
-            float spacingWidth = layout.spacing * (participatingChildren - 1);
-            float targetScaledWidth = availableWidth - spacingWidth - fixedOtherWidth;
-            float flexibleScale = Mathf.Abs(flexibleChild.localScale.x);
-            if (targetScaledWidth <= 0f || flexibleScale <= 0.0001f)
-            {
-                return false;
-            }
-
-            float targetWidth = targetScaledWidth / flexibleScale;
-            if (Mathf.Abs(targetWidth - flexibleChild.rect.width) < 0.01f)
-            {
-                return false;
-            }
-
-            flexibleChild.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetWidth);
-            return true;
-        }
-
-        /// <summary>
-        /// Structural horizontal rows represent screen columns, not local cards. Once their owner
-        /// receives additional height on a tall display, every participating fixed-anchor column
-        /// must fill that live cross-axis. Comparing an old 718px child against the already-expanded
-        /// parent would otherwise stop recognizing it on sufficiently tall viewports.
-        /// </summary>
-        internal static bool FitStructuralHorizontalCrossAxisChildren(RectTransform layoutRoot)
-        {
-            if (layoutRoot == null)
-            {
-                return false;
-            }
-
-            HorizontalLayoutGroup layout = layoutRoot.GetComponent<HorizontalLayoutGroup>();
-            if (layout == null || layout.childControlHeight)
-            {
-                return false;
-            }
-
-            float availableHeight = layoutRoot.rect.height - layout.padding.top - layout.padding.bottom;
-            if (availableHeight <= 0f)
-            {
-                return false;
-            }
-
-            bool changed = false;
-            for (int i = 0; i < layoutRoot.childCount; i++)
-            {
-                RectTransform child = layoutRoot.GetChild(i) as RectTransform;
-                if (!CanParticipateInManualLayoutSizing(child) ||
-                    Mathf.Abs(child.anchorMax.y - child.anchorMin.y) > FixedAnchorTolerance)
-                {
-                    continue;
-                }
-
-                float scale = Mathf.Abs(child.localScale.y);
-                if (scale <= 0.0001f)
-                {
-                    continue;
-                }
-
-                float targetHeight = availableHeight / scale;
-                if (Mathf.Abs(targetHeight - child.rect.height) < 0.01f)
-                {
-                    continue;
-                }
-
-                child.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
-                changed = true;
-            }
-
-            return changed;
-        }
-
-        internal static bool IsStructuralLayout(RectTransform canvasRect, RectTransform layoutRoot)
-        {
-            if (canvasRect == null || layoutRoot == null || layoutRoot.GetComponent<LayoutGroup>() == null)
-            {
-                return false;
-            }
-
-            Vector2 canvasSize = canvasRect.rect.size;
-            if (canvasSize.x <= 0f || canvasSize.y <= 0f)
-            {
-                return false;
-            }
-
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
-            return bounds.size.x >= canvasSize.x * StructuralWidthCoverage &&
-                   bounds.size.y >= canvasSize.y * StructuralHeightCoverage;
-        }
-
-        private static bool CanParticipateInManualLayoutSizing(RectTransform child)
-        {
-            if (child == null || !child.gameObject.activeSelf)
-            {
-                return false;
-            }
-
-            LayoutElement layoutElement = child.GetComponent<LayoutElement>();
-            return layoutElement == null || !layoutElement.ignoreLayout;
+            return Mathf.Abs(left.x - right.x) <= AnchorTolerance &&
+                   Mathf.Abs(left.y - right.y) <= AnchorTolerance &&
+                   Mathf.Abs(left.z - right.z) <= AnchorTolerance;
         }
     }
 }
