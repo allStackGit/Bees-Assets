@@ -14,10 +14,11 @@ namespace Assets.Scripts.UI_Components
     /// positions and extents across the live viewport; fitting the entire 1366x768 composition
     /// inside the viewport merely produces a centered 16:9 island and blank bands.
     ///
-    /// This guard snapshots the authored direct-branch geometry, converts each reference-space
-    /// rectangle into normalized viewport anchors, then lets nested structural LayoutGroups absorb
-    /// their branch's resized allocation. START/TEST hover descriptions remain visual overlays and
-    /// never participate in structural layout measurement.
+    /// This guard snapshots the authored direct-branch geometry plus the fixed sizes of children
+    /// owned by screen-scale structural LayoutGroups. Every responsive pass restores those canonical
+    /// structural sizes before deriving the live allocation, so a previously repaired narrow/tall
+    /// viewport can never become the baseline for the next resize. START/TEST hover descriptions
+    /// remain visual overlays and never participate in structural layout measurement.
     /// </summary>
     [DefaultExecutionOrder(-700)]
     public sealed class SquadMakerResponsiveLayoutGuard : MonoBehaviour
@@ -43,6 +44,12 @@ namespace Assets.Scripts.UI_Components
             public Vector3 LocalScale;
         }
 
+        private sealed class StructuralChildReferenceGeometry
+        {
+            public RectTransform Rect;
+            public Vector2 SizeDelta;
+        }
+
         private SquadMaker _squadMaker;
         private Canvas _canvas;
         private CanvasScaler _scaler;
@@ -51,12 +58,18 @@ namespace Assets.Scripts.UI_Components
         private SquadMakerHoverDescriptionRelay _testRelay;
         private readonly List<DirectBranchReferenceGeometry> _referenceBranches =
             new List<DirectBranchReferenceGeometry>();
+        private readonly List<StructuralChildReferenceGeometry> _structuralChildReferences =
+            new List<StructuralChildReferenceGeometry>();
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
         private float _nextRepairTime;
         private bool _referenceGeometryCaptured;
+        private bool _structuralReferenceGeometryCaptured;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        // Subscribe before the generic BeforeSceneLoad responsive guards. The specialized Squad
+        // Maker owner must capture its canonical layout sizes before a generic compatibility pass
+        // has any opportunity to resize those same structural children.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
         {
             SceneManager.sceneLoaded -= HandleSceneLoaded;
@@ -119,6 +132,7 @@ namespace Assets.Scripts.UI_Components
             _lastScreenHeight = -1;
             _nextRepairTime = 0f;
             _referenceGeometryCaptured = false;
+            _structuralReferenceGeometryCaptured = false;
 
             PrepareReferenceGeometry();
             StabilizeHoverDescriptions();
@@ -174,10 +188,10 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // LegacyScreenResponsiveLayoutGuard subscribes before the generic guards and may already
-            // have mapped direct branches into a centered reference artboard. Undo that one mapping
-            // before capturing the real authored geometry. Anchored position and sizeDelta are not
-            // changed by that guard, so reversing the anchors restores the complete reference data.
+            // LegacyScreenResponsiveLayoutGuard also subscribes before the generic guards and may
+            // already have mapped direct branches into a centered reference artboard. Undo that one
+            // mapping before capturing the real authored geometry. Nested structural sizes remain
+            // canonical because both specialized owners run before the generic compatibility passes.
             LegacyScreenResponsiveLayoutGuard legacy =
                 _canvas.GetComponent<LegacyScreenResponsiveLayoutGuard>();
             if (legacy != null)
@@ -190,6 +204,7 @@ namespace Assets.Scripts.UI_Components
             ConfigureScaler();
             Canvas.ForceUpdateCanvases();
             CaptureDirectReferenceBranches();
+            CaptureStructuralChildReferenceGeometry();
             _referenceGeometryCaptured = _referenceBranches.Count > 0;
         }
 
@@ -261,6 +276,82 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        private void CaptureStructuralChildReferenceGeometry()
+        {
+            _structuralChildReferences.Clear();
+            if (_canvasRect == null)
+            {
+                _structuralReferenceGeometryCaptured = false;
+                return;
+            }
+
+            CaptureStructuralChildReferenceGeometry(_canvasRect, 0);
+            _structuralReferenceGeometryCaptured = true;
+        }
+
+        private void CaptureStructuralChildReferenceGeometry(RectTransform current, int depth)
+        {
+            if (_canvasRect == null || current == null || depth >= MaxHierarchyDepth)
+            {
+                return;
+            }
+
+            LayoutGroup layout = current.GetComponent<LayoutGroup>();
+            if (layout != null && IsReferenceStructuralLayout(_canvasRect, current))
+            {
+                for (int i = 0; i < current.childCount; i++)
+                {
+                    RectTransform child = current.GetChild(i) as RectTransform;
+                    if (child == null || IsStructuralChildReferenceCaptured(child))
+                    {
+                        continue;
+                    }
+
+                    _structuralChildReferences.Add(new StructuralChildReferenceGeometry
+                    {
+                        Rect = child,
+                        SizeDelta = child.sizeDelta
+                    });
+                }
+            }
+
+            for (int i = 0; i < current.childCount; i++)
+            {
+                RectTransform child = current.GetChild(i) as RectTransform;
+                if (child != null)
+                {
+                    CaptureStructuralChildReferenceGeometry(child, depth + 1);
+                }
+            }
+        }
+
+        private bool IsStructuralChildReferenceCaptured(RectTransform rect)
+        {
+            for (int i = 0; i < _structuralChildReferences.Count; i++)
+            {
+                if (_structuralChildReferences[i].Rect == rect)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void RestoreStructuralChildReferenceGeometry()
+        {
+            for (int i = 0; i < _structuralChildReferences.Count; i++)
+            {
+                StructuralChildReferenceGeometry geometry = _structuralChildReferences[i];
+                if (geometry == null || geometry.Rect == null)
+                {
+                    continue;
+                }
+
+                geometry.Rect.sizeDelta = geometry.SizeDelta;
+            }
+        }
+
         private void ApplyViewportFill()
         {
             if (_canvasRect == null || !_referenceGeometryCaptured)
@@ -268,6 +359,16 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            if (!_structuralReferenceGeometryCaptured)
+            {
+                CaptureStructuralChildReferenceGeometry();
+            }
+
+            // Never let the result of a previous responsive pass become input to the next pass.
+            // The fitting helpers intentionally inspect current child sizes to identify dominant
+            // regions, so restoring canonical structural sizes is what makes resize behavior
+            // reversible and prevents progressive shrink after repeated aspect changes.
+            RestoreStructuralChildReferenceGeometry();
             Canvas.ForceUpdateCanvases();
             for (int i = 0; i < _referenceBranches.Count; i++)
             {
@@ -553,6 +654,18 @@ namespace Assets.Scripts.UI_Components
             Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
             return bounds.size.x >= canvasSize.x * StructuralWidthCoverage &&
                    bounds.size.y >= canvasSize.y * StructuralHeightCoverage;
+        }
+
+        internal static bool IsReferenceStructuralLayout(RectTransform canvasRect, RectTransform layoutRoot)
+        {
+            if (canvasRect == null || layoutRoot == null || layoutRoot.GetComponent<LayoutGroup>() == null)
+            {
+                return false;
+            }
+
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(canvasRect, layoutRoot);
+            return bounds.size.x >= ReferenceResolution.x * StructuralWidthCoverage &&
+                   bounds.size.y >= ReferenceResolution.y * StructuralHeightCoverage;
         }
 
         private static bool CanParticipateInManualLayoutSizing(RectTransform child)
