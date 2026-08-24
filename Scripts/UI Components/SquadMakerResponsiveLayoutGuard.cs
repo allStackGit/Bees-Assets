@@ -553,12 +553,11 @@ namespace Assets.Scripts.UI_Components
                 Mathf.Max(1f, reference.SquadsColumnSize.x),
                 Mathf.Max(1f, reference.SquadsColumnSize.y + heightDelta));
 
-            bool changed = false;
-            changed |= SetRectSize(reference.MainContainer, mainContainerSize);
-            changed |= SetRectSize(reference.Footer, footerSize);
-            changed |= SetRectSize(reference.ShipSelectorColumn, shipSelectorSize);
-            changed |= SetRectSize(reference.SquadMakerColumn, squadMakerSize);
-            changed |= SetRectSize(reference.SquadsColumn, squadsSize);
+            SetRectSize(reference.MainContainer, mainContainerSize);
+            SetRectSize(reference.Footer, footerSize);
+            SetRectSize(reference.ShipSelectorColumn, shipSelectorSize);
+            SetRectSize(reference.SquadMakerColumn, squadMakerSize);
+            SetRectSize(reference.SquadsColumn, squadsSize);
 
             for (int i = 0; i < reference.SquadsColumnChildren.Count; i++)
             {
@@ -571,7 +570,7 @@ namespace Assets.Scripts.UI_Components
                 Vector2 targetSize = new Vector2(
                     Mathf.Max(1f, childReference.Size.x),
                     Mathf.Max(1f, childReference.Size.y + heightDelta));
-                changed |= SetRectSize(childReference.Rect, targetSize);
+                SetRectSize(childReference.Rect, targetSize);
             }
 
             // These LayoutGroups own child positions. Rebuild only the explicitly owned hierarchy;
@@ -579,7 +578,11 @@ namespace Assets.Scripts.UI_Components
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainPanel);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadsColumn);
-            return changed;
+
+            // True means the authored Squad Maker hierarchy was resolved and owns this pass. It is
+            // intentionally independent of whether the requested size happened to equal last frame;
+            // an idempotent pass must never fall back into the recursive compatibility heuristic.
+            return true;
         }
 
         private static RectTransform FindOwnedChild(RectTransform owner, string name)
