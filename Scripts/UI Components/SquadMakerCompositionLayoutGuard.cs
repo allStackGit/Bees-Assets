@@ -8,12 +8,12 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Captures and applies the responsive relationships inside Squad Settings and Squad Composition.
     ///
-    /// The scene's authored geometry is useful as a reference composition, but its pixel coordinates
-    /// are not runtime layout rules. Direct manual children retain their authored horizontal fractions,
-    /// the real Drop Zone stretches with the work surface, Formations belongs to the inside-left edge,
-    /// and the action buttons form one compact row at the bottom. The outer
-    /// SquadMakerResponsiveLayoutGuard is the lifecycle owner and invokes this helper from its immutable
-    /// reference snapshot.
+    /// The scene's authored geometry is reference data, not a set of runtime pixel coordinates. Native
+    /// LayoutGroups retain ownership of their children. Manual horizontal regions retain their authored
+    /// fractions, the real Drop Zone stretches with the work surface, Formations belongs to the
+    /// inside-left edge, and the action buttons form one compact row at the bottom. The outer
+    /// SquadMakerResponsiveLayoutGuard is the only lifecycle owner and invokes this helper from its
+    /// immutable reference snapshot.
     /// </summary>
     internal static class SquadMakerCompositionLayoutGuard
     {
@@ -28,6 +28,7 @@ namespace Assets.Scripts.UI_Components
             internal readonly List<HorizontalReferenceGeometry> CompositionChildren =
                 new List<HorizontalReferenceGeometry>();
 
+            internal NestedLayoutReference SettingsLayout;
             internal RectTransform Composition;
             internal RectTransform DropZone;
             internal RectTransform Formations;
@@ -42,6 +43,19 @@ namespace Assets.Scripts.UI_Components
             internal RectTransform Rect;
             internal float MinFraction;
             internal float MaxFraction;
+        }
+
+        internal sealed class NestedLayoutReference
+        {
+            internal RectTransform Owner;
+            internal LayoutGroup Layout;
+            internal readonly List<LayoutChildReference> Children = new List<LayoutChildReference>();
+        }
+
+        internal sealed class LayoutChildReference
+        {
+            internal RectTransform Rect;
+            internal float Width;
         }
 
         internal struct RectOffsetGeometry
@@ -64,6 +78,7 @@ namespace Assets.Scripts.UI_Components
 
             ReferenceGeometry reference = new ReferenceGeometry
             {
+                SettingsLayout = CaptureNestedLayout(squadSettings),
                 Composition = squadComposition,
                 Formations = FindDirectChildByName(squadComposition, FormationsName),
                 ActionRow = FindDirectChildByName(squadComposition, LowerButtonsName)
@@ -74,12 +89,16 @@ namespace Assets.Scripts.UI_Components
                 : null;
             reference.DropZone = FindDirectChildAncestor(serializedDropZone, squadComposition);
 
-            CaptureNormalizedHorizontalChildren(
-                squadSettings,
-                reference.SettingsChildren,
-                null,
-                null,
-                null);
+            if (reference.SettingsLayout == null)
+            {
+                CaptureNormalizedHorizontalChildren(
+                    squadSettings,
+                    reference.SettingsChildren,
+                    null,
+                    null,
+                    null);
+            }
+
             CaptureNormalizedHorizontalChildren(
                 squadComposition,
                 reference.CompositionChildren,
@@ -103,11 +122,96 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            ApplyNestedLayout(reference.SettingsLayout);
             ApplyNormalizedHorizontalGeometry(reference.SettingsChildren);
             ApplyNormalizedHorizontalGeometry(reference.CompositionChildren);
             StretchDropZone(reference);
             PinFormationsToLeftEdge(reference.Formations);
             ConfigureActionRow(reference);
+        }
+
+        private static NestedLayoutReference CaptureNestedLayout(RectTransform owner)
+        {
+            if (owner == null)
+            {
+                return null;
+            }
+
+            LayoutGroup layout = owner.GetComponent<LayoutGroup>();
+            if (layout == null)
+            {
+                return null;
+            }
+
+            NestedLayoutReference reference = new NestedLayoutReference
+            {
+                Owner = owner,
+                Layout = layout
+            };
+
+            for (int index = 0; index < owner.childCount; index++)
+            {
+                RectTransform child = owner.GetChild(index) as RectTransform;
+                if (child == null)
+                {
+                    continue;
+                }
+
+                reference.Children.Add(new LayoutChildReference
+                {
+                    Rect = child,
+                    Width = Mathf.Abs(child.rect.width * child.localScale.x)
+                });
+            }
+
+            return reference;
+        }
+
+        private static void ApplyNestedLayout(NestedLayoutReference reference)
+        {
+            if (reference == null || reference.Owner == null || reference.Layout == null)
+            {
+                return;
+            }
+
+            HorizontalLayoutGroup horizontal = reference.Layout as HorizontalLayoutGroup;
+            if (horizontal != null)
+            {
+                horizontal.childControlWidth = true;
+                horizontal.childForceExpandWidth = false;
+
+                for (int index = 0; index < reference.Children.Count; index++)
+                {
+                    LayoutChildReference childReference = reference.Children[index];
+                    if (childReference == null || childReference.Rect == null || childReference.Width <= 0f)
+                    {
+                        continue;
+                    }
+
+                    LayoutElement element = childReference.Rect.GetComponent<LayoutElement>();
+                    if (element == null)
+                    {
+                        element = childReference.Rect.gameObject.AddComponent<LayoutElement>();
+                    }
+
+                    element.ignoreLayout = false;
+                    element.minWidth = childReference.Width;
+                    element.preferredWidth = childReference.Width;
+                    element.flexibleWidth = childReference.Width;
+                    element.layoutPriority = 1;
+                }
+
+                LayoutRebuilder.ForceRebuildLayoutImmediate(reference.Owner);
+                return;
+            }
+
+            VerticalLayoutGroup vertical = reference.Layout as VerticalLayoutGroup;
+            if (vertical != null)
+            {
+                vertical.childControlWidth = true;
+                vertical.childForceExpandWidth = true;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(reference.Owner);
+            }
         }
 
         private static void CaptureNormalizedHorizontalChildren(
@@ -117,7 +221,7 @@ namespace Assets.Scripts.UI_Components
             RectTransform excludedB,
             RectTransform excludedC)
         {
-            if (owner == null || destination == null)
+            if (owner == null || destination == null || owner.GetComponent<LayoutGroup>() != null)
             {
                 return;
             }
@@ -299,8 +403,6 @@ namespace Assets.Scripts.UI_Components
             layout.childControlHeight = false;
             layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = false;
-            layout.childScaleWidth = false;
-            layout.childScaleHeight = false;
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(row);
         }
