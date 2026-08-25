@@ -138,7 +138,7 @@ namespace Assets.Scripts.UI_Components
             }
 
             LayoutGroup layout = owner.GetComponent<LayoutGroup>();
-            if (layout == null)
+            if (layout == null || !layout.enabled)
             {
                 return null;
             }
@@ -169,7 +169,8 @@ namespace Assets.Scripts.UI_Components
 
         private static void ApplyNestedLayout(NestedLayoutReference reference)
         {
-            if (reference == null || reference.Owner == null || reference.Layout == null)
+            if (reference == null || reference.Owner == null || reference.Layout == null ||
+                !reference.Layout.enabled)
             {
                 return;
             }
@@ -221,7 +222,7 @@ namespace Assets.Scripts.UI_Components
             RectTransform excludedB,
             RectTransform excludedC)
         {
-            if (owner == null || destination == null || owner.GetComponent<LayoutGroup>() != null)
+            if (owner == null || destination == null || HasEnabledLayoutGroup(owner))
             {
                 return;
             }
@@ -248,6 +249,12 @@ namespace Assets.Scripts.UI_Components
                     MaxFraction = Mathf.Clamp01((childBounds.xMax - owner.rect.xMin) / ownerWidth)
                 });
             }
+        }
+
+        private static bool HasEnabledLayoutGroup(RectTransform owner)
+        {
+            LayoutGroup layout = owner != null ? owner.GetComponent<LayoutGroup>() : null;
+            return layout != null && layout.enabled;
         }
 
         private static void ApplyNormalizedHorizontalGeometry(
