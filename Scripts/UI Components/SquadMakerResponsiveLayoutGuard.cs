@@ -596,6 +596,13 @@ namespace Assets.Scripts.UI_Components
                 return false;
             }
 
+            // MainPanel.prefab is shared and is authored with decorative 5px padding/10px spacing.
+            // Squad Maker is a viewport tiling surface, so its specialized owner must remove those
+            // inherited gutters before the native LayoutGroups calculate body/footer/column sizes.
+            NormalizeViewportLayout(mainPanelLayout);
+            NormalizeViewportLayout(mainContainerLayout);
+            NormalizeViewportLayout(squadsLayout);
+
             // MainPanel owns width and height. The body is flexible; the footer keeps its authored
             // height. At the 768 reference height the authored 718+51 overlap resolves to a one-pixel
             // body reduction instead of leaving an uncovered strip.
@@ -661,6 +668,26 @@ namespace Assets.Scripts.UI_Components
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadsColumn);
             return true;
+        }
+
+        private static void NormalizeViewportLayout(HorizontalOrVerticalLayoutGroup layout)
+        {
+            if (layout == null)
+            {
+                return;
+            }
+
+            RectOffset padding = layout.padding;
+            if (padding != null)
+            {
+                padding.left = 0;
+                padding.right = 0;
+                padding.top = 0;
+                padding.bottom = 0;
+            }
+
+            layout.spacing = 0f;
+            layout.childAlignment = TextAnchor.UpperLeft;
         }
 
         private static void ConfigureFixedWidthFlexibleHeight(
