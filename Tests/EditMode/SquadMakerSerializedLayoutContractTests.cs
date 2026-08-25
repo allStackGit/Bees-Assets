@@ -1,3 +1,4 @@
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,6 +13,46 @@ namespace Bees.Tests.EditMode
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
         [Test]
+        public void TrackedSceneContainsTheNativeHierarchyThatResponsiveLayoutOwns()
+        {
+            string scene = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scenes",
+                "Squad Maker.unity"));
+            string mainPanelPrefab = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Prefabs",
+                "UI",
+                "MainPanel.prefab"));
+
+            // These are the real serialized regions used by the production ChosenSquadList ancestry
+            // path. This guard prevents a synthetic-only fixture from silently drifting away from the
+            // scene that players actually load.
+            Assert.That(scene, Does.Contain("value: Main Container"));
+            Assert.That(scene, Does.Contain("value: Ship Selector Column"));
+            Assert.That(scene, Does.Contain("value: Squad Maker Column"));
+            Assert.That(scene, Does.Contain("value: Squads Column"));
+            Assert.That(scene, Does.Contain("value: Saved Squads Column"));
+            Assert.That(scene, Does.Contain("value: Chosen Squads Column"));
+
+            // Main Container and Squads Column are Panel prefab instances whose scene-owned
+            // HorizontalLayoutGroups start with manual child sizing. The runtime owner deliberately
+            // takes control of those native layouts rather than writing their child RectTransforms.
+            Assert.That(scene, Does.Contain("guid: dd037183c8013734eae4f02aeab00941"));
+            Assert.That(scene, Does.Contain("guid: 30649d3a9faa99c48a7b1166b86bf2a0"));
+            Assert.That(scene, Does.Contain("m_ChildControlWidth: 0"));
+            Assert.That(scene, Does.Contain("m_ChildControlHeight: 0"));
+
+            // The shared MainPanel prefab really does contribute gutters that the old synthetic
+            // fixture omitted. Squad Maker's specialized layout owner must normalize these at runtime.
+            Assert.That(mainPanelPrefab, Does.Contain("m_Left: 5"));
+            Assert.That(mainPanelPrefab, Does.Contain("m_Right: 5"));
+            Assert.That(mainPanelPrefab, Does.Contain("m_Top: 5"));
+            Assert.That(mainPanelPrefab, Does.Contain("m_Bottom: 5"));
+            Assert.That(mainPanelPrefab, Does.Contain("m_Spacing: 10"));
+        }
+
+        [Test]
         public void AuthoredHierarchyUsesNativeLayoutsAndTilesViewportAcrossRepeatedAspectChanges()
         {
             RectTransform canvas = CreateRect("Canvas", null, ReferenceResolution);
@@ -21,10 +62,11 @@ namespace Bees.Tests.EditMode
             mainPanel.anchoredPosition = Vector2.zero;
             mainPanel.sizeDelta = Vector2.zero;
 
-            // Match the serialized Squad Maker scene before the responsive owner changes it.
+            // Match MainPanel.prefab itself. The real prefab starts with 5px padding and 10px spacing;
+            // the Squad Maker owner must remove those inherited decorative gutters before tiling.
             VerticalLayoutGroup panelLayout = mainPanel.gameObject.AddComponent<VerticalLayoutGroup>();
-            panelLayout.padding = new RectOffset(0, 0, 0, 0);
-            panelLayout.spacing = 0f;
+            panelLayout.padding = new RectOffset(5, 5, 5, 5);
+            panelLayout.spacing = 10f;
             panelLayout.childAlignment = TextAnchor.UpperLeft;
             panelLayout.childControlWidth = false;
             panelLayout.childControlHeight = false;
@@ -188,16 +230,34 @@ namespace Bees.Tests.EditMode
             RectTransform savedSquads,
             RectTransform chosenSquads)
         {
+            Assert.That(panelLayout.padding.left, Is.Zero);
+            Assert.That(panelLayout.padding.right, Is.Zero);
+            Assert.That(panelLayout.padding.top, Is.Zero);
+            Assert.That(panelLayout.padding.bottom, Is.Zero);
+            Assert.That(panelLayout.spacing, Is.Zero);
+            Assert.That(panelLayout.childAlignment, Is.EqualTo(TextAnchor.UpperLeft));
             Assert.That(panelLayout.childControlWidth, Is.True);
             Assert.That(panelLayout.childControlHeight, Is.True);
             Assert.That(panelLayout.childForceExpandWidth, Is.True);
             Assert.That(panelLayout.childForceExpandHeight, Is.False);
 
+            Assert.That(mainLayout.padding.left, Is.Zero);
+            Assert.That(mainLayout.padding.right, Is.Zero);
+            Assert.That(mainLayout.padding.top, Is.Zero);
+            Assert.That(mainLayout.padding.bottom, Is.Zero);
+            Assert.That(mainLayout.spacing, Is.Zero);
+            Assert.That(mainLayout.childAlignment, Is.EqualTo(TextAnchor.UpperLeft));
             Assert.That(mainLayout.childControlWidth, Is.True);
             Assert.That(mainLayout.childControlHeight, Is.True);
             Assert.That(mainLayout.childForceExpandWidth, Is.False);
             Assert.That(mainLayout.childForceExpandHeight, Is.True);
 
+            Assert.That(squadsLayout.padding.left, Is.Zero);
+            Assert.That(squadsLayout.padding.right, Is.Zero);
+            Assert.That(squadsLayout.padding.top, Is.Zero);
+            Assert.That(squadsLayout.padding.bottom, Is.Zero);
+            Assert.That(squadsLayout.spacing, Is.Zero);
+            Assert.That(squadsLayout.childAlignment, Is.EqualTo(TextAnchor.UpperLeft));
             Assert.That(squadsLayout.childControlWidth, Is.True);
             Assert.That(squadsLayout.childControlHeight, Is.True);
             Assert.That(squadsLayout.childForceExpandWidth, Is.False);
