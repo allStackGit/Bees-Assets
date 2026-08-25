@@ -16,14 +16,18 @@ namespace Bees.Tests.EditMode
         private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
-        public void HeaderGivesHorizontalSurplusToSquadNameInsteadOfSeparatingCompactControls()
+        public void SharedHeaderOwnerGivesHorizontalSurplusToSquadNameInsteadOfSeparatingCompactControls()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
-            RectTransform supply = CreateTopRowRect("Supply Capacity", composition, 10f, 200f);
-            RectTransform name = CreateTopRowRect("Squad Name", composition, 220f, 230f);
-            RectTransform color = CreateTopRowRect("COLOR", composition, 460f, 70f);
-            RectTransform count = CreateTopRowRect("0 / 10", composition, 540f, 70f);
+            RectTransform header = CreateRect("Header Row", composition, new Vector2(600f, 30f));
+            header.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Left, 10f, 600f);
+            header.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Top, 0f, 30f);
+
+            RectTransform supply = CreateTopRowRect("Supply Capacity", header, 0f, 200f);
+            RectTransform name = CreateTopRowRect("Squad Name", header, 210f, 220f);
+            RectTransform color = CreateTopRowRect("COLOR", header, 440f, 70f);
+            RectTransform count = CreateTopRowRect("0 / 10", header, 520f, 70f);
 
             GameObject manager = new GameObject("UI Manager");
             Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
@@ -42,10 +46,12 @@ namespace Bees.Tests.EditMode
 
             try
             {
+                Assert.That(reference, Is.Not.Null);
                 float referenceSupplyWidth = supply.rect.width;
                 float referenceNameWidth = name.rect.width;
                 float referenceColorWidth = color.rect.width;
                 float referenceCountWidth = count.rect.width;
+                float referenceHeaderWidth = header.rect.width;
 
                 float[] widths = { 620f, 930f, 1240f, 500f, 775f, 620f };
                 for (int index = 0; index < widths.Length; index++)
@@ -54,25 +60,30 @@ namespace Bees.Tests.EditMode
                     composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, width);
                     RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
 
-                    Bounds supplyBounds = BoundsIn(composition, supply);
-                    Bounds nameBounds = BoundsIn(composition, name);
-                    Bounds colorBounds = BoundsIn(composition, color);
-                    Bounds countBounds = BoundsIn(composition, count);
+                    Bounds headerBounds = BoundsIn(composition, header);
+                    Bounds supplyBounds = BoundsIn(header, supply);
+                    Bounds nameBounds = BoundsIn(header, name);
+                    Bounds colorBounds = BoundsIn(header, color);
+                    Bounds countBounds = BoundsIn(header, count);
 
+                    float expectedHeaderWidth = Mathf.Max(0f, width - 20f);
+                    Assert.That(headerBounds.size.x, Is.EqualTo(expectedHeaderWidth).Within(0.02f));
                     Assert.That(supplyBounds.max.x, Is.LessThanOrEqualTo(nameBounds.min.x + 0.02f));
                     Assert.That(nameBounds.max.x, Is.LessThanOrEqualTo(colorBounds.min.x + 0.02f));
                     Assert.That(colorBounds.max.x, Is.LessThanOrEqualTo(countBounds.min.x + 0.02f));
-                    Assert.That(supplyBounds.min.x, Is.GreaterThanOrEqualTo(composition.rect.xMin - 0.02f));
-                    Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(composition.rect.xMax + 0.02f));
+                    Assert.That(supplyBounds.min.x, Is.GreaterThanOrEqualTo(header.rect.xMin - 0.02f));
+                    Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(header.rect.xMax + 0.02f));
 
-                    if (width >= 620f)
+                    if (expectedHeaderWidth >= referenceHeaderWidth)
                     {
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth).Within(0.02f));
                         Assert.That(
                             name.rect.width,
-                            Is.EqualTo(referenceNameWidth + (width - 620f)).Within(0.02f),
+                            Is.EqualTo(
+                                referenceNameWidth + (expectedHeaderWidth - referenceHeaderWidth))
+                                .Within(0.02f),
                             "Only the editable squad-name field should absorb wide-layout surplus.");
                     }
                 }
@@ -156,8 +167,6 @@ namespace Bees.Tests.EditMode
                     AssertBoundsEqual(chosenLabelBaseline, BoundsIn(chosenRow, chosenLabel.transform as RectTransform));
                 }
 
-                // Rows are layout-owned by their lists/columns. Widen the owners, then verify that
-                // the stable left edge remains fixed while only the label's available right edge grows.
                 savedColumn.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 420f);
                 chosenColumn.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360f);
                 RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
