@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -22,7 +23,27 @@ namespace Bees.Tests.EditMode
             Assert.That(scene, Does.Contain("m_Name: Formations"));
             Assert.That(scene, Does.Contain("m_Name: Lower Buttons"));
             Assert.That(scene, Does.Contain("SquadShipCount:"));
-            Assert.That(scene, Does.Contain("value: Squad Composition"));
+
+            int compositionNameIndex = scene.IndexOf("value: Squad Composition", StringComparison.Ordinal);
+            Assert.That(compositionNameIndex, Is.GreaterThanOrEqualTo(0));
+
+            int compositionPrefabStart = scene.LastIndexOf(
+                "--- !u!1001",
+                compositionNameIndex,
+                StringComparison.Ordinal);
+            Assert.That(compositionPrefabStart, Is.GreaterThanOrEqualTo(0));
+
+            string compositionPrefab = scene.Substring(
+                compositionPrefabStart,
+                compositionNameIndex - compositionPrefabStart);
+            Assert.That(
+                compositionPrefab,
+                Does.Contain("propertyPath: m_SizeDelta.x\n      value: 620"),
+                "The responsive reference width must match the tracked Squad Composition prefab override.");
+            Assert.That(
+                compositionPrefab,
+                Does.Contain("propertyPath: m_SizeDelta.y\n      value: 420"),
+                "The responsive reference height must match the tracked Squad Composition prefab override.");
         }
 
         [Test]
@@ -44,7 +65,7 @@ namespace Bees.Tests.EditMode
             squadShipCount.anchorMax = Vector2.one;
             squadShipCount.anchoredPosition = new Vector2(-40f, -15f);
 
-            System.Type guardType = RuntimeAssembly.GetType(GuardTypeName);
+            Type guardType = RuntimeAssembly.GetType(GuardTypeName);
 
             try
             {
