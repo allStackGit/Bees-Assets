@@ -10,12 +10,10 @@ namespace Assets.Scripts.UI_Components
     /// <summary>
     /// Owns Squad Maker-specific responsive behavior.
     ///
-    /// The authored screen is a 1366x768 desktop composition. MainPanel is viewport-sized, while
-    /// its body/footer and the body's three columns are ordinary Unity LayoutGroup children. The
-    /// responsive owner therefore changes the native layout contract rather than repeatedly writing
-    /// LayoutGroup-owned RectTransforms. The footer keeps its authored height, horizontal surplus is
-    /// distributed across the structural columns in their authored proportions, and the body absorbs
-    /// vertical surplus.
+    /// The authored 1366x768 screen is reference geometry, not a runtime target resolution. Native
+    /// LayoutGroups own structural regions, manually authored horizontal regions preserve their
+    /// normalized relationships, functional work surfaces stretch with their owners, and semantic
+    /// edge controls remain attached to those edges. No responsive pass derives from a previous pass.
     ///
     /// The SquadMaker controller is on a separate UI Manager root. The visible hierarchy is resolved
     /// from the serialized ChosenSquadList reference so this guard always operates on the same
@@ -84,6 +82,7 @@ namespace Assets.Scripts.UI_Components
             public Vector2 SquadsColumnSize;
             public Vector2 SavedSquadsColumnSize;
             public Vector2 ChosenSquadsColumnSize;
+            public SquadMakerCompositionLayoutGuard.ReferenceGeometry CompositionLayout;
         }
 
         private SquadMaker _squadMaker;
@@ -538,7 +537,11 @@ namespace Assets.Scripts.UI_Components
                 SquadCompositionSize = squadComposition.rect.size,
                 SquadsColumnSize = squadsColumn.rect.size,
                 SavedSquadsColumnSize = savedSquadsColumn.rect.size,
-                ChosenSquadsColumnSize = chosenSquadsColumn.rect.size
+                ChosenSquadsColumnSize = chosenSquadsColumn.rect.size,
+                CompositionLayout = SquadMakerCompositionLayoutGuard.Capture(
+                    _squadMaker,
+                    squadSettings,
+                    squadComposition)
             };
         }
 
@@ -646,17 +649,13 @@ namespace Assets.Scripts.UI_Components
                 return false;
             }
 
-            // MainPanel.prefab is shared and is authored with decorative 5px padding/10px spacing.
-            // Squad Maker is a viewport tiling surface, so its specialized owner must remove those
-            // inherited gutters before the native LayoutGroups calculate body/footer/column sizes.
+            // Structural layout groups own their children. Shared prefab gutters are normalized only
+            // where Squad Maker uses a panel as a viewport-tiling owner.
             NormalizeViewportLayout(mainPanelLayout);
             NormalizeViewportLayout(mainContainerLayout);
             NormalizeViewportLayout(squadMakerLayout);
             NormalizeViewportLayout(squadsLayout);
 
-            // MainPanel owns width and height. The body is flexible; the footer keeps its authored
-            // height. At the 768 reference height the authored 718+51 overlap resolves to a one-pixel
-            // body reduction instead of leaving an uncovered strip.
             mainPanelLayout.childControlWidth = true;
             mainPanelLayout.childControlHeight = true;
             mainPanelLayout.childForceExpandWidth = true;
@@ -679,11 +678,8 @@ namespace Assets.Scripts.UI_Components
                 reference.FooterSize.y,
                 0f);
 
-            // Main Container owns all three columns. CanvasScaler.Expand guarantees that the logical
-            // canvas is never narrower than the 1366-wide reference, so the authored widths are safe
-            // minima. Using those same authored widths as flexible weights makes every unit of
-            // ultrawide surplus preserve the 262/620/484 reference split instead of dumping all of it
-            // into the center work area and leaving the side regions visually compressed at the edges.
+            // Horizontal surplus is distributed using the authored column widths as proportional
+            // weights. The widths are reference proportions, not special cases for any live ratio.
             mainContainerLayout.childControlWidth = true;
             mainContainerLayout.childControlHeight = true;
             mainContainerLayout.childForceExpandWidth = false;
@@ -699,11 +695,6 @@ namespace Assets.Scripts.UI_Components
                 reference.SquadsColumn,
                 reference.SquadsColumnSize.x);
 
-            // The center column is another structural layout owner. Its 298-high settings/presets
-            // region stays at the authored height while filling the live center width. The composition
-            // work region fills that same live width and absorbs any remaining vertical surplus. With
-            // childControl* left false, Unity allocates force-expand space without resizing the actual
-            // panels, which exposes the orange parent between/below them on tall and wide displays.
             squadMakerLayout.childControlWidth = true;
             squadMakerLayout.childControlHeight = true;
             squadMakerLayout.childForceExpandWidth = true;
@@ -726,8 +717,6 @@ namespace Assets.Scripts.UI_Components
                 reference.SquadCompositionSize.y,
                 1f);
 
-            // Squads Column is itself a two-column native layout. Its children inherit the body's live
-            // height and preserve their authored 262/222 horizontal split as the parent grows wider.
             squadsLayout.childControlWidth = true;
             squadsLayout.childControlHeight = true;
             squadsLayout.childForceExpandWidth = false;
@@ -740,16 +729,26 @@ namespace Assets.Scripts.UI_Components
                 reference.ChosenSquadsColumn,
                 reference.ChosenSquadsColumnSize.x);
 
+            // The outer columns can grow on wide displays, so their own vertical layouts must own
+            // the live cross-axis width of rows, lists, and labels instead of leaving 1366-era child
+            // widths floating inside a larger column.
+            ConfigureVerticalColumnCrossAxis(reference.ShipSelectorColumn);
+            ConfigureVerticalColumnCrossAxis(reference.SavedSquadsColumn);
+            ConfigureVerticalColumnCrossAxis(reference.ChosenSquadsColumn);
+
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainPanel);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadMakerColumn);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadsColumn);
 
-            // SquadMaker.ToggleLevelOptions/ToggleLevelDetails deliberately owns the reference
-            // height of the chosen-squads ScrollView (663/415/278 depending semantic state). Keep
-            // that stateful base intact and add only the height that exists beyond the authored
-            // 718-high Chosen Squads Column. If SquadMaker writes a new semantic height later, the
-            // next repair recognizes it as the new base instead of fighting the scene controller.
+            // Apply the manually-authored inner relationships only after the structural owners have
+            // established the live settings/composition bounds. This helper captured its reference
+            // snapshot before any responsive mutation.
+            SquadMakerCompositionLayoutGuard.Apply(reference.CompositionLayout);
+
+            // SquadMaker.ToggleLevelOptions/ToggleLevelDetails deliberately owns the semantic base
+            // height of the chosen-squads ScrollView. Responsive layout layers only genuine vertical
+            // surplus on top of that state rather than replacing the scene controller's choice.
             ApplyChosenSquadScrollSurplus(reference);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.ChosenSquadsColumn);
             return true;
@@ -834,6 +833,23 @@ namespace Assets.Scripts.UI_Components
                 -1f,
                 -1f,
                 1f);
+        }
+
+        private static void ConfigureVerticalColumnCrossAxis(RectTransform column)
+        {
+            if (column == null)
+            {
+                return;
+            }
+
+            VerticalLayoutGroup layout = column.GetComponent<VerticalLayoutGroup>();
+            if (layout == null)
+            {
+                return;
+            }
+
+            layout.childControlWidth = true;
+            layout.childForceExpandWidth = true;
         }
 
         private static void ConfigureLayoutElement(
