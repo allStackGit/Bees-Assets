@@ -104,7 +104,7 @@ namespace Bees.Tests.EditMode
             }
             finally
             {
-                Object.DestroyImmediate(composition.gameObject);
+                UnityEngine.Object.DestroyImmediate(composition.gameObject);
             }
         }
 
