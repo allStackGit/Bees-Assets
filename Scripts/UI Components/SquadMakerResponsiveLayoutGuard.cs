@@ -158,13 +158,27 @@ namespace Assets.Scripts.UI_Components
 
         private void Initialize(SquadMaker squadMaker)
         {
-            _squadMaker = squadMaker;
-            if (_squadMaker == null)
+            if (squadMaker == null)
             {
                 return;
             }
 
-            _canvas = ResolveOwnedCanvas(_squadMaker);
+            Canvas ownedCanvas = ResolveOwnedCanvas(squadMaker);
+
+            // AddComponent invokes Awake synchronously, and the scene-loaded bootstrap calls
+            // Initialize again immediately afterward. Once the same owner/canvas has captured its
+            // immutable authored geometry, that second call must be a no-op; otherwise already-
+            // responsive RectTransforms become the new baseline and later display changes drift.
+            if (_squadMaker == squadMaker &&
+                _referenceGeometryCaptured &&
+                _canvas != null &&
+                _canvas == ownedCanvas)
+            {
+                return;
+            }
+
+            _squadMaker = squadMaker;
+            _canvas = ownedCanvas;
             _canvasRect = _canvas != null ? _canvas.transform as RectTransform : null;
             _scaler = _canvas != null ? _canvas.GetComponent<CanvasScaler>() : null;
             if (_canvas != null && _scaler == null)
