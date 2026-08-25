@@ -131,10 +131,8 @@ namespace Bees.Tests.EditMode
 
             try
             {
-                // Reproduce the prefab's original competing layout before responsive ownership takes over.
                 LayoutRebuilder.ForceRebuildLayoutImmediate(savedRow);
                 LayoutRebuilder.ForceRebuildLayoutImmediate(chosenRow);
-
                 RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
 
                 Assert.That(savedCompetingLayout.enabled, Is.False);
@@ -149,8 +147,6 @@ namespace Bees.Tests.EditMode
                 Bounds chosenIconBaseline = BoundsIn(chosenRow, chosenRuntimeIcon);
                 Bounds chosenLabelBaseline = BoundsIn(chosenRow, chosenLabel.transform as RectTransform);
 
-                // The production responsive guard repairs periodically. Reapplying the same contract
-                // must not alternate between the prefab LayoutGroup and responsive label geometry.
                 for (int pass = 0; pass < 12; pass++)
                 {
                     RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
@@ -160,9 +156,10 @@ namespace Bees.Tests.EditMode
                     AssertBoundsEqual(chosenLabelBaseline, BoundsIn(chosenRow, chosenLabel.transform as RectTransform));
                 }
 
-                // Width changes expand only the label's right edge; icon and label start remain stable.
-                savedRow.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 420f);
-                chosenRow.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360f);
+                // Rows are layout-owned by their lists/columns. Widen the owners, then verify that
+                // the stable left edge remains fixed while only the label's available right edge grows.
+                savedColumn.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 420f);
+                chosenColumn.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360f);
                 RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
 
                 Bounds savedIconWide = BoundsIn(savedRow, savedRuntimeIcon);
@@ -170,6 +167,8 @@ namespace Bees.Tests.EditMode
                 Bounds chosenIconWide = BoundsIn(chosenRow, chosenRuntimeIcon);
                 Bounds chosenLabelWide = BoundsIn(chosenRow, chosenLabel.transform as RectTransform);
 
+                Assert.That(savedRow.rect.width, Is.EqualTo(savedColumn.rect.width).Within(0.02f));
+                Assert.That(chosenRow.rect.width, Is.EqualTo(chosenColumn.rect.width).Within(0.02f));
                 Assert.That(savedIconWide.min.x, Is.EqualTo(savedIconBaseline.min.x).Within(0.02f));
                 Assert.That(savedLabelWide.min.x, Is.EqualTo(savedLabelBaseline.min.x).Within(0.02f));
                 Assert.That(savedLabelWide.max.x, Is.GreaterThan(savedLabelBaseline.max.x));
@@ -205,12 +204,7 @@ namespace Bees.Tests.EditMode
 
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
             Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
-            object reference = RuntimeAssembly.InvokeStatic(
-                layoutType,
-                "Capture",
-                null,
-                settings,
-                composition);
+            object reference = RuntimeAssembly.InvokeStatic(layoutType, "Capture", null, settings, composition);
 
             try
             {
@@ -252,12 +246,7 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(squadMaker, "SquadInfoBox", squadOverlay.gameObject);
 
             Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
-            object reference = RuntimeAssembly.InvokeStatic(
-                layoutType,
-                "Capture",
-                squadMaker,
-                settings,
-                composition);
+            object reference = RuntimeAssembly.InvokeStatic(layoutType, "Capture", squadMaker, settings, composition);
 
             try
             {
@@ -300,12 +289,7 @@ namespace Bees.Tests.EditMode
             Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
             RuntimeAssembly.SetField(squadMaker, "DropZone", dropZone.gameObject);
             Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
-            object reference = RuntimeAssembly.InvokeStatic(
-                layoutType,
-                "Capture",
-                squadMaker,
-                settings,
-                composition);
+            object reference = RuntimeAssembly.InvokeStatic(layoutType, "Capture", squadMaker, settings, composition);
 
             try
             {
@@ -348,8 +332,6 @@ namespace Bees.Tests.EditMode
                 Assert.That(firstRoot.center.x, Is.EqualTo(anchorBounds.center.x).Within(0.02f));
                 Assert.That(firstRoot.yMax, Is.EqualTo(anchorBounds.yMin - 4f).Within(0.02f));
 
-                // Moving a picker cursor/descendant inside the popup must not cause the popup root to
-                // chase that descendant on the next LateUpdate.
                 movingDescendant.anchoredPosition = new Vector2(80f, -180f);
                 RuntimeAssembly.InvokeStatic(layoutType, "PositionOverlayNearAnchor", viewport, anchor, overlay);
                 Rect secondRoot = RectBounds(viewport, overlay);
@@ -362,11 +344,7 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        private static RectTransform CreateTopRowRect(
-            string name,
-            RectTransform parent,
-            float left,
-            float width)
+        private static RectTransform CreateTopRowRect(string name, RectTransform parent, float left, float width)
         {
             RectTransform rect = CreateRect(name, parent, new Vector2(width, 30f));
             rect.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Left, left, width);
@@ -412,10 +390,7 @@ namespace Bees.Tests.EditMode
             return row;
         }
 
-        private static void AssertStableLeftAlignedSquadRow(
-            RectTransform row,
-            RectTransform icon,
-            Component label)
+        private static void AssertStableLeftAlignedSquadRow(RectTransform row, RectTransform icon, Component label)
         {
             RectTransform labelRect = label.transform as RectTransform;
             Bounds iconBounds = BoundsIn(row, icon);
@@ -451,7 +426,6 @@ namespace Bees.Tests.EditMode
                     return type;
                 }
             }
-
             throw new TypeLoadException($"Could not resolve loaded runtime type '{TmpTextTypeName}'.");
         }
 
@@ -522,7 +496,6 @@ namespace Bees.Tests.EditMode
             {
                 rect.SetParent(parent, false);
             }
-
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
