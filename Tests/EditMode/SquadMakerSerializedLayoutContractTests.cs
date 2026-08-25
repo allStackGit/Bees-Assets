@@ -262,22 +262,69 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ChosenSquadScrollHeightAddsOnlyLiveColumnSurplusToSemanticBaseHeight()
+        public void ChosenSquadScrollKeepsSemanticBaseWhileAbsorbingOnlyLiveColumnSurplus()
         {
-            System.Type guardType = RuntimeAssembly.GetType(GuardTypeName);
+            RectTransform chosenSquads = CreateRect(
+                "Chosen Squads Column",
+                null,
+                new Vector2(222f, 718f));
+            RectTransform chosenScroll = CreateRect(
+                "Chosen Squads Scroll",
+                chosenSquads,
+                new Vector2(222f, 278f));
+            Component guard = chosenSquads.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
 
-            Assert.That(
-                (float)RuntimeAssembly.InvokeStatic(guardType, "CalculateSurplusAbsorbingHeight", 278f, 718f, 717f),
-                Is.EqualTo(278f).Within(0.01f));
-            Assert.That(
-                (float)RuntimeAssembly.InvokeStatic(guardType, "CalculateSurplusAbsorbingHeight", 278f, 718f, 949f),
-                Is.EqualTo(509f).Within(0.01f));
-            Assert.That(
-                (float)RuntimeAssembly.InvokeStatic(guardType, "CalculateSurplusAbsorbingHeight", 415f, 718f, 949f),
-                Is.EqualTo(646f).Within(0.01f));
-            Assert.That(
-                (float)RuntimeAssembly.InvokeStatic(guardType, "CalculateSurplusAbsorbingHeight", 663f, 718f, 949f),
-                Is.EqualTo(894f).Within(0.01f));
+            try
+            {
+                System.Type referenceType = guard.GetType().GetNestedType(
+                    "SquadMakerLayoutReferenceGeometry",
+                    System.Reflection.BindingFlags.NonPublic);
+                Assert.That(referenceType, Is.Not.Null);
+
+                object reference = System.Activator.CreateInstance(referenceType);
+                SetReferenceField(referenceType, reference, "ChosenSquadsColumn", chosenSquads);
+                SetReferenceField(referenceType, reference, "ChosenSquadScroll", chosenScroll);
+                SetReferenceField(
+                    referenceType,
+                    reference,
+                    "ChosenSquadsColumnSize",
+                    new Vector2(222f, 718f));
+
+                // Reference height: preserve the campaign/detail semantic base exactly.
+                RuntimeAssembly.Invoke(guard, "ApplyChosenSquadScrollSurplus", reference);
+                AssertSize(chosenScroll, 222f, 278f);
+
+                // A taller viewport contributes only its 231 units of real column surplus.
+                chosenSquads.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 949f);
+                RuntimeAssembly.Invoke(guard, "ApplyChosenSquadScrollSurplus", reference);
+                AssertSize(chosenScroll, 222f, 509f);
+
+                // Simulate SquadMaker.ToggleLevelOptions changing the semantic base while still tall.
+                // The responsive owner must adopt 415 as the new base, not restore the old 278 state.
+                chosenScroll.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 415f);
+                RuntimeAssembly.Invoke(guard, "ApplyChosenSquadScrollSurplus", reference);
+                AssertSize(chosenScroll, 222f, 646f);
+
+                // Returning to authored height removes only responsive surplus and restores 415.
+                chosenSquads.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 718f);
+                RuntimeAssembly.Invoke(guard, "ApplyChosenSquadScrollSurplus", reference);
+                AssertSize(chosenScroll, 222f, 415f);
+            }
+            finally
+            {
+                Object.DestroyImmediate(chosenSquads.gameObject);
+            }
+        }
+
+        private static void SetReferenceField(
+            System.Type referenceType,
+            object reference,
+            string fieldName,
+            object value)
+        {
+            System.Reflection.FieldInfo field = referenceType.GetField(fieldName);
+            Assert.That(field, Is.Not.Null, fieldName + " must remain part of the responsive reference contract");
+            field.SetValue(reference, value);
         }
 
         private static void AssertNativeOwnership(
