@@ -96,8 +96,8 @@ namespace Assets.Scripts.UI_Components
 
         /// <summary>
         /// Converts the three authored controls from reference-rectangle placement into the edge
-        /// ownership that their visual roles require. Only the relevant axis is changed; the other
-        /// axis and all child layout remain authored exactly as before.
+        /// ownership that their visual roles require. Only the owned axes are changed; child layout
+        /// and unrelated axes remain authored exactly as before.
         /// </summary>
         internal static void ApplyReferenceEdgePins(
             RectTransform composition,
@@ -130,6 +130,12 @@ namespace Assets.Scripts.UI_Components
                 Vector2 anchorMin = lowerButtons.anchorMin;
                 Vector2 anchorMax = lowerButtons.anchorMax;
                 Vector2 anchoredPosition = lowerButtons.anchoredPosition;
+                float referencePivotFromLeft = CalculateReferencePivotCoordinate(
+                    anchorMin.x,
+                    anchorMax.x,
+                    lowerButtons.pivot.x,
+                    anchoredPosition.x,
+                    ReferenceCompositionWidth);
                 float referencePivotFromBottom = CalculateReferencePivotCoordinate(
                     anchorMin.y,
                     anchorMax.y,
@@ -137,8 +143,11 @@ namespace Assets.Scripts.UI_Components
                     anchoredPosition.y,
                     ReferenceCompositionHeight);
 
+                anchorMin.x = 0f;
+                anchorMax.x = 0f;
                 anchorMin.y = 0f;
                 anchorMax.y = 0f;
+                anchoredPosition.x = referencePivotFromLeft;
                 anchoredPosition.y = referencePivotFromBottom;
 
                 lowerButtons.anchorMin = anchorMin;
