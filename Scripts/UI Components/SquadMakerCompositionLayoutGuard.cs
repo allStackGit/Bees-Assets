@@ -1,208 +1,335 @@
 using Assets.Scripts.Scenes;
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Owns the edge-relative controls inside Squad Composition.
+    /// Captures and applies the responsive relationships inside Squad Settings and Squad Composition.
     ///
-    /// SquadMakerResponsiveLayoutGuard owns the size of the composition panel itself. These direct
-    /// children are intentionally not LayoutGroup-owned, so their anchors must express which edge
-    /// they belong to when the composition grows beyond its authored 620x420 rectangle.
+    /// The scene's authored geometry is useful as a reference composition, but its pixel coordinates
+    /// are not runtime layout rules. Direct manual children retain their authored horizontal fractions,
+    /// the real Drop Zone stretches with the work surface, Formations belongs to the inside-left edge,
+    /// and the action buttons form one compact row at the bottom. The outer
+    /// SquadMakerResponsiveLayoutGuard is the lifecycle owner and invokes this helper from its immutable
+    /// reference snapshot.
     /// </summary>
-    [DefaultExecutionOrder(-650)]
-    public sealed class SquadMakerCompositionLayoutGuard : MonoBehaviour
+    internal static class SquadMakerCompositionLayoutGuard
     {
-        private const string SquadMakerSceneName = "Squad Maker";
-        private const string SquadCompositionName = "Squad Composition";
         private const string FormationsName = "Formations";
         private const string LowerButtonsName = "Lower Buttons";
+        private const float GeometryTolerance = 0.001f;
 
-        private const float ReferenceCompositionWidth = 620f;
-        private const float ReferenceCompositionHeight = 420f;
-
-        private SquadMaker _squadMaker;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
-        private static void Install()
+        internal sealed class ReferenceGeometry
         {
-            SceneManager.sceneLoaded -= HandleSceneLoaded;
-            SceneManager.sceneLoaded += HandleSceneLoaded;
+            internal readonly List<HorizontalReferenceGeometry> SettingsChildren =
+                new List<HorizontalReferenceGeometry>();
+            internal readonly List<HorizontalReferenceGeometry> CompositionChildren =
+                new List<HorizontalReferenceGeometry>();
+
+            internal RectTransform Composition;
+            internal RectTransform DropZone;
+            internal RectTransform Formations;
+            internal RectTransform ActionRow;
+            internal RectOffsetGeometry DropZoneMargins;
+            internal float ActionRowHeight;
+            internal float ActionSpacing;
         }
 
-        private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
+        internal sealed class HorizontalReferenceGeometry
         {
-            if (scene.name != SquadMakerSceneName)
+            internal RectTransform Rect;
+            internal float MinFraction;
+            internal float MaxFraction;
+        }
+
+        internal struct RectOffsetGeometry
+        {
+            internal float Left;
+            internal float Right;
+            internal float Top;
+            internal float Bottom;
+        }
+
+        internal static ReferenceGeometry Capture(
+            SquadMaker squadMaker,
+            RectTransform squadSettings,
+            RectTransform squadComposition)
+        {
+            if (squadComposition == null)
+            {
+                return null;
+            }
+
+            ReferenceGeometry reference = new ReferenceGeometry
+            {
+                Composition = squadComposition,
+                Formations = FindDirectChildByName(squadComposition, FormationsName),
+                ActionRow = FindDirectChildByName(squadComposition, LowerButtonsName)
+            };
+
+            RectTransform serializedDropZone = squadMaker != null && squadMaker.DropZone != null
+                ? squadMaker.DropZone.transform as RectTransform
+                : null;
+            reference.DropZone = FindDirectChildAncestor(serializedDropZone, squadComposition);
+
+            CaptureNormalizedHorizontalChildren(
+                squadSettings,
+                reference.SettingsChildren,
+                null,
+                null,
+                null);
+            CaptureNormalizedHorizontalChildren(
+                squadComposition,
+                reference.CompositionChildren,
+                reference.Formations,
+                reference.ActionRow,
+                reference.DropZone);
+
+            if (reference.DropZone != null)
+            {
+                reference.DropZoneMargins = CaptureMargins(squadComposition, reference.DropZone);
+            }
+
+            CaptureActionRowMetrics(reference);
+            return reference;
+        }
+
+        internal static void Apply(ReferenceGeometry reference)
+        {
+            if (reference == null || reference.Composition == null)
             {
                 return;
             }
 
-            foreach (GameObject root in scene.GetRootGameObjects())
+            ApplyNormalizedHorizontalGeometry(reference.SettingsChildren);
+            ApplyNormalizedHorizontalGeometry(reference.CompositionChildren);
+            StretchDropZone(reference);
+            PinFormationsToLeftEdge(reference.Formations);
+            ConfigureActionRow(reference);
+        }
+
+        private static void CaptureNormalizedHorizontalChildren(
+            RectTransform owner,
+            List<HorizontalReferenceGeometry> destination,
+            RectTransform excludedA,
+            RectTransform excludedB,
+            RectTransform excludedC)
+        {
+            if (owner == null || destination == null)
             {
-                SquadMaker squadMaker = root.GetComponentInChildren<SquadMaker>(true);
-                if (squadMaker == null)
+                return;
+            }
+
+            float ownerWidth = Mathf.Abs(owner.rect.width);
+            if (ownerWidth <= GeometryTolerance)
+            {
+                return;
+            }
+
+            for (int index = 0; index < owner.childCount; index++)
+            {
+                RectTransform child = owner.GetChild(index) as RectTransform;
+                if (child == null || child == excludedA || child == excludedB || child == excludedC)
                 {
                     continue;
                 }
 
-                SquadMakerCompositionLayoutGuard guard =
-                    squadMaker.GetComponent<SquadMakerCompositionLayoutGuard>();
-                if (guard == null)
+                Rect childBounds = CalculateRectBounds(owner, child);
+                destination.Add(new HorizontalReferenceGeometry
                 {
-                    guard = squadMaker.gameObject.AddComponent<SquadMakerCompositionLayoutGuard>();
+                    Rect = child,
+                    MinFraction = Mathf.Clamp01((childBounds.xMin - owner.rect.xMin) / ownerWidth),
+                    MaxFraction = Mathf.Clamp01((childBounds.xMax - owner.rect.xMin) / ownerWidth)
+                });
+            }
+        }
+
+        private static void ApplyNormalizedHorizontalGeometry(
+            List<HorizontalReferenceGeometry> references)
+        {
+            if (references == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < references.Count; index++)
+            {
+                HorizontalReferenceGeometry reference = references[index];
+                RectTransform rect = reference != null ? reference.Rect : null;
+                if (rect == null)
+                {
+                    continue;
                 }
 
-                guard.Initialize(squadMaker);
-                return;
+                Vector2 anchorMin = rect.anchorMin;
+                Vector2 anchorMax = rect.anchorMax;
+                Vector2 anchoredPosition = rect.anchoredPosition;
+                Vector2 sizeDelta = rect.sizeDelta;
+
+                anchorMin.x = reference.MinFraction;
+                anchorMax.x = reference.MaxFraction;
+                anchoredPosition.x = 0f;
+                sizeDelta.x = 0f;
+
+                rect.anchorMin = anchorMin;
+                rect.anchorMax = anchorMax;
+                rect.anchoredPosition = anchoredPosition;
+                rect.sizeDelta = sizeDelta;
             }
         }
 
-        private void Awake()
+        private static RectOffsetGeometry CaptureMargins(RectTransform owner, RectTransform rect)
         {
-            if (_squadMaker == null)
+            Rect bounds = CalculateRectBounds(owner, rect);
+            return new RectOffsetGeometry
             {
-                Initialize(GetComponent<SquadMaker>());
-            }
+                Left = Mathf.Max(0f, bounds.xMin - owner.rect.xMin),
+                Right = Mathf.Max(0f, owner.rect.xMax - bounds.xMax),
+                Bottom = Mathf.Max(0f, bounds.yMin - owner.rect.yMin),
+                Top = Mathf.Max(0f, owner.rect.yMax - bounds.yMax)
+            };
         }
 
-        private void Initialize(SquadMaker squadMaker)
+        private static void StretchDropZone(ReferenceGeometry reference)
         {
-            if (squadMaker == null)
-            {
-                return;
-            }
-
-            _squadMaker = squadMaker;
-            RectTransform squadShipCount = squadMaker.SquadShipCount != null
-                ? squadMaker.SquadShipCount.transform as RectTransform
-                : null;
-            RectTransform composition = FindAncestorByName(squadShipCount, SquadCompositionName);
-            if (composition == null)
-            {
-                return;
-            }
-
-            RectTransform formations = FindDirectChildByName(composition, FormationsName);
-            RectTransform lowerButtons = FindDirectChildByName(composition, LowerButtonsName);
-            RectTransform squadShipCountOwner = FindDirectChildAncestor(squadShipCount, composition);
-
-            ApplyReferenceEdgePins(
-                composition,
-                formations,
-                lowerButtons,
-                squadShipCountOwner);
-        }
-
-        /// <summary>
-        /// Converts the three authored controls from reference-rectangle placement into the edge
-        /// ownership that their visual roles require. Only the owned axes are changed; child layout
-        /// and unrelated axes remain authored exactly as before.
-        /// </summary>
-        internal static void ApplyReferenceEdgePins(
-            RectTransform composition,
-            RectTransform formations,
-            RectTransform lowerButtons,
-            RectTransform squadShipCount)
-        {
-            if (composition == null)
+            RectTransform dropZone = reference.DropZone;
+            if (dropZone == null)
             {
                 return;
             }
 
-            if (formations != null)
-            {
-                Vector2 anchorMin = formations.anchorMin;
-                Vector2 anchorMax = formations.anchorMax;
-                Vector2 anchoredPosition = formations.anchoredPosition;
-
-                anchorMin.x = 0f;
-                anchorMax.x = 0f;
-                anchoredPosition.x = formations.pivot.x * Mathf.Abs(formations.rect.width);
-
-                formations.anchorMin = anchorMin;
-                formations.anchorMax = anchorMax;
-                formations.anchoredPosition = anchoredPosition;
-            }
-
-            if (lowerButtons != null)
-            {
-                Vector2 anchorMin = lowerButtons.anchorMin;
-                Vector2 anchorMax = lowerButtons.anchorMax;
-                Vector2 anchoredPosition = lowerButtons.anchoredPosition;
-                float referencePivotFromLeft = CalculateReferencePivotCoordinate(
-                    anchorMin.x,
-                    anchorMax.x,
-                    lowerButtons.pivot.x,
-                    anchoredPosition.x,
-                    ReferenceCompositionWidth);
-                float referencePivotFromBottom = CalculateReferencePivotCoordinate(
-                    anchorMin.y,
-                    anchorMax.y,
-                    lowerButtons.pivot.y,
-                    anchoredPosition.y,
-                    ReferenceCompositionHeight);
-
-                anchorMin.x = 0f;
-                anchorMax.x = 0f;
-                anchorMin.y = 0f;
-                anchorMax.y = 0f;
-                anchoredPosition.x = referencePivotFromLeft;
-                anchoredPosition.y = referencePivotFromBottom;
-
-                lowerButtons.anchorMin = anchorMin;
-                lowerButtons.anchorMax = anchorMax;
-                lowerButtons.anchoredPosition = anchoredPosition;
-            }
-
-            if (squadShipCount != null)
-            {
-                Vector2 anchorMin = squadShipCount.anchorMin;
-                Vector2 anchorMax = squadShipCount.anchorMax;
-                Vector2 anchoredPosition = squadShipCount.anchoredPosition;
-                float referencePivotFromLeft = CalculateReferencePivotCoordinate(
-                    anchorMin.x,
-                    anchorMax.x,
-                    squadShipCount.pivot.x,
-                    anchoredPosition.x,
-                    ReferenceCompositionWidth);
-
-                anchorMin.x = 0f;
-                anchorMax.x = 0f;
-                anchoredPosition.x = referencePivotFromLeft;
-
-                squadShipCount.anchorMin = anchorMin;
-                squadShipCount.anchorMax = anchorMax;
-                squadShipCount.anchoredPosition = anchoredPosition;
-            }
+            dropZone.anchorMin = Vector2.zero;
+            dropZone.anchorMax = Vector2.one;
+            dropZone.offsetMin = new Vector2(
+                reference.DropZoneMargins.Left,
+                reference.DropZoneMargins.Bottom);
+            dropZone.offsetMax = new Vector2(
+                -reference.DropZoneMargins.Right,
+                -reference.DropZoneMargins.Top);
         }
 
-        internal static float CalculateReferencePivotCoordinate(
-            float authoredAnchorMin,
-            float authoredAnchorMax,
-            float pivot,
-            float authoredAnchoredPosition,
-            float referenceOwnerSize)
+        private static void PinFormationsToLeftEdge(RectTransform formations)
         {
-            float anchorReference = Mathf.Lerp(authoredAnchorMin, authoredAnchorMax, pivot);
-            return anchorReference * referenceOwnerSize + authoredAnchoredPosition;
+            if (formations == null)
+            {
+                return;
+            }
+
+            Vector2 anchorMin = formations.anchorMin;
+            Vector2 anchorMax = formations.anchorMax;
+            Vector2 anchoredPosition = formations.anchoredPosition;
+
+            anchorMin.x = 0f;
+            anchorMax.x = 0f;
+            anchoredPosition.x = formations.pivot.x * Mathf.Abs(formations.rect.width * formations.localScale.x);
+
+            formations.anchorMin = anchorMin;
+            formations.anchorMax = anchorMax;
+            formations.anchoredPosition = anchoredPosition;
         }
 
-        private static RectTransform FindAncestorByName(RectTransform start, string name)
+        private static void CaptureActionRowMetrics(ReferenceGeometry reference)
         {
-            Transform current = start;
-            while (current != null)
+            RectTransform row = reference.ActionRow;
+            if (row == null)
             {
-                RectTransform rect = current as RectTransform;
-                if (rect != null && rect.name == name)
+                return;
+            }
+
+            List<Rect> childBounds = new List<Rect>();
+            float maxHeight = 0f;
+            for (int index = 0; index < row.childCount; index++)
+            {
+                RectTransform child = row.GetChild(index) as RectTransform;
+                if (child == null)
                 {
-                    return rect;
+                    continue;
                 }
 
-                current = current.parent;
+                Rect bounds = CalculateRectBounds(row, child);
+                childBounds.Add(bounds);
+                maxHeight = Mathf.Max(maxHeight, bounds.height);
             }
 
-            return null;
+            childBounds.Sort((left, right) => left.center.x.CompareTo(right.center.x));
+            float gapTotal = 0f;
+            int gapCount = 0;
+            for (int index = 1; index < childBounds.Count; index++)
+            {
+                float gap = childBounds[index].xMin - childBounds[index - 1].xMax;
+                if (gap >= 0f)
+                {
+                    gapTotal += gap;
+                    gapCount++;
+                }
+            }
+
+            reference.ActionRowHeight = maxHeight > GeometryTolerance
+                ? maxHeight
+                : Mathf.Abs(row.rect.height);
+            reference.ActionSpacing = gapCount > 0 ? gapTotal / gapCount : 0f;
+        }
+
+        private static void ConfigureActionRow(ReferenceGeometry reference)
+        {
+            RectTransform row = reference.ActionRow;
+            if (row == null)
+            {
+                return;
+            }
+
+            row.anchorMin = new Vector2(0f, 0f);
+            row.anchorMax = new Vector2(1f, 0f);
+            row.pivot = new Vector2(0.5f, 0f);
+            row.anchoredPosition = Vector2.zero;
+            row.sizeDelta = new Vector2(0f, reference.ActionRowHeight);
+
+            HorizontalLayoutGroup layout = row.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null)
+            {
+                layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            }
+
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = reference.ActionSpacing;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.childScaleWidth = false;
+            layout.childScaleHeight = false;
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(row);
+        }
+
+        private static Rect CalculateRectBounds(RectTransform owner, RectTransform rect)
+        {
+            if (owner == null || rect == null)
+            {
+                return default;
+            }
+
+            Vector3[] corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            Vector3 first = owner.InverseTransformPoint(corners[0]);
+            float minX = first.x;
+            float maxX = first.x;
+            float minY = first.y;
+            float maxY = first.y;
+
+            for (int index = 1; index < corners.Length; index++)
+            {
+                Vector3 local = owner.InverseTransformPoint(corners[index]);
+                minX = Mathf.Min(minX, local.x);
+                maxX = Mathf.Max(maxX, local.x);
+                minY = Mathf.Min(minY, local.y);
+                maxY = Mathf.Max(maxY, local.y);
+            }
+
+            return Rect.MinMaxRect(minX, minY, maxX, maxY);
         }
 
         private static RectTransform FindDirectChildByName(RectTransform owner, string name)
