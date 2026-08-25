@@ -23,10 +23,14 @@ namespace Bees.Tests.EditMode
 
             Assert.That(scene, Does.Contain("value: Squad Settings"));
             Assert.That(scene, Does.Contain("value: Squad Composition"));
+            Assert.That(scene, Does.Contain("value: Ship Selector Column"));
+            Assert.That(scene, Does.Contain("value: Saved Squads Column"));
+            Assert.That(scene, Does.Contain("value: Chosen Squads Column"));
             Assert.That(scene, Does.Contain("m_Name: Formations"));
             Assert.That(scene, Does.Contain("m_Name: Lower Buttons"));
             Assert.That(scene, Does.Contain("m_Name: Drop Zone"));
             Assert.That(scene, Does.Contain("DropZone:"));
+            Assert.That(scene, Does.Contain("ColorPicker:"));
             Assert.That(scene, Does.Contain("SquadMakerSupplyCapacityLabel:"));
             Assert.That(scene, Does.Contain("SquadNameInput:"));
             Assert.That(scene, Does.Contain("SquadShipCount:"));
@@ -73,6 +77,14 @@ namespace Bees.Tests.EditMode
             formations.anchorMin = new Vector2(0f, 0.5f);
             formations.anchorMax = new Vector2(0f, 0.5f);
             formations.anchoredPosition = new Vector2(0f, -25f);
+
+            // Reproduce the real narrow-screen failure mode: a descendant can extend beyond the
+            // Formations parent's own rect, so parent-pivot math alone is not sufficient protection.
+            RectTransform protrudingFormationVisual = CreateRect(
+                "BLARP Visual",
+                formations,
+                new Vector2(42f, 30f));
+            protrudingFormationVisual.anchoredPosition = new Vector2(-9f, 0f);
 
             RectTransform dropZone = CreateRect("Drop Zone", composition, new Vector2(600f, 340f));
             dropZone.anchoredPosition = new Vector2(7f, -5f);
@@ -132,7 +144,7 @@ namespace Bees.Tests.EditMode
                     AssertHorizontalFractions(composition, color, colorFractions);
                     AssertHorizontalFractions(composition, count, countFractions);
                     AssertDropZoneMargins(composition, dropZone, dropMargins);
-                    AssertFormationsFlushLeft(composition, formations);
+                    AssertFormationsWhollyInsideLeftEdge(composition, formations);
                     AssertCompactBottomActionRow(composition, actionRow);
                 }
             }
@@ -141,6 +153,149 @@ namespace Bees.Tests.EditMode
                 UnityEngine.Object.DestroyImmediate(manager);
                 UnityEngine.Object.DestroyImmediate(settings.gameObject);
                 UnityEngine.Object.DestroyImmediate(composition.gameObject);
+            }
+        }
+
+        [Test]
+        public void NestedColumnWrappersAndRowsInheritLiveColumnWidth()
+        {
+            RectTransform mainContainer = CreateRect("Main Container", null, new Vector2(1366f, 718f));
+            RectTransform shipColumn = CreateRect(
+                "Ship Selector Column",
+                mainContainer,
+                new Vector2(262f, 718f));
+            VerticalLayoutGroup shipColumnLayout = shipColumn.gameObject.AddComponent<VerticalLayoutGroup>();
+            ConfigureLegacyVerticalLayout(shipColumnLayout);
+
+            RectTransform shipHeading = CreateRect("Ship Heading", shipColumn, new Vector2(262f, 30f));
+            RectTransform shipWrapper = CreateRect("Ship Wrapper", shipColumn, new Vector2(262f, 200f));
+            RectTransform shipContent = CreateRect("Ship Content", shipWrapper, new Vector2(242f, 200f));
+            VerticalLayoutGroup shipContentLayout = shipContent.gameObject.AddComponent<VerticalLayoutGroup>();
+            ConfigureLegacyVerticalLayout(shipContentLayout);
+            RectTransform shipRow = CreateRect("Fleet Inventory Ship", shipContent, new Vector2(220f, 30f));
+
+            RectTransform squadsColumn = CreateRect(
+                "Squads Column",
+                mainContainer,
+                new Vector2(484f, 718f));
+            RectTransform savedColumn = CreateRect(
+                "Saved Squads Column",
+                squadsColumn,
+                new Vector2(262f, 718f));
+            VerticalLayoutGroup savedLayout = savedColumn.gameObject.AddComponent<VerticalLayoutGroup>();
+            ConfigureLegacyVerticalLayout(savedLayout);
+            RectTransform savedHeading = CreateRect("Squads Heading", savedColumn, new Vector2(262f, 30f));
+
+            RectTransform chosenColumn = CreateRect(
+                "Chosen Squads Column",
+                squadsColumn,
+                new Vector2(222f, 718f));
+            VerticalLayoutGroup chosenLayout = chosenColumn.gameObject.AddComponent<VerticalLayoutGroup>();
+            ConfigureLegacyVerticalLayout(chosenLayout);
+            RectTransform chosenHeading = CreateRect("Chosen Squads Heading", chosenColumn, new Vector2(222f, 30f));
+            RectTransform chosenList = CreateRect("Chosen Squad List", chosenColumn, new Vector2(222f, 200f));
+
+            RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
+            RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
+            GameObject manager = new GameObject("UI Manager");
+            Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
+            RuntimeAssembly.SetField(squadMaker, "ChosenSquadList", chosenList.gameObject);
+
+            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            object reference = RuntimeAssembly.InvokeStatic(
+                layoutType,
+                "Capture",
+                squadMaker,
+                settings,
+                composition);
+
+            try
+            {
+                Assert.That(reference, Is.Not.Null);
+
+                float[] scaleFactors = { 1f, 1.25f, 2f, 1.5f, 1f };
+                for (int index = 0; index < scaleFactors.Length; index++)
+                {
+                    float scale = scaleFactors[index];
+                    shipColumn.sizeDelta = new Vector2(262f * scale, 718f);
+                    savedColumn.sizeDelta = new Vector2(262f * scale, 718f);
+                    chosenColumn.sizeDelta = new Vector2(222f * scale, 718f);
+
+                    RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
+
+                    Assert.That(shipColumnLayout.childControlWidth, Is.True);
+                    Assert.That(shipColumnLayout.childForceExpandWidth, Is.True);
+                    Assert.That(shipContentLayout.childControlWidth, Is.True);
+                    Assert.That(shipContentLayout.childForceExpandWidth, Is.True);
+                    Assert.That(savedLayout.childControlWidth, Is.True);
+                    Assert.That(chosenLayout.childControlWidth, Is.True);
+
+                    Assert.That(shipHeading.rect.width, Is.EqualTo(shipColumn.rect.width).Within(0.02f));
+                    Assert.That(shipWrapper.rect.width, Is.EqualTo(shipColumn.rect.width).Within(0.02f));
+                    Assert.That(
+                        shipContent.rect.width,
+                        Is.EqualTo(shipWrapper.rect.width - 20f).Within(0.02f),
+                        "Nested non-layout wrappers preserve their authored 10-unit side margins.");
+                    Assert.That(shipRow.rect.width, Is.EqualTo(shipContent.rect.width).Within(0.02f));
+                    AssertCenteredInOwner(shipColumn, shipHeading);
+                    Assert.That(savedHeading.rect.width, Is.EqualTo(savedColumn.rect.width).Within(0.02f));
+                    AssertCenteredInOwner(savedColumn, savedHeading);
+                    Assert.That(chosenHeading.rect.width, Is.EqualTo(chosenColumn.rect.width).Within(0.02f));
+                    AssertCenteredInOwner(chosenColumn, chosenHeading);
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(manager);
+                UnityEngine.Object.DestroyImmediate(mainContainer.gameObject);
+                UnityEngine.Object.DestroyImmediate(settings.gameObject);
+                UnityEngine.Object.DestroyImmediate(composition.gameObject);
+            }
+        }
+
+        [Test]
+        public void ColorPickerOverlayFollowsLiveAnchorAndStaysInsideViewport()
+        {
+            RectTransform viewport = CreateRect("Canvas", null, new Vector2(1000f, 700f));
+            RectTransform anchor = CreateRect("COLOR", viewport, new Vector2(80f, 30f));
+            anchor.anchoredPosition = new Vector2(250f, 150f);
+
+            RectTransform overlay = CreateRect("Color Picker", viewport, new Vector2(220f, 200f));
+            overlay.anchoredPosition = new Vector2(-250f, 100f);
+            RectTransform largeSheet = CreateRect("Color Sheet", overlay, new Vector2(360f, 360f));
+            largeSheet.anchoredPosition = new Vector2(0f, -120f);
+
+            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    layoutType,
+                    "PositionOverlayNearAnchor",
+                    viewport,
+                    anchor,
+                    overlay);
+
+                AssertOverlayInsideViewport(viewport, overlay);
+                AssertOverlayHorizontallyAlignedWhenUnclamped(viewport, anchor, overlay);
+
+                // Moving the live anchor near the bottom forces the same relationship to flip above
+                // rather than preserving a stale authored screen coordinate.
+                anchor.anchoredPosition = new Vector2(-300f, -300f);
+                RuntimeAssembly.InvokeStatic(
+                    layoutType,
+                    "PositionOverlayNearAnchor",
+                    viewport,
+                    anchor,
+                    overlay);
+
+                AssertOverlayInsideViewport(viewport, overlay);
+                Bounds anchorBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, anchor);
+                Bounds overlayBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, overlay);
+                Assert.That(overlayBounds.min.y, Is.GreaterThanOrEqualTo(anchorBounds.max.y - 0.02f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(viewport.gameObject);
             }
         }
 
@@ -190,6 +345,16 @@ namespace Bees.Tests.EditMode
                 UnityEngine.Object.DestroyImmediate(settings.gameObject);
                 UnityEngine.Object.DestroyImmediate(composition.gameObject);
             }
+        }
+
+        private static void ConfigureLegacyVerticalLayout(VerticalLayoutGroup layout)
+        {
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
         }
 
         private static RectTransform CreateActionButton(
@@ -260,12 +425,13 @@ namespace Bees.Tests.EditMode
             Assert.That(actual.w, Is.EqualTo(expectedMargins.w).Within(0.01f), "Drop Zone bottom margin");
         }
 
-        private static void AssertFormationsFlushLeft(
+        private static void AssertFormationsWhollyInsideLeftEdge(
             RectTransform composition,
             RectTransform formations)
         {
             Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
             Assert.That(bounds.min.x, Is.EqualTo(composition.rect.xMin).Within(0.01f));
+            Assert.That(bounds.max.x, Is.LessThanOrEqualTo(composition.rect.xMax + 0.01f));
         }
 
         private static void AssertCompactBottomActionRow(
@@ -301,6 +467,31 @@ namespace Bees.Tests.EditMode
 
             Assert.That((minX + maxX) * 0.5f, Is.EqualTo(composition.rect.center.x).Within(0.05f));
             Assert.That(maxX - minX, Is.LessThan(composition.rect.width));
+        }
+
+        private static void AssertCenteredInOwner(RectTransform owner, RectTransform rect)
+        {
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(owner, rect);
+            Assert.That(bounds.center.x, Is.EqualTo(owner.rect.center.x).Within(0.02f));
+        }
+
+        private static void AssertOverlayInsideViewport(RectTransform viewport, RectTransform overlay)
+        {
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, overlay);
+            Assert.That(bounds.min.x, Is.GreaterThanOrEqualTo(viewport.rect.xMin - 0.02f));
+            Assert.That(bounds.max.x, Is.LessThanOrEqualTo(viewport.rect.xMax + 0.02f));
+            Assert.That(bounds.min.y, Is.GreaterThanOrEqualTo(viewport.rect.yMin - 0.02f));
+            Assert.That(bounds.max.y, Is.LessThanOrEqualTo(viewport.rect.yMax + 0.02f));
+        }
+
+        private static void AssertOverlayHorizontallyAlignedWhenUnclamped(
+            RectTransform viewport,
+            RectTransform anchor,
+            RectTransform overlay)
+        {
+            Bounds anchorBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, anchor);
+            Bounds overlayBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, overlay);
+            Assert.That(overlayBounds.center.x, Is.EqualTo(anchorBounds.center.x).Within(0.02f));
         }
 
         private static RectTransform CreateRect(string name, RectTransform parent, Vector2 size)
