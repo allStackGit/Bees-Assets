@@ -6,20 +6,30 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Captures and applies the responsive relationships inside Squad Settings and Squad Composition.
+    /// Captures and applies responsive relationships inside the Squad Maker's authored subregions.
     ///
-    /// The scene's authored geometry is reference data, not a set of runtime pixel coordinates. Native
+    /// Scene geometry is immutable reference data, not a set of runtime pixel coordinates. Native
     /// LayoutGroups retain ownership of their children. Manual horizontal regions retain their authored
-    /// fractions, the real Drop Zone stretches with the work surface, Formations belongs to the
-    /// inside-left edge, and the action buttons form one compact row at the bottom. The outer
-    /// SquadMakerResponsiveLayoutGuard is the only lifecycle owner and invokes this helper from its
-    /// immutable reference snapshot.
+    /// fractions, the real Drop Zone stretches with the work surface, Formations belongs wholly inside
+    /// the composition's left edge, the action buttons form one compact bottom row, and nested column
+    /// wrappers/lists inherit the live cross-axis width of their structural column.
+    ///
+    /// SquadMakerResponsiveLayoutGuard remains the lifecycle owner and invokes this helper from its
+    /// immutable reference snapshot. The color-picker relay owns only the picker overlay itself so that
+    /// it can be positioned before its end-of-frame texture capture when the picker is activated.
     /// </summary>
     internal static class SquadMakerCompositionLayoutGuard
     {
         private const string FormationsName = "Formations";
         private const string LowerButtonsName = "Lower Buttons";
+        private const string MainContainerName = "Main Container";
+        private const string ShipSelectorColumnName = "Ship Selector Column";
+        private const string SquadsColumnName = "Squads Column";
+        private const string SavedSquadsColumnName = "Saved Squads Column";
+        private const string ChosenSquadsColumnName = "Chosen Squads Column";
         private const float GeometryTolerance = 0.001f;
+        private const float StructuralCrossAxisCoverage = 0.5f;
+        private const int MaxColumnTraversalDepth = 12;
 
         internal sealed class ReferenceGeometry
         {
@@ -27,6 +37,11 @@ namespace Assets.Scripts.UI_Components
                 new List<HorizontalReferenceGeometry>();
             internal readonly List<HorizontalReferenceGeometry> CompositionChildren =
                 new List<HorizontalReferenceGeometry>();
+            internal readonly List<CrossAxisReferenceGeometry> ColumnCrossAxisBranches =
+                new List<CrossAxisReferenceGeometry>();
+            internal readonly List<VerticalLayoutGroup> ColumnVerticalLayouts =
+                new List<VerticalLayoutGroup>();
+            internal readonly List<RectTransform> ColumnRoots = new List<RectTransform>();
 
             internal NestedLayoutReference SettingsLayout;
             internal RectTransform Composition;
@@ -43,6 +58,13 @@ namespace Assets.Scripts.UI_Components
             internal RectTransform Rect;
             internal float MinFraction;
             internal float MaxFraction;
+        }
+
+        internal sealed class CrossAxisReferenceGeometry
+        {
+            internal RectTransform Rect;
+            internal float LeftMargin;
+            internal float RightMargin;
         }
 
         internal sealed class NestedLayoutReference
@@ -112,6 +134,8 @@ namespace Assets.Scripts.UI_Components
             }
 
             CaptureActionRowMetrics(reference);
+            CaptureColumnCrossAxisRelationships(squadMaker, reference);
+            ConfigureColorPickerPlacement(squadMaker);
             return reference;
         }
 
@@ -123,10 +147,11 @@ namespace Assets.Scripts.UI_Components
             }
 
             ApplyNestedLayout(reference.SettingsLayout);
+            ApplyColumnCrossAxisRelationships(reference);
             ApplyNormalizedHorizontalGeometry(reference.SettingsChildren);
             ApplyNormalizedHorizontalGeometry(reference.CompositionChildren);
             StretchDropZone(reference);
-            PinFormationsToLeftEdge(reference.Formations);
+            PinFormationsInsideLeftEdge(reference.Composition, reference.Formations);
             ConfigureActionRow(reference);
         }
 
@@ -291,6 +316,151 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        /// <summary>
+        /// The three outer list columns grow proportionally on wide canvases. Unity's direct column
+        /// layout can stretch its immediate children, but legacy scroll/list wrappers one level down
+        /// can still retain their authored width. Capture only branches that already occupied at least
+        /// half of their immediate owner at reference size, and preserve their authored side margins.
+        /// This makes structural rows/backers and centered headings inherit live column width without
+        /// stretching icons or other deliberately small controls.
+        /// </summary>
+        private static void CaptureColumnCrossAxisRelationships(
+            SquadMaker squadMaker,
+            ReferenceGeometry reference)
+        {
+            if (squadMaker == null || reference == null || squadMaker.ChosenSquadList == null)
+            {
+                return;
+            }
+
+            RectTransform chosenList = squadMaker.ChosenSquadList.transform as RectTransform;
+            RectTransform chosenColumn = FindAncestorByName(chosenList, ChosenSquadsColumnName);
+            RectTransform squadsColumn = FindAncestorByName(chosenColumn, SquadsColumnName);
+            RectTransform mainContainer = FindAncestorByName(squadsColumn, MainContainerName);
+            RectTransform savedColumn = FindDirectChildByName(squadsColumn, SavedSquadsColumnName);
+            RectTransform shipSelectorColumn = FindDirectChildByName(mainContainer, ShipSelectorColumnName);
+
+            CaptureColumnRoot(shipSelectorColumn, reference);
+            CaptureColumnRoot(savedColumn, reference);
+            CaptureColumnRoot(chosenColumn, reference);
+        }
+
+        private static void CaptureColumnRoot(RectTransform root, ReferenceGeometry reference)
+        {
+            if (root == null || reference == null)
+            {
+                return;
+            }
+
+            if (!reference.ColumnRoots.Contains(root))
+            {
+                reference.ColumnRoots.Add(root);
+            }
+
+            CaptureColumnNode(root, reference, 0);
+        }
+
+        private static void CaptureColumnNode(
+            RectTransform current,
+            ReferenceGeometry reference,
+            int depth)
+        {
+            if (current == null || reference == null || depth >= MaxColumnTraversalDepth)
+            {
+                return;
+            }
+
+            LayoutGroup ownerLayout = current.GetComponent<LayoutGroup>();
+            bool layoutOwnsChildren = ownerLayout != null && ownerLayout.enabled;
+            VerticalLayoutGroup vertical = ownerLayout as VerticalLayoutGroup;
+            if (vertical != null && !reference.ColumnVerticalLayouts.Contains(vertical))
+            {
+                reference.ColumnVerticalLayouts.Add(vertical);
+            }
+
+            float ownerWidth = Mathf.Abs(current.rect.width);
+            for (int index = 0; index < current.childCount; index++)
+            {
+                RectTransform child = current.GetChild(index) as RectTransform;
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (!layoutOwnsChildren && ownerWidth > GeometryTolerance)
+                {
+                    Rect bounds = CalculateRectBounds(current, child);
+                    float coverage = Mathf.Abs(bounds.width) / ownerWidth;
+                    if (coverage >= StructuralCrossAxisCoverage)
+                    {
+                        reference.ColumnCrossAxisBranches.Add(new CrossAxisReferenceGeometry
+                        {
+                            Rect = child,
+                            LeftMargin = Mathf.Max(0f, bounds.xMin - current.rect.xMin),
+                            RightMargin = Mathf.Max(0f, current.rect.xMax - bounds.xMax)
+                        });
+                    }
+                }
+
+                CaptureColumnNode(child, reference, depth + 1);
+            }
+        }
+
+        private static void ApplyColumnCrossAxisRelationships(ReferenceGeometry reference)
+        {
+            if (reference == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < reference.ColumnVerticalLayouts.Count; index++)
+            {
+                VerticalLayoutGroup layout = reference.ColumnVerticalLayouts[index];
+                if (layout == null || !layout.enabled)
+                {
+                    continue;
+                }
+
+                layout.childControlWidth = true;
+                layout.childForceExpandWidth = true;
+            }
+
+            // References are captured parent-first, so wrappers expand before their descendants.
+            for (int index = 0; index < reference.ColumnCrossAxisBranches.Count; index++)
+            {
+                CrossAxisReferenceGeometry branch = reference.ColumnCrossAxisBranches[index];
+                RectTransform rect = branch != null ? branch.Rect : null;
+                if (rect == null)
+                {
+                    continue;
+                }
+
+                Vector2 anchorMin = rect.anchorMin;
+                Vector2 anchorMax = rect.anchorMax;
+                Vector2 offsetMin = rect.offsetMin;
+                Vector2 offsetMax = rect.offsetMax;
+
+                anchorMin.x = 0f;
+                anchorMax.x = 1f;
+                offsetMin.x = branch.LeftMargin;
+                offsetMax.x = -branch.RightMargin;
+
+                rect.anchorMin = anchorMin;
+                rect.anchorMax = anchorMax;
+                rect.offsetMin = offsetMin;
+                rect.offsetMax = offsetMax;
+            }
+
+            for (int index = 0; index < reference.ColumnRoots.Count; index++)
+            {
+                RectTransform root = reference.ColumnRoots[index];
+                if (root != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(root);
+                }
+            }
+        }
+
         private static RectOffsetGeometry CaptureMargins(RectTransform owner, RectTransform rect)
         {
             Rect bounds = CalculateRectBounds(owner, rect);
@@ -321,9 +491,11 @@ namespace Assets.Scripts.UI_Components
                 -reference.DropZoneMargins.Top);
         }
 
-        private static void PinFormationsToLeftEdge(RectTransform formations)
+        private static void PinFormationsInsideLeftEdge(
+            RectTransform composition,
+            RectTransform formations)
         {
-            if (formations == null)
+            if (composition == null || formations == null)
             {
                 return;
             }
@@ -332,12 +504,21 @@ namespace Assets.Scripts.UI_Components
             Vector2 anchorMax = formations.anchorMax;
             Vector2 anchoredPosition = formations.anchoredPosition;
 
+            // Reset to the semantic left edge first so repeated repairs never accumulate a correction.
             anchorMin.x = 0f;
             anchorMax.x = 0f;
-            anchoredPosition.x = formations.pivot.x * Mathf.Abs(formations.rect.width * formations.localScale.x);
-
+            anchoredPosition.x = 0f;
             formations.anchorMin = anchorMin;
             formations.anchorMax = anchorMax;
+            formations.anchoredPosition = anchoredPosition;
+
+            // The Formations parent is narrower than some of its authored child visuals. Aligning only
+            // the parent's pivot can therefore leave BLARP protruding on narrow screens. Correct using
+            // the complete rendered hierarchy bounds instead.
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+            float correction = composition.rect.xMin - bounds.min.x;
+            anchoredPosition = formations.anchoredPosition;
+            anchoredPosition.x += correction;
             formations.anchoredPosition = anchoredPosition;
         }
 
@@ -414,6 +595,128 @@ namespace Assets.Scripts.UI_Components
             LayoutRebuilder.ForceRebuildLayoutImmediate(row);
         }
 
+        private static void ConfigureColorPickerPlacement(SquadMaker squadMaker)
+        {
+            if (squadMaker == null || squadMaker.ColorPicker == null ||
+                squadMaker.SquadColorPickerButton == null)
+            {
+                return;
+            }
+
+            RectTransform picker = squadMaker.ColorPicker.transform as RectTransform;
+            RectTransform anchor = squadMaker.SquadColorPickerButton.transform as RectTransform;
+            Canvas canvas = anchor != null ? anchor.GetComponentInParent<Canvas>() : null;
+            RectTransform viewport = canvas != null ? canvas.rootCanvas.transform as RectTransform : null;
+            if (picker == null || anchor == null || viewport == null)
+            {
+                return;
+            }
+
+            SquadMakerColorPickerPlacementRelay relay =
+                picker.GetComponent<SquadMakerColorPickerPlacementRelay>();
+            if (relay == null)
+            {
+                relay = picker.gameObject.AddComponent<SquadMakerColorPickerPlacementRelay>();
+            }
+
+            relay.Configure(viewport, anchor);
+        }
+
+        /// <summary>
+        /// Places an overlay directly below its live anchor, flipping above when needed and clamping
+        /// the overlay's complete rendered hierarchy to the viewport. All measurements share viewport
+        /// coordinates, so this is independent of screen resolution, CanvasScaler scale, and parent
+        /// hierarchy.
+        /// </summary>
+        internal static bool PositionOverlayNearAnchor(
+            RectTransform viewport,
+            RectTransform anchor,
+            RectTransform overlay)
+        {
+            if (viewport == null || anchor == null || overlay == null)
+            {
+                return false;
+            }
+
+            Bounds anchorBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, anchor);
+            Bounds overlayBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, overlay);
+            if (overlayBounds.size.x <= GeometryTolerance || overlayBounds.size.y <= GeometryTolerance)
+            {
+                return false;
+            }
+
+            Rect available = viewport.rect;
+            Vector2 correction = new Vector2(
+                anchorBounds.center.x - overlayBounds.center.x,
+                anchorBounds.min.y - overlayBounds.max.y);
+
+            float belowMinY = overlayBounds.min.y + correction.y;
+            if (belowMinY < available.yMin)
+            {
+                float aboveCorrection = anchorBounds.max.y - overlayBounds.min.y;
+                float aboveMaxY = overlayBounds.max.y + aboveCorrection;
+                if (aboveMaxY <= available.yMax)
+                {
+                    correction.y = aboveCorrection;
+                }
+            }
+
+            MoveRectByViewportDelta(viewport, overlay, correction);
+
+            overlayBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, overlay);
+            Vector2 clamp = Vector2.zero;
+
+            if (overlayBounds.size.x <= available.width)
+            {
+                if (overlayBounds.min.x < available.xMin)
+                {
+                    clamp.x = available.xMin - overlayBounds.min.x;
+                }
+                else if (overlayBounds.max.x > available.xMax)
+                {
+                    clamp.x = available.xMax - overlayBounds.max.x;
+                }
+            }
+            else
+            {
+                clamp.x = available.center.x - overlayBounds.center.x;
+            }
+
+            if (overlayBounds.size.y <= available.height)
+            {
+                if (overlayBounds.min.y < available.yMin)
+                {
+                    clamp.y = available.yMin - overlayBounds.min.y;
+                }
+                else if (overlayBounds.max.y > available.yMax)
+                {
+                    clamp.y = available.yMax - overlayBounds.max.y;
+                }
+            }
+            else
+            {
+                clamp.y = available.center.y - overlayBounds.center.y;
+            }
+
+            MoveRectByViewportDelta(viewport, overlay, clamp);
+            return correction.sqrMagnitude > GeometryTolerance || clamp.sqrMagnitude > GeometryTolerance;
+        }
+
+        private static void MoveRectByViewportDelta(
+            RectTransform viewport,
+            RectTransform rect,
+            Vector2 viewportDelta)
+        {
+            if (viewportDelta.sqrMagnitude <= GeometryTolerance)
+            {
+                return;
+            }
+
+            Vector3 worldDelta = viewport.TransformVector(
+                new Vector3(viewportDelta.x, viewportDelta.y, 0f));
+            rect.position += worldDelta;
+        }
+
         private static Rect CalculateRectBounds(RectTransform owner, RectTransform rect)
         {
             if (owner == null || rect == null)
@@ -439,6 +742,22 @@ namespace Assets.Scripts.UI_Components
             }
 
             return Rect.MinMaxRect(minX, minY, maxX, maxY);
+        }
+
+        private static RectTransform FindAncestorByName(RectTransform start, string name)
+        {
+            RectTransform current = start;
+            while (current != null)
+            {
+                if (current.name == name)
+                {
+                    return current;
+                }
+
+                current = current.parent as RectTransform;
+            }
+
+            return null;
         }
 
         private static RectTransform FindDirectChildByName(RectTransform owner, string name)
@@ -474,6 +793,43 @@ namespace Assets.Scripts.UI_Components
             }
 
             return current != null && current.parent == owner ? current : null;
+        }
+    }
+
+    internal sealed class SquadMakerColorPickerPlacementRelay : MonoBehaviour
+    {
+        private RectTransform _viewport;
+        private RectTransform _anchor;
+        private RectTransform _overlay;
+
+        internal void Configure(RectTransform viewport, RectTransform anchor)
+        {
+            _viewport = viewport;
+            _anchor = anchor;
+            _overlay = transform as RectTransform;
+
+            if (isActiveAndEnabled)
+            {
+                Reposition();
+            }
+        }
+
+        private void OnEnable()
+        {
+            Reposition();
+        }
+
+        private void LateUpdate()
+        {
+            Reposition();
+        }
+
+        private void Reposition()
+        {
+            SquadMakerCompositionLayoutGuard.PositionOverlayNearAnchor(
+                _viewport,
+                _anchor,
+                _overlay);
         }
     }
 }
