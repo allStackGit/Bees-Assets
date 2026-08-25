@@ -92,6 +92,11 @@ namespace Assets.Scripts.UIComponents
                 Rect rect = new Rect((ColorSheet.transform.position.x - (width / 2f)) - RectAdjustment.x,
                     (ColorSheet.transform.position.y - (height / 2f)) - RectAdjustment.y, width, height);
 
+                if (_colorTexture != null)
+                {
+                    Destroy(_colorTexture);
+                }
+
                 _colorTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
                 _colorTexture.ReadPixels(rect, 0, 0);
                 _colorTexture.Apply(true);
@@ -99,7 +104,6 @@ namespace Assets.Scripts.UIComponents
                 _colors = _colorTexture.GetPixels();
 
                 MouseIndicator.SetActive(true);
-                StopCoroutine(SetTexture());
             }
             ChangeHexValue(_hexInput.text);
         }
