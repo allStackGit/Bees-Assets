@@ -14,7 +14,7 @@ namespace Assets.Scripts.UIComponents
         private Color[] _colors;
         private Texture2D _colorTexture = null;
         private RectTransform _mouse;
-        private Vector2 _screenScaleFactor;
+        private Vector2 _screenScaleFactor = Vector2.one;
         private Image _colorSquareImage;
         private TMP_InputField _hexInput;
         private RectTransform _colorSheetRect;
@@ -36,34 +36,61 @@ namespace Assets.Scripts.UIComponents
 
         public void SetScreenScaleFactor()
         {
-            _screenScaleFactor = new Vector2(Screen.width / ReferenceScreenSize.x, Screen.height / ReferenceScreenSize.y);
+            UpdateScreenScaleFactor();
             _hasActiveTexture = false;
             MouseIndicator.SetActive(false);
 
+            // A resolution/aspect change invalidates the sampled screen texture, but it must not
+            // close an open picker. Re-sample after layout/overlay placement settles this frame.
             if (IsActive)
             {
-                Toggle();
+                StartCoroutine(SetTexture());
             }
         }
 
         void Start()
         {
-            _screenScaleFactor = new Vector2(Screen.width / ReferenceScreenSize.x, Screen.height / ReferenceScreenSize.y);
             EnsureReferences();
+            UpdateScreenScaleFactor();
+        }
+
+        private void UpdateScreenScaleFactor()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            float liveCanvasScale = canvas != null ? canvas.rootCanvas.scaleFactor : 0f;
+            if (liveCanvasScale > 0f)
+            {
+                // CanvasScaler produces one rendered UI scale. Screen.width/referenceWidth and
+                // Screen.height/referenceHeight diverge on non-reference aspect ratios and therefore
+                // cannot describe the rendered Color Sheet dimensions independently.
+                _screenScaleFactor = new Vector2(liveCanvasScale, liveCanvasScale);
+                return;
+            }
+
+            if (ReferenceScreenSize.x > 0f && ReferenceScreenSize.y > 0f)
+            {
+                _screenScaleFactor = new Vector2(
+                    Screen.width / ReferenceScreenSize.x,
+                    Screen.height / ReferenceScreenSize.y);
+                return;
+            }
+
+            _screenScaleFactor = Vector2.one;
         }
 
         public IEnumerator SetTexture()
         {
             yield return new WaitForEndOfFrame();
             EnsureReferences();
+            UpdateScreenScaleFactor();
             if (IsActive && !_hasActiveTexture)
             {
                 Vector2 size = Size();
-                int width = (int)(size.x * _screenScaleFactor.x);
-                int height = (int)(size.y * _screenScaleFactor.y);
+                int width = Mathf.Max(1, Mathf.RoundToInt(size.x * _screenScaleFactor.x));
+                int height = Mathf.Max(1, Mathf.RoundToInt(size.y * _screenScaleFactor.y));
 
-                Rect rect = new Rect((ColorSheet.transform.position.x - (width / 2)) - RectAdjustment.x,
-                    (ColorSheet.transform.position.y - (height / 2)) - RectAdjustment.y, width, height);
+                Rect rect = new Rect((ColorSheet.transform.position.x - (width / 2f)) - RectAdjustment.x,
+                    (ColorSheet.transform.position.y - (height / 2f)) - RectAdjustment.y, width, height);
 
                 _colorTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
                 _colorTexture.ReadPixels(rect, 0, 0);
@@ -158,6 +185,7 @@ namespace Assets.Scripts.UIComponents
             gameObject.SetActive(!gameObject.activeSelf);
             if (IsActive)
             {
+                UpdateScreenScaleFactor();
                 StartCoroutine(SetTexture());
             }
         }
