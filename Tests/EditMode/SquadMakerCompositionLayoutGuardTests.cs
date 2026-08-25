@@ -34,8 +34,9 @@ namespace Bees.Tests.EditMode
             Assert.That(compositionPrefabStart, Is.GreaterThanOrEqualTo(0));
 
             string compositionPrefab = scene.Substring(
-                compositionPrefabStart,
-                compositionNameIndex - compositionPrefabStart);
+                    compositionPrefabStart,
+                    compositionNameIndex - compositionPrefabStart)
+                .Replace("\r\n", "\n");
             Assert.That(
                 compositionPrefab,
                 Does.Contain("propertyPath: m_SizeDelta.x\n      value: 620"),
