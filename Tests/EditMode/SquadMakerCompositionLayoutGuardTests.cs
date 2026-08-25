@@ -128,6 +128,12 @@ namespace Bees.Tests.EditMode
                 Is.EqualTo(composition.rect.xMin).Within(0.01f),
                 "BLARP/Formations must be flush with the inside of the live composition's left edge.");
 
+            Assert.That(lowerButtons.anchorMin.x, Is.Zero);
+            Assert.That(lowerButtons.anchorMax.x, Is.Zero);
+            Assert.That(
+                lowerButtonsBounds.center.x - composition.rect.xMin,
+                Is.EqualTo(110f).Within(0.01f),
+                "The save/clear/duplicate/delete group must retain its authored horizontal position instead of following ultrawide surplus.");
             Assert.That(lowerButtons.anchorMin.y, Is.Zero);
             Assert.That(lowerButtons.anchorMax.y, Is.Zero);
             Assert.That(
