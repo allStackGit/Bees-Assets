@@ -29,6 +29,8 @@ namespace Assets.Scripts.UI_Components
         private const string FooterName = "Footer";
         private const string ShipSelectorColumnName = "Ship Selector Column";
         private const string SquadMakerColumnName = "Squad Maker Column";
+        private const string SquadSettingsName = "Squad Settings";
+        private const string SquadCompositionName = "Squad Composition";
         private const string SquadsColumnName = "Squads Column";
         private const string SavedSquadsColumnName = "Saved Squads Column";
         private const string ChosenSquadsColumnName = "Chosen Squads Column";
@@ -38,6 +40,7 @@ namespace Assets.Scripts.UI_Components
         private const float RelaxedHorizontalMinimumCoverage = 0.20f;
         private const float RelaxedHorizontalDominanceRatio = 1.5f;
         private const float FixedAnchorTolerance = 0.001f;
+        private const float ChosenScrollHeightTolerance = 0.01f;
         private const int MaxHierarchyDepth = 16;
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
 
@@ -65,13 +68,18 @@ namespace Assets.Scripts.UI_Components
             public RectTransform Footer;
             public RectTransform ShipSelectorColumn;
             public RectTransform SquadMakerColumn;
+            public RectTransform SquadSettings;
+            public RectTransform SquadComposition;
             public RectTransform SquadsColumn;
             public RectTransform SavedSquadsColumn;
             public RectTransform ChosenSquadsColumn;
+            public RectTransform ChosenSquadScroll;
             public Vector2 MainContainerSize;
             public Vector2 FooterSize;
             public Vector2 ShipSelectorColumnSize;
             public Vector2 SquadMakerColumnSize;
+            public Vector2 SquadSettingsSize;
+            public Vector2 SquadCompositionSize;
             public Vector2 SquadsColumnSize;
             public Vector2 SavedSquadsColumnSize;
             public Vector2 ChosenSquadsColumnSize;
@@ -91,6 +99,8 @@ namespace Assets.Scripts.UI_Components
         private int _lastScreenWidth = -1;
         private int _lastScreenHeight = -1;
         private float _nextRepairTime;
+        private float _chosenSquadScrollReferenceHeight = -1f;
+        private float _lastAppliedChosenSquadScrollHeight = -1f;
         private bool _referenceGeometryCaptured;
         private bool _structuralReferenceGeometryCaptured;
         private bool _warnedMissingAuthoredHierarchy;
@@ -189,6 +199,8 @@ namespace Assets.Scripts.UI_Components
             _lastScreenWidth = -1;
             _lastScreenHeight = -1;
             _nextRepairTime = 0f;
+            _chosenSquadScrollReferenceHeight = -1f;
+            _lastAppliedChosenSquadScrollHeight = -1f;
             _referenceGeometryCaptured = false;
             _structuralReferenceGeometryCaptured = false;
             _layoutReference = null;
@@ -433,9 +445,12 @@ namespace Assets.Scripts.UI_Components
             RectTransform footer = null;
             RectTransform shipSelectorColumn = null;
             RectTransform squadMakerColumn = null;
+            RectTransform squadSettings = null;
+            RectTransform squadComposition = null;
             RectTransform squadsColumn = null;
             RectTransform savedSquadsColumn = null;
             RectTransform chosenSquadsColumn = null;
+            RectTransform chosenSquadScroll = null;
 
             // Production path: walk upward from the serialized right-side list. This avoids choosing
             // a similarly named object from another Canvas/prefab branch.
@@ -456,28 +471,39 @@ namespace Assets.Scripts.UI_Components
                     shipSelectorColumn = FindDirectChildByName(mainContainer, ShipSelectorColumnName);
                     squadMakerColumn = FindDirectChildByName(mainContainer, SquadMakerColumnName);
                     savedSquadsColumn = FindDirectChildByName(squadsColumn, SavedSquadsColumnName);
+                    chosenSquadScroll = FindDirectChildAncestor(chosenList, chosenSquadsColumn);
+                    squadSettings = FindDirectChildByName(squadMakerColumn, SquadSettingsName);
+                    squadComposition = FindDirectChildByName(squadMakerColumn, SquadCompositionName);
                 }
             }
 
             // Fallback for isolated tests/future fixtures that intentionally do not provide a
             // SquadMaker serialized anchor.
             if (mainPanel == null || mainContainer == null || footer == null ||
-                shipSelectorColumn == null || squadMakerColumn == null || squadsColumn == null ||
-                savedSquadsColumn == null || chosenSquadsColumn == null)
+                shipSelectorColumn == null || squadMakerColumn == null || squadSettings == null ||
+                squadComposition == null || squadsColumn == null || savedSquadsColumn == null ||
+                chosenSquadsColumn == null)
             {
                 mainPanel = FindDescendantByName(_canvasRect, MainPanelName);
                 mainContainer = FindOwnedChild(mainPanel, MainContainerName);
                 footer = FindOwnedChild(mainPanel, FooterName);
                 shipSelectorColumn = FindOwnedChild(mainContainer, ShipSelectorColumnName);
                 squadMakerColumn = FindOwnedChild(mainContainer, SquadMakerColumnName);
+                squadSettings = FindOwnedChild(squadMakerColumn, SquadSettingsName);
+                squadComposition = FindOwnedChild(squadMakerColumn, SquadCompositionName);
                 squadsColumn = FindOwnedChild(mainContainer, SquadsColumnName);
                 savedSquadsColumn = FindOwnedChild(squadsColumn, SavedSquadsColumnName);
                 chosenSquadsColumn = FindOwnedChild(squadsColumn, ChosenSquadsColumnName);
+                if (chosenList != null && chosenSquadsColumn != null)
+                {
+                    chosenSquadScroll = FindDirectChildAncestor(chosenList, chosenSquadsColumn);
+                }
             }
 
             if (mainPanel == null || mainContainer == null || footer == null ||
-                shipSelectorColumn == null || squadMakerColumn == null || squadsColumn == null ||
-                savedSquadsColumn == null || chosenSquadsColumn == null)
+                shipSelectorColumn == null || squadMakerColumn == null || squadSettings == null ||
+                squadComposition == null || squadsColumn == null || savedSquadsColumn == null ||
+                chosenSquadsColumn == null)
             {
                 WarnMissingAuthoredHierarchy();
                 return;
@@ -497,13 +523,18 @@ namespace Assets.Scripts.UI_Components
                 Footer = footer,
                 ShipSelectorColumn = shipSelectorColumn,
                 SquadMakerColumn = squadMakerColumn,
+                SquadSettings = squadSettings,
+                SquadComposition = squadComposition,
                 SquadsColumn = squadsColumn,
                 SavedSquadsColumn = savedSquadsColumn,
                 ChosenSquadsColumn = chosenSquadsColumn,
+                ChosenSquadScroll = chosenSquadScroll,
                 MainContainerSize = mainContainer.rect.size,
                 FooterSize = footer.rect.size,
                 ShipSelectorColumnSize = shipSelectorColumn.rect.size,
                 SquadMakerColumnSize = squadMakerColumn.rect.size,
+                SquadSettingsSize = squadSettings.rect.size,
+                SquadCompositionSize = squadComposition.rect.size,
                 SquadsColumnSize = squadsColumn.rect.size,
                 SavedSquadsColumnSize = savedSquadsColumn.rect.size,
                 ChosenSquadsColumnSize = chosenSquadsColumn.rect.size
@@ -532,6 +563,8 @@ namespace Assets.Scripts.UI_Components
                    reference.Footer != null &&
                    reference.ShipSelectorColumn != null &&
                    reference.SquadMakerColumn != null &&
+                   reference.SquadSettings != null &&
+                   reference.SquadComposition != null &&
                    reference.SquadsColumn != null &&
                    reference.SavedSquadsColumn != null &&
                    reference.ChosenSquadsColumn != null;
@@ -603,8 +636,10 @@ namespace Assets.Scripts.UI_Components
             SquadMakerLayoutReferenceGeometry reference = _layoutReference;
             VerticalLayoutGroup mainPanelLayout = reference.MainPanel.GetComponent<VerticalLayoutGroup>();
             HorizontalLayoutGroup mainContainerLayout = reference.MainContainer.GetComponent<HorizontalLayoutGroup>();
+            VerticalLayoutGroup squadMakerLayout = reference.SquadMakerColumn.GetComponent<VerticalLayoutGroup>();
             HorizontalLayoutGroup squadsLayout = reference.SquadsColumn.GetComponent<HorizontalLayoutGroup>();
-            if (mainPanelLayout == null || mainContainerLayout == null || squadsLayout == null)
+            if (mainPanelLayout == null || mainContainerLayout == null ||
+                squadMakerLayout == null || squadsLayout == null)
             {
                 WarnMissingAuthoredHierarchy();
                 return false;
@@ -615,6 +650,7 @@ namespace Assets.Scripts.UI_Components
             // inherited gutters before the native LayoutGroups calculate body/footer/column sizes.
             NormalizeViewportLayout(mainPanelLayout);
             NormalizeViewportLayout(mainContainerLayout);
+            NormalizeViewportLayout(squadMakerLayout);
             NormalizeViewportLayout(squadsLayout);
 
             // MainPanel owns width and height. The body is flexible; the footer keeps its authored
@@ -662,6 +698,33 @@ namespace Assets.Scripts.UI_Components
                 reference.SquadsColumnSize.x,
                 0f);
 
+            // The center column is another structural layout owner. Its 298-high settings/presets
+            // region stays at the authored height while filling the live center width. The composition
+            // work region fills that same live width and absorbs any remaining vertical surplus. With
+            // childControl* left false, Unity allocates force-expand space without resizing the actual
+            // panels, which exposes the orange parent between/below them on tall and wide displays.
+            squadMakerLayout.childControlWidth = true;
+            squadMakerLayout.childControlHeight = true;
+            squadMakerLayout.childForceExpandWidth = true;
+            squadMakerLayout.childForceExpandHeight = false;
+
+            ConfigureLayoutElement(
+                reference.SquadSettings,
+                -1f,
+                -1f,
+                1f,
+                reference.SquadSettingsSize.y,
+                reference.SquadSettingsSize.y,
+                0f);
+            ConfigureLayoutElement(
+                reference.SquadComposition,
+                -1f,
+                -1f,
+                1f,
+                1f,
+                reference.SquadCompositionSize.y,
+                1f);
+
             // Squads Column is itself a two-column native layout. Its children exactly tile the
             // authored 484-wide region and inherit the body's live height.
             squadsLayout.childControlWidth = true;
@@ -680,8 +743,64 @@ namespace Assets.Scripts.UI_Components
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainPanel);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadMakerColumn);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.SquadsColumn);
+
+            // SquadMaker.ToggleLevelOptions/ToggleLevelDetails deliberately owns the reference
+            // height of the chosen-squads ScrollView (663/415/278 depending semantic state). Keep
+            // that stateful base intact and add only the height that exists beyond the authored
+            // 718-high Chosen Squads Column. If SquadMaker writes a new semantic height later, the
+            // next repair recognizes it as the new base instead of fighting the scene controller.
+            ApplyChosenSquadScrollSurplus(reference);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(reference.ChosenSquadsColumn);
             return true;
+        }
+
+        private void ApplyChosenSquadScrollSurplus(SquadMakerLayoutReferenceGeometry reference)
+        {
+            if (reference == null || reference.ChosenSquadScroll == null ||
+                reference.ChosenSquadsColumn == null)
+            {
+                return;
+            }
+
+            float currentHeight = Mathf.Abs(reference.ChosenSquadScroll.rect.height);
+            bool semanticHeightChanged = _chosenSquadScrollReferenceHeight < 0f ||
+                                         _lastAppliedChosenSquadScrollHeight < 0f ||
+                                         Mathf.Abs(currentHeight - _lastAppliedChosenSquadScrollHeight) >
+                                         ChosenScrollHeightTolerance;
+            if (semanticHeightChanged)
+            {
+                _chosenSquadScrollReferenceHeight = currentHeight;
+            }
+
+            float targetHeight = CalculateSurplusAbsorbingHeight(
+                _chosenSquadScrollReferenceHeight,
+                reference.ChosenSquadsColumnSize.y,
+                Mathf.Abs(reference.ChosenSquadsColumn.rect.height));
+
+            if (Mathf.Abs(currentHeight - targetHeight) > ChosenScrollHeightTolerance)
+            {
+                reference.ChosenSquadScroll.SetSizeWithCurrentAnchors(
+                    RectTransform.Axis.Vertical,
+                    targetHeight);
+            }
+
+            _lastAppliedChosenSquadScrollHeight = targetHeight;
+        }
+
+        internal static float CalculateSurplusAbsorbingHeight(
+            float semanticBaseHeight,
+            float authoredOwnerHeight,
+            float liveOwnerHeight)
+        {
+            if (semanticBaseHeight <= 0f)
+            {
+                return semanticBaseHeight;
+            }
+
+            float surplus = Mathf.Max(0f, liveOwnerHeight - Mathf.Max(0f, authoredOwnerHeight));
+            return semanticBaseHeight + surplus;
         }
 
         private static void NormalizeViewportLayout(HorizontalOrVerticalLayoutGroup layout)
@@ -783,6 +902,22 @@ namespace Assets.Scripts.UI_Components
             }
 
             return null;
+        }
+
+        private static RectTransform FindDirectChildAncestor(RectTransform descendant, RectTransform owner)
+        {
+            if (descendant == null || owner == null)
+            {
+                return null;
+            }
+
+            RectTransform current = descendant;
+            while (current != null && current.parent != owner)
+            {
+                current = current.parent as RectTransform;
+            }
+
+            return current != null && current.parent == owner ? current : null;
         }
 
         private static RectTransform FindOwnedChild(RectTransform owner, string name)
