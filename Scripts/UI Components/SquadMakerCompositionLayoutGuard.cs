@@ -1,5 +1,8 @@
 using Assets.Scripts.Scenes;
+using Assets.Scripts.UIComponents;
+using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -9,14 +12,15 @@ namespace Assets.Scripts.UI_Components
     /// Captures and applies responsive relationships inside the Squad Maker's authored subregions.
     ///
     /// Scene geometry is immutable reference data, not a set of runtime pixel coordinates. Native
-    /// LayoutGroups retain ownership of their children. Manual horizontal regions retain their authored
-    /// fractions, the real Drop Zone stretches with the work surface, Formations belongs wholly inside
-    /// the composition's left edge, the action buttons form one compact bottom row, and nested column
-    /// wrappers/lists inherit the live cross-axis width of their structural column.
+    /// LayoutGroups retain ownership of their children. Manual regions preserve authored relationships,
+    /// structural backers inherit their live owner's width, the composition header gives horizontal
+    /// surplus to the editable squad name, the real Drop Zone stretches with the work surface,
+    /// Formations remains wholly inside that work surface, and action buttons form one compact bottom
+    /// row. Dynamic squad rows inherit their live list width and align icon/name content from the left.
     ///
     /// SquadMakerResponsiveLayoutGuard remains the lifecycle owner and invokes this helper from its
     /// immutable reference snapshot. The color-picker relay owns only the picker overlay itself so that
-    /// it can be positioned before its end-of-frame texture capture when the picker is activated.
+    /// it can normalize and position the picker before its end-of-frame texture capture.
     /// </summary>
     internal static class SquadMakerCompositionLayoutGuard
     {
@@ -27,9 +31,13 @@ namespace Assets.Scripts.UI_Components
         private const string SquadsColumnName = "Squads Column";
         private const string SavedSquadsColumnName = "Saved Squads Column";
         private const string ChosenSquadsColumnName = "Chosen Squads Column";
+        private const string SquadPresetsHeading = "Squad Presets";
+        private const string SquadNumberObjectName = "Squad Number";
         private const float GeometryTolerance = 0.001f;
         private const float StructuralCrossAxisCoverage = 0.5f;
+        private const float SettingsStructuralCrossAxisCoverage = 0.6f;
         private const int MaxColumnTraversalDepth = 12;
+        private const int MaxSettingsTraversalDepth = 8;
 
         internal sealed class ReferenceGeometry
         {
@@ -42,12 +50,20 @@ namespace Assets.Scripts.UI_Components
             internal readonly List<VerticalLayoutGroup> ColumnVerticalLayouts =
                 new List<VerticalLayoutGroup>();
             internal readonly List<RectTransform> ColumnRoots = new List<RectTransform>();
+            internal readonly List<CrossAxisReferenceGeometry> SettingsCrossAxisBranches =
+                new List<CrossAxisReferenceGeometry>();
+            internal readonly List<VerticalLayoutGroup> SettingsVerticalLayouts =
+                new List<VerticalLayoutGroup>();
 
             internal NestedLayoutReference SettingsLayout;
+            internal HeaderReferenceGeometry Header;
+            internal RectTransform Settings;
             internal RectTransform Composition;
             internal RectTransform DropZone;
             internal RectTransform Formations;
             internal RectTransform ActionRow;
+            internal RectTransform SavedSquadList;
+            internal RectTransform ChosenSquadList;
             internal RectOffsetGeometry DropZoneMargins;
             internal float ActionRowHeight;
             internal float ActionSpacing;
@@ -80,6 +96,25 @@ namespace Assets.Scripts.UI_Components
             internal float Width;
         }
 
+        internal sealed class HeaderReferenceGeometry
+        {
+            internal RectTransform Owner;
+            internal RectTransform Supply;
+            internal RectTransform Name;
+            internal RectTransform Color;
+            internal RectTransform Count;
+            internal float OwnerWidth;
+            internal float LeftMargin;
+            internal float SupplyWidth;
+            internal float SupplyNameGap;
+            internal float NameWidth;
+            internal float NameColorGap;
+            internal float ColorWidth;
+            internal float ColorCountGap;
+            internal float CountWidth;
+            internal float RightMargin;
+        }
+
         internal struct RectOffsetGeometry
         {
             internal float Left;
@@ -100,33 +135,44 @@ namespace Assets.Scripts.UI_Components
 
             ReferenceGeometry reference = new ReferenceGeometry
             {
+                Settings = squadSettings,
                 SettingsLayout = CaptureNestedLayout(squadSettings),
                 Composition = squadComposition,
                 Formations = FindDirectChildByName(squadComposition, FormationsName),
-                ActionRow = FindDirectChildByName(squadComposition, LowerButtonsName)
+                ActionRow = FindDirectChildByName(squadComposition, LowerButtonsName),
+                SavedSquadList = squadMaker != null && squadMaker.SavedSquadList != null
+                    ? squadMaker.SavedSquadList.transform as RectTransform
+                    : null,
+                ChosenSquadList = squadMaker != null && squadMaker.ChosenSquadList != null
+                    ? squadMaker.ChosenSquadList.transform as RectTransform
+                    : null
             };
 
             RectTransform serializedDropZone = squadMaker != null && squadMaker.DropZone != null
                 ? squadMaker.DropZone.transform as RectTransform
                 : null;
             reference.DropZone = FindDirectChildAncestor(serializedDropZone, squadComposition);
+            reference.Header = CaptureHeaderReference(squadMaker, squadComposition);
 
             if (reference.SettingsLayout == null)
             {
                 CaptureNormalizedHorizontalChildren(
                     squadSettings,
-                    reference.SettingsChildren,
-                    null,
-                    null,
-                    null);
+                    reference.SettingsChildren);
             }
+
+            CaptureSettingsCrossAxisRelationships(squadSettings, reference);
 
             CaptureNormalizedHorizontalChildren(
                 squadComposition,
                 reference.CompositionChildren,
                 reference.Formations,
                 reference.ActionRow,
-                reference.DropZone);
+                reference.DropZone,
+                reference.Header != null ? reference.Header.Supply : null,
+                reference.Header != null ? reference.Header.Name : null,
+                reference.Header != null ? reference.Header.Color : null,
+                reference.Header != null ? reference.Header.Count : null);
 
             if (reference.DropZone != null)
             {
@@ -147,12 +193,17 @@ namespace Assets.Scripts.UI_Components
             }
 
             ApplyNestedLayout(reference.SettingsLayout);
+            ApplySettingsCrossAxisRelationships(reference);
             ApplyColumnCrossAxisRelationships(reference);
             ApplyNormalizedHorizontalGeometry(reference.SettingsChildren);
             ApplyNormalizedHorizontalGeometry(reference.CompositionChildren);
+            ApplyHeaderLayout(reference.Header);
             StretchDropZone(reference);
-            PinFormationsInsideLeftEdge(reference.Composition, reference.Formations);
+            PinFormationsInsideWorkArea(reference.Composition, reference.DropZone, reference.Formations);
             ConfigureActionRow(reference);
+            CenterHeading(reference.Settings, SquadPresetsHeading);
+            ConfigureSquadListRows(reference.SavedSquadList);
+            ConfigureSquadListRows(reference.ChosenSquadList);
         }
 
         private static NestedLayoutReference CaptureNestedLayout(RectTransform owner)
@@ -240,12 +291,145 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        private static HeaderReferenceGeometry CaptureHeaderReference(
+            SquadMaker squadMaker,
+            RectTransform composition)
+        {
+            if (squadMaker == null || composition == null)
+            {
+                return null;
+            }
+
+            RectTransform supply = FindDirectChildAncestor(
+                squadMaker.SquadMakerSupplyCapacityLabel != null
+                    ? squadMaker.SquadMakerSupplyCapacityLabel.transform as RectTransform
+                    : null,
+                composition);
+            RectTransform name = FindDirectChildAncestor(
+                squadMaker.SquadNameInput != null ? squadMaker.SquadNameInput.transform as RectTransform : null,
+                composition);
+            RectTransform color = FindDirectChildAncestor(
+                squadMaker.SquadColorPickerButton != null
+                    ? squadMaker.SquadColorPickerButton.transform as RectTransform
+                    : null,
+                composition);
+            RectTransform count = FindDirectChildAncestor(
+                squadMaker.SquadShipCount != null ? squadMaker.SquadShipCount.transform as RectTransform : null,
+                composition);
+
+            if (supply == null || name == null || color == null || count == null ||
+                supply == name || supply == color || supply == count || name == color ||
+                name == count || color == count)
+            {
+                return null;
+            }
+
+            Rect supplyBounds = CalculateRectBounds(composition, supply);
+            Rect nameBounds = CalculateRectBounds(composition, name);
+            Rect colorBounds = CalculateRectBounds(composition, color);
+            Rect countBounds = CalculateRectBounds(composition, count);
+
+            if (supplyBounds.xMin > nameBounds.xMin || nameBounds.xMin > colorBounds.xMin ||
+                colorBounds.xMin > countBounds.xMin)
+            {
+                return null;
+            }
+
+            return new HeaderReferenceGeometry
+            {
+                Owner = composition,
+                Supply = supply,
+                Name = name,
+                Color = color,
+                Count = count,
+                OwnerWidth = Mathf.Abs(composition.rect.width),
+                LeftMargin = Mathf.Max(0f, supplyBounds.xMin - composition.rect.xMin),
+                SupplyWidth = supplyBounds.width,
+                SupplyNameGap = Mathf.Max(0f, nameBounds.xMin - supplyBounds.xMax),
+                NameWidth = nameBounds.width,
+                NameColorGap = Mathf.Max(0f, colorBounds.xMin - nameBounds.xMax),
+                ColorWidth = colorBounds.width,
+                ColorCountGap = Mathf.Max(0f, countBounds.xMin - colorBounds.xMax),
+                CountWidth = countBounds.width,
+                RightMargin = Mathf.Max(0f, composition.rect.xMax - countBounds.xMax)
+            };
+        }
+
+        private static void ApplyHeaderLayout(HeaderReferenceGeometry reference)
+        {
+            if (reference == null || reference.Owner == null || reference.Supply == null ||
+                reference.Name == null || reference.Color == null || reference.Count == null ||
+                reference.OwnerWidth <= GeometryTolerance)
+            {
+                return;
+            }
+
+            float liveWidth = Mathf.Abs(reference.Owner.rect.width);
+            if (liveWidth <= GeometryTolerance)
+            {
+                return;
+            }
+
+            float scale = Mathf.Min(1f, liveWidth / reference.OwnerWidth);
+            float leftMargin = reference.LeftMargin * scale;
+            float supplyWidth = reference.SupplyWidth * scale;
+            float supplyNameGap = reference.SupplyNameGap * scale;
+            float nameWidth = reference.NameWidth * scale;
+            float nameColorGap = reference.NameColorGap * scale;
+            float colorWidth = reference.ColorWidth * scale;
+            float colorCountGap = reference.ColorCountGap * scale;
+            float countWidth = reference.CountWidth * scale;
+            float rightMargin = reference.RightMargin * scale;
+
+            if (liveWidth > reference.OwnerWidth)
+            {
+                // Supply, color and count are compact semantic controls. The editable name is the
+                // useful flexible region, so it alone absorbs horizontal surplus on wider layouts.
+                nameWidth += liveWidth - reference.OwnerWidth;
+            }
+
+            float cursor = reference.Owner.rect.xMin + leftMargin;
+            SetHorizontalBounds(reference.Owner, reference.Supply, cursor, supplyWidth);
+            cursor += supplyWidth + supplyNameGap;
+            SetHorizontalBounds(reference.Owner, reference.Name, cursor, Mathf.Max(0f, nameWidth));
+            cursor += nameWidth + nameColorGap;
+            SetHorizontalBounds(reference.Owner, reference.Color, cursor, colorWidth);
+            cursor += colorWidth + colorCountGap;
+            SetHorizontalBounds(reference.Owner, reference.Count, cursor, countWidth);
+
+            // Floating-point/layout rounding can leave a sub-pixel discrepancy at the right edge.
+            // Keep the authored right ownership without moving the flexible name field again.
+            Rect countBounds = CalculateRectBounds(reference.Owner, reference.Count);
+            float expectedRight = reference.Owner.rect.xMax - rightMargin;
+            if (Mathf.Abs(countBounds.xMax - expectedRight) > GeometryTolerance)
+            {
+                SetHorizontalBounds(
+                    reference.Owner,
+                    reference.Count,
+                    expectedRight - countWidth,
+                    countWidth);
+            }
+        }
+
+        private static void SetHorizontalBounds(
+            RectTransform owner,
+            RectTransform rect,
+            float left,
+            float width)
+        {
+            if (owner == null || rect == null)
+            {
+                return;
+            }
+
+            float inset = left - owner.rect.xMin;
+            rect.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Left, inset, Mathf.Max(0f, width));
+        }
+
         private static void CaptureNormalizedHorizontalChildren(
             RectTransform owner,
             List<HorizontalReferenceGeometry> destination,
-            RectTransform excludedA,
-            RectTransform excludedB,
-            RectTransform excludedC)
+            params RectTransform[] excluded)
         {
             if (owner == null || destination == null || HasEnabledLayoutGroup(owner))
             {
@@ -261,7 +445,7 @@ namespace Assets.Scripts.UI_Components
             for (int index = 0; index < owner.childCount; index++)
             {
                 RectTransform child = owner.GetChild(index) as RectTransform;
-                if (child == null || child == excludedA || child == excludedB || child == excludedC)
+                if (child == null || IsExcluded(child, excluded))
                 {
                     continue;
                 }
@@ -274,6 +458,24 @@ namespace Assets.Scripts.UI_Components
                     MaxFraction = Mathf.Clamp01((childBounds.xMax - owner.rect.xMin) / ownerWidth)
                 });
             }
+        }
+
+        private static bool IsExcluded(RectTransform rect, RectTransform[] excluded)
+        {
+            if (rect == null || excluded == null)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < excluded.Length; index++)
+            {
+                if (excluded[index] == rect)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool HasEnabledLayoutGroup(RectTransform owner)
@@ -316,13 +518,92 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
+        private static void CaptureSettingsCrossAxisRelationships(
+            RectTransform settings,
+            ReferenceGeometry reference)
+        {
+            if (settings == null || reference == null)
+            {
+                return;
+            }
+
+            CaptureSettingsNode(settings, reference, 0);
+        }
+
+        private static void CaptureSettingsNode(
+            RectTransform current,
+            ReferenceGeometry reference,
+            int depth)
+        {
+            if (current == null || reference == null || depth >= MaxSettingsTraversalDepth)
+            {
+                return;
+            }
+
+            LayoutGroup ownerLayout = current.GetComponent<LayoutGroup>();
+            bool layoutEnabled = ownerLayout != null && ownerLayout.enabled;
+            VerticalLayoutGroup vertical = ownerLayout as VerticalLayoutGroup;
+            if (vertical != null && !reference.SettingsVerticalLayouts.Contains(vertical))
+            {
+                reference.SettingsVerticalLayouts.Add(vertical);
+            }
+
+            float ownerWidth = Mathf.Abs(current.rect.width);
+            for (int index = 0; index < current.childCount; index++)
+            {
+                RectTransform child = current.GetChild(index) as RectTransform;
+                if (child == null)
+                {
+                    continue;
+                }
+
+                LayoutElement layoutElement = child.GetComponent<LayoutElement>();
+                bool layoutOwnsChild = layoutEnabled && (layoutElement == null || !layoutElement.ignoreLayout);
+                if (!layoutOwnsChild && ownerWidth > GeometryTolerance)
+                {
+                    Rect bounds = CalculateRectBounds(current, child);
+                    float coverage = Mathf.Abs(bounds.width) / ownerWidth;
+                    if (coverage >= SettingsStructuralCrossAxisCoverage)
+                    {
+                        AddCrossAxisReference(reference.SettingsCrossAxisBranches, current, child, bounds);
+                    }
+                }
+
+                CaptureSettingsNode(child, reference, depth + 1);
+            }
+        }
+
+        private static void ApplySettingsCrossAxisRelationships(ReferenceGeometry reference)
+        {
+            if (reference == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < reference.SettingsVerticalLayouts.Count; index++)
+            {
+                VerticalLayoutGroup layout = reference.SettingsVerticalLayouts[index];
+                if (layout == null || !layout.enabled)
+                {
+                    continue;
+                }
+
+                layout.childControlWidth = true;
+                layout.childForceExpandWidth = true;
+            }
+
+            ApplyCrossAxisReferences(reference.SettingsCrossAxisBranches);
+            if (reference.Settings != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(reference.Settings);
+            }
+        }
+
         /// <summary>
         /// The three outer list columns grow proportionally on wide canvases. Unity's direct column
         /// layout can stretch its immediate children, but legacy scroll/list wrappers one level down
-        /// can still retain their authored width. Capture only branches that already occupied at least
-        /// half of their immediate owner at reference size, and preserve their authored side margins.
-        /// This makes structural rows/backers and centered headings inherit live column width without
-        /// stretching icons or other deliberately small controls.
+        /// can still retain their authored width. Capture only structural branches that already occupy
+        /// most of their immediate owner and preserve their authored side margins.
         /// </summary>
         private static void CaptureColumnCrossAxisRelationships(
             SquadMaker squadMaker,
@@ -393,17 +674,31 @@ namespace Assets.Scripts.UI_Components
                     float coverage = Mathf.Abs(bounds.width) / ownerWidth;
                     if (coverage >= StructuralCrossAxisCoverage)
                     {
-                        reference.ColumnCrossAxisBranches.Add(new CrossAxisReferenceGeometry
-                        {
-                            Rect = child,
-                            LeftMargin = Mathf.Max(0f, bounds.xMin - current.rect.xMin),
-                            RightMargin = Mathf.Max(0f, current.rect.xMax - bounds.xMax)
-                        });
+                        AddCrossAxisReference(reference.ColumnCrossAxisBranches, current, child, bounds);
                     }
                 }
 
                 CaptureColumnNode(child, reference, depth + 1);
             }
+        }
+
+        private static void AddCrossAxisReference(
+            List<CrossAxisReferenceGeometry> destination,
+            RectTransform owner,
+            RectTransform child,
+            Rect bounds)
+        {
+            if (destination == null || owner == null || child == null)
+            {
+                return;
+            }
+
+            destination.Add(new CrossAxisReferenceGeometry
+            {
+                Rect = child,
+                LeftMargin = Mathf.Max(0f, bounds.xMin - owner.rect.xMin),
+                RightMargin = Mathf.Max(0f, owner.rect.xMax - bounds.xMax)
+            });
         }
 
         private static void ApplyColumnCrossAxisRelationships(ReferenceGeometry reference)
@@ -425,12 +720,32 @@ namespace Assets.Scripts.UI_Components
                 layout.childForceExpandWidth = true;
             }
 
-            // References are captured parent-first, so wrappers expand before their descendants.
-            for (int index = 0; index < reference.ColumnCrossAxisBranches.Count; index++)
+            ApplyCrossAxisReferences(reference.ColumnCrossAxisBranches);
+
+            for (int index = 0; index < reference.ColumnRoots.Count; index++)
             {
-                CrossAxisReferenceGeometry branch = reference.ColumnCrossAxisBranches[index];
+                RectTransform root = reference.ColumnRoots[index];
+                if (root != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(root);
+                }
+            }
+        }
+
+        private static void ApplyCrossAxisReferences(List<CrossAxisReferenceGeometry> references)
+        {
+            if (references == null)
+            {
+                return;
+            }
+
+            // References are captured parent-first, so wrappers expand before descendants.
+            for (int index = 0; index < references.Count; index++)
+            {
+                CrossAxisReferenceGeometry branch = references[index];
                 RectTransform rect = branch != null ? branch.Rect : null;
-                if (rect == null)
+                RectTransform owner = rect != null ? rect.parent as RectTransform : null;
+                if (rect == null || owner == null)
                 {
                     continue;
                 }
@@ -449,15 +764,6 @@ namespace Assets.Scripts.UI_Components
                 rect.anchorMax = anchorMax;
                 rect.offsetMin = offsetMin;
                 rect.offsetMax = offsetMax;
-            }
-
-            for (int index = 0; index < reference.ColumnRoots.Count; index++)
-            {
-                RectTransform root = reference.ColumnRoots[index];
-                if (root != null)
-                {
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(root);
-                }
             }
         }
 
@@ -491,8 +797,9 @@ namespace Assets.Scripts.UI_Components
                 -reference.DropZoneMargins.Top);
         }
 
-        private static void PinFormationsInsideLeftEdge(
+        private static void PinFormationsInsideWorkArea(
             RectTransform composition,
+            RectTransform dropZone,
             RectTransform formations)
         {
             if (composition == null || formations == null)
@@ -512,14 +819,24 @@ namespace Assets.Scripts.UI_Components
             formations.anchorMax = anchorMax;
             formations.anchoredPosition = anchoredPosition;
 
-            // The Formations parent is narrower than some of its authored child visuals. Aligning only
-            // the parent's pivot can therefore leave BLARP protruding on narrow screens. Correct using
-            // the complete rendered hierarchy bounds instead.
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
-            float correction = composition.rect.xMin - bounds.min.x;
+            Rect workBounds = dropZone != null
+                ? CalculateRectBounds(composition, dropZone)
+                : composition.rect;
+            Bounds formationBounds =
+                RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+
+            float correction = workBounds.xMin - formationBounds.min.x;
             anchoredPosition = formations.anchoredPosition;
             anchoredPosition.x += correction;
             formations.anchoredPosition = anchoredPosition;
+
+            formationBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+            if (formationBounds.max.x > workBounds.xMax)
+            {
+                anchoredPosition = formations.anchoredPosition;
+                anchoredPosition.x -= formationBounds.max.x - workBounds.xMax;
+                formations.anchoredPosition = anchoredPosition;
+            }
         }
 
         private static void CaptureActionRowMetrics(ReferenceGeometry reference)
@@ -593,6 +910,137 @@ namespace Assets.Scripts.UI_Components
             layout.childForceExpandHeight = false;
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(row);
+        }
+
+        private static void CenterHeading(RectTransform owner, string heading)
+        {
+            if (owner == null || string.IsNullOrEmpty(heading))
+            {
+                return;
+            }
+
+            TMP_Text[] labels = owner.GetComponentsInChildren<TMP_Text>(true);
+            for (int index = 0; index < labels.Length; index++)
+            {
+                TMP_Text label = labels[index];
+                if (label == null || !string.Equals(label.text?.Trim(), heading, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                RectTransform rect = label.rectTransform;
+                Vector2 anchorMin = rect.anchorMin;
+                Vector2 anchorMax = rect.anchorMax;
+                Vector2 offsetMin = rect.offsetMin;
+                Vector2 offsetMax = rect.offsetMax;
+
+                anchorMin.x = 0f;
+                anchorMax.x = 1f;
+                offsetMin.x = 0f;
+                offsetMax.x = 0f;
+                rect.anchorMin = anchorMin;
+                rect.anchorMax = anchorMax;
+                rect.offsetMin = offsetMin;
+                rect.offsetMax = offsetMax;
+                label.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            }
+        }
+
+        private static void ConfigureSquadListRows(RectTransform listRoot)
+        {
+            if (listRoot == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < listRoot.childCount; index++)
+            {
+                RectTransform row = listRoot.GetChild(index) as RectTransform;
+                if (row == null)
+                {
+                    continue;
+                }
+
+                TMP_Text label = FindSquadRowLabel(row);
+                if (label == null)
+                {
+                    continue;
+                }
+
+                float rowWidth = Mathf.Abs(row.rect.width);
+                float gap = Mathf.Max(4f, Mathf.Abs(row.rect.height) * 0.15f);
+                float iconRight = row.rect.xMin;
+                Image[] images = row.GetComponentsInChildren<Image>(true);
+                for (int imageIndex = 0; imageIndex < images.Length; imageIndex++)
+                {
+                    Image image = images[imageIndex];
+                    RectTransform imageRect = image != null ? image.rectTransform : null;
+                    if (imageRect == null || imageRect == row)
+                    {
+                        continue;
+                    }
+
+                    Rect bounds = CalculateRectBounds(row, imageRect);
+                    if (rowWidth > GeometryTolerance &&
+                        bounds.width <= rowWidth * 0.45f &&
+                        bounds.center.x <= row.rect.center.x)
+                    {
+                        iconRight = Mathf.Max(iconRight, bounds.xMax);
+                    }
+                }
+
+                float leftInset = Mathf.Max(gap, iconRight - row.rect.xMin + gap);
+                float rightInset = gap;
+                RectTransform labelRect = label.rectTransform;
+                Vector2 anchorMin = labelRect.anchorMin;
+                Vector2 anchorMax = labelRect.anchorMax;
+                Vector2 offsetMin = labelRect.offsetMin;
+                Vector2 offsetMax = labelRect.offsetMax;
+
+                anchorMin.x = 0f;
+                anchorMax.x = 1f;
+                offsetMin.x = leftInset;
+                offsetMax.x = -rightInset;
+                labelRect.anchorMin = anchorMin;
+                labelRect.anchorMax = anchorMax;
+                labelRect.offsetMin = offsetMin;
+                labelRect.offsetMax = offsetMax;
+                label.horizontalAlignment = HorizontalAlignmentOptions.Left;
+            }
+        }
+
+        private static TMP_Text FindSquadRowLabel(RectTransform row)
+        {
+            TMP_Text[] labels = row != null ? row.GetComponentsInChildren<TMP_Text>(true) : null;
+            if (labels == null)
+            {
+                return null;
+            }
+
+            for (int index = 0; index < labels.Length; index++)
+            {
+                TMP_Text label = labels[index];
+                if (label != null && string.Equals(
+                    label.gameObject.name,
+                    SquadNumberObjectName,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return label;
+                }
+            }
+
+            for (int index = 0; index < labels.Length; index++)
+            {
+                TMP_Text label = labels[index];
+                string text = label != null ? label.text : null;
+                if (!string.IsNullOrWhiteSpace(text) &&
+                    text.TrimStart().StartsWith("Squad", StringComparison.OrdinalIgnoreCase))
+                {
+                    return label;
+                }
+            }
+
+            return null;
         }
 
         private static void ConfigureColorPickerPlacement(SquadMaker squadMaker)
@@ -801,12 +1249,14 @@ namespace Assets.Scripts.UI_Components
         private RectTransform _viewport;
         private RectTransform _anchor;
         private RectTransform _overlay;
+        private ColorPicker _picker;
 
         internal void Configure(RectTransform viewport, RectTransform anchor)
         {
             _viewport = viewport;
             _anchor = anchor;
             _overlay = transform as RectTransform;
+            _picker = GetComponent<ColorPicker>();
 
             if (isActiveAndEnabled)
             {
@@ -826,6 +1276,11 @@ namespace Assets.Scripts.UI_Components
 
         private void Reposition()
         {
+            if (_picker != null)
+            {
+                _picker.PrepareResponsiveGeometry();
+            }
+
             SquadMakerCompositionLayoutGuard.PositionOverlayNearAnchor(
                 _viewport,
                 _anchor,
