@@ -13,8 +13,9 @@ namespace Assets.Scripts.UI_Components
     /// The authored screen is a 1366x768 desktop composition. MainPanel is viewport-sized, while
     /// its body/footer and the body's three columns are ordinary Unity LayoutGroup children. The
     /// responsive owner therefore changes the native layout contract rather than repeatedly writing
-    /// LayoutGroup-owned RectTransforms. The footer and side columns keep their authored dimensions,
-    /// the center work column absorbs horizontal surplus, and the body absorbs vertical surplus.
+    /// LayoutGroup-owned RectTransforms. The footer keeps its authored height, horizontal surplus is
+    /// distributed across the structural columns in their authored proportions, and the body absorbs
+    /// vertical surplus.
     ///
     /// The SquadMaker controller is on a separate UI Manager root. The visible hierarchy is resolved
     /// from the serialized ChosenSquadList reference so this guard always operates on the same
@@ -678,25 +679,25 @@ namespace Assets.Scripts.UI_Components
                 reference.FooterSize.y,
                 0f);
 
-            // Main Container owns all three columns. Left and right preserve their authored widths;
-            // the center work area is the only flexible horizontal region.
+            // Main Container owns all three columns. CanvasScaler.Expand guarantees that the logical
+            // canvas is never narrower than the 1366-wide reference, so the authored widths are safe
+            // minima. Using those same authored widths as flexible weights makes every unit of
+            // ultrawide surplus preserve the 262/620/484 reference split instead of dumping all of it
+            // into the center work area and leaving the side regions visually compressed at the edges.
             mainContainerLayout.childControlWidth = true;
             mainContainerLayout.childControlHeight = true;
             mainContainerLayout.childForceExpandWidth = false;
             mainContainerLayout.childForceExpandHeight = true;
 
-            ConfigureFixedWidthFlexibleHeight(
+            ConfigureProportionalWidthFlexibleHeight(
                 reference.ShipSelectorColumn,
-                reference.ShipSelectorColumnSize.x,
-                0f);
-            ConfigureFixedWidthFlexibleHeight(
+                reference.ShipSelectorColumnSize.x);
+            ConfigureProportionalWidthFlexibleHeight(
                 reference.SquadMakerColumn,
-                reference.SquadMakerColumnSize.x,
-                1f);
-            ConfigureFixedWidthFlexibleHeight(
+                reference.SquadMakerColumnSize.x);
+            ConfigureProportionalWidthFlexibleHeight(
                 reference.SquadsColumn,
-                reference.SquadsColumnSize.x,
-                0f);
+                reference.SquadsColumnSize.x);
 
             // The center column is another structural layout owner. Its 298-high settings/presets
             // region stays at the authored height while filling the live center width. The composition
@@ -725,21 +726,19 @@ namespace Assets.Scripts.UI_Components
                 reference.SquadCompositionSize.y,
                 1f);
 
-            // Squads Column is itself a two-column native layout. Its children exactly tile the
-            // authored 484-wide region and inherit the body's live height.
+            // Squads Column is itself a two-column native layout. Its children inherit the body's live
+            // height and preserve their authored 262/222 horizontal split as the parent grows wider.
             squadsLayout.childControlWidth = true;
             squadsLayout.childControlHeight = true;
             squadsLayout.childForceExpandWidth = false;
             squadsLayout.childForceExpandHeight = true;
 
-            ConfigureFixedWidthFlexibleHeight(
+            ConfigureProportionalWidthFlexibleHeight(
                 reference.SavedSquadsColumn,
-                reference.SavedSquadsColumnSize.x,
-                0f);
-            ConfigureFixedWidthFlexibleHeight(
+                reference.SavedSquadsColumnSize.x);
+            ConfigureProportionalWidthFlexibleHeight(
                 reference.ChosenSquadsColumn,
-                reference.ChosenSquadsColumnSize.x,
-                0f);
+                reference.ChosenSquadsColumnSize.x);
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainPanel);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.MainContainer);
@@ -823,16 +822,15 @@ namespace Assets.Scripts.UI_Components
             layout.childAlignment = TextAnchor.UpperLeft;
         }
 
-        private static void ConfigureFixedWidthFlexibleHeight(
+        private static void ConfigureProportionalWidthFlexibleHeight(
             RectTransform rect,
-            float authoredWidth,
-            float flexibleWidth)
+            float authoredWidth)
         {
             ConfigureLayoutElement(
                 rect,
                 authoredWidth,
                 authoredWidth,
-                flexibleWidth,
+                authoredWidth,
                 -1f,
                 -1f,
                 1f);
