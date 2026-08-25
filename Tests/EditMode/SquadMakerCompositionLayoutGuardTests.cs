@@ -144,6 +144,54 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [Test]
+        public void EnabledSettingsLayoutRemainsTheGeometryOwnerAcrossArbitraryWidths()
+        {
+            RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
+            HorizontalLayoutGroup settingsLayout = settings.gameObject.AddComponent<HorizontalLayoutGroup>();
+            settingsLayout.padding = new RectOffset(0, 0, 0, 0);
+            settingsLayout.spacing = 0f;
+            settingsLayout.childControlWidth = false;
+            settingsLayout.childControlHeight = false;
+            settingsLayout.childForceExpandWidth = true;
+            settingsLayout.childForceExpandHeight = false;
+
+            RectTransform left = CreateRect("Left", settings, new Vector2(200f, 298f));
+            RectTransform right = CreateRect("Right", settings, new Vector2(420f, 298f));
+            RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
+
+            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            object reference = RuntimeAssembly.InvokeStatic(
+                layoutType,
+                "Capture",
+                null,
+                settings,
+                composition);
+
+            try
+            {
+                Assert.That(reference, Is.Not.Null);
+
+                float[] widths = { 620f, 930f, 1240f, 775f, 620f };
+                for (int index = 0; index < widths.Length; index++)
+                {
+                    float width = widths[index];
+                    settings.sizeDelta = new Vector2(width, settings.rect.height);
+                    RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
+
+                    Assert.That(settingsLayout.childControlWidth, Is.True);
+                    Assert.That(settingsLayout.childForceExpandWidth, Is.False);
+                    Assert.That(left.rect.width, Is.EqualTo(width * (200f / 620f)).Within(0.02f));
+                    Assert.That(right.rect.width, Is.EqualTo(width * (420f / 620f)).Within(0.02f));
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings.gameObject);
+                UnityEngine.Object.DestroyImmediate(composition.gameObject);
+            }
+        }
+
         private static RectTransform CreateActionButton(
             string name,
             RectTransform parent,
