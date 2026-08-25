@@ -1,5 +1,6 @@
+using System;
+using System.Reflection;
 using NUnit.Framework;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -12,6 +13,7 @@ namespace Bees.Tests.EditMode
         private const string LayoutTypeName =
             "Assets.Scripts.UI_Components.SquadMakerCompositionLayoutGuard";
         private const string SquadMakerTypeName = "Assets.Scripts.Scenes.SquadMaker";
+        private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
         public void HeaderGivesHorizontalSurplusToSquadNameInsteadOfSeparatingCompactControls()
@@ -30,7 +32,7 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(squadMaker, "SquadColorPickerButton", color.gameObject);
             RuntimeAssembly.SetField(squadMaker, "SquadShipCount", count.gameObject);
 
-            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
             object reference = RuntimeAssembly.InvokeStatic(
                 layoutType,
                 "Capture",
@@ -92,8 +94,18 @@ namespace Bees.Tests.EditMode
             RectTransform chosenColumn = CreateRect("Chosen Squads Column", squadsColumn, new Vector2(222f, 718f));
             RectTransform savedList = CreateRect("Saved List", savedColumn, new Vector2(262f, 300f));
             RectTransform chosenList = CreateRect("Chosen List", chosenColumn, new Vector2(222f, 300f));
-            RectTransform savedRow = CreateSquadRow("Saved Row", savedList, 262f, out RectTransform savedIcon, out TMP_Text savedLabel);
-            RectTransform chosenRow = CreateSquadRow("Chosen Row", chosenList, 222f, out RectTransform chosenIcon, out TMP_Text chosenLabel);
+            RectTransform savedRow = CreateSquadRow(
+                "Saved Row",
+                savedList,
+                262f,
+                out RectTransform savedIcon,
+                out Component savedLabel);
+            RectTransform chosenRow = CreateSquadRow(
+                "Chosen Row",
+                chosenList,
+                222f,
+                out RectTransform chosenIcon,
+                out Component chosenLabel);
 
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
@@ -102,7 +114,7 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(squadMaker, "SavedSquadList", savedList.gameObject);
             RuntimeAssembly.SetField(squadMaker, "ChosenSquadList", chosenList.gameObject);
 
-            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
             object reference = RuntimeAssembly.InvokeStatic(
                 layoutType,
                 "Capture",
@@ -139,11 +151,11 @@ namespace Bees.Tests.EditMode
             RectTransform backer = CreateRect("Preset Backer", info, new Vector2(400f, 268f));
             backer.gameObject.AddComponent<Image>();
             RectTransform headingRect = CreateRect("Preset Heading", backer, new Vector2(200f, 30f));
-            TextMeshProUGUI heading = headingRect.gameObject.AddComponent<TextMeshProUGUI>();
-            heading.text = "Squad Presets";
+            Component heading = headingRect.gameObject.AddComponent(GetTmpTextType());
+            SetTmpText(heading, "Squad Presets");
 
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
-            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
             object reference = RuntimeAssembly.InvokeStatic(
                 layoutType,
                 "Capture",
@@ -163,7 +175,7 @@ namespace Bees.Tests.EditMode
                     "The visible settings/presets backer should fill the live center region rather than retain a reference-width island.");
                 Bounds headingBounds = BoundsIn(settings, headingRect);
                 Assert.That(headingBounds.center.x, Is.EqualTo(settings.rect.center.x).Within(0.02f));
-                Assert.That(heading.horizontalAlignment, Is.EqualTo(HorizontalAlignmentOptions.Center));
+                AssertTmpHorizontalAlignment(heading, "Center");
             }
             finally
             {
@@ -189,7 +201,7 @@ namespace Bees.Tests.EditMode
             GameObject manager = new GameObject("UI Manager");
             Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
             RuntimeAssembly.SetField(squadMaker, "DropZone", dropZone.gameObject);
-            System.Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
+            Type layoutType = RuntimeAssembly.GetType(LayoutTypeName);
             object reference = RuntimeAssembly.InvokeStatic(
                 layoutType,
                 "Capture",
@@ -236,7 +248,7 @@ namespace Bees.Tests.EditMode
             RectTransform parent,
             float width,
             out RectTransform icon,
-            out TMP_Text label)
+            out Component label)
         {
             RectTransform row = CreateRect(name, parent, new Vector2(width, 30f));
             row.gameObject.AddComponent<Image>();
@@ -249,22 +261,78 @@ namespace Bees.Tests.EditMode
             RectTransform labelRect = labelObject.GetComponent<RectTransform>();
             labelRect.SetParent(row, false);
             labelRect.sizeDelta = new Vector2(60f, 20f);
-            label = labelObject.AddComponent<TextMeshProUGUI>();
-            label.text = "Squad #1";
-            label.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            label = labelObject.AddComponent(GetTmpTextType());
+            SetTmpText(label, "Squad #1");
+            SetTmpHorizontalAlignment(label, "Center");
             return row;
         }
 
         private static void AssertLeftAlignedSquadRow(
             RectTransform row,
             RectTransform icon,
-            TMP_Text label)
+            Component label)
         {
+            RectTransform labelRect = label.transform as RectTransform;
             Bounds iconBounds = BoundsIn(row, icon);
-            Bounds labelBounds = BoundsIn(row, label.rectTransform);
-            Assert.That(label.horizontalAlignment, Is.EqualTo(HorizontalAlignmentOptions.Left));
+            Bounds labelBounds = BoundsIn(row, labelRect);
+            AssertTmpHorizontalAlignment(label, "Left");
             Assert.That(labelBounds.min.x, Is.GreaterThan(iconBounds.max.x));
             Assert.That(labelBounds.max.x, Is.LessThanOrEqualTo(row.rect.xMax + 0.02f));
+        }
+
+        private static Type GetTmpTextType()
+        {
+            Type type = Type.GetType($"{TmpTextTypeName}, Unity.TextMeshPro");
+            if (type != null)
+            {
+                return type;
+            }
+
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (int index = 0; index < assemblies.Length; index++)
+            {
+                type = assemblies[index].GetType(TmpTextTypeName, false);
+                if (type != null)
+                {
+                    return type;
+                }
+            }
+
+            throw new TypeLoadException($"Could not resolve loaded runtime type '{TmpTextTypeName}'.");
+        }
+
+        private static void SetTmpText(Component label, string text)
+        {
+            SetTmpProperty(label, "text", text);
+        }
+
+        private static void SetTmpHorizontalAlignment(Component label, string alignmentName)
+        {
+            PropertyInfo property = GetTmpProperty(label, "horizontalAlignment");
+            object alignment = Enum.Parse(property.PropertyType, alignmentName);
+            property.SetValue(label, alignment);
+        }
+
+        private static void AssertTmpHorizontalAlignment(Component label, string expectedName)
+        {
+            PropertyInfo property = GetTmpProperty(label, "horizontalAlignment");
+            object actual = property.GetValue(label);
+            Assert.That(actual != null ? actual.ToString() : null, Is.EqualTo(expectedName));
+        }
+
+        private static void SetTmpProperty(Component component, string propertyName, object value)
+        {
+            GetTmpProperty(component, propertyName).SetValue(component, value);
+        }
+
+        private static PropertyInfo GetTmpProperty(Component component, string propertyName)
+        {
+            Assert.That(component, Is.Not.Null);
+            PropertyInfo property = component.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(property, Is.Not.Null, $"Expected TMP property '{propertyName}'.");
+            return property;
         }
 
         private static Bounds BoundsIn(RectTransform owner, RectTransform child)
