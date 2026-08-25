@@ -565,7 +565,23 @@ namespace Assets.Scripts.UI_Components
                     float coverage = Mathf.Abs(bounds.width) / ownerWidth;
                     if (coverage >= SettingsStructuralCrossAxisCoverage)
                     {
-                        AddCrossAxisReference(reference.SettingsCrossAxisBranches, current, child, bounds);
+                        // Settings/preset backers are presentation surfaces, not intentional side-
+                        // inset controls. Once their outer settings region grows, these surfaces must
+                        // fill the live owner rather than preserve a 620-wide-era island/margin.
+                        bool isPresentationBacker = child.GetComponent<Image>() != null;
+                        if (isPresentationBacker)
+                        {
+                            reference.SettingsCrossAxisBranches.Add(new CrossAxisReferenceGeometry
+                            {
+                                Rect = child,
+                                LeftMargin = 0f,
+                                RightMargin = 0f
+                            });
+                        }
+                        else
+                        {
+                            AddCrossAxisReference(reference.SettingsCrossAxisBranches, current, child, bounds);
+                        }
                     }
                 }
 
@@ -929,19 +945,29 @@ namespace Assets.Scripts.UI_Components
                 }
 
                 RectTransform rect = label.rectTransform;
-                Vector2 anchorMin = rect.anchorMin;
-                Vector2 anchorMax = rect.anchorMax;
-                Vector2 offsetMin = rect.offsetMin;
-                Vector2 offsetMax = rect.offsetMax;
+                RectTransform parent = rect != null ? rect.parent as RectTransform : null;
+                LayoutGroup parentLayout = parent != null ? parent.GetComponent<LayoutGroup>() : null;
+                LayoutElement element = rect != null ? rect.GetComponent<LayoutElement>() : null;
+                bool layoutOwnsLabel = parentLayout != null && parentLayout.enabled &&
+                                       (element == null || !element.ignoreLayout);
 
-                anchorMin.x = 0f;
-                anchorMax.x = 1f;
-                offsetMin.x = 0f;
-                offsetMax.x = 0f;
-                rect.anchorMin = anchorMin;
-                rect.anchorMax = anchorMax;
-                rect.offsetMin = offsetMin;
-                rect.offsetMax = offsetMax;
+                if (!layoutOwnsLabel && rect != null)
+                {
+                    Vector2 anchorMin = rect.anchorMin;
+                    Vector2 anchorMax = rect.anchorMax;
+                    Vector2 offsetMin = rect.offsetMin;
+                    Vector2 offsetMax = rect.offsetMax;
+
+                    anchorMin.x = 0f;
+                    anchorMax.x = 1f;
+                    offsetMin.x = 0f;
+                    offsetMax.x = 0f;
+                    rect.anchorMin = anchorMin;
+                    rect.anchorMax = anchorMax;
+                    rect.offsetMin = offsetMin;
+                    rect.offsetMax = offsetMax;
+                }
+
                 label.horizontalAlignment = HorizontalAlignmentOptions.Center;
             }
         }
