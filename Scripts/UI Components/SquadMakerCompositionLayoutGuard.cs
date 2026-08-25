@@ -21,10 +21,6 @@ namespace Assets.Scripts.UI_Components
 
         private const float ReferenceCompositionWidth = 620f;
         private const float ReferenceCompositionHeight = 420f;
-        private const float AuthoredLowerButtonsAnchorY = 0.5f;
-        private const float AuthoredLowerButtonsAnchoredY = -230f;
-        private const float AuthoredSquadShipCountAnchorX = 1f;
-        private const float AuthoredSquadShipCountAnchoredX = -40f;
 
         private SquadMaker _squadMaker;
 
@@ -134,13 +130,16 @@ namespace Assets.Scripts.UI_Components
                 Vector2 anchorMin = lowerButtons.anchorMin;
                 Vector2 anchorMax = lowerButtons.anchorMax;
                 Vector2 anchoredPosition = lowerButtons.anchoredPosition;
+                float referencePivotFromBottom = CalculateReferencePivotCoordinate(
+                    anchorMin.y,
+                    anchorMax.y,
+                    lowerButtons.pivot.y,
+                    anchoredPosition.y,
+                    ReferenceCompositionHeight);
 
                 anchorMin.y = 0f;
                 anchorMax.y = 0f;
-                anchoredPosition.y = CalculateReferencePivotCoordinate(
-                    AuthoredLowerButtonsAnchorY,
-                    AuthoredLowerButtonsAnchoredY,
-                    ReferenceCompositionHeight);
+                anchoredPosition.y = referencePivotFromBottom;
 
                 lowerButtons.anchorMin = anchorMin;
                 lowerButtons.anchorMax = anchorMax;
@@ -152,13 +151,16 @@ namespace Assets.Scripts.UI_Components
                 Vector2 anchorMin = squadShipCount.anchorMin;
                 Vector2 anchorMax = squadShipCount.anchorMax;
                 Vector2 anchoredPosition = squadShipCount.anchoredPosition;
+                float referencePivotFromLeft = CalculateReferencePivotCoordinate(
+                    anchorMin.x,
+                    anchorMax.x,
+                    squadShipCount.pivot.x,
+                    anchoredPosition.x,
+                    ReferenceCompositionWidth);
 
                 anchorMin.x = 0f;
                 anchorMax.x = 0f;
-                anchoredPosition.x = CalculateReferencePivotCoordinate(
-                    AuthoredSquadShipCountAnchorX,
-                    AuthoredSquadShipCountAnchoredX,
-                    ReferenceCompositionWidth);
+                anchoredPosition.x = referencePivotFromLeft;
 
                 squadShipCount.anchorMin = anchorMin;
                 squadShipCount.anchorMax = anchorMax;
@@ -167,11 +169,14 @@ namespace Assets.Scripts.UI_Components
         }
 
         internal static float CalculateReferencePivotCoordinate(
-            float authoredAnchor,
+            float authoredAnchorMin,
+            float authoredAnchorMax,
+            float pivot,
             float authoredAnchoredPosition,
             float referenceOwnerSize)
         {
-            return authoredAnchor * referenceOwnerSize + authoredAnchoredPosition;
+            float anchorReference = Mathf.Lerp(authoredAnchorMin, authoredAnchorMax, pivot);
+            return anchorReference * referenceOwnerSize + authoredAnchoredPosition;
         }
 
         private static RectTransform FindAncestorByName(RectTransform start, string name)
