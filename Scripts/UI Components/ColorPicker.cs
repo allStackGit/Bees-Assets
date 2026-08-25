@@ -95,15 +95,16 @@ namespace Assets.Scripts.UIComponents
             float height,
             float topOffset)
         {
+            float expectedCenterY = -(topOffset + (height * 0.5f));
             return rect != null &&
                    Approximately(rect.anchorMin.x, 0.5f) &&
                    Approximately(rect.anchorMin.y, 1f) &&
                    Approximately(rect.anchorMax.x, 0.5f) &&
                    Approximately(rect.anchorMax.y, 1f) &&
                    Approximately(rect.pivot.x, 0.5f) &&
-                   Approximately(rect.pivot.y, 1f) &&
+                   Approximately(rect.pivot.y, 0.5f) &&
                    Approximately(rect.anchoredPosition.x, 0f) &&
-                   Approximately(rect.anchoredPosition.y, -topOffset) &&
+                   Approximately(rect.anchoredPosition.y, expectedCenterY) &&
                    Approximately(rect.rect.width, width) &&
                    Approximately(rect.rect.height, height);
         }
@@ -121,8 +122,8 @@ namespace Assets.Scripts.UIComponents
 
             rect.anchorMin = new Vector2(0.5f, 1f);
             rect.anchorMax = new Vector2(0.5f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, -topOffset);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, -(topOffset + (height * 0.5f)));
             rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, width);
             rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, height);
         }
