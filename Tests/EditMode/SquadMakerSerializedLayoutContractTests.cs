@@ -144,7 +144,6 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 620f,
                     expectedBodyHeight: 717f,
                     expectedCompositionHeight: 419f);
 
@@ -177,7 +176,6 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 1254f,
                     expectedBodyHeight: 717f,
                     expectedCompositionHeight: 419f);
 
@@ -196,7 +194,26 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 1254f,
+                    expectedBodyHeight: 717f,
+                    expectedCompositionHeight: 419f);
+
+                // Approximate the logical canvas produced by CanvasScaler.Expand for the reported
+                // 2048x388 ultrawide player. The authored 262/620/484 main-column proportions and
+                // 262/222 right-side split must survive even this extreme horizontal surplus.
+                ApplyAndAssertCoverage(
+                    guard,
+                    canvas,
+                    new Vector2(4054f, 768f),
+                    mainPanel,
+                    mainContainer,
+                    footer,
+                    shipSelector,
+                    squadMaker,
+                    squadSettings,
+                    squadComposition,
+                    squads,
+                    savedSquads,
+                    chosenSquads,
                     expectedBodyHeight: 717f,
                     expectedCompositionHeight: 419f);
 
@@ -214,11 +231,10 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 620f,
                     expectedBodyHeight: 949f,
                     expectedCompositionHeight: 651f);
 
-                // Revisit the previous aspect, then return to reference, to catch stateful drift.
+                // Revisit a wide aspect, then return to reference, to catch stateful drift.
                 ApplyAndAssertCoverage(
                     guard,
                     canvas,
@@ -233,7 +249,6 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 1254f,
                     expectedBodyHeight: 717f,
                     expectedCompositionHeight: 419f);
 
@@ -251,7 +266,6 @@ namespace Bees.Tests.EditMode
                     squads,
                     savedSquads,
                     chosenSquads,
-                    expectedCenterWidth: 620f,
                     expectedBodyHeight: 717f,
                     expectedCompositionHeight: 419f);
             }
@@ -390,15 +404,15 @@ namespace Bees.Tests.EditMode
             AssertLayoutElement(footer, flexibleWidth: 1f, flexibleHeight: 0f);
             Assert.That(footer.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(51f).Within(0.01f));
 
-            AssertLayoutElement(shipSelector, flexibleWidth: 0f, flexibleHeight: 1f);
-            AssertLayoutElement(squadMaker, flexibleWidth: 1f, flexibleHeight: 1f);
+            AssertLayoutElement(shipSelector, flexibleWidth: 262f, flexibleHeight: 1f);
+            AssertLayoutElement(squadMaker, flexibleWidth: 620f, flexibleHeight: 1f);
             AssertLayoutElement(squadSettings, flexibleWidth: 1f, flexibleHeight: 0f);
             Assert.That(squadSettings.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(298f).Within(0.01f));
             AssertLayoutElement(squadComposition, flexibleWidth: 1f, flexibleHeight: 1f);
             Assert.That(squadComposition.GetComponent<LayoutElement>().preferredHeight, Is.EqualTo(420f).Within(0.01f));
-            AssertLayoutElement(squads, flexibleWidth: 0f, flexibleHeight: 1f);
-            AssertLayoutElement(savedSquads, flexibleWidth: 0f, flexibleHeight: 1f);
-            AssertLayoutElement(chosenSquads, flexibleWidth: 0f, flexibleHeight: 1f);
+            AssertLayoutElement(squads, flexibleWidth: 484f, flexibleHeight: 1f);
+            AssertLayoutElement(savedSquads, flexibleWidth: 262f, flexibleHeight: 1f);
+            AssertLayoutElement(chosenSquads, flexibleWidth: 222f, flexibleHeight: 1f);
         }
 
         private static void ApplyAndAssertCoverage(
@@ -415,23 +429,29 @@ namespace Bees.Tests.EditMode
             RectTransform squads,
             RectTransform savedSquads,
             RectTransform chosenSquads,
-            float expectedCenterWidth,
             float expectedBodyHeight,
             float expectedCompositionHeight)
         {
             canvas.sizeDelta = canvasSize;
             RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
 
+            float horizontalScale = canvasSize.x / ReferenceResolution.x;
+            float expectedShipSelectorWidth = 262f * horizontalScale;
+            float expectedCenterWidth = 620f * horizontalScale;
+            float expectedSquadsWidth = 484f * horizontalScale;
+            float expectedSavedSquadsWidth = 262f * horizontalScale;
+            float expectedChosenSquadsWidth = 222f * horizontalScale;
+
             AssertSize(mainPanel, canvasSize.x, canvasSize.y);
             AssertSize(mainContainer, canvasSize.x, expectedBodyHeight);
             AssertSize(footer, canvasSize.x, 51f);
-            AssertSize(shipSelector, 262f, expectedBodyHeight);
+            AssertSize(shipSelector, expectedShipSelectorWidth, expectedBodyHeight);
             AssertSize(squadMaker, expectedCenterWidth, expectedBodyHeight);
             AssertSize(squadSettings, expectedCenterWidth, 298f);
             AssertSize(squadComposition, expectedCenterWidth, expectedCompositionHeight);
-            AssertSize(squads, 484f, expectedBodyHeight);
-            AssertSize(savedSquads, 262f, expectedBodyHeight);
-            AssertSize(chosenSquads, 222f, expectedBodyHeight);
+            AssertSize(squads, expectedSquadsWidth, expectedBodyHeight);
+            AssertSize(savedSquads, expectedSavedSquadsWidth, expectedBodyHeight);
+            AssertSize(chosenSquads, expectedChosenSquadsWidth, expectedBodyHeight);
 
             AssertTilesHorizontally(mainContainer, shipSelector, squadMaker, squads);
             AssertTilesHorizontally(squads, savedSquads, chosenSquads);
