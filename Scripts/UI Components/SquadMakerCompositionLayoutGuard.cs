@@ -62,6 +62,11 @@ namespace Assets.Scripts.UI_Components
             internal RectTransform SavedSquadList;
             internal RectTransform ChosenSquadList;
             internal RectOffsetGeometry DropZoneMargins;
+            internal Vector2 FormationsReferenceAnchorMin;
+            internal Vector2 FormationsReferenceAnchorMax;
+            internal Vector2 FormationsReferencePivot;
+            internal Vector2 FormationsReferenceAnchoredPosition;
+            internal Vector2 FormationsReferenceSizeDelta;
             internal Vector3 FormationsReferenceScale;
             internal float ActionRowHeight;
             internal float ActionSpacing;
@@ -151,6 +156,11 @@ namespace Assets.Scripts.UI_Components
 
             if (reference.Formations != null)
             {
+                reference.FormationsReferenceAnchorMin = reference.Formations.anchorMin;
+                reference.FormationsReferenceAnchorMax = reference.Formations.anchorMax;
+                reference.FormationsReferencePivot = reference.Formations.pivot;
+                reference.FormationsReferenceAnchoredPosition = reference.Formations.anchoredPosition;
+                reference.FormationsReferenceSizeDelta = reference.Formations.sizeDelta;
                 reference.FormationsReferenceScale = reference.Formations.localScale;
             }
 
@@ -288,8 +298,7 @@ namespace Assets.Scripts.UI_Components
                 float ownerWidth = Mathf.Max(
                     0f,
                     reference.Owner.rect.width -
-                    horizontal.padding.left -
-                    horizontal.padding.right -
+                    horizontal.padding.left - horizontal.padding.right -
                     Mathf.Max(0, reference.Children.Count - 1) * horizontal.spacing);
 
                 for (int index = 0; index < reference.Children.Count; index++)
@@ -444,7 +453,10 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            float scale = Mathf.Min(1f, liveWidth / reference.OwnerWidth);
+            // The header is a compact control strip. Wider screens may enlarge its containing row,
+            // but they must not turn the editable name field into the spacer for all surplus width.
+            float contentWidth = Mathf.Min(liveWidth, reference.OwnerWidth);
+            float scale = Mathf.Min(1f, contentWidth / reference.OwnerWidth);
             float leftMargin = reference.LeftMargin * scale;
             float supplyWidth = reference.SupplyWidth * scale;
             float supplyNameGap = reference.SupplyNameGap * scale;
@@ -455,13 +467,9 @@ namespace Assets.Scripts.UI_Components
             float countWidth = reference.CountWidth * scale;
             float rightMargin = reference.RightMargin * scale;
 
-            if (liveWidth > reference.OwnerWidth)
-            {
-                nameWidth += liveWidth - reference.OwnerWidth;
-            }
-
             Rect liveOwnerBounds = CalculateRectBounds(reference.Owner, reference.Owner);
-            float cursor = liveOwnerBounds.xMin + leftMargin;
+            float contentLeft = liveOwnerBounds.xMin;
+            float cursor = contentLeft + leftMargin;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Supply, cursor, supplyWidth);
             cursor += supplyWidth + supplyNameGap;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Name, cursor, Mathf.Max(0f, nameWidth));
@@ -471,7 +479,7 @@ namespace Assets.Scripts.UI_Components
             SetHorizontalBoundsInOwner(reference.Owner, reference.Count, cursor, countWidth);
 
             Rect countBounds = CalculateRectBounds(reference.Owner, reference.Count);
-            float expectedRight = liveOwnerBounds.xMax - rightMargin;
+            float expectedRight = contentLeft + contentWidth - rightMargin;
             if (Mathf.Abs(countBounds.xMax - expectedRight) > GeometryTolerance)
             {
                 SetHorizontalBoundsInOwner(
@@ -981,50 +989,78 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            // Always start from the immutable authored transform. The previous pass must never become
+            // the next pass's baseline when the display changes repeatedly.
+            formations.anchorMin = reference.FormationsReferenceAnchorMin;
+            formations.anchorMax = reference.FormationsReferenceAnchorMax;
+            formations.pivot = reference.FormationsReferencePivot;
+            formations.anchoredPosition = reference.FormationsReferenceAnchoredPosition;
+            formations.sizeDelta = reference.FormationsReferenceSizeDelta;
             formations.localScale = reference.FormationsReferenceScale;
             LayoutRebuilder.ForceRebuildLayoutImmediate(formations);
             Canvas.ForceUpdateCanvases();
 
-            Vector2 anchorMin = formations.anchorMin;
-            Vector2 anchorMax = formations.anchorMax;
-            Vector2 anchoredPosition = formations.anchoredPosition;
-            anchorMin.x = 0f;
-            anchorMax.x = 0f;
-            anchoredPosition.x = 0f;
-            formations.anchorMin = anchorMin;
-            formations.anchorMax = anchorMax;
-            formations.anchoredPosition = anchoredPosition;
-
             Rect workBounds = dropZone != null
                 ? CalculateRectBounds(composition, dropZone)
                 : composition.rect;
-            Bounds formationBounds =
-                RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
-
-            if (formationBounds.size.x > workBounds.width + GeometryTolerance &&
-                formationBounds.size.x > 0f)
+            if (workBounds.width <= GeometryTolerance || workBounds.height <= GeometryTolerance)
             {
-                Vector3 scale = formations.localScale;
-                scale.x *= workBounds.width / formationBounds.size.x;
+                return;
+            }
+
+            Bounds formationBounds;
+            if (!TryCalculateVisibleGraphicBounds(composition, formations, out formationBounds))
+            {
+                formationBounds =
+                    RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+            }
+
+            float fitScale = 1f;
+            if (formationBounds.size.x > workBounds.width + GeometryTolerance &&
+                formationBounds.size.x > GeometryTolerance)
+            {
+                fitScale = Mathf.Min(fitScale, workBounds.width / formationBounds.size.x);
+            }
+            if (formationBounds.size.y > workBounds.height + GeometryTolerance &&
+                formationBounds.size.y > GeometryTolerance)
+            {
+                fitScale = Mathf.Min(fitScale, workBounds.height / formationBounds.size.y);
+            }
+
+            if (fitScale < 1f - GeometryTolerance)
+            {
+                Vector3 scale = reference.FormationsReferenceScale;
+                scale.x *= fitScale;
+                scale.y *= fitScale;
                 formations.localScale = scale;
                 Canvas.ForceUpdateCanvases();
-                formationBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
-                    composition,
-                    formations);
+                if (!TryCalculateVisibleGraphicBounds(composition, formations, out formationBounds))
+                {
+                    formationBounds =
+                        RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+                }
             }
 
-            float correction = workBounds.xMin - formationBounds.min.x;
-            MoveRectByOwnerDelta(composition, formations, new Vector2(correction, 0f));
-
-            formationBounds =
-                RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
-            if (formationBounds.max.x > workBounds.xMax)
+            Vector2 correction = Vector2.zero;
+            if (formationBounds.min.x < workBounds.xMin)
             {
-                MoveRectByOwnerDelta(
-                    composition,
-                    formations,
-                    new Vector2(workBounds.xMax - formationBounds.max.x, 0f));
+                correction.x = workBounds.xMin - formationBounds.min.x;
             }
+            else if (formationBounds.max.x > workBounds.xMax)
+            {
+                correction.x = workBounds.xMax - formationBounds.max.x;
+            }
+
+            if (formationBounds.min.y < workBounds.yMin)
+            {
+                correction.y = workBounds.yMin - formationBounds.min.y;
+            }
+            else if (formationBounds.max.y > workBounds.yMax)
+            {
+                correction.y = workBounds.yMax - formationBounds.max.y;
+            }
+
+            MoveRectByOwnerDelta(composition, formations, correction);
         }
 
         private static void CaptureActionRowMetrics(ReferenceGeometry reference)
@@ -1157,36 +1193,60 @@ namespace Assets.Scripts.UI_Components
                 }
 
                 HorizontalLayoutGroup competingLayout = row.GetComponent<HorizontalLayoutGroup>();
+                RectOffset padding = competingLayout != null ? competingLayout.padding : null;
+                float leftPadding = padding != null ? padding.left : 0f;
+                float rightPadding = padding != null ? padding.right : 0f;
+                float spacing = competingLayout != null
+                    ? competingLayout.spacing
+                    : Mathf.Max(4f, Mathf.Abs(row.rect.height) * 0.15f);
                 if (competingLayout != null && competingLayout.enabled)
                 {
-                    // Preserve its current vertical placement once, then remove it as a competing
-                    // horizontal geometry writer. All responsive x-geometry below is deterministic.
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(row);
+                    // The runtime adds a second icon container to an authored two-child row. Letting
+                    // the prefab layout rebuild that three-child hierarchy first creates a bad baseline.
+                    // From this point the semantic row repair is the sole horizontal geometry owner.
                     competingLayout.enabled = false;
                 }
 
                 RectTransform runtimeIcon = FindDirectChildByName(row, RuntimeIconContainerName);
                 RectTransform legacyIcon = FindDirectChildByName(row, LegacySquadIconName);
+
+                float slotWidth = 0f;
+                if (legacyIcon != null)
+                {
+                    slotWidth = Mathf.Abs(CalculateRectBounds(row, legacyIcon).width);
+                }
+
                 if (runtimeIcon != null && legacyIcon != null && legacyIcon.gameObject.activeSelf)
                 {
                     legacyIcon.gameObject.SetActive(false);
                 }
-                RectTransform icon = runtimeIcon != null ? runtimeIcon : legacyIcon;
 
-                float gap = Mathf.Max(4f, Mathf.Abs(row.rect.height) * 0.15f);
-                float iconRight = row.rect.xMin;
+                RectTransform icon = runtimeIcon != null ? runtimeIcon : legacyIcon;
                 if (icon != null && icon.gameObject.activeInHierarchy)
                 {
-                    Bounds iconBounds =
-                        RectTransformUtility.CalculateRelativeRectTransformBounds(row, icon);
-                    float targetMin = row.rect.xMin + gap;
-                    MoveRectByOwnerDelta(
-                        row,
-                        icon,
-                        new Vector2(targetMin - iconBounds.min.x, 0f));
-                    iconBounds =
-                        RectTransformUtility.CalculateRelativeRectTransformBounds(row, icon);
-                    iconRight = iconBounds.max.x;
+                    Bounds visibleIconBounds;
+                    if (!TryCalculateVisibleGraphicBounds(row, icon, out visibleIconBounds))
+                    {
+                        visibleIconBounds =
+                            RectTransformUtility.CalculateRelativeRectTransformBounds(row, icon);
+                    }
+
+                    if (slotWidth <= GeometryTolerance)
+                    {
+                        slotWidth = visibleIconBounds.size.x;
+                    }
+
+                    float slotCenterX = row.rect.xMin + leftPadding + (slotWidth * 0.5f);
+                    Vector2 iconCorrection = new Vector2(
+                        slotCenterX - visibleIconBounds.center.x,
+                        row.rect.center.y - visibleIconBounds.center.y);
+                    MoveRectByOwnerDelta(row, icon, iconCorrection);
+                }
+
+                float labelLeft = leftPadding + slotWidth;
+                if (slotWidth > GeometryTolerance)
+                {
+                    labelLeft += spacing;
                 }
 
                 RectTransform labelRect = label.rectTransform;
@@ -1196,8 +1256,8 @@ namespace Assets.Scripts.UI_Components
                 Vector2 offsetMax = labelRect.offsetMax;
                 anchorMin.x = 0f;
                 anchorMax.x = 1f;
-                offsetMin.x = Mathf.Max(gap, iconRight - row.rect.xMin + gap);
-                offsetMax.x = -gap;
+                offsetMin.x = labelLeft;
+                offsetMax.x = -rightPadding;
                 labelRect.anchorMin = anchorMin;
                 labelRect.anchorMax = anchorMax;
                 labelRect.offsetMin = offsetMin;
@@ -1350,6 +1410,62 @@ namespace Assets.Scripts.UI_Components
             MoveRectByOwnerDelta(viewport, overlay, clamp);
             return correction.sqrMagnitude > GeometryTolerance ||
                 clamp.sqrMagnitude > GeometryTolerance;
+        }
+
+        private static bool TryCalculateVisibleGraphicBounds(
+            RectTransform owner,
+            RectTransform root,
+            out Bounds bounds)
+        {
+            bounds = default;
+            if (owner == null || root == null)
+            {
+                return false;
+            }
+
+            Graphic[] graphics = root.GetComponentsInChildren<Graphic>(true);
+            bool found = false;
+            float minX = 0f;
+            float maxX = 0f;
+            float minY = 0f;
+            float maxY = 0f;
+
+            for (int index = 0; index < graphics.Length; index++)
+            {
+                Graphic graphic = graphics[index];
+                if (graphic == null || !graphic.enabled || !graphic.gameObject.activeInHierarchy ||
+                    graphic.color.a <= GeometryTolerance)
+                {
+                    continue;
+                }
+
+                Rect graphicBounds = CalculateRectBounds(owner, graphic.rectTransform);
+                if (!found)
+                {
+                    minX = graphicBounds.xMin;
+                    maxX = graphicBounds.xMax;
+                    minY = graphicBounds.yMin;
+                    maxY = graphicBounds.yMax;
+                    found = true;
+                }
+                else
+                {
+                    minX = Mathf.Min(minX, graphicBounds.xMin);
+                    maxX = Mathf.Max(maxX, graphicBounds.xMax);
+                    minY = Mathf.Min(minY, graphicBounds.yMin);
+                    maxY = Mathf.Max(maxY, graphicBounds.yMax);
+                }
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+
+            Vector3 min = new Vector3(minX, minY, 0f);
+            Vector3 max = new Vector3(maxX, maxY, 0f);
+            bounds = new Bounds((min + max) * 0.5f, max - min);
+            return true;
         }
 
         private static void MoveRectByOwnerDelta(
