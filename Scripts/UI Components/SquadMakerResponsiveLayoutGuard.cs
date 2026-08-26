@@ -678,20 +678,22 @@ namespace Assets.Scripts.UI_Components
                 reference.FooterSize.y,
                 0f);
 
-            // Horizontal surplus is distributed using the authored column widths as proportional
-            // weights. The widths are reference proportions, not special cases for any live ratio.
+            // The inventory and squads columns are navigation/summary rails, not work surfaces.
+            // Keep them at their authored widths and let the central Squad Maker absorb every unit
+            // of horizontal surplus. This preserves useful density on ultrawide viewports instead of
+            // turning the side rails into large empty panels.
             mainContainerLayout.childControlWidth = true;
             mainContainerLayout.childControlHeight = true;
             mainContainerLayout.childForceExpandWidth = false;
             mainContainerLayout.childForceExpandHeight = true;
 
-            ConfigureProportionalWidthFlexibleHeight(
+            ConfigureFixedWidthFlexibleHeight(
                 reference.ShipSelectorColumn,
                 reference.ShipSelectorColumnSize.x);
-            ConfigureProportionalWidthFlexibleHeight(
+            ConfigureSurplusAbsorbingWidthFlexibleHeight(
                 reference.SquadMakerColumn,
                 reference.SquadMakerColumnSize.x);
-            ConfigureProportionalWidthFlexibleHeight(
+            ConfigureFixedWidthFlexibleHeight(
                 reference.SquadsColumn,
                 reference.SquadsColumnSize.x);
 
@@ -729,9 +731,7 @@ namespace Assets.Scripts.UI_Components
                 reference.ChosenSquadsColumn,
                 reference.ChosenSquadsColumnSize.x);
 
-            // The outer columns can grow on wide displays, so their own vertical layouts must own
-            // the live cross-axis width of rows, lists, and labels instead of leaving 1366-era child
-            // widths floating inside a larger column.
+            // Each vertical column owns the live cross-axis width of its rows, lists, and labels.
             ConfigureVerticalColumnCrossAxis(reference.ShipSelectorColumn);
             ConfigureVerticalColumnCrossAxis(reference.SavedSquadsColumn);
             ConfigureVerticalColumnCrossAxis(reference.ChosenSquadsColumn);
@@ -819,6 +819,34 @@ namespace Assets.Scripts.UI_Components
 
             layout.spacing = 0f;
             layout.childAlignment = TextAnchor.UpperLeft;
+        }
+
+        private static void ConfigureFixedWidthFlexibleHeight(
+            RectTransform rect,
+            float authoredWidth)
+        {
+            ConfigureLayoutElement(
+                rect,
+                authoredWidth,
+                authoredWidth,
+                0f,
+                -1f,
+                -1f,
+                1f);
+        }
+
+        private static void ConfigureSurplusAbsorbingWidthFlexibleHeight(
+            RectTransform rect,
+            float authoredWidth)
+        {
+            ConfigureLayoutElement(
+                rect,
+                authoredWidth,
+                authoredWidth,
+                1f,
+                -1f,
+                -1f,
+                1f);
         }
 
         private static void ConfigureProportionalWidthFlexibleHeight(
