@@ -185,7 +185,7 @@ namespace Bees.Tests.EditMode
                 Assert.That(savedLegacy.gameObject.activeSelf, Is.False);
                 Assert.That(chosenLegacy.gameObject.activeSelf, Is.False);
                 AssertIconSlot(savedRow, savedRuntime, savedLabel, 48f, savedLayout.spacing);
-                AssertIconSlot(chosenRow, chosenRuntime, savedLabel == chosenLabel ? chosenLabel : chosenLabel, 48f, chosenLayout.spacing);
+                AssertIconSlot(chosenRow, chosenRuntime, chosenLabel, 48f, chosenLayout.spacing);
                 Assert.That(savedGraphic.anchoredPosition, Is.EqualTo(savedGraphicOffset));
                 Assert.That(chosenGraphic.anchoredPosition, Is.EqualTo(chosenGraphicOffset));
 
