@@ -30,7 +30,6 @@ namespace Assets.Scripts.UI_Components
         private const float StructuralCrossAxisCoverage = 0.5f;
         private const float SettingsStructuralCrossAxisCoverage = 0.6f;
         private const float OverlayGap = 4f;
-        private const float MaximumNameWidthScale = 1.5f;
         private const int MaxColumnTraversalDepth = 12;
         private const int MaxSettingsTraversalDepth = 8;
 
@@ -389,10 +388,7 @@ namespace Assets.Scripts.UI_Components
 
             float ratio = liveWidth / reference.OwnerWidth;
             float compactScale = Mathf.Min(1f, ratio);
-            float nameScale = ratio < 1f ? ratio : Mathf.Min(MaximumNameWidthScale, ratio);
-
             float supplyWidth = reference.SupplyWidth * compactScale;
-            float nameWidth = reference.NameWidth * nameScale;
             float colorWidth = reference.ColorWidth * compactScale;
             float countWidth = reference.CountWidth * compactScale;
 
@@ -402,16 +398,17 @@ namespace Assets.Scripts.UI_Components
             float colorCount = reference.ColorCountGap * compactScale;
             float right = reference.RightMargin * compactScale;
 
-            // Keep the semantic controls as one readable strip. Surplus belongs outside that strip,
-            // not between its controls; otherwise an ultrawide viewport disconnects the label,
-            // editable name, color button and count from one another.
-            float controlStripWidth = supplyWidth + supplyName + nameWidth + nameColor +
-                colorWidth + colorCount + countWidth;
-            float innerAvailableWidth = Mathf.Max(0f, liveWidth - left - right);
-            float outerSurplus = Mathf.Max(0f, innerAvailableWidth - controlStripWidth);
+            // This is a toolbar, not a floating badge. Keep the informational controls compact and
+            // give the editable squad-name field the remaining width so the visible bar occupies the
+            // workspace from its authored left margin through its authored right margin.
+            float fixedWidth = left + supplyWidth + supplyName + nameColor + colorWidth +
+                colorCount + countWidth + right;
+            float nameWidth = ratio < 1f
+                ? reference.NameWidth * compactScale
+                : Mathf.Max(reference.NameWidth, liveWidth - fixedWidth);
 
             Rect ownerBounds = CalculateRectBounds(reference.Owner, reference.Owner);
-            float cursor = ownerBounds.xMin + left + outerSurplus * 0.5f;
+            float cursor = ownerBounds.xMin + left;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Supply, cursor, supplyWidth);
             cursor += supplyWidth + supplyName;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Name, cursor, nameWidth);
