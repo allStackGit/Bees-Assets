@@ -16,7 +16,7 @@ namespace Bees.Tests.EditMode
         private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
-        public void HeaderUsesFullWidthWithFlexibleNameFieldAndCompactEdgeControls()
+        public void HeaderUsesFullWidthBackdropWithBoundedCompactControls()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
@@ -25,6 +25,8 @@ namespace Bees.Tests.EditMode
             header.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Top, 0f, 30f);
 
             RectTransform supply = CreateTopRowRect("Supply Capacity", header, 0f, 200f);
+            Image supplyBackground = supply.gameObject.AddComponent<Image>();
+            supplyBackground.color = new Color(0.2f, 0.2f, 0.2f, 1f);
             RectTransform name = CreateTopRowRect("Squad Name", header, 210f, 220f);
             RectTransform color = CreateTopRowRect("COLOR", header, 440f, 70f);
             RectTransform count = CreateTopRowRect("0 / 10", header, 520f, 70f);
@@ -41,6 +43,12 @@ namespace Bees.Tests.EditMode
 
             try
             {
+                Image backdrop = header.GetComponent<Image>();
+                Assert.That(backdrop, Is.Not.Null,
+                    "The full-width toolbar needs its own backdrop instead of stretching an editable field to fake one.");
+                Assert.That(backdrop.raycastTarget, Is.False);
+                Assert.That(backdrop.color, Is.EqualTo(supplyBackground.color));
+
                 float referenceHeaderWidth = header.rect.width;
                 float referenceNameWidth = name.rect.width;
                 float referenceSupplyWidth = supply.rect.width;
@@ -74,7 +82,8 @@ namespace Bees.Tests.EditMode
                     Assert.That(nameBounds.min.x - supplyBounds.max.x,
                         Is.EqualTo(referenceSupplyNameGap * scale).Within(0.02f));
                     Assert.That(colorBounds.min.x - nameBounds.max.x,
-                        Is.EqualTo(referenceNameColorGap * scale).Within(0.02f));
+                        Is.EqualTo(referenceNameColorGap * scale).Within(0.02f),
+                        "Reducing the name field must not create a large hole before COLOR.");
                     Assert.That(countBounds.min.x - colorBounds.max.x,
                         Is.EqualTo(referenceColorCountGap * scale).Within(0.02f));
 
@@ -82,17 +91,17 @@ namespace Bees.Tests.EditMode
                     float rightMargin = referenceRightMargin * scale;
                     Assert.That(supplyBounds.min.x,
                         Is.EqualTo(header.rect.xMin + leftMargin).Within(0.02f));
-                    Assert.That(countBounds.max.x,
-                        Is.EqualTo(header.rect.xMax - rightMargin).Within(0.02f),
-                        "The visible toolbar should span the header instead of floating in its center.");
 
                     float expectedNameWidth;
                     if (liveHeaderWidth >= referenceHeaderWidth)
                     {
-                        float fixedWidth = leftMargin + referenceSupplyWidth + referenceSupplyNameGap +
-                            referenceNameColorGap + referenceColorWidth + referenceColorCountGap +
-                            referenceCountWidth + rightMargin;
-                        expectedNameWidth = liveHeaderWidth - fixedWidth;
+                        float availableNameWidth = liveHeaderWidth - leftMargin - referenceSupplyWidth -
+                            referenceSupplyNameGap - referenceNameColorGap - referenceColorWidth -
+                            referenceColorCountGap - referenceCountWidth - rightMargin;
+                        float desiredNameWidth = Mathf.Min(
+                            referenceNameWidth * 1.5f,
+                            referenceNameWidth + liveHeaderWidth - referenceHeaderWidth);
+                        expectedNameWidth = Mathf.Min(desiredNameWidth, availableNameWidth);
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth).Within(0.02f));
@@ -103,10 +112,14 @@ namespace Bees.Tests.EditMode
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth * scale).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth * scale).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth * scale).Within(0.02f));
+                        Assert.That(countBounds.max.x,
+                            Is.EqualTo(header.rect.xMax - rightMargin).Within(0.02f));
                     }
 
-                    Assert.That(name.rect.width, Is.EqualTo(expectedNameWidth).Within(0.02f),
-                        "Horizontal surplus should become useful squad-name editing space, not empty toolbar margins.");
+                    Assert.That(name.rect.width, Is.EqualTo(expectedNameWidth).Within(0.02f));
+                    Assert.That(name.rect.width, Is.LessThanOrEqualTo(referenceNameWidth * 1.5f + 0.02f),
+                        "The squad-name editor must remain a reasonable text-entry width on ultrawide screens.");
+                    Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(header.rect.xMax - rightMargin + 0.02f));
                 }
             }
             finally
