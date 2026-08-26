@@ -11,11 +11,12 @@ namespace Bees.Tests.EditMode
     public class SquadMakerSemanticResponsiveTests
     {
         private const string LayoutTypeName = "Assets.Scripts.UI_Components.SquadMakerCompositionLayoutGuard";
+        private const string GuardTypeName = "Assets.Scripts.UI_Components.SquadMakerResponsiveLayoutGuard";
         private const string SquadMakerTypeName = "Assets.Scripts.Scenes.SquadMaker";
         private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
-        public void HeaderUsesFullWidthWhileNameFieldGrowsOnlyToReadableBound()
+        public void HeaderUsesFullWidthWithoutDisconnectingItsControls()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
@@ -40,12 +41,22 @@ namespace Bees.Tests.EditMode
 
             try
             {
+                float referenceHeaderWidth = header.rect.width;
                 float referenceNameWidth = name.rect.width;
                 float referenceSupplyWidth = supply.rect.width;
                 float referenceColorWidth = color.rect.width;
                 float referenceCountWidth = count.rect.width;
-                float[] widths = { 620f, 930f, 1240f, 500f, 775f, 620f };
+                Bounds referenceSupply = BoundsIn(header, supply);
+                Bounds referenceName = BoundsIn(header, name);
+                Bounds referenceColor = BoundsIn(header, color);
+                Bounds referenceCount = BoundsIn(header, count);
+                float referenceSupplyNameGap = referenceName.min.x - referenceSupply.max.x;
+                float referenceNameColorGap = referenceColor.min.x - referenceName.max.x;
+                float referenceColorCountGap = referenceCount.min.x - referenceColor.max.x;
+                float referenceLeftMargin = referenceSupply.min.x - header.rect.xMin;
+                float referenceRightMargin = header.rect.xMax - referenceCount.max.x;
 
+                float[] widths = { 620f, 930f, 1240f, 2400f, 500f, 775f, 620f };
                 for (int i = 0; i < widths.Length; i++)
                 {
                     composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, widths[i]);
@@ -56,21 +67,41 @@ namespace Bees.Tests.EditMode
                     Bounds nameBounds = BoundsIn(header, name);
                     Bounds colorBounds = BoundsIn(header, color);
                     Bounds countBounds = BoundsIn(header, count);
+                    float liveHeaderWidth = Mathf.Max(0f, widths[i] - 20f);
+                    float scale = Mathf.Min(1f, liveHeaderWidth / referenceHeaderWidth);
 
-                    Assert.That(headerBounds.size.x, Is.EqualTo(Mathf.Max(0f, widths[i] - 20f)).Within(0.02f));
-                    Assert.That(supplyBounds.max.x, Is.LessThanOrEqualTo(nameBounds.min.x + 0.02f));
-                    Assert.That(nameBounds.max.x, Is.LessThanOrEqualTo(colorBounds.min.x + 0.02f));
-                    Assert.That(colorBounds.max.x, Is.LessThanOrEqualTo(countBounds.min.x + 0.02f));
+                    Assert.That(headerBounds.size.x, Is.EqualTo(liveHeaderWidth).Within(0.02f));
+                    Assert.That(nameBounds.min.x - supplyBounds.max.x,
+                        Is.EqualTo(referenceSupplyNameGap * scale).Within(0.02f));
+                    Assert.That(colorBounds.min.x - nameBounds.max.x,
+                        Is.EqualTo(referenceNameColorGap * scale).Within(0.02f));
+                    Assert.That(countBounds.min.x - colorBounds.max.x,
+                        Is.EqualTo(referenceColorCountGap * scale).Within(0.02f));
                     Assert.That(supplyBounds.min.x, Is.GreaterThanOrEqualTo(header.rect.xMin - 0.02f));
                     Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(header.rect.xMax + 0.02f));
 
-                    if (widths[i] > 620f)
+                    float leftMargin = referenceLeftMargin * scale;
+                    float rightMargin = referenceRightMargin * scale;
+                    float expectedStripCenter =
+                        (header.rect.xMin + leftMargin + header.rect.xMax - rightMargin) * 0.5f;
+                    float actualStripCenter = (supplyBounds.min.x + countBounds.max.x) * 0.5f;
+                    Assert.That(actualStripCenter, Is.EqualTo(expectedStripCenter).Within(0.02f),
+                        "Unused ultrawide space belongs outside the cohesive header strip, not inside its gaps.");
+
+                    if (liveHeaderWidth >= referenceHeaderWidth)
                     {
                         Assert.That(name.rect.width, Is.GreaterThanOrEqualTo(referenceNameWidth - 0.02f));
                         Assert.That(name.rect.width, Is.LessThanOrEqualTo(referenceNameWidth * 1.5f + 0.02f));
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth).Within(0.02f));
+                    }
+                    else
+                    {
+                        Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth * scale).Within(0.02f));
+                        Assert.That(name.rect.width, Is.EqualTo(referenceNameWidth * scale).Within(0.02f));
+                        Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth * scale).Within(0.02f));
+                        Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth * scale).Within(0.02f));
                     }
                 }
             }
@@ -79,6 +110,47 @@ namespace Bees.Tests.EditMode
                 UnityEngine.Object.DestroyImmediate(manager);
                 UnityEngine.Object.DestroyImmediate(settings.gameObject);
                 UnityEngine.Object.DestroyImmediate(composition.gameObject);
+            }
+        }
+
+        [Test]
+        public void UltrawideMainColumnsKeepSideRailsAuthoredAndGiveSurplusToCenter()
+        {
+            RectTransform row = CreateRect("Main Container", null, new Vector2(1366f, 718f));
+            HorizontalLayoutGroup layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = true;
+
+            RectTransform inventory = CreateRect("Ship Selector Column", row, new Vector2(262f, 718f));
+            RectTransform center = CreateRect("Squad Maker Column", row, new Vector2(620f, 718f));
+            RectTransform squads = CreateRect("Squads Column", row, new Vector2(484f, 718f));
+            Type guardType = RuntimeAssembly.GetType(GuardTypeName);
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(guardType, "ConfigureFixedWidthFlexibleHeight", inventory, 262f);
+                RuntimeAssembly.InvokeStatic(guardType, "ConfigureSurplusAbsorbingWidthFlexibleHeight", center, 620f);
+                RuntimeAssembly.InvokeStatic(guardType, "ConfigureFixedWidthFlexibleHeight", squads, 484f);
+
+                float[] widths = { 1366f, 2000f, 5278f, 1600f, 1366f };
+                for (int i = 0; i < widths.Length; i++)
+                {
+                    row.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, widths[i]);
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(row);
+
+                    Assert.That(inventory.rect.width, Is.EqualTo(262f).Within(0.02f));
+                    Assert.That(squads.rect.width, Is.EqualTo(484f).Within(0.02f));
+                    Assert.That(center.rect.width, Is.EqualTo(widths[i] - 262f - 484f).Within(0.02f),
+                        "Only the central Squad Maker workspace should absorb ultrawide horizontal surplus.");
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(row.gameObject);
             }
         }
 
