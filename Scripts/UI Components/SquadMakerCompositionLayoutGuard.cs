@@ -402,27 +402,16 @@ namespace Assets.Scripts.UI_Components
             float colorCount = reference.ColorCountGap * compactScale;
             float right = reference.RightMargin * compactScale;
 
-            float occupied = supplyWidth + nameWidth + colorWidth + countWidth +
-                left + supplyName + nameColor + colorCount + right;
-            float surplus = Mathf.Max(0f, liveWidth - occupied);
-            float weightTotal =
-                Mathf.Max(1f, reference.LeftMargin) +
-                Mathf.Max(1f, reference.SupplyNameGap) +
-                Mathf.Max(1f, reference.NameColorGap) +
-                Mathf.Max(1f, reference.ColorCountGap) +
-                Mathf.Max(1f, reference.RightMargin);
-
-            if (surplus > 0f)
-            {
-                left += surplus * Mathf.Max(1f, reference.LeftMargin) / weightTotal;
-                supplyName += surplus * Mathf.Max(1f, reference.SupplyNameGap) / weightTotal;
-                nameColor += surplus * Mathf.Max(1f, reference.NameColorGap) / weightTotal;
-                colorCount += surplus * Mathf.Max(1f, reference.ColorCountGap) / weightTotal;
-                right += surplus * Mathf.Max(1f, reference.RightMargin) / weightTotal;
-            }
+            // Keep the semantic controls as one readable strip. Surplus belongs outside that strip,
+            // not between its controls; otherwise an ultrawide viewport disconnects the label,
+            // editable name, color button and count from one another.
+            float controlStripWidth = supplyWidth + supplyName + nameWidth + nameColor +
+                colorWidth + colorCount + countWidth;
+            float innerAvailableWidth = Mathf.Max(0f, liveWidth - left - right);
+            float outerSurplus = Mathf.Max(0f, innerAvailableWidth - controlStripWidth);
 
             Rect ownerBounds = CalculateRectBounds(reference.Owner, reference.Owner);
-            float cursor = ownerBounds.xMin + left;
+            float cursor = ownerBounds.xMin + left + outerSurplus * 0.5f;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Supply, cursor, supplyWidth);
             cursor += supplyWidth + supplyName;
             SetHorizontalBoundsInOwner(reference.Owner, reference.Name, cursor, nameWidth);
