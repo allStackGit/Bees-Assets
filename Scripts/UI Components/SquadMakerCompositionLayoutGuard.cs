@@ -30,6 +30,7 @@ namespace Assets.Scripts.UI_Components
         private const float StructuralCrossAxisCoverage = 0.5f;
         private const float SettingsStructuralCrossAxisCoverage = 0.6f;
         private const float OverlayGap = 4f;
+        private const float MaximumNameWidthScale = 1.5f;
         private const int MaxColumnTraversalDepth = 12;
         private const int MaxSettingsTraversalDepth = 8;
 
@@ -150,6 +151,7 @@ namespace Assets.Scripts.UI_Components
                 : null;
             reference.DropZone = FindDirectChildAncestor(serializedDropZone, squadComposition);
             reference.Header = CaptureHeaderReference(squadMaker, squadComposition);
+            ConfigureHeaderBackdrop(reference.Header);
 
             if (reference.SettingsLayout == null)
             {
@@ -359,6 +361,38 @@ namespace Assets.Scripts.UI_Components
             };
         }
 
+        private static void ConfigureHeaderBackdrop(HeaderReferenceGeometry reference)
+        {
+            if (reference == null || reference.Owner == null || reference.Owner == reference.OuterOwner ||
+                reference.Owner.GetComponent<Image>() != null)
+            {
+                return;
+            }
+
+            Image source = FindHeaderBackdropSource(reference.Supply) ?? FindHeaderBackdropSource(reference.Count);
+            if (source == null)
+            {
+                return;
+            }
+
+            Image backdrop = reference.Owner.gameObject.AddComponent<Image>();
+            backdrop.sprite = source.sprite;
+            backdrop.color = source.color;
+            backdrop.material = source.material;
+            backdrop.type = source.type;
+            backdrop.preserveAspect = false;
+            backdrop.raycastTarget = false;
+        }
+
+        private static Image FindHeaderBackdropSource(RectTransform branch)
+        {
+            if (branch == null)
+            {
+                return null;
+            }
+            return branch.GetComponent<Image>() ?? branch.GetComponentInChildren<Image>(true);
+        }
+
         private static void ApplyHeaderLayout(HeaderReferenceGeometry reference)
         {
             if (reference == null || reference.OuterOwner == null || reference.Owner == null ||
@@ -398,14 +432,18 @@ namespace Assets.Scripts.UI_Components
             float colorCount = reference.ColorCountGap * compactScale;
             float right = reference.RightMargin * compactScale;
 
-            // This is a toolbar, not a floating badge. Keep the informational controls compact and
-            // give the editable squad-name field the remaining width so the visible bar occupies the
-            // workspace from its authored left margin through its authored right margin.
-            float fixedWidth = left + supplyWidth + supplyName + nameColor + colorWidth +
-                colorCount + countWidth + right;
-            float nameWidth = ratio < 1f
+            // Keep the controls as one compact, readable toolbar cluster. The header backdrop owns
+            // ultrawide surplus; the text field may grow modestly, but it must never become the bar.
+            float availableNameWidth = Mathf.Max(
+                0f,
+                liveWidth - left - supplyWidth - supplyName - nameColor - colorWidth -
+                colorCount - countWidth - right);
+            float desiredNameWidth = ratio < 1f
                 ? reference.NameWidth * compactScale
-                : Mathf.Max(reference.NameWidth, liveWidth - fixedWidth);
+                : Mathf.Min(
+                    reference.NameWidth * MaximumNameWidthScale,
+                    reference.NameWidth + Mathf.Max(0f, liveWidth - reference.OwnerWidth));
+            float nameWidth = Mathf.Min(desiredNameWidth, availableNameWidth);
 
             Rect ownerBounds = CalculateRectBounds(reference.Owner, reference.Owner);
             float cursor = ownerBounds.xMin + left;
