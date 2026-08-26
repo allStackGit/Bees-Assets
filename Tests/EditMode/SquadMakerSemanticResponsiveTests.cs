@@ -16,7 +16,7 @@ namespace Bees.Tests.EditMode
         private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
-        public void HeaderUsesFullWidthWithoutDisconnectingItsControls()
+        public void HeaderUsesFullWidthWithFlexibleNameFieldAndCompactEdgeControls()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
@@ -77,32 +77,36 @@ namespace Bees.Tests.EditMode
                         Is.EqualTo(referenceNameColorGap * scale).Within(0.02f));
                     Assert.That(countBounds.min.x - colorBounds.max.x,
                         Is.EqualTo(referenceColorCountGap * scale).Within(0.02f));
-                    Assert.That(supplyBounds.min.x, Is.GreaterThanOrEqualTo(header.rect.xMin - 0.02f));
-                    Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(header.rect.xMax + 0.02f));
 
                     float leftMargin = referenceLeftMargin * scale;
                     float rightMargin = referenceRightMargin * scale;
-                    float expectedStripCenter =
-                        (header.rect.xMin + leftMargin + header.rect.xMax - rightMargin) * 0.5f;
-                    float actualStripCenter = (supplyBounds.min.x + countBounds.max.x) * 0.5f;
-                    Assert.That(actualStripCenter, Is.EqualTo(expectedStripCenter).Within(0.02f),
-                        "Unused ultrawide space belongs outside the cohesive header strip, not inside its gaps.");
+                    Assert.That(supplyBounds.min.x,
+                        Is.EqualTo(header.rect.xMin + leftMargin).Within(0.02f));
+                    Assert.That(countBounds.max.x,
+                        Is.EqualTo(header.rect.xMax - rightMargin).Within(0.02f),
+                        "The visible toolbar should span the header instead of floating in its center.");
 
+                    float expectedNameWidth;
                     if (liveHeaderWidth >= referenceHeaderWidth)
                     {
-                        Assert.That(name.rect.width, Is.GreaterThanOrEqualTo(referenceNameWidth - 0.02f));
-                        Assert.That(name.rect.width, Is.LessThanOrEqualTo(referenceNameWidth * 1.5f + 0.02f));
+                        float fixedWidth = leftMargin + referenceSupplyWidth + referenceSupplyNameGap +
+                            referenceNameColorGap + referenceColorWidth + referenceColorCountGap +
+                            referenceCountWidth + rightMargin;
+                        expectedNameWidth = liveHeaderWidth - fixedWidth;
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth).Within(0.02f));
                     }
                     else
                     {
+                        expectedNameWidth = referenceNameWidth * scale;
                         Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth * scale).Within(0.02f));
-                        Assert.That(name.rect.width, Is.EqualTo(referenceNameWidth * scale).Within(0.02f));
                         Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth * scale).Within(0.02f));
                         Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth * scale).Within(0.02f));
                     }
+
+                    Assert.That(name.rect.width, Is.EqualTo(expectedNameWidth).Within(0.02f),
+                        "Horizontal surplus should become useful squad-name editing space, not empty toolbar margins.");
                 }
             }
             finally
@@ -181,7 +185,7 @@ namespace Bees.Tests.EditMode
                 Assert.That(savedLegacy.gameObject.activeSelf, Is.False);
                 Assert.That(chosenLegacy.gameObject.activeSelf, Is.False);
                 AssertIconSlot(savedRow, savedRuntime, savedLabel, 48f, savedLayout.spacing);
-                AssertIconSlot(chosenRow, chosenRuntime, chosenLabel, 48f, chosenLayout.spacing);
+                AssertIconSlot(chosenRow, chosenRuntime, savedLabel == chosenLabel ? chosenLabel : chosenLabel, 48f, chosenLayout.spacing);
                 Assert.That(savedGraphic.anchoredPosition, Is.EqualTo(savedGraphicOffset));
                 Assert.That(chosenGraphic.anchoredPosition, Is.EqualTo(chosenGraphicOffset));
 
