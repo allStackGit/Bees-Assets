@@ -16,7 +16,7 @@ namespace Bees.Tests.EditMode
         private const string TmpTextTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
-        public void SharedHeaderOwnerGivesHorizontalSurplusToSquadNameInsteadOfSeparatingCompactControls()
+        public void SharedHeaderOwnerKeepsAuthoredControlStripBoundedOnWideLayouts()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
@@ -52,6 +52,8 @@ namespace Bees.Tests.EditMode
                 float referenceColorWidth = color.rect.width;
                 float referenceCountWidth = count.rect.width;
                 float referenceHeaderWidth = header.rect.width;
+                Bounds referenceCountBounds = BoundsIn(header, count);
+                float referenceRightMargin = header.rect.xMax - referenceCountBounds.max.x;
 
                 float[] widths = { 620f, 930f, 1240f, 500f, 775f, 620f };
                 for (int index = 0; index < widths.Length; index++)
@@ -67,6 +69,11 @@ namespace Bees.Tests.EditMode
                     Bounds countBounds = BoundsIn(header, count);
 
                     float expectedHeaderWidth = Mathf.Max(0f, width - 20f);
+                    float contentWidth = Mathf.Min(referenceHeaderWidth, expectedHeaderWidth);
+                    float scale = referenceHeaderWidth > 0f
+                        ? Mathf.Min(1f, contentWidth / referenceHeaderWidth)
+                        : 1f;
+
                     Assert.That(headerBounds.size.x, Is.EqualTo(expectedHeaderWidth).Within(0.02f));
                     Assert.That(supplyBounds.max.x, Is.LessThanOrEqualTo(nameBounds.min.x + 0.02f));
                     Assert.That(nameBounds.max.x, Is.LessThanOrEqualTo(colorBounds.min.x + 0.02f));
@@ -74,18 +81,25 @@ namespace Bees.Tests.EditMode
                     Assert.That(supplyBounds.min.x, Is.GreaterThanOrEqualTo(header.rect.xMin - 0.02f));
                     Assert.That(countBounds.max.x, Is.LessThanOrEqualTo(header.rect.xMax + 0.02f));
 
-                    if (expectedHeaderWidth >= referenceHeaderWidth)
-                    {
-                        Assert.That(supply.rect.width, Is.EqualTo(referenceSupplyWidth).Within(0.02f));
-                        Assert.That(color.rect.width, Is.EqualTo(referenceColorWidth).Within(0.02f));
-                        Assert.That(count.rect.width, Is.EqualTo(referenceCountWidth).Within(0.02f));
-                        Assert.That(
-                            name.rect.width,
-                            Is.EqualTo(
-                                referenceNameWidth + (expectedHeaderWidth - referenceHeaderWidth))
-                                .Within(0.02f),
-                            "Only the editable squad-name field should absorb wide-layout surplus.");
-                    }
+                    Assert.That(
+                        supply.rect.width,
+                        Is.EqualTo(referenceSupplyWidth * scale).Within(0.02f));
+                    Assert.That(
+                        name.rect.width,
+                        Is.EqualTo(referenceNameWidth * scale).Within(0.02f),
+                        "The squad-name input must retain its authored width on wide layouts.");
+                    Assert.That(
+                        color.rect.width,
+                        Is.EqualTo(referenceColorWidth * scale).Within(0.02f));
+                    Assert.That(
+                        count.rect.width,
+                        Is.EqualTo(referenceCountWidth * scale).Within(0.02f));
+                    Assert.That(
+                        countBounds.max.x,
+                        Is.EqualTo(
+                            header.rect.xMin + contentWidth - (referenceRightMargin * scale))
+                            .Within(0.02f),
+                        "Wide-layout surplus belongs to the composition region, not the name input.");
                 }
             }
             finally
@@ -97,7 +111,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DynamicSquadRowsHaveOneGeometryOwnerAndDoNotJitterAcrossRepeatedRepairs()
+        public void DynamicSquadRowsUseAuthoredIconSlotAndDoNotJitterAcrossRepeatedRepairs()
         {
             RectTransform mainContainer = CreateRect("Main Container", null, new Vector2(1366f, 718f));
             RectTransform squadsColumn = CreateRect("Squads Column", mainContainer, new Vector2(484f, 718f));
@@ -112,6 +126,7 @@ namespace Bees.Tests.EditMode
                 262f,
                 "1st Pantheras",
                 out RectTransform savedRuntimeIcon,
+                out RectTransform savedRuntimeGraphic,
                 out RectTransform savedLegacyIcon,
                 out Component savedLabel,
                 out HorizontalLayoutGroup savedCompetingLayout);
@@ -121,6 +136,7 @@ namespace Bees.Tests.EditMode
                 222f,
                 "Blue Squadron",
                 out RectTransform chosenRuntimeIcon,
+                out RectTransform chosenRuntimeGraphic,
                 out RectTransform chosenLegacyIcon,
                 out Component chosenLabel,
                 out HorizontalLayoutGroup chosenCompetingLayout);
@@ -142,6 +158,8 @@ namespace Bees.Tests.EditMode
 
             try
             {
+                // Reproduce the runtime state after Unity has already let the authored row layout see
+                // both its legacy placeholder and the newly inserted runtime icon container.
                 LayoutRebuilder.ForceRebuildLayoutImmediate(savedRow);
                 LayoutRebuilder.ForceRebuildLayoutImmediate(chosenRow);
                 RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
@@ -150,20 +168,30 @@ namespace Bees.Tests.EditMode
                 Assert.That(chosenCompetingLayout.enabled, Is.False);
                 Assert.That(savedLegacyIcon.gameObject.activeSelf, Is.False);
                 Assert.That(chosenLegacyIcon.gameObject.activeSelf, Is.False);
-                AssertStableLeftAlignedSquadRow(savedRow, savedRuntimeIcon, savedLabel);
-                AssertStableLeftAlignedSquadRow(chosenRow, chosenRuntimeIcon, chosenLabel);
+                AssertStableSquadRow(
+                    savedRow,
+                    savedRuntimeGraphic,
+                    savedLegacyIcon,
+                    savedLabel,
+                    savedCompetingLayout);
+                AssertStableSquadRow(
+                    chosenRow,
+                    chosenRuntimeGraphic,
+                    chosenLegacyIcon,
+                    chosenLabel,
+                    chosenCompetingLayout);
 
-                Bounds savedIconBaseline = BoundsIn(savedRow, savedRuntimeIcon);
+                Bounds savedIconBaseline = BoundsIn(savedRow, savedRuntimeGraphic);
                 Bounds savedLabelBaseline = BoundsIn(savedRow, savedLabel.transform as RectTransform);
-                Bounds chosenIconBaseline = BoundsIn(chosenRow, chosenRuntimeIcon);
+                Bounds chosenIconBaseline = BoundsIn(chosenRow, chosenRuntimeGraphic);
                 Bounds chosenLabelBaseline = BoundsIn(chosenRow, chosenLabel.transform as RectTransform);
 
                 for (int pass = 0; pass < 12; pass++)
                 {
                     RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
-                    AssertBoundsEqual(savedIconBaseline, BoundsIn(savedRow, savedRuntimeIcon));
+                    AssertBoundsEqual(savedIconBaseline, BoundsIn(savedRow, savedRuntimeGraphic));
                     AssertBoundsEqual(savedLabelBaseline, BoundsIn(savedRow, savedLabel.transform as RectTransform));
-                    AssertBoundsEqual(chosenIconBaseline, BoundsIn(chosenRow, chosenRuntimeIcon));
+                    AssertBoundsEqual(chosenIconBaseline, BoundsIn(chosenRow, chosenRuntimeGraphic));
                     AssertBoundsEqual(chosenLabelBaseline, BoundsIn(chosenRow, chosenLabel.transform as RectTransform));
                 }
 
@@ -171,17 +199,19 @@ namespace Bees.Tests.EditMode
                 chosenColumn.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360f);
                 RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
 
-                Bounds savedIconWide = BoundsIn(savedRow, savedRuntimeIcon);
+                Bounds savedIconWide = BoundsIn(savedRow, savedRuntimeGraphic);
                 Bounds savedLabelWide = BoundsIn(savedRow, savedLabel.transform as RectTransform);
-                Bounds chosenIconWide = BoundsIn(chosenRow, chosenRuntimeIcon);
+                Bounds chosenIconWide = BoundsIn(chosenRow, chosenRuntimeGraphic);
                 Bounds chosenLabelWide = BoundsIn(chosenRow, chosenLabel.transform as RectTransform);
 
                 Assert.That(savedRow.rect.width, Is.EqualTo(savedColumn.rect.width).Within(0.02f));
                 Assert.That(chosenRow.rect.width, Is.EqualTo(chosenColumn.rect.width).Within(0.02f));
-                Assert.That(savedIconWide.min.x, Is.EqualTo(savedIconBaseline.min.x).Within(0.02f));
+                Assert.That(savedIconWide.center.x, Is.EqualTo(savedIconBaseline.center.x).Within(0.02f));
+                Assert.That(savedIconWide.center.y, Is.EqualTo(savedIconBaseline.center.y).Within(0.02f));
                 Assert.That(savedLabelWide.min.x, Is.EqualTo(savedLabelBaseline.min.x).Within(0.02f));
                 Assert.That(savedLabelWide.max.x, Is.GreaterThan(savedLabelBaseline.max.x));
-                Assert.That(chosenIconWide.min.x, Is.EqualTo(chosenIconBaseline.min.x).Within(0.02f));
+                Assert.That(chosenIconWide.center.x, Is.EqualTo(chosenIconBaseline.center.x).Within(0.02f));
+                Assert.That(chosenIconWide.center.y, Is.EqualTo(chosenIconBaseline.center.y).Within(0.02f));
                 Assert.That(chosenLabelWide.min.x, Is.EqualTo(chosenLabelBaseline.min.x).Within(0.02f));
                 Assert.That(chosenLabelWide.max.x, Is.GreaterThan(chosenLabelBaseline.max.x));
             }
@@ -281,15 +311,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FullBlarpHierarchyRemainsInsideTheActualDropWorkspace()
+        public void VisibleBlarpGraphicsRemainInsideAllDropWorkspaceEdges()
         {
             RectTransform settings = CreateRect("Squad Settings", null, new Vector2(620f, 298f));
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
             RectTransform formations = CreateRect("Formations", composition, new Vector2(30f, 410f));
             formations.anchorMin = new Vector2(0f, 0.5f);
             formations.anchorMax = new Vector2(0f, 0.5f);
-            RectTransform protruding = CreateRect("BLARP Visual", formations, new Vector2(48f, 30f));
-            protruding.anchoredPosition = new Vector2(-12f, 0f);
+            RectTransform protruding = CreateRect("BLARP Visual", formations, new Vector2(48f, 70f));
+            protruding.anchoredPosition = new Vector2(-20f, 190f);
+            protruding.gameObject.AddComponent<Image>();
 
             RectTransform dropZone = CreateRect("Drop Zone", composition, new Vector2(580f, 340f));
             dropZone.anchoredPosition = new Vector2(15f, -5f);
@@ -302,16 +333,38 @@ namespace Bees.Tests.EditMode
 
             try
             {
-                float[] widths = { 620f, 500f, 930f, 420f, 1240f, 620f };
-                for (int index = 0; index < widths.Length; index++)
+                Vector2[] sizes =
                 {
-                    composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, widths[index]);
+                    new Vector2(620f, 420f),
+                    new Vector2(500f, 360f),
+                    new Vector2(930f, 540f),
+                    new Vector2(420f, 320f),
+                    new Vector2(1240f, 620f),
+                    new Vector2(620f, 420f)
+                };
+
+                Bounds baseline = default;
+                for (int index = 0; index < sizes.Length; index++)
+                {
+                    composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, sizes[index].x);
+                    composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, sizes[index].y);
                     RuntimeAssembly.InvokeStatic(layoutType, "Apply", reference);
 
                     Bounds work = BoundsIn(composition, dropZone);
-                    Bounds blarp = RectTransformUtility.CalculateRelativeRectTransformBounds(composition, formations);
+                    Bounds blarp = BoundsIn(composition, protruding);
                     Assert.That(blarp.min.x, Is.GreaterThanOrEqualTo(work.min.x - 0.02f));
                     Assert.That(blarp.max.x, Is.LessThanOrEqualTo(work.max.x + 0.02f));
+                    Assert.That(blarp.min.y, Is.GreaterThanOrEqualTo(work.min.y - 0.02f));
+                    Assert.That(blarp.max.y, Is.LessThanOrEqualTo(work.max.y + 0.02f));
+
+                    if (index == 0)
+                    {
+                        baseline = blarp;
+                    }
+                    else if (index == sizes.Length - 1)
+                    {
+                        AssertBoundsEqual(baseline, blarp);
+                    }
                 }
             }
             finally
@@ -367,6 +420,7 @@ namespace Bees.Tests.EditMode
             float width,
             string squadName,
             out RectTransform runtimeIcon,
+            out RectTransform runtimeGraphic,
             out RectTransform legacyIcon,
             out Component label,
             out HorizontalLayoutGroup competingLayout)
@@ -382,31 +436,47 @@ namespace Bees.Tests.EditMode
             competingLayout.childForceExpandWidth = false;
             competingLayout.childForceExpandHeight = false;
 
-            legacyIcon = CreateRect("Squad Icon", row, new Vector2(30f, 30f));
+            // Match the serialized Saved Squad Label contract: a fixed 48-wide authored icon slot.
+            legacyIcon = CreateRect("Squad Icon", row, new Vector2(48f, 64f));
             legacyIcon.gameObject.AddComponent<Image>();
 
-            runtimeIcon = CreateRect("Icon Container", row, new Vector2(30f, 30f));
-            RectTransform runtimeShipImage = CreateRect("Ship Icon", runtimeIcon, new Vector2(24f, 24f));
-            runtimeShipImage.gameObject.AddComponent<Image>();
+            // Deliberately make the runtime container/graphic a different size and offset its graphic.
+            // The repair must align the rendered ship, not whichever container happened to be cloned.
+            runtimeIcon = CreateRect("Icon Container", row, new Vector2(36f, 44f));
+            runtimeGraphic = CreateRect("Ship Icon", runtimeIcon, new Vector2(20f, 26f));
+            runtimeGraphic.anchoredPosition = new Vector2(7f, 8f);
+            runtimeGraphic.gameObject.AddComponent<Image>();
 
             GameObject labelObject = new GameObject("Squad Name", typeof(RectTransform), typeof(CanvasRenderer));
             RectTransform labelRect = labelObject.GetComponent<RectTransform>();
             labelRect.SetParent(row, false);
-            labelRect.sizeDelta = new Vector2(Mathf.Max(60f, width - 50f), 30f);
+            labelRect.sizeDelta = new Vector2(240f, 64f);
             label = labelObject.AddComponent(GetTmpTextType());
             SetTmpText(label, squadName);
             SetTmpHorizontalAlignment(label, "Center");
             return row;
         }
 
-        private static void AssertStableLeftAlignedSquadRow(RectTransform row, RectTransform icon, Component label)
+        private static void AssertStableSquadRow(
+            RectTransform row,
+            RectTransform visibleIcon,
+            RectTransform legacyIcon,
+            Component label,
+            HorizontalLayoutGroup authoredLayout)
         {
             RectTransform labelRect = label.transform as RectTransform;
-            Bounds iconBounds = BoundsIn(row, icon);
+            Bounds iconBounds = BoundsIn(row, visibleIcon);
+            Bounds legacyBounds = BoundsIn(row, legacyIcon);
             Bounds labelBounds = BoundsIn(row, labelRect);
+            float expectedIconCenterX =
+                row.rect.xMin + authoredLayout.padding.left + (legacyBounds.size.x * 0.5f);
+            float expectedLabelMinX =
+                row.rect.xMin + authoredLayout.padding.left + legacyBounds.size.x + authoredLayout.spacing;
+
             AssertTmpHorizontalAlignment(label, "Left");
-            Assert.That(iconBounds.min.x, Is.GreaterThanOrEqualTo(row.rect.xMin - 0.02f));
-            Assert.That(labelBounds.min.x, Is.GreaterThan(iconBounds.max.x));
+            Assert.That(iconBounds.center.x, Is.EqualTo(expectedIconCenterX).Within(0.02f));
+            Assert.That(iconBounds.center.y, Is.EqualTo(row.rect.center.y).Within(0.02f));
+            Assert.That(labelBounds.min.x, Is.EqualTo(expectedLabelMinX).Within(0.02f));
             Assert.That(labelBounds.max.x, Is.LessThanOrEqualTo(row.rect.xMax + 0.02f));
         }
 
