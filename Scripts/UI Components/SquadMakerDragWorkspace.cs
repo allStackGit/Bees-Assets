@@ -7,15 +7,17 @@ namespace Assets.Scripts.UIComponents
     /// <summary>
     /// Provides one resolution-independent coordinate space for Squad Maker placement.
     ///
-    /// The authored drop surface is 600x340 logical UI units. That logical size never changes.
-    /// Responsive layout may uniformly scale the visible host only when there is not enough room to
-    /// show the workspace at full size. Persistent SquadShip offsets remain world-space gameplay data.
+    /// The responsive DropZone is only an available host region. The actual visible/interactable
+    /// placement canvas is always 600x340 logical UI units and is centered inside that host. It is
+    /// never stretched; on an undersized host it may scale down uniformly so the UI remains usable.
+    /// Persistent SquadShip offsets remain world-space gameplay data.
     /// </summary>
     internal sealed class SquadMakerDragWorkspace
     {
         internal static readonly Vector2 LogicalSize = new Vector2(600f, 340f);
         private static readonly Vector2 ReferenceResolution = new Vector2(1366f, 768f);
         private const string WorkspaceName = "Invariant Drag Workspace";
+        private const float MinimumScale = 0.05f;
         private const float MinimumPixelsPerUnit = 0.0001f;
 
         private readonly SquadMaker _scene;
@@ -62,25 +64,34 @@ namespace Assets.Scripts.UIComponents
             _referenceWorkspaceCanvasScale = CalculateCanvasScaleAtResolution(_canvasScaler, ReferenceResolution);
             _referenceDragCanvasScale = CalculateCanvasScaleAtResolution(_dragCanvasScaler, ReferenceResolution);
             _workspace = EnsureWorkspaceRect(_host);
+            ConfigureWorkspaceBackdrop(_host, _workspace);
             RefreshVisualFit();
         }
 
         internal void RefreshVisualFit()
         {
-            if (_workspace == null)
+            if (_host == null || _workspace == null)
             {
                 return;
             }
 
-            // The responsive composition owner is responsible for fitting the visible DropZone.
-            // Keep this child strictly invariant so all input, hit testing and saved offsets use the
-            // same 600x340 coordinates regardless of presentation size.
+            float availableWidth = Mathf.Abs(_host.rect.width);
+            float availableHeight = Mathf.Abs(_host.rect.height);
+            float fit = Mathf.Min(
+                1f,
+                Mathf.Min(
+                    availableWidth / Mathf.Max(1f, LogicalSize.x),
+                    availableHeight / Mathf.Max(1f, LogicalSize.y)));
+            fit = Mathf.Max(MinimumScale, fit);
+
+            // Logical coordinates never change. Only presentation may uniformly shrink when the
+            // responsive host genuinely cannot contain the authored workspace.
             _workspace.anchorMin = new Vector2(0.5f, 0.5f);
             _workspace.anchorMax = new Vector2(0.5f, 0.5f);
             _workspace.pivot = new Vector2(0.5f, 0.5f);
             _workspace.sizeDelta = LogicalSize;
             _workspace.anchoredPosition = Vector2.zero;
-            _workspace.localScale = Vector3.one;
+            _workspace.localScale = new Vector3(fit, fit, 1f);
         }
 
         internal bool TryScreenToWorldOffset(Vector2 screenPosition, out Vector2 worldOffset)
@@ -306,7 +317,6 @@ namespace Assets.Scripts.UIComponents
                 GameObject workspaceObject = new GameObject(WorkspaceName, typeof(RectTransform));
                 workspace = workspaceObject.GetComponent<RectTransform>();
                 workspace.SetParent(host, false);
-                workspace.SetAsLastSibling();
             }
 
             workspace.anchorMin = new Vector2(0.5f, 0.5f);
@@ -314,8 +324,40 @@ namespace Assets.Scripts.UIComponents
             workspace.pivot = new Vector2(0.5f, 0.5f);
             workspace.sizeDelta = LogicalSize;
             workspace.anchoredPosition = Vector2.zero;
-            workspace.localScale = Vector3.one;
+            workspace.SetAsFirstSibling();
             return workspace;
+        }
+
+        private static void ConfigureWorkspaceBackdrop(RectTransform host, RectTransform workspace)
+        {
+            if (host == null || workspace == null)
+            {
+                return;
+            }
+
+            Image hostImage = host.GetComponent<Image>();
+            if (hostImage == null)
+            {
+                return;
+            }
+
+            Image workspaceImage = workspace.GetComponent<Image>();
+            if (workspaceImage == null)
+            {
+                workspaceImage = workspace.gameObject.AddComponent<Image>();
+            }
+
+            workspaceImage.sprite = hostImage.sprite;
+            workspaceImage.color = hostImage.color;
+            workspaceImage.material = hostImage.material;
+            workspaceImage.type = hostImage.type;
+            workspaceImage.preserveAspect = hostImage.preserveAspect;
+            workspaceImage.fillCenter = hostImage.fillCenter;
+            workspaceImage.raycastTarget = false;
+
+            // The responsive host remains the layout-owned available region, but it must not paint a
+            // stretched copy of the canvas behind the invariant child.
+            hostImage.enabled = false;
         }
     }
 }
