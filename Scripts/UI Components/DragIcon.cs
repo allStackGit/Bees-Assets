@@ -1,29 +1,28 @@
-﻿
-
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Scenes;
-using System.Collections;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
-
 
 namespace Assets.Scripts.UIComponents
 {
     public class DragIcon
     {
         public Vector2 Position => _icon.transform.position;
+        public Vector2 WorkspaceOffset => _workspaceOffset;
+        public bool HasWorkspaceOffset => _hasWorkspaceOffset;
         public int Id;
-        private GameObject _icon;
-        private GameObject _deadShipBox = null;
-        private FleetShip _fleetShip;
-        private SquadMaker _scene;
+
+        private readonly GameObject _icon;
+        private readonly FleetShip _fleetShip;
+        private readonly SquadMaker _scene;
+        private GameObject _deadShipBox;
         private int[] _changeablePixels;
+        private Vector2 _workspaceOffset;
+        private bool _hasWorkspaceOffset;
 
         public bool HasDeadShipBox => _deadShipBox != null;
+
         public DragIcon(SquadMaker scene, GameObject icon, FleetShip fleetShip, string gameObjectName, int id)
         {
             _scene = scene;
@@ -35,35 +34,40 @@ namespace Assets.Scripts.UIComponents
             {
                 SetChangablePixels(ConfigData.ChangeableShipColors.GetValueOrDefault(fleetShip.Type));
             }
-            //Debugger.PrintList(_changeablePixels.ToList());
         }
 
         public FleetShip GetFleetShip()
         {
             return _fleetShip;
         }
-        public GameObject GetIcon() { 
+
+        public GameObject GetIcon()
+        {
             return _icon;
         }
+
         public GameObject GetDeadShipBox()
         {
             return _deadShipBox;
         }
-        //public DragIconDropper GetDropper()
-        //{
-        //    return _dropper;
-        //}
 
         public void SetPosition(Vector2 position)
         {
             _icon.transform.position = position;
         }
+
+        public void SetWorkspaceOffset(Vector2 offset)
+        {
+            _workspaceOffset = offset;
+            _hasWorkspaceOffset = true;
+        }
+
         public void SetChangablePixels(Color[] colors)
         {
-            //Debug.Log($"Setting changable pixels for {_icon.name}");
             Image image = _icon.GetComponent<Image>();
             _changeablePixels = Utilities.GetChangablePixelsForImage(colors, image.sprite);
         }
+
         public void SetColor(Color color)
         {
             Image image = _icon.GetComponent<Image>();
@@ -74,7 +78,6 @@ namespace Assets.Scripts.UIComponents
             }
 
             image.sprite = Utilities.SetImageColor(color, image.sprite, _changeablePixels);
-
             Sprite deckSprite = _fleetShip != null && _fleetShip.Type == ConfigData.ShipTypes.Carrier
                 ? CarrierDeckVariants.GetDeckSprite(color)
                 : null;
@@ -86,17 +89,39 @@ namespace Assets.Scripts.UIComponents
             _deadShipBox = deadShipBox;
         }
 
+        /// <summary>
+        /// Compatibility entry point used by SquadMaker load/resize code. Saved ships already carry
+        /// the canonical world offset. Resize repair must reuse an icon's canonical offset rather
+        /// than converting its current screen pixels back into gameplay coordinates.
+        /// </summary>
         public void Reposition(Vector2 position, SquadShip ship)
         {
             Dropper dropper = _scene.GetDropper();
             dropper.SetCurrentDragIcon(this);
-            dropper.PlaceShipAtPosition(position, ship);
-            _scene.FleetDragEnd();
 
+            if (ship != null)
+            {
+                dropper.PlaceShipAtWorldOffset(ship.Offset, ship);
+            }
+            else if (_hasWorkspaceOffset)
+            {
+                dropper.PlaceShipAtWorldOffset(_workspaceOffset, null);
+            }
+            else
+            {
+                dropper.PlaceShipAtPosition(position, null);
+            }
+
+            _scene.FleetDragEnd();
         }
 
-
-
+        public void RepositionWorldOffset(Vector2 worldOffset, SquadShip ship)
+        {
+            Dropper dropper = _scene.GetDropper();
+            dropper.SetCurrentDragIcon(this);
+            dropper.PlaceShipAtWorldOffset(worldOffset, ship);
+            _scene.FleetDragEnd();
+        }
 
         public void RemoveDragIcon()
         {
@@ -104,11 +129,9 @@ namespace Assets.Scripts.UIComponents
             FleetShip fleetShip = GetFleetShip();
             if (currentSquad != null)
             {
-                //Debug.Log($"Removing drag icon from {currentSquad}");
                 SquadShip squadShip = currentSquad.GetShip(fleetShip.Id);
                 if (squadShip != null)
                 {
-                    //Debug.Log($"Removing squad ship from {currentSquad}");
                     currentSquad.RemoveShipFromSquad(squadShip, true);
                     _scene.UpdateShipCounter(fleetShip.Type);
                 }
@@ -116,10 +139,10 @@ namespace Assets.Scripts.UIComponents
 
             _scene.GetDropper().RemoveDragIcon(this);
         }
+
         public bool Equals(DragIcon dragIcon)
         {
-            return dragIcon.Id == Id;
+            return dragIcon != null && dragIcon.Id == Id;
         }
-        
     }
 }
