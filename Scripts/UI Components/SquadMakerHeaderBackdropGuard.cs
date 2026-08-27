@@ -7,8 +7,9 @@ namespace Assets.Scripts.UI_Components
 {
     /// <summary>
     /// Supplies the visual toolbar band when the serialized Squad Maker header controls are direct
-    /// children of Squad Composition. Nested header containers remain owned by
-    /// SquadMakerCompositionLayoutGuard; this relay does not move or resize existing controls.
+    /// branches of Squad Composition and centers those existing controls as one compact group.
+    /// Nested header containers remain owned by SquadMakerCompositionLayoutGuard; this relay never
+    /// changes the size of an existing control.
     /// </summary>
     [DefaultExecutionOrder(-650)]
     internal sealed class SquadMakerHeaderBackdropGuard : MonoBehaviour
@@ -129,6 +130,7 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            CenterControls();
             Rect band = CalculateUnionBounds(_composition, _supply, _name, _color, _count);
             if (band.width <= GeometryTolerance || band.height <= GeometryTolerance)
             {
@@ -142,6 +144,53 @@ namespace Assets.Scripts.UI_Components
             _backdrop.anchoredPosition = new Vector2(0f, -topInset);
             _backdrop.sizeDelta = new Vector2(0f, band.height);
             _backdrop.SetAsFirstSibling();
+        }
+
+        private void CenterControls()
+        {
+            Rect band = CalculateUnionBounds(_composition, _supply, _name, _color, _count);
+            float compositionWidth = Mathf.Abs(_composition.rect.width);
+            if (band.width <= GeometryTolerance || band.width > compositionWidth + GeometryTolerance)
+            {
+                return;
+            }
+
+            float delta = _composition.rect.center.x - band.center.x;
+            if (Mathf.Abs(delta) <= GeometryTolerance)
+            {
+                return;
+            }
+
+            RectTransform supplyBranch = FindDirectChildAncestor(_supply, _composition);
+            RectTransform nameBranch = FindDirectChildAncestor(_name, _composition);
+            RectTransform colorBranch = FindDirectChildAncestor(_color, _composition);
+            RectTransform countBranch = FindDirectChildAncestor(_count, _composition);
+
+            TranslateBranch(supplyBranch, delta);
+            if (nameBranch != supplyBranch)
+            {
+                TranslateBranch(nameBranch, delta);
+            }
+            if (colorBranch != supplyBranch && colorBranch != nameBranch)
+            {
+                TranslateBranch(colorBranch, delta);
+            }
+            if (countBranch != supplyBranch && countBranch != nameBranch && countBranch != colorBranch)
+            {
+                TranslateBranch(countBranch, delta);
+            }
+        }
+
+        private static void TranslateBranch(RectTransform branch, float delta)
+        {
+            if (branch == null)
+            {
+                return;
+            }
+
+            Vector2 position = branch.anchoredPosition;
+            position.x += delta;
+            branch.anchoredPosition = position;
         }
 
         private void EnsureBackdrop()
@@ -244,6 +293,21 @@ namespace Assets.Scripts.UI_Components
                 current = current.parent as RectTransform;
             }
             return null;
+        }
+
+        private static RectTransform FindDirectChildAncestor(RectTransform descendant, RectTransform owner)
+        {
+            if (descendant == null || owner == null)
+            {
+                return null;
+            }
+
+            RectTransform current = descendant;
+            while (current != null && current.parent != owner)
+            {
+                current = current.parent as RectTransform;
+            }
+            return current != null && current.parent == owner ? current : null;
         }
 
         private static RectTransform FindLowestCommonAncestor(
