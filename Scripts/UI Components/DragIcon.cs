@@ -98,18 +98,19 @@ namespace Assets.Scripts.UIComponents
         {
             Dropper dropper = _scene.GetDropper();
             dropper.SetCurrentDragIcon(this);
+            SquadShip self = ship ?? GetCurrentSquadShip();
 
             if (ship != null)
             {
-                dropper.PlaceShipAtWorldOffset(ship.Offset, ship);
+                dropper.PlaceShipAtWorldOffset(ship.Offset, self);
             }
             else if (_hasWorkspaceOffset)
             {
-                dropper.PlaceShipAtWorldOffset(_workspaceOffset, null);
+                dropper.PlaceShipAtWorldOffset(_workspaceOffset, self);
             }
             else
             {
-                dropper.PlaceShipAtPosition(position, null);
+                dropper.PlaceShipAtPosition(position, self);
             }
 
             _scene.FleetDragEnd();
@@ -119,7 +120,7 @@ namespace Assets.Scripts.UIComponents
         {
             Dropper dropper = _scene.GetDropper();
             dropper.SetCurrentDragIcon(this);
-            dropper.PlaceShipAtWorldOffset(worldOffset, ship);
+            dropper.PlaceShipAtWorldOffset(worldOffset, ship ?? GetCurrentSquadShip());
             _scene.FleetDragEnd();
         }
 
@@ -143,6 +144,14 @@ namespace Assets.Scripts.UIComponents
         public bool Equals(DragIcon dragIcon)
         {
             return dragIcon != null && dragIcon.Id == Id;
+        }
+
+        private SquadShip GetCurrentSquadShip()
+        {
+            SavedSquad currentSquad = _scene != null ? _scene.GetCurrentSquad() : null;
+            return currentSquad != null && _fleetShip != null
+                ? currentSquad.GetShip(_fleetShip.Id)
+                : null;
         }
     }
 }
