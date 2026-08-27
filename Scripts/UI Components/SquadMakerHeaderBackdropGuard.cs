@@ -116,8 +116,11 @@ namespace Assets.Scripts.UI_Components
             _nameBranch = FindDirectChildAncestor(name, composition);
             _colorBranch = FindDirectChildAncestor(color, composition);
             _countBranch = FindDirectChildAncestor(count, composition);
-            EnsureBackdrop();
-            ApplyBackdrop();
+
+            // Do not mutate header geometry during the sceneLoaded callback. The responsive owner
+            // captures immutable authored geometry during that same callback phase. LateUpdate runs
+            // afterward, and this component's execution order keeps centering after the responsive
+            // pass without contaminating its reference snapshot.
         }
 
         private void LateUpdate()
