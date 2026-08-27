@@ -23,6 +23,10 @@ namespace Bees.Tests.EditMode
             RectTransform color = CreateHeaderRect("COLOR", composition, 450f, 70f);
             RectTransform count = CreateHeaderRect("0 / 10", composition, 530f, 80f);
 
+            Vector2 supplyPosition = supply.anchoredPosition;
+            Vector2 namePosition = name.anchoredPosition;
+            Vector2 colorPosition = color.anchoredPosition;
+            Vector2 countPosition = count.anchoredPosition;
             Vector2 supplySize = supply.sizeDelta;
             Vector2 nameSize = name.sizeDelta;
             Vector2 colorSize = color.sizeDelta;
@@ -45,6 +49,12 @@ namespace Bees.Tests.EditMode
             {
                 Assert.That(guard, Is.Not.Null,
                     "The direct-under-composition scene shape must receive the dedicated backdrop relay.");
+                Assert.That(composition.Find(BackdropName), Is.Null,
+                    "Registering the relay during sceneLoaded must not mutate hierarchy before responsive reference capture.");
+                Assert.That(supply.anchoredPosition, Is.EqualTo(supplyPosition));
+                Assert.That(name.anchoredPosition, Is.EqualTo(namePosition));
+                Assert.That(color.anchoredPosition, Is.EqualTo(colorPosition));
+                Assert.That(count.anchoredPosition, Is.EqualTo(countPosition));
 
                 float[] widths = { 620f, 2400f, 775f, 620f };
                 for (int i = 0; i < widths.Length; i++)
