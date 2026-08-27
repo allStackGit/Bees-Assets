@@ -23,6 +23,10 @@ namespace Assets.Scripts.UI_Components
         private RectTransform _name;
         private RectTransform _color;
         private RectTransform _count;
+        private RectTransform _supplyBranch;
+        private RectTransform _nameBranch;
+        private RectTransform _colorBranch;
+        private RectTransform _countBranch;
         private RectTransform _backdrop;
         private readonly Vector3[] _corners = new Vector3[4];
 
@@ -108,6 +112,10 @@ namespace Assets.Scripts.UI_Components
             _name = name;
             _color = color;
             _count = count;
+            _supplyBranch = FindDirectChildAncestor(supply, composition);
+            _nameBranch = FindDirectChildAncestor(name, composition);
+            _colorBranch = FindDirectChildAncestor(color, composition);
+            _countBranch = FindDirectChildAncestor(count, composition);
             EnsureBackdrop();
             ApplyBackdrop();
         }
@@ -130,12 +138,13 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            CenterControls();
-            Rect band = CalculateUnionBounds(_composition, _supply, _name, _color, _count);
+            Rect band = CalculateControlBounds(_composition);
             if (band.width <= GeometryTolerance || band.height <= GeometryTolerance)
             {
                 return;
             }
+
+            CenterControls(band);
 
             float topInset = Mathf.Max(0f, _composition.rect.yMax - band.yMax);
             _backdrop.anchorMin = new Vector2(0f, 1f);
@@ -143,14 +152,16 @@ namespace Assets.Scripts.UI_Components
             _backdrop.pivot = new Vector2(0.5f, 1f);
             _backdrop.anchoredPosition = new Vector2(0f, -topInset);
             _backdrop.sizeDelta = new Vector2(0f, band.height);
-            _backdrop.SetAsFirstSibling();
+            if (_backdrop.GetSiblingIndex() != 0)
+            {
+                _backdrop.SetAsFirstSibling();
+            }
         }
 
-        private void CenterControls()
+        private void CenterControls(Rect band)
         {
-            Rect band = CalculateUnionBounds(_composition, _supply, _name, _color, _count);
             float compositionWidth = Mathf.Abs(_composition.rect.width);
-            if (band.width <= GeometryTolerance || band.width > compositionWidth + GeometryTolerance)
+            if (band.width > compositionWidth + GeometryTolerance)
             {
                 return;
             }
@@ -161,23 +172,18 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            RectTransform supplyBranch = FindDirectChildAncestor(_supply, _composition);
-            RectTransform nameBranch = FindDirectChildAncestor(_name, _composition);
-            RectTransform colorBranch = FindDirectChildAncestor(_color, _composition);
-            RectTransform countBranch = FindDirectChildAncestor(_count, _composition);
-
-            TranslateBranch(supplyBranch, delta);
-            if (nameBranch != supplyBranch)
+            TranslateBranch(_supplyBranch, delta);
+            if (_nameBranch != _supplyBranch)
             {
-                TranslateBranch(nameBranch, delta);
+                TranslateBranch(_nameBranch, delta);
             }
-            if (colorBranch != supplyBranch && colorBranch != nameBranch)
+            if (_colorBranch != _supplyBranch && _colorBranch != _nameBranch)
             {
-                TranslateBranch(colorBranch, delta);
+                TranslateBranch(_colorBranch, delta);
             }
-            if (countBranch != supplyBranch && countBranch != nameBranch && countBranch != colorBranch)
+            if (_countBranch != _supplyBranch && _countBranch != _nameBranch && _countBranch != _colorBranch)
             {
-                TranslateBranch(countBranch, delta);
+                TranslateBranch(_countBranch, delta);
             }
         }
 
@@ -242,7 +248,7 @@ namespace Assets.Scripts.UI_Components
                 : null;
         }
 
-        private Rect CalculateUnionBounds(RectTransform owner, params RectTransform[] rects)
+        private Rect CalculateControlBounds(RectTransform owner)
         {
             bool found = false;
             float minX = 0f;
@@ -250,35 +256,46 @@ namespace Assets.Scripts.UI_Components
             float minY = 0f;
             float maxY = 0f;
 
-            for (int i = 0; i < rects.Length; i++)
-            {
-                RectTransform rect = rects[i];
-                if (rect == null)
-                {
-                    continue;
-                }
-
-                rect.GetWorldCorners(_corners);
-                for (int corner = 0; corner < _corners.Length; corner++)
-                {
-                    Vector3 local = owner.InverseTransformPoint(_corners[corner]);
-                    if (!found)
-                    {
-                        minX = maxX = local.x;
-                        minY = maxY = local.y;
-                        found = true;
-                    }
-                    else
-                    {
-                        minX = Mathf.Min(minX, local.x);
-                        maxX = Mathf.Max(maxX, local.x);
-                        minY = Mathf.Min(minY, local.y);
-                        maxY = Mathf.Max(maxY, local.y);
-                    }
-                }
-            }
+            IncludeBounds(owner, _supply, ref found, ref minX, ref maxX, ref minY, ref maxY);
+            IncludeBounds(owner, _name, ref found, ref minX, ref maxX, ref minY, ref maxY);
+            IncludeBounds(owner, _color, ref found, ref minX, ref maxX, ref minY, ref maxY);
+            IncludeBounds(owner, _count, ref found, ref minX, ref maxX, ref minY, ref maxY);
 
             return found ? Rect.MinMaxRect(minX, minY, maxX, maxY) : default;
+        }
+
+        private void IncludeBounds(
+            RectTransform owner,
+            RectTransform rect,
+            ref bool found,
+            ref float minX,
+            ref float maxX,
+            ref float minY,
+            ref float maxY)
+        {
+            if (rect == null)
+            {
+                return;
+            }
+
+            rect.GetWorldCorners(_corners);
+            for (int corner = 0; corner < _corners.Length; corner++)
+            {
+                Vector3 local = owner.InverseTransformPoint(_corners[corner]);
+                if (!found)
+                {
+                    minX = maxX = local.x;
+                    minY = maxY = local.y;
+                    found = true;
+                }
+                else
+                {
+                    minX = Mathf.Min(minX, local.x);
+                    maxX = Mathf.Max(maxX, local.x);
+                    minY = Mathf.Min(minY, local.y);
+                    maxY = Mathf.Max(maxY, local.y);
+                }
+            }
         }
 
         private static RectTransform FindAncestorByName(RectTransform start, string name)
