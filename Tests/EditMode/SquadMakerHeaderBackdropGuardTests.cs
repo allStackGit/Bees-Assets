@@ -14,7 +14,7 @@ namespace Bees.Tests.EditMode
         private const string BackdropName = "Responsive Squad Header Backdrop";
 
         [Test]
-        public void DirectCompositionHeaderGetsFullWidthBackdropWithoutMovingControls()
+        public void DirectCompositionHeaderGetsFullWidthBackdropAndCentersControlsWithoutResizing()
         {
             RectTransform composition = CreateRect("Squad Composition", null, new Vector2(620f, 420f));
             RectTransform supply = CreateHeaderRect("Supply Capacity", composition, 10f, 200f);
@@ -23,11 +23,13 @@ namespace Bees.Tests.EditMode
             RectTransform color = CreateHeaderRect("COLOR", composition, 450f, 70f);
             RectTransform count = CreateHeaderRect("0 / 10", composition, 530f, 80f);
 
-            Vector2 supplyPosition = supply.anchoredPosition;
-            Vector2 namePosition = name.anchoredPosition;
-            Vector2 colorPosition = color.anchoredPosition;
-            Vector2 countPosition = count.anchoredPosition;
+            Vector2 supplySize = supply.sizeDelta;
             Vector2 nameSize = name.sizeDelta;
+            Vector2 colorSize = color.sizeDelta;
+            Vector2 countSize = count.sizeDelta;
+            float supplyNameGap = BoundsIn(composition, name).min.x - BoundsIn(composition, supply).max.x;
+            float nameColorGap = BoundsIn(composition, color).min.x - BoundsIn(composition, name).max.x;
+            float colorCountGap = BoundsIn(composition, count).min.x - BoundsIn(composition, color).max.x;
 
             GameObject manager = new GameObject("UI Manager");
             Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
@@ -43,21 +45,33 @@ namespace Bees.Tests.EditMode
             {
                 Assert.That(guard, Is.Not.Null,
                     "The direct-under-composition scene shape must receive the dedicated backdrop relay.");
-                AssertBackdrop(composition, expectedWidth: 620f, expectedHeight: 30f);
-                AssertControlsUnchanged(supply, name, color, count,
-                    supplyPosition, namePosition, colorPosition, countPosition, nameSize);
 
-                composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 2400f);
-                RuntimeAssembly.Invoke(guard, "ApplyBackdrop");
-                AssertBackdrop(composition, expectedWidth: 2400f, expectedHeight: 30f);
-                AssertControlsUnchanged(supply, name, color, count,
-                    supplyPosition, namePosition, colorPosition, countPosition, nameSize);
+                float[] widths = { 620f, 2400f, 775f, 620f };
+                for (int i = 0; i < widths.Length; i++)
+                {
+                    composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, widths[i]);
+                    RuntimeAssembly.Invoke(guard, "ApplyBackdrop");
 
-                composition.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 775f);
-                RuntimeAssembly.Invoke(guard, "ApplyBackdrop");
-                AssertBackdrop(composition, expectedWidth: 775f, expectedHeight: 30f);
-                AssertControlsUnchanged(supply, name, color, count,
-                    supplyPosition, namePosition, colorPosition, countPosition, nameSize);
+                    AssertBackdrop(composition, expectedWidth: widths[i], expectedHeight: 30f);
+                    AssertControlsCentered(
+                        composition,
+                        supply,
+                        name,
+                        color,
+                        count,
+                        supplyNameGap,
+                        nameColorGap,
+                        colorCountGap);
+                    AssertControlsUnresized(
+                        supply,
+                        name,
+                        color,
+                        count,
+                        supplySize,
+                        nameSize,
+                        colorSize,
+                        countSize);
+                }
             }
             finally
             {
@@ -78,22 +92,49 @@ namespace Bees.Tests.EditMode
             Assert.That(backdrop.GetComponent<LayoutElement>().ignoreLayout, Is.True);
         }
 
-        private static void AssertControlsUnchanged(
+        private static void AssertControlsCentered(
+            RectTransform composition,
             RectTransform supply,
             RectTransform name,
             RectTransform color,
             RectTransform count,
-            Vector2 supplyPosition,
-            Vector2 namePosition,
-            Vector2 colorPosition,
-            Vector2 countPosition,
-            Vector2 nameSize)
+            float supplyNameGap,
+            float nameColorGap,
+            float colorCountGap)
         {
-            Assert.That(supply.anchoredPosition, Is.EqualTo(supplyPosition));
-            Assert.That(name.anchoredPosition, Is.EqualTo(namePosition));
-            Assert.That(color.anchoredPosition, Is.EqualTo(colorPosition));
-            Assert.That(count.anchoredPosition, Is.EqualTo(countPosition));
-            Assert.That(name.sizeDelta, Is.EqualTo(nameSize));
+            Bounds supplyBounds = BoundsIn(composition, supply);
+            Bounds nameBounds = BoundsIn(composition, name);
+            Bounds colorBounds = BoundsIn(composition, color);
+            Bounds countBounds = BoundsIn(composition, count);
+            float groupCenter = (supplyBounds.min.x + countBounds.max.x) * 0.5f;
+
+            Assert.That(groupCenter, Is.EqualTo(composition.rect.center.x).Within(0.02f),
+                "Supply/name/COLOR/count should remain one group centered in the full-width toolbar.");
+            Assert.That(nameBounds.min.x - supplyBounds.max.x, Is.EqualTo(supplyNameGap).Within(0.02f));
+            Assert.That(colorBounds.min.x - nameBounds.max.x, Is.EqualTo(nameColorGap).Within(0.02f));
+            Assert.That(countBounds.min.x - colorBounds.max.x, Is.EqualTo(colorCountGap).Within(0.02f));
+        }
+
+        private static void AssertControlsUnresized(
+            RectTransform supply,
+            RectTransform name,
+            RectTransform color,
+            RectTransform count,
+            Vector2 supplySize,
+            Vector2 nameSize,
+            Vector2 colorSize,
+            Vector2 countSize)
+        {
+            Assert.That(supply.sizeDelta, Is.EqualTo(supplySize));
+            Assert.That(name.sizeDelta, Is.EqualTo(nameSize),
+                "Centering the toolbar must not change the squad-name input size.");
+            Assert.That(color.sizeDelta, Is.EqualTo(colorSize));
+            Assert.That(count.sizeDelta, Is.EqualTo(countSize));
+        }
+
+        private static Bounds BoundsIn(RectTransform owner, RectTransform child)
+        {
+            return RectTransformUtility.CalculateRelativeRectTransformBounds(owner, child);
         }
 
         private static RectTransform CreateHeaderRect(string name, RectTransform parent, float left, float width)
