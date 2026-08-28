@@ -7,11 +7,11 @@ namespace Assets.Scripts.UIComponents
     /// <summary>
     /// Keeps Squad Maker display resizing presentation-only.
     ///
-    /// SquadMaker's legacy UpdateDimensions callback rebuilt the current squad by clearing its
-    /// SquadShips and semantically re-dropping every icon when Screen.width/height changed. That
-    /// made persistent formation offsets depend on display timing and allowed resize to behave like
-    /// gameplay input. The fixed drag workspace owns presentation instead: resizing may move/scale
-    /// the rendered 600x340 workspace, but never changes squad membership or SquadShip.Offset.
+    /// SquadMaker's legacy UpdateDimensions callback clears and rebuilds the current SquadShips
+    /// when Screen.width/height changes. That makes display resizing behave like gameplay input.
+    /// This guard replaces only that resize path: it keeps the legacy screen metrics/color-picker
+    /// refresh, then reprojects existing canonical offsets into the fixed drag workspace without
+    /// changing squad membership or SquadShip.Offset.
     /// </summary>
     [DefaultExecutionOrder(900)]
     public sealed class SquadMakerDragWorkspaceResizeGuard : MonoBehaviour
@@ -94,10 +94,18 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            // SquadMaker.Start schedules this callback one second later. LateUpdate runs in the
-            // first rendered frame after Start, so canceling here prevents the first semantic resize
-            // pass and also protects against any future code that schedules it again.
-            _squadMaker.CancelInvoke(LegacyResizeCallback);
+            // SquadMaker.Start still schedules the legacy method. Suppress that one semantic resize
+            // path, but explicitly preserve its non-gameplay screen-metric responsibilities below.
+            if (_squadMaker.IsInvoking(LegacyResizeCallback))
+            {
+                _squadMaker.CancelInvoke(LegacyResizeCallback);
+            }
+
+            bool displayChanged = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight;
+            if (displayChanged)
+            {
+                RefreshDisplayMetrics();
+            }
 
             Dropper dropper = _squadMaker.GetDropper();
             RectTransform dropZone = _squadMaker.DropZone != null
@@ -105,11 +113,12 @@ namespace Assets.Scripts.UIComponents
                 : null;
             if (dropper == null || dropZone == null)
             {
+                _lastScreenWidth = Screen.width;
+                _lastScreenHeight = Screen.height;
                 return;
             }
 
             bool ownerChanged = _dropper != dropper || _dropZone != dropZone;
-            bool displayChanged = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight;
             bool geometryChanged = ownerChanged || HasDropZoneGeometryChanged(dropZone);
 
             if (!ownerChanged && !displayChanged && !geometryChanged)
@@ -122,11 +131,33 @@ namespace Assets.Scripts.UIComponents
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
 
-            // This is deliberately the only resize-side effect. It reprojects existing canonical
-            // world offsets into the current presentation without adding/removing/repositioning any
-            // SquadShip semantically.
+            // This is deliberately the only drag-workspace resize side effect. It changes rendered
+            // positions/scales only; Dropper.RefreshWorkspacePresentation never performs a drop.
             _dropper.RefreshWorkspacePresentation();
             CaptureDropZoneGeometry(dropZone);
+        }
+
+        private void RefreshDisplayMetrics()
+        {
+            ConfigData.ScreenWidth = Screen.width;
+            ConfigData.ScreenHeight = Screen.height;
+
+            Vector2 reference = _squadMaker.ReferenceScreenSize;
+            if (reference.x > 0.001f && reference.y > 0.001f)
+            {
+                _squadMaker.ScreenScaleFactor = new Vector2(
+                    ConfigData.ScreenWidth / reference.x,
+                    ConfigData.ScreenHeight / reference.y);
+            }
+
+            if (_squadMaker.HasColorPicker && _squadMaker.ColorPicker != null)
+            {
+                ColorPicker picker = _squadMaker.ColorPicker.GetComponent<ColorPicker>();
+                if (picker != null)
+                {
+                    picker.SetScreenScaleFactor();
+                }
+            }
         }
 
         private bool HasDropZoneGeometryChanged(RectTransform dropZone)
