@@ -16,7 +16,6 @@ namespace Assets.Scripts.UIComponents
     {
         private readonly SquadMaker _scene;
         private readonly SquadMakerDragWorkspace _workspace;
-        private bool _isAutoPlacing;
         private bool _isDragging;
         private readonly List<DragIcon> _dragIcons = new List<DragIcon>();
         private DragIcon _currentDragIcon;
@@ -46,6 +45,35 @@ namespace Assets.Scripts.UIComponents
         public void SetCurrentDragIcon(DragIcon dragIcon)
         {
             _currentDragIcon = dragIcon;
+        }
+
+        /// <summary>
+        /// Reprojects the existing canonical squad offsets into the current screen presentation.
+        /// This method deliberately does not add, remove, validate, snap, or rewrite SquadShips.
+        /// Resizing the window is presentation only.
+        /// </summary>
+        public void RefreshWorkspacePresentation()
+        {
+            _workspace.RefreshVisualFit();
+
+            foreach (DragIcon icon in _dragIcons)
+            {
+                if (icon == null || !icon.HasWorkspaceOffset)
+                {
+                    continue;
+                }
+
+                Vector2 screenPosition = _workspace.WorldOffsetToScreen(icon.WorkspaceOffset);
+                SetIconScreenPosition(icon, screenPosition);
+                PositionDeadShipBox(icon, screenPosition);
+            }
+
+            if (_currentDragIcon != null && _currentDragIcon.HasWorkspaceOffset && _scene.DragStatusBox != null)
+            {
+                Vector2 currentScreenPosition = _workspace.WorldOffsetToScreen(_currentDragIcon.WorkspaceOffset);
+                _scene.DragStatusBox.transform.position = currentScreenPosition;
+                UpdateDragStatusScale();
+            }
         }
 
         public void PullNewDragIcon(ConfigData.ShipTypes shipType)
@@ -90,7 +118,6 @@ namespace Assets.Scripts.UIComponents
             }
 
             _workspace.RefreshVisualFit();
-            _isAutoPlacing = isAutoPlacing;
             _isDragging = true;
             IsValidDropLocation = false;
 
@@ -106,6 +133,7 @@ namespace Assets.Scripts.UIComponents
                 screenPosition = _workspace.WorldOffsetToScreen(origin);
             }
 
+            _currentDragIcon.GetIcon().SetActive(true);
             SetIconScreenPosition(_currentDragIcon, screenPosition);
             ConfigureDragStatus(screenPosition);
             _scene.DragStatusBox.SetActive(true);
@@ -120,7 +148,6 @@ namespace Assets.Scripts.UIComponents
         /// </summary>
         public bool PlaceShipAtPosition(Vector2 position, SquadShip ship)
         {
-            _isAutoPlacing = true;
             if (_currentDragIcon == null)
             {
                 IsValidDropLocation = false;
@@ -150,7 +177,6 @@ namespace Assets.Scripts.UIComponents
 
         public bool PlaceShipAtWorldOffset(Vector2 worldOffset, SquadShip ship)
         {
-            _isAutoPlacing = true;
             if (_currentDragIcon == null)
             {
                 IsValidDropLocation = false;
@@ -161,7 +187,6 @@ namespace Assets.Scripts.UIComponents
                 worldOffset,
                 false,
                 ship,
-                _currentDragIcon.GetFleetShip().Type,
                 out Vector2 acceptedOffset);
 
             if (IsValidDropLocation)
@@ -195,9 +220,18 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
+            // Legacy auto-drop intentionally commits the newly selected ship before applying the
+            // selected formation. The temporary formation origin can already be occupied by an
+            // existing ship, so proximity validation here would incorrectly reject the second and
+            // later auto-drops. Formation placement immediately assigns the final canonical offsets.
             Vector2 origin = _workspace.FormationOriginWorldOffset;
             SetupActiveDragging(_workspace.WorldOffsetToScreen(origin), true);
-            PlaceShipAtWorldOffset(origin, null);
+            IsValidDropLocation = _workspace.ContainsWorldOffset(origin);
+            if (IsValidDropLocation)
+            {
+                _currentDragIcon.SetWorkspaceOffset(origin);
+            }
+
             _scene.FleetDragEnd();
             _scene.SetFormation(_scene.CurrentFormation);
         }
@@ -215,7 +249,6 @@ namespace Assets.Scripts.UIComponents
             }
 
             _isDragging = true;
-            _isAutoPlacing = false;
             Vector2 pointer = MouseDragPosition();
             SetIconScreenPosition(_currentDragIcon, pointer);
             _scene.DragStatusBox.transform.position = pointer;
@@ -228,12 +261,7 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            if (CheckValidDropLocation(
-                candidate,
-                true,
-                null,
-                _currentDragIcon.GetFleetShip().Type,
-                out Vector2 acceptedOffset))
+            if (CheckValidDropLocation(candidate, true, null, out Vector2 acceptedOffset))
             {
                 _currentDragIcon.SetWorkspaceOffset(acceptedOffset);
                 Vector2 snappedScreenPosition = _workspace.WorldOffsetToScreen(acceptedOffset);
@@ -520,7 +548,6 @@ namespace Assets.Scripts.UIComponents
         {
             _currentDragIcon = null;
             _isDragging = false;
-            _isAutoPlacing = false;
             _scene.DropBox.SetActive(false);
             _scene.DragStatusBox.SetActive(false);
             _scene.UpdateSquadUI();
@@ -532,7 +559,6 @@ namespace Assets.Scripts.UIComponents
             Vector2 worldOffset,
             bool shouldSnapPosition,
             SquadShip ship,
-            ConfigData.ShipTypes shipType,
             out Vector2 acceptedOffset)
         {
             acceptedOffset = worldOffset;
@@ -609,7 +635,7 @@ namespace Assets.Scripts.UIComponents
 
             position = newPosition;
             newPosition = SnapSymmetricAxis(newPosition, ship, 'x');
-            if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType, out _) ||
+            if (!CheckValidDropLocation(newPosition, false, null, out _) ||
                 Mathf.Abs(newPosition.x - position.x) >= tooClose.x)
             {
                 return position;
@@ -627,7 +653,7 @@ namespace Assets.Scripts.UIComponents
 
             position = newPosition;
             newPosition = SnapSymmetricAxis(newPosition, ship, 'y');
-            if (!CheckValidDropLocation(newPosition, false, null, ship.ShipType, out _) ||
+            if (!CheckValidDropLocation(newPosition, false, null, out _) ||
                 Mathf.Abs(newPosition.y - position.y) >= tooClose.y)
             {
                 return position;
@@ -804,6 +830,11 @@ namespace Assets.Scripts.UIComponents
             _scene.DragStatusBox.GetComponent<UnityEngine.UI.Image>().color = ConfigData.GetUIColor("bad");
             _scene.DragStatusBox.transform.position = screenPosition;
             _scene.DragStatusBox.GetComponent<RectTransform>().sizeDelta = ConfigData.ShipOffset;
+            UpdateDragStatusScale();
+        }
+
+        private void UpdateDragStatusScale()
+        {
             float scale = 4f * _workspace.VisualScale;
             _scene.DragStatusBox.transform.localScale = new Vector3(scale, scale, 1f);
         }
