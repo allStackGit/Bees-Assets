@@ -200,7 +200,7 @@ namespace Assets.Scripts.Entities.Projectiles
                     return;
                 }
             }
-            if (ShipIsDead && DistanceToPoint(StartingPosition) > Range)
+            if (DistanceToPoint(StartingPosition) > Range)
             {
                 Kill();
             }
