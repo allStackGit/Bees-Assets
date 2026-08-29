@@ -32,9 +32,7 @@ namespace Assets.Scripts.UIComponents
             Id = id;
             if (fleetShip.Side == ConfigData.Configuration.HumanSide)
             {
-                Color[] changeableColors;
-                ConfigData.ChangeableShipColors.TryGetValue(fleetShip.Type, out changeableColors);
-                SetChangablePixels(changeableColors);
+                SetChangablePixels(ConfigData.ChangeableShipColors.GetValueOrDefault(fleetShip.Type));
             }
         }
 
