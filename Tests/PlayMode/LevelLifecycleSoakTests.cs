@@ -119,6 +119,73 @@ namespace Bees.Tests.PlayMode
             yield return RunLifecycleCycles(ExtendedCycleCount);
         }
 
+        [Test]
+        [Category("BeesPlayModeFoundation")]
+        public void LivingShooterProjectilePastRangeIsReleasedAndUnregistered()
+        {
+            GameObject projectileObject = new GameObject(
+                nameof(LivingShooterProjectilePastRangeIsReleasedAndUnregistered));
+
+            try
+            {
+                object projectile = projectileObject.AddComponent(
+                    RuntimeAssembly.GetType("Assets.Scripts.Entities.Projectiles.Projectile"));
+                ((Behaviour)projectile).enabled = false;
+
+                object projectileType = Enum.Parse(
+                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ProjectileTypes"),
+                    "BeeSmall");
+
+                RuntimeAssembly.SetField(projectile, "Transform", projectileObject.transform);
+                RuntimeAssembly.SetField(projectile, "Stage", _stage);
+                RuntimeAssembly.SetField(projectile, "Level", _level);
+                RuntimeAssembly.SetField(projectile, "Shooter", _ship);
+                RuntimeAssembly.SetField(projectile, "StartingPosition", Vector2.zero);
+                RuntimeAssembly.SetField(projectile, "Range", 10);
+                RuntimeAssembly.SetField(projectile, "Type", projectileType);
+                RuntimeAssembly.SetField(projectile, "IsDead", false);
+                RuntimeAssembly.SetField(projectile, "ShipIsDead", false);
+
+                RuntimeAssembly.Invoke(_state, "AddProjectile", projectile);
+                RuntimeAssembly.AddToCollection(
+                    RuntimeAssembly.GetField(_ship, "ProjectilesInFlight"), projectile);
+
+                projectileObject.transform.localPosition = new Vector2(9f, 0f);
+                RuntimeAssembly.Invoke(projectile, "FixedUpdate");
+
+                Assert.That(RuntimeAssembly.GetField(projectile, "IsDead"), Is.False,
+                    "A projectile still inside its weapon range was retired early.");
+                Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "Projectiles")),
+                    Is.EqualTo(1));
+                Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_ship, "ProjectilesInFlight")),
+                    Is.EqualTo(1));
+
+                projectileObject.transform.localPosition = new Vector2(11f, 0f);
+                RuntimeAssembly.Invoke(projectile, "FixedUpdate");
+
+                Assert.That(RuntimeAssembly.GetField(projectile, "IsDead"), Is.True,
+                    "A missed projectile from a living shooter remained alive after exceeding weapon range.");
+                Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_state, "Projectiles")),
+                    Is.Zero, "Expired projectile remained registered in the owning GameState.");
+                Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_ship, "ProjectilesInFlight")),
+                    Is.Zero, "Expired projectile remained retained by its shooter.");
+
+                object projectilePool = RuntimeAssembly.GetField(_pool, "BeeSmallProjectilePool");
+                Assert.That(GetPoolCount(projectilePool, "CountInactive"), Is.EqualTo(1),
+                    "Expired projectile was not returned to its pool.");
+
+                object reacquiredProjectile = RuntimeAssembly.Invoke(
+                    _pool, "GetProjectileFromPool", projectileType);
+                Assert.That(reacquiredProjectile, Is.SameAs(projectile),
+                    "Projectile pool did not reuse the expired projectile.");
+                Assert.That(GetPoolCount(projectilePool, "CountInactive"), Is.Zero);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(projectileObject);
+            }
+        }
+
         private IEnumerator RunLifecycleCycles(int cycleCount)
         {
             object firstShip = _ship;
