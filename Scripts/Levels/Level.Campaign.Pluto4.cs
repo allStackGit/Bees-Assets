@@ -64,32 +64,18 @@ namespace Assets.Scripts.Levels
                             else
                             {
                                 Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                basicTooltip.Show("As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end.", true);
-                                basicTooltip.Place(Vector2.zero, new Vector2(150, 350));
-
-                                NextTriggers.Add(new Trigger(
-                                    () => !basicTooltip.gameObject.activeSelf,
-                                    () =>
-                                    {
-                                        basicTooltip.Show("Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on.", true);
-                                        NextTriggers.Add(new Trigger(
-                                            () => !basicTooltip.gameObject.activeSelf,
-                                            () =>
-                                            {
-                                                basicTooltip.Show("In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander.", true);
-                                                NextTriggers.Add(new Trigger(
-                                                    () => !basicTooltip.gameObject.activeSelf,
-                                                    () =>
-                                                    {
-                                                        Stage.Menus.TogglePausePanel();
-                                                        hasSeenFleetMessages = true;
-                                                        Destroy(basicTooltip.gameObject);
-                                                    },
-                                                    "Level 3 Hiding the 3rd message"));
-                                            },
-                                            "Level 3 Showing 3rd message"));
-                                    },
-                                    "Level 3 Showing 2nd message"));
+                                basicTooltip.Place(Vector2.zero, new Vector2(300, 260));
+                                basicTooltip.ShowSequence(new List<string>
+                                {
+                                    "As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end.",
+                                    "Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on.",
+                                    "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander."
+                                }, true, () =>
+                                {
+                                    Stage.Menus.TogglePausePanel();
+                                    hasSeenFleetMessages = true;
+                                    Destroy(basicTooltip.gameObject);
+                                });
                             }
 
                             NextTriggers.Add(new Trigger(
