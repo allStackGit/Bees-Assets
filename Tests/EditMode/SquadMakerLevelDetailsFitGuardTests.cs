@@ -11,41 +11,22 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName =
             "Assets.Scripts.UI_Components.SquadMakerLevelDetailsFitGuard";
 
-        [TestCase(350f, 718f, 718f, 150f, 350f)]
-        [TestCase(350f, 718f, 710f, 150f, 342f)]
-        [TestCase(350f, 718f, 900f, 150f, 532f)]
-        [TestCase(350f, 718f, 500f, 150f, 150f)]
-        public void DetailsHeightUsesOnlyViewportDeltaFromAuthoredGeometry(
-            float referenceDetailsHeight,
-            float referenceOwnerHeight,
-            float liveOwnerHeight,
-            float minimumHeight,
+        [TestCase(718f, 368f, 350f)]
+        [TestCase(710f, 368f, 342f)]
+        [TestCase(900f, 368f, 532f)]
+        [TestCase(500f, 368f, 132f)]
+        public void DetailsHeightUsesActualRemainingColumnBudget(
+            float ownerHeight,
+            float fixedHeight,
             float expected)
         {
             float result = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateResponsiveDetailsHeight",
-                referenceDetailsHeight,
-                referenceOwnerHeight,
-                liveOwnerHeight,
-                minimumHeight);
+                "CalculateFittingDetailsHeight",
+                ownerHeight,
+                fixedHeight);
 
             Assert.That(result, Is.EqualTo(expected).Within(0.01f));
-        }
-
-        [Test]
-        public void ReferenceSizedColumnDoesNotConsumeAuthoredSlackIntoDetailsRow()
-        {
-            float result = (float)RuntimeAssembly.InvokeStatic(
-                RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateResponsiveDetailsHeight",
-                350f,
-                718f,
-                718f,
-                120f);
-
-            Assert.That(result, Is.EqualTo(350f).Within(0.01f),
-                "At the authored height the details row must remain authored-sized; pre-existing vertical slack belongs to the composition, not to the report.");
         }
 
         [Test]
@@ -61,7 +42,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ApplyFitRestoresCollapsedSupplyCapacityRowItself()
+        public void FixedHeightBudgetIgnoresOverlayRowsAndProtectsCollapsedSupplyRow()
         {
             RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 718f));
             VerticalLayoutGroup layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -77,26 +58,23 @@ namespace Bees.Tests.EditMode
             CreateRect("Level Title", column, new Vector2(222f, 25f));
             RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
             RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
-            Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            RectTransform hover = CreateRect("Start Text", column, new Vector2(222f, 450f));
+            LayoutElement hoverLayout = hover.gameObject.AddComponent<LayoutElement>();
+            hoverLayout.ignoreLayout = true;
 
             try
             {
-                RuntimeAssembly.SetField(guard, "_chosenColumn", column);
-                RuntimeAssembly.SetField(guard, "_detailsRow", details);
-                RuntimeAssembly.SetField(guard, "_supplyRow", supply);
-                RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
-                RuntimeAssembly.SetField(guard, "_supplyText", null);
-                RuntimeAssembly.SetField(guard, "_referenceChosenColumnHeight", 718f);
-                RuntimeAssembly.SetField(guard, "_referenceDetailsHeight", 350f);
-                RuntimeAssembly.SetField(guard, "_referenceSupplyHeight", 35f);
-                RuntimeAssembly.SetField(guard, "_referenceGeometryCaptured", true);
+                float fixedHeight = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateOtherActiveRowHeight",
+                    column,
+                    details,
+                    supply,
+                    35f);
 
-                RuntimeAssembly.Invoke(guard, "ApplyFit");
-
-                Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f),
-                    "Reserving 35px in a budget is insufficient if the actual Supply Capacity RectTransform is still only a clipped strip.");
-                Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f),
-                    "Restoring Supply Capacity must not make a reference-sized details panel consume unrelated authored slack.");
+                Assert.That(fixedHeight, Is.EqualTo(368f).Within(0.01f),
+                    "The budget must use the protected Supply Capacity height and ignore hover-only overlays.");
             }
             finally
             {
@@ -104,46 +82,124 @@ namespace Bees.Tests.EditMode
             }
         }
 
-        [TestCase(0f, -3f, 3f)]
-        [TestCase(0f, 0f, 0f)]
-        [TestCase(-359f, -360.5f, 1.5f)]
-        public void BottomOverflowMeasuresOnlyRenderedContentBelowOwner(
-            float ownerBottom,
-            float renderedBottom,
-            float expected)
+        [Test]
+        public void ApplyFitRestoresCollapsedSupplyCapacityRowAndUsesRemainingHeight()
         {
-            float result = (float)RuntimeAssembly.InvokeStatic(
-                RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateBottomOverflow",
-                ownerBottom,
-                renderedBottom);
+            RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 718f));
+            ConfigureColumnLayout(column);
 
-            Assert.That(result, Is.EqualTo(expected).Within(0.01f));
+            CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
+            CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
+            CreateRect("Level Title", column, new Vector2(222f, 25f));
+            RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
+            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
+            Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            try
+            {
+                ConfigureGuardForFixture(guard, column, details, supply, 35f);
+                RuntimeAssembly.Invoke(guard, "ApplyFit");
+
+                Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f),
+                    "The real Supply Capacity RectTransform must be restored, not merely reserved in a calculation.");
+                Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(column.gameObject);
+            }
         }
 
         [Test]
-        public void DetailsHeightReturnsToAuthoredValueAfterTallViewport()
+        public void TallerNeighborReducesDetailsBeforeSupplyCapacityCanLeaveColumn()
+        {
+            RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 718f));
+            ConfigureColumnLayout(column);
+
+            CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
+            CreateRect("Chosen Squad List", column, new Vector2(222f, 298f));
+            CreateRect("Level Title", column, new Vector2(222f, 25f));
+            RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
+            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
+            Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            try
+            {
+                ConfigureGuardForFixture(guard, column, details, supply, 35f);
+                RuntimeAssembly.Invoke(guard, "ApplyFit");
+
+                Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f));
+                Assert.That(details.rect.height, Is.EqualTo(330f).Within(0.01f),
+                    "A neighboring row that grows by 20px must take those 20px from the flexible details row rather than pushing Supply Capacity below the column.");
+
+                Bounds supplyBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(column, supply);
+                Assert.That(supplyBounds.min.y, Is.GreaterThanOrEqualTo(column.rect.yMin - 0.01f),
+                    "Supply Capacity must remain fully inside the rendered Chosen Squads column even when a neighboring row is taller than authored.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(column.gameObject);
+            }
+        }
+
+        [Test]
+        public void DetailsHeightTracksNeighborAndViewportChangesWithoutDrift()
         {
             System.Type guardType = RuntimeAssembly.GetType(GuardTypeName);
 
+            float reference = (float)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateFittingDetailsHeight",
+                718f,
+                368f);
             float tall = (float)RuntimeAssembly.InvokeStatic(
                 guardType,
-                "CalculateResponsiveDetailsHeight",
-                350f,
-                718f,
+                "CalculateFittingDetailsHeight",
                 949f,
-                150f);
+                368f);
+            float tallerNeighbor = (float)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateFittingDetailsHeight",
+                718f,
+                388f);
             float restored = (float)RuntimeAssembly.InvokeStatic(
                 guardType,
-                "CalculateResponsiveDetailsHeight",
-                350f,
+                "CalculateFittingDetailsHeight",
                 718f,
-                718f,
-                150f);
+                368f);
 
+            Assert.That(reference, Is.EqualTo(350f).Within(0.01f));
             Assert.That(tall, Is.EqualTo(581f).Within(0.01f));
+            Assert.That(tallerNeighbor, Is.EqualTo(330f).Within(0.01f));
             Assert.That(restored, Is.EqualTo(350f).Within(0.01f),
-                "Responsive repair must derive from immutable authored geometry instead of the previous live height.");
+                "Every pass must derive from the live owner/fixed-row budget rather than the previous details height.");
+        }
+
+        private static void ConfigureColumnLayout(RectTransform column)
+        {
+            VerticalLayoutGroup layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+        }
+
+        private static void ConfigureGuardForFixture(
+            Component guard,
+            RectTransform column,
+            RectTransform details,
+            RectTransform supply,
+            float referenceSupplyHeight)
+        {
+            RuntimeAssembly.SetField(guard, "_chosenColumn", column);
+            RuntimeAssembly.SetField(guard, "_detailsRow", details);
+            RuntimeAssembly.SetField(guard, "_supplyRow", supply);
+            RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
+            RuntimeAssembly.SetField(guard, "_supplyText", null);
+            RuntimeAssembly.SetField(guard, "_referenceSupplyHeight", referenceSupplyHeight);
+            RuntimeAssembly.SetField(guard, "_referenceGeometryCaptured", true);
         }
 
         private static RectTransform CreateRect(string name, RectTransform parent, Vector2 size)
