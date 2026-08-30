@@ -10,9 +10,10 @@ namespace Assets.Scripts.UI_Components
     /// Keeps the campaign level summary readable in the Squad Maker's Chosen Squads column.
     ///
     /// SquadMaker owns the semantic chosen-list height and SquadMakerResponsiveLayoutGuard owns the
-    /// outer responsive geometry. This guard preserves the authored level-details/supply geometry,
-    /// applies only the live column's vertical delta to the flexible details row, and restores the
-    /// fixed Supply Capacity row itself if another layout pass has squeezed it into a clipped strip.
+    /// outer responsive geometry. This guard restores the fixed Supply Capacity row, measures every
+    /// other active structural row in the live column, and gives the flexible level-details row only
+    /// the height that actually remains. That prevents a tall neighboring row from pushing Supply
+    /// Capacity, START, or TEST below the visible column.
     /// </summary>
     [DefaultExecutionOrder(-600)]
     public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
@@ -30,8 +31,6 @@ namespace Assets.Scripts.UI_Components
         private TMP_Text _levelDetailsText;
         private TMP_Text _supplyText;
         private float _nextRepairTime;
-        private float _referenceChosenColumnHeight = -1f;
-        private float _referenceDetailsHeight = -1f;
         private float _referenceSupplyHeight = -1f;
         private bool _referenceGeometryCaptured;
 
@@ -145,16 +144,14 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            float ownerHeight = Mathf.Abs(_chosenColumn.rect.height);
-            float detailsHeight = Mathf.Abs(_detailsRow.rect.height);
             float supplyHeight = Mathf.Abs(_supplyRow.rect.height);
-            if (ownerHeight <= SizeTolerance || detailsHeight <= SizeTolerance || supplyHeight <= SizeTolerance)
+            if (Mathf.Abs(_chosenColumn.rect.height) <= SizeTolerance ||
+                Mathf.Abs(_detailsRow.rect.height) <= SizeTolerance ||
+                supplyHeight <= SizeTolerance)
             {
                 return;
             }
 
-            _referenceChosenColumnHeight = ownerHeight;
-            _referenceDetailsHeight = detailsHeight;
             _referenceSupplyHeight = supplyHeight;
             _referenceGeometryCaptured = true;
         }
@@ -173,46 +170,26 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // The previous repair only reserved enough budget for Supply Capacity but left the
-            // actual row at its already-collapsed live height. Restore that fixed row first so its
-            // text has a real RectTransform to render into.
+            // Supply Capacity is a fixed summary row. Restore its real RectTransform before measuring
+            // the column so an already-squeezed live rect cannot hide the amount of space it needs.
             float protectedSupplyHeight = CalculateProtectedRowHeight(
                 _referenceSupplyHeight,
                 CalculatePreferredTextHeight(_supplyText, _supplyRow));
             SetHeightIfNeeded(_supplyRow, protectedSupplyHeight);
 
-            float minimumDetailsHeight = CalculateMinimumDetailsHeight();
-            float targetDetailsHeight = CalculateResponsiveDetailsHeight(
-                _referenceDetailsHeight,
-                _referenceChosenColumnHeight,
-                ownerHeight,
-                minimumDetailsHeight);
+            // The level report is the flexible row in this state. Measure the other live layout rows
+            // every pass rather than assuming their authored heights still add up to the reference
+            // column height. This is the missing protection when a neighboring row becomes taller.
+            float fixedLayoutHeight = CalculateOtherActiveRowHeight(
+                _chosenColumn,
+                _detailsRow,
+                _supplyRow,
+                protectedSupplyHeight);
+            float targetDetailsHeight = CalculateFittingDetailsHeight(ownerHeight, fixedLayoutHeight);
             SetHeightIfNeeded(_detailsRow, targetDetailsHeight);
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
             LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
-
-            // Use the rendered supply bounds as the final authority. If a legacy row or layout
-            // relationship still pushes any part of Supply Capacity below the chosen column, move
-            // it back into view by giving up only that amount of flexible details height.
-            float bottomOverflow = CalculateSupplyBottomOverflow(_chosenColumn, _supplyRow);
-            if (bottomOverflow > SizeTolerance)
-            {
-                float correctedHeight = Mathf.Max(
-                    minimumDetailsHeight,
-                    targetDetailsHeight - bottomOverflow);
-                if (SetHeightIfNeeded(_detailsRow, correctedHeight))
-                {
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
-                }
-            }
-        }
-
-        private float CalculateMinimumDetailsHeight()
-        {
-            float preferredHeight = CalculatePreferredTextHeight(_levelDetailsText, _detailsRow);
-            return preferredHeight > 0f ? preferredHeight + TextSafetyPadding : 0f;
         }
 
         private static float CalculatePreferredTextHeight(TMP_Text text, RectTransform fallbackRow)
@@ -246,40 +223,64 @@ namespace Assets.Scripts.UI_Components
             return Mathf.Max(0f, Mathf.Max(referenceHeight, protectedTextHeight));
         }
 
-        internal static float CalculateResponsiveDetailsHeight(
-            float referenceDetailsHeight,
-            float referenceOwnerHeight,
-            float liveOwnerHeight,
-            float minimumDetailsHeight)
+        internal static float CalculateOtherActiveRowHeight(
+            RectTransform column,
+            RectTransform excludedRow,
+            RectTransform protectedRow,
+            float protectedRowHeight)
         {
-            float minimum = Mathf.Max(0f, minimumDetailsHeight);
-            if (referenceDetailsHeight <= 0f || referenceOwnerHeight <= 0f)
-            {
-                return minimum;
-            }
-
-            float liveDelta = liveOwnerHeight - referenceOwnerHeight;
-            return Mathf.Max(minimum, referenceDetailsHeight + liveDelta);
-        }
-
-        private static float CalculateSupplyBottomOverflow(
-            RectTransform owner,
-            RectTransform supplyRow)
-        {
-            if (owner == null || supplyRow == null)
+            if (column == null)
             {
                 return 0f;
             }
 
-            Bounds renderedBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
-                owner,
-                supplyRow);
-            return CalculateBottomOverflow(owner.rect.yMin, renderedBounds.min.y);
+            VerticalLayoutGroup layout = column.GetComponent<VerticalLayoutGroup>();
+            float height = layout != null
+                ? layout.padding.top + layout.padding.bottom
+                : 0f;
+            int layoutChildCount = 0;
+
+            for (int index = 0; index < column.childCount; index++)
+            {
+                RectTransform child = column.GetChild(index) as RectTransform;
+                if (child == null || !child.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                LayoutElement element = child.GetComponent<LayoutElement>();
+                if (element != null && element.ignoreLayout)
+                {
+                    continue;
+                }
+
+                layoutChildCount++;
+                if (child == excludedRow)
+                {
+                    continue;
+                }
+
+                float childHeight = Mathf.Abs(child.rect.height);
+                if (child == protectedRow)
+                {
+                    childHeight = Mathf.Max(childHeight, protectedRowHeight);
+                }
+                height += childHeight;
+            }
+
+            if (layout != null && layoutChildCount > 1)
+            {
+                height += layout.spacing * (layoutChildCount - 1);
+            }
+
+            return Mathf.Max(0f, height);
         }
 
-        internal static float CalculateBottomOverflow(float ownerBottom, float renderedBottom)
+        internal static float CalculateFittingDetailsHeight(
+            float ownerHeight,
+            float fixedLayoutHeight)
         {
-            return Mathf.Max(0f, ownerBottom - renderedBottom);
+            return Mathf.Max(0f, ownerHeight - Mathf.Max(0f, fixedLayoutHeight));
         }
 
         private static bool SetHeightIfNeeded(RectTransform rect, float targetHeight)
