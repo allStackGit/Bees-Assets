@@ -268,7 +268,7 @@ namespace Assets.Scripts.Levels
                                                             {
                                                                 Tooltip attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
                                                                 attackOnSightTooltip.Show(
-                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the red exclamation point) to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.",
+                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.",
                                                                     true);
                                                                 attackOnSightTooltip.Place(new Vector2(0, -50), new Vector2(150, 300));
                                                             },
@@ -353,10 +353,9 @@ namespace Assets.Scripts.Levels
             FishTankTrigger();
             HasContinuousTriggers = true;
             Tooltip basicTooltip = null;
-            Tooltip selectMultiple = null;
-            Tooltip rangeTooltip = null;
             GameObject highlightTooltipObject = null;
             GameObject squadNumberHighlight = null;
+            bool tacticalTutorialComplete = !ConfigData.UserProgressData.ShowToolTips;
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>()
             {
@@ -416,7 +415,7 @@ namespace Assets.Scripts.Levels
                             if (ConfigData.UserProgressData.ShowToolTips)
                             {
                                 highlightTooltipObject.SetActive(false);
-                                basicTooltip.Show("Here are different settings for your ship.You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
+                                basicTooltip.Show("Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
                                 basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
 
                                 pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
@@ -452,26 +451,35 @@ namespace Assets.Scripts.Levels
                                         squadNumberHighlight.transform.localScale = new Vector2(150, 30);
                                         squadNumberHighlight.transform.SetAsFirstSibling();
 
-                                        basicTooltip.Show("You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.", true);
-                                        basicTooltip.Place(new Vector2(-550, 300), new Vector2(150, 150));
-                                        selectMultiple = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                        selectMultiple.Show("If you need to select multiple squads, click and drag the mouse over the squads.", true);
-                                        selectMultiple.Place(new Vector2(-200, 0), new Vector2(150, 100));
-                                        rangeTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                                        rangeTooltip.Show("Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.You can also manually fire towards your cursor with any selected ships by pressing <b>F</b>", true);
-                                        rangeTooltip.Place(new Vector2(200, 0), new Vector2(150, 280));
+                                        basicTooltip.Place(new Vector2(-300, 175), new Vector2(260, 170));
+                                        basicTooltip.ShowSequence(new List<string>
+                                        {
+                                            "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
+                                            "If you need to select multiple squads, click and drag the mouse over the squads.",
+                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.",
+                                            "You can manually fire towards your cursor with any selected ships by pressing <b>F</b>."
+                                        }, true, () =>
+                                        {
+                                            tacticalTutorialComplete = true;
+                                            if (squadNumberHighlight != null)
+                                            {
+                                                Destroy(squadNumberHighlight);
+                                                squadNumberHighlight = null;
+                                            }
+                                        });
                                     }
 
                                     Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
                                     Stage.Menus.TogglePausePanel();
 
                                     NextTriggers.Add(new Trigger(
-                                        () => Stage.CutsceneManager.HitDialogueBreak,
+                                        () => Stage.CutsceneManager.HitDialogueBreak && tacticalTutorialComplete,
                                         () =>
                                         {
-                                            if (ConfigData.UserProgressData.ShowToolTips)
+                                            if (squadNumberHighlight != null)
                                             {
                                                 Destroy(squadNumberHighlight);
+                                                squadNumberHighlight = null;
                                             }
                                             Stage.Menus.TogglePausePanel();
                                             Stage.Menus.SetMissionStatus("Find and destroy the enemy ships!");
@@ -594,34 +602,29 @@ namespace Assets.Scripts.Levels
                         () =>
                         {
                             Destroy(plutoCircle);
-                            bool hasSeenFleetMessages = !ConfigData.UserProgressData.ShowToolTips;
-                            Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
-                            basicTooltip.Show("As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end.", true);
-                            basicTooltip.Place(Vector2.zero, new Vector2(150, 350));
+                            bool hasSeenFleetMessages = false;
 
-                            NextTriggers.Add(new Trigger(
-                                () => !basicTooltip.gameObject.activeSelf,
-                                () =>
+                            if (!ConfigData.UserProgressData.ShowToolTips)
+                            {
+                                Stage.Menus.TogglePausePanel();
+                                hasSeenFleetMessages = true;
+                            }
+                            else
+                            {
+                                Tooltip basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                basicTooltip.Place(Vector2.zero, new Vector2(300, 260));
+                                basicTooltip.ShowSequence(new List<string>
                                 {
-                                    basicTooltip.Show("Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on.", true);
-                                    NextTriggers.Add(new Trigger(
-                                        () => !basicTooltip.gameObject.activeSelf,
-                                        () =>
-                                        {
-                                            basicTooltip.Show("In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander.", true);
-                                            NextTriggers.Add(new Trigger(
-                                                () => !basicTooltip.gameObject.activeSelf,
-                                                () =>
-                                                {
-                                                    Stage.Menus.TogglePausePanel();
-                                                    hasSeenFleetMessages = true;
-                                                    Destroy(basicTooltip.gameObject);
-                                                },
-                                                "Level 3 Hiding the 3rd message"));
-                                        },
-                                        "Level 3 Showing 3rd message"));
-                                },
-                                "Level 3 Showing 2nd message"));
+                                    "As the war campaign progresses, you may lose ships that you bring into battles. These ships are gone forever. Your fleet will still find a way forward, even if you lose all the ships you brought into battle. But if you lose all of the ships in your fleet, the campaign will end.",
+                                    "Similarly, the Bees have a finite number of resources. The more enemy ships you destroy in each mission, the less the Bee threat will have for their entire invasion. But the same is true in reverse: if you don’t destroy many ships, they can come back to haunt you later on.",
+                                    "In this mission, the more personnel you evacuate, the more ships you'll have for your fleet. Play strategically to preserve as much of your own fleet while whittling down the Bees' numbers. Good luck, Commander."
+                                }, true, () =>
+                                {
+                                    Stage.Menus.TogglePausePanel();
+                                    hasSeenFleetMessages = true;
+                                    Destroy(basicTooltip.gameObject);
+                                });
+                            }
 
                             NextTriggers.Add(new Trigger(
                                 () => hasSeenFleetMessages,
