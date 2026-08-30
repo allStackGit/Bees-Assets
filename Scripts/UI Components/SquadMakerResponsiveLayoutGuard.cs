@@ -746,9 +746,9 @@ namespace Assets.Scripts.UI_Components
             // snapshot before any responsive mutation.
             SquadMakerCompositionLayoutGuard.Apply(reference.CompositionLayout);
 
-            // SquadMaker.ToggleLevelOptions/ToggleLevelDetails deliberately owns the semantic base
-            // height of the chosen-squads ScrollView. Responsive layout layers only genuine vertical
-            // surplus on top of that state rather than replacing the scene controller's choice.
+            // SquadMaker.ToggleLevelOptions/ToggleLevelDetails owns the chosen-list semantic base.
+            // Normal/options states may use spare height for the list, but when level details are
+            // visible the list remains at that base so the details panel can absorb vertical surplus.
             ApplyChosenSquadScrollSurplus(reference);
             LayoutRebuilder.ForceRebuildLayoutImmediate(reference.ChosenSquadsColumn);
             return true;
@@ -772,10 +772,14 @@ namespace Assets.Scripts.UI_Components
                 _chosenSquadScrollReferenceHeight = currentHeight;
             }
 
-            float targetHeight = CalculateSurplusAbsorbingHeight(
+            bool levelDetailsVisible = _squadMaker != null &&
+                                       _squadMaker.LevelDetailsContainer != null &&
+                                       _squadMaker.LevelDetailsContainer.activeInHierarchy;
+            float targetHeight = CalculateChosenSquadScrollHeight(
                 _chosenSquadScrollReferenceHeight,
                 reference.ChosenSquadsColumnSize.y,
-                Mathf.Abs(reference.ChosenSquadsColumn.rect.height));
+                Mathf.Abs(reference.ChosenSquadsColumn.rect.height),
+                levelDetailsVisible);
 
             if (Mathf.Abs(currentHeight - targetHeight) > ChosenScrollHeightTolerance)
             {
@@ -785,6 +789,25 @@ namespace Assets.Scripts.UI_Components
             }
 
             _lastAppliedChosenSquadScrollHeight = targetHeight;
+        }
+
+        internal static float CalculateChosenSquadScrollHeight(
+            float semanticBaseHeight,
+            float authoredOwnerHeight,
+            float liveOwnerHeight,
+            bool levelDetailsVisible)
+        {
+            if (semanticBaseHeight <= 0f)
+            {
+                return semanticBaseHeight;
+            }
+
+            return levelDetailsVisible
+                ? semanticBaseHeight
+                : CalculateSurplusAbsorbingHeight(
+                    semanticBaseHeight,
+                    authoredOwnerHeight,
+                    liveOwnerHeight);
         }
 
         internal static float CalculateSurplusAbsorbingHeight(
