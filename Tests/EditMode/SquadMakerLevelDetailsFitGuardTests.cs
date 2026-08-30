@@ -32,6 +32,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void SupplyCapacityRowUsesTextHeightWhenItsLiveRectHasAlreadyBeenClipped()
+        {
+            float protectedHeight = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateProtectedRowHeight",
+                2f,
+                27f);
+
+            Assert.That(protectedHeight, Is.EqualTo(35f).Within(0.01f),
+                "A nearly collapsed live row must still reserve enough height for its visible text.");
+        }
+
+        [Test]
         public void LevelDetailsRowAbsorbsChosenColumnDeficitBeforeBottomRowsAreClipped()
         {
             RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 710f));
@@ -47,7 +60,7 @@ namespace Bees.Tests.EditMode
             CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
             CreateRect("Level Title", column, new Vector2(222f, 25f));
             RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
-            CreateRect("Supply Capacity", column, new Vector2(222f, 35f));
+            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 35f));
 
             RectTransform hover = CreateRect("Start Text", column, new Vector2(222f, 450f));
             LayoutElement hoverLayout = hover.gameObject.AddComponent<LayoutElement>();
@@ -61,17 +74,53 @@ namespace Bees.Tests.EditMode
                     RuntimeAssembly.GetType(GuardTypeName),
                     "CalculateOtherActiveRowHeight",
                     column,
-                    details);
+                    details,
+                    supply,
+                    35f);
                 Assert.That(fixedHeight, Is.EqualTo(368f).Within(0.01f),
                     "Hover-only descriptions must not consume the right-column height budget.");
 
                 RuntimeAssembly.SetField(guard, "_chosenColumn", column);
                 RuntimeAssembly.SetField(guard, "_detailsRow", details);
+                RuntimeAssembly.SetField(guard, "_supplyRow", supply);
                 RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
+                RuntimeAssembly.SetField(guard, "_supplyText", null);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
                 Assert.That(details.rect.height, Is.EqualTo(342f).Within(0.01f),
                     "The details container should give up only the space needed so the supply-capacity row stays visible.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(column.gameObject);
+            }
+        }
+
+        [Test]
+        public void FixedHeightBudgetReservesSupplyTextEvenWhenSupplyRectIsOnlyATinyStrip()
+        {
+            RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 710f));
+            VerticalLayoutGroup layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 0f;
+
+            CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
+            CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
+            CreateRect("Level Title", column, new Vector2(222f, 25f));
+            RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
+            RectTransform clippedSupply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
+
+            try
+            {
+                float fixedHeight = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateOtherActiveRowHeight",
+                    column,
+                    details,
+                    clippedSupply,
+                    35f);
+
+                Assert.That(fixedHeight, Is.EqualTo(368f).Within(0.01f),
+                    "The fitting pass must budget the Supply Capacity row's required height rather than its already-clipped live height.");
             }
             finally
             {
