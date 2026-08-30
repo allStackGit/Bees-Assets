@@ -77,6 +77,8 @@ namespace Assets.Scripts.Levels
         public int EnemyShipsDestroyedByPlayer;
         public int PlayerShipsReturned;
         public int PlayerShipsLost;
+        public readonly Dictionary<ConfigData.ShipTypes, int> PlayerShipsLostByType =
+            new Dictionary<ConfigData.ShipTypes, int>();
         public int PlayerNewShipsReceived;
         public int PlayerScore;
         public int PlayerMineralsReceived;
@@ -98,6 +100,14 @@ namespace Assets.Scripts.Levels
         {
             Level = level;
             Stage = Level.Stage;
+        }
+
+        public void RecordPlayerShipLost(ConfigData.ShipTypes shipType)
+        {
+            PlayerShipsLost++;
+            int count;
+            PlayerShipsLostByType.TryGetValue(shipType, out count);
+            PlayerShipsLostByType[shipType] = count + 1;
         }
 
         public void CaptureEliminationState()
@@ -201,6 +211,7 @@ namespace Assets.Scripts.Levels
             EnemyShipsDestroyedByPlayer = 0;
             PlayerShipsReturned = 0;
             PlayerShipsLost = 0;
+            PlayerShipsLostByType.Clear();
             PlayerNewShipsReceived = 0;
             PlayerScore = 0;
             PlayerMineralsReceived = 0;
