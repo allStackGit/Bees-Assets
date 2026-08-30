@@ -74,7 +74,7 @@ namespace Assets.Scripts.Entities.Ships
             _targetOldTSV = target.Tsv;
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
-            _targetTSVChange = target.Tsv - _targetOldTSV;
+            _targetTSVChange = target.Tsv - _targetOldTsv;
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
@@ -223,7 +223,7 @@ namespace Assets.Scripts.Entities.Ships
                 if (ShipType != ConfigData.ShipTypes.HumanTarget)
                 {
                     Level.State.PlayerScore -= FleetShip.GetTsv();
-                    Level.State.PlayerShipsLost++;
+                    Level.State.RecordPlayerShipLost(ShipType);
                 }
             }
             else Level.State.PlayerScore += FleetShip.GetTsv();
