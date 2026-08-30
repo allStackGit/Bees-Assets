@@ -11,10 +11,10 @@ namespace Assets.Scripts.UI_Components
     ///
     /// SquadMaker owns the semantic chosen-list height and SquadMakerResponsiveLayoutGuard owns the
     /// outer responsive geometry. While level details are visible this guard remembers the list height
-    /// selected when that state was entered and restores it if a later responsive/layout pass inflates
-    /// the list. Only after that semantic owner is restored does the guard fit the flexible report and
-    /// protect the fixed Supply Capacity row. This prevents a transiently tall chosen-list row from
-    /// becoming a new baseline and stealing the space that contains the selected level's details.
+    /// selected when that state was entered, prevents the native VerticalLayoutGroup from distributing
+    /// spare height back into the structural rows, fits the flexible report, and finally verifies the
+    /// rendered Supply Capacity row against the real START/TEST footer boundary. This makes the final
+    /// visible geometry authoritative instead of assuming that nominal row heights imply safe placement.
     /// </summary>
     [DefaultExecutionOrder(-600)]
     public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
@@ -24,12 +24,17 @@ namespace Assets.Scripts.UI_Components
         private const float RepairInterval = 0.20f;
         private const float SizeTolerance = 0.01f;
         private const float TextSafetyPadding = 8f;
+        private const float BottomControlSafetyGap = 6f;
+        private const int BottomClearanceRepairPasses = 2;
 
         private SquadMaker _squadMaker;
         private RectTransform _chosenColumn;
         private RectTransform _chosenListRow;
         private RectTransform _detailsRow;
         private RectTransform _supplyRow;
+        private RectTransform _startButtonRect;
+        private RectTransform _testButtonRect;
+        private VerticalLayoutGroup _chosenColumnLayout;
         private TMP_Text _supplyText;
         private float _nextRepairTime;
         private float _referenceChosenColumnHeight = -1f;
@@ -39,6 +44,8 @@ namespace Assets.Scripts.UI_Components
         private bool _levelDetailsVisibilityKnown;
         private bool _levelDetailsWasVisible;
         private bool _referenceGeometryCaptured;
+        private bool _chosenColumnLayoutReferenceCaptured;
+        private bool _referenceChosenColumnForceExpandHeight;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
@@ -102,6 +109,7 @@ namespace Assets.Scripts.UI_Components
             _levelDetailsChosenListHeight = -1f;
             _levelDetailsVisibilityKnown = false;
             _levelDetailsWasVisible = false;
+            _chosenColumnLayoutReferenceCaptured = false;
             ResolveOwnedRows();
             CaptureReferenceGeometry();
             _nextRepairTime = 0f;
@@ -134,6 +142,9 @@ namespace Assets.Scripts.UI_Components
                 ? _squadMaker.LevelDetailsContainer.transform as RectTransform
                 : null;
             _chosenColumn = FindAncestorByName(details, ChosenSquadsColumnName);
+            _chosenColumnLayout = _chosenColumn != null
+                ? _chosenColumn.GetComponent<VerticalLayoutGroup>()
+                : null;
             _detailsRow = FindDirectChildAncestor(details, _chosenColumn);
 
             RectTransform chosenList = _squadMaker != null && _squadMaker.ChosenSquadList != null
@@ -148,10 +159,19 @@ namespace Assets.Scripts.UI_Components
             _supplyText = _squadMaker != null && _squadMaker.ChosenSquadsSupplyCapacityLabel != null
                 ? _squadMaker.ChosenSquadsSupplyCapacityLabel.GetComponentInChildren<TMP_Text>()
                 : null;
+
+            _startButtonRect = _squadMaker != null && _squadMaker.StartButton != null
+                ? _squadMaker.StartButton.transform as RectTransform
+                : null;
+            _testButtonRect = _squadMaker != null && _squadMaker.TestButton != null
+                ? _squadMaker.TestButton.transform as RectTransform
+                : null;
         }
 
         private void CaptureReferenceGeometry()
         {
+            CaptureChosenColumnLayoutReference();
+
             if (_referenceGeometryCaptured || _chosenColumn == null ||
                 _detailsRow == null || _supplyRow == null)
             {
@@ -172,6 +192,26 @@ namespace Assets.Scripts.UI_Components
             _referenceGeometryCaptured = true;
         }
 
+        private void CaptureChosenColumnLayoutReference()
+        {
+            if (_chosenColumnLayoutReferenceCaptured)
+            {
+                return;
+            }
+
+            if (_chosenColumnLayout == null && _chosenColumn != null)
+            {
+                _chosenColumnLayout = _chosenColumn.GetComponent<VerticalLayoutGroup>();
+            }
+            if (_chosenColumnLayout == null)
+            {
+                return;
+            }
+
+            _referenceChosenColumnForceExpandHeight = _chosenColumnLayout.childForceExpandHeight;
+            _chosenColumnLayoutReferenceCaptured = true;
+        }
+
         private void ApplyFit()
         {
             if (!_referenceGeometryCaptured || _chosenColumn == null ||
@@ -182,8 +222,13 @@ namespace Assets.Scripts.UI_Components
 
             bool detailsVisible = _detailsRow.gameObject.activeInHierarchy;
             bool chosenListRestored = StabilizeLevelDetailsChosenListHeight(detailsVisible);
+            bool columnLayoutChanged = StabilizeChosenColumnVerticalLayout(detailsVisible);
             if (!detailsVisible)
             {
+                if (columnLayoutChanged)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
+                }
                 return;
             }
 
@@ -193,13 +238,14 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            if (chosenListRestored)
+            if (chosenListRestored || columnLayoutChanged)
             {
                 LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
             }
 
-            // Supply Capacity is a fixed summary row. Restore its real RectTransform before measuring
-            // the column so an already-squeezed live rect cannot hide the amount of space it needs.
+            // Supply Capacity is the selected-level budget shown at the bottom of the right-hand
+            // Chosen Squads column. Restore its real RectTransform before measuring the column so an
+            // already-squeezed live rect cannot hide the amount of space it needs.
             float protectedSupplyHeight = CalculateProtectedRowHeight(
                 _referenceSupplyHeight,
                 CalculatePreferredTextHeight(_supplyText, _supplyRow));
@@ -223,6 +269,60 @@ namespace Assets.Scripts.UI_Components
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
             LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
+
+            // Nominal row arithmetic is not sufficient here because START/TEST live in the footer,
+            // outside this VerticalLayoutGroup. Verify the final rendered geometry and move the
+            // flexible report upward if the Supply Capacity row would enter that footer region.
+            EnforceRenderedBottomClearance();
+        }
+
+        private bool StabilizeChosenColumnVerticalLayout(bool detailsVisible)
+        {
+            CaptureChosenColumnLayoutReference();
+            if (_chosenColumnLayout == null || !_chosenColumnLayoutReferenceCaptured)
+            {
+                return false;
+            }
+
+            // Panel.prefab authors this as true. That is useful for generic panels but wrong while
+            // this column has an explicit semantic list height plus a single flexible report: Unity
+            // otherwise distributes spare height back into every cell after this guard sizes them.
+            bool targetForceExpandHeight = detailsVisible
+                ? false
+                : _referenceChosenColumnForceExpandHeight;
+            if (_chosenColumnLayout.childForceExpandHeight == targetForceExpandHeight)
+            {
+                return false;
+            }
+
+            _chosenColumnLayout.childForceExpandHeight = targetForceExpandHeight;
+            return true;
+        }
+
+        private void EnforceRenderedBottomClearance()
+        {
+            for (int pass = 0; pass < BottomClearanceRepairPasses; pass++)
+            {
+                float requiredClearance = CalculateRequiredBottomClearance(
+                    _chosenColumn,
+                    _supplyRow,
+                    _startButtonRect,
+                    _testButtonRect);
+                if (requiredClearance <= SizeTolerance)
+                {
+                    return;
+                }
+
+                float currentDetailsHeight = Mathf.Abs(_detailsRow.rect.height);
+                float targetDetailsHeight = Mathf.Max(0f, currentDetailsHeight - requiredClearance);
+                if (!SetHeightIfNeeded(_detailsRow, targetDetailsHeight))
+                {
+                    return;
+                }
+
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
+            }
         }
 
         private bool StabilizeLevelDetailsChosenListHeight(bool detailsVisible)
@@ -363,6 +463,48 @@ namespace Assets.Scripts.UI_Components
                 : 0f;
             float availableHeight = liveOwnerHeight - Mathf.Max(0f, fixedLayoutHeight);
             return Mathf.Max(0f, Mathf.Min(responsiveTarget, availableHeight));
+        }
+
+        internal static float CalculateRequiredBottomClearance(
+            RectTransform owner,
+            RectTransform protectedRow,
+            RectTransform firstBottomControl,
+            RectTransform secondBottomControl)
+        {
+            if (owner == null || protectedRow == null || !protectedRow.gameObject.activeInHierarchy)
+            {
+                return 0f;
+            }
+
+            float safeBottom = owner.rect.yMin;
+            VerticalLayoutGroup layout = owner.GetComponent<VerticalLayoutGroup>();
+            if (layout != null)
+            {
+                safeBottom += layout.padding.bottom;
+            }
+
+            safeBottom = Mathf.Max(
+                safeBottom,
+                CalculateActiveControlTop(owner, firstBottomControl) + BottomControlSafetyGap);
+            safeBottom = Mathf.Max(
+                safeBottom,
+                CalculateActiveControlTop(owner, secondBottomControl) + BottomControlSafetyGap);
+
+            Bounds protectedBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                owner,
+                protectedRow);
+            return Mathf.Max(0f, safeBottom - protectedBounds.min.y);
+        }
+
+        private static float CalculateActiveControlTop(RectTransform owner, RectTransform control)
+        {
+            if (owner == null || control == null || !control.gameObject.activeInHierarchy)
+            {
+                return float.NegativeInfinity;
+            }
+
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(owner, control);
+            return bounds.max.y;
         }
 
         private static bool SetHeightIfNeeded(RectTransform rect, float targetHeight)
