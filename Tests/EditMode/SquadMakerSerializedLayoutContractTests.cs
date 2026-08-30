@@ -223,6 +223,32 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [Test]
+        public void LevelDetailsModeKeepsChosenSquadScrollAtSemanticBaseSoDetailsCanUseSurplus()
+        {
+            System.Type guardType = RuntimeAssembly.GetType(GuardTypeName);
+
+            float detailsHeight = (float)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateChosenSquadScrollHeight",
+                278f,
+                718f,
+                949f,
+                true);
+            float ordinaryHeight = (float)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateChosenSquadScrollHeight",
+                278f,
+                718f,
+                949f,
+                false);
+
+            Assert.That(detailsHeight, Is.EqualTo(278f).Within(0.01f),
+                "Level-details mode must leave tall-screen surplus for the details/report area.");
+            Assert.That(ordinaryHeight, Is.EqualTo(509f).Within(0.01f),
+                "Other semantic list states should continue using legitimate extra column height.");
+        }
+
         private static void ConfigureLegacyManualLayout(HorizontalLayoutGroup layout)
         {
             layout.padding = new RectOffset(0, 0, 0, 0);
