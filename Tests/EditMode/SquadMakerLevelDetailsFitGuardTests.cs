@@ -11,14 +11,13 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName =
             "Assets.Scripts.UI_Components.SquadMakerLevelDetailsFitGuard";
 
-        [TestCase(718f, 368f, 350f, 150f, 350f)]
-        [TestCase(710f, 368f, 350f, 150f, 342f)]
-        [TestCase(900f, 368f, 350f, 150f, 350f)]
-        [TestCase(500f, 368f, 350f, 150f, 150f)]
-        public void DetailsHeightUsesOnlyAvailableSlackWithoutClippingRequiredText(
+        [TestCase(718f, 368f, 150f, 350f)]
+        [TestCase(710f, 368f, 150f, 342f)]
+        [TestCase(900f, 368f, 150f, 532f)]
+        [TestCase(500f, 368f, 150f, 150f)]
+        public void DetailsHeightFillsRemainingColumnWithoutClippingRequiredText(
             float ownerHeight,
             float fixedHeight,
-            float authoredHeight,
             float minimumHeight,
             float expected)
         {
@@ -27,7 +26,6 @@ namespace Bees.Tests.EditMode
                 "CalculateFittingDetailsHeight",
                 ownerHeight,
                 fixedHeight,
-                authoredHeight,
                 minimumHeight);
 
             Assert.That(result, Is.EqualTo(expected).Within(0.01f));
@@ -70,11 +68,10 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.SetField(guard, "_chosenColumn", column);
                 RuntimeAssembly.SetField(guard, "_detailsRow", details);
                 RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
-                RuntimeAssembly.SetField(guard, "_authoredDetailsHeight", 350f);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
                 Assert.That(details.rect.height, Is.EqualTo(342f).Within(0.01f),
-                    "The large details container should give up only its unused slack so the supply-capacity row stays visible.");
+                    "The details container should give up only the space needed so the supply-capacity row stays visible.");
             }
             finally
             {
@@ -83,7 +80,40 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DetailsHeightReturnsToAuthoredSizeWhenViewportRoomReturns()
+        public void LevelDetailsRowAbsorbsTallViewportSurplusInsteadOfLeavingItInChosenSquadList()
+        {
+            RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 949f));
+            VerticalLayoutGroup layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 0f;
+            layout.childControlHeight = false;
+            layout.childForceExpandHeight = false;
+
+            CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
+            CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
+            CreateRect("Level Title", column, new Vector2(222f, 25f));
+            RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
+            CreateRect("Supply Capacity", column, new Vector2(222f, 35f));
+            Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            try
+            {
+                RuntimeAssembly.SetField(guard, "_chosenColumn", column);
+                RuntimeAssembly.SetField(guard, "_detailsRow", details);
+                RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
+                RuntimeAssembly.Invoke(guard, "ApplyFit");
+
+                Assert.That(details.rect.height, Is.EqualTo(581f).Within(0.01f),
+                    "When level details are visible, the details row should own the live vertical surplus so the lower summary remains fully visible.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(column.gameObject);
+            }
+        }
+
+        [Test]
+        public void DetailsHeightReturnsToReferenceFitWhenViewportRoomReturns()
         {
             RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 710f));
             VerticalLayoutGroup layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -104,7 +134,6 @@ namespace Bees.Tests.EditMode
                 RuntimeAssembly.SetField(guard, "_chosenColumn", column);
                 RuntimeAssembly.SetField(guard, "_detailsRow", details);
                 RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
-                RuntimeAssembly.SetField(guard, "_authoredDetailsHeight", 350f);
 
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
                 Assert.That(details.rect.height, Is.EqualTo(342f).Within(0.01f));
