@@ -33,6 +33,7 @@ public class Tooltip : MonoBehaviour
     private Button _nextButton;
     private TMP_Text _previousLabel;
     private TMP_Text _nextLabel;
+    private DialogueManager _dialogueManager;
 
     private void Awake()
     {
@@ -66,29 +67,43 @@ public class Tooltip : MonoBehaviour
         }
 
         Transform parent = transform.parent;
-        for (int i = 0; i < parent.childCount; i++)
+        if (_dialogueManager == null)
         {
-            Transform sibling = parent.GetChild(i);
-            if (sibling == transform || !sibling.gameObject.activeInHierarchy)
+            for (int i = 0; i < parent.childCount; i++)
             {
-                continue;
-            }
+                Transform sibling = parent.GetChild(i);
+                if (sibling == transform)
+                {
+                    continue;
+                }
 
-            DialogueManager dialogueManager = sibling.GetComponent<DialogueManager>();
-            if (dialogueManager == null)
-            {
-                continue;
+                _dialogueManager = sibling.GetComponent<DialogueManager>();
+                if (_dialogueManager != null)
+                {
+                    break;
+                }
             }
+        }
 
-            int dialogueIndex = sibling.GetSiblingIndex();
-            if (transform.GetSiblingIndex() > dialogueIndex)
-            {
-                // Level dialogue and tutorial tooltips are siblings under the shared UI overlay.
-                // Only move this tutorial box below the active dialogue; preserve all other HUD
-                // and popup ordering rather than forcing dialogue to the top of the entire canvas.
-                transform.SetSiblingIndex(dialogueIndex);
-            }
+        if (_dialogueManager == null || !_dialogueManager.gameObject.activeInHierarchy)
+        {
             return;
+        }
+
+        Transform dialogueTransform = _dialogueManager.transform;
+        if (dialogueTransform.parent != parent)
+        {
+            _dialogueManager = null;
+            return;
+        }
+
+        int dialogueIndex = dialogueTransform.GetSiblingIndex();
+        if (transform.GetSiblingIndex() > dialogueIndex)
+        {
+            // Level dialogue and tutorial tooltips are siblings under the shared UI overlay.
+            // Only move this tutorial box below the active dialogue; preserve all other HUD
+            // and popup ordering rather than forcing dialogue to the top of the entire canvas.
+            transform.SetSiblingIndex(dialogueIndex);
         }
     }
 
