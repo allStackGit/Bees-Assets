@@ -1,0 +1,267 @@
+using Assets.Scripts.Scenes;
+using TMPro;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+namespace Assets.Scripts.UI_Components
+{
+    /// <summary>
+    /// Keeps the fixed level-summary rows in the Squad Maker's Chosen Squads column visible when
+    /// the live logical viewport is slightly shorter than the 1366x768 authoring rectangle.
+    ///
+    /// SquadMaker still owns the semantic chosen-list height (normal/options/level-details states),
+    /// and SquadMakerResponsiveLayoutGuard still owns the outer responsive geometry. This guard only
+    /// removes unused vertical slack from the large level-details container when the active direct
+    /// rows would otherwise extend beyond the chosen column and clip the supply-capacity row.
+    /// </summary>
+    [DefaultExecutionOrder(-600)]
+    public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
+    {
+        private const string SquadMakerSceneName = "Squad Maker";
+        private const string ChosenSquadsColumnName = "Chosen Squads Column";
+        private const float RepairInterval = 0.20f;
+        private const float SizeTolerance = 0.01f;
+        private const float TextSafetyPadding = 8f;
+
+        private SquadMaker _squadMaker;
+        private RectTransform _chosenColumn;
+        private RectTransform _detailsRow;
+        private TMP_Text _levelDetailsText;
+        private float _authoredDetailsHeight = -1f;
+        private float _nextRepairTime;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        private static void Install()
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+        }
+
+        private static void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
+        {
+            if (scene.name != SquadMakerSceneName)
+            {
+                return;
+            }
+
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                SquadMaker squadMaker = root.GetComponentInChildren<SquadMaker>(true);
+                if (squadMaker == null)
+                {
+                    continue;
+                }
+
+                SquadMakerLevelDetailsFitGuard guard =
+                    squadMaker.GetComponent<SquadMakerLevelDetailsFitGuard>();
+                if (guard == null)
+                {
+                    guard = squadMaker.gameObject.AddComponent<SquadMakerLevelDetailsFitGuard>();
+                }
+
+                guard.Initialize(squadMaker);
+                return;
+            }
+        }
+
+        private void Awake()
+        {
+            if (_squadMaker == null)
+            {
+                Initialize(GetComponent<SquadMaker>());
+            }
+        }
+
+        private void Initialize(SquadMaker squadMaker)
+        {
+            if (squadMaker == null)
+            {
+                return;
+            }
+
+            _squadMaker = squadMaker;
+            ResolveOwnedRows();
+            _nextRepairTime = 0f;
+        }
+
+        private void LateUpdate()
+        {
+            if (_squadMaker == null || Time.unscaledTime < _nextRepairTime)
+            {
+                return;
+            }
+
+            _nextRepairTime = Time.unscaledTime + RepairInterval;
+            if (_chosenColumn == null || _detailsRow == null)
+            {
+                ResolveOwnedRows();
+            }
+
+            ApplyFit();
+        }
+
+        private void ResolveOwnedRows()
+        {
+            RectTransform details = _squadMaker != null && _squadMaker.LevelDetailsContainer != null
+                ? _squadMaker.LevelDetailsContainer.transform as RectTransform
+                : null;
+            _chosenColumn = FindAncestorByName(details, ChosenSquadsColumnName);
+            _detailsRow = FindDirectChildAncestor(details, _chosenColumn);
+            _levelDetailsText = _squadMaker != null ? _squadMaker.LevelDetails : null;
+
+            if (_detailsRow != null && _authoredDetailsHeight < 0f)
+            {
+                _authoredDetailsHeight = Mathf.Abs(_detailsRow.rect.height);
+                if (_authoredDetailsHeight <= SizeTolerance)
+                {
+                    _authoredDetailsHeight = Mathf.Abs(_detailsRow.sizeDelta.y);
+                }
+            }
+        }
+
+        private void ApplyFit()
+        {
+            if (_chosenColumn == null || _detailsRow == null ||
+                !_detailsRow.gameObject.activeInHierarchy || _authoredDetailsHeight <= 0f)
+            {
+                return;
+            }
+
+            float ownerHeight = Mathf.Abs(_chosenColumn.rect.height);
+            if (ownerHeight <= SizeTolerance)
+            {
+                return;
+            }
+
+            float fixedLayoutHeight = CalculateOtherActiveRowHeight(_chosenColumn, _detailsRow);
+            float minimumDetailsHeight = CalculateMinimumDetailsHeight();
+            float targetHeight = CalculateFittingDetailsHeight(
+                ownerHeight,
+                fixedLayoutHeight,
+                _authoredDetailsHeight,
+                minimumDetailsHeight);
+
+            if (Mathf.Abs(Mathf.Abs(_detailsRow.rect.height) - targetHeight) <= SizeTolerance)
+            {
+                return;
+            }
+
+            _detailsRow.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_chosenColumn);
+        }
+
+        private float CalculateMinimumDetailsHeight()
+        {
+            if (_levelDetailsText == null || string.IsNullOrWhiteSpace(_levelDetailsText.text))
+            {
+                return 0f;
+            }
+
+            RectTransform textRect = _levelDetailsText.rectTransform;
+            float width = textRect != null ? Mathf.Abs(textRect.rect.width) : 0f;
+            if (width <= SizeTolerance && _detailsRow != null)
+            {
+                width = Mathf.Abs(_detailsRow.rect.width);
+            }
+            if (width <= SizeTolerance)
+            {
+                return 0f;
+            }
+
+            float preferredHeight = _levelDetailsText.GetPreferredValues(
+                _levelDetailsText.text,
+                width,
+                0f).y;
+            return Mathf.Min(
+                _authoredDetailsHeight,
+                Mathf.Max(0f, preferredHeight + TextSafetyPadding));
+        }
+
+        internal static float CalculateOtherActiveRowHeight(
+            RectTransform column,
+            RectTransform excludedRow)
+        {
+            if (column == null)
+            {
+                return 0f;
+            }
+
+            VerticalLayoutGroup layout = column.GetComponent<VerticalLayoutGroup>();
+            float height = layout != null
+                ? layout.padding.top + layout.padding.bottom
+                : 0f;
+            int layoutChildCount = 0;
+
+            for (int index = 0; index < column.childCount; index++)
+            {
+                RectTransform child = column.GetChild(index) as RectTransform;
+                if (child == null || !child.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                LayoutElement element = child.GetComponent<LayoutElement>();
+                if (element != null && element.ignoreLayout)
+                {
+                    continue;
+                }
+
+                layoutChildCount++;
+                if (child != excludedRow)
+                {
+                    height += Mathf.Abs(child.rect.height);
+                }
+            }
+
+            if (layout != null && layoutChildCount > 1)
+            {
+                height += layout.spacing * (layoutChildCount - 1);
+            }
+
+            return height;
+        }
+
+        internal static float CalculateFittingDetailsHeight(
+            float ownerHeight,
+            float fixedLayoutHeight,
+            float authoredDetailsHeight,
+            float minimumDetailsHeight)
+        {
+            float authored = Mathf.Max(0f, authoredDetailsHeight);
+            float minimum = Mathf.Clamp(minimumDetailsHeight, 0f, authored);
+            float available = Mathf.Max(0f, ownerHeight - Mathf.Max(0f, fixedLayoutHeight));
+            return Mathf.Clamp(available, minimum, authored);
+        }
+
+        private static RectTransform FindAncestorByName(RectTransform start, string name)
+        {
+            Transform current = start;
+            while (current != null)
+            {
+                if (current.name == name)
+                {
+                    return current as RectTransform;
+                }
+                current = current.parent;
+            }
+            return null;
+        }
+
+        private static RectTransform FindDirectChildAncestor(RectTransform start, RectTransform owner)
+        {
+            if (start == null || owner == null)
+            {
+                return null;
+            }
+
+            RectTransform current = start;
+            while (current != null && current.parent != owner)
+            {
+                current = current.parent as RectTransform;
+            }
+            return current != null && current.parent == owner ? current : null;
+        }
+    }
+}
