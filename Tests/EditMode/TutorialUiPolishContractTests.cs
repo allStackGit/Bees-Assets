@@ -29,6 +29,48 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ActiveLevelDialogueStaysAboveTutorialWithoutReorderingOtherPopups()
+        {
+            GameObject overlay = new GameObject("UI Overlay");
+            GameObject dialogueObject = new GameObject("Dialogue");
+            dialogueObject.transform.SetParent(overlay.transform, false);
+            dialogueObject.AddComponent<DialogueManager>();
+
+            GameObject tooltipObject = new GameObject("Tooltip");
+            tooltipObject.transform.SetParent(overlay.transform, false);
+            Tooltip tooltip = tooltipObject.AddComponent<Tooltip>();
+            tooltip.TooltipObject = tooltipObject;
+
+            GameObject unrelatedPopup = new GameObject("Unrelated Popup");
+            unrelatedPopup.transform.SetParent(overlay.transform, false);
+
+            try
+            {
+                Assert.That(
+                    tooltipObject.transform.GetSiblingIndex(),
+                    Is.GreaterThan(dialogueObject.transform.GetSiblingIndex()));
+
+                System.Reflection.MethodInfo keepBelowDialogue = typeof(Tooltip).GetMethod(
+                    "KeepBelowActiveDialogue",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Assert.That(keepBelowDialogue, Is.Not.Null);
+
+                keepBelowDialogue.Invoke(tooltip, null);
+
+                Assert.That(
+                    tooltipObject.transform.GetSiblingIndex(),
+                    Is.LessThan(dialogueObject.transform.GetSiblingIndex()));
+                Assert.That(
+                    unrelatedPopup.transform.GetSiblingIndex(),
+                    Is.GreaterThan(dialogueObject.transform.GetSiblingIndex()));
+            }
+            finally
+            {
+                Object.DestroyImmediate(overlay);
+            }
+        }
+
+        [Test]
         public void PlutoTwoTutorialPagesGateEnemySpawnUntilTutorialAndDialogueAreComplete()
         {
             string source = ReadSource("Scripts", "Levels", "Level.Campaign.Pluto.cs");
