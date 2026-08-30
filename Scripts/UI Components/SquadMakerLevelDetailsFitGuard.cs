@@ -14,7 +14,9 @@ namespace Assets.Scripts.UI_Components
     /// and SquadMakerResponsiveLayoutGuard still owns the outer responsive geometry. This guard only
     /// sizes the active level-details row to the height left after the other structural rows, so tall
     /// viewports place their surplus in the details panel while shorter viewports preserve the text's
-    /// minimum readable height instead of clipping the supply-capacity row unnecessarily.
+    /// minimum readable height. The Supply Capacity row is measured from its text as well as its live
+    /// RectTransform so a row that has already been squeezed by layout is not mistaken for its desired
+    /// height and left as a thin clipped strip at the bottom of the column.
     /// </summary>
     [DefaultExecutionOrder(-600)]
     public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
@@ -28,7 +30,9 @@ namespace Assets.Scripts.UI_Components
         private SquadMaker _squadMaker;
         private RectTransform _chosenColumn;
         private RectTransform _detailsRow;
+        private RectTransform _supplyRow;
         private TMP_Text _levelDetailsText;
+        private TMP_Text _supplyText;
         private float _nextRepairTime;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
@@ -93,7 +97,7 @@ namespace Assets.Scripts.UI_Components
             }
 
             _nextRepairTime = Time.unscaledTime + RepairInterval;
-            if (_chosenColumn == null || _detailsRow == null)
+            if (_chosenColumn == null || _detailsRow == null || _supplyRow == null)
             {
                 ResolveOwnedRows();
             }
@@ -109,6 +113,14 @@ namespace Assets.Scripts.UI_Components
             _chosenColumn = FindAncestorByName(details, ChosenSquadsColumnName);
             _detailsRow = FindDirectChildAncestor(details, _chosenColumn);
             _levelDetailsText = _squadMaker != null ? _squadMaker.LevelDetails : null;
+
+            RectTransform supply = _squadMaker != null && _squadMaker.ChosenSquadsSupplyCapacityLabel != null
+                ? _squadMaker.ChosenSquadsSupplyCapacityLabel.transform as RectTransform
+                : null;
+            _supplyRow = FindDirectChildAncestor(supply, _chosenColumn);
+            _supplyText = _squadMaker != null && _squadMaker.ChosenSquadsSupplyCapacityLabel != null
+                ? _squadMaker.ChosenSquadsSupplyCapacityLabel.GetComponentInChildren<TMP_Text>()
+                : null;
         }
 
         private void ApplyFit()
@@ -125,7 +137,12 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            float fixedLayoutHeight = CalculateOtherActiveRowHeight(_chosenColumn, _detailsRow);
+            float minimumSupplyHeight = CalculateMinimumSupplyHeight();
+            float fixedLayoutHeight = CalculateOtherActiveRowHeight(
+                _chosenColumn,
+                _detailsRow,
+                _supplyRow,
+                minimumSupplyHeight);
             float minimumDetailsHeight = CalculateMinimumDetailsHeight();
             float targetHeight = CalculateFittingDetailsHeight(
                 ownerHeight,
@@ -167,9 +184,52 @@ namespace Assets.Scripts.UI_Components
             return Mathf.Max(0f, preferredHeight + TextSafetyPadding);
         }
 
+        private float CalculateMinimumSupplyHeight()
+        {
+            if (_supplyRow == null)
+            {
+                return 0f;
+            }
+
+            float currentHeight = Mathf.Abs(_supplyRow.rect.height);
+            if (_supplyText == null || string.IsNullOrWhiteSpace(_supplyText.text))
+            {
+                return currentHeight;
+            }
+
+            RectTransform textRect = _supplyText.rectTransform;
+            float width = textRect != null ? Mathf.Abs(textRect.rect.width) : 0f;
+            if (width <= SizeTolerance)
+            {
+                width = Mathf.Abs(_supplyRow.rect.width);
+            }
+            if (width <= SizeTolerance)
+            {
+                return currentHeight;
+            }
+
+            float preferredTextHeight = _supplyText.GetPreferredValues(
+                _supplyText.text,
+                width,
+                0f).y;
+            return CalculateProtectedRowHeight(currentHeight, preferredTextHeight);
+        }
+
+        internal static float CalculateProtectedRowHeight(
+            float currentHeight,
+            float preferredTextHeight)
+        {
+            float protectedTextHeight = preferredTextHeight > 0f
+                ? preferredTextHeight + TextSafetyPadding
+                : 0f;
+            return Mathf.Max(0f, Mathf.Max(currentHeight, protectedTextHeight));
+        }
+
         internal static float CalculateOtherActiveRowHeight(
             RectTransform column,
-            RectTransform excludedRow)
+            RectTransform excludedRow,
+            RectTransform protectedRow,
+            float protectedRowMinimumHeight)
         {
             if (column == null)
             {
@@ -199,7 +259,12 @@ namespace Assets.Scripts.UI_Components
                 layoutChildCount++;
                 if (child != excludedRow)
                 {
-                    height += Mathf.Abs(child.rect.height);
+                    float childHeight = Mathf.Abs(child.rect.height);
+                    if (child == protectedRow)
+                    {
+                        childHeight = Mathf.Max(childHeight, protectedRowMinimumHeight);
+                    }
+                    height += childHeight;
                 }
             }
 
