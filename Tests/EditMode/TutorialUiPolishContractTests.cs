@@ -55,6 +55,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PlutoFourFleetTutorialUsesSequenceBeforeCombatStarts()
+        {
+            string source = ReadSource("Scripts", "Levels", "Level.Campaign.Pluto4.cs");
+            int mission = source.IndexOf("public void Pluto4BluerPasturesCampaign()", System.StringComparison.Ordinal);
+            Assert.That(mission, Is.GreaterThanOrEqualTo(0));
+
+            int tutorial = source.IndexOf("basicTooltip.ShowSequence", mission, System.StringComparison.Ordinal);
+            int tutorialComplete = source.IndexOf("hasSeenFleetMessages = true", tutorial, System.StringComparison.Ordinal);
+            int combatGate = source.IndexOf("() => hasSeenFleetMessages", tutorialComplete, System.StringComparison.Ordinal);
+            int enemySpawn = source.IndexOf("AddReinforcementSquads(firstSquads", combatGate, System.StringComparison.Ordinal);
+
+            Assert.That(tutorial, Is.GreaterThan(mission));
+            Assert.That(tutorialComplete, Is.GreaterThan(tutorial));
+            Assert.That(combatGate, Is.GreaterThan(tutorialComplete));
+            Assert.That(enemySpawn, Is.GreaterThan(combatGate));
+        }
+
+        [Test]
         public void SquadMakerDeleteShortcutUsesDeleteAndExistingConfirmationFlow()
         {
             string source = ReadSource("Scripts", "Scenes", "SquadMakerDeleteShortcutGuard.cs");
