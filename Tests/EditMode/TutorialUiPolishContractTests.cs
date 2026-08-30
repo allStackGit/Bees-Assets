@@ -13,7 +13,9 @@ namespace Bees.Tests.EditMode
         {
             string source = ReadSource("Scripts", "UI Components", "Tooltip.cs");
 
-            Assert.That(source, Does.Contain("WidthMultiplier = 1.25f"));
+            Assert.That(source, Does.Contain("WidthMultiplier = 1.1f"));
+            Assert.That(source, Does.Contain("MaxReadableWidth = 500f"));
+            Assert.That(source, Does.Contain("SequenceRequestedHeightMultiplier = 0.78f"));
             Assert.That(source, Does.Contain("HorizontalPadding = 22f"));
             Assert.That(source, Does.Contain("VerticalPadding = 18f"));
             Assert.That(source, Does.Contain("_authoredFontSize + 2f"));
@@ -21,11 +23,32 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Tutorial Close Hit Area"));
             Assert.That(source, Does.Contain("button.onClick.AddListener(Hide)"));
             Assert.That(source, Does.Contain("Tutorial Info Tab"));
-            Assert.That(source, Does.Contain("UnityEngine.UI.Outline"));
+            Assert.That(source, Does.Contain("rect.anchoredPosition = Vector2.zero"));
+            Assert.That(source, Does.Contain("TutorialInfoTabGraphic"));
             Assert.That(source, Does.Contain("Input.GetKeyDown(KeyCode.Space)"));
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+        }
+
+        [Test]
+        public void TutorialInfoTabRightEdgeSlantsDownToPanelBorder()
+        {
+            System.Type graphicType = RuntimeAssembly.GetType("TutorialInfoTabGraphic");
+            Vector2[] vertices = (Vector2[])RuntimeAssembly.InvokeStatic(
+                graphicType,
+                "CalculateInfoTabVertices",
+                new Rect(0f, 0f, 90f, 30f),
+                12f);
+
+            Assert.That(vertices.Length, Is.EqualTo(4));
+            Assert.That(vertices[0], Is.EqualTo(new Vector2(0f, 0f)));
+            Assert.That(vertices[1], Is.EqualTo(new Vector2(90f, 0f)),
+                "The tab bottom must run flush into the tutorial panel border.");
+            Assert.That(vertices[2], Is.EqualTo(new Vector2(78f, 30f)),
+                "The top-right corner must be inset so the right edge slopes downward/right.");
+            Assert.That(vertices[3], Is.EqualTo(new Vector2(0f, 30f)),
+                "The tab left edge must stay exactly flush with the panel's left edge.");
         }
 
         [Test]
