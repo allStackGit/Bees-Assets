@@ -7,13 +7,14 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Keeps the fixed level-summary rows in the Squad Maker's Chosen Squads column visible when
-    /// the live logical viewport is slightly shorter than the 1366x768 authoring rectangle.
+    /// Keeps the fixed level-summary rows in the Squad Maker's Chosen Squads column visible while
+    /// letting the active level-details row own the remaining vertical space.
     ///
     /// SquadMaker still owns the semantic chosen-list height (normal/options/level-details states),
     /// and SquadMakerResponsiveLayoutGuard still owns the outer responsive geometry. This guard only
-    /// removes unused vertical slack from the large level-details container when the active direct
-    /// rows would otherwise extend beyond the chosen column and clip the supply-capacity row.
+    /// sizes the active level-details row to the height left after the other structural rows, so tall
+    /// viewports place their surplus in the details panel while shorter viewports preserve the text's
+    /// minimum readable height instead of clipping the supply-capacity row unnecessarily.
     /// </summary>
     [DefaultExecutionOrder(-600)]
     public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
@@ -28,7 +29,6 @@ namespace Assets.Scripts.UI_Components
         private RectTransform _chosenColumn;
         private RectTransform _detailsRow;
         private TMP_Text _levelDetailsText;
-        private float _authoredDetailsHeight = -1f;
         private float _nextRepairTime;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
@@ -109,21 +109,12 @@ namespace Assets.Scripts.UI_Components
             _chosenColumn = FindAncestorByName(details, ChosenSquadsColumnName);
             _detailsRow = FindDirectChildAncestor(details, _chosenColumn);
             _levelDetailsText = _squadMaker != null ? _squadMaker.LevelDetails : null;
-
-            if (_detailsRow != null && _authoredDetailsHeight < 0f)
-            {
-                _authoredDetailsHeight = Mathf.Abs(_detailsRow.rect.height);
-                if (_authoredDetailsHeight <= SizeTolerance)
-                {
-                    _authoredDetailsHeight = Mathf.Abs(_detailsRow.sizeDelta.y);
-                }
-            }
         }
 
         private void ApplyFit()
         {
             if (_chosenColumn == null || _detailsRow == null ||
-                !_detailsRow.gameObject.activeInHierarchy || _authoredDetailsHeight <= 0f)
+                !_detailsRow.gameObject.activeInHierarchy)
             {
                 return;
             }
@@ -139,7 +130,6 @@ namespace Assets.Scripts.UI_Components
             float targetHeight = CalculateFittingDetailsHeight(
                 ownerHeight,
                 fixedLayoutHeight,
-                _authoredDetailsHeight,
                 minimumDetailsHeight);
 
             if (Mathf.Abs(Mathf.Abs(_detailsRow.rect.height) - targetHeight) <= SizeTolerance)
@@ -174,9 +164,7 @@ namespace Assets.Scripts.UI_Components
                 _levelDetailsText.text,
                 width,
                 0f).y;
-            return Mathf.Min(
-                _authoredDetailsHeight,
-                Mathf.Max(0f, preferredHeight + TextSafetyPadding));
+            return Mathf.Max(0f, preferredHeight + TextSafetyPadding);
         }
 
         internal static float CalculateOtherActiveRowHeight(
@@ -226,13 +214,11 @@ namespace Assets.Scripts.UI_Components
         internal static float CalculateFittingDetailsHeight(
             float ownerHeight,
             float fixedLayoutHeight,
-            float authoredDetailsHeight,
             float minimumDetailsHeight)
         {
-            float authored = Mathf.Max(0f, authoredDetailsHeight);
-            float minimum = Mathf.Clamp(minimumDetailsHeight, 0f, authored);
+            float minimum = Mathf.Max(0f, minimumDetailsHeight);
             float available = Mathf.Max(0f, ownerHeight - Mathf.Max(0f, fixedLayoutHeight));
-            return Mathf.Clamp(available, minimum, authored);
+            return Mathf.Max(minimum, available);
         }
 
         private static RectTransform FindAncestorByName(RectTransform start, string name)
