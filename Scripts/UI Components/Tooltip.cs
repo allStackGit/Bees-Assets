@@ -12,8 +12,14 @@ public class Tooltip : MonoBehaviour
     private const float VerticalPadding = 18f;
     private const float SequenceFooterHeight = 34f;
     private const float MinReadableWidth = 260f;
-    private const float MaxReadableWidth = 600f;
-    private const float WidthMultiplier = 1.25f;
+    private const float MaxReadableWidth = 500f;
+    private const float WidthMultiplier = 1.1f;
+    private const float SequenceRequestedHeightMultiplier = 0.78f;
+    private const float StandardRequestedHeightMultiplier = 1f;
+    private const float InfoTabWidth = 90f;
+    private const float InfoTabHeight = 30f;
+    private const float InfoTabSlant = 12f;
+    private const float InfoTabBorder = 1.5f;
 
     public GameObject TooltipObject, CloseButton;
     public TMP_Text TooltipText;
@@ -376,21 +382,44 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
-        GameObject tab = new GameObject("Tutorial Info Tab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        // The tab is part of the panel silhouette rather than a floating badge. Its bottom-left
+        // corner sits exactly on the panel's top-left border, and the right edge slopes down/right
+        // to match the original UI sketch.
+        GameObject tab = new GameObject(
+            "Tutorial Info Tab",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TutorialInfoTabGraphic));
         tab.transform.SetParent(TooltipSize, false);
         RectTransform rect = tab.GetComponent<RectTransform>();
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 0f);
-        rect.anchoredPosition = new Vector2(12f, -1f);
-        rect.sizeDelta = new Vector2(82f, 27f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(InfoTabWidth, InfoTabHeight);
 
-        Image image = tab.GetComponent<Image>();
-        image.color = new Color(0.34f, 0.39f, 0.44f, 0.96f);
-        image.raycastTarget = false;
-        UnityEngine.UI.Outline outline = tab.AddComponent<UnityEngine.UI.Outline>();
-        outline.effectColor = new Color(0.62f, 0.69f, 0.74f, 0.95f);
-        outline.effectDistance = new Vector2(1f, -1f);
+        TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
+        border.color = new Color(0.62f, 0.69f, 0.74f, 0.95f);
+        border.Slant = InfoTabSlant;
+        border.raycastTarget = false;
+
+        GameObject fillObject = new GameObject(
+            "Fill",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TutorialInfoTabGraphic));
+        fillObject.transform.SetParent(tab.transform, false);
+        RectTransform fillRect = fillObject.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.pivot = new Vector2(0.5f, 0.5f);
+        fillRect.offsetMin = new Vector2(InfoTabBorder, InfoTabBorder);
+        fillRect.offsetMax = new Vector2(-InfoTabBorder, -InfoTabBorder);
+
+        TutorialInfoTabGraphic fill = fillObject.GetComponent<TutorialInfoTabGraphic>();
+        fill.color = new Color(0.34f, 0.39f, 0.44f, 0.96f);
+        fill.Slant = Mathf.Max(0f, InfoTabSlant - InfoTabBorder);
+        fill.raycastTarget = false;
 
         GameObject labelObject = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         labelObject.transform.SetParent(tab.transform, false);
@@ -398,7 +427,7 @@ public class Tooltip : MonoBehaviour
         labelRect.anchorMin = Vector2.zero;
         labelRect.anchorMax = Vector2.one;
         labelRect.offsetMin = new Vector2(6f, 2f);
-        labelRect.offsetMax = new Vector2(-6f, -2f);
+        labelRect.offsetMax = new Vector2(-(InfoTabSlant + 4f), -2f);
         TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
         label.text = "INFO";
         label.font = TooltipText.font;
@@ -477,7 +506,10 @@ public class Tooltip : MonoBehaviour
         Vector2 preferred = TooltipText.GetPreferredValues(message, contentWidth, 0f);
         float footer = _sequenceActive ? SequenceFooterHeight : 0f;
         float readableHeight = preferred.y + VerticalPadding * 2f + footer;
-        float requestedHeight = _requestedSize.y * 1.08f;
+        float requestedHeightMultiplier = _sequenceActive
+            ? SequenceRequestedHeightMultiplier
+            : StandardRequestedHeightMultiplier;
+        float requestedHeight = _requestedSize.y * requestedHeightMultiplier;
         float height = Mathf.Max(requestedHeight, readableHeight);
         TooltipSize.sizeDelta = new Vector2(readableWidth, height);
 
@@ -508,5 +540,60 @@ public class Tooltip : MonoBehaviour
 
         float estimate = longestClause * TooltipText.fontSize * 0.44f + HorizontalPadding * 2f;
         return Mathf.Clamp(estimate, MinReadableWidth, MaxReadableWidth);
+    }
+}
+
+/// <summary>
+/// Simple four-vertex UI graphic used by the tutorial INFO tab. The lower-right point extends
+/// farther right than the upper-right point, so the exposed right edge slopes downward/right.
+/// </summary>
+public sealed class TutorialInfoTabGraphic : MaskableGraphic
+{
+    [SerializeField]
+    private float _slant = 12f;
+
+    public float Slant
+    {
+        get => _slant;
+        set
+        {
+            float clamped = Mathf.Max(0f, value);
+            if (Mathf.Approximately(_slant, clamped))
+            {
+                return;
+            }
+            _slant = clamped;
+            SetVerticesDirty();
+        }
+    }
+
+    protected override void OnPopulateMesh(VertexHelper vertexHelper)
+    {
+        vertexHelper.Clear();
+        Vector2[] vertices = CalculateInfoTabVertices(GetPixelAdjustedRect(), _slant);
+        UIVertex vertex = UIVertex.simpleVert;
+        vertex.color = color;
+
+        for (int index = 0; index < vertices.Length; index++)
+        {
+            vertex.position = vertices[index];
+            vertex.uv0 = Vector2.zero;
+            vertexHelper.AddVert(vertex);
+        }
+
+        vertexHelper.AddTriangle(0, 1, 2);
+        vertexHelper.AddTriangle(0, 2, 3);
+    }
+
+    internal static Vector2[] CalculateInfoTabVertices(Rect rect, float slant)
+    {
+        float safeSlant = Mathf.Clamp(slant, 0f, Mathf.Max(0f, rect.width));
+        return new[]
+        {
+            new Vector2(rect.xMin, rect.yMin),
+            new Vector2(rect.xMax, rect.yMin),
+            new Vector2(rect.xMax - safeSlant, rect.yMax),
+            new Vector2(rect.xMin, rect.yMax)
+        };
     }
 }
