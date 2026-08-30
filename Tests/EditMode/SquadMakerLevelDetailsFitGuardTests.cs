@@ -61,6 +61,26 @@ namespace Bees.Tests.EditMode
             Assert.That(protectedHeight, Is.EqualTo(35f).Within(0.01f));
         }
 
+        [TestCase(-1f, 278f, true, 278f)]
+        [TestCase(663f, 278f, true, 278f)]
+        [TestCase(278f, 298f, false, 278f)]
+        [TestCase(278f, 509f, false, 278f)]
+        public void LevelDetailsSemanticListHeightIsCapturedOnEntryButNotRecapturedFromLayout(
+            float capturedHeight,
+            float currentHeight,
+            bool enteringDetails,
+            float expected)
+        {
+            float result = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateStableLevelDetailsListHeight",
+                capturedHeight,
+                currentHeight,
+                enteringDetails);
+
+            Assert.That(result, Is.EqualTo(expected).Within(0.01f));
+        }
+
         [Test]
         public void FixedHeightBudgetIgnoresOverlayRowsAndProtectsCollapsedSupplyRow()
         {
@@ -109,7 +129,7 @@ namespace Bees.Tests.EditMode
             ConfigureColumnLayout(column);
 
             CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
-            CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
+            RectTransform chosenList = CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
             CreateRect("Level Title", column, new Vector2(222f, 25f));
             RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
             RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
@@ -117,11 +137,20 @@ namespace Bees.Tests.EditMode
 
             try
             {
-                ConfigureGuardForFixture(guard, column, details, supply, 718f, 350f, 35f);
+                ConfigureGuardForFixture(
+                    guard,
+                    column,
+                    chosenList,
+                    details,
+                    supply,
+                    718f,
+                    350f,
+                    35f);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
                 Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f),
                     "The real Supply Capacity RectTransform must be restored, not merely reserved in a calculation.");
+                Assert.That(chosenList.rect.height, Is.EqualTo(278f).Within(0.01f));
                 Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f));
             }
             finally
@@ -131,30 +160,85 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TallerNeighborReducesDetailsBeforeSupplyCapacityCanLeaveColumn()
+        public void InflatedChosenListReturnsToLevelDetailsSemanticHeightBeforeReportIsFitted()
         {
             RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 718f));
             ConfigureColumnLayout(column);
 
             CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
-            CreateRect("Chosen Squad List", column, new Vector2(222f, 298f));
+            RectTransform chosenList = CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
             CreateRect("Level Title", column, new Vector2(222f, 25f));
             RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
-            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 2f));
+            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 35f));
             Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
 
             try
             {
-                ConfigureGuardForFixture(guard, column, details, supply, 718f, 350f, 35f);
+                ConfigureGuardForFixture(
+                    guard,
+                    column,
+                    chosenList,
+                    details,
+                    supply,
+                    718f,
+                    350f,
+                    35f);
+
+                // First pass observes the 278px height deliberately selected by ToggleLevelDetails.
+                RuntimeAssembly.Invoke(guard, "ApplyFit");
+                Assert.That(chosenList.rect.height, Is.EqualTo(278f).Within(0.01f));
+                Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f));
+
+                // Reproduce the real failure family: another responsive/layout pass makes the list
+                // taller while level-details mode remains active. This is presentation drift, not a
+                // new semantic state, so it must not steal space from the selected-level report.
+                chosenList.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 298f);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
-                Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f));
-                Assert.That(details.rect.height, Is.EqualTo(330f).Within(0.01f),
-                    "A neighboring row that grows by 20px must take those 20px from the flexible details row rather than pushing Supply Capacity below the column.");
+                Assert.That(chosenList.rect.height, Is.EqualTo(278f).Within(0.01f),
+                    "A transiently enlarged chosen-list row must not become the new level-details semantic height.");
+                Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f),
+                    "Restoring the list owner should preserve the authored report height instead of hiding level details such as Supply Capacity.");
 
                 Bounds supplyBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(column, supply);
-                Assert.That(supplyBounds.min.y, Is.GreaterThanOrEqualTo(column.rect.yMin - 0.01f),
-                    "Supply Capacity must remain fully inside the rendered Chosen Squads column even when a neighboring row is taller than authored.");
+                Assert.That(supplyBounds.min.y, Is.GreaterThanOrEqualTo(column.rect.yMin - 0.01f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(column.gameObject);
+            }
+        }
+
+        [Test]
+        public void UnrelatedTallerStructuralNeighborStillReducesFlexibleReport()
+        {
+            RectTransform column = CreateRect("Chosen Squads Column", null, new Vector2(222f, 718f));
+            ConfigureColumnLayout(column);
+
+            CreateRect("Chosen Squads Heading", column, new Vector2(222f, 30f));
+            RectTransform chosenList = CreateRect("Chosen Squad List", column, new Vector2(222f, 278f));
+            CreateRect("Level Title", column, new Vector2(222f, 25f));
+            CreateRect("Unexpected Fixed Row", column, new Vector2(222f, 20f));
+            RectTransform details = CreateRect("Details Container", column, new Vector2(222f, 350f));
+            RectTransform supply = CreateRect("Supply Capacity", column, new Vector2(222f, 35f));
+            Component guard = column.gameObject.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+
+            try
+            {
+                ConfigureGuardForFixture(
+                    guard,
+                    column,
+                    chosenList,
+                    details,
+                    supply,
+                    718f,
+                    350f,
+                    35f);
+                RuntimeAssembly.Invoke(guard, "ApplyFit");
+
+                Assert.That(chosenList.rect.height, Is.EqualTo(278f).Within(0.01f));
+                Assert.That(details.rect.height, Is.EqualTo(330f).Within(0.01f),
+                    "Only genuinely separate structural height should be paid for by the flexible report.");
             }
             finally
             {
@@ -204,6 +288,7 @@ namespace Bees.Tests.EditMode
         private static void ConfigureGuardForFixture(
             Component guard,
             RectTransform column,
+            RectTransform chosenList,
             RectTransform details,
             RectTransform supply,
             float referenceOwnerHeight,
@@ -211,6 +296,7 @@ namespace Bees.Tests.EditMode
             float referenceSupplyHeight)
         {
             RuntimeAssembly.SetField(guard, "_chosenColumn", column);
+            RuntimeAssembly.SetField(guard, "_chosenListRow", chosenList);
             RuntimeAssembly.SetField(guard, "_detailsRow", details);
             RuntimeAssembly.SetField(guard, "_supplyRow", supply);
             RuntimeAssembly.SetField(guard, "_supplyText", null);
