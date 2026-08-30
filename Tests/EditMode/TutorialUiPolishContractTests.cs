@@ -34,12 +34,12 @@ namespace Bees.Tests.EditMode
             GameObject overlay = new GameObject("UI Overlay");
             GameObject dialogueObject = new GameObject("Dialogue");
             dialogueObject.transform.SetParent(overlay.transform, false);
-            dialogueObject.AddComponent<DialogueManager>();
+            dialogueObject.AddComponent(RuntimeAssembly.GetType("DialogueManager"));
 
             GameObject tooltipObject = new GameObject("Tooltip");
             tooltipObject.transform.SetParent(overlay.transform, false);
-            Tooltip tooltip = tooltipObject.AddComponent<Tooltip>();
-            tooltip.TooltipObject = tooltipObject;
+            Component tooltip = tooltipObject.AddComponent(RuntimeAssembly.GetType("Tooltip"));
+            RuntimeAssembly.SetField(tooltip, "TooltipObject", tooltipObject);
 
             GameObject unrelatedPopup = new GameObject("Unrelated Popup");
             unrelatedPopup.transform.SetParent(overlay.transform, false);
@@ -50,7 +50,7 @@ namespace Bees.Tests.EditMode
                     tooltipObject.transform.GetSiblingIndex(),
                     Is.GreaterThan(dialogueObject.transform.GetSiblingIndex()));
 
-                System.Reflection.MethodInfo keepBelowDialogue = typeof(Tooltip).GetMethod(
+                System.Reflection.MethodInfo keepBelowDialogue = tooltip.GetType().GetMethod(
                     "KeepBelowActiveDialogue",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                 Assert.That(keepBelowDialogue, Is.Not.Null);
