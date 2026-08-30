@@ -68,7 +68,7 @@ namespace Assets.Scripts.UIComponents
         private RectTransform _hoverOverlay;
         private GameObject _dragPreview;
         private float _nextScanTime;
-        private int _pendingUnchooseAfterLoadId = int.MinValue;
+        private long _pendingUnchooseAfterLoadId = long.MinValue;
         private bool _pendingLoadDialogueWasOpen;
         private bool _warnedMissingReflectionFields;
 
@@ -467,7 +467,7 @@ namespace Assets.Scripts.UIComponents
 
         private void ResolvePendingUnchooseAfterLoad()
         {
-            if (_pendingUnchooseAfterLoadId == int.MinValue || _squadMaker == null)
+            if (_pendingUnchooseAfterLoadId == long.MinValue || _squadMaker == null)
             {
                 return;
             }
@@ -490,7 +490,7 @@ namespace Assets.Scripts.UIComponents
 
         private void UnchoosePendingSquad()
         {
-            if (_pendingUnchooseAfterLoadId == int.MinValue || _squadMaker == null)
+            if (_pendingUnchooseAfterLoadId == long.MinValue || _squadMaker == null)
             {
                 return;
             }
@@ -506,7 +506,7 @@ namespace Assets.Scripts.UIComponents
 
         private void ClearPendingUnchooseAfterLoad()
         {
-            _pendingUnchooseAfterLoadId = int.MinValue;
+            _pendingUnchooseAfterLoadId = long.MinValue;
             _pendingLoadDialogueWasOpen = false;
         }
 
@@ -679,7 +679,7 @@ namespace Assets.Scripts.UIComponents
                 int.TryParse(rowName.Substring(hashIndex + 1), out squadId);
         }
 
-        private static string FindRowNameById(GameObject list, string prefix, int squadId)
+        private static string FindRowNameById(GameObject list, string prefix, long squadId)
         {
             if (list == null)
             {
