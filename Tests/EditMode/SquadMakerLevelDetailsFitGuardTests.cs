@@ -11,22 +11,42 @@ namespace Bees.Tests.EditMode
         private const string GuardTypeName =
             "Assets.Scripts.UI_Components.SquadMakerLevelDetailsFitGuard";
 
-        [TestCase(718f, 368f, 350f)]
-        [TestCase(710f, 368f, 342f)]
-        [TestCase(900f, 368f, 532f)]
-        [TestCase(500f, 368f, 132f)]
-        public void DetailsHeightUsesActualRemainingColumnBudget(
-            float ownerHeight,
+        [TestCase(350f, 718f, 718f, 368f, 350f)]
+        [TestCase(350f, 718f, 710f, 368f, 342f)]
+        [TestCase(350f, 718f, 900f, 368f, 532f)]
+        [TestCase(350f, 718f, 718f, 348f, 350f)]
+        [TestCase(350f, 718f, 718f, 388f, 330f)]
+        public void DetailsHeightUsesReferenceGrowthButNeverExceedsLiveBudget(
+            float referenceDetailsHeight,
+            float referenceOwnerHeight,
+            float liveOwnerHeight,
             float fixedHeight,
             float expected)
         {
             float result = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
                 "CalculateFittingDetailsHeight",
-                ownerHeight,
+                referenceDetailsHeight,
+                referenceOwnerHeight,
+                liveOwnerHeight,
                 fixedHeight);
 
             Assert.That(result, Is.EqualTo(expected).Within(0.01f));
+        }
+
+        [Test]
+        public void ReferenceSizedColumnDoesNotConsumeAuthoredSlackIntoDetailsRow()
+        {
+            float result = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateFittingDetailsHeight",
+                350f,
+                718f,
+                718f,
+                340f);
+
+            Assert.That(result, Is.EqualTo(350f).Within(0.01f),
+                "Unused authored/semantic slack must remain slack rather than stretching the report.");
         }
 
         [Test]
@@ -97,7 +117,7 @@ namespace Bees.Tests.EditMode
 
             try
             {
-                ConfigureGuardForFixture(guard, column, details, supply, 35f);
+                ConfigureGuardForFixture(guard, column, details, supply, 718f, 350f, 35f);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
                 Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f),
@@ -125,7 +145,7 @@ namespace Bees.Tests.EditMode
 
             try
             {
-                ConfigureGuardForFixture(guard, column, details, supply, 35f);
+                ConfigureGuardForFixture(guard, column, details, supply, 718f, 350f, 35f);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
 
                 Assert.That(supply.rect.height, Is.EqualTo(35f).Within(0.01f));
@@ -147,32 +167,27 @@ namespace Bees.Tests.EditMode
         {
             System.Type guardType = RuntimeAssembly.GetType(GuardTypeName);
 
-            float reference = (float)RuntimeAssembly.InvokeStatic(
-                guardType,
-                "CalculateFittingDetailsHeight",
-                718f,
-                368f);
-            float tall = (float)RuntimeAssembly.InvokeStatic(
-                guardType,
-                "CalculateFittingDetailsHeight",
-                949f,
-                368f);
-            float tallerNeighbor = (float)RuntimeAssembly.InvokeStatic(
-                guardType,
-                "CalculateFittingDetailsHeight",
-                718f,
-                388f);
-            float restored = (float)RuntimeAssembly.InvokeStatic(
-                guardType,
-                "CalculateFittingDetailsHeight",
-                718f,
-                368f);
+            float reference = Calculate(guardType, 718f, 368f);
+            float tall = Calculate(guardType, 949f, 368f);
+            float tallerNeighbor = Calculate(guardType, 718f, 388f);
+            float restored = Calculate(guardType, 718f, 368f);
 
             Assert.That(reference, Is.EqualTo(350f).Within(0.01f));
             Assert.That(tall, Is.EqualTo(581f).Within(0.01f));
             Assert.That(tallerNeighbor, Is.EqualTo(330f).Within(0.01f));
             Assert.That(restored, Is.EqualTo(350f).Within(0.01f),
-                "Every pass must derive from the live owner/fixed-row budget rather than the previous details height.");
+                "Every pass must derive from immutable reference geometry plus the live row budget rather than the previous details height.");
+        }
+
+        private static float Calculate(System.Type guardType, float liveOwnerHeight, float fixedHeight)
+        {
+            return (float)RuntimeAssembly.InvokeStatic(
+                guardType,
+                "CalculateFittingDetailsHeight",
+                350f,
+                718f,
+                liveOwnerHeight,
+                fixedHeight);
         }
 
         private static void ConfigureColumnLayout(RectTransform column)
@@ -191,13 +206,16 @@ namespace Bees.Tests.EditMode
             RectTransform column,
             RectTransform details,
             RectTransform supply,
+            float referenceOwnerHeight,
+            float referenceDetailsHeight,
             float referenceSupplyHeight)
         {
             RuntimeAssembly.SetField(guard, "_chosenColumn", column);
             RuntimeAssembly.SetField(guard, "_detailsRow", details);
             RuntimeAssembly.SetField(guard, "_supplyRow", supply);
-            RuntimeAssembly.SetField(guard, "_levelDetailsText", null);
             RuntimeAssembly.SetField(guard, "_supplyText", null);
+            RuntimeAssembly.SetField(guard, "_referenceChosenColumnHeight", referenceOwnerHeight);
+            RuntimeAssembly.SetField(guard, "_referenceDetailsHeight", referenceDetailsHeight);
             RuntimeAssembly.SetField(guard, "_referenceSupplyHeight", referenceSupplyHeight);
             RuntimeAssembly.SetField(guard, "_referenceGeometryCaptured", true);
         }
