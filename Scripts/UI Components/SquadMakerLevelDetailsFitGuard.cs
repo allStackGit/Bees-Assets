@@ -11,9 +11,9 @@ namespace Assets.Scripts.UI_Components
     ///
     /// SquadMaker owns the semantic chosen-list height and SquadMakerResponsiveLayoutGuard owns the
     /// outer responsive geometry. This guard restores the fixed Supply Capacity row, measures every
-    /// other active structural row in the live column, and gives the flexible level-details row only
-    /// the height that actually remains. That prevents a tall neighboring row from pushing Supply
-    /// Capacity, START, or TEST below the visible column.
+    /// other active structural row in the live column, and caps the flexible level-details row by
+    /// both its reference-responsive size and the space that actually remains. This preserves authored
+    /// slack while preventing a tall neighboring row from pushing Supply Capacity, START, or TEST out.
     /// </summary>
     [DefaultExecutionOrder(-600)]
     public sealed class SquadMakerLevelDetailsFitGuard : MonoBehaviour
@@ -28,9 +28,10 @@ namespace Assets.Scripts.UI_Components
         private RectTransform _chosenColumn;
         private RectTransform _detailsRow;
         private RectTransform _supplyRow;
-        private TMP_Text _levelDetailsText;
         private TMP_Text _supplyText;
         private float _nextRepairTime;
+        private float _referenceChosenColumnHeight = -1f;
+        private float _referenceDetailsHeight = -1f;
         private float _referenceSupplyHeight = -1f;
         private bool _referenceGeometryCaptured;
 
@@ -125,7 +126,6 @@ namespace Assets.Scripts.UI_Components
                 : null;
             _chosenColumn = FindAncestorByName(details, ChosenSquadsColumnName);
             _detailsRow = FindDirectChildAncestor(details, _chosenColumn);
-            _levelDetailsText = _squadMaker != null ? _squadMaker.LevelDetails : null;
 
             RectTransform supply = _squadMaker != null && _squadMaker.ChosenSquadsSupplyCapacityLabel != null
                 ? _squadMaker.ChosenSquadsSupplyCapacityLabel.transform as RectTransform
@@ -144,14 +144,16 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            float ownerHeight = Mathf.Abs(_chosenColumn.rect.height);
+            float detailsHeight = Mathf.Abs(_detailsRow.rect.height);
             float supplyHeight = Mathf.Abs(_supplyRow.rect.height);
-            if (Mathf.Abs(_chosenColumn.rect.height) <= SizeTolerance ||
-                Mathf.Abs(_detailsRow.rect.height) <= SizeTolerance ||
-                supplyHeight <= SizeTolerance)
+            if (ownerHeight <= SizeTolerance || detailsHeight <= SizeTolerance || supplyHeight <= SizeTolerance)
             {
                 return;
             }
 
+            _referenceChosenColumnHeight = ownerHeight;
+            _referenceDetailsHeight = detailsHeight;
             _referenceSupplyHeight = supplyHeight;
             _referenceGeometryCaptured = true;
         }
@@ -177,15 +179,20 @@ namespace Assets.Scripts.UI_Components
                 CalculatePreferredTextHeight(_supplyText, _supplyRow));
             SetHeightIfNeeded(_supplyRow, protectedSupplyHeight);
 
-            // The level report is the flexible row in this state. Measure the other live layout rows
-            // every pass rather than assuming their authored heights still add up to the reference
-            // column height. This is the missing protection when a neighboring row becomes taller.
+            // The report is flexible, but only within two independent limits:
+            // 1) reference geometry plus genuine viewport-height delta, which preserves authored slack;
+            // 2) the actual remainder after all currently active structural neighbors, which prevents
+            //    any taller neighbor from pushing the fixed lower summary/buttons out of the column.
             float fixedLayoutHeight = CalculateOtherActiveRowHeight(
                 _chosenColumn,
                 _detailsRow,
                 _supplyRow,
                 protectedSupplyHeight);
-            float targetDetailsHeight = CalculateFittingDetailsHeight(ownerHeight, fixedLayoutHeight);
+            float targetDetailsHeight = CalculateFittingDetailsHeight(
+                _referenceDetailsHeight,
+                _referenceChosenColumnHeight,
+                ownerHeight,
+                fixedLayoutHeight);
             SetHeightIfNeeded(_detailsRow, targetDetailsHeight);
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(_detailsRow);
@@ -277,10 +284,16 @@ namespace Assets.Scripts.UI_Components
         }
 
         internal static float CalculateFittingDetailsHeight(
-            float ownerHeight,
+            float referenceDetailsHeight,
+            float referenceOwnerHeight,
+            float liveOwnerHeight,
             float fixedLayoutHeight)
         {
-            return Mathf.Max(0f, ownerHeight - Mathf.Max(0f, fixedLayoutHeight));
+            float responsiveTarget = referenceDetailsHeight > 0f && referenceOwnerHeight > 0f
+                ? referenceDetailsHeight + (liveOwnerHeight - referenceOwnerHeight)
+                : 0f;
+            float availableHeight = liveOwnerHeight - Mathf.Max(0f, fixedLayoutHeight);
+            return Mathf.Max(0f, Mathf.Min(responsiveTarget, availableHeight));
         }
 
         private static bool SetHeightIfNeeded(RectTransform rect, float targetHeight)
