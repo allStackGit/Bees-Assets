@@ -41,6 +41,8 @@ public class Tooltip : MonoBehaviour
 
     private void Update()
     {
+        KeepBelowActiveDialogue();
+
         if (!_sequenceActive || !TooltipObject.activeInHierarchy || !Input.GetKeyDown(KeyCode.Space))
         {
             return;
@@ -54,6 +56,40 @@ public class Tooltip : MonoBehaviour
         }
 
         NextPage();
+    }
+
+    private void KeepBelowActiveDialogue()
+    {
+        if (TooltipObject == null || !TooltipObject.activeInHierarchy || transform.parent == null)
+        {
+            return;
+        }
+
+        Transform parent = transform.parent;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform sibling = parent.GetChild(i);
+            if (sibling == transform || !sibling.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            DialogueManager dialogueManager = sibling.GetComponent<DialogueManager>();
+            if (dialogueManager == null)
+            {
+                continue;
+            }
+
+            int dialogueIndex = sibling.GetSiblingIndex();
+            if (transform.GetSiblingIndex() > dialogueIndex)
+            {
+                // Level dialogue and tutorial tooltips are siblings under the shared UI overlay.
+                // Only move this tutorial box below the active dialogue; preserve all other HUD
+                // and popup ordering rather than forcing dialogue to the top of the entire canvas.
+                transform.SetSiblingIndex(dialogueIndex);
+            }
+            return;
+        }
     }
 
     public void Place(Vector2 position, Vector2 size)
