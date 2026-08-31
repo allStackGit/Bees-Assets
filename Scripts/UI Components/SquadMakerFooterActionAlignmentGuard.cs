@@ -1,4 +1,5 @@
 using Assets.Scripts.Scenes;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -6,14 +7,17 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Keeps the Squad Maker START/TEST action row attached to the body/footer boundary.
+    /// Removes only the unused top portion of the Squad Maker footer while preserving the authored
+    /// screen position of every footer branch.
     ///
-    /// The authored hierarchy is Footer -> Right Side -> Start Buttons -> START/TEST. The nested
-    /// top-relative offsets place the button tops below the Footer top even though the Footer itself
-    /// correctly owns the bottom 51 logical units. This guard solves that semantic relationship
-    /// directly: keep the complete Footer and translate only the shared START/TEST row until the
-    /// highest active action button meets the Footer top. The calculation is idempotent and uses the
-    /// current rendered relationship, so repeated responsive passes cannot accumulate drift.
+    /// The serialized footer is 51 units high, but its controls occupy a smaller bottom-relative
+    /// envelope. Shrinking the footer without preserving those bottom-relative branch positions moves
+    /// top-anchored branches downward and clips START/TEST. Moving START/TEST upward instead closes the
+    /// visible strip but makes the Supply Capacity warning touch the buttons. This guard measures the
+    /// complete authored Button envelope, trims the footer to that measured height, and then restores
+    /// each direct footer branch to its captured distance from the footer bottom. The body therefore
+    /// receives exactly the genuinely unused footer height while BACK/START/TEST/NEXT remain where the
+    /// scene authored them.
     /// </summary>
     [DefaultExecutionOrder(-660)]
     public sealed class SquadMakerFooterActionAlignmentGuard : MonoBehaviour
@@ -22,11 +26,20 @@ namespace Assets.Scripts.UI_Components
         private const string FooterName = "Footer";
         private const float PositionTolerance = 0.01f;
 
+        private sealed class FooterBranchReference
+        {
+            public RectTransform Rect;
+            public float BottomOffset;
+        }
+
         private SquadMaker _squadMaker;
         private RectTransform _footer;
-        private RectTransform _actionRow;
-        private RectTransform _startButton;
-        private RectTransform _testButton;
+        private RectTransform _mainPanel;
+        private LayoutElement _footerLayoutElement;
+        private readonly List<FooterBranchReference> _branchReferences =
+            new List<FooterBranchReference>();
+        private float _targetFooterHeight = -1f;
+        private bool _referenceCaptured;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
@@ -77,8 +90,14 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
+            if (_squadMaker == squadMaker && _referenceCaptured && _footer != null)
+            {
+                return;
+            }
+
             _squadMaker = squadMaker;
             ResolveOwnedGeometry();
+            CaptureReferenceGeometry();
         }
 
         private void LateUpdate()
@@ -88,118 +107,205 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            if (_footer == null || _actionRow == null || _startButton == null || _testButton == null)
+            if (_footer == null || _mainPanel == null)
             {
                 ResolveOwnedGeometry();
             }
 
-            ApplyAlignment();
+            if (!_referenceCaptured)
+            {
+                CaptureReferenceGeometry();
+            }
+
+            ApplyMeasuredFooterFit();
         }
 
         private void ResolveOwnedGeometry()
         {
-            _startButton = _squadMaker != null && _squadMaker.StartButton != null
+            RectTransform startButton = _squadMaker != null && _squadMaker.StartButton != null
                 ? _squadMaker.StartButton.transform as RectTransform
                 : null;
-            _testButton = _squadMaker != null && _squadMaker.TestButton != null
+            RectTransform testButton = _squadMaker != null && _squadMaker.TestButton != null
                 ? _squadMaker.TestButton.transform as RectTransform
                 : null;
-            _actionRow = FindNearestCommonAncestor(_startButton, _testButton);
-            _footer = FindAncestorByName(_actionRow, FooterName);
+            RectTransform nextButton = _squadMaker != null && _squadMaker.NextButton != null
+                ? _squadMaker.NextButton.transform as RectTransform
+                : null;
+
+            _footer = FindAncestorByName(startButton, FooterName);
+            if (_footer == null)
+            {
+                _footer = FindAncestorByName(testButton, FooterName);
+            }
+            if (_footer == null)
+            {
+                _footer = FindAncestorByName(nextButton, FooterName);
+            }
+
+            _mainPanel = _footer != null ? _footer.parent as RectTransform : null;
+            _footerLayoutElement = _footer != null ? _footer.GetComponent<LayoutElement>() : null;
         }
 
-        private void ApplyAlignment()
+        private void CaptureReferenceGeometry()
         {
-            if (_footer == null || _actionRow == null)
+            if (_footer == null)
             {
                 return;
             }
 
-            bool startVisible = _startButton != null && _startButton.gameObject.activeInHierarchy;
-            bool testVisible = _testButton != null && _testButton.gameObject.activeInHierarchy;
-            if (!startVisible && !testVisible)
+            Canvas.ForceUpdateCanvases();
+
+            float measuredHeight = CalculateFooterControlEnvelopeHeight(_footer);
+            if (measuredHeight <= PositionTolerance)
             {
                 return;
             }
 
-            LayoutRebuilder.ForceRebuildLayoutImmediate(_actionRow);
-            Vector2 offset = CalculateFooterActionRowOffset(
-                _footer,
-                _actionRow,
-                _startButton,
-                _testButton);
-            if (offset.sqrMagnitude <= PositionTolerance * PositionTolerance)
+            _targetFooterHeight = measuredHeight;
+            _branchReferences.Clear();
+            for (int index = 0; index < _footer.childCount; index++)
             {
-                return;
-            }
-
-            _actionRow.anchoredPosition += offset;
-        }
-
-        internal static Vector2 CalculateFooterActionRowOffset(
-            RectTransform footer,
-            RectTransform actionRow,
-            RectTransform firstButton,
-            RectTransform secondButton)
-        {
-            RectTransform rowParent = actionRow != null ? actionRow.parent as RectTransform : null;
-            if (footer == null || actionRow == null || rowParent == null)
-            {
-                return Vector2.zero;
-            }
-
-            float highestButtonTop = float.NegativeInfinity;
-            highestButtonTop = Mathf.Max(
-                highestButtonTop,
-                CalculateActiveButtonTop(footer, firstButton));
-            highestButtonTop = Mathf.Max(
-                highestButtonTop,
-                CalculateActiveButtonTop(footer, secondButton));
-            if (float.IsNegativeInfinity(highestButtonTop))
-            {
-                return Vector2.zero;
-            }
-
-            float footerLocalDeltaY = footer.rect.yMax - highestButtonTop;
-            Vector3 worldOrigin = footer.TransformPoint(Vector3.zero);
-            Vector3 worldShifted = footer.TransformPoint(new Vector3(0f, footerLocalDeltaY, 0f));
-            Vector3 parentOrigin = rowParent.InverseTransformPoint(worldOrigin);
-            Vector3 parentShifted = rowParent.InverseTransformPoint(worldShifted);
-            Vector3 parentDelta = parentShifted - parentOrigin;
-            return new Vector2(parentDelta.x, parentDelta.y);
-        }
-
-        private static float CalculateActiveButtonTop(RectTransform footer, RectTransform button)
-        {
-            if (footer == null || button == null || !button.gameObject.activeInHierarchy)
-            {
-                return float.NegativeInfinity;
-            }
-
-            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, button);
-            return bounds.max.y;
-        }
-
-        private static RectTransform FindNearestCommonAncestor(
-            RectTransform first,
-            RectTransform second)
-        {
-            if (first == null || second == null)
-            {
-                return null;
-            }
-
-            Transform candidate = first.parent;
-            while (candidate != null)
-            {
-                if (second.IsChildOf(candidate))
+                RectTransform branch = _footer.GetChild(index) as RectTransform;
+                if (branch == null)
                 {
-                    return candidate as RectTransform;
+                    continue;
                 }
-                candidate = candidate.parent;
+
+                _branchReferences.Add(new FooterBranchReference
+                {
+                    Rect = branch,
+                    BottomOffset = CalculateBottomOffset(_footer, branch)
+                });
             }
 
-            return null;
+            _referenceCaptured = true;
+        }
+
+        private void ApplyMeasuredFooterFit()
+        {
+            if (!_referenceCaptured || _footer == null || _mainPanel == null ||
+                _targetFooterHeight <= PositionTolerance)
+            {
+                return;
+            }
+
+            if (_footerLayoutElement == null)
+            {
+                _footerLayoutElement = _footer.gameObject.AddComponent<LayoutElement>();
+            }
+
+            _footerLayoutElement.minHeight = _targetFooterHeight;
+            _footerLayoutElement.preferredHeight = _targetFooterHeight;
+            _footerLayoutElement.flexibleHeight = 0f;
+
+            // SquadMakerResponsiveLayoutGuard runs first and may restore the authored footer height.
+            // Rebuild the real MainPanel owner after applying the measured LayoutElement contract so
+            // the flexible body receives exactly the reclaimed height in the same frame.
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_mainPanel);
+            Canvas.ForceUpdateCanvases();
+
+            RestoreBottomRelativeBranches();
+        }
+
+        private void RestoreBottomRelativeBranches()
+        {
+            if (_footer == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < _branchReferences.Count; index++)
+            {
+                FooterBranchReference reference = _branchReferences[index];
+                if (reference == null || reference.Rect == null || reference.Rect.parent != _footer)
+                {
+                    continue;
+                }
+
+                float correction = CalculateBottomRelativeCorrection(
+                    _footer,
+                    reference.Rect,
+                    reference.BottomOffset);
+                if (Mathf.Abs(correction) <= PositionTolerance)
+                {
+                    continue;
+                }
+
+                Vector2 position = reference.Rect.anchoredPosition;
+                position.y += correction;
+                reference.Rect.anchoredPosition = position;
+            }
+        }
+
+        internal static float CalculateFooterControlEnvelopeHeight(RectTransform footer)
+        {
+            if (footer == null)
+            {
+                return 0f;
+            }
+
+            float authoredHeight = Mathf.Abs(footer.rect.height);
+            float requiredHeight = 0f;
+            bool foundControl = false;
+            Button[] controls = footer.GetComponentsInChildren<Button>(true);
+            for (int index = 0; index < controls.Length; index++)
+            {
+                RectTransform control = controls[index] != null
+                    ? controls[index].transform as RectTransform
+                    : null;
+                if (control == null)
+                {
+                    continue;
+                }
+
+                Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                    footer,
+                    control);
+                float bottomToTop = bounds.max.y - footer.rect.yMin;
+                if (bottomToTop <= PositionTolerance)
+                {
+                    continue;
+                }
+
+                requiredHeight = Mathf.Max(requiredHeight, bottomToTop);
+                foundControl = true;
+            }
+
+            if (!foundControl)
+            {
+                return authoredHeight;
+            }
+
+            return authoredHeight > PositionTolerance
+                ? Mathf.Clamp(requiredHeight, 1f, authoredHeight)
+                : requiredHeight;
+        }
+
+        internal static float CalculateBottomOffset(
+            RectTransform footer,
+            RectTransform branch)
+        {
+            if (footer == null || branch == null)
+            {
+                return 0f;
+            }
+
+            Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, branch);
+            return bounds.min.y - footer.rect.yMin;
+        }
+
+        internal static float CalculateBottomRelativeCorrection(
+            RectTransform footer,
+            RectTransform branch,
+            float referenceBottomOffset)
+        {
+            if (footer == null || branch == null)
+            {
+                return 0f;
+            }
+
+            float currentBottomOffset = CalculateBottomOffset(footer, branch);
+            return referenceBottomOffset - currentBottomOffset;
         }
 
         private static RectTransform FindAncestorByName(RectTransform start, string name)
