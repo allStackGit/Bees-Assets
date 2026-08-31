@@ -11,10 +11,10 @@ namespace Assets.Scripts.UI_Components
     /// positions them in its root-canvas overlay.
     ///
     /// The authored scene stores these descriptions in the Chosen Squads layout hierarchy. Their live
-    /// RectTransforms can therefore inherit a structural row height that is appropriate for the column
-    /// but wildly too tall for a tooltip. The interaction guard intentionally preserves the size it is
-    /// given when it reparents a description, so this guard is the single owner of description size and
-    /// content bounds: derive both from the rendered TMP content rather than mutable layout geometry.
+    /// RectTransforms can therefore inherit structural row geometry that is appropriate for the column
+    /// but wildly wrong for a tooltip. This guard becomes the single owner of hover-description size
+    /// and content bounds: it removes obsolete root layout writers, sizes from rendered TMP content,
+    /// normalizes any intermediate wrappers, and leaves InteractionGuard to clamp the finished outer rect.
     /// </summary>
     [DefaultExecutionOrder(-675)]
     public sealed class SquadMakerHoverDescriptionSizeGuard : MonoBehaviour
@@ -136,6 +136,11 @@ namespace Assets.Scripts.UI_Components
             }
             layoutElement.ignoreLayout = true;
 
+            // Start Text/Test Text carry authored layout writers from their former structural role.
+            // Once these objects are hover overlays those writers have no semantic ownership and can
+            // otherwise rewrite the canonical tooltip/content geometry after this guard normalizes it.
+            DisableDescriptionLayoutWriters(description);
+
             TMP_Text text = description.GetComponentInChildren<TMP_Text>(true);
             Vector2 targetSize = CalculateDescriptionSize(text, _rootCanvasRect);
             if (targetSize.x <= SizeTolerance || targetSize.y <= SizeTolerance)
@@ -158,6 +163,32 @@ namespace Assets.Scripts.UI_Components
             // character per line. Normalize the entire parent chain to the tooltip bounds, then apply
             // the intended padding only to the final TMP rect.
             NormalizeContentRect(description, text != null ? text.rectTransform : null);
+        }
+
+        internal static void DisableDescriptionLayoutWriters(RectTransform description)
+        {
+            if (description == null)
+            {
+                return;
+            }
+
+            LayoutGroup[] layoutGroups = description.GetComponents<LayoutGroup>();
+            for (int index = 0; index < layoutGroups.Length; index++)
+            {
+                if (layoutGroups[index] != null)
+                {
+                    layoutGroups[index].enabled = false;
+                }
+            }
+
+            ContentSizeFitter[] fitters = description.GetComponents<ContentSizeFitter>();
+            for (int index = 0; index < fitters.Length; index++)
+            {
+                if (fitters[index] != null)
+                {
+                    fitters[index].enabled = false;
+                }
+            }
         }
 
         private static Vector2 CalculateDescriptionSize(TMP_Text text, RectTransform rootCanvas)

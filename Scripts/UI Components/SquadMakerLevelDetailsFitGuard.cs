@@ -251,10 +251,10 @@ namespace Assets.Scripts.UI_Components
                 CalculatePreferredTextHeight(_supplyText, _supplyRow));
             SetHeightIfNeeded(_supplyRow, protectedSupplyHeight);
 
-            // The report is flexible, but only within two independent limits:
-            // 1) reference geometry plus genuine viewport-height delta, which preserves authored slack;
-            // 2) the actual remainder after all currently active structural neighbors, which prevents
-            //    a non-semantic neighbor from pushing the fixed lower summary out of the column.
+            // The level report is the one flexible structural row in this state. Once the semantic
+            // chosen-list height and all fixed neighbors are accounted for, give the report every
+            // remaining live pixel. Preserving arbitrary authored slack here leaves Supply Capacity
+            // floating above the body/footer boundary and can reintroduce clipping when neighbors grow.
             float fixedLayoutHeight = CalculateOtherActiveRowHeight(
                 _chosenColumn,
                 _detailsRow,
@@ -458,11 +458,9 @@ namespace Assets.Scripts.UI_Components
             float liveOwnerHeight,
             float fixedLayoutHeight)
         {
-            float responsiveTarget = referenceDetailsHeight > 0f && referenceOwnerHeight > 0f
-                ? referenceDetailsHeight + (liveOwnerHeight - referenceOwnerHeight)
-                : 0f;
-            float availableHeight = liveOwnerHeight - Mathf.Max(0f, fixedLayoutHeight);
-            return Mathf.Max(0f, Mathf.Min(responsiveTarget, availableHeight));
+            // The reference arguments remain part of this helper's internal test seam, but level-details
+            // mode deliberately does not preserve reference slack. The report owns the entire remainder.
+            return Mathf.Max(0f, liveOwnerHeight - Mathf.Max(0f, fixedLayoutHeight));
         }
 
         internal static float CalculateRequiredBottomClearance(
