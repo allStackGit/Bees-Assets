@@ -124,6 +124,33 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EpisodeCoordinatorCapturesOutcomeBeforeLegacyTrainingReset()
+        {
+            Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
+            Assert.That(coordinatorType, Is.Not.Null);
+
+            DefaultExecutionOrder executionOrder = coordinatorType.GetCustomAttribute<DefaultExecutionOrder>();
+            Assert.That(executionOrder, Is.Not.Null);
+            Assert.That(executionOrder.order, Is.LessThan(0));
+            Assert.That(coordinatorType.GetEvent("EpisodeEnded", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
+
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(source, Does.Contain("if (currentLevel.State.GameOver)"));
+            Assert.That(source, Does.Contain("int winningSide = DetermineWinner(currentLevel);"));
+            Assert.That(source, Does.Contain("CompleteEpisode(currentLevel, winningSide, false);"));
+            Assert.That(source, Does.Contain("EpisodeEnded?.Invoke(LastEpisodeResult);"));
+        }
+
+        [Test]
+        public void EpisodeCoordinatorTreatsTimeoutAsNoWinnerAndResetsImmediately()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(source, Does.Contain("elapsedSeconds >= RlOneVsOneTrainingBootstrap.TrainingTimeoutSeconds"));
+            Assert.That(source, Does.Contain("CompleteEpisode(currentLevel, 0, true);"));
+            Assert.That(source, Does.Contain("currentLevel.ResetLevel(true);"));
+        }
+
+        [Test]
         public void TrainingSceneAssetExists()
         {
             string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
