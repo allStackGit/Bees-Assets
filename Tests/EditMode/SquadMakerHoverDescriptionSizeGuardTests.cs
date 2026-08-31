@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -82,20 +83,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void OffsetNestedTextIsNormalizedInsideTheClampedTooltipRect()
+        public void AuthoredDirectTextIsNormalizedInsideTheClampedTooltipRect()
         {
             GameObject descriptionObject = new GameObject("Description", typeof(RectTransform));
-            GameObject contentObject = new GameObject("Text", typeof(RectTransform));
+            GameObject contentObject = new GameObject("Contents", typeof(RectTransform));
             RectTransform description = descriptionObject.GetComponent<RectTransform>();
             RectTransform content = contentObject.GetComponent<RectTransform>();
 
             description.sizeDelta = new Vector2(320f, 120f);
             content.SetParent(description, false);
-            content.anchorMin = new Vector2(1f, 0.5f);
-            content.anchorMax = new Vector2(1f, 0.5f);
-            content.pivot = new Vector2(0f, 0.5f);
-            content.anchoredPosition = new Vector2(100f, 0f);
-            content.sizeDelta = new Vector2(300f, 100f);
+            content.anchorMin = Vector2.zero;
+            content.anchorMax = Vector2.zero;
+            content.pivot = new Vector2(0.5f, 0.5f);
+            content.anchoredPosition = new Vector2(110f, -172.5f);
+            content.sizeDelta = new Vector2(200f, 325f);
 
             try
             {
@@ -121,6 +122,60 @@ namespace Bees.Tests.EditMode
                     Is.GreaterThanOrEqualTo(description.rect.xMin + 7.99f));
                 Assert.That(contentBounds.max.x,
                     Is.LessThanOrEqualTo(description.rect.xMax - 7.99f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(descriptionObject);
+            }
+        }
+
+        [Test]
+        public void StructuralStartTextLayoutCannotRewriteCanonicalTooltipWidthAfterNormalization()
+        {
+            GameObject descriptionObject = new GameObject("Start Text", typeof(RectTransform));
+            GameObject contentObject = new GameObject("Contents", typeof(RectTransform));
+            RectTransform description = descriptionObject.GetComponent<RectTransform>();
+            RectTransform content = contentObject.GetComponent<RectTransform>();
+
+            description.sizeDelta = new Vector2(320f, 120f);
+            HorizontalLayoutGroup authoredLayout =
+                descriptionObject.AddComponent<HorizontalLayoutGroup>();
+            authoredLayout.padding = new RectOffset(0, 0, 0, 0);
+            authoredLayout.spacing = 0f;
+            authoredLayout.childAlignment = TextAnchor.UpperLeft;
+            authoredLayout.childForceExpandWidth = true;
+            authoredLayout.childForceExpandHeight = true;
+            authoredLayout.childControlWidth = false;
+            authoredLayout.childControlHeight = false;
+
+            content.SetParent(description, false);
+            content.anchorMin = Vector2.zero;
+            content.anchorMax = Vector2.zero;
+            content.pivot = new Vector2(0.5f, 0.5f);
+            content.anchoredPosition = new Vector2(110f, -172.5f);
+            content.sizeDelta = new Vector2(200f, 325f);
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "DisableDescriptionLayoutWriters",
+                    description);
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "NormalizeContentRect",
+                    description,
+                    content,
+                    16f,
+                    10f);
+
+                LayoutRebuilder.ForceRebuildLayoutImmediate(description);
+
+                Assert.That(authoredLayout.enabled, Is.False,
+                    "Start Text/Test Text carry a structural HorizontalLayoutGroup in the tracked scene; it must be disabled once the object becomes a hover overlay.");
+                Assert.That(content.rect.width, Is.EqualTo(304f).Within(0.01f),
+                    "A later layout rebuild must not collapse the rendered hover text to a one-character-wide column.");
+                Assert.That(content.rect.height, Is.EqualTo(110f).Within(0.01f));
             }
             finally
             {
