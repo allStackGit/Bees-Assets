@@ -1,5 +1,7 @@
 using Assets.Scripts;
 using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Levels;
 using Assets.Scripts.UIComponents;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
@@ -18,6 +20,7 @@ internal static class RlOneVsOneTrainingBootstrap
     internal const int TrainingTimeoutSeconds = 120;
     internal const int TrainingMapIndex = 2; // Reuse Titania's art/prefab plumbing, then resize it for this scene only.
     internal const float TrainingMapSize = 120f;
+    internal const float TrainingCameraSize = 60f;
     internal const float SpawnRadius = 30f;
 
     private const float AuthoredMapSize = 512f;
@@ -188,6 +191,13 @@ internal static class RlOneVsOneTrainingBootstrap
 
         stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes> { BeeShipType };
         stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes> { HumanShipType };
+
+        RlOneVsOneTrainingRuntimeGuard guard = stage.GetComponent<RlOneVsOneTrainingRuntimeGuard>();
+        if (guard == null)
+        {
+            guard = stage.gameObject.AddComponent<RlOneVsOneTrainingRuntimeGuard>();
+        }
+        guard.Configure(stage);
     }
 
     private static void PreserveLegacySetupUi(Stage stage)
@@ -220,5 +230,116 @@ internal static class RlOneVsOneTrainingBootstrap
         }
 
         stage.UIManager.SetActive(false);
+    }
+}
+
+/// <summary>
+/// Dedicated presentation and arena guard for the first RL proof. It runs after ordinary gameplay
+/// FixedUpdate callbacks so the policy can use the normal ship movement code while still respecting
+/// the small training arena. This is deliberately scoped to the dedicated RL scene.
+/// </summary>
+[DefaultExecutionOrder(10000)]
+internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
+{
+    private Stage _stage;
+
+    internal void Configure(Stage stage)
+    {
+        _stage = stage;
+    }
+
+    private void FixedUpdate()
+    {
+        if (!RlOneVsOneTrainingBootstrap.IsActiveFor(_stage))
+        {
+            return;
+        }
+
+        Level level = _stage.PrimaryLevel;
+        if (level == null || level.State == null)
+        {
+            return;
+        }
+
+        List<Ship> ships = level.State.GetShips();
+        for (int i = 0; i < ships.Count; i++)
+        {
+            ConstrainShipToArena(level, ships[i]);
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (!RlOneVsOneTrainingBootstrap.IsActiveFor(_stage) || _stage.Camera == null || _stage.PrimaryLevel == null)
+        {
+            return;
+        }
+
+        // Fish Tank normally zooms all the way out to Map.MaxZoom. The dedicated proof instead
+        // keeps the complete 120-unit arena visible at a useful scale, including after resets.
+        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.TrainingCameraSize;
+        Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();
+        _stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f);
+    }
+
+    private static void ConstrainShipToArena(Level level, Ship ship)
+    {
+        if (ship == null || ship.IsDead || ship.CanOverrideBounds || ship.Body == null)
+        {
+            return;
+        }
+
+        // Keep the complete rotated ship inside the map by reserving its largest half-dimension
+        // on every side. This is slightly conservative for non-square ships but remains correct
+        // for every heading without needing an expensive rotated-bounds calculation each step.
+        float shipExtent = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight());
+        float minX = level.MinX + shipExtent;
+        float maxX = level.MaxX - shipExtent;
+        float minY = level.MinY + shipExtent;
+        float maxY = level.MaxY - shipExtent;
+        if (minX > maxX || minY > maxY)
+        {
+            ship.Body.linearVelocity = Vector2.zero;
+            return;
+        }
+
+        Vector2 position = ship.GetPosition();
+        Vector2 clampedPosition = new Vector2(
+            Mathf.Clamp(position.x, minX, maxX),
+            Mathf.Clamp(position.y, minY, maxY));
+
+        if (position != clampedPosition)
+        {
+            Vector3 localPosition = ship.transform.localPosition;
+            localPosition.x = clampedPosition.x;
+            localPosition.y = clampedPosition.y;
+            ship.transform.localPosition = localPosition;
+            ship.Body.position = ship.transform.position;
+            position = clampedPosition;
+        }
+
+        Vector2 velocity = ship.Body.linearVelocity;
+        float fixedDeltaTime = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
+        Vector2 projectedPosition = position + velocity * fixedDeltaTime;
+
+        if (projectedPosition.x < minX && velocity.x < 0f)
+        {
+            velocity.x = (minX - position.x) / fixedDeltaTime;
+        }
+        else if (projectedPosition.x > maxX && velocity.x > 0f)
+        {
+            velocity.x = (maxX - position.x) / fixedDeltaTime;
+        }
+
+        if (projectedPosition.y < minY && velocity.y < 0f)
+        {
+            velocity.y = (minY - position.y) / fixedDeltaTime;
+        }
+        else if (projectedPosition.y > maxY && velocity.y > 0f)
+        {
+            velocity.y = (maxY - position.y) / fixedDeltaTime;
+        }
+
+        ship.Body.linearVelocity = velocity;
     }
 }
