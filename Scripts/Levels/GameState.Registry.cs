@@ -165,7 +165,6 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            int removedObserverSideIndex = ship.IsHiveMindControlled ? ship.Side - 1 : -1;
             foreach (Dictionary<long, HashSet<Ship>> observerMap in HivemindShips)
             {
                 if (observerMap == null)
@@ -181,26 +180,6 @@ namespace Assets.Scripts.Levels
             foreach (HashSet<Ship> visibleCache in VisionCache)
             {
                 visibleCache?.Remove(ship);
-            }
-
-            if (removedObserverSideIndex >= 0 && removedObserverSideIndex < HivemindShips.Length)
-            {
-                HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex];
-                sideCache.Clear();
-                foreach (HashSet<Ship> visibleShips in HivemindShips[removedObserverSideIndex].Values)
-                {
-                    if (visibleShips == null)
-                    {
-                        continue;
-                    }
-                    foreach (Ship visibleShip in visibleShips)
-                    {
-                        if (visibleShip != null && !visibleShip.IsDead)
-                        {
-                            sideCache.Add(visibleShip);
-                        }
-                    }
-                }
             }
 
             if (!ship.IsMinionShip && !ship.IsCarrierShip)
