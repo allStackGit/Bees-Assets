@@ -174,7 +174,7 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        ActionSegment<float> continuous = actions.ContinuousActions;
+        var continuous = actions.ContinuousActions;
         Vector2 movement = new Vector2(continuous[0], continuous[1]);
         if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
         {
@@ -207,7 +207,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         // With no Python trainer connected, pressing Play still produces visibly random actions for
         // a quick environment/control smoke test. Training overrides this through BehaviorName.
-        ActionSegment<float> continuous = actionsOut.ContinuousActions;
+        var continuous = actionsOut.ContinuousActions;
         continuous[0] = Random.Range(-1f, 1f);
         continuous[1] = Random.Range(-1f, 1f);
         continuous[2] = Random.Range(-1f, 1f);
@@ -260,6 +260,15 @@ internal sealed class RlOneVsOneAgent : Agent
         if (_ship == null)
         {
             return false;
+        }
+
+        // This scene has no human/player controller. Make the runtime squad state agree even if the
+        // account-level DoesUserHaveController setting would otherwise make Level.HasPlayer true.
+        if (_ship.Squad != null)
+        {
+            _ship.Squad.IsUserControlled = false;
+            _ship.Squad.IsHiveMindControlled = true;
+            _ship.Squad.CanAcceptUserInput = false;
         }
 
         _ship.HasBrain = true;
