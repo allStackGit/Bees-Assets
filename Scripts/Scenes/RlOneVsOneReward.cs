@@ -39,11 +39,15 @@ internal static class RlOneVsOneReward
         return -normalizedElapsed * MaximumEpisodeTimePenalty;
     }
 
+    /// <summary>
+    /// A timeout or simultaneous no-winner result is a failure for both sides. Otherwise a weak ship
+    /// could learn that indefinitely avoiding combat is preferable to accepting a likely loss.
+    /// </summary>
     internal static float CalculateTerminalReward(int side, int winningSide)
     {
         if (winningSide == 0)
         {
-            return 0f;
+            return LossReward;
         }
         return side == winningSide ? WinReward : LossReward;
     }
