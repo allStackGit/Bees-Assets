@@ -93,6 +93,23 @@ namespace Assets.Scripts.Levels
         private ScaledTimer _timeoutTimer = new ScaledTimer();
         public void SetupMapAndCamera()
         {
+            if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                global::RlOneVsOneTrainingBootstrap.ConfigureTrainingMap(Map);
+
+                // The first learning proof deliberately excludes every environmental dimension
+                // except two ships and the map boundary. Prevent the generic training option path
+                // from accidentally enabling mining or another environment feature.
+                CurrentLevelOptions.Obstacles = "No";
+                CurrentLevelOptions.AsteroidOption = 0;
+                CurrentLevelOptions.FogOfWar = 0;
+                CurrentLevelOptions.Mining = 0;
+                HasObstacles = false;
+                ActivateCollisionAsteroids = false;
+                ActivateMining = false;
+                ActivateFogOfWar = false;
+            }
+
             Map.Setup(this);
             
             if (CurrentLevelOptions.UserStartingPosition != Vector2.zero)
