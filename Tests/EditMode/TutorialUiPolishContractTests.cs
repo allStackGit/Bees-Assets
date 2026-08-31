@@ -1,6 +1,7 @@
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Bees.Tests.EditMode
 {
@@ -23,12 +24,56 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Tutorial Close Hit Area"));
             Assert.That(source, Does.Contain("button.onClick.AddListener(Hide)"));
             Assert.That(source, Does.Contain("Tutorial Info Tab"));
-            Assert.That(source, Does.Contain("rect.anchoredPosition = Vector2.zero"));
+            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f)"));
+            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight)"));
             Assert.That(source, Does.Contain("TutorialInfoTabGraphic"));
             Assert.That(source, Does.Contain("Input.GetKeyDown(KeyCode.Space)"));
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+        }
+
+        [Test]
+        public void TutorialCloseButtonPreservesAuthoredHoverColors()
+        {
+            GameObject tooltipObject = new GameObject("Tooltip");
+            GameObject closeButtonObject = new GameObject(
+                "Close Button",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image),
+                typeof(Button));
+
+            try
+            {
+                Component tooltip = tooltipObject.AddComponent(RuntimeAssembly.GetType("Tooltip"));
+                RuntimeAssembly.SetField(tooltip, "CloseButton", closeButtonObject);
+
+                Button button = closeButtonObject.GetComponent<Button>();
+                Image image = closeButtonObject.GetComponent<Image>();
+                ColorBlock authoredColors = button.colors;
+                authoredColors.normalColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+                authoredColors.highlightedColor = new Color(0.25f, 0.25f, 0.25f, 1f);
+                authoredColors.pressedColor = new Color(0.15f, 0.15f, 0.15f, 1f);
+                button.colors = authoredColors;
+
+                System.Reflection.MethodInfo configureCloseButton = tooltip.GetType().GetMethod(
+                    "ConfigureCloseButton",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Assert.That(configureCloseButton, Is.Not.Null);
+
+                configureCloseButton.Invoke(tooltip, null);
+
+                Assert.That(button.targetGraphic, Is.SameAs(image));
+                Assert.That(button.colors.normalColor, Is.EqualTo(authoredColors.normalColor));
+                Assert.That(button.colors.highlightedColor, Is.EqualTo(authoredColors.highlightedColor));
+                Assert.That(button.colors.pressedColor, Is.EqualTo(authoredColors.pressedColor));
+            }
+            finally
+            {
+                Object.DestroyImmediate(closeButtonObject);
+                Object.DestroyImmediate(tooltipObject);
+            }
         }
 
         [Test]
