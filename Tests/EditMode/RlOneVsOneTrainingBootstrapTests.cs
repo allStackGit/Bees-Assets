@@ -148,7 +148,7 @@ namespace Bees.Tests.EditMode
         {
             FieldInfo field = type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(field, Is.Not.Null, $"Missing constant {name} on {type.FullName}");
-            return field.GetRawConstantValue();
+            return field.GetValue(null);
         }
 
         private static string ReadSource(params string[] pathParts)
