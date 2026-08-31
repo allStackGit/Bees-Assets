@@ -10,11 +10,12 @@ namespace Bees.Tests.EditMode
     public class RlOneVsOneRuntimeGuardTests
     {
         [Test]
-        public void TrainingViewStaysAtSixtyInsteadOfFishTankMaxZoom()
+        public void TrainingViewFitsSixtyUnitArenaInsteadOfFishTankMaxZoom()
         {
             string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
 
-            Assert.That(bootstrap, Does.Contain("TrainingCameraSize = 60f"));
+            Assert.That(bootstrap, Does.Contain("TrainingMapSize = 60f"));
+            Assert.That(bootstrap, Does.Contain("TrainingCameraSize = 30f"));
             Assert.That(bootstrap, Does.Contain("private void LateUpdate()"));
             Assert.That(bootstrap, Does.Contain("_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.TrainingCameraSize"));
             Assert.That(bootstrap, Does.Contain("_stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f)"));
