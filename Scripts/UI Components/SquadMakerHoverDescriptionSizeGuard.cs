@@ -12,9 +12,9 @@ namespace Assets.Scripts.UI_Components
     ///
     /// The authored scene stores these descriptions in the Chosen Squads layout hierarchy. Their live
     /// RectTransforms can therefore inherit a structural row height that is appropriate for the column
-    /// but wildly too tall for a tooltip. The interaction guard intentionally preserves the size it is
-    /// given when it reparents a description, so this guard is the single owner of description size and
-    /// content bounds: derive both from the rendered TMP content rather than mutable layout geometry.
+    /// but wildly too tall for a tooltip. The description roots also carry an authored LayoutGroup that
+    /// was useful in the structural column but must not keep driving their TMP child after the roots are
+    /// converted to hover overlays. This guard owns the compact description size and content bounds.
     /// </summary>
     [DefaultExecutionOrder(-675)]
     public sealed class SquadMakerHoverDescriptionSizeGuard : MonoBehaviour
@@ -127,14 +127,16 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            // Until SquadMakerInteractionGuard reparents the description, keep it out of the native
-            // Chosen Squads layout so this compact tooltip size cannot alter structural row budgeting.
+            // The Chosen Squads column owns the description root as a structural child only until the
+            // hover system takes over. Keep that root out of parent layout measurement, then disable the
+            // root's own authored LayoutGroup so it cannot rewrite the TMP rect after we normalize it.
             LayoutElement layoutElement = description.GetComponent<LayoutElement>();
             if (layoutElement == null)
             {
                 layoutElement = description.gameObject.AddComponent<LayoutElement>();
             }
             layoutElement.ignoreLayout = true;
+            DisableDescriptionLayoutWriters(description);
 
             TMP_Text text = description.GetComponentInChildren<TMP_Text>(true);
             Vector2 targetSize = CalculateDescriptionSize(text, _rootCanvasRect);
@@ -152,11 +154,36 @@ namespace Assets.Scripts.UI_Components
                 description.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetSize.y);
             }
 
-            // InteractionGuard clamps the outer description rect to the root-canvas edge. The scene's
-            // nested TMP rect has independent authored anchors/offsets, so leaving those intact can put
-            // visible text outside an otherwise correctly clamped outer rect. Make the content rect use
-            // the same canonical bounds (with the padding already budgeted into targetSize).
+            // In the tracked scene the TMP object is the direct child of Start Text/Test Text. Once the
+            // obsolete root layout writer is disabled, this stretched padded rect remains the actual
+            // rendered text boundary that InteractionGuard can safely clamp by the outer description.
             NormalizeContentRect(description, text != null ? text.rectTransform : null);
+        }
+
+        internal static void DisableDescriptionLayoutWriters(RectTransform description)
+        {
+            if (description == null)
+            {
+                return;
+            }
+
+            LayoutGroup[] layoutGroups = description.GetComponents<LayoutGroup>();
+            for (int index = 0; index < layoutGroups.Length; index++)
+            {
+                if (layoutGroups[index] != null)
+                {
+                    layoutGroups[index].enabled = false;
+                }
+            }
+
+            ContentSizeFitter[] fitters = description.GetComponents<ContentSizeFitter>();
+            for (int index = 0; index < fitters.Length; index++)
+            {
+                if (fitters[index] != null)
+                {
+                    fitters[index].enabled = false;
+                }
+            }
         }
 
         private static Vector2 CalculateDescriptionSize(TMP_Text text, RectTransform rootCanvas)
@@ -195,7 +222,8 @@ namespace Assets.Scripts.UI_Components
             float horizontalPadding = HorizontalPadding,
             float verticalPadding = VerticalPadding)
         {
-            if (description == null || content == null || content == description)
+            if (description == null || content == null || content == description ||
+                !content.IsChildOf(description))
             {
                 return;
             }
@@ -207,6 +235,7 @@ namespace Assets.Scripts.UI_Components
             content.pivot = new Vector2(0.5f, 0.5f);
             content.offsetMin = new Vector2(horizontalInset, verticalInset);
             content.offsetMax = new Vector2(-horizontalInset, -verticalInset);
+            content.localScale = Vector3.one;
         }
 
         internal static float CalculateCompactWidth(
