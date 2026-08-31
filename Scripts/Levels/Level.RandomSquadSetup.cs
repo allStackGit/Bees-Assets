@@ -1,4 +1,5 @@
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -61,6 +62,11 @@ namespace Assets.Scripts.Levels
                     Vector2.zero,
                     false);
             }
+
+            if (rlOneVsOneTraining)
+            {
+                RandomizeRlOneVsOneFacing(side);
+            }
         }
 
         private void ConfigureRlOneVsOneSpawnPositions()
@@ -71,6 +77,17 @@ namespace Assets.Scripts.Levels
 
             StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
             StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
+        }
+
+        private void RandomizeRlOneVsOneFacing(int side)
+        {
+            List<Ship> ships = State.GetShips(side);
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Vector3 euler = ships[i].transform.localEulerAngles;
+                euler.z = Random.Range(0f, 360f);
+                ships[i].transform.localEulerAngles = euler;
+            }
         }
 
         private void AddRlOneVsOneSquadForSetup(int side)
