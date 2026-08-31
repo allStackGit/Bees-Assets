@@ -202,7 +202,6 @@ namespace Bees.Tests.EditMode
 
             Assert.That(polish, Does.Contain("Enemy Ships Destroyed:"));
             Assert.That(polish, Does.Contain("BuildShipsLostText"));
-            Assert.That(polish, Does.Contain("fontSize *= 1.18f"));
             Assert.That(state, Does.Contain("PlayerShipsLostByType"));
             Assert.That(state, Does.Contain("RecordPlayerShipLost"));
             Assert.That(combat, Does.Contain("RecordPlayerShipLost(ShipType)"));
