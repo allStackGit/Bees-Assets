@@ -32,6 +32,11 @@ namespace Bees.Tests.EditMode
         [Test]
         public void DedicatedSceneAppliesMinimalOneVsOneTrainingConfiguration()
         {
+            // The dedicated scene was copied from a player-facing stage and may retain these flags.
+            // Training skips AudioController.Setup(), so the bootstrap must normalize them explicitly.
+            RuntimeAssembly.SetField(_stage, "ActivateAudio", true);
+            RuntimeAssembly.SetField(_stage, "PlayMusic", true);
+
             ApplyBootstrap();
 
             Assert.That(RuntimeAssembly.GetField(_stage, "IsTrainingHiveMind"), Is.False);
@@ -42,6 +47,8 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetField(_stage, "UseFullyRandomSquads"), Is.True);
             Assert.That(RuntimeAssembly.GetField(_stage, "HasRandomizedOptions"), Is.False);
             Assert.That(RuntimeAssembly.GetField(_stage, "IsRendering"), Is.True);
+            Assert.That(RuntimeAssembly.GetField(_stage, "ActivateAudio"), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_stage, "PlayMusic"), Is.False);
             Assert.That(RuntimeAssembly.GetField(_stage, "LevelCount"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetField(_stage, "GeneratedSquadCountOverride"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetField(_stage, "OverrideMapIndex"), Is.EqualTo(2));
