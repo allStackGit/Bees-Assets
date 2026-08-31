@@ -20,6 +20,7 @@ public class Tooltip : MonoBehaviour
     private const float InfoTabHeight = 30f;
     private const float InfoTabSlant = 12f;
     private const float InfoTabBorder = 1.5f;
+    private static readonly Color SteelBorderColor = new Color(0.48f, 0.55f, 0.61f, 0.9f);
 
     public GameObject TooltipObject, CloseButton;
     public TMP_Text TooltipText;
@@ -366,7 +367,7 @@ public class Tooltip : MonoBehaviour
         {
             outline = body.gameObject.AddComponent<UnityEngine.UI.Outline>();
         }
-        outline.effectColor = new Color(0.48f, 0.55f, 0.61f, 0.9f);
+        outline.effectColor = SteelBorderColor;
         outline.effectDistance = new Vector2(1.5f, -1.5f);
         outline.useGraphicAlpha = true;
     }
@@ -394,7 +395,7 @@ public class Tooltip : MonoBehaviour
         rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight);
 
         TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
-        border.color = new Color(0.62f, 0.69f, 0.74f, 0.95f);
+        border.color = SteelBorderColor;
         border.Slant = InfoTabSlant;
         border.raycastTarget = false;
 
