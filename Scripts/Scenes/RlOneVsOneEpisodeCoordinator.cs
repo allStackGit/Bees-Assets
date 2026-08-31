@@ -242,7 +242,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _beeStartingTsv,
             beeFinalTsv,
             combinedStartingTsv);
-        float timeReward = RlOneVsOneReward.CalculateTimePenalty(durationSeconds);
+
+        // Time is a tertiary preference among victories. Penalizing a losing side for elapsed time
+        // would teach it to die faster; timeouts are already a full terminal loss for both sides.
+        float beeTimeReward = winningSide == beeSide
+            ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)
+            : 0f;
+        float humanTimeReward = winningSide == humanSide
+            ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)
+            : 0f;
 
         LastEpisodeResult = new EpisodeResult(
             _episodeNumber,
@@ -255,10 +263,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             humanFinalTsv,
             beeTerminal,
             beeTsv,
-            timeReward,
+            beeTimeReward,
             humanTerminal,
             humanTsv,
-            timeReward);
+            humanTimeReward);
 
         Debug.Log(
             $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} winner={winningSide} timeout={timedOut} " +
