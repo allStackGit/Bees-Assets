@@ -127,5 +127,61 @@ namespace Bees.Tests.EditMode
                 Object.DestroyImmediate(descriptionObject);
             }
         }
+
+        [Test]
+        public void NarrowIntermediateWrapperCannotCollapseTooltipTextToOneCharacterPerLine()
+        {
+            GameObject descriptionObject = new GameObject("Description", typeof(RectTransform));
+            GameObject wrapperObject = new GameObject("Narrow Wrapper", typeof(RectTransform));
+            GameObject contentObject = new GameObject("Text", typeof(RectTransform));
+            RectTransform description = descriptionObject.GetComponent<RectTransform>();
+            RectTransform wrapper = wrapperObject.GetComponent<RectTransform>();
+            RectTransform content = contentObject.GetComponent<RectTransform>();
+
+            description.sizeDelta = new Vector2(320f, 120f);
+            wrapper.SetParent(description, false);
+            wrapper.anchorMin = new Vector2(0.5f, 0.5f);
+            wrapper.anchorMax = new Vector2(0.5f, 0.5f);
+            wrapper.pivot = new Vector2(0.5f, 0.5f);
+            wrapper.sizeDelta = new Vector2(8f, 100f);
+
+            content.SetParent(wrapper, false);
+            content.anchorMin = Vector2.zero;
+            content.anchorMax = Vector2.one;
+            content.offsetMin = Vector2.zero;
+            content.offsetMax = Vector2.zero;
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "NormalizeContentRect",
+                    description,
+                    content,
+                    16f,
+                    10f);
+
+                Assert.That(wrapper.anchorMin, Is.EqualTo(Vector2.zero));
+                Assert.That(wrapper.anchorMax, Is.EqualTo(Vector2.one));
+                Assert.That(wrapper.offsetMin, Is.EqualTo(Vector2.zero));
+                Assert.That(wrapper.offsetMax, Is.EqualTo(Vector2.zero));
+
+                Bounds wrapperBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                    description,
+                    wrapper);
+                Bounds contentBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                    description,
+                    content);
+
+                Assert.That(wrapperBounds.size.x, Is.EqualTo(320f).Within(0.01f),
+                    "The intermediate wrapper must no longer impose its authored 8px width on the tooltip text.");
+                Assert.That(contentBounds.size.x, Is.EqualTo(304f).Within(0.01f),
+                    "The final text rect should receive only the intended 16px total horizontal padding.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(descriptionObject);
+            }
+        }
     }
 }
