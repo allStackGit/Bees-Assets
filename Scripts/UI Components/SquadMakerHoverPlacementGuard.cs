@@ -6,22 +6,26 @@ using UnityEngine.SceneManagement;
 namespace Assets.Scripts.UI_Components
 {
     /// <summary>
-    /// Applies the semantic horizontal placement of the Squad Maker START/TEST hover descriptions.
+    /// Restores the semantic horizontal placement of the Squad Maker START/TEST hover descriptions.
     ///
-    /// SquadMakerInteractionGuard owns the root-canvas overlay and vertical above/below placement.
-    /// A centered outer tooltip is not the desired horizontal presentation for the paired footer
-    /// actions: START should expand left from its button and TEST should expand right. Screen-edge
-    /// safety is based on the rendered TMP glyph bounds, not unused space in the outer tooltip rect.
+    /// The serialized scene authors both help descriptions as centered content in the Chosen Squads
+    /// column. SquadMakerInteractionGuard moves them into a root-canvas overlay for clipping safety and
+    /// temporarily centers their outer rectangles on the hovered buttons. This final horizontal pass
+    /// restores the authored presentation intent by centering the actually rendered TMP glyph bounds in
+    /// the live Chosen Squads column, then clamps only those visible bounds to the root-canvas margin.
+    /// Vertical placement remains owned by InteractionGuard and SupplyCapacityPresentationGuard.
     /// </summary>
     [DefaultExecutionOrder(-625)]
     public sealed class SquadMakerHoverPlacementGuard : MonoBehaviour
     {
         private const string SquadMakerSceneName = "Squad Maker";
+        private const string ChosenSquadsColumnName = "Chosen Squads Column";
         private const string HoverOverlayName = "Squad Maker Hover Text Overlay";
         private const float OverlayMargin = 8f;
         private const float BoundsTolerance = 0.01f;
 
         private SquadMaker _squadMaker;
+        private RectTransform _chosenColumn;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void Install()
@@ -68,6 +72,7 @@ namespace Assets.Scripts.UI_Components
         private void Initialize(SquadMaker squadMaker)
         {
             _squadMaker = squadMaker;
+            _chosenColumn = ResolveChosenColumn(squadMaker);
         }
 
         private void LateUpdate()
@@ -77,39 +82,38 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            ApplyPlacement(_squadMaker.StartButton, _squadMaker.StartText, -1);
-            ApplyPlacement(_squadMaker.TestButton, _squadMaker.TestText, 1);
+            if (_chosenColumn == null)
+            {
+                _chosenColumn = ResolveChosenColumn(_squadMaker);
+            }
+
+            ApplyPlacement(_squadMaker.StartText);
+            ApplyPlacement(_squadMaker.TestText);
         }
 
-        private static void ApplyPlacement(
-            GameObject buttonObject,
-            GameObject descriptionObject,
-            int horizontalDirection)
+        private void ApplyPlacement(GameObject descriptionObject)
         {
-            RectTransform button = buttonObject != null ? buttonObject.transform as RectTransform : null;
             RectTransform description = descriptionObject != null
                 ? descriptionObject.transform as RectTransform
                 : null;
             RectTransform overlay = description != null ? description.parent as RectTransform : null;
-            if (button == null || description == null || overlay == null ||
+            if (description == null || overlay == null || _chosenColumn == null ||
                 overlay.name != HoverOverlayName)
             {
                 return;
             }
 
-            Rect buttonRect = GetRectInLocalSpace(button, overlay);
+            Rect columnRect = GetRectInLocalSpace(_chosenColumn, overlay);
             Rect visibleLocalBounds;
             if (!TryGetRenderedTextBounds(descriptionObject, description, out visibleLocalBounds))
             {
                 visibleLocalBounds = description.rect;
             }
 
-            float targetX = CalculateDirectionalHoverX(
-                buttonRect,
-                Mathf.Abs(description.rect.width),
+            float targetX = CalculateColumnCenteredHoverX(
+                columnRect,
                 visibleLocalBounds,
                 overlay.rect,
-                horizontalDirection,
                 OverlayMargin);
 
             Vector2 position = description.anchoredPosition;
@@ -120,39 +124,24 @@ namespace Assets.Scripts.UI_Components
             }
         }
 
-        internal static float CalculateDirectionalHoverX(
-            Rect buttonRect,
-            float descriptionWidth,
+        internal static float CalculateColumnCenteredHoverX(
+            Rect columnRect,
             Rect visibleLocalBounds,
             Rect overlayRect,
-            int horizontalDirection,
             float margin = OverlayMargin)
         {
-            float width = Mathf.Abs(descriptionWidth);
-            float halfWidth = width * 0.5f;
-            float desiredX;
-            if (horizontalDirection < 0)
-            {
-                // START: keep the tooltip's right edge attached to the START button's right edge.
-                desiredX = buttonRect.xMax - halfWidth;
-            }
-            else if (horizontalDirection > 0)
-            {
-                // TEST: keep the tooltip's left edge attached to the TEST button's left edge.
-                desiredX = buttonRect.xMin + halfWidth;
-            }
-            else
-            {
-                desiredX = buttonRect.center.x;
-            }
+            // Center what the player can actually see, not the padded outer tooltip rectangle. TMP
+            // glyph bounds are commonly asymmetric inside their RectTransform, so outer-rect centering
+            // can still make the paragraph visibly lean left or right.
+            float desiredX = columnRect.center.x - visibleLocalBounds.center.x;
 
             float safeMargin = Mathf.Max(0f, margin);
             float minimumX = overlayRect.xMin + safeMargin - visibleLocalBounds.xMin;
             float maximumX = overlayRect.xMax - safeMargin - visibleLocalBounds.xMax;
             if (minimumX > maximumX)
             {
-                // The visible content itself is wider than the safe region. Center it rather than
-                // choosing one edge and making the opposite edge even worse.
+                // The visible content itself is wider than the safe region. Center it in the safe
+                // region so any unavoidable overflow is symmetric.
                 return (minimumX + maximumX) * 0.5f;
             }
 
@@ -220,6 +209,28 @@ namespace Assets.Scripts.UI_Components
             maxX = Mathf.Max(maxX, local.x);
             minY = Mathf.Min(minY, local.y);
             maxY = Mathf.Max(maxY, local.y);
+        }
+
+        private static RectTransform ResolveChosenColumn(SquadMaker squadMaker)
+        {
+            RectTransform chosenList = squadMaker != null && squadMaker.ChosenSquadList != null
+                ? squadMaker.ChosenSquadList.transform as RectTransform
+                : null;
+            return FindAncestorByName(chosenList, ChosenSquadsColumnName);
+        }
+
+        private static RectTransform FindAncestorByName(RectTransform start, string name)
+        {
+            Transform current = start;
+            while (current != null)
+            {
+                if (current.name == name)
+                {
+                    return current as RectTransform;
+                }
+                current = current.parent;
+            }
+            return null;
         }
 
         private static Rect GetRectInLocalSpace(RectTransform rect, RectTransform owner)
