@@ -11,68 +11,76 @@ namespace Bees.Tests.EditMode
             "Assets.Scripts.UI_Components.SquadMakerHoverPlacementGuard";
 
         [Test]
-        public void RealFooterButtonPairBiasesStartLeftAndTestRightUsingVisibleBoundsForEdgeSafety()
+        public void StartAndTestVisibleTextShareTheChosenColumnCenterDespiteDifferentGlyphBounds()
         {
             Rect overlay = new Rect(-683f, -384f, 1366f, 768f);
-            Rect startButton = new Rect(488f, -380f, 85f, 30f);
-            Rect testButton = new Rect(583f, -380f, 85f, 30f);
-            const float descriptionWidth = 160f;
+            Rect chosenColumn = new Rect(453f, -333f, 230f, 666f);
 
-            // The canonical tooltip has horizontal padding and TMP glyphs do not fill every unit of
-            // its outer RectTransform. This local glyph envelope is deliberately narrower than the
-            // 160-unit outer tooltip so edge protection models what is actually visible.
-            Rect visibleLocalBounds = new Rect(-70f, 5f, 115f, 55f);
+            // The two descriptions have different paragraph lengths and therefore different rendered
+            // glyph envelopes inside their padded outer RectTransforms. Centering outer rects would
+            // visibly misalign the paragraphs even if the RectTransforms themselves had the same x.
+            Rect startVisibleBounds = new Rect(-70f, 5f, 115f, 42f);
+            Rect testVisibleBounds = new Rect(-76f, 5f, 141f, 84f);
 
             float startX = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateDirectionalHoverX",
-                startButton,
-                descriptionWidth,
-                visibleLocalBounds,
+                "CalculateColumnCenteredHoverX",
+                chosenColumn,
+                startVisibleBounds,
                 overlay,
-                -1,
                 8f);
             float testX = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateDirectionalHoverX",
-                testButton,
-                descriptionWidth,
-                visibleLocalBounds,
+                "CalculateColumnCenteredHoverX",
+                chosenColumn,
+                testVisibleBounds,
                 overlay,
-                1,
                 8f);
 
-            Assert.That(startX, Is.EqualTo(493f).Within(0.01f));
-            Assert.That(startX, Is.LessThan(startButton.center.x),
-                "START help must expand toward the left rather than remain centered on START.");
+            Assert.That(startX + startVisibleBounds.center.x,
+                Is.EqualTo(chosenColumn.center.x).Within(0.01f),
+                "START's rendered paragraph must be centered in the Chosen Squads column, not on the START button or the padded outer tooltip.");
+            Assert.That(testX + testVisibleBounds.center.x,
+                Is.EqualTo(chosenColumn.center.x).Within(0.01f),
+                "TEST's rendered paragraph must use the same Chosen Squads-column center even though its glyph bounds differ from START's.");
 
-            // The old outer-rect clamp capped this 160-unit TEST tooltip at x=595. Using the actual
-            // rendered text edge allows it to sit farther right while the visible glyphs remain safe.
-            Assert.That(testX, Is.EqualTo(630f).Within(0.01f));
-            Assert.That(testX, Is.GreaterThan(595f),
-                "TEST help must no longer be pulled left by unused outer-tooltip width.");
-            Assert.That(testX, Is.GreaterThan(testButton.center.x),
-                "TEST help must expand toward the right from the TEST button.");
-
-            AssertVisibleBoundsInsideOverlay(startX, visibleLocalBounds, overlay, 8f);
-            AssertVisibleBoundsInsideOverlay(testX, visibleLocalBounds, overlay, 8f);
+            AssertVisibleBoundsInsideOverlay(startX, startVisibleBounds, overlay, 8f);
+            AssertVisibleBoundsInsideOverlay(testX, testVisibleBounds, overlay, 8f);
         }
 
         [Test]
-        public void DirectionalPlacementFallsBackToCenteredVisibleContentWhenContentCannotFitSafeRegion()
+        public void ColumnCenteredPlacementClampsOnlyRenderedContentAtCanvasEdge()
         {
             Rect overlay = new Rect(-100f, -100f, 200f, 200f);
-            Rect button = new Rect(50f, -80f, 40f, 30f);
-            Rect visibleLocalBounds = new Rect(-120f, 0f, 240f, 40f);
+            Rect chosenColumn = new Rect(60f, -80f, 40f, 160f);
+            Rect visibleBounds = new Rect(-80f, 0f, 130f, 40f);
 
             float x = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
-                "CalculateDirectionalHoverX",
-                button,
-                260f,
-                visibleLocalBounds,
+                "CalculateColumnCenteredHoverX",
+                chosenColumn,
+                visibleBounds,
                 overlay,
-                1,
+                8f);
+
+            Assert.That(x, Is.EqualTo(42f).Within(0.01f),
+                "When the column center would push visible text off-screen, clamp the rendered glyph edge to the canvas margin without using unused outer-tooltip padding.");
+            AssertVisibleBoundsInsideOverlay(x, visibleBounds, overlay, 8f);
+        }
+
+        [Test]
+        public void ColumnCenteredPlacementFallsBackToCenteredVisibleContentWhenContentCannotFitSafeRegion()
+        {
+            Rect overlay = new Rect(-100f, -100f, 200f, 200f);
+            Rect chosenColumn = new Rect(60f, -80f, 40f, 160f);
+            Rect visibleBounds = new Rect(-120f, 0f, 240f, 40f);
+
+            float x = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateColumnCenteredHoverX",
+                chosenColumn,
+                visibleBounds,
+                overlay,
                 8f);
 
             Assert.That(x, Is.EqualTo(0f).Within(0.01f),
