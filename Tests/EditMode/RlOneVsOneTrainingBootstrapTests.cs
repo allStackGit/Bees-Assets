@@ -124,7 +124,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void EpisodeCoordinatorCapturesOutcomeBeforeLegacyTrainingReset()
+        public void EpisodeCoordinatorExposesTrainerHookAndEliminationIsReportedBeforeReset()
         {
             Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
             Assert.That(coordinatorType, Is.Not.Null);
@@ -134,20 +134,28 @@ namespace Bees.Tests.EditMode
             Assert.That(executionOrder.order, Is.LessThan(0));
             Assert.That(coordinatorType.GetEvent("EpisodeEnded", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
 
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(source, Does.Contain("if (currentLevel.State.GameOver)"));
-            Assert.That(source, Does.Contain("int winningSide = DetermineWinner(currentLevel);"));
-            Assert.That(source, Does.Contain("CompleteEpisode(currentLevel, winningSide, false);"));
-            Assert.That(source, Does.Contain("EpisodeEnded?.Invoke(LastEpisodeResult);"));
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("EpisodeEnded?.Invoke(LastEpisodeResult);"));
+            Assert.That(coordinator, Does.Contain("int winningSide = DetermineWinner(level);"));
+
+            string runtime = ReadSource("Scripts", "Levels", "Level.Runtime.cs");
+            int report = runtime.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteElimination(this);", StringComparison.Ordinal);
+            int reset = runtime.IndexOf("ResetLevel(false);", StringComparison.Ordinal);
+            Assert.That(report, Is.GreaterThanOrEqualTo(0));
+            Assert.That(reset, Is.GreaterThan(report));
         }
 
         [Test]
-        public void EpisodeCoordinatorTreatsTimeoutAsNoWinnerAndResetsImmediately()
+        public void TimeoutIsReportedAsNoWinnerBeforeLevelTeardown()
         {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(source, Does.Contain("elapsedSeconds >= RlOneVsOneTrainingBootstrap.TrainingTimeoutSeconds"));
-            Assert.That(source, Does.Contain("CompleteEpisode(currentLevel, 0, true);"));
-            Assert.That(source, Does.Contain("currentLevel.ResetLevel(true);"));
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("_active.CompleteEpisode(level, 0, true);"));
+
+            string ending = ReadSource("Scripts", "Levels", "Level.Ending.cs");
+            int report = ending.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);", StringComparison.Ordinal);
+            int teardown = ending.IndexOf("SaveAndEnd();", report, StringComparison.Ordinal);
+            Assert.That(report, Is.GreaterThanOrEqualTo(0));
+            Assert.That(teardown, Is.GreaterThan(report));
         }
 
         [Test]
