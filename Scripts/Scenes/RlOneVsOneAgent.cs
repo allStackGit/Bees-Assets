@@ -2,6 +2,7 @@ using Assets.Scripts;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
@@ -44,6 +45,31 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             Debug.LogError("RL 1v1 policy adapter could not find the training Stage.");
             return;
+        }
+
+        // AfterSceneLoad runs before the normal Scene readiness pump has necessarily loaded
+        // ConfigData.Configuration. Wait for Stage finalization, which only occurs after settings and
+        // user data are ready and after the Level setup path is safe to use.
+        stage.StartCoroutine(InstallWhenStageIsReady(stage));
+    }
+
+    private static IEnumerator InstallWhenStageIsReady(Stage stage)
+    {
+        while (stage != null && (!stage.IsFinalized || ConfigData.Configuration == null))
+        {
+            yield return null;
+        }
+
+        if (stage == null || !RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
+        {
+            yield break;
+        }
+
+        // Protect against duplicate installation if this bootstrap is invoked again during a
+        // scene/domain lifecycle transition.
+        if (stage.GetComponentsInChildren<RlOneVsOneAgent>(true).Length > 0)
+        {
+            yield break;
         }
 
         CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, "Bee");
