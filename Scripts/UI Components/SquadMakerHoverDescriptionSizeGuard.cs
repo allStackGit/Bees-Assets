@@ -152,10 +152,11 @@ namespace Assets.Scripts.UI_Components
                 description.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetSize.y);
             }
 
-            // InteractionGuard clamps the outer description rect to the root-canvas edge. The scene's
-            // nested TMP rect has independent authored anchors/offsets, so leaving those intact can put
-            // visible text outside an otherwise correctly clamped outer rect. Make the content rect use
-            // the same canonical bounds (with the padding already budgeted into targetSize).
+            // InteractionGuard clamps the outer description rect to the root-canvas edge. The real
+            // scene may place TMP under one or more authored wrapper RectTransforms; normalizing only
+            // the TMP rect leaves any narrow wrapper authoritative and can collapse the text to one
+            // character per line. Normalize the entire parent chain to the tooltip bounds, then apply
+            // the intended padding only to the final TMP rect.
             NormalizeContentRect(description, text != null ? text.rectTransform : null);
         }
 
@@ -195,18 +196,43 @@ namespace Assets.Scripts.UI_Components
             float horizontalPadding = HorizontalPadding,
             float verticalPadding = VerticalPadding)
         {
-            if (description == null || content == null || content == description)
+            if (description == null || content == null || content == description ||
+                !content.IsChildOf(description))
             {
                 return;
             }
 
+            RectTransform wrapper = content.parent as RectTransform;
+            while (wrapper != null && wrapper != description)
+            {
+                StretchToParent(wrapper, Vector2.zero, Vector2.zero);
+                wrapper = wrapper.parent as RectTransform;
+            }
+
             float horizontalInset = Mathf.Max(0f, horizontalPadding) * 0.5f;
             float verticalInset = Mathf.Max(0f, verticalPadding) * 0.5f;
-            content.anchorMin = Vector2.zero;
-            content.anchorMax = Vector2.one;
-            content.pivot = new Vector2(0.5f, 0.5f);
-            content.offsetMin = new Vector2(horizontalInset, verticalInset);
-            content.offsetMax = new Vector2(-horizontalInset, -verticalInset);
+            StretchToParent(
+                content,
+                new Vector2(horizontalInset, verticalInset),
+                new Vector2(-horizontalInset, -verticalInset));
+        }
+
+        private static void StretchToParent(
+            RectTransform rect,
+            Vector2 offsetMin,
+            Vector2 offsetMax)
+        {
+            if (rect == null)
+            {
+                return;
+            }
+
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
+            rect.localScale = Vector3.one;
         }
 
         internal static float CalculateCompactWidth(
