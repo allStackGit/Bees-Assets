@@ -1,5 +1,6 @@
+using System;
+using System.Reflection;
 using NUnit.Framework;
-using TMPro;
 using UnityEngine;
 
 namespace Bees.Tests.EditMode
@@ -10,10 +11,20 @@ namespace Bees.Tests.EditMode
     {
         private const string GuardTypeName =
             "Assets.Scripts.UI_Components.SquadMakerSupplyCapacityPresentationGuard";
+        private const string TextMeshProTypeName = "TMPro.TextMeshProUGUI";
 
         [Test]
         public void SupplyCapacityTextFillsWarningBackgroundAndCentersGlyphs()
         {
+            Type textMeshProType = ResolveLoadedType(TextMeshProTypeName);
+            Assert.That(textMeshProType, Is.Not.Null,
+                "TextMeshProUGUI must be available through the runtime assembly without adding a direct test-assembly reference.");
+
+            PropertyInfo alignmentProperty = textMeshProType.GetProperty("alignment");
+            PropertyInfo marginProperty = textMeshProType.GetProperty("margin");
+            Assert.That(alignmentProperty, Is.Not.Null);
+            Assert.That(marginProperty, Is.Not.Null);
+
             GameObject backgroundObject = new GameObject("Supply Capacity Background", typeof(RectTransform));
             RectTransform background = backgroundObject.GetComponent<RectTransform>();
             background.sizeDelta = new Vector2(270f, 35f);
@@ -30,8 +41,8 @@ namespace Bees.Tests.EditMode
             GameObject textObject = new GameObject(
                 "Text",
                 typeof(RectTransform),
-                typeof(CanvasRenderer),
-                typeof(TextMeshProUGUI));
+                typeof(CanvasRenderer));
+            Component text = textObject.AddComponent(textMeshProType);
             RectTransform textRect = textObject.GetComponent<RectTransform>();
             textRect.SetParent(label, false);
             textRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -40,9 +51,10 @@ namespace Bees.Tests.EditMode
             textRect.anchoredPosition = new Vector2(-9f, 4f);
             textRect.sizeDelta = new Vector2(180f, 18f);
 
-            TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
-            text.alignment = TextAlignmentOptions.TopLeft;
-            text.margin = new Vector4(4f, 2f, 7f, 5f);
+            object topLeftAlignment = Enum.Parse(alignmentProperty.PropertyType, "TopLeft");
+            object centeredAlignment = Enum.Parse(alignmentProperty.PropertyType, "Center");
+            alignmentProperty.SetValue(text, topLeftAlignment);
+            marginProperty.SetValue(text, new Vector4(4f, 2f, 7f, 5f));
 
             try
             {
@@ -55,13 +67,28 @@ namespace Bees.Tests.EditMode
 
                 AssertStretched(label);
                 AssertStretched(textRect);
-                Assert.That(text.alignment, Is.EqualTo(TextAlignmentOptions.Center));
-                Assert.That(text.margin, Is.EqualTo(Vector4.zero));
+                Assert.That(alignmentProperty.GetValue(text), Is.EqualTo(centeredAlignment));
+                Assert.That((Vector4)marginProperty.GetValue(text), Is.EqualTo(Vector4.zero));
             }
             finally
             {
-                Object.DestroyImmediate(backgroundObject);
+                UnityEngine.Object.DestroyImmediate(backgroundObject);
             }
+        }
+
+        private static Type ResolveLoadedType(string fullName)
+        {
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (int index = 0; index < assemblies.Length; index++)
+            {
+                Type type = assemblies[index].GetType(fullName, false);
+                if (type != null)
+                {
+                    return type;
+                }
+            }
+
+            return null;
         }
 
         private static void AssertStretched(RectTransform rect)
