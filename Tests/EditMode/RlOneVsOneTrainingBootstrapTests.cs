@@ -106,6 +106,8 @@ namespace Bees.Tests.EditMode
             string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
             Assert.That(squadSetup, Does.Contain("RandomizeRlOneVsOneFacing(side)"));
             Assert.That(squadSetup, Does.Contain("Random.Range(0f, 360f)"));
+            Assert.That(squadSetup, Does.Contain("ship.Rotation = ship.transform.eulerAngles.z"));
+            Assert.That(squadSetup, Does.Contain("Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z"));
         }
 
         [Test]
