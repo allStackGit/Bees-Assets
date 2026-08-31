@@ -13,8 +13,8 @@ namespace Assets.Scripts.UI_Components
     /// The authored scene stores these descriptions in the Chosen Squads layout hierarchy. Their live
     /// RectTransforms can therefore inherit a structural row height that is appropriate for the column
     /// but wildly too tall for a tooltip. The interaction guard intentionally preserves the size it is
-    /// given when it reparents a description, so this guard is the single owner of description size:
-    /// derive it from the rendered TMP content rather than mutable layout geometry.
+    /// given when it reparents a description, so this guard is the single owner of description size and
+    /// content bounds: derive both from the rendered TMP content rather than mutable layout geometry.
     /// </summary>
     [DefaultExecutionOrder(-675)]
     public sealed class SquadMakerHoverDescriptionSizeGuard : MonoBehaviour
@@ -151,6 +151,12 @@ namespace Assets.Scripts.UI_Components
             {
                 description.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetSize.y);
             }
+
+            // InteractionGuard clamps the outer description rect to the root-canvas edge. The scene's
+            // nested TMP rect has independent authored anchors/offsets, so leaving those intact can put
+            // visible text outside an otherwise correctly clamped outer rect. Make the content rect use
+            // the same canonical bounds (with the padding already budgeted into targetSize).
+            NormalizeContentRect(description, text != null ? text.rectTransform : null);
         }
 
         private static Vector2 CalculateDescriptionSize(TMP_Text text, RectTransform rootCanvas)
@@ -181,6 +187,26 @@ namespace Assets.Scripts.UI_Components
                 VerticalPadding);
 
             return new Vector2(outerWidth, outerHeight);
+        }
+
+        internal static void NormalizeContentRect(
+            RectTransform description,
+            RectTransform content,
+            float horizontalPadding = HorizontalPadding,
+            float verticalPadding = VerticalPadding)
+        {
+            if (description == null || content == null || content == description)
+            {
+                return;
+            }
+
+            float horizontalInset = Mathf.Max(0f, horizontalPadding) * 0.5f;
+            float verticalInset = Mathf.Max(0f, verticalPadding) * 0.5f;
+            content.anchorMin = Vector2.zero;
+            content.anchorMax = Vector2.one;
+            content.pivot = new Vector2(0.5f, 0.5f);
+            content.offsetMin = new Vector2(horizontalInset, verticalInset);
+            content.offsetMax = new Vector2(-horizontalInset, -verticalInset);
         }
 
         internal static float CalculateCompactWidth(
