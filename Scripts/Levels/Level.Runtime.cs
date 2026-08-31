@@ -192,6 +192,11 @@ namespace Assets.Scripts.Levels
         /// </summary>
         public void LevelOver()
         {
+            if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                global::RlOneVsOneEpisodeCoordinator.CompleteElimination(this);
+            }
+
             if (!Stage.IsTrainingNueralNetwork)
             {
                 Stage.DebugLogger.__LevelCompletes++;
