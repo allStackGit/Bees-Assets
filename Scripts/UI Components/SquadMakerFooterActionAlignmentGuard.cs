@@ -79,7 +79,6 @@ namespace Assets.Scripts.UI_Components
 
             _squadMaker = squadMaker;
             ResolveOwnedGeometry();
-            ApplyAlignment();
         }
 
         private void LateUpdate()
