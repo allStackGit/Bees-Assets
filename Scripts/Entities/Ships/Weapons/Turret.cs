@@ -89,10 +89,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public override void ClearData()
         {
             base.ClearData();
+            ClearRlControl();
             ResetRotation();
             TargetingPasses = 0;
             IsAimedAtTarget = false;
-            IsFiringManually = false;
             ReadyToFire = false;
             TargetPoint = Vector2.zero;
             TargetAsteroid = null;
