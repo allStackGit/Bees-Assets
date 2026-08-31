@@ -70,7 +70,15 @@ namespace Bees.Tests.EditMode
             string source = ReadSource("Editor", "SteamBuildPackager.cs");
 
             Assert.That(source, Does.Contain("UnityPlayer.dll"));
-            Assert.That(source, Does.Contain("MonoBleedingEdge"));
+            Assert.That(source, Does.Contain("Path.Combine(buildRoot, \"MonoBleedingEdge\", \"EmbedRuntime\")"),
+                "Modern Windows players commonly place MonoBleedingEdge beside the executable.");
+            Assert.That(source, Does.Contain("Path.Combine(dataDirectory, \"MonoBleedingEdge\", \"EmbedRuntime\")"),
+                "The validator should also support Unity versions that place Mono under the Data directory.");
+            Assert.That(source, Does.Contain("Directory.EnumerateFiles(runtimeDirectory, \"mono*.dll\", SearchOption.TopDirectoryOnly)"),
+                "A non-empty MonoBleedingEdge folder is insufficient; the actual Mono runtime DLL must be present.");
+            Assert.That(source, Does.Contain("new FileInfo(path).Length > 0"),
+                "A zero-byte/corrupt placeholder must not satisfy Steam package validation.");
+            Assert.That(source, Does.Contain("Path.Combine(dataDirectory, \"Managed\")"));
             Assert.That(source, Does.Contain("GameAssembly.dll"));
             Assert.That(source, Does.Contain("steam_api64.dll"));
             Assert.That(source, Does.Contain("Directory.EnumerateFiles(buildRoot, \"*\", SearchOption.AllDirectories)"));
