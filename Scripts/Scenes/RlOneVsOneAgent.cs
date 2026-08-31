@@ -18,7 +18,7 @@ using UnityEngine;
 internal sealed class RlOneVsOneAgent : Agent
 {
     internal const string BehaviorName = "BeesRL1v1";
-    internal const int ObservationSize = 25;
+    internal const int ObservationSize = 24;
     internal const int ContinuousActionCount = 5;
     internal const int DecisionPeriod = 5;
 
@@ -136,38 +136,32 @@ internal sealed class RlOneVsOneAgent : Agent
         Level level = _ship.Level;
         float halfMap = RlOneVsOneTrainingBootstrap.TrainingMapSize / 2f;
         Vector2 shipPosition = _ship.GetPosition();
-        Vector2 shipVelocity = GetVelocity(_ship);
 
-        // Self: type, map-local position, heading, velocity and health.
+        // Self: type, map-local position, heading, whether it is moving, and health. Speed itself
+        // is fixed by ship type in this proof, so X/Y velocity would duplicate type + heading.
         sensor.AddObservation(GetShipTypeIndicator(_ship));
         sensor.AddObservation(shipPosition.x / halfMap);
         sensor.AddObservation(shipPosition.y / halfMap);
         AddHeading(sensor, _ship.Rotation);
-        float ownSpeedScale = Mathf.Max(1f, _ship.Speed);
-        sensor.AddObservation(shipVelocity.x / ownSpeedScale);
-        sensor.AddObservation(shipVelocity.y / ownSpeedScale);
+        sensor.AddObservation(_ship.IsMoving ? 1f : 0f);
         sensor.AddObservation(GetHealthFraction(_ship));
 
         Ship enemy = FindVisibleEnemy(level);
         if (enemy == null)
         {
-            AddZeroObservations(sensor, 9);
+            AddZeroObservations(sensor, 8);
         }
         else
         {
             // Enemy information comes only from the side's Hive Mind memory, never an omniscient
             // GetAllEnemyShips/GetShips lookup. In this 1v1 proof there can be at most one enemy.
-            Vector2 enemyVelocity = GetVelocity(enemy);
             Vector2 relativePosition = enemy.GetPosition() - shipPosition;
-            Vector2 relativeVelocity = enemyVelocity - shipVelocity;
-            float relativeSpeedScale = Mathf.Max(1f, _ship.Speed + enemy.Speed);
 
             sensor.AddObservation(1f);
             sensor.AddObservation(relativePosition.x / RlOneVsOneTrainingBootstrap.TrainingMapSize);
             sensor.AddObservation(relativePosition.y / RlOneVsOneTrainingBootstrap.TrainingMapSize);
             AddHeading(sensor, enemy.Rotation);
-            sensor.AddObservation(relativeVelocity.x / relativeSpeedScale);
-            sensor.AddObservation(relativeVelocity.y / relativeSpeedScale);
+            sensor.AddObservation(enemy.IsMoving ? 1f : 0f);
             sensor.AddObservation(GetHealthFraction(enemy));
             sensor.AddObservation(GetShipTypeIndicator(enemy));
         }
@@ -175,18 +169,20 @@ internal sealed class RlOneVsOneAgent : Agent
         Turret turret = GetPrimaryTurret();
         if (turret == null)
         {
-            AddZeroObservations(sensor, 8);
+            AddZeroObservations(sensor, 9);
             return;
         }
 
-        // Weapon: mounting point relative to the hull, current facing and the state needed to learn
-        // aiming/firing without bypassing authored range or rate-of-fire mechanics.
+        // Weapon: mounting point, facing, range, damage, and firing state. The trainer has vector
+        // observation normalization enabled, so raw authored power remains useful across ship types
+        // without hard-coding a maximum weapon power into this adapter.
         Vector2 relativeWeaponPosition = turret.GetPosition() - shipPosition;
         float shipSizeScale = Mathf.Max(1f, _ship.LongestSide);
         sensor.AddObservation(relativeWeaponPosition.x / shipSizeScale);
         sensor.AddObservation(relativeWeaponPosition.y / shipSizeScale);
         AddHeading(sensor, turret.Rotation);
         sensor.AddObservation((float)turret.Range / RlOneVsOneTrainingBootstrap.TrainingMapSize);
+        sensor.AddObservation((float)turret.Power);
         sensor.AddObservation(turret.RateOfFire / (1f + Mathf.Max(0f, turret.RateOfFire)));
         sensor.AddObservation(turret.PassesPerFire > 0
             ? Mathf.Clamp01((float)turret.TargetingPasses / turret.PassesPerFire)
@@ -343,11 +339,6 @@ internal sealed class RlOneVsOneAgent : Agent
     private Turret GetPrimaryTurret()
     {
         return _ship != null && _ship.Turrets.Count > 0 ? _ship.Turrets[0] : null;
-    }
-
-    private static Vector2 GetVelocity(Ship ship)
-    {
-        return ship != null && ship.Body != null ? ship.Body.linearVelocity : Vector2.zero;
     }
 
     private static float GetHealthFraction(Ship ship)
