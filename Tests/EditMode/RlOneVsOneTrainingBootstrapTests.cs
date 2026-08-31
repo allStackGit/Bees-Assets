@@ -124,6 +124,59 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TimePreferenceOnlyAppliesToTheWinner()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("winningSide == beeSide"));
+            Assert.That(coordinator, Does.Contain("winningSide == humanSide"));
+            Assert.That(coordinator, Does.Contain("? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)"));
+            Assert.That(coordinator, Does.Contain(": 0f;"));
+        }
+
+        [Test]
+        public void PolicyUsesOneSharedBehaviorAndOnlyHiveMindEnemyKnowledge()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("BehaviorName = \"BeesRL1v1\""));
+            Assert.That(agent, Does.Contain("ContinuousActionCount = 5"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 1"));
+            Assert.That(agent, Does.Contain("GetShipsVisibleToHiveMind(_side)"));
+            Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
+        }
+
+        [Test]
+        public void PolicyOwnsMovementAimAndFireWhileWeaponTimerOwnsRateOfFire()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("_ship.Direction = 360"));
+            Assert.That(agent, Does.Contain("turret.SetRlControl(targetPoint, fireRequested)"));
+
+            string aiming = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
+            int rlAim = aiming.IndexOf("if (IsRlControlled)", StringComparison.Ordinal);
+            int mouseAim = aiming.IndexOf("else if (IsFiringManually)", StringComparison.Ordinal);
+            Assert.That(rlAim, Is.GreaterThanOrEqualTo(0));
+            Assert.That(mouseAim, Is.GreaterThan(rlAim));
+            Assert.That(aiming, Does.Contain("TargetPoint = RlTargetPoint"));
+
+            string targeting = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
+            Assert.That(targeting, Does.Contain("if (IsRlControlled)"));
+            Assert.That(targeting, Does.Contain("TargetingPasses >= PassesPerFire"));
+            Assert.That(targeting, Does.Contain("RlFireRequested && IsAimedAtTarget"));
+            Assert.That(targeting, Does.Contain("FireAtPoint();"));
+        }
+
+        [Test]
+        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesPpoSelfPlay()
+        {
+            string config = ReadSource("Training", "rl_1v1_config.yaml");
+            Assert.That(config, Does.Contain("BeesRL1v1:"));
+            Assert.That(config, Does.Contain("trainer_type: ppo"));
+            Assert.That(config, Does.Contain("self_play:"));
+            Assert.That(config, Does.Contain("max_steps: 500000"));
+        }
+
+        [Test]
         public void EpisodeCoordinatorExposesTrainerHookAndEliminationIsReportedBeforeReset()
         {
             Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
