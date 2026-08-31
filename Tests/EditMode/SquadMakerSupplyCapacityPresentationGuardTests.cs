@@ -77,7 +77,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SupplyCapacityRowClearsFooterSurfaceNotOnlyButtonTops()
+        public void SupplyCapacityRowClearsFooterSurfaceWithoutReservingSlack()
         {
             Rect owner = new Rect(-111f, -359f, 222f, 718f);
             Rect row = new Rect(-111f, -350f, 222f, 35f);
@@ -96,10 +96,10 @@ namespace Bees.Tests.EditMode
                 true,
                 testButton,
                 true,
-                6f);
+                0f);
 
-            Assert.That(clearance, Is.EqualTo(16f).Within(0.01f),
-                "The footer surface begins above the buttons; using only button tops would leave the lower part of the red row hidden.");
+            Assert.That(clearance, Is.EqualTo(10f).Within(0.01f),
+                "The row must clear the real Footer surface exactly; an additional safety gap recreates the visible strip above START/TEST.");
         }
 
         [Test]

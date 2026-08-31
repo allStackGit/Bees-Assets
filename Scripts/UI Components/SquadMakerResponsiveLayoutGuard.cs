@@ -75,7 +75,6 @@ namespace Assets.Scripts.UI_Components
             public RectTransform ChosenSquadScroll;
             public Vector2 MainContainerSize;
             public Vector2 FooterSize;
-            public float FooterContentHeight;
             public Vector2 ShipSelectorColumnSize;
             public Vector2 SquadMakerColumnSize;
             public Vector2 SquadSettingsSize;
@@ -517,16 +516,6 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            RectTransform startButton = _squadMaker != null && _squadMaker.StartButton != null
-                ? _squadMaker.StartButton.transform as RectTransform
-                : null;
-            RectTransform testButton = _squadMaker != null && _squadMaker.TestButton != null
-                ? _squadMaker.TestButton.transform as RectTransform
-                : null;
-            RectTransform nextButton = _squadMaker != null && _squadMaker.NextButton != null
-                ? _squadMaker.NextButton.transform as RectTransform
-                : null;
-
             _layoutReference = new SquadMakerLayoutReferenceGeometry
             {
                 MainPanel = mainPanel,
@@ -542,11 +531,6 @@ namespace Assets.Scripts.UI_Components
                 ChosenSquadScroll = chosenSquadScroll,
                 MainContainerSize = mainContainer.rect.size,
                 FooterSize = footer.rect.size,
-                FooterContentHeight = CalculateFooterControlHeight(
-                    footer,
-                    startButton,
-                    testButton,
-                    nextButton),
                 ShipSelectorColumnSize = shipSelectorColumn.rect.size,
                 SquadMakerColumnSize = squadMakerColumn.rect.size,
                 SquadSettingsSize = squadSettings.rect.size,
@@ -685,17 +669,13 @@ namespace Assets.Scripts.UI_Components
                 1f,
                 reference.MainContainerSize.y,
                 1f);
-
-            float footerHeight = reference.FooterContentHeight > 0f
-                ? reference.FooterContentHeight
-                : reference.FooterSize.y;
             ConfigureLayoutElement(
                 reference.Footer,
                 -1f,
                 -1f,
                 1f,
-                footerHeight,
-                footerHeight,
+                reference.FooterSize.y,
+                reference.FooterSize.y,
                 0f);
 
             // The inventory and squads columns are navigation/summary rails, not work surfaces.
@@ -842,56 +822,6 @@ namespace Assets.Scripts.UI_Components
 
             float surplus = Mathf.Max(0f, liveOwnerHeight - Mathf.Max(0f, authoredOwnerHeight));
             return semanticBaseHeight + surplus;
-        }
-
-        internal static float CalculateFooterControlHeight(
-            RectTransform footer,
-            params RectTransform[] controls)
-        {
-            if (footer == null)
-            {
-                return 0f;
-            }
-
-            float authoredHeight = Mathf.Abs(footer.rect.height);
-            float requiredHeight = 0f;
-            bool foundControl = false;
-
-            if (controls != null)
-            {
-                for (int index = 0; index < controls.Length; index++)
-                {
-                    RectTransform control = controls[index];
-                    if (control == null)
-                    {
-                        continue;
-                    }
-
-                    Bounds bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
-                        footer,
-                        control);
-                    float bottomToTop = bounds.max.y - footer.rect.yMin;
-                    if (bottomToTop <= 0f)
-                    {
-                        continue;
-                    }
-
-                    requiredHeight = Mathf.Max(requiredHeight, bottomToTop);
-                    foundControl = true;
-                }
-            }
-
-            if (!foundControl)
-            {
-                return authoredHeight;
-            }
-
-            if (authoredHeight <= 0f)
-            {
-                return requiredHeight;
-            }
-
-            return Mathf.Clamp(requiredHeight, 1f, authoredHeight);
         }
 
         private static void NormalizeViewportLayout(HorizontalOrVerticalLayoutGroup layout)
