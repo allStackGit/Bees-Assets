@@ -37,9 +37,18 @@ A generous battle timeout should exist. Failing to win before timeout must not b
 
 The terminal win/loss result must dominate the reward.
 
-A small elapsed-time cost may be applied so that otherwise-equivalent strategies prefer the one that finishes sooner.
+A small elapsed-time cost is applied so that otherwise-equivalent strategies prefer the one that finishes sooner.
 
-TSV is a strong candidate for intermediate reward shaping because it measures value destroyed rather than raw hit-point damage. Any TSV-based shaping must remain subordinate to actually winning the battle.
+TSV is used for intermediate reward shaping because it measures value destroyed rather than raw hit-point damage. TSV shaping remains subordinate to actually winning the battle.
+
+For the first Wasp-vs-Gunship proof, the initial tunable reward magnitudes are:
+
+- win: `+10`;
+- loss: `-10`;
+- TSV exchange: normalized by the combined starting TSV with scale `1`;
+- elapsed time: at most `-0.1` for lasting the entire 120-second timeout.
+
+These numbers are initial proof settings rather than permanent balance constants. They are deliberately separated by an order of magnitude so that a win is always much more important than shaping.
 
 Do **not** add tactical shaping such as rewards for moving toward an enemy, pointing at an enemy, flanking, or other hand-authored fighting behavior unless later evidence proves it necessary. The network should be allowed to discover tactics itself.
 
@@ -197,19 +206,23 @@ If repeated per-ship encoding later becomes expensive, the world entities can be
 
 The first experiment must remain small and disposable. Its purpose is to prove that Bees RL can learn at all, not to construct the final training platform.
 
-Initial experiment:
+The first proof is now fixed as:
 
-1. Use a tiny, simple map.
-2. Place one armed Bee ship and one armed Human ship.
-3. Use a fixed, reasonably contestable matchup at first. The matchup does not need perfect balance, but the winner must depend meaningfully on behavior. Avoid pairings where one ship should win almost regardless of control quality.
-4. Randomize starting positions/orientations enough to prevent memorizing one exact trajectory.
-5. Control both sides with the same shared policy during training.
-6. End the episode when one side dies or a short timeout is reached.
-7. Repeat rapidly from fresh starts.
+1. Dedicated scene: `RL 1v1 Training`.
+2. Map: `120 x 120`, reusing the normal Space/Titania map plumbing but resizing it only for this scene.
+3. Bee ship: one **Wasp**.
+4. Human ship: one **Gunship**.
+5. No static obstacles, collision asteroids, mining asteroids, fog of war, reinforcements, or other environment dimensions.
+6. Starting positions are randomized on opposite points of a circle with radius 30, giving 60 units of initial separation.
+7. Initial ship facings are randomized independently.
+8. Both sides are intended to use the same shared policy during training.
+9. Episode ends when one side dies or after **120 seconds**.
+10. Reward uses dominant win/loss (`+10/-10`), smaller normalized net TSV exchange, and a maximum full-episode time penalty of `-0.1`.
+11. Repeat rapidly from fresh starts.
 
-The first success criterion is behavioral learning from a fresh network: movement and weapon control should improve from random behavior toward reliably engaging and defeating the opponent.
+Wasp-versus-Gunship is intentionally allowed to be asymmetric. A nearly always-losing ship can still receive useful intermediate learning signal because better behavior destroys more enemy TSV before losing. Terminal win/loss remains dominant so dealing damage and dying cannot become preferable to winning.
 
-For this first short 1v1 experiment, try the simplest reward that can work. Terminal win/loss plus a small time preference may be sufficient. If sparse reward demonstrably fails, TSV-based damage/value change is the preferred first dense shaping signal.
+The first success criterion is behavioral learning from a fresh network: movement and weapon control should improve from random behavior toward engaging, aiming, firing, and producing progressively better combat outcomes. Fresh-start learning must be demonstrated rather than inferred from checkpoint continuation.
 
 ## 8. Expansion Strategy
 
@@ -224,7 +237,7 @@ Once a small experiment learns reliably:
 - add mining/economic behavior where appropriate;
 - progress toward realistic battles.
 
-Uneven matchups are useful later because the network should eventually learn how to behave when a direct fight is unfavorable. They are poor first experiments if ship identity predicts the outcome more strongly than the actions do.
+Uneven matchups are useful because the network should eventually learn how to behave when a direct fight is unfavorable. TSV shaping makes an asymmetric first duel usable because losing episodes can still distinguish better and worse combat behavior.
 
 ## 9. Lessons Carried Forward From Ants
 
@@ -245,15 +258,15 @@ Requirements for early Bees RL work:
 
 The following decisions have deliberately not yet been fixed:
 
-- exact first Bee/Human ship pairing;
 - exact observation fields beyond the agreed minimum for movement/orientation and special ship states;
 - exact representation of obstacle geometry;
 - exact movement action representation;
 - exact weapon/charge action representation;
 - policy architecture details (pooling vs attention, embedding sizes, etc.);
 - RL algorithm and training hyperparameters;
-- exact numerical reward weights;
 - exact treatment/weighting of temporary spawned ships in dense TSV shaping;
 - how and when manually assigned maximum TSV should be replaced by empirically learned combat value.
 
-These should be decided from the real Bees mechanics and evidence from the smallest working experiments rather than by building speculative infrastructure in advance.
+The initial first-proof reward magnitudes are fixed for the first attempt but remain tunable based on actual learning evidence.
+
+These open decisions should be resolved from the real Bees mechanics and evidence from the smallest working experiments rather than by building speculative infrastructure in advance.
