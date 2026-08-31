@@ -76,6 +76,79 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [Test]
+        public void SupplyCapacityRowClearsFooterSurfaceNotOnlyButtonTops()
+        {
+            Rect owner = new Rect(-111f, -359f, 222f, 718f);
+            Rect row = new Rect(-111f, -350f, 222f, 35f);
+            Rect footer = new Rect(-111f, -390f, 222f, 50f);
+            Rect startButton = new Rect(-100f, -390f, 80f, 40f);
+            Rect testButton = new Rect(10f, -390f, 80f, 40f);
+
+            float clearance = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateRequiredUpwardClearance",
+                row,
+                owner,
+                footer,
+                true,
+                startButton,
+                true,
+                testButton,
+                true,
+                6f);
+
+            Assert.That(clearance, Is.EqualTo(16f).Within(0.01f),
+                "The footer surface begins above the buttons; using only button tops would leave the lower part of the red row hidden.");
+        }
+
+        [Test]
+        public void HoverDescriptionIsMovedEntirelyAboveSupplyCapacityRow()
+        {
+            Rect overlay = new Rect(-830f, -465f, 1660f, 930f);
+            Rect supply = new Rect(560f, -350f, 270f, 35f);
+            Rect description = new Rect(520f, -350f, 300f, 35f);
+
+            float shift = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateHoverUpwardShift",
+                description,
+                supply,
+                overlay,
+                8f,
+                8f);
+
+            Rect shifted = new Rect(
+                description.x,
+                description.y + shift,
+                description.width,
+                description.height);
+
+            Assert.That(shift, Is.EqualTo(43f).Within(0.01f));
+            Assert.That(shifted.yMin, Is.GreaterThanOrEqualTo(supply.yMax + 8f - 0.01f),
+                "START/TEST hover text must not cover the red Supply Capacity row.");
+            Assert.That(shifted.yMax, Is.LessThanOrEqualTo(overlay.yMax - 8f + 0.01f));
+        }
+
+        [Test]
+        public void HoverDescriptionThatDoesNotOverlapSupplyRowIsNotMoved()
+        {
+            Rect overlay = new Rect(-830f, -465f, 1660f, 930f);
+            Rect supply = new Rect(560f, -350f, 270f, 35f);
+            Rect description = new Rect(520f, -250f, 300f, 35f);
+
+            float shift = (float)RuntimeAssembly.InvokeStatic(
+                RuntimeAssembly.GetType(GuardTypeName),
+                "CalculateHoverUpwardShift",
+                description,
+                supply,
+                overlay,
+                8f,
+                8f);
+
+            Assert.That(shift, Is.EqualTo(0f).Within(0.01f));
+        }
+
         private static Type ResolveLoadedType(string fullName)
         {
             Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
