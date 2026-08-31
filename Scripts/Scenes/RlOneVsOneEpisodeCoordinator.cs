@@ -1,16 +1,20 @@
 using Assets.Scripts;
+using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using System;
 using UnityEngine;
 
 /// <summary>
-/// Owns episode reward bookkeeping for the dedicated first RL proof.
+/// Owns episode reward bookkeeping and lightweight training diagnostics for the dedicated first RL proof.
 /// The existing Level lifecycle calls the static completion hooks before it tears an episode down,
-/// while this component detects each newly spawned duel and captures its starting TSV/time.
+/// while this component detects each newly spawned duel and captures its starting state/time.
 /// </summary>
 [DefaultExecutionOrder(-5000)]
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 {
+    private const int SummaryIntervalEpisodes = 10;
+
     internal readonly struct EpisodeResult
     {
         internal readonly int EpisodeNumber;
@@ -21,6 +25,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         internal readonly int BeeFinalTsv;
         internal readonly int HumanStartingTsv;
         internal readonly int HumanFinalTsv;
+        internal readonly int BeeShotsFired;
+        internal readonly int BeeShotsHit;
+        internal readonly int BeeDamageDealt;
+        internal readonly int HumanShotsFired;
+        internal readonly int HumanShotsHit;
+        internal readonly int HumanDamageDealt;
         internal readonly float BeeTerminalReward;
         internal readonly float BeeTsvReward;
         internal readonly float BeeTimeReward;
@@ -39,6 +49,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             int beeFinalTsv,
             int humanStartingTsv,
             int humanFinalTsv,
+            int beeShotsFired,
+            int beeShotsHit,
+            int beeDamageDealt,
+            int humanShotsFired,
+            int humanShotsHit,
+            int humanDamageDealt,
             float beeTerminalReward,
             float beeTsvReward,
             float beeTimeReward,
@@ -54,6 +70,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             BeeFinalTsv = beeFinalTsv;
             HumanStartingTsv = humanStartingTsv;
             HumanFinalTsv = humanFinalTsv;
+            BeeShotsFired = beeShotsFired;
+            BeeShotsHit = beeShotsHit;
+            BeeDamageDealt = beeDamageDealt;
+            HumanShotsFired = humanShotsFired;
+            HumanShotsHit = humanShotsHit;
+            HumanDamageDealt = humanDamageDealt;
             BeeTerminalReward = beeTerminalReward;
             BeeTsvReward = beeTsvReward;
             BeeTimeReward = beeTimeReward;
@@ -82,6 +104,28 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _episodeStartedAt;
     private int _beeStartingTsv;
     private int _humanStartingTsv;
+    private FleetShip _beeFleetShip;
+    private FleetShip _humanFleetShip;
+    private int _beeShotsAtStart;
+    private int _humanShotsAtStart;
+    private int _beeHitsThisEpisode;
+    private int _humanHitsThisEpisode;
+    private int _beeDamageThisEpisode;
+    private int _humanDamageThisEpisode;
+
+    private int _completedEpisodes;
+    private int _beeWins;
+    private int _beeLosses;
+    private int _humanWins;
+    private int _humanLosses;
+    private int _timeouts;
+    private long _beeShotsTotal;
+    private long _beeHitsTotal;
+    private long _beeDamageTotal;
+    private long _humanShotsTotal;
+    private long _humanHitsTotal;
+    private long _humanDamageTotal;
+    private float _totalDurationSeconds;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void AttachToDedicatedTrainingScene()
@@ -131,6 +175,33 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (!_episodeActive || _level != currentLevel)
         {
             TryBeginEpisode(currentLevel);
+        }
+    }
+
+    /// <summary>
+    /// Records a real enemy-ship hit after normal projectile eligibility checks have succeeded.
+    /// This is diagnostics only; reward and damage mechanics remain owned by the normal combat path.
+    /// </summary>
+    internal static void RecordHit(Ship attacker, Ship target, int damage)
+    {
+        if (_active == null || !_active._episodeActive || attacker == null || target == null ||
+            attacker.Level != _active._level || target.Level != _active._level || attacker.Side == target.Side)
+        {
+            return;
+        }
+
+        int appliedDamage = Mathf.Max(0, damage);
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (attacker.Side == beeSide)
+        {
+            _active._beeHitsThisEpisode++;
+            _active._beeDamageThisEpisode += appliedDamage;
+        }
+        else if (attacker.Side == humanSide)
+        {
+            _active._humanHitsThisEpisode++;
+            _active._humanDamageThisEpisode += appliedDamage;
         }
     }
 
@@ -196,10 +267,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeStartingTsv = level.State.InitialTsv[beeSide - 1];
         int humanStartingTsv = level.State.InitialTsv[humanSide - 1];
+        Ship beeShip = FindActiveShip(level, beeSide);
+        Ship humanShip = FindActiveShip(level, humanSide);
 
-        // Initial TSV is populated while squads are spawned. Waiting for both values keeps the
-        // coordinator out of Stage/Level construction ordering and starts timing only once the duel exists.
-        if (beeStartingTsv <= 0 || humanStartingTsv <= 0 || level.State.GameOver)
+        // Initial TSV is populated while squads are spawned. Waiting for both values and both ships
+        // keeps the coordinator out of Stage/Level construction ordering and starts timing only once
+        // the duel and its diagnostic counters actually exist.
+        if (beeStartingTsv <= 0 || humanStartingTsv <= 0 || beeShip == null || humanShip == null || level.State.GameOver)
         {
             return;
         }
@@ -209,6 +283,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _episodeStartedAt = Time.time;
         _beeStartingTsv = beeStartingTsv;
         _humanStartingTsv = humanStartingTsv;
+        _beeFleetShip = beeShip.FleetShip;
+        _humanFleetShip = humanShip.FleetShip;
+        _beeShotsAtStart = _beeFleetShip?.ShotsFired ?? 0;
+        _humanShotsAtStart = _humanFleetShip?.ShotsFired ?? 0;
+        _beeHitsThisEpisode = 0;
+        _humanHitsThisEpisode = 0;
+        _beeDamageThisEpisode = 0;
+        _humanDamageThisEpisode = 0;
         _episodeActive = true;
     }
 
@@ -223,6 +305,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeFinalTsv = level.State.GetTsvBySide(beeSide);
         int humanFinalTsv = level.State.GetTsvBySide(humanSide);
+        int beeShotsFired = Mathf.Max(0, (_beeFleetShip?.ShotsFired ?? _beeShotsAtStart) - _beeShotsAtStart);
+        int humanShotsFired = Mathf.Max(0, (_humanFleetShip?.ShotsFired ?? _humanShotsAtStart) - _humanShotsAtStart);
         int combinedStartingTsv = Mathf.Max(1, _beeStartingTsv + _humanStartingTsv);
         float durationSeconds = Mathf.Clamp(
             Time.time - _episodeStartedAt,
@@ -262,6 +346,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             beeFinalTsv,
             _humanStartingTsv,
             humanFinalTsv,
+            beeShotsFired,
+            _beeHitsThisEpisode,
+            _beeDamageThisEpisode,
+            humanShotsFired,
+            _humanHitsThisEpisode,
+            _humanDamageThisEpisode,
             beeTerminal,
             beeTsv,
             beeTimeReward,
@@ -269,15 +359,84 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             humanTsv,
             humanTimeReward);
 
+        UpdateRunningDiagnostics(LastEpisodeResult, beeSide, humanSide);
+
         Debug.Log(
             $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} winner={winningSide} timeout={timedOut} " +
             $"duration={durationSeconds:F2}s bee_tsv={_beeStartingTsv}->{beeFinalTsv} " +
             $"human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
+            $"bee_shots={beeShotsFired} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+            $"human_shots={humanShotsFired} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
             $"bee_reward={LastEpisodeResult.BeeTotalReward:F4} " +
             $"human_reward={LastEpisodeResult.HumanTotalReward:F4}");
 
+        if (_completedEpisodes % SummaryIntervalEpisodes == 0)
+        {
+            LogRunningSummary();
+        }
+
         _episodeActive = false;
         EpisodeEnded?.Invoke(LastEpisodeResult);
+    }
+
+    private void UpdateRunningDiagnostics(EpisodeResult result, int beeSide, int humanSide)
+    {
+        _completedEpisodes++;
+        _totalDurationSeconds += result.DurationSeconds;
+        _beeShotsTotal += result.BeeShotsFired;
+        _beeHitsTotal += result.BeeShotsHit;
+        _beeDamageTotal += result.BeeDamageDealt;
+        _humanShotsTotal += result.HumanShotsFired;
+        _humanHitsTotal += result.HumanShotsHit;
+        _humanDamageTotal += result.HumanDamageDealt;
+
+        if (result.TimedOut || result.WinningSide == 0)
+        {
+            _beeLosses++;
+            _humanLosses++;
+            if (result.TimedOut)
+            {
+                _timeouts++;
+            }
+        }
+        else if (result.WinningSide == beeSide)
+        {
+            _beeWins++;
+            _humanLosses++;
+        }
+        else if (result.WinningSide == humanSide)
+        {
+            _humanWins++;
+            _beeLosses++;
+        }
+    }
+
+    private void LogRunningSummary()
+    {
+        float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
+        float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
+        float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
+
+        Debug.Log(
+            $"RL 1v1 summary episodes={_completedEpisodes} " +
+            $"bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
+            $"timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
+            $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
+            $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
+    }
+
+    private static Ship FindActiveShip(Level level, int side)
+    {
+        var ships = level.State.GetShips(side);
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship != null && !ship.IsDead)
+            {
+                return ship;
+            }
+        }
+        return null;
     }
 
     private static int DetermineWinner(Level level)
