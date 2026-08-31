@@ -14,9 +14,9 @@ namespace Bees.Tests.EditMode
         [TestCase(350f, 718f, 718f, 368f, 350f)]
         [TestCase(350f, 718f, 710f, 368f, 342f)]
         [TestCase(350f, 718f, 900f, 368f, 532f)]
-        [TestCase(350f, 718f, 718f, 348f, 350f)]
+        [TestCase(350f, 718f, 718f, 348f, 370f)]
         [TestCase(350f, 718f, 718f, 388f, 330f)]
-        public void DetailsHeightUsesReferenceGrowthButNeverExceedsLiveBudget(
+        public void DetailsHeightUsesLiveRemainderAndNeverExceedsLiveBudget(
             float referenceDetailsHeight,
             float referenceOwnerHeight,
             float liveOwnerHeight,
@@ -35,7 +35,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ReferenceSizedColumnDoesNotConsumeAuthoredSlackIntoDetailsRow()
+        public void ReferenceSizedColumnConsumesResidualSlackIntoFlexibleDetailsRow()
         {
             float result = (float)RuntimeAssembly.InvokeStatic(
                 RuntimeAssembly.GetType(GuardTypeName),
@@ -45,8 +45,8 @@ namespace Bees.Tests.EditMode
                 718f,
                 340f);
 
-            Assert.That(result, Is.EqualTo(350f).Within(0.01f),
-                "Unused authored/semantic slack must remain slack rather than stretching the report.");
+            Assert.That(result, Is.EqualTo(378f).Within(0.01f),
+                "In level-details mode the report must consume residual live space so Supply Capacity reaches the bottom boundary instead of floating above it.");
         }
 
         [Test]
@@ -198,7 +198,7 @@ namespace Bees.Tests.EditMode
                 Assert.That(chosenList.rect.height, Is.EqualTo(278f).Within(0.01f),
                     "A transiently enlarged chosen-list row must not become the new level-details semantic height.");
                 Assert.That(details.rect.height, Is.EqualTo(350f).Within(0.01f),
-                    "Restoring the list owner should preserve the authored report height instead of hiding level details such as Supply Capacity.");
+                    "Restoring the list owner should preserve the live report budget instead of hiding level details such as Supply Capacity.");
 
                 Bounds supplyBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(column, supply);
                 Assert.That(supplyBounds.min.y, Is.GreaterThanOrEqualTo(column.rect.yMin - 0.01f));
@@ -260,7 +260,7 @@ namespace Bees.Tests.EditMode
             Assert.That(tall, Is.EqualTo(581f).Within(0.01f));
             Assert.That(tallerNeighbor, Is.EqualTo(330f).Within(0.01f));
             Assert.That(restored, Is.EqualTo(350f).Within(0.01f),
-                "Every pass must derive from immutable reference geometry plus the live row budget rather than the previous details height.");
+                "Every pass must derive from the live owner and fixed-row budget rather than the previous details height.");
         }
 
         private static float Calculate(System.Type guardType, float liveOwnerHeight, float fixedHeight)
