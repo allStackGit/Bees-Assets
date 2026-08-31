@@ -24,7 +24,7 @@ namespace Assets.Scripts.UI_Components
         private const float RepairInterval = 0.20f;
         private const float SizeTolerance = 0.01f;
         private const float TextSafetyPadding = 8f;
-        private const float BottomControlSafetyGap = 6f;
+        private const float BottomControlSafetyGap = 0f;
         private const int BottomClearanceRepairPasses = 2;
 
         private SquadMaker _squadMaker;
