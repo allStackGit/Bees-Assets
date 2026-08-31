@@ -169,7 +169,13 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.HasRandomizedOptions = false;
         stage.IsRendering = true;
         stage.LevelCount = TrainingLevelCount;
+
+        // This scene was copied from the legacy Hive Mind training scene and can retain a non-zero
+        // serialized minimum. The dedicated 1v1 proof must normalize both ends of the range so
+        // StageConfigOptions never receives an invalid RandomInt range and always generates one squad.
         stage.GeneratedSquadCountOverride = 1;
+        stage.GeneratedSquadCountMinimum = 0;
+
         stage.OverrideMapIndex = TrainingMapIndex;
         stage.TimeoutTime = TrainingTimeoutSeconds;
         stage.InitialCommandDelay = 0;
