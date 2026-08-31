@@ -50,6 +50,16 @@ namespace Bees.Tests.EditMode
             Assert.That(guardEnd, Is.GreaterThan(actionBoxSetup));
         }
 
+        [Test]
+        public void TrainingMapKeepsFogReferenceValidAcrossEpisodeResets()
+        {
+            string map = ReadSource("Scripts", "UI Components", "Map.cs");
+
+            Assert.That(map, Does.Contain("if (FogOfWar != null)"));
+            Assert.That(map, Does.Contain("FogOfWar.SetActive(false);"));
+            Assert.That(map, Does.Not.Contain("Destroy(FogOfWar)"));
+        }
+
         private static string ReadSource(params string[] pathParts)
         {
             string path = Application.dataPath;
