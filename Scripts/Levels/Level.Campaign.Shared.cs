@@ -54,6 +54,13 @@ namespace Assets.Scripts.Levels
 
         public void EasterEggTriggers()
         {
+            // Automated training deliberately omits player cutscene/UI setup and should not add
+            // nondeterministic cosmetic dialogue timers to an episode.
+            if (Stage.IsTraining)
+            {
+                return;
+            }
+
             Stage.CutsceneManager.Setup(() => { });
             _egg.Reuse(10f, () =>
             {
