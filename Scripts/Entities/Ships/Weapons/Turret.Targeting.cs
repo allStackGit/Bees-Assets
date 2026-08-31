@@ -11,6 +11,22 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             FreezeDiagnostics.RecordTurretTargetingPass(Level, ShipsWithinRange.Count);
             TargetingPasses++;
+
+            if (IsRlControlled)
+            {
+                // The policy may continuously request fire, but the authored targeting timer remains
+                // the sole gate on when a shot can actually leave the weapon.
+                if (TargetingPasses >= PassesPerFire)
+                {
+                    if (RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)
+                    {
+                        FireAtPoint();
+                    }
+                    TargetingPasses = 0;
+                }
+                return;
+            }
+
             if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
             {
                 TryToFire();
