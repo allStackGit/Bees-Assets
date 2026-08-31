@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Entities.Projectiles;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
 using System.Collections.Generic;
 using UnityEngine;
@@ -57,7 +57,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
             }
-            else if (_colliderEnter.CompareTag("Object"))
+            else
             {
                 MapObject mapObject = _colliderEnter.GetComponent<MapObject>();
                 if (mapObject != null)
@@ -105,7 +105,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     _projectileExit.Kill();
                 }
             }
-            else if (_colliderExit.CompareTag("Object"))
+            else
             {
                 MapObject mapObject = _colliderExit.GetComponent<MapObject>();
                 if (mapObject != null && _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
