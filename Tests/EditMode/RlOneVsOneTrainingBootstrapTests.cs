@@ -45,7 +45,16 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetField(_stage, "LevelCount"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetField(_stage, "GeneratedSquadCountOverride"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetField(_stage, "OverrideMapIndex"), Is.EqualTo(2));
-            Assert.That(RuntimeAssembly.GetField(_stage, "TimeoutTime"), Is.EqualTo(30));
+            Assert.That(RuntimeAssembly.GetField(_stage, "TimeoutTime"), Is.EqualTo(120));
+        }
+
+        [Test]
+        public void FirstProofUsesRequestedMapAndMatchup()
+        {
+            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(120f));
+            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(30f));
+            Assert.That(GetBootstrapConstant("BeeShipType").ToString(), Is.EqualTo("Wasp"));
+            Assert.That(GetBootstrapConstant("HumanShipType").ToString(), Is.EqualTo("Gunship"));
         }
 
         [Test]
@@ -79,6 +88,42 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void FirstProofEnvironmentDisablesExtraDimensionsAndRandomizesFacing()
+        {
+            string setup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
+            Assert.That(setup, Does.Contain("ConfigureTrainingMap(Map)"));
+            Assert.That(setup, Does.Contain("CurrentLevelOptions.Mining = 0"));
+            Assert.That(setup, Does.Contain("CurrentLevelOptions.AsteroidOption = 0"));
+            Assert.That(setup, Does.Contain("CurrentLevelOptions.Obstacles = \"No\""));
+
+            string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            Assert.That(squadSetup, Does.Contain("RandomizeRlOneVsOneFacing(side)"));
+            Assert.That(squadSetup, Does.Contain("Random.Range(0f, 360f)"));
+        }
+
+        [Test]
+        public void RewardWeightsKeepVictoryDominant()
+        {
+            Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
+            Assert.That(rewardType, Is.Not.Null);
+
+            Assert.That(GetConstant(rewardType, "WinReward"), Is.EqualTo(10f));
+            Assert.That(GetConstant(rewardType, "LossReward"), Is.EqualTo(-10f));
+            Assert.That(GetConstant(rewardType, "TsvRewardScale"), Is.EqualTo(1f));
+            Assert.That(GetConstant(rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.1f));
+
+            MethodInfo tsvReward = rewardType.GetMethod("CalculateTsvDeltaReward", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo timePenalty = rewardType.GetMethod("CalculateTimePenalty", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(tsvReward, Is.Not.Null);
+            Assert.That(timePenalty, Is.Not.Null);
+
+            float tsv = (float)tsvReward.Invoke(null, new object[] { 100, 80, 200, 150, 300 });
+            float fullTimeoutPenalty = (float)timePenalty.Invoke(null, new object[] { 120f });
+            Assert.That(tsv, Is.EqualTo(0.1f).Within(0.0001f));
+            Assert.That(fullTimeoutPenalty, Is.EqualTo(-0.1f).Within(0.0001f));
+        }
+
+        [Test]
         public void TrainingSceneAssetExists()
         {
             string scenePath = ReadPath("Scenes", "RL 1v1 Training.unity");
@@ -92,6 +137,18 @@ namespace Bees.Tests.EditMode
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(apply, Is.Not.Null);
             apply.Invoke(null, new object[] { _stage });
+        }
+
+        private object GetBootstrapConstant(string name)
+        {
+            return GetConstant(_bootstrapType, name);
+        }
+
+        private static object GetConstant(Type type, string name)
+        {
+            FieldInfo field = type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Missing constant {name} on {type.FullName}");
+            return field.GetRawConstantValue();
         }
 
         private static string ReadSource(params string[] pathParts)
