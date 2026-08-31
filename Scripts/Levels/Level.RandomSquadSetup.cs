@@ -84,9 +84,19 @@ namespace Assets.Scripts.Levels
             List<Ship> ships = State.GetShips(side);
             for (int i = 0; i < ships.Count; i++)
             {
-                Vector3 euler = ships[i].transform.localEulerAngles;
+                Ship ship = ships[i];
+                Vector3 euler = ship.transform.localEulerAngles;
                 euler.z = Random.Range(0f, 360f);
-                ships[i].transform.localEulerAngles = euler;
+                ship.transform.localEulerAngles = euler;
+
+                // Ship movement and turret aiming use their cached world rotations rather than
+                // reading the Transform every frame. Keep those caches synchronized with the
+                // randomized visual facing or the ship can physically travel tail-first.
+                ship.Rotation = ship.transform.eulerAngles.z;
+                for (int turretIndex = 0; turretIndex < ship.Turrets.Count; turretIndex++)
+                {
+                    ship.Turrets[turretIndex].Rotation = ship.Turrets[turretIndex].PieceTransform.eulerAngles.z;
+                }
             }
         }
 
