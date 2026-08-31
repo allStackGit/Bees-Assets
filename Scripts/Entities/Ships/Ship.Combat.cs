@@ -71,6 +71,9 @@ namespace Assets.Scripts.Entities.Ships
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
             attacker.ShipsHit.Add(target);
+            // Diagnostics only: count the actual enemy hit and HP removed before the normal combat
+            // path mutates health. The coordinator ignores non-RL scenes and friendly fire.
+            global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, math.min(power, target.Health));
             _targetOldTSV = target.Tsv;
             target.Health -= math.min(power, target.Health);
             target.Tsv = Utilities.CalculateTsv(target);
