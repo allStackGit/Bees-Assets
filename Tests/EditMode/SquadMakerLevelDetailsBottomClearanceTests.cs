@@ -12,7 +12,7 @@ namespace Bees.Tests.EditMode
             "Assets.Scripts.UI_Components.SquadMakerLevelDetailsFitGuard";
 
         [Test]
-        public void LevelDetailsKeepSupplyCapacityAboveFooterButtonsWithRealPanelExpansion()
+        public void LevelDetailsKeepSupplyCapacityFlushAboveFooterButtonsWithRealPanelExpansion()
         {
             RectTransform column = CreateRect(
                 "Chosen Squads Column",
@@ -72,8 +72,8 @@ namespace Bees.Tests.EditMode
                 Bounds testBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(column, test);
                 float footerTop = Mathf.Max(startBounds.max.y, testBounds.max.y);
 
-                Assert.That(supplyBounds.min.y, Is.GreaterThanOrEqualTo(footerTop + 5.99f),
-                    "The entire Supply Capacity row must render above START/TEST instead of being hidden behind the footer.");
+                Assert.That(supplyBounds.min.y, Is.EqualTo(footerTop).Within(0.01f),
+                    "The Supply Capacity row must clear START/TEST without reserving a visible strip of unused panel background.");
 
                 details.gameObject.SetActive(false);
                 RuntimeAssembly.Invoke(guard, "ApplyFit");
@@ -117,8 +117,8 @@ namespace Bees.Tests.EditMode
                     start,
                     null);
 
-                Assert.That(clearance, Is.EqualTo(36f).Within(0.01f),
-                    "A 40px footer plus the 6px safety gap must move a row whose bottom is only 10px above the column edge by 36px.");
+                Assert.That(clearance, Is.EqualTo(30f).Within(0.01f),
+                    "A 40px footer must move a row whose bottom is only 10px above the column edge by exactly the 30px overlap, without adding visible slack.");
             }
             finally
             {
