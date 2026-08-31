@@ -21,7 +21,7 @@ namespace Assets.Scripts.UI_Components
         private const string SquadMakerSceneName = "Squad Maker";
         private const string ChosenSquadsColumnName = "Chosen Squads Column";
         private const string FooterName = "Footer";
-        private const float FooterSafetyGap = 6f;
+        private const float FooterSafetyGap = 0f;
         private const float HoverSafetyGap = 8f;
         private const float OverlayMargin = 8f;
         private const float SizeTolerance = 0.01f;
