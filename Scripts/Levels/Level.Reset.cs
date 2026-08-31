@@ -140,16 +140,18 @@ namespace Assets.Scripts.Levels
             if (!Stage.IsTraining)
             {
                 Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
-            }
 
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
-            {
-                CurrentLevelOptions.HasSquadActionBox = true;
-                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
-            }
-            else if (CurrentLevelOptions.HasSquadActionBox)
-            {
-                Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                // The action box is player UI. Automated training destroys/omits that hierarchy,
+                // so neither initial setup nor episode resets may touch its serialized references.
+                if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+                {
+                    CurrentLevelOptions.HasSquadActionBox = true;
+                    Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                }
+                else if (CurrentLevelOptions.HasSquadActionBox)
+                {
+                    Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);
+                }
             }
 
             StageConfigOptions.Apply(Stage, this);
