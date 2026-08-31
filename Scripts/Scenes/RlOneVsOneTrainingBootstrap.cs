@@ -168,6 +168,12 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.UseFullyRandomEnemySquads = false;
         stage.HasRandomizedOptions = false;
         stage.IsRendering = true;
+
+        // Automated training skips AudioController.Setup(), so inherited scene audio flags must
+        // not reach music or effect paths that expect the controller to have a bound Level.
+        stage.ActivateAudio = false;
+        stage.PlayMusic = false;
+
         stage.LevelCount = TrainingLevelCount;
 
         // This scene was copied from the legacy Hive Mind training scene and can retain a non-zero
