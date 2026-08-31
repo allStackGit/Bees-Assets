@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -78,6 +79,53 @@ namespace Bees.Tests.EditMode
                 16f);
 
             Assert.That(width, Is.EqualTo(140f).Within(0.01f));
+        }
+
+        [Test]
+        public void OffsetNestedTextIsNormalizedInsideTheClampedTooltipRect()
+        {
+            GameObject descriptionObject = new GameObject("Description", typeof(RectTransform));
+            GameObject contentObject = new GameObject("Text", typeof(RectTransform));
+            RectTransform description = descriptionObject.GetComponent<RectTransform>();
+            RectTransform content = contentObject.GetComponent<RectTransform>();
+
+            description.sizeDelta = new Vector2(320f, 120f);
+            content.SetParent(description, false);
+            content.anchorMin = new Vector2(1f, 0.5f);
+            content.anchorMax = new Vector2(1f, 0.5f);
+            content.pivot = new Vector2(0f, 0.5f);
+            content.anchoredPosition = new Vector2(100f, 0f);
+            content.sizeDelta = new Vector2(300f, 100f);
+
+            try
+            {
+                RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "NormalizeContentRect",
+                    description,
+                    content,
+                    16f,
+                    10f);
+
+                Assert.That(content.anchorMin, Is.EqualTo(Vector2.zero));
+                Assert.That(content.anchorMax, Is.EqualTo(Vector2.one));
+                Assert.That(content.offsetMin.x, Is.EqualTo(8f).Within(0.01f));
+                Assert.That(content.offsetMin.y, Is.EqualTo(5f).Within(0.01f));
+                Assert.That(content.offsetMax.x, Is.EqualTo(-8f).Within(0.01f));
+                Assert.That(content.offsetMax.y, Is.EqualTo(-5f).Within(0.01f));
+
+                Bounds contentBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                    description,
+                    content);
+                Assert.That(contentBounds.min.x,
+                    Is.GreaterThanOrEqualTo(description.rect.xMin + 7.99f));
+                Assert.That(contentBounds.max.x,
+                    Is.LessThanOrEqualTo(description.rect.xMax - 7.99f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(descriptionObject);
+            }
         }
     }
 }
