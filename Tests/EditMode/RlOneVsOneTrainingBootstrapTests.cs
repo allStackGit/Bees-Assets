@@ -58,8 +58,8 @@ namespace Bees.Tests.EditMode
         [Test]
         public void FirstProofUsesRequestedMapAndMatchup()
         {
-            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(120f));
-            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(30f));
+            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(60f));
+            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(15f));
             Assert.That(GetBootstrapConstant("BeeShipType").ToString(), Is.EqualTo("Wasp"));
             Assert.That(GetBootstrapConstant("HumanShipType").ToString(), Is.EqualTo("Gunship"));
         }
@@ -152,6 +152,21 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 1"));
             Assert.That(agent, Does.Contain("GetShipsVisibleToHiveMind(_side)"));
             Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
+        }
+
+        [Test]
+        public void PolicyObservationsUseMovementFlagsAndWeaponPower()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(agent, Does.Contain("ObservationSize = 24"));
+            Assert.That(agent, Does.Contain("_ship.IsMoving ? 1f : 0f"));
+            Assert.That(agent, Does.Contain("enemy.IsMoving ? 1f : 0f"));
+            Assert.That(agent, Does.Contain("sensor.AddObservation((float)turret.Power);"));
+            Assert.That(agent, Does.Not.Contain("GetVelocity("));
+            Assert.That(agent, Does.Not.Contain("relativeVelocity"));
+            Assert.That(agent, Does.Contain("AddZeroObservations(sensor, 8)"));
+            Assert.That(agent, Does.Contain("AddZeroObservations(sensor, 9)"));
         }
 
         [Test]
