@@ -316,13 +316,9 @@ public class Tooltip : MonoBehaviour
         }
         if (xGraphic != null)
         {
+            // Keep the prefab's authored ColorTint states. Rebuilding the ColorBlock from the
+            // Image's white tint makes normal and highlighted identical, so hover has no effect.
             button.targetGraphic = xGraphic;
-            ColorBlock colors = button.colors;
-            colors.normalColor = xGraphic.color;
-            colors.highlightedColor = Color.Lerp(xGraphic.color, Color.white, 0.35f);
-            colors.pressedColor = Color.Lerp(xGraphic.color, Color.black, 0.2f);
-            colors.selectedColor = colors.highlightedColor;
-            button.colors = colors;
         }
 
         // A transparent child provides one deterministic 32x32 raycast area without resizing
@@ -382,9 +378,8 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
-        // The tab is part of the panel silhouette rather than a floating badge. Its bottom-left
-        // corner sits exactly on the panel's top-left border, and the right edge slopes down/right
-        // to match the original UI sketch.
+        // The tab is part of the panel silhouette rather than a floating badge. Extend its left
+        // edge by the steel outline thickness while keeping the right-hand join at the same point.
         GameObject tab = new GameObject(
             "Tutorial Info Tab",
             typeof(RectTransform),
@@ -395,8 +390,8 @@ public class Tooltip : MonoBehaviour
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 0f);
-        rect.anchoredPosition = Vector2.zero;
-        rect.sizeDelta = new Vector2(InfoTabWidth, InfoTabHeight);
+        rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f);
+        rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight);
 
         TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
         border.color = new Color(0.62f, 0.69f, 0.74f, 0.95f);
