@@ -3,9 +3,9 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// Owns episode boundaries and reward reporting for the dedicated first RL proof.
-/// It runs before the ordinary Level update so a terminal state can be measured before
-/// the legacy neural-training reset path tears the episode down.
+/// Owns episode reward bookkeeping for the dedicated first RL proof.
+/// The existing Level lifecycle calls the static completion hooks before it tears an episode down,
+/// while this component detects each newly spawned duel and captures its starting TSV/time.
 /// </summary>
 [DefaultExecutionOrder(-5000)]
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
@@ -72,6 +72,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     internal static EpisodeResult LastEpisodeResult { get; private set; }
 
+    private static RlOneVsOneEpisodeCoordinator _active;
+
     private Stage _stage;
     private Level _level;
     private bool _episodeActive;
@@ -101,6 +103,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             coordinator = stage.gameObject.AddComponent<RlOneVsOneEpisodeCoordinator>();
         }
         coordinator._stage = stage;
+        _active = coordinator;
+    }
+
+    private void OnDestroy()
+    {
+        if (_active == this)
+        {
+            _active = null;
+        }
     }
 
     private void Update()
@@ -116,40 +127,70 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        if (!_episodeActive)
+        if (!_episodeActive || _level != currentLevel)
         {
             TryBeginEpisode(currentLevel);
+        }
+    }
+
+    /// <summary>
+    /// Called by Level.LevelOver before the legacy neural-training reset path executes.
+    /// </summary>
+    internal static void CompleteElimination(Level level)
+    {
+        if (!CanHandle(level))
+        {
             return;
         }
 
-        if (_level != currentLevel)
+        _active.TryBeginEpisode(level);
+        if (!_active._episodeActive)
         {
-            _episodeActive = false;
-            TryBeginEpisode(currentLevel);
             return;
         }
 
-        if (currentLevel.State.GameOver)
+        int winningSide = DetermineWinner(level);
+        _active.CompleteEpisode(level, winningSide, false);
+    }
+
+    /// <summary>
+    /// Called by Level.LevelTimeOut before SaveAndEnd tears the timed-out episode down.
+    /// A timeout deliberately has no winner, making the terminal reward a loss for both sides.
+    /// </summary>
+    internal static void CompleteTimeout(Level level)
+    {
+        if (!CanHandle(level))
         {
-            int winningSide = DetermineWinner(currentLevel);
-            CompleteEpisode(currentLevel, winningSide, false);
             return;
         }
 
-        float elapsedSeconds = Mathf.Max(0f, Time.time - _episodeStartedAt);
-        if (elapsedSeconds >= RlOneVsOneTrainingBootstrap.TrainingTimeoutSeconds)
+        _active.TryBeginEpisode(level);
+        if (_active._episodeActive)
         {
-            CompleteEpisode(currentLevel, 0, true);
-
-            // Reset before Level.Update sees its legacy timeout timer. This keeps timeout handling on
-            // the same fast episode-reset path as elimination and guarantees the no-winner reward is
-            // emitted before the old episode is torn down.
-            currentLevel.ResetLevel(true);
+            _active.CompleteEpisode(level, 0, true);
         }
+    }
+
+    private static bool CanHandle(Level level)
+    {
+        return _active != null &&
+               level != null &&
+               level.Stage != null &&
+               RlOneVsOneTrainingBootstrap.IsActiveFor(level.Stage);
     }
 
     private void TryBeginEpisode(Level level)
     {
+        if (level == null || level.State == null)
+        {
+            return;
+        }
+
+        if (_episodeActive && _level == level)
+        {
+            return;
+        }
+
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeStartingTsv = level.State.InitialTsv[beeSide - 1];
