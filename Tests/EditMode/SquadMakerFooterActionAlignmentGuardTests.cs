@@ -12,7 +12,7 @@ namespace Bees.Tests.EditMode
             "Assets.Scripts.UI_Components.SquadMakerFooterActionAlignmentGuard";
 
         [Test]
-        public void TrackedNestedFooterGeometryKeepsFullFooterAndAlignsStartTestToBodyBoundary()
+        public void FooterTrimUsesCompleteControlEnvelopeAndPreservesAuthoredButtonPositions()
         {
             RectTransform footer = CreateRect("Footer", null, new Vector2(1366f, 51f));
             RectTransform rightSide = CreateRect("Right Side", footer, new Vector2(220f, 50f));
@@ -36,12 +36,12 @@ namespace Bees.Tests.EditMode
             layout.childControlWidth = false;
             layout.childControlHeight = false;
 
-            RectTransform start = CreateRect("START", actionRow, new Vector2(85f, 30f));
-            RectTransform test = CreateRect("TEST", actionRow, new Vector2(85f, 30f));
+            RectTransform start = CreateButton("START", actionRow, new Vector2(85f, 30f));
+            RectTransform test = CreateButton("TEST", actionRow, new Vector2(85f, 30f));
 
-            // An unrelated footer control represents BACK/other footer content. The START/TEST
-            // repair must not move it or shrink the Footer around it.
-            RectTransform back = CreateRect("BACK", footer, new Vector2(220f, 40f));
+            // BACK is the tallest bottom-relative footer control in the tracked scene. Measuring only
+            // START/TEST would produce 38.5 and clip BACK; the complete real control envelope is 40.
+            RectTransform back = CreateButton("BACK", footer, new Vector2(220f, 40f));
             back.anchorMin = Vector2.zero;
             back.anchorMax = Vector2.zero;
             back.pivot = Vector2.zero;
@@ -54,52 +54,110 @@ namespace Bees.Tests.EditMode
                 Bounds startBefore = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, start);
                 Bounds testBefore = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, test);
                 Bounds backBefore = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, back);
-                float buttonTopBefore = Mathf.Max(startBefore.max.y, testBefore.max.y);
-                Assert.That(footer.rect.yMax - buttonTopBefore, Is.EqualTo(12.5f).Within(0.01f),
-                    "The fixture mirrors Footer/Right Side/Start Buttons from Squad Maker.unity and must reproduce the reported strip before repair.");
-
-                Vector2 offset = (Vector2)RuntimeAssembly.InvokeStatic(
+                float rightSideBottomOffset = (float)RuntimeAssembly.InvokeStatic(
                     RuntimeAssembly.GetType(GuardTypeName),
-                    "CalculateFooterActionRowOffset",
+                    "CalculateBottomOffset",
                     footer,
-                    actionRow,
-                    start,
-                    test);
+                    rightSide);
+                float backBottomOffset = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateBottomOffset",
+                    footer,
+                    back);
 
-                Assert.That(offset.x, Is.EqualTo(0f).Within(0.01f));
-                Assert.That(offset.y, Is.EqualTo(12.5f).Within(0.01f));
-                actionRow.anchoredPosition += offset;
+                float measuredHeight = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateFooterControlEnvelopeHeight",
+                    footer);
+
+                Assert.That(measuredHeight, Is.EqualTo(40f).Within(0.01f),
+                    "Footer height must come from the complete authored button envelope. BACK is 40 units tall from the footer bottom, so no guessed START/TEST margin may make the footer shorter.");
+
+                // Simulate the structural owner reclaiming the measured 11 unused units.
+                footer.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, measuredHeight);
+
+                float rightCorrection = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateBottomRelativeCorrection",
+                    footer,
+                    rightSide,
+                    rightSideBottomOffset);
+                float backCorrection = (float)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType(GuardTypeName),
+                    "CalculateBottomRelativeCorrection",
+                    footer,
+                    back,
+                    backBottomOffset);
+
+                rightSide.anchoredPosition += new Vector2(0f, rightCorrection);
+                back.anchoredPosition += new Vector2(0f, backCorrection);
+                LayoutRebuilder.ForceRebuildLayoutImmediate(actionRow);
 
                 Bounds startAfter = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, start);
                 Bounds testAfter = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, test);
                 Bounds backAfter = RectTransformUtility.CalculateRelativeRectTransformBounds(footer, back);
-                float buttonTopAfter = Mathf.Max(startAfter.max.y, testAfter.max.y);
-                float buttonBottomAfter = Mathf.Min(startAfter.min.y, testAfter.min.y);
 
-                Assert.That(buttonTopAfter, Is.EqualTo(footer.rect.yMax).Within(0.01f),
-                    "START/TEST must meet the body/footer boundary without the 12.5-unit strip.");
-                Assert.That(buttonBottomAfter, Is.GreaterThanOrEqualTo(footer.rect.yMin - 0.01f),
-                    "Moving the action row to the body boundary must keep the buttons inside the Footer.");
-                Assert.That(footer.rect.height, Is.EqualTo(51f).Within(0.01f),
-                    "The complete authored Footer must remain 51 units high so bottom controls are not clipped.");
-                Assert.That(backAfter.min, Is.EqualTo(backBefore.min));
-                Assert.That(backAfter.max, Is.EqualTo(backBefore.max),
-                    "Aligning START/TEST must not translate unrelated Footer controls such as BACK.");
+                Assert.That(rightCorrection, Is.EqualTo(11f).Within(0.01f),
+                    "The top-anchored Right Side must be translated by exactly the reclaimed footer height so START/TEST do not move down with the smaller footer.");
+                Assert.That(backCorrection, Is.EqualTo(0f).Within(0.01f),
+                    "The bottom-anchored BACK button is already bottom-relative and must not move.");
+                Assert.That(
+                    (float)RuntimeAssembly.InvokeStatic(
+                        RuntimeAssembly.GetType(GuardTypeName),
+                        "CalculateBottomOffset",
+                        footer,
+                        rightSide),
+                    Is.EqualTo(rightSideBottomOffset).Within(0.01f));
+                Assert.That(
+                    (float)RuntimeAssembly.InvokeStatic(
+                        RuntimeAssembly.GetType(GuardTypeName),
+                        "CalculateBottomOffset",
+                        footer,
+                        back),
+                    Is.EqualTo(backBottomOffset).Within(0.01f));
 
-                Vector2 secondOffset = (Vector2)RuntimeAssembly.InvokeStatic(
-                    RuntimeAssembly.GetType(GuardTypeName),
-                    "CalculateFooterActionRowOffset",
-                    footer,
-                    actionRow,
-                    start,
-                    test);
-                Assert.That(secondOffset.sqrMagnitude, Is.LessThan(0.0001f),
-                    "The invariant solver must be idempotent rather than accumulating vertical drift.");
+                // The footer-local coordinates move when its height changes, so compare every control
+                // by its distance from the footer bottom: this is the screen-stable relationship the
+                // runtime guard preserves while the MainPanel body gains the reclaimed 11 units.
+                AssertBottomRelativeBoundsEqual(footer, startBefore, 51f, startAfter, measuredHeight);
+                AssertBottomRelativeBoundsEqual(footer, testBefore, 51f, testAfter, measuredHeight);
+                AssertBottomRelativeBoundsEqual(footer, backBefore, 51f, backAfter, measuredHeight);
+
+                Assert.That(footer.rect.yMax - startAfter.max.y, Is.EqualTo(1.5f).Within(0.01f),
+                    "With the complete 40-unit footer envelope, START/TEST retain their authored position and sit 1.5 units below the reclaimed body boundary instead of being pulled upward into Supply Capacity.");
+                Assert.That(footer.rect.yMax - backAfter.max.y, Is.EqualTo(0f).Within(0.01f),
+                    "BACK defines the measured footer top and remains completely visible.");
             }
             finally
             {
                 Object.DestroyImmediate(footer.gameObject);
             }
+        }
+
+        private static void AssertBottomRelativeBoundsEqual(
+            RectTransform footer,
+            Bounds before,
+            float beforeFooterHeight,
+            Bounds after,
+            float afterFooterHeight)
+        {
+            float beforeFooterBottom = -beforeFooterHeight * 0.5f;
+            float afterFooterBottom = footer.rect.yMin;
+            Assert.That(after.min.y - afterFooterBottom,
+                Is.EqualTo(before.min.y - beforeFooterBottom).Within(0.01f));
+            Assert.That(after.max.y - afterFooterBottom,
+                Is.EqualTo(before.max.y - beforeFooterBottom).Within(0.01f));
+        }
+
+        private static RectTransform CreateButton(
+            string name,
+            RectTransform parent,
+            Vector2 size)
+        {
+            RectTransform rect = CreateRect(name, parent, size);
+            rect.gameObject.AddComponent<Image>();
+            rect.gameObject.AddComponent<Button>();
+            return rect;
         }
 
         private static RectTransform CreateRect(
