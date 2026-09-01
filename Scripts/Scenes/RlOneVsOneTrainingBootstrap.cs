@@ -6,6 +6,7 @@ using Assets.Scripts.UIComponents;
 using Assets.Scripts.UI_Components;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 /// <summary>
@@ -44,6 +45,23 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static bool IsActiveFor(Stage stage)
     {
         return stage != null && stage.IsTrainingNueralNetwork && IsDedicatedTrainingRuntime;
+    }
+
+    /// <summary>
+    /// Keep the visual training view in the Unity Editor and ordinary standalone players, but do not
+    /// ask the gameplay layer to construct/render presentation work in a dedicated headless player.
+    /// ML-Agents --no-graphics produces a null graphics device; batch-mode standalone execution is
+    /// also treated as headless. Editor tests remain on the visible-training path regardless of how
+    /// the Editor process itself was launched.
+    /// </summary>
+    internal static bool ShouldRenderTraining(bool isEditor, bool isBatchMode, GraphicsDeviceType graphicsDeviceType)
+    {
+        if (isEditor)
+        {
+            return true;
+        }
+
+        return !isBatchMode && graphicsDeviceType != GraphicsDeviceType.Null;
     }
 
     internal static ConfigData.ShipTypes GetShipTypeForSide(int side)
@@ -170,7 +188,7 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.UseFullyRandomSquads = true;
         stage.UseFullyRandomEnemySquads = false;
         stage.HasRandomizedOptions = false;
-        stage.IsRendering = true;
+        stage.IsRendering = ShouldRenderTraining(Application.isEditor, Application.isBatchMode, SystemInfo.graphicsDeviceType);
 
         // Automated training skips AudioController.Setup(), so inherited scene audio flags must
         // not reach music or effect paths that expect the controller to have a bound Level.
