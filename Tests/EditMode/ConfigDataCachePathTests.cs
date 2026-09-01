@@ -1,4 +1,3 @@
-using Assets.Scripts;
 using System;
 using System.IO;
 using NUnit.Framework;
@@ -13,7 +12,8 @@ namespace Bees.Tests.EditMode
         [Test]
         public void SpriteCacheResolvesOutsideAssetsInEditor()
         {
-            string cachePath = NormalizePath(ConfigData.GetCachePath());
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            string cachePath = NormalizePath((string)RuntimeAssembly.InvokeStatic(configDataType, "GetCachePath"));
             string assetsPath = NormalizePath(Application.dataPath);
             string expectedPath = NormalizePath(Path.Combine(
                 Application.dataPath,
