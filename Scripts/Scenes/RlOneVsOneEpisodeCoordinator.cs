@@ -18,6 +18,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     internal readonly struct EpisodeResult
     {
         internal readonly int EpisodeNumber;
+        internal readonly int BeeTeamId;
+        internal readonly int HumanTeamId;
         internal readonly int WinningSide;
         internal readonly bool TimedOut;
         internal readonly float DurationSeconds;
@@ -42,6 +44,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         internal EpisodeResult(
             int episodeNumber,
+            int beeTeamId,
+            int humanTeamId,
             int winningSide,
             bool timedOut,
             float durationSeconds,
@@ -63,6 +67,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             float humanTimeReward)
         {
             EpisodeNumber = episodeNumber;
+            BeeTeamId = beeTeamId;
+            HumanTeamId = humanTeamId;
             WinningSide = winningSide;
             TimedOut = timedOut;
             DurationSeconds = durationSeconds;
@@ -88,9 +94,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Trainer adapters can subscribe to this without putting trainer-specific dependencies into
-    /// the battle scene or the core Level lifecycle.
+    /// Trainer adapters can subscribe to these without putting trainer-specific dependencies into
+    /// the battle scene or the core Level lifecycle. TSV shaping is emitted at the hit that caused it;
+    /// the episode event carries terminal/time rewards and diagnostic totals.
     /// </summary>
+    internal static event Action<int, float> TsvRewardOccurred;
     internal static event Action<EpisodeResult> EpisodeEnded;
 
     internal static EpisodeResult LastEpisodeResult { get; private set; }
@@ -101,6 +109,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private Level _level;
     private bool _episodeActive;
     private int _episodeNumber;
+    private int _beeTeamId;
+    private int _humanTeamId;
     private float _episodeStartedAt;
     private int _beeStartingTsv;
     private int _humanStartingTsv;
@@ -112,6 +122,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanHitsThisEpisode;
     private int _beeDamageThisEpisode;
     private int _humanDamageThisEpisode;
+    private float _beeTsvRewardThisEpisode;
+    private float _humanTsvRewardThisEpisode;
 
     private int _completedEpisodes;
     private int _beeWins;
@@ -179,10 +191,52 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Records a real enemy-ship hit after normal projectile eligibility checks have succeeded.
-    /// This is diagnostics only; reward and damage mechanics remain owned by the normal combat path.
+    /// Returns whether this fixed ML-Agents team instance owns the physical side in the current duel.
+    /// Both team IDs alternate between Wasp and Gunship across game episodes so GhostTrainer never
+    /// equates one learning team with one faction/ship type.
     /// </summary>
-    internal static void RecordHit(Ship attacker, Ship target, int damage)
+    internal static bool IsControllerForSide(int side, int teamId)
+    {
+        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null)
+        {
+            return false;
+        }
+
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            return teamId == _active._beeTeamId;
+        }
+        if (side == ConfigData.Configuration.HumanSide)
+        {
+            return teamId == _active._humanTeamId;
+        }
+        return false;
+    }
+
+    internal static int GetTeamIdForSide(int side, int episodeNumber)
+    {
+        if (ConfigData.Configuration == null || episodeNumber <= 0)
+        {
+            return -1;
+        }
+
+        int beeTeamId = (episodeNumber & 1) == 1 ? 0 : 1;
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            return beeTeamId;
+        }
+        if (side == ConfigData.Configuration.HumanSide)
+        {
+            return 1 - beeTeamId;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Records a real enemy-ship hit after normal damage/TSV calculation has succeeded. Diagnostics
+    /// are updated and the exact TSV exchange is rewarded immediately instead of waiting for timeout.
+    /// </summary>
+    internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
         if (_active == null || !_active._episodeActive || attacker == null || target == null ||
             attacker.Level != _active._level || target.Level != _active._level || attacker.Side == target.Side)
@@ -191,6 +245,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         int appliedDamage = Mathf.Max(0, damage);
+        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         if (attacker.Side == beeSide)
@@ -203,6 +258,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _active._humanHitsThisEpisode++;
             _active._humanDamageThisEpisode += appliedDamage;
         }
+        else
+        {
+            return;
+        }
+
+        if (appliedTsvLoss <= 0)
+        {
+            return;
+        }
+
+        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
+        _active.ApplyImmediateTsvReward(attacker.Side, reward);
+        _active.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
     /// <summary>
@@ -280,6 +349,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         _level = level;
         _episodeNumber++;
+        _beeTeamId = GetTeamIdForSide(beeSide, _episodeNumber);
+        _humanTeamId = GetTeamIdForSide(humanSide, _episodeNumber);
         _episodeStartedAt = Time.time;
         _beeStartingTsv = beeStartingTsv;
         _humanStartingTsv = humanStartingTsv;
@@ -291,7 +362,29 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanHitsThisEpisode = 0;
         _beeDamageThisEpisode = 0;
         _humanDamageThisEpisode = 0;
+        _beeTsvRewardThisEpisode = 0f;
+        _humanTsvRewardThisEpisode = 0f;
         _episodeActive = true;
+    }
+
+    private void ApplyImmediateTsvReward(int side, float reward)
+    {
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (side == beeSide)
+        {
+            _beeTsvRewardThisEpisode += reward;
+        }
+        else if (side == humanSide)
+        {
+            _humanTsvRewardThisEpisode += reward;
+        }
+        else
+        {
+            return;
+        }
+
+        TsvRewardOccurred?.Invoke(side, reward);
     }
 
     private void CompleteEpisode(Level level, int winningSide, bool timedOut)
@@ -307,7 +400,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanFinalTsv = level.State.GetTsvBySide(humanSide);
         int beeShotsFired = Mathf.Max(0, (_beeFleetShip?.ShotsFired ?? _beeShotsAtStart) - _beeShotsAtStart);
         int humanShotsFired = Mathf.Max(0, (_humanFleetShip?.ShotsFired ?? _humanShotsAtStart) - _humanShotsAtStart);
-        int combinedStartingTsv = Mathf.Max(1, _beeStartingTsv + _humanStartingTsv);
         float durationSeconds = Mathf.Clamp(
             Time.time - _episodeStartedAt,
             0f,
@@ -315,18 +407,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide);
         float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide);
-        float beeTsv = RlOneVsOneReward.CalculateTsvDeltaReward(
-            _beeStartingTsv,
-            beeFinalTsv,
-            _humanStartingTsv,
-            humanFinalTsv,
-            combinedStartingTsv);
-        float humanTsv = RlOneVsOneReward.CalculateTsvDeltaReward(
-            _humanStartingTsv,
-            humanFinalTsv,
-            _beeStartingTsv,
-            beeFinalTsv,
-            combinedStartingTsv);
 
         // Time is a tertiary preference among victories. Penalizing a losing side for elapsed time
         // would teach it to die faster; timeouts are already a full terminal loss for both sides.
@@ -339,6 +419,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         LastEpisodeResult = new EpisodeResult(
             _episodeNumber,
+            _beeTeamId,
+            _humanTeamId,
             winningSide,
             timedOut,
             durationSeconds,
@@ -353,20 +435,22 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _humanHitsThisEpisode,
             _humanDamageThisEpisode,
             beeTerminal,
-            beeTsv,
+            _beeTsvRewardThisEpisode,
             beeTimeReward,
             humanTerminal,
-            humanTsv,
+            _humanTsvRewardThisEpisode,
             humanTimeReward);
 
         UpdateRunningDiagnostics(LastEpisodeResult, beeSide, humanSide);
 
         Debug.Log(
-            $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} winner={winningSide} timeout={timedOut} " +
-            $"duration={durationSeconds:F2}s bee_tsv={_beeStartingTsv}->{beeFinalTsv} " +
-            $"human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
+            $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} bee_team={_beeTeamId} human_team={_humanTeamId} " +
+            $"winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+            $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
             $"bee_shots={beeShotsFired} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+            $"bee_tsv_reward={_beeTsvRewardThisEpisode:F4} " +
             $"human_shots={humanShotsFired} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
+            $"human_tsv_reward={_humanTsvRewardThisEpisode:F4} " +
             $"bee_reward={LastEpisodeResult.BeeTotalReward:F4} " +
             $"human_reward={LastEpisodeResult.HumanTotalReward:F4}");
 
