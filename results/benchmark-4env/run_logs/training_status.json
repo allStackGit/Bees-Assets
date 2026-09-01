@@ -1,0 +1,48 @@
+{
+    "BeesRL1v1": {
+        "checkpoints": [
+            {
+                "steps": 49917,
+                "file_path": "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-49917.onnx",
+                "reward": -10.15441165305674,
+                "creation_time": 1788277818.1171706,
+                "auxillary_file_paths": [
+                    "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-49917.pt"
+                ]
+            },
+            {
+                "steps": 99932,
+                "file_path": "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-99932.onnx",
+                "reward": -9.892156859238943,
+                "creation_time": 1788278024.8842652,
+                "auxillary_file_paths": [
+                    "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-99932.pt"
+                ]
+            },
+            {
+                "steps": 100362,
+                "file_path": "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-100362.onnx",
+                "reward": -9.919117644429207,
+                "creation_time": 1788278027.3656259,
+                "auxillary_file_paths": [
+                    "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-100362.pt"
+                ]
+            }
+        ],
+        "elo": 1197.5129054908655,
+        "final_checkpoint": {
+            "steps": 100362,
+            "file_path": "results\\benchmark-4env\\BeesRL1v1.onnx",
+            "reward": -9.919117644429207,
+            "creation_time": 1788278027.3656259,
+            "auxillary_file_paths": [
+                "results\\benchmark-4env\\BeesRL1v1\\BeesRL1v1-100362.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}
