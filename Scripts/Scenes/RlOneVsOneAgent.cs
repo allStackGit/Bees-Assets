@@ -264,17 +264,20 @@ internal sealed class RlOneVsOneAgent : Agent
         int assignedTeamId = _side == ConfigData.Configuration.BeeSide
             ? result.BeeTeamId
             : result.HumanTeamId;
-        if (_teamId == assignedTeamId)
+        _lastRewardedEpisode = result.EpisodeNumber;
+        if (_teamId != assignedTeamId)
         {
-            // TSV shaping was already delivered at each hit. Add only the terminal outcome and
-            // winner-only time preference here so the same TSV exchange is never counted twice.
-            float reward = _side == ConfigData.Configuration.BeeSide
-                ? result.BeeTerminalReward + result.BeeTimeReward
-                : result.HumanTerminalReward + result.HumanTimeReward;
-            AddReward(reward);
+            // This fixed Agent was idle for this physical duel. Ending it would create a synthetic
+            // zero-step trajectory, so leave its fresh internal episode untouched until it next owns a side.
+            return;
         }
 
-        _lastRewardedEpisode = result.EpisodeNumber;
+        // TSV shaping was already delivered at each hit. Add only the terminal outcome and
+        // winner-only time preference here so the same TSV exchange is never counted twice.
+        float reward = _side == ConfigData.Configuration.BeeSide
+            ? result.BeeTerminalReward + result.BeeTimeReward
+            : result.HumanTerminalReward + result.HumanTimeReward;
+        AddReward(reward);
         EndEpisode();
     }
 
