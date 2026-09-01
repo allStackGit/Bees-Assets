@@ -83,6 +83,7 @@ internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
         }
 
         int trainingHealth = CalculateTrainingHealth(ship.OriginalHealth);
+        bool durabilityChanged = ship.MaxHealth != trainingHealth || ship.Health > trainingHealth;
         ship.MaxHealth = trainingHealth;
 
         // Ship.Setup restores Health to OriginalHealth on every pooled episode reset. Clamping here
@@ -91,6 +92,14 @@ internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
         if (ship.Health > trainingHealth)
         {
             ship.Health = trainingHealth;
+        }
+
+        // Ship.Setup updates the health bar before this training-only clamp runs. A pooled ship can
+        // therefore briefly calculate a 2x/4x bar from OriginalHealth / reduced MaxHealth unless the
+        // presentation state is refreshed after the curriculum state is restored.
+        if (durabilityChanged)
+        {
+            ship.UpdateHealthBar();
         }
     }
 }

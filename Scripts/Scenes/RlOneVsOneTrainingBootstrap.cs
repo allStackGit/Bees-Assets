@@ -208,7 +208,7 @@ internal static class RlOneVsOneTrainingBootstrap
             return;
         }
 
-        Stage stage = Object.FindFirstObjectByType<Stage>();
+        Stage stage = UnityEngine.Object.FindFirstObjectByType<Stage>();
         if (stage == null)
         {
             Debug.LogError("RL 1v1 training scene loaded without a Stage.");
