@@ -19,9 +19,9 @@ internal static class RlOneVsOneTrainingBootstrap
     internal const int TrainingLevelCount = 1;
     internal const int TrainingTimeoutSeconds = 120;
     internal const int TrainingMapIndex = 2; // Reuse Titania's art/prefab plumbing, then resize it for this scene only.
-    internal const float TrainingMapSize = 60f;
-    internal const float TrainingCameraSize = 30f;
-    internal const float SpawnRadius = 15f;
+    internal const float TrainingMapSize = 30f;
+    internal const float TrainingCameraSize = 15f;
+    internal const float SpawnRadius = 7.5f;
 
     private const float AuthoredMapSize = 512f;
     private const float BorderThickness = 24f;
@@ -61,7 +61,7 @@ internal static class RlOneVsOneTrainingBootstrap
 
     /// <summary>
     /// Reuses the normal Titania map object so all normal map ownership/pooling code stays intact,
-    /// but shrinks the playable area and its four trigger borders to 60x60 for this scene only.
+    /// but shrinks the playable area and its four trigger borders to 30x30 for this scene only.
     /// </summary>
     internal static void ConfigureTrainingMap(Map map)
     {
@@ -276,7 +276,7 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
         }
 
         // Fish Tank normally zooms all the way out to Map.MaxZoom. The dedicated proof instead
-        // keeps the complete 60-unit arena visible at a useful scale, including after resets.
+        // keeps the complete 30-unit arena visible at a useful scale, including after resets.
         _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.TrainingCameraSize;
         Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();
         _stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f);
