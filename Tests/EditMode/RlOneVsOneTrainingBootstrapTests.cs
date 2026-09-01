@@ -58,8 +58,8 @@ namespace Bees.Tests.EditMode
         [Test]
         public void FirstProofUsesRequestedMapAndMatchup()
         {
-            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(60f));
-            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(15f));
+            Assert.That(GetBootstrapConstant("TrainingMapSize"), Is.EqualTo(30f));
+            Assert.That(GetBootstrapConstant("SpawnRadius"), Is.EqualTo(7.5f));
             Assert.That(GetBootstrapConstant("BeeShipType").ToString(), Is.EqualTo("Wasp"));
             Assert.That(GetBootstrapConstant("HumanShipType").ToString(), Is.EqualTo("Gunship"));
         }
