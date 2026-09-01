@@ -197,7 +197,7 @@ namespace Bees.Tests.EditMode
             Assert.That(config, Does.Contain("BeesRL1v1:"));
             Assert.That(config, Does.Contain("trainer_type: ppo"));
             Assert.That(config, Does.Contain("self_play:"));
-            Assert.That(config, Does.Contain("max_steps: 500000"));
+            Assert.That(config, Does.Contain("max_steps: 5000000000000"));
         }
 
         [Test]
