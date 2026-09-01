@@ -2,15 +2,6 @@
     "BeesRL1v1": {
         "checkpoints": [
             {
-                "steps": 349959,
-                "file_path": "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-349959.onnx",
-                "reward": -10.0,
-                "creation_time": 1788236627.8425605,
-                "auxillary_file_paths": [
-                    "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-349959.pt"
-                ]
-            },
-            {
                 "steps": 399846,
                 "file_path": "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-399846.onnx",
                 "reward": -10.0,
@@ -45,16 +36,25 @@
                 "auxillary_file_paths": [
                     "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-500212.pt"
                 ]
+            },
+            {
+                "steps": 526609,
+                "file_path": "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-526609.onnx",
+                "reward": -9.955882549285889,
+                "creation_time": 1788258710.5640485,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-526609.pt"
+                ]
             }
         ],
-        "elo": 1093.162678105581,
+        "elo": 1086.2242423712905,
         "final_checkpoint": {
-            "steps": 500212,
+            "steps": 526609,
             "file_path": "results\\bees-rl-1v1-002\\BeesRL1v1.onnx",
-            "reward": null,
-            "creation_time": 1788242261.9542139,
+            "reward": -9.955882549285889,
+            "creation_time": 1788258710.5640485,
             "auxillary_file_paths": [
-                "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-500212.pt"
+                "results\\bees-rl-1v1-002\\BeesRL1v1\\BeesRL1v1-526609.pt"
             ]
         }
     },
