@@ -18,7 +18,10 @@ namespace Bees.Tests.EditMode
             _guardType = RuntimeAssembly.GetType("RlOneVsOneTrainingDurabilityGuard").GetTypeInfo();
             _calculateTrainingHealth = _guardType.GetMethod(
                 "CalculateTrainingHealth",
-                BindingFlags.Static | BindingFlags.NonPublic);
+                BindingFlags.Static | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(int) },
+                null);
             Assert.That(_calculateTrainingHealth, Is.Not.Null);
         }
 
@@ -58,6 +61,20 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Not.Contain("ship.OriginalHealth ="));
             Assert.That(source, Does.Not.Contain("ship.OriginalTsv ="));
             Assert.That(source, Does.Not.Contain("ship.Tsv ="));
+        }
+
+        [Test]
+        public void ReapplyingCurriculumRefreshesHealthBarAfterPooledReset()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "RlOneVsOneTrainingDurabilityGuard.cs"));
+
+            Assert.That(source, Does.Contain("bool durabilityChanged = ship.MaxHealth != trainingHealth || ship.Health > trainingHealth;"));
+            Assert.That(source, Does.Contain("if (durabilityChanged)"));
+            Assert.That(source, Does.Contain("ship.UpdateHealthBar();"));
         }
 
         private int CalculateTrainingHealth(int originalHealth)
