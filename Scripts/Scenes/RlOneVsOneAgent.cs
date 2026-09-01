@@ -111,6 +111,13 @@ internal sealed class RlOneVsOneAgent : Agent
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
     }
 
+    protected override void OnDisable()
+    {
+        RlOneVsOneEpisodeCoordinator.TsvRewardOccurred -= HandleTsvRewardOccurred;
+        RlOneVsOneEpisodeCoordinator.EpisodeEnded -= HandleEpisodeEnded;
+        base.OnDisable();
+    }
+
     public override void OnEpisodeBegin()
     {
         ReleaseShip();
@@ -278,7 +285,18 @@ internal sealed class RlOneVsOneAgent : Agent
             ? result.BeeTerminalReward + result.BeeTimeReward
             : result.HumanTerminalReward + result.HumanTimeReward;
         AddReward(reward);
-        EndEpisode();
+
+        if (result.TimedOut)
+        {
+            // Keep the explicit -10 timeout failure in the PPO trajectory, but mark the artificial
+            // time limit as an interruption. GhostTrainer excludes interrupted games from ELO, so
+            // repeated timeouts no longer masquerade as competitive losses in that diagnostic.
+            EpisodeInterrupted();
+        }
+        else
+        {
+            EndEpisode();
+        }
     }
 
     private bool IsCurrentController()
