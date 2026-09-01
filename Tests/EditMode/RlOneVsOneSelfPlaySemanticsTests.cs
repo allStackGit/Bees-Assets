@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -12,10 +13,14 @@ namespace Bees.Tests.EditMode
         public void IdleRoleAgentsDoNotEmitSyntheticZeroStepTrajectories()
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            int idleGuard = agent.IndexOf("if (_teamId != assignedTeamId)", StringComparison.Ordinal);
+            int activeReward = agent.IndexOf("// TSV shaping was already delivered", StringComparison.Ordinal);
+            int endEpisode = agent.IndexOf("EndEpisode();", idleGuard, StringComparison.Ordinal);
 
-            Assert.That(agent, Does.Contain("if (_teamId != assignedTeamId)"));
+            Assert.That(idleGuard, Is.GreaterThanOrEqualTo(0));
             Assert.That(agent, Does.Contain("zero-step trajectory"));
-            Assert.That(agent, Does.Contain("return;\n        }\n\n        // TSV shaping was already delivered"));
+            Assert.That(activeReward, Is.GreaterThan(idleGuard));
+            Assert.That(endEpisode, Is.GreaterThan(activeReward));
         }
 
         [Test]
@@ -27,9 +32,13 @@ namespace Bees.Tests.EditMode
             Assert.That(reward, Does.Contain("return LossReward;"));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("if (result.TimedOut)"));
-            Assert.That(agent, Does.Contain("EpisodeInterrupted();"));
-            Assert.That(agent, Does.Contain("else\n        {\n            EndEpisode();"));
+            int timeoutBranch = agent.IndexOf("if (result.TimedOut)", StringComparison.Ordinal);
+            int interrupted = agent.IndexOf("EpisodeInterrupted();", StringComparison.Ordinal);
+            int decisiveEnd = agent.IndexOf("EndEpisode();", interrupted, StringComparison.Ordinal);
+
+            Assert.That(timeoutBranch, Is.GreaterThanOrEqualTo(0));
+            Assert.That(interrupted, Is.GreaterThan(timeoutBranch));
+            Assert.That(decisiveEnd, Is.GreaterThan(interrupted));
         }
 
         private static string ReadSource(params string[] pathParts)
