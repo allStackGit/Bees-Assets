@@ -121,15 +121,43 @@ namespace Bees.Tests.EditMode
             Assert.That(GetConstant(rewardType, "TsvRewardScale"), Is.EqualTo(1f));
             Assert.That(GetConstant(rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.1f));
 
+            MethodInfo immediateTsvReward = rewardType.GetMethod("CalculateTsvLossReward", BindingFlags.Static | BindingFlags.NonPublic);
             MethodInfo tsvReward = rewardType.GetMethod("CalculateTsvDeltaReward", BindingFlags.Static | BindingFlags.NonPublic);
             MethodInfo timePenalty = rewardType.GetMethod("CalculateTimePenalty", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(immediateTsvReward, Is.Not.Null);
             Assert.That(tsvReward, Is.Not.Null);
             Assert.That(timePenalty, Is.Not.Null);
 
+            float immediate = (float)immediateTsvReward.Invoke(null, new object[] { 30, 300 });
             float tsv = (float)tsvReward.Invoke(null, new object[] { 100, 80, 200, 150, 300 });
             float fullTimeoutPenalty = (float)timePenalty.Invoke(null, new object[] { 120f });
+            Assert.That(immediate, Is.EqualTo(0.1f).Within(0.0001f));
             Assert.That(tsv, Is.EqualTo(0.1f).Within(0.0001f));
             Assert.That(fullTimeoutPenalty, Is.EqualTo(-0.1f).Within(0.0001f));
+        }
+
+        [Test]
+        public void TsvShapingIsDeliveredAtImpactAndNotDoubleCountedAtEpisodeEnd()
+        {
+            string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            int tsvCalculated = combat.IndexOf("_targetTSVChange = target.Tsv - _targetOldTSV;", StringComparison.Ordinal);
+            int immediateReward = combat.IndexOf(
+                "RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);",
+                StringComparison.Ordinal);
+            Assert.That(tsvCalculated, Is.GreaterThanOrEqualTo(0));
+            Assert.That(immediateReward, Is.GreaterThan(tsvCalculated));
+
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("TsvRewardOccurred?.Invoke(side, reward);"));
+            Assert.That(coordinator, Does.Contain("_beeTsvRewardThisEpisode"));
+            Assert.That(coordinator, Does.Not.Contain("float beeTsv = RlOneVsOneReward.CalculateTsvDeltaReward"));
+
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("TsvRewardOccurred += HandleTsvRewardOccurred"));
+            Assert.That(agent, Does.Contain("result.BeeTerminalReward + result.BeeTimeReward"));
+            Assert.That(agent, Does.Contain("result.HumanTerminalReward + result.HumanTimeReward"));
+            Assert.That(agent, Does.Not.Contain("result.BeeTotalReward"));
+            Assert.That(agent, Does.Not.Contain("result.HumanTotalReward"));
         }
 
         [Test]
@@ -149,9 +177,25 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("BehaviorName = \"BeesRL1v1\""));
             Assert.That(agent, Does.Contain("ContinuousActionCount = 5"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 1"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 1"));
             Assert.That(agent, Does.Contain("GetShipsVisibleToHiveMind(_side)"));
             Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
+        }
+
+        [Test]
+        public void SelfPlayTeamsAlternateAcrossBothPhysicalShipRoles()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("int beeTeamId = (episodeNumber & 1) == 1 ? 0 : 1;"));
+            Assert.That(coordinator, Does.Contain("return 1 - beeTeamId;"));
+            Assert.That(coordinator, Does.Contain("IsControllerForSide(int side, int teamId)"));
+
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Contain("!IsCurrentController()"));
+            Assert.That(agent, Does.Contain("result.BeeTeamId"));
+            Assert.That(agent, Does.Contain("result.HumanTeamId"));
         }
 
         [Test]
@@ -191,17 +235,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesPpoSelfPlay()
+        public void FirstTrainerConfigMatchesSharedBehaviorAndUsesLongRunPpoSelfPlay()
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
             Assert.That(config, Does.Contain("BeesRL1v1:"));
             Assert.That(config, Does.Contain("trainer_type: ppo"));
+            Assert.That(config, Does.Contain("learning_rate_schedule: constant"));
+            Assert.That(config, Does.Contain("beta_schedule: constant"));
+            Assert.That(config, Does.Contain("epsilon_schedule: constant"));
             Assert.That(config, Does.Contain("self_play:"));
             Assert.That(config, Does.Contain("max_steps: 5000000000000"));
         }
 
         [Test]
-        public void EpisodeCoordinatorExposesTrainerHookAndEliminationIsReportedBeforeReset()
+        public void EpisodeCoordinatorExposesTrainerHooksAndEliminationIsReportedBeforeReset()
         {
             Type coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
             Assert.That(coordinatorType, Is.Not.Null);
@@ -209,6 +256,7 @@ namespace Bees.Tests.EditMode
             DefaultExecutionOrder executionOrder = coordinatorType.GetCustomAttribute<DefaultExecutionOrder>();
             Assert.That(executionOrder, Is.Not.Null);
             Assert.That(executionOrder.order, Is.LessThan(0));
+            Assert.That(coordinatorType.GetEvent("TsvRewardOccurred", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
             Assert.That(coordinatorType.GetEvent("EpisodeEnded", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
