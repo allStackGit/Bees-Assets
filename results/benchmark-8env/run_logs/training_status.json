@@ -1,0 +1,48 @@
+{
+    "BeesRL1v1": {
+        "checkpoints": [
+            {
+                "steps": 49827,
+                "file_path": "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-49827.onnx",
+                "reward": null,
+                "creation_time": 1788278278.278794,
+                "auxillary_file_paths": [
+                    "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-49827.pt"
+                ]
+            },
+            {
+                "steps": 99767,
+                "file_path": "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-99767.onnx",
+                "reward": -1.3633695329938615,
+                "creation_time": 1788278488.6397917,
+                "auxillary_file_paths": [
+                    "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-99767.pt"
+                ]
+            },
+            {
+                "steps": 103044,
+                "file_path": "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-103044.onnx",
+                "reward": null,
+                "creation_time": 1788278503.9738252,
+                "auxillary_file_paths": [
+                    "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-103044.pt"
+                ]
+            }
+        ],
+        "elo": 1202.9870678674556,
+        "final_checkpoint": {
+            "steps": 103044,
+            "file_path": "results\\benchmark-8env\\BeesRL1v1.onnx",
+            "reward": null,
+            "creation_time": 1788278503.9738252,
+            "auxillary_file_paths": [
+                "results\\benchmark-8env\\BeesRL1v1\\BeesRL1v1-103044.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}
