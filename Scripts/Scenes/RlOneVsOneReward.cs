@@ -12,8 +12,19 @@ internal static class RlOneVsOneReward
     internal const float MaximumEpisodeTimePenalty = 0.1f;
 
     /// <summary>
-    /// Rewards net TSV exchanged since the previous sample. Normalizing by the combined starting
-    /// TSV bounds the full-episode shaping to roughly one point in an ordinary two-ship duel.
+    /// Converts one real combat TSV loss into immediate shaping. Normalizing by the combined
+    /// starting TSV keeps the sum of all hit rewards on the same scale as the original
+    /// full-episode TSV exchange reward while making credit assignment local to the hit.
+    /// </summary>
+    internal static float CalculateTsvLossReward(int tsvLost, int combinedStartingTsv)
+    {
+        float denominator = Mathf.Max(1, combinedStartingTsv);
+        return (Mathf.Max(0, tsvLost) / denominator) * TsvRewardScale;
+    }
+
+    /// <summary>
+    /// Calculates the equivalent net full-episode TSV exchange. This remains useful as a reference
+    /// and for validation; live training emits the same shaping incrementally as hits occur.
     /// </summary>
     internal static float CalculateTsvDeltaReward(
         int previousFriendlyTsv,
@@ -30,7 +41,7 @@ internal static class RlOneVsOneReward
 
     /// <summary>
     /// Applies a very small continuous cost for elapsed battle time. Even a full two-minute timeout
-    /// costs only 0.1 reward, so speed can break otherwise similar outcomes without encouraging
+    /// costs only 0.1 reward, so speed can break otherwise similar victories without encouraging
     /// sacrificing a ship merely to finish a little sooner.
     /// </summary>
     internal static float CalculateTimePenalty(float elapsedSeconds)
