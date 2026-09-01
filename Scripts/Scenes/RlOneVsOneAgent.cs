@@ -11,9 +11,10 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Deliberately small ML-Agents adapter for the first Wasp-vs-Gunship proof. Two instances use the
-/// same behavior name with opposing team IDs, so one shared policy learns to control either ship.
-/// This is not the eventual variable-fleet observation architecture.
+/// Deliberately small ML-Agents adapter for the first Wasp-vs-Gunship proof. Four fixed Agent
+/// instances cover both physical sides under both self-play team IDs, while exactly one Agent per
+/// side is active in each duel. The team-to-side mapping alternates every game episode, so either
+/// self-play team learns both ship types through one shared behavior/network.
 /// </summary>
 internal sealed class RlOneVsOneAgent : Agent
 {
@@ -28,6 +29,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private Stage _stage;
     private Ship _ship;
     private int _side;
+    private int _teamId;
     private int _decisionCounter;
     private int _lastRewardedEpisode;
     private Vector2 _lastAimDirection = Vector2.up;
@@ -72,8 +74,12 @@ internal sealed class RlOneVsOneAgent : Agent
             yield break;
         }
 
-        CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, "Bee");
-        CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, "Human");
+        // Ship types remain on their authored factions. Instead, fixed ML-Agents team instances
+        // alternate which faction they control each episode in RlOneVsOneEpisodeCoordinator.
+        CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, "Bee Team 0");
+        CreateAgent(stage, ConfigData.Configuration.BeeSide, 1, "Bee Team 1");
+        CreateAgent(stage, ConfigData.Configuration.HumanSide, 0, "Human Team 0");
+        CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, "Human Team 1");
     }
 
     private static void CreateAgent(Stage stage, int side, int teamId, string label)
@@ -89,17 +95,19 @@ internal sealed class RlOneVsOneAgent : Agent
         behavior.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ContinuousActionCount);
 
         RlOneVsOneAgent agent = agentObject.AddComponent<RlOneVsOneAgent>();
-        agent.Configure(stage, side);
+        agent.Configure(stage, side, teamId);
     }
 
-    private void Configure(Stage stage, int side)
+    private void Configure(Stage stage, int side, int teamId)
     {
         _stage = stage;
         _side = side;
+        _teamId = teamId;
     }
 
     public override void Initialize()
     {
+        RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
     }
 
@@ -112,7 +120,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void FixedUpdate()
     {
-        if (_stage == null || !_stage.IsTrainingNueralNetwork || !TryBindShip())
+        if (_stage == null || !_stage.IsTrainingNueralNetwork || !IsCurrentController() || !TryBindShip())
         {
             return;
         }
@@ -127,7 +135,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (!TryBindShip())
+        if (!IsCurrentController() || !TryBindShip())
         {
             AddZeroObservations(sensor, ObservationSize);
             return;
@@ -192,7 +200,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        if (!TryBindShip())
+        if (!IsCurrentController() || !TryBindShip())
         {
             return;
         }
@@ -238,6 +246,14 @@ internal sealed class RlOneVsOneAgent : Agent
         continuous[4] = Random.value >= 0.5f ? 1f : -1f;
     }
 
+    private void HandleTsvRewardOccurred(int side, float reward)
+    {
+        if (side == _side && IsCurrentController())
+        {
+            AddReward(reward);
+        }
+    }
+
     private void HandleEpisodeEnded(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
         if (result.EpisodeNumber <= _lastRewardedEpisode)
@@ -245,12 +261,26 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        float reward = _side == ConfigData.Configuration.BeeSide
-            ? result.BeeTotalReward
-            : result.HumanTotalReward;
+        int assignedTeamId = _side == ConfigData.Configuration.BeeSide
+            ? result.BeeTeamId
+            : result.HumanTeamId;
+        if (_teamId == assignedTeamId)
+        {
+            // TSV shaping was already delivered at each hit. Add only the terminal outcome and
+            // winner-only time preference here so the same TSV exchange is never counted twice.
+            float reward = _side == ConfigData.Configuration.BeeSide
+                ? result.BeeTerminalReward + result.BeeTimeReward
+                : result.HumanTerminalReward + result.HumanTimeReward;
+            AddReward(reward);
+        }
+
         _lastRewardedEpisode = result.EpisodeNumber;
-        AddReward(reward);
         EndEpisode();
+    }
+
+    private bool IsCurrentController()
+    {
+        return RlOneVsOneEpisodeCoordinator.IsControllerForSide(_side, _teamId);
     }
 
     private bool TryBindShip()
