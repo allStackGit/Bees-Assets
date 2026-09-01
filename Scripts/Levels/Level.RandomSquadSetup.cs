@@ -73,7 +73,7 @@ namespace Assets.Scripts.Levels
         {
             float angle = Random.Range(0f, Mathf.PI * 2f);
             Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) *
-                             global::RlOneVsOneTrainingBootstrap.SpawnRadius;
+                             global::RlOneVsOneTrainingBootstrap.CurrentSpawnRadius;
 
             StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
             StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
@@ -102,18 +102,12 @@ namespace Assets.Scripts.Levels
 
         private void AddRlOneVsOneSquadForSetup(int side)
         {
-            ConfigData.ShipTypes type = global::RlOneVsOneTrainingBootstrap.GetShipTypeForSide(side);
-            if (!ConfigData.ArmedShipTypes.Contains(type) || Utilities.ConvertShipTypeToSide[type] != side)
-            {
-                throw new System.InvalidOperationException(
-                    $"RL 1v1 training requires an armed ship belonging to side {side}; configured type was {type}.");
-            }
-
+            int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
             long squadId = Utilities.GetNegativeSavedSquadId();
             SavedSquad savedSquad = new SavedSquad(
                 squadId,
                 side,
-                $"RL {type} #{squadId}",
+                $"RL training squad #{squadId}",
                 Vector2.zero,
                 false,
                 false,
@@ -121,20 +115,41 @@ namespace Assets.Scripts.Levels
                 ConfigData.UnsetColor,
                 null);
 
-            long fleetShipId = Utilities.GetNegativeFleetshipId();
-            FleetShip fleetShip = new FleetShip(
-                fleetShipId,
-                type,
-                false,
-                false,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0);
-            savedSquad.AddShipToSquad(new SquadShip(fleetShip, Vector2.zero));
+            for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
+            {
+                ConfigData.ShipTypes type = global::RlOneVsOneTrainingBootstrap.GetShipTypeForSide(side, shipIndex);
+                if (!ConfigData.ArmedShipTypes.Contains(type) || Utilities.ConvertShipTypeToSide[type] != side)
+                {
+                    throw new System.InvalidOperationException(
+                        $"RL training requires an armed ship belonging to side {side}; configured type at slot {shipIndex} was {type}.");
+                }
+
+                long fleetShipId = Utilities.GetNegativeFleetshipId();
+                FleetShip fleetShip = new FleetShip(
+                    fleetShipId,
+                    type,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+
+                // Preserve the exact original spawn for the default 1v1. Larger teams use a compact,
+                // deterministic formation around the same side-specific squad starting position.
+                if (shipCount == 1)
+                {
+                    savedSquad.AddShipToSquad(new SquadShip(fleetShip, Vector2.zero));
+                }
+                else
+                {
+                    Vector2 shipOffset = global::RlOneVsOneTrainingBootstrap.GetShipFormationOffset(shipIndex);
+                    savedSquad.AddShipToSquad(new SquadShip(fleetShip, shipOffset));
+                }
+            }
 
             if (side == ConfigData.Configuration.AISide)
             {

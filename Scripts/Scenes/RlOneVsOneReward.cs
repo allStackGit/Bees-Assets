@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Reward definition for the first Wasp-vs-Gunship learning proof.
+/// Reward definition for the dedicated RL combat proof.
 /// Terminal victory is deliberately an order of magnitude larger than all shaping.
 /// </summary>
 internal static class RlOneVsOneReward
@@ -40,13 +40,14 @@ internal static class RlOneVsOneReward
     }
 
     /// <summary>
-    /// Applies a very small continuous cost for elapsed battle time. Even a full two-minute timeout
+    /// Applies a very small continuous cost for elapsed battle time. A complete configured episode
     /// costs only 0.1 reward, so speed can break otherwise similar victories without encouraging
     /// sacrificing a ship merely to finish a little sooner.
     /// </summary>
     internal static float CalculateTimePenalty(float elapsedSeconds)
     {
-        float normalizedElapsed = Mathf.Clamp01(elapsedSeconds / RlOneVsOneTrainingBootstrap.TrainingTimeoutSeconds);
+        float timeoutSeconds = Mathf.Max(1f, RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds);
+        float normalizedElapsed = Mathf.Clamp01(elapsedSeconds / timeoutSeconds);
         return -normalizedElapsed * MaximumEpisodeTimePenalty;
     }
 

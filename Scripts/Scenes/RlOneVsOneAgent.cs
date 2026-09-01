@@ -11,10 +11,10 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Deliberately small ML-Agents adapter for the first Wasp-vs-Gunship proof. Four fixed Agent
-/// instances cover both physical sides under both self-play team IDs, while exactly one Agent per
-/// side is active in each duel. The team-to-side mapping alternates every game episode, so either
-/// self-play team learns both ship types through one shared behavior/network.
+/// ML-Agents adapter for the dedicated combat-training scene. Every configured ship slot gets four
+/// fixed Agent instances (both physical sides under both self-play team IDs), while exactly one team
+/// instance per physical ship is active in an episode. All instances share BeesRL1v1, so one policy
+/// learns every configured ship type and role.
 /// </summary>
 internal sealed class RlOneVsOneAgent : Agent
 {
@@ -30,9 +30,13 @@ internal sealed class RlOneVsOneAgent : Agent
     private Ship _ship;
     private int _side;
     private int _teamId;
+    private int _shipSlot;
     private int _decisionCounter;
     private int _lastRewardedEpisode;
+    private bool _hasBoundFleetShip;
+    private long _boundFleetShipId;
     private Vector2 _lastAimDirection = Vector2.up;
+    private readonly List<Ship> _bindCandidates = new List<Ship>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallForDedicatedTrainingScene()
@@ -74,15 +78,19 @@ internal sealed class RlOneVsOneAgent : Agent
             yield break;
         }
 
-        // Ship types remain on their authored factions. Instead, fixed ML-Agents team instances
-        // alternate which faction they control each episode in RlOneVsOneEpisodeCoordinator.
-        CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, "Bee Team 0");
-        CreateAgent(stage, ConfigData.Configuration.BeeSide, 1, "Bee Team 1");
-        CreateAgent(stage, ConfigData.Configuration.HumanSide, 0, "Human Team 0");
-        CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, "Human Team 1");
+        // Ship types remain on their authored factions. Fixed ML-Agents team instances alternate
+        // which faction they control each episode in RlOneVsOneEpisodeCoordinator. Each physical
+        // ship slot gets one Agent for each possible side/team ownership combination.
+        for (int shipSlot = 0; shipSlot < RlOneVsOneTrainingBootstrap.CurrentShipsPerSide; shipSlot++)
+        {
+            CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, shipSlot, $"Bee Team 0 Slot {shipSlot}");
+            CreateAgent(stage, ConfigData.Configuration.BeeSide, 1, shipSlot, $"Bee Team 1 Slot {shipSlot}");
+            CreateAgent(stage, ConfigData.Configuration.HumanSide, 0, shipSlot, $"Human Team 0 Slot {shipSlot}");
+            CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, shipSlot, $"Human Team 1 Slot {shipSlot}");
+        }
     }
 
-    private static void CreateAgent(Stage stage, int side, int teamId, string label)
+    private static void CreateAgent(Stage stage, int side, int teamId, int shipSlot, string label)
     {
         GameObject agentObject = new GameObject($"RL 1v1 Agent - {label}");
         agentObject.transform.SetParent(stage.transform, false);
@@ -95,14 +103,15 @@ internal sealed class RlOneVsOneAgent : Agent
         behavior.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ContinuousActionCount);
 
         RlOneVsOneAgent agent = agentObject.AddComponent<RlOneVsOneAgent>();
-        agent.Configure(stage, side, teamId);
+        agent.Configure(stage, side, teamId, shipSlot);
     }
 
-    private void Configure(Stage stage, int side, int teamId)
+    private void Configure(Stage stage, int side, int teamId, int shipSlot)
     {
         _stage = stage;
         _side = side;
         _teamId = teamId;
+        _shipSlot = shipSlot;
     }
 
     public override void Initialize()
@@ -121,6 +130,7 @@ internal sealed class RlOneVsOneAgent : Agent
     public override void OnEpisodeBegin()
     {
         ReleaseShip();
+        _hasBoundFleetShip = false;
         _decisionCounter = 0;
         _lastAimDirection = Vector2.up;
     }
@@ -149,11 +159,12 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         Level level = _ship.Level;
-        float halfMap = RlOneVsOneTrainingBootstrap.TrainingMapSize / 2f;
+        float mapSize = RlOneVsOneTrainingBootstrap.CurrentMapSize;
+        float halfMap = mapSize / 2f;
         Vector2 shipPosition = _ship.GetPosition();
 
         // Self: type, map-local position, heading, whether it is moving, and health. Speed itself
-        // is fixed by ship type in this proof, so X/Y velocity would duplicate type + heading.
+        // is fixed by ship type, so X/Y velocity would duplicate type + heading.
         sensor.AddObservation(GetShipTypeIndicator(_ship));
         sensor.AddObservation(shipPosition.x / halfMap);
         sensor.AddObservation(shipPosition.y / halfMap);
@@ -169,12 +180,12 @@ internal sealed class RlOneVsOneAgent : Agent
         else
         {
             // Enemy information comes only from the side's Hive Mind memory, never an omniscient
-            // GetAllEnemyShips/GetShips lookup. In this 1v1 proof there can be at most one enemy.
+            // GetAllEnemyShips/GetShips lookup. With larger teams, use the nearest visible enemy.
             Vector2 relativePosition = enemy.GetPosition() - shipPosition;
 
             sensor.AddObservation(1f);
-            sensor.AddObservation(relativePosition.x / RlOneVsOneTrainingBootstrap.TrainingMapSize);
-            sensor.AddObservation(relativePosition.y / RlOneVsOneTrainingBootstrap.TrainingMapSize);
+            sensor.AddObservation(relativePosition.x / mapSize);
+            sensor.AddObservation(relativePosition.y / mapSize);
             AddHeading(sensor, enemy.Rotation);
             sensor.AddObservation(enemy.IsMoving ? 1f : 0f);
             sensor.AddObservation(GetHealthFraction(enemy));
@@ -196,7 +207,7 @@ internal sealed class RlOneVsOneAgent : Agent
         sensor.AddObservation(relativeWeaponPosition.x / shipSizeScale);
         sensor.AddObservation(relativeWeaponPosition.y / shipSizeScale);
         AddHeading(sensor, turret.Rotation);
-        sensor.AddObservation((float)turret.Range / RlOneVsOneTrainingBootstrap.TrainingMapSize);
+        sensor.AddObservation((float)turret.Range / mapSize);
         sensor.AddObservation((float)turret.Power);
         sensor.AddObservation(turret.RateOfFire / (1f + Mathf.Max(0f, turret.RateOfFire)));
         sensor.AddObservation(turret.PassesPerFire > 0
@@ -257,6 +268,9 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (side == _side && IsCurrentController())
         {
+            // Every active ship on a team receives the team TSV exchange. This keeps the shared
+            // policy cooperative when more than one ship is configured instead of assigning credit
+            // only to whichever ship happened to fire the projectile.
             AddReward(reward);
         }
     }
@@ -274,7 +288,7 @@ internal sealed class RlOneVsOneAgent : Agent
         _lastRewardedEpisode = result.EpisodeNumber;
         if (_teamId != assignedTeamId)
         {
-            // This fixed Agent was idle for this physical duel. Ending it would create a synthetic
+            // This fixed Agent was idle for this physical battle. Ending it would create a synthetic
             // zero-step trajectory, so leave its fresh internal episode untouched until it next owns a side.
             return;
         }
@@ -313,28 +327,47 @@ internal sealed class RlOneVsOneAgent : Agent
             return false;
         }
 
+        if (_hasBoundFleetShip)
+        {
+            if (_ship != null && !_ship.IsDead && _ship.Level == level && _ship.FleetShip != null &&
+                _ship.FleetShip.Id == _boundFleetShipId)
+            {
+                return true;
+            }
+
+            // A ship slot remains assigned to the same FleetShip for the whole episode. If that ship
+            // dies, do not let its Agent jump to a surviving teammate and duplicate control. The
+            // terminal EndEpisode/OnEpisodeBegin path clears this binding for the next battle.
+            _ship = null;
+            return false;
+        }
+
         List<Ship> ships = level.State.GetShips(_side);
-        Ship current = null;
+        _bindCandidates.Clear();
         for (int i = 0; i < ships.Count; i++)
         {
-            if (ships[i] != null && !ships[i].IsDead)
+            Ship candidate = ships[i];
+            if (candidate != null && !candidate.IsDead && candidate.FleetShip != null)
             {
-                current = ships[i];
-                break;
+                _bindCandidates.Add(candidate);
             }
         }
 
-        if (current == _ship)
-        {
-            return current != null;
-        }
-
-        ReleaseShip();
-        _ship = current;
-        if (_ship == null)
+        // Wait until the complete configured roster has spawned, then assign stable slots by the
+        // generated FleetShip identity. Binding happens once per Agent episode, not every decision.
+        if (_bindCandidates.Count < RlOneVsOneTrainingBootstrap.CurrentShipsPerSide)
         {
             return false;
         }
+        _bindCandidates.Sort(CompareShipsForSlot);
+        if (_shipSlot >= _bindCandidates.Count)
+        {
+            return false;
+        }
+
+        _ship = _bindCandidates[_shipSlot];
+        _boundFleetShipId = _ship.FleetShip.Id;
+        _hasBoundFleetShip = true;
 
         // This scene has no human/player controller. Make the runtime squad state agree even if the
         // account-level DoesUserHaveController setting would otherwise make Level.HasPlayer true.
@@ -348,7 +381,7 @@ internal sealed class RlOneVsOneAgent : Agent
         _ship.HasBrain = true;
         if (_ship.Turrets.Count == 0)
         {
-            Debug.LogError($"RL 1v1 expected {_ship.ShipType} to have at least one turret-controlled weapon.");
+            Debug.LogError($"RL training expected {_ship.ShipType} to have at least one turret-controlled weapon.");
             return false;
         }
 
@@ -358,6 +391,13 @@ internal sealed class RlOneVsOneAgent : Agent
             turret.SetRlControl(turret.GetPosition() + Vector2.up * Mathf.Max(1f, turret.Range), false);
         }
         return true;
+    }
+
+    private static int CompareShipsForSlot(Ship left, Ship right)
+    {
+        long leftId = left != null && left.FleetShip != null ? left.FleetShip.Id : long.MaxValue;
+        long rightId = right != null && right.FleetShip != null ? right.FleetShip.Id : long.MaxValue;
+        return leftId.CompareTo(rightId);
     }
 
     private void ReleaseShip()
@@ -377,14 +417,24 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private Ship FindVisibleEnemy(Level level)
     {
+        Ship closest = null;
+        float closestDistanceSquared = float.MaxValue;
+        Vector2 position = _ship.GetPosition();
         foreach (Ship candidate in level.State.GetShipsVisibleToHiveMind(_side))
         {
-            if (candidate != null && !candidate.IsDead && candidate.Side != _side)
+            if (candidate == null || candidate.IsDead || candidate.Side == _side)
             {
-                return candidate;
+                continue;
+            }
+
+            float distanceSquared = (candidate.GetPosition() - position).sqrMagnitude;
+            if (distanceSquared < closestDistanceSquared)
+            {
+                closest = candidate;
+                closestDistanceSquared = distanceSquared;
             }
         }
-        return null;
+        return closest;
     }
 
     private Turret GetPrimaryTurret()
@@ -405,6 +455,8 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             return 0f;
         }
+
+        // Preserve the exact feature values seen by the existing Wasp/Gunship checkpoint.
         if (ship.ShipType == RlOneVsOneTrainingBootstrap.BeeShipType)
         {
             return -1f;
@@ -413,7 +465,11 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             return 1f;
         }
-        return 0f;
+
+        // Other configured types receive a stable bounded scalar without changing observation size.
+        int typeCount = System.Enum.GetValues(typeof(ConfigData.ShipTypes)).Length;
+        float normalizedIndex = typeCount > 1 ? (float)(int)ship.ShipType / (typeCount - 1) : 0.5f;
+        return Mathf.Lerp(-0.9f, 0.9f, normalizedIndex);
     }
 
     private static void AddHeading(VectorSensor sensor, float degrees)

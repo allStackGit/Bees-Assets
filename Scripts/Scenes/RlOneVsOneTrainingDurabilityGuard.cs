@@ -4,16 +4,16 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// First curriculum step for the dedicated RL 1v1 proof. Ships keep their authored combat stats,
-/// weapons, TSV and observations, but begin each duel with 25% of their normal durability so the
-/// already-learned hit behavior can reach terminal win/loss rewards frequently enough to learn a
-/// complete attack sequence. MaxHealth is reduced with Health so normalized health and TSV damage
-/// calculations continue to treat the reduced starting durability as a full-health ship.
+/// Training-only durability curriculum for the dedicated RL combat scene. Ships keep their authored
+/// combat stats, weapons, TSV and observations, but MaxHealth and starting Health are scaled by the
+/// configured health ratio. MaxHealth is reduced with Health so normalized health and TSV damage
+/// calculations continue to treat the configured starting durability as a full-health ship.
 /// </summary>
 [DefaultExecutionOrder(-4000)]
 internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
 {
-    internal const float TrainingHealthFraction = 0.25f;
+    // Retained as the stable no-argument curriculum default and for regression compatibility.
+    internal const float TrainingHealthFraction = RlOneVsOneTrainingOptions.DefaultHealthRatio;
 
     private Stage _stage;
 
@@ -62,12 +62,17 @@ internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
 
     internal static int CalculateTrainingHealth(int originalHealth)
     {
+        return CalculateTrainingHealth(originalHealth, RlOneVsOneTrainingBootstrap.CurrentHealthRatio);
+    }
+
+    internal static int CalculateTrainingHealth(int originalHealth, float healthRatio)
+    {
         if (originalHealth <= 0)
         {
             return 0;
         }
 
-        return Mathf.Max(1, Mathf.CeilToInt(originalHealth * TrainingHealthFraction));
+        return Mathf.Max(1, Mathf.CeilToInt(originalHealth * healthRatio));
     }
 
     internal static void ApplyTrainingDurability(Ship ship)
@@ -81,8 +86,8 @@ internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
         ship.MaxHealth = trainingHealth;
 
         // Ship.Setup restores Health to OriginalHealth on every pooled episode reset. Clamping here
-        // therefore reapplies the curriculum each episode without changing the authored stat or the
-        // ordinary game. During combat Health is already <= trainingHealth and is left untouched.
+        // therefore reapplies the selected curriculum each episode without changing the authored stat
+        // or ordinary game. During combat Health is already <= trainingHealth and is left untouched.
         if (ship.Health > trainingHealth)
         {
             ship.Health = trainingHealth;

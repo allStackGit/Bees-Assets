@@ -3,12 +3,13 @@ using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Owns episode reward bookkeeping and lightweight training diagnostics for the dedicated first RL proof.
+/// Owns episode reward bookkeeping and lightweight training diagnostics for the dedicated RL combat scene.
 /// The existing Level lifecycle calls the static completion hooks before it tears an episode down,
-/// while this component detects each newly spawned duel and captures its starting state/time.
+/// while this component detects each newly spawned battle and captures its starting state/time.
 /// </summary>
 [DefaultExecutionOrder(-5000)]
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
@@ -93,6 +94,18 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
+    private readonly struct ShotBaseline
+    {
+        internal readonly FleetShip FleetShip;
+        internal readonly int ShotsAtStart;
+
+        internal ShotBaseline(FleetShip fleetShip)
+        {
+            FleetShip = fleetShip;
+            ShotsAtStart = fleetShip != null ? fleetShip.ShotsFired : 0;
+        }
+    }
+
     /// <summary>
     /// Trainer adapters can subscribe to these without putting trainer-specific dependencies into
     /// the battle scene or the core Level lifecycle. TSV shaping is emitted at the hit that caused it;
@@ -114,10 +127,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _episodeStartedAt;
     private int _beeStartingTsv;
     private int _humanStartingTsv;
-    private FleetShip _beeFleetShip;
-    private FleetShip _humanFleetShip;
-    private int _beeShotsAtStart;
-    private int _humanShotsAtStart;
+    private readonly List<ShotBaseline> _beeShotBaselines = new List<ShotBaseline>();
+    private readonly List<ShotBaseline> _humanShotBaselines = new List<ShotBaseline>();
     private int _beeHitsThisEpisode;
     private int _humanHitsThisEpisode;
     private int _beeDamageThisEpisode;
@@ -191,9 +202,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns whether this fixed ML-Agents team instance owns the physical side in the current duel.
-    /// Both team IDs alternate between Wasp and Gunship across game episodes so GhostTrainer never
-    /// equates one learning team with one faction/ship type.
+    /// Returns whether this fixed ML-Agents team instance owns the physical side in the current battle.
+    /// Both team IDs alternate across physical factions every episode so GhostTrainer never equates one
+    /// learning team with one faction or configured ship composition.
     /// </summary>
     internal static bool IsControllerForSide(int side, int teamId)
     {
@@ -336,13 +347,23 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeStartingTsv = level.State.InitialTsv[beeSide - 1];
         int humanStartingTsv = level.State.InitialTsv[humanSide - 1];
-        Ship beeShip = FindActiveShip(level, beeSide);
-        Ship humanShip = FindActiveShip(level, humanSide);
+        List<Ship> beeShips = level.State.GetShips(beeSide);
+        List<Ship> humanShips = level.State.GetShips(humanSide);
+        int expectedShips = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
 
-        // Initial TSV is populated while squads are spawned. Waiting for both values and both ships
-        // keeps the coordinator out of Stage/Level construction ordering and starts timing only once
-        // the duel and its diagnostic counters actually exist.
-        if (beeStartingTsv <= 0 || humanStartingTsv <= 0 || beeShip == null || humanShip == null || level.State.GameOver)
+        // Initial TSV is populated while squads are spawned. Waiting for the complete configured
+        // rosters keeps the coordinator out of Stage/Level construction ordering and prevents the
+        // first few ships from beginning an episode before their teammates exist.
+        if (beeStartingTsv <= 0 || humanStartingTsv <= 0 ||
+            CountActiveShips(beeShips) < expectedShips || CountActiveShips(humanShips) < expectedShips ||
+            level.State.GameOver)
+        {
+            return;
+        }
+
+        CaptureShotBaselines(beeShips, _beeShotBaselines);
+        CaptureShotBaselines(humanShips, _humanShotBaselines);
+        if (_beeShotBaselines.Count < expectedShips || _humanShotBaselines.Count < expectedShips)
         {
             return;
         }
@@ -354,10 +375,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _episodeStartedAt = Time.time;
         _beeStartingTsv = beeStartingTsv;
         _humanStartingTsv = humanStartingTsv;
-        _beeFleetShip = beeShip.FleetShip;
-        _humanFleetShip = humanShip.FleetShip;
-        _beeShotsAtStart = _beeFleetShip?.ShotsFired ?? 0;
-        _humanShotsAtStart = _humanFleetShip?.ShotsFired ?? 0;
         _beeHitsThisEpisode = 0;
         _humanHitsThisEpisode = 0;
         _beeDamageThisEpisode = 0;
@@ -398,12 +415,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeFinalTsv = level.State.GetTsvBySide(beeSide);
         int humanFinalTsv = level.State.GetTsvBySide(humanSide);
-        int beeShotsFired = Mathf.Max(0, (_beeFleetShip?.ShotsFired ?? _beeShotsAtStart) - _beeShotsAtStart);
-        int humanShotsFired = Mathf.Max(0, (_humanFleetShip?.ShotsFired ?? _humanShotsAtStart) - _humanShotsAtStart);
+        int beeShotsFired = CalculateShotsFired(_beeShotBaselines);
+        int humanShotsFired = CalculateShotsFired(_humanShotBaselines);
         float durationSeconds = Mathf.Clamp(
             Time.time - _episodeStartedAt,
             0f,
-            RlOneVsOneTrainingBootstrap.TrainingTimeoutSeconds);
+            RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds);
 
         float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide);
         float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide);
@@ -445,6 +462,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         Debug.Log(
             $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} bee_team={_beeTeamId} human_team={_humanTeamId} " +
+            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} " +
             $"winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
             $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
             $"bee_shots={beeShotsFired} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
@@ -509,18 +527,43 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
     }
 
-    private static Ship FindActiveShip(Level level, int side)
+    private static int CountActiveShips(List<Ship> ships)
     {
-        var ships = level.State.GetShips(side);
+        int count = 0;
         for (int i = 0; i < ships.Count; i++)
         {
             Ship ship = ships[i];
-            if (ship != null && !ship.IsDead)
+            if (ship != null && !ship.IsDead && ship.FleetShip != null)
             {
-                return ship;
+                count++;
             }
         }
-        return null;
+        return count;
+    }
+
+    private static void CaptureShotBaselines(List<Ship> ships, List<ShotBaseline> destination)
+    {
+        destination.Clear();
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship != null && !ship.IsDead && ship.FleetShip != null)
+            {
+                destination.Add(new ShotBaseline(ship.FleetShip));
+            }
+        }
+    }
+
+    private static int CalculateShotsFired(List<ShotBaseline> baselines)
+    {
+        int shots = 0;
+        for (int i = 0; i < baselines.Count; i++)
+        {
+            ShotBaseline baseline = baselines[i];
+            int currentShots = baseline.FleetShip != null ? baseline.FleetShip.ShotsFired : baseline.ShotsAtStart;
+            shots += Mathf.Max(0, currentShots - baseline.ShotsAtStart);
+        }
+        return shots;
     }
 
     private static int DetermineWinner(Level level)

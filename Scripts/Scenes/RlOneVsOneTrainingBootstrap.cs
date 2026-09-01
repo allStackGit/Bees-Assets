@@ -4,38 +4,62 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.UIComponents;
 using Assets.Scripts.UI_Components;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Configures the first neural-network proof scene as one small, repeatable 1v1 battle.
-/// This is intentionally narrow: no Hive Mind commands, no randomized environment dimensions,
-/// no mining, and exactly one armed primary-fleet ship per side.
+/// Configures the dedicated neural-network combat scene. The defaults preserve the original small
+/// Wasp-vs-Gunship 1v1 proof, while standalone ML-Agents workers can override curriculum/environment
+/// dimensions through command-line arguments passed with mlagents-learn --env-args.
 /// </summary>
 internal static class RlOneVsOneTrainingBootstrap
 {
     internal const string TrainingSceneName = "RL 1v1 Training";
     internal const int TrainingLevelCount = 1;
-    internal const int TrainingTimeoutSeconds = 120;
+
+    // Keep these original proof constants as the stable no-argument defaults. Runtime code uses the
+    // Current* accessors below so command-line curriculum changes do not alter serialized scene state.
+    internal const int TrainingTimeoutSeconds = RlOneVsOneTrainingOptions.DefaultEpisodeTimeoutSeconds;
     internal const int TrainingMapIndex = 2; // Reuse Titania's art/prefab plumbing, then resize it for this scene only.
-    internal const float TrainingMapSize = 30f;
-    internal const float TrainingCameraSize = 15f;
-    internal const float SpawnRadius = 7.5f;
+    internal const float TrainingMapSize = RlOneVsOneTrainingOptions.DefaultMapSize;
+    internal const float TrainingCameraSize = TrainingMapSize / 2f;
+    internal const float SpawnRadius = TrainingMapSize / 4f;
 
     private const float AuthoredMapSize = 512f;
     private const float BorderThickness = 24f;
     private const float BorderHalfThickness = BorderThickness / 2f;
     private const float BorderOverhang = BorderThickness * 2f;
 
-    // Fixed first proof matchup. Balance is not required because TSV shaping distinguishes
-    // better and worse losing behavior while the much larger terminal reward still favors wins.
+    // Stable default matchup retained for checkpoint compatibility and the no-argument proof.
     internal const ConfigData.ShipTypes BeeShipType = ConfigData.ShipTypes.Wasp;
     internal const ConfigData.ShipTypes HumanShipType = ConfigData.ShipTypes.Gunship;
 
+    private static RlOneVsOneTrainingOptions _runtimeOptions;
+
     internal static bool IsDedicatedTrainingRuntime =>
         ShouldApply(SceneManager.GetActiveScene().name);
+
+    internal static float CurrentHealthRatio => RuntimeOptions.HealthRatio;
+    internal static float CurrentMapSize => RuntimeOptions.MapSize;
+    internal static float CurrentCameraSize => CurrentMapSize / 2f;
+    internal static float CurrentSpawnRadius => CurrentMapSize / 4f;
+    internal static int CurrentTimeoutSeconds => RuntimeOptions.EpisodeTimeoutSeconds;
+    internal static int CurrentShipsPerSide => RuntimeOptions.ShipsPerSide;
+
+    private static RlOneVsOneTrainingOptions RuntimeOptions
+    {
+        get
+        {
+            if (_runtimeOptions == null)
+            {
+                _runtimeOptions = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
+            }
+            return _runtimeOptions;
+        }
+    }
 
     internal static bool ShouldApply(string sceneName)
     {
@@ -66,20 +90,51 @@ internal static class RlOneVsOneTrainingBootstrap
 
     internal static ConfigData.ShipTypes GetShipTypeForSide(int side)
     {
+        return GetShipTypeForSide(side, 0);
+    }
+
+    internal static ConfigData.ShipTypes GetShipTypeForSide(int side, int shipIndex)
+    {
         if (side == ConfigData.Configuration.BeeSide)
         {
-            return BeeShipType;
+            return RuntimeOptions.GetBeeShipType(shipIndex);
         }
         if (side == ConfigData.Configuration.HumanSide)
         {
-            return HumanShipType;
+            return RuntimeOptions.GetHumanShipType(shipIndex);
         }
-        throw new System.ArgumentOutOfRangeException(nameof(side), side, "RL training side must be Bees or Humans.");
+        throw new ArgumentOutOfRangeException(nameof(side), side, "RL training side must be Bees or Humans.");
+    }
+
+    internal static Vector2 GetShipFormationOffset(int shipIndex)
+    {
+        int shipCount = CurrentShipsPerSide;
+        if (shipIndex < 0 || shipIndex >= shipCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shipIndex));
+        }
+        if (shipCount == 1)
+        {
+            return Vector2.zero;
+        }
+
+        int columns = Mathf.CeilToInt(Mathf.Sqrt(shipCount));
+        int rows = Mathf.CeilToInt((float)shipCount / columns);
+        int row = shipIndex / columns;
+        int column = shipIndex % columns;
+        int itemsInRow = Mathf.Min(columns, shipCount - row * columns);
+
+        // Scale formation spacing with the selected arena while capping it so a larger map does not
+        // scatter a small team unnecessarily. The last partial row is centered independently.
+        float spacing = Mathf.Clamp(CurrentMapSize / (Mathf.Max(columns, rows) + 4f), 1.5f, 6f);
+        float x = (column - (itemsInRow - 1) * 0.5f) * spacing;
+        float y = (row - (rows - 1) * 0.5f) * spacing;
+        return new Vector2(x, y);
     }
 
     /// <summary>
     /// Reuses the normal Titania map object so all normal map ownership/pooling code stays intact,
-    /// but shrinks the playable area and its four trigger borders to 30x30 for this scene only.
+    /// but resizes the playable area and its four trigger borders for this training process only.
     /// </summary>
     internal static void ConfigureTrainingMap(Map map)
     {
@@ -88,15 +143,17 @@ internal static class RlOneVsOneTrainingBootstrap
             return;
         }
 
-        map.SpriteRenderer.size = new Vector2(TrainingMapSize, TrainingMapSize);
-        float scale = TrainingMapSize / AuthoredMapSize;
+        float mapSize = CurrentMapSize;
+        float spawnRadius = CurrentSpawnRadius;
+        map.SpriteRenderer.size = new Vector2(mapSize, mapSize);
+        float scale = mapSize / AuthoredMapSize;
         map.SizeMultiplier = new Vector2(scale, scale);
-        map.UserStartingPosition = new Vector2(0f, -SpawnRadius);
-        map.AIStartingPosition = new Vector2(0f, SpawnRadius);
+        map.UserStartingPosition = new Vector2(0f, -spawnRadius);
+        map.AIStartingPosition = new Vector2(0f, spawnRadius);
 
-        float halfMap = TrainingMapSize / 2f;
+        float halfMap = mapSize / 2f;
         float borderCenter = halfMap + BorderHalfThickness;
-        float longBorder = TrainingMapSize + BorderOverhang;
+        float longBorder = mapSize + BorderOverhang;
         MapBorder[] borders = map.GetComponentsInChildren<MapBorder>(true);
         for (int i = 0; i < borders.Length; i++)
         {
@@ -158,7 +215,20 @@ internal static class RlOneVsOneTrainingBootstrap
             return;
         }
 
-        Apply(stage);
+        try
+        {
+            Apply(stage);
+        }
+        catch (ArgumentException exception)
+        {
+            // A typo in an --env-args flag must never silently train the default environment.
+            stage.IsTrainingNueralNetwork = false;
+            Debug.LogError($"Invalid RL training command-line configuration: {exception.Message}");
+            if (!Application.isEditor)
+            {
+                Application.Quit(2);
+            }
+        }
     }
 
     internal static void Apply(Stage stage)
@@ -167,6 +237,8 @@ internal static class RlOneVsOneTrainingBootstrap
         {
             return;
         }
+
+        RlOneVsOneTrainingOptions options = RuntimeOptions;
 
         // Training skips normal GameMenus.Setup(), while Level.SetupLevel() still expects the
         // serialized ActionBox hierarchy to exist. Preserve it but keep it inactive.
@@ -183,7 +255,7 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.IsTrainingHiveMind = false;
         stage.IsTrainingNueralNetwork = true;
         stage.ActivateHiveMind = false;
-        stage.ActivateBrains = false; // The new RL controller will own actions; the historical Brain path is dormant.
+        stage.ActivateBrains = false; // The ML-Agents adapters own actions; the historical Brain path is dormant.
         stage.DoesUserHaveController = false;
         stage.UseFullyRandomSquads = true;
         stage.UseFullyRandomEnemySquads = false;
@@ -197,18 +269,19 @@ internal static class RlOneVsOneTrainingBootstrap
 
         stage.LevelCount = TrainingLevelCount;
 
-        // This scene was copied from the legacy Hive Mind training scene and can retain a non-zero
-        // serialized minimum. The dedicated 1v1 proof must normalize both ends of the range so
-        // StageConfigOptions never receives an invalid RandomInt range and always generates one squad.
+        // The dedicated RL path always creates one explicit squad per side; CurrentShipsPerSide
+        // controls the number of explicit FleetShips inside that squad.
         stage.GeneratedSquadCountOverride = 1;
         stage.GeneratedSquadCountMinimum = 0;
 
         stage.OverrideMapIndex = TrainingMapIndex;
-        stage.TimeoutTime = TrainingTimeoutSeconds;
+        stage.TimeoutTime = options.EpisodeTimeoutSeconds;
         stage.InitialCommandDelay = 0;
 
-        stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes> { BeeShipType };
-        stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes> { HumanShipType };
+        stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(options.BeeShipTypes);
+        stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(options.HumanShipTypes);
+
+        Debug.Log($"RL training configuration {options.Describe()}");
 
         RlOneVsOneTrainingRuntimeGuard guard = stage.GetComponent<RlOneVsOneTrainingRuntimeGuard>();
         if (guard == null)
@@ -252,9 +325,9 @@ internal static class RlOneVsOneTrainingBootstrap
 }
 
 /// <summary>
-/// Dedicated presentation and arena guard for the first RL proof. It runs after ordinary gameplay
+/// Dedicated presentation and arena guard for RL combat training. It runs after ordinary gameplay
 /// FixedUpdate callbacks so the policy can use the normal ship movement code while still respecting
-/// the small training arena. This is deliberately scoped to the dedicated RL scene.
+/// the configured training arena. This is deliberately scoped to the dedicated RL scene.
 /// </summary>
 [DefaultExecutionOrder(10000)]
 internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
@@ -293,9 +366,7 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
             return;
         }
 
-        // Fish Tank normally zooms all the way out to Map.MaxZoom. The dedicated proof instead
-        // keeps the complete 30-unit arena visible at a useful scale, including after resets.
-        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.TrainingCameraSize;
+        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
         Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();
         _stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f);
     }
