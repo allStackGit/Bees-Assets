@@ -35,6 +35,7 @@ namespace Bees.Tests.EditMode
             _humanSide = (int)sideMap[Enum.Parse(shipType, "Gunship")];
 
             object configuration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "IsLoaded", true);
             RuntimeAssembly.SetField(configuration, "BeeSide", _beeSide);
             RuntimeAssembly.SetField(configuration, "HumanSide", _humanSide);
             RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
