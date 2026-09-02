@@ -161,3 +161,35 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         throw new ArgumentOutOfRangeException(nameof(side), side, "RL training side must be Bees or Humans.");
     }
 }
+
+/// <summary>
+/// Process-wide training-only facade. Level.SetupShips always prepares the AI side first, so the
+/// episode pair is advanced once before either side is spawned and then remains fixed for both sides.
+/// </summary>
+internal static class RlOneVsOneEpisodeMatchups
+{
+    private static RlOneVsOneEpisodeMatchupSelector _selector;
+
+    private static RlOneVsOneEpisodeMatchupSelector Selector
+    {
+        get
+        {
+            if (_selector == null)
+            {
+                RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
+                _selector = new RlOneVsOneEpisodeMatchupSelector(options);
+            }
+            return _selector;
+        }
+    }
+
+    internal static void PrepareEpisode()
+    {
+        Selector.PrepareEpisode();
+    }
+
+    internal static ConfigData.ShipTypes GetShipType(int side, int shipIndex)
+    {
+        return Selector.GetShipType(side, shipIndex);
+    }
+}
