@@ -25,10 +25,13 @@ namespace Bees.Tests.EditMode
         [Test]
         public void FleetLoaderAllowsOptionalNameAndMinedStatFromOlderRecords()
         {
-            string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Data", "FleetData.cs"));
+            string fleetData = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Data", "FleetData.cs"));
+            string aotJson = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Data", "AotJson.cs"));
 
-            StringAssert.Contains("ship.m != null ? (int)ship.m : 0", source);
-            StringAssert.Contains("ship.n != null ? (string)ship.n : \"\"", source);
+            StringAssert.Contains("AotJson.ParseFleetShips(json)", fleetData,
+                "FleetData must route persisted ship records through the explicit AOT-safe parser.");
+            StringAssert.Contains("ship[\"m\"]?.Value<int>() ?? 0", aotJson);
+            StringAssert.Contains("ship[\"n\"]?.Value<string>() ?? string.Empty", aotJson);
         }
     }
 }
