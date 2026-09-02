@@ -73,6 +73,7 @@ public class MapObject : MonoBehaviour
         if (!IsDead)
         {
             IsDead = true;
+            Level?.State?.ForgetHiveMindMapObject(this);
             Destroy(gameObject);
         }
     }
@@ -89,6 +90,7 @@ public class MapObject : MonoBehaviour
 
     private void RemoveVisibilityOwnership()
     {
+        Level?.State?.ForgetHiveMindMapObject(this);
         MapObjectVisibilityTracker tracker = GetComponent<MapObjectVisibilityTracker>();
         if (!System.Object.ReferenceEquals(tracker, null))
         {
