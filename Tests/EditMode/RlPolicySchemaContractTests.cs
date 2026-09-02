@@ -42,6 +42,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CanonicalTrainerNetworkArchitectureIsFrozenAndFeedForward()
+        {
+            string trainer = Read("Training", "rl_1v1_config.yaml");
+            string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
+
+            Assert.That(trainer, Does.Contain("normalize: true"));
+            Assert.That(trainer, Does.Contain("hidden_units: 128"));
+            Assert.That(trainer, Does.Contain("num_layers: 2"));
+            Assert.That(trainer, Does.Not.Contain("memory:"));
+            Assert.That(schema, Does.Contain("network=ff-128x2"));
+            Assert.That(schema, Does.Contain("normalize=true"));
+        }
+
+        [Test]
         public void WeaponSlotsNeverAliasOverflowOntoLastAction()
         {
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
