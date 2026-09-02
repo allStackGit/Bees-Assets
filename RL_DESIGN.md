@@ -54,25 +54,27 @@ The preservation objective is therefore not simply "lose the fewest hulls." Losi
 
 Some ships can spawn additional ships for free during a battle. Those spawned units are real tactical assets and are dynamically assigned shared-policy agents when they require policy control, but temporary spawning must not manufacture persistent fleet-value reward.
 
-## 4. Canonical Policy ABI v2
+## 4. Canonical Policy ABI v3
 
 `Scripts/Scenes/RlPolicySchema.cs` is the executable policy contract. Training startup validates it before agents are created. `Tests/EditMode/RlPolicySchemaContractTests.cs` guards the same contract against accidental drift.
 
 Current identity:
 
-- ABI version: `2`
+- ABI version: `3`
 - behavior name: `BeesRL1v1`
 - vector observations: `4685`
-- continuous actions: `4`
-- discrete branches: `[33, 5, 65, 65, 65]`
+- continuous actions: `34`
+- discrete branches: `16 x [2]`, then `[5, 65, 65, 65]`
 - network: feed-forward, `128` hidden units, `2` hidden layers, observation normalization enabled
 - recurrent memory: none
+
+The 34 continuous actions are two movement values plus two independent aim values for each of the 16 authored weapon slots. The first 16 discrete branches independently cease/fire those same weapon slots. ABI v3 intentionally supersedes the earlier shared-aim/single-weapon-command ABI before canonical long-term training.
 
 The complete schema signature is emitted at training startup. A checkpoint should be resumed only when its ABI signature matches.
 
 ### 4.1 What is frozen
 
-The following are checkpoint-sensitive and must not change for ABI v2:
+The following are checkpoint-sensitive and must not change for ABI v3:
 
 - observation count, order, meaning, and normalization semantics;
 - entity ordering semantics;
@@ -86,7 +88,7 @@ Changing any of these requires an intentional new ABI version and should be trea
 
 ### 4.2 What remains tunable
 
-The following may be changed while continuing an ABI-v2 network:
+The following may be changed while continuing an ABI-v3 network:
 
 - reward magnitudes and reward balancing;
 - curriculum and matchup distributions;
@@ -173,7 +175,7 @@ The permanent policy semantic is **nearest/relevant bounded state**, not "observ
 
 Each authored weapon slot receives 19 values including weapon identity, local position, combat characteristics, turret heading/readiness, and target/aim state where applicable.
 
-Weapon list order is the stable slot identity. Discrete weapon action slot N controls exactly authored weapon N.
+Weapon list order is the stable slot identity. Continuous aim pair N and discrete fire branch N control exactly authored weapon N.
 
 Excess weapons are never collapsed onto the final action. If a policy-controlled ship has more than 16 authored weapon slots, training is rejected by `RlPolicySchema.TryValidateShip` so the incompatibility is discovered before silently training the wrong control mapping.
 
@@ -209,21 +211,25 @@ Individual projectiles are intentionally not observed for projectile dodging. Do
 
 ## 6. Action Layout
 
-### 6.1 Continuous actions — 4
+### 6.1 Continuous actions — 34
 
 - movement X
 - movement Y
-- aim X
-- aim Y
+- weapon slot 0 aim X/Y
+- weapon slot 1 aim X/Y
+- ...
+- weapon slot 15 aim X/Y
 
-Movement controls the real ship movement primitive. Aim sets the current policy aim direction used when a weapon command is issued.
+Movement controls the real ship movement primitive. Every authored weapon slot has its own retained aim direction. A non-dead-zone aim pair updates only that slot's direction, so all turrets can hold different targets and can be updated independently in the same policy decision.
 
-### 6.2 Weapon command branch — 33 choices
+### 6.2 Weapon fire branches — 16 branches x 2 choices
 
-- `0`: no weapon command
-- for each of 16 weapon slots: cease fire / fire
+For each authored weapon slot N:
 
-Turrets retain their own RL aim target after being commanded, so different turrets can be aimed independently across decisions without requiring 16 simultaneous continuous aim vectors.
+- `0`: cease fire for slot N
+- `1`: fire slot N
+
+All 16 branches are read every decision. A slot's fire command is paired with that slot's independent continuous aim direction. Missing/non-turret authored slots ignore the command and their fire action is masked when the agent is bound.
 
 ### 6.3 Special-action branch — 5 choices
 
@@ -249,7 +255,7 @@ They are currently masked except for `none`. A future mechanic that genuinely re
 
 ## 7. Special Mechanics and Temporal State
 
-ABI v2 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
+ABI v3 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
 
 Examples:
 
@@ -258,13 +264,13 @@ Examples:
 - Striker exposes bomb readiness and its dedicated live parent-carrier state.
 - mining/healing/warp eligibility is explicit.
 
-If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v2 is not checkpoint-compatible.
+If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v3 is not checkpoint-compatible.
 
 ## 8. Barge Charge Lifecycle
 
-The Barge charge action is reserved immediately when wind-up begins. `HasStartedCharging` is set before the first coroutine yield.
+The Barge charge action reserves its RL charge phase immediately when wind-up begins. `SetChargePhase(1)` occurs before the first coroutine yield, preventing repeated policy decisions during the wind-up from reserving overlapping charge coroutines.
 
-This prevents repeated ML-Agent decisions during the two-second build-up from launching overlapping charge coroutines. Charge phase state is reset during pooled lifecycle cleanup and guarded by regression tests.
+`HasStartedCharging` retains its historical campaign meaning: it becomes true only after the wind-up completes, immediately before active charge movement begins. Charge phase state is reset during pooled lifecycle cleanup and guarded by regression tests.
 
 ## 9. Dynamic Agent Provisioning and Reset
 
@@ -277,13 +283,13 @@ An agent owns one physical ship lifecycle per trajectory. Episode begin resets:
 - runtime ship identity;
 - decision counter;
 - mining/healing action timers;
-- retained aim direction.
+- retained per-weapon aim directions.
 
 Releasing a ship clears direct RL turret control. Ship-specific pooled lifecycle cleanup remains responsible for resetting its own gameplay state.
 
 ## 10. Trainer Architecture
 
-The canonical ABI-v2 network is the current ML-Agents PPO network:
+The canonical ABI-v3 network is the current ML-Agents PPO network:
 
 - `normalize: true`
 - `hidden_units: 128`
@@ -294,7 +300,7 @@ The optimizer, reward, horizon, checkpoint, and self-play settings in `Training/
 
 ## 11. Training Progression
 
-The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v2 network should be retained while training complexity expands.
+The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v3 network should be retained while training complexity expands.
 
 Recommended progression:
 
@@ -314,11 +320,11 @@ Before treating a long run as a keep-forever canonical checkpoint series:
 
 - Unity must compile the branch;
 - `RlPolicySchemaContractTests` and the relevant EditMode/Foundation tests must pass;
-- the training scene must start and print ABI v2 with `observations=4685`, continuous actions `4`, and branches `[33,5,65,65,65]`;
+- the training scene must start and print ABI v3 with `observations=4685`, `continuous_actions=34`, `weapon_fire_branches=16x2`, `special_branch=5`, and 65-choice ally/enemy/map-object target branches;
 - every ship type intended for the curriculum must successfully bind without a schema overflow error;
 - a short multi-episode smoke run must demonstrate clean resets and dynamic agent provisioning.
 
-Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v2 checkpoints.
+Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v3 checkpoints.
 
 ## 13. Lessons Carried Forward From Ants
 
