@@ -19,6 +19,8 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(17));
         }
 
         [Test]
