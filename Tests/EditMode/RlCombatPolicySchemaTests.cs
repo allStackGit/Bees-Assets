@@ -15,14 +15,19 @@ namespace Bees.Tests.EditMode
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
 
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(15));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(16));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(16));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedObstacles"), Is.EqualTo(64));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMiningAsteroids"), Is.EqualTo(8));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(64));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedCollisionAsteroids"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridSize"), Is.EqualTo(13));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridCellCount"), Is.EqualTo(169));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(8));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(28));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObstacleObservationSize"), Is.EqualTo(15));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(1871));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(3413));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
@@ -30,25 +35,35 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "HealingAction"), Is.EqualTo(3));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WarpAction"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(16));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(17));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(17));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(49));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(49));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(65));
         }
 
         [Test]
-        public void EnumIdentityEncodingHasCapacityForEveryCurrentShipWeaponAndObstacleType()
+        public void TacticalPerceptionCapacityIsIndependentOfTrainingPopulationLimit()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            Type optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
+
+            int trainingMaximum = (int)RuntimeAssembly.GetStaticField(optionsType, "MaximumShipsPerSide");
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(48));
+            Assert.That(48, Is.GreaterThan(trainingMaximum),
+                "Deployment-scale tactical perception must not be capped by the current curriculum population limit.");
+        }
+
+        [Test]
+        public void EnumIdentityEncodingHasCapacityForEveryCurrentShipAndWeaponType()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             int shipBits = (int)RuntimeAssembly.GetStaticField(agentType, "ShipTypeBitCount");
             int weaponBits = (int)RuntimeAssembly.GetStaticField(agentType, "WeaponTypeBitCount");
-            int obstacleBits = (int)RuntimeAssembly.GetStaticField(agentType, "ObstacleTypeBitCount");
             int shipTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes")).Length;
             int weaponTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+WeaponTypes")).Length;
-            int obstacleTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ObstacleTypes")).Length;
 
             Assert.That(1 << shipBits, Is.GreaterThanOrEqualTo(shipTypeCount));
             Assert.That(1 << weaponBits, Is.GreaterThanOrEqualTo(weaponTypeCount));
-            Assert.That(1 << obstacleBits, Is.GreaterThanOrEqualTo(obstacleTypeCount));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTypeBitCount"), Is.EqualTo(4));
         }
 
@@ -170,7 +185,7 @@ namespace Bees.Tests.EditMode
                 Array mapObjectCaches = (Array)RuntimeAssembly.GetField(state, "HiveMindMapObjectCache");
                 Assert.That(RuntimeAssembly.GetCount(miningCaches.GetValue(0)), Is.EqualTo(1));
                 Assert.That(RuntimeAssembly.GetCount(obstacleCaches.GetValue(0)), Is.EqualTo(2),
-                    "Mining asteroids are also obstacle knowledge even though the policy emits them in strategic slots only.");
+                    "Mining asteroids are also obstacle knowledge even though the policy emits them in dedicated mining slots only.");
                 Assert.That(RuntimeAssembly.GetCount(mapObjectCaches.GetValue(0)), Is.EqualTo(1));
 
                 RuntimeAssembly.Invoke(state, "ResetState");
@@ -219,19 +234,73 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void EnvironmentObservationsExposeGeometryMotionAndTargetability()
+        public void EnvironmentObservationsSeparateStaticGeometryMovingAsteroidsAndStrategicObjects()
         {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(source, Does.Contain("GetObstaclesVisibleToHiveMind(_side)"));
+            Assert.That(source, Does.Contain("GetMiningAsteroidsVisibleToHiveMind(side)"));
+            Assert.That(source, Does.Contain("GetMapObjectsVisibleToHiveMind(side)"));
+            Assert.That(source, Does.Contain("GetObstaclesVisibleToHiveMind(side)"));
             Assert.That(source, Does.Contain("collisionAsteroid.Body.linearVelocity"));
-            Assert.That(source, Does.Contain("obstacle.HalfExtents.x"));
-            Assert.That(source, Does.Contain("obstacle.HalfExtents.y"));
-            Assert.That(source, Does.Contain("AddHeading(sensor, obstacle.Rotation)"));
-            Assert.That(source, Does.Contain("obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid"));
+            Assert.That(source, Does.Contain("asteroid.HalfExtents.x"));
+            Assert.That(source, Does.Contain("asteroid.HalfExtents.y"));
+            Assert.That(source, Does.Contain("AddHeading(sensor, asteroid.Rotation)"));
+            Assert.That(source, Does.Contain("obstacle.ObstacleType == ConfigData.ObstacleTypes.StaticObstacle"));
+            Assert.That(source, Does.Contain("MarkNavigationAabb(_navigationOccupancy"));
+            Assert.That(source, Does.Contain("MarkNavigationBounds(_navigationOccupancy"));
             Assert.That(source, Does.Contain("mapObject is CanisterBomb"));
             Assert.That(source, Does.Contain("FireTankObservationType"));
             Assert.That(source, Does.Contain("mapObject.Targetable ? 1f : 0f"));
+            Assert.That(source, Does.Not.Contain("Projectile"),
+                "Projectile-evasion observations are intentionally excluded from the combat policy.");
+        }
+
+        [Test]
+        public void NavigationGridMarksLocalStaticGeometryWithoutConsumingExplicitObjectSlots()
+        {
+            Type perceptionType = RuntimeAssembly.GetType("RlCombatPerception");
+            int gridSize = (int)RuntimeAssembly.GetStaticField(perceptionType, "NavigationGridSize");
+            int cellCount = (int)RuntimeAssembly.GetStaticField(perceptionType, "NavigationGridCellCount");
+            float[] occupancy = new float[cellCount];
+
+            RuntimeAssembly.InvokeStatic(
+                perceptionType,
+                "MarkNavigationAabb",
+                occupancy,
+                Vector2.zero,
+                Vector2.zero,
+                new Vector2(4f, 4f));
+
+            int center = (gridSize / 2) * gridSize + gridSize / 2;
+            int blocked = 0;
+            for (int i = 0; i < occupancy.Length; i++)
+            {
+                if (occupancy[i] > 0f)
+                {
+                    blocked++;
+                }
+            }
+
+            Assert.That(occupancy[center], Is.EqualTo(1f));
+            Assert.That(blocked, Is.EqualTo(1),
+                "A small obstacle centered on the ship should occupy only the center 10x10 navigation cell.");
+
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            Assert.That(agent, Does.Not.Contain("MaxObservedObstacles"));
+            Assert.That(agent, Does.Contain("MaxObservedCollisionAsteroids"));
+        }
+
+        [Test]
+        public void SelfPerceptionUsesActualMapBoundsAndCompactGlobalBattleCounts()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
+
+            Assert.That(source, Does.Contain("NormalizeSignedCoordinate(position.x, level.MinX, level.MaxX)"));
+            Assert.That(source, Does.Contain("NormalizeSignedCoordinate(position.y, level.MinY, level.MaxY)"));
+            Assert.That(source, Does.Contain("level.MaxX - level.MinX"));
+            Assert.That(source, Does.Contain("level.MaxY - level.MinY"));
+            Assert.That(source, Does.Contain("state.GetShips(side).Count"));
+            Assert.That(source, Does.Contain("state.GetShipsVisibleToHiveMind(side).Count"));
         }
 
         [Test]
@@ -253,15 +322,17 @@ namespace Bees.Tests.EditMode
         [Test]
         public void ObservationCollectionsUseExplicitDeterministicOrdering()
         {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string source = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
             Assert.That(source, Does.Contain("SortShipsForObservation(_allyCandidates, origin)"));
             Assert.That(source, Does.Contain("SortShipsForObservation(_enemyCandidates, origin)"));
             Assert.That(source, Does.Contain("((int)left.ShipType).CompareTo((int)right.ShipType)"));
             Assert.That(source, Does.Contain("left.Id.CompareTo(right.Id)"));
+            Assert.That(source, Does.Contain("_miningAsteroidCandidates.Sort"));
             Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
-            Assert.That(source, Does.Contain("_obstacleCandidates.Sort"));
+            Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Sort"));
             Assert.That(source, Does.Contain("left.Type.CompareTo(right.Type)"));
+            Assert.That(source, Does.Contain("iteration order is intentionally irrelevant"));
             Assert.That(source, Does.Contain("Weapon is an authored List rather than an unordered set"));
         }
 
