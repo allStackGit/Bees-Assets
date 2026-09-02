@@ -11,18 +11,21 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 2;
+    internal const int Version = 3;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int ExpectedObservationSize = 4685;
-    internal const int ExpectedContinuousActions = 4;
-    internal const int ExpectedWeaponCommandBranchSize = 33;
+    internal const int ExpectedContinuousActions = 34;
+    internal const int ExpectedWeaponFireBranchCount = 16;
+    internal const int ExpectedWeaponFireBranchSize = 2;
+    internal const int ExpectedDiscreteBranchCount = 20;
     internal const int ExpectedSpecialActionBranchSize = 5;
     internal const int ExpectedAllyTargetBranchSize = 65;
     internal const int ExpectedEnemyTargetBranchSize = 65;
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v2|behavior=BeesRL1v1|network=ff-128x2|normalize=true|obs=4685|cont=4|disc=33,5,65,65,65|" +
+        "bees-rl-v3|behavior=BeesRL1v1|network=ff-128x2|normalize=true|obs=4685|cont=34|disc=2x16,5,65,65,65|" +
+        "weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|" +
         "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
         "self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|" +
@@ -38,11 +41,14 @@ internal static class RlPolicySchema
 
         Check(errors, RlCombatPerception.ObservationSize, ExpectedObservationSize, "observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
-        Check(errors, RlOneVsOneAgent.WeaponCommandBranchSize, ExpectedWeaponCommandBranchSize, "weapon branch");
+        Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
+        Check(errors, RlOneVsOneAgent.WeaponFireBranchSize, ExpectedWeaponFireBranchSize, "weapon fire branch size");
+        Check(errors, RlOneVsOneAgent.DiscreteBranchCount, ExpectedDiscreteBranchCount, "discrete branch count");
         Check(errors, RlOneVsOneAgent.SpecialActionBranchSize, ExpectedSpecialActionBranchSize, "special branch");
         Check(errors, RlOneVsOneAgent.AllyTargetBranchSize, ExpectedAllyTargetBranchSize, "ally target branch");
         Check(errors, RlOneVsOneAgent.EnemyTargetBranchSize, ExpectedEnemyTargetBranchSize, "enemy target branch");
         Check(errors, RlOneVsOneAgent.MapObjectTargetBranchSize, ExpectedMapObjectTargetBranchSize, "map-object target branch");
+        ValidateDiscreteBranchSizes(errors);
 
         Check(errors, RlCombatPerception.ShipTypeBitCount, 6, "ship type bits");
         Check(errors, RlCombatPerception.WeaponTypeBitCount, 6, "weapon type bits");
@@ -115,10 +121,29 @@ internal static class RlPolicySchema
         return true;
     }
 
+    private static void ValidateDiscreteBranchSizes(List<string> errors)
+    {
+        int[] branchSizes = RlOneVsOneAgent.CreateDiscreteBranchSizes();
+        Check(errors, branchSizes.Length, ExpectedDiscreteBranchCount, "discrete branch array length");
+        if (branchSizes.Length != ExpectedDiscreteBranchCount)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < ExpectedWeaponFireBranchCount; slot++)
+        {
+            Check(errors, branchSizes[slot], ExpectedWeaponFireBranchSize, $"weapon fire branch {slot}");
+        }
+        Check(errors, branchSizes[RlOneVsOneAgent.SpecialActionBranch], ExpectedSpecialActionBranchSize, "special branch array entry");
+        Check(errors, branchSizes[RlOneVsOneAgent.AllyTargetBranch], ExpectedAllyTargetBranchSize, "ally target branch array entry");
+        Check(errors, branchSizes[RlOneVsOneAgent.EnemyTargetBranch], ExpectedEnemyTargetBranchSize, "enemy target branch array entry");
+        Check(errors, branchSizes[RlOneVsOneAgent.MapObjectTargetBranch], ExpectedMapObjectTargetBranchSize, "map-object target branch array entry");
+    }
+
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
         // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v2.
+        // within the reserved bit range, but existing values must never be renumbered for ABI v3.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");

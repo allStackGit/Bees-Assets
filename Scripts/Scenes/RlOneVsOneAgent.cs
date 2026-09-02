@@ -44,16 +44,23 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int ObjectiveObservationSize = RlCombatPerception.ObjectiveObservationSize;
     internal const int ObservationSize = RlCombatPerception.ObservationSize;
 
-    // Movement/aim remain continuous. The capability branch is intentionally primitive: it asks
-    // the ship to perform an action at its CURRENT location. It never invokes a Hive Mind command
-    // and never scripts movement toward an asteroid, Beehive or Warp Gate.
-    internal const int ContinuousActionCount = 4; // move x/y, aim x/y
-    internal const int WeaponCommandBranch = 0;
-    internal const int SpecialActionBranch = 1;
-    internal const int AllyTargetBranch = 2;
-    internal const int EnemyTargetBranch = 3;
-    internal const int MapObjectTargetBranch = 4;
-    internal const int WeaponCommandBranchSize = 1 + MaxWeaponSlots * 2; // none + (cease/fire) per slot
+    // Movement occupies the first two continuous actions. Every authored weapon slot then gets its
+    // own aim x/y pair and its own fire branch so all turrets can be aimed/fired independently in
+    // the same policy decision. The capability branch remains primitive: it acts at CURRENT location.
+    internal const int MovementContinuousActionCount = 2;
+    internal const int WeaponAimContinuousActionsPerSlot = 2;
+    internal const int WeaponAimContinuousActionStart = MovementContinuousActionCount;
+    internal const int ContinuousActionCount = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;
+    internal const int WeaponFireBranchStart = 0;
+    internal const int WeaponFireBranchCount = MaxWeaponSlots;
+    internal const int WeaponFireBranchSize = 2;
+    internal const int CeaseWeaponAction = 0;
+    internal const int FireWeaponAction = 1;
+    internal const int SpecialActionBranch = WeaponFireBranchStart + WeaponFireBranchCount;
+    internal const int AllyTargetBranch = SpecialActionBranch + 1;
+    internal const int EnemyTargetBranch = AllyTargetBranch + 1;
+    internal const int MapObjectTargetBranch = EnemyTargetBranch + 1;
+    internal const int DiscreteBranchCount = MapObjectTargetBranch + 1;
     internal const int NoSpecialAction = 0;
     internal const int ShipSpecialAction = 1;
     internal const int MiningAction = 2;
@@ -86,7 +93,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private long _boundRuntimeShipId;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
-    private Vector2 _lastAimDirection = Vector2.up;
+    private readonly Vector2[] _weaponAimDirections = new Vector2[MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
 
@@ -140,8 +147,9 @@ internal sealed class RlOneVsOneAgent : Agent
 
         Debug.Log($"RL policy ABI v{RlPolicySchema.Version} {RlPolicySchema.Signature} " +
                   $"observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
-                  $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}," +
-                  $"{AllyTargetBranchSize},{EnemyTargetBranchSize},{MapObjectTargetBranchSize}] " +
+                  $"weapon_fire_branches={WeaponFireBranchCount}x{WeaponFireBranchSize} " +
+                  $"special_branch={SpecialActionBranchSize} ally_target_branch={AllyTargetBranchSize} " +
+                  $"enemy_target_branch={EnemyTargetBranchSize} map_object_target_branch={MapObjectTargetBranchSize} " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} " +
                   $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
                   $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
@@ -184,6 +192,20 @@ internal sealed class RlOneVsOneAgent : Agent
         return count;
     }
 
+    internal static int[] CreateDiscreteBranchSizes()
+    {
+        int[] branchSizes = new int[DiscreteBranchCount];
+        for (int slot = 0; slot < WeaponFireBranchCount; slot++)
+        {
+            branchSizes[WeaponFireBranchStart + slot] = WeaponFireBranchSize;
+        }
+        branchSizes[SpecialActionBranch] = SpecialActionBranchSize;
+        branchSizes[AllyTargetBranch] = AllyTargetBranchSize;
+        branchSizes[EnemyTargetBranch] = EnemyTargetBranchSize;
+        branchSizes[MapObjectTargetBranch] = MapObjectTargetBranchSize;
+        return branchSizes;
+    }
+
     private static void CreateAgent(Stage stage, int side, int teamId, string label)
     {
         GameObject obj = new GameObject($"RL Combat Agent - {label}");
@@ -196,14 +218,7 @@ internal sealed class RlOneVsOneAgent : Agent
         behavior.BrainParameters.NumStackedVectorObservations = 1;
         behavior.BrainParameters.ActionSpec = new ActionSpec(
             ContinuousActionCount,
-            new[]
-            {
-                WeaponCommandBranchSize,
-                SpecialActionBranchSize,
-                AllyTargetBranchSize,
-                EnemyTargetBranchSize,
-                MapObjectTargetBranchSize
-            });
+            CreateDiscreteBranchSizes());
 
         RlOneVsOneAgent agent = obj.AddComponent<RlOneVsOneAgent>();
         agent._stage = stage;
@@ -269,6 +284,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     public override void Initialize()
     {
+        ResetWeaponAimDirections();
         Instances.Add(this);
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
@@ -296,7 +312,15 @@ internal sealed class RlOneVsOneAgent : Agent
         _decisionCounter = 0;
         _nextMiningActionTime = 0f;
         _nextHealingActionTime = 0f;
-        _lastAimDirection = Vector2.up;
+        ResetWeaponAimDirections();
+    }
+
+    private void ResetWeaponAimDirections()
+    {
+        for (int slot = 0; slot < _weaponAimDirections.Length; slot++)
+        {
+            _weaponAimDirections[slot] = Vector2.up;
+        }
     }
 
     private void FixedUpdate()
@@ -332,13 +356,9 @@ internal sealed class RlOneVsOneAgent : Agent
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             bool enabled = canControl && HasTurretForSlot(slot);
-            actionMask.SetActionEnabled(WeaponCommandBranch, 1 + slot * 2, enabled);
-            actionMask.SetActionEnabled(WeaponCommandBranch, 2 + slot * 2, enabled);
+            actionMask.SetActionEnabled(WeaponFireBranchStart + slot, FireWeaponAction, enabled);
         }
 
-        // Masks describe permanent capability only. They deliberately do NOT reveal whether the ship
-        // is currently touching a valid target, damaged, off cooldown, or otherwise in a successful
-        // situation. Invalid attempts remain legal and simply have no effect.
         actionMask.SetActionEnabled(SpecialActionBranch, ShipSpecialAction,
             canControl && HasSpecialAction(_ship));
         actionMask.SetActionEnabled(SpecialActionBranch, MiningAction,
@@ -348,9 +368,6 @@ internal sealed class RlOneVsOneAgent : Agent
         actionMask.SetActionEnabled(SpecialActionBranch, WarpAction,
             canControl && CanUseWarpAction(_ship));
 
-        // These branches remain reserved permanent capacity for a future mechanic that genuinely
-        // needs explicit entity selection. Mine/heal/warp are spatial primitive actions and do not
-        // consume target selections.
         for (int action = 1; action < AllyTargetBranchSize; action++)
         {
             actionMask.SetActionEnabled(AllyTargetBranch, action, false);
@@ -374,18 +391,19 @@ internal sealed class RlOneVsOneAgent : Agent
 
         var continuous = actions.ContinuousActions;
         ApplyMovement(new Vector2(continuous[0], continuous[1]));
-        Vector2 aim = new Vector2(continuous[2], continuous[3]);
-        if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone)
-        {
-            _lastAimDirection = aim.normalized;
-        }
 
         var discrete = actions.DiscreteActions;
-        int weaponCommand = discrete[WeaponCommandBranch];
-        if (weaponCommand > 0)
+        for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
-            int encoded = weaponCommand - 1;
-            ApplyWeaponCommand(encoded / 2, (encoded & 1) == 1);
+            int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;
+            Vector2 aim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);
+            if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone)
+            {
+                _weaponAimDirections[slot] = aim.normalized;
+            }
+
+            bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
+            ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);
         }
 
         switch (discrete[SpecialActionBranch])
@@ -413,7 +431,10 @@ internal sealed class RlOneVsOneAgent : Agent
             continuous[i] = Random.Range(-1f, 1f);
         }
         var discrete = actionsOut.DiscreteActions;
-        discrete[WeaponCommandBranch] = Random.Range(0, WeaponCommandBranchSize);
+        for (int slot = 0; slot < WeaponFireBranchCount; slot++)
+        {
+            discrete[WeaponFireBranchStart + slot] = Random.Range(0, WeaponFireBranchSize);
+        }
         discrete[SpecialActionBranch] = Random.Range(0, SpecialActionBranchSize);
         discrete[AllyTargetBranch] = 0;
         discrete[EnemyTargetBranch] = 0;
@@ -441,7 +462,7 @@ internal sealed class RlOneVsOneAgent : Agent
         _ship.HasBrain = true;
     }
 
-    private void ApplyWeaponCommand(int slot, bool fire)
+    private void ApplyWeaponCommand(int slot, Vector2 aimDirection, bool fire)
     {
         if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= _ship.Weapons.Count)
         {
@@ -453,7 +474,7 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        Vector2 target = turret.GetPosition() + _lastAimDirection * Mathf.Max(1f, turret.Range);
+        Vector2 target = turret.GetPosition() + aimDirection * Mathf.Max(1f, turret.Range);
         turret.SetRlControl(target, fire);
     }
 
@@ -508,9 +529,6 @@ internal sealed class RlOneVsOneAgent : Agent
             return false;
         }
 
-        // Healing eligibility is an inherent ship-size rule, not a statement about whether a live
-        // Beehive exists nearby. Requiring both dimensions to be strictly smaller also excludes the
-        // Beehive itself without a special-case positional check.
         return shipSize.x < beehiveSize.x && shipSize.y < beehiveSize.y;
     }
 
@@ -732,7 +750,7 @@ internal sealed class RlOneVsOneAgent : Agent
             {
                 return true;
             }
-            _ship = null; // One trajectory owns one physical ship lifecycle.
+            _ship = null;
             return false;
         }
 
