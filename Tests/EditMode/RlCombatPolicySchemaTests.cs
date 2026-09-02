@@ -31,8 +31,14 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4685));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(33));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(34));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchSize"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranch"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranch"), Is.EqualTo(17));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranch"), Is.EqualTo(18));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranch"), Is.EqualTo(19));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "DiscreteBranchCount"), Is.EqualTo(20));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ShipSpecialAction"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
@@ -41,6 +47,23 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(65));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(65));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(65));
+        }
+
+        [Test]
+        public void EveryWeaponSlotHasItsOwnDiscreteFireBranch()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            int[] branchSizes = (int[])RuntimeAssembly.InvokeStatic(agentType, "CreateDiscreteBranchSizes");
+
+            Assert.That(branchSizes.Length, Is.EqualTo(20));
+            for (int slot = 0; slot < 16; slot++)
+            {
+                Assert.That(branchSizes[slot], Is.EqualTo(2), $"Weapon slot {slot} must have an independent cease/fire branch.");
+            }
+            Assert.That(branchSizes[16], Is.EqualTo(5));
+            Assert.That(branchSizes[17], Is.EqualTo(65));
+            Assert.That(branchSizes[18], Is.EqualTo(65));
+            Assert.That(branchSizes[19], Is.EqualTo(65));
         }
 
         [Test]

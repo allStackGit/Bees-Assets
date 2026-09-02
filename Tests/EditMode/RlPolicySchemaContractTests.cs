@@ -35,9 +35,12 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 2;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 3;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = 4685;"));
-            Assert.That(schema, Does.Contain("disc=33,5,65,65,65"));
+            Assert.That(schema, Does.Contain("cont=34"));
+            Assert.That(schema, Does.Contain("disc=2x16,5,65,65,65"));
+            Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
+            Assert.That(schema, Does.Contain("weapon-fire=slotwise-cease-or-fire"));
             Assert.That(agent, Does.Contain("RlPolicySchema.ValidateOrThrow();"));
         }
 
@@ -66,6 +69,25 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("_ship.Weapons[slot] is Turret turret"));
             Assert.That(schema, Does.Contain("ship.Weapons.Count > RlCombatPerception.MaxWeaponSlots"));
             Assert.That(agent, Does.Contain("RlPolicySchema.TryValidateShip(_ship, out string schemaError)"));
+        }
+
+        [Test]
+        public void EveryWeaponSlotHasIndependentAimAndFireActionsInOneDecision()
+        {
+            string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
+
+            Assert.That(agent, Does.Contain("internal const int ContinuousActionCount = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;"));
+            Assert.That(agent, Does.Contain("internal const int WeaponFireBranchCount = MaxWeaponSlots;"));
+            Assert.That(agent, Does.Contain("internal const int WeaponFireBranchSize = 2;"));
+            Assert.That(agent, Does.Contain("int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;"));
+            Assert.That(agent, Does.Contain("_weaponAimDirections[slot] = aim.normalized;"));
+            Assert.That(agent, Does.Contain("bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;"));
+            Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);"));
+            Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
+                "Independent weapon branches must not secretly share one retained aim vector.");
+            Assert.That(schema, Does.Contain("ExpectedContinuousActions = 34"));
+            Assert.That(schema, Does.Contain("ExpectedWeaponFireBranchCount = 16"));
         }
 
         [Test]
@@ -143,7 +165,7 @@ namespace Bees.Tests.EditMode
             string source = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             int methodStart = source.IndexOf("public override void OnEpisodeBegin()", StringComparison.Ordinal);
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
-            int nextMethod = source.IndexOf("private void FixedUpdate()", methodStart, StringComparison.Ordinal);
+            int nextMethod = source.IndexOf("private void ResetWeaponAimDirections()", methodStart, StringComparison.Ordinal);
             Assert.That(nextMethod, Is.GreaterThan(methodStart));
             string reset = source.Substring(methodStart, nextMethod - methodStart);
 
@@ -154,7 +176,8 @@ namespace Bees.Tests.EditMode
             Assert.That(reset, Does.Contain("_decisionCounter = 0;"));
             Assert.That(reset, Does.Contain("_nextMiningActionTime = 0f;"));
             Assert.That(reset, Does.Contain("_nextHealingActionTime = 0f;"));
-            Assert.That(reset, Does.Contain("_lastAimDirection = Vector2.up;"));
+            Assert.That(reset, Does.Contain("ResetWeaponAimDirections();"));
+            Assert.That(source, Does.Contain("_weaponAimDirections[slot] = Vector2.up;"));
         }
 
         [Test]
