@@ -130,5 +130,47 @@ namespace Bees.Tests.EditMode
             Assert.That(clearData, Does.Contain("IsCharging = false;"));
             Assert.That(clearData, Does.Contain("SetChargePhase(0);"));
         }
+
+        [Test]
+        public void AgentEpisodeBeginClearsTrajectoryLocalState()
+        {
+            string source = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            int methodStart = source.IndexOf("public override void OnEpisodeBegin()", StringComparison.Ordinal);
+            Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
+            int nextMethod = source.IndexOf("private void FixedUpdate()", methodStart, StringComparison.Ordinal);
+            Assert.That(nextMethod, Is.GreaterThan(methodStart));
+            string reset = source.Substring(methodStart, nextMethod - methodStart);
+
+            Assert.That(reset, Does.Contain("ReleaseShip();"));
+            Assert.That(reset, Does.Contain("_hasBoundShip = false;"));
+            Assert.That(reset, Does.Contain("_hasParticipatedThisEpisode = false;"));
+            Assert.That(reset, Does.Contain("_boundRuntimeShipId = 0;"));
+            Assert.That(reset, Does.Contain("_decisionCounter = 0;"));
+            Assert.That(reset, Does.Contain("_nextMiningActionTime = 0f;"));
+            Assert.That(reset, Does.Contain("_nextHealingActionTime = 0f;"));
+            Assert.That(reset, Does.Contain("_lastAimDirection = Vector2.up;"));
+        }
+
+        [Test]
+        public void SpawnedAndCapabilityOnlyShipsRemainEligibleForDynamicPolicyAgents()
+        {
+            string source = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(source, Does.Contain("ProvisionAgentsForSpawnedShips(_stage);"));
+            Assert.That(source, Does.Contain("CountPolicyControlledShips(level, beeSide)"));
+            Assert.That(source, Does.Contain("CountPolicyControlledShips(level, humanSide)"));
+            Assert.That(source, Does.Contain("EnsureAgentCount(stage, beeSide"));
+            Assert.That(source, Does.Contain("EnsureAgentCount(stage, humanSide"));
+
+            int methodStart = source.IndexOf("internal static bool RequiresPolicyControl(Ship ship)", StringComparison.Ordinal);
+            Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
+            int nextMethod = source.IndexOf("private static void EnsureAgentCount", methodStart, StringComparison.Ordinal);
+            Assert.That(nextMethod, Is.GreaterThan(methodStart));
+            string eligibility = source.Substring(methodStart, nextMethod - methodStart);
+
+            Assert.That(eligibility, Does.Contain("CanUseMiningAction(ship)"));
+            Assert.That(eligibility, Does.Contain("CanUseHealingAction(ship)"));
+            Assert.That(eligibility, Does.Contain("CanUseWarpAction(ship)"));
+        }
     }
 }
