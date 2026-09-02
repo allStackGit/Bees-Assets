@@ -241,6 +241,20 @@ namespace Bees.Tests.EditMode
                 "Direct Yellow Jacket damage must receive the same real-outcome reward path as weapon impacts.");
         }
 
+        [Test]
+        public void DirectShipSpecialsDoNotDependOnTheirScriptedCommandLoops()
+        {
+            string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
+            string barge = ReadSource("Scripts", "Entities", "Ships", "Barge.cs");
+
+            Assert.That(striker, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
+            Assert.That(striker, Does.Contain("HasDroppedBomb = false;"),
+                "A policy-controlled Striker must be able to drop again after its proximity reload without BombingRun resetting a new run.");
+            Assert.That(barge, Does.Contain("if (!Stage.IsTrainingNueralNetwork && target != null && !target.IsDead)"));
+            Assert.That(barge, Does.Contain("MoveInDirection(Rotation)"),
+                "RL Barge charge must follow the heading established by the policy rather than auto-aiming at a scripted target.");
+        }
+
         private static string ReadSource(params string[] pathParts)
         {
             string path = Application.dataPath;
