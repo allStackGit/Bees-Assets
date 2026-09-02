@@ -1,8 +1,9 @@
-﻿using Assets.Scripts.Entities.Ships;
+﻿using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
-using System.Collections;
 using System.Collections.Generic;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities
@@ -78,6 +79,7 @@ namespace Assets.Scripts.Entities
                         }
                     }
                 }
+                Level.State.ForgetHiveMindMiningAsteroid(this);
                 Level.State.RemoveObstacle(this);
                 Level.State.MiningAsteroids.Remove(this);
                 Level.State.MiningAsteroidsToRelease.Add(this);
