@@ -7,6 +7,8 @@ description: Context-efficient Bees repository learning. Route first, verify cur
 
 The objective is a progressively more accurate model of Bees that becomes **cheaper** to use over time. Repository learning is successful only when similar future tasks need fewer searches, fewer broad reads, and fewer reminders.
 
+Related specialist workflows remain deliberately separate: use `.agents/skills/search-index/SKILL.md` for bounded source discovery, `.agents/skills/continuous-learning/SKILL.md` when deciding whether a verified lesson deserves durable promotion, and `.agents/skills/code-quality/SKILL.md` for touched-code quality review.
+
 ## 1. Route before reading
 
 1. Start from the already-fetched root `AGENTS.md`.
