@@ -95,14 +95,19 @@ namespace Bees.Tests.EditMode
 
             string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
             Assert.That(squadSetup, Does.Contain("shipIndex < shipCount"));
-            Assert.That(squadSetup, Does.Contain("GetShipTypeForSide(side, shipIndex)"));
+            Assert.That(squadSetup, Does.Contain("RlOneVsOneEpisodeMatchups.PrepareEpisode()"));
+            Assert.That(squadSetup, Does.Contain("RlOneVsOneEpisodeMatchups.GetShipType(side, shipIndex)"));
             Assert.That(squadSetup, Does.Contain("GetShipFormationOffset(shipIndex)"));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("shipSlot < RlOneVsOneTrainingBootstrap.CurrentShipsPerSide"));
-            Assert.That(agent, Does.Contain("_shipSlot"));
-            Assert.That(agent, Does.Contain("_hasBoundFleetShip"));
-            Assert.That(agent, Does.Contain("GetShipsVisibleToHiveMind(_side)"));
+            Assert.That(agent, Does.Contain("int initialSlots = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;"));
+            Assert.That(agent, Does.Contain("ProvisionAgentsForSpawnedShips(_stage);"));
+            Assert.That(agent, Does.Contain("Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, beeSide))"));
+            Assert.That(agent, Does.Contain("_hasBoundShip"));
+            Assert.That(agent, Does.Contain("TryBindShip()"));
+
+            string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
+            Assert.That(perception, Does.Contain("GetShipsVisibleToHiveMind(side)"));
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             Assert.That(coordinator, Does.Contain("CaptureShotBaselines"));

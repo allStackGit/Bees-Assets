@@ -35,8 +35,9 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 3;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 4;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = 4685;"));
+            Assert.That(schema, Does.Contain("bees-rl-v4"));
             Assert.That(schema, Does.Contain("cont=34"));
             Assert.That(schema, Does.Contain("disc=2x16,5,65,65,65"));
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
@@ -51,10 +52,10 @@ namespace Bees.Tests.EditMode
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
             Assert.That(trainer, Does.Contain("normalize: true"));
-            Assert.That(trainer, Does.Contain("hidden_units: 128"));
-            Assert.That(trainer, Does.Contain("num_layers: 2"));
+            Assert.That(trainer, Does.Contain("hidden_units: 512"));
+            Assert.That(trainer, Does.Contain("num_layers: 3"));
             Assert.That(trainer, Does.Not.Contain("memory:"));
-            Assert.That(schema, Does.Contain("network=ff-128x2"));
+            Assert.That(schema, Does.Contain("network=ff-512x3"));
             Assert.That(schema, Does.Contain("normalize=true"));
         }
 

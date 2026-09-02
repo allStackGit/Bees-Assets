@@ -277,8 +277,9 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("mapObject is CanisterBomb"));
             Assert.That(source, Does.Contain("FireTankObservationType"));
             Assert.That(source, Does.Contain("mapObject.Targetable ? 1f : 0f"));
-            Assert.That(source, Does.Not.Contain("Projectile"),
-                "Projectile-evasion observations are intentionally excluded from the combat policy.");
+            Assert.That(source, Does.Not.Contain("MaxObservedProjectiles"));
+            Assert.That(source, Does.Not.Contain("AddProjectileSlots"),
+                "Projectile-evasion slots are intentionally excluded; weapon ProjectileValue remains a weapon characteristic.");
         }
 
         [Test]
@@ -354,11 +355,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("SortShipsForObservation(_enemyCandidates, origin)"));
             Assert.That(source, Does.Contain("((int)left.ShipType).CompareTo((int)right.ShipType)"));
             Assert.That(source, Does.Contain("left.Id.CompareTo(right.Id)"));
+            Assert.That(source, Does.Contain("_miningAsteroidCandidates.Add(new ObservedMiningAsteroid("));
+            Assert.That(source, Does.Contain("_mapObjectCandidates.Add(new ObservedMapObject("));
+            Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Add(new ObservedCollisionAsteroid("));
             Assert.That(source, Does.Contain("_miningAsteroidCandidates.Sort"));
             Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
             Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Sort"));
             Assert.That(source, Does.Contain("left.Type.CompareTo(right.Type)"));
-            Assert.That(source, Does.Contain("iteration order is intentionally irrelevant"));
             Assert.That(source, Does.Contain("Weapon is an authored List rather than an unordered set"));
         }
 

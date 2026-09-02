@@ -12,12 +12,14 @@ namespace Bees.Tests.EditMode
         [Test]
         public void TrainingViewFitsThirtyUnitArenaInsteadOfFishTankMaxZoom()
         {
-            string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
+            Type bootstrapType = RuntimeAssembly.GetType("RlOneVsOneTrainingBootstrap");
+            Assert.That(RuntimeAssembly.GetStaticField(bootstrapType, "TrainingMapSize"), Is.EqualTo(30f));
+            Assert.That(RuntimeAssembly.GetStaticField(bootstrapType, "TrainingCameraSize"), Is.EqualTo(15f));
 
-            Assert.That(bootstrap, Does.Contain("TrainingMapSize = 30f"));
-            Assert.That(bootstrap, Does.Contain("TrainingCameraSize = 15f"));
+            string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
+            Assert.That(bootstrap, Does.Contain("internal static float CurrentCameraSize => CurrentMapSize / 2f;"));
             Assert.That(bootstrap, Does.Contain("private void LateUpdate()"));
-            Assert.That(bootstrap, Does.Contain("_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.TrainingCameraSize"));
+            Assert.That(bootstrap, Does.Contain("_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize"));
             Assert.That(bootstrap, Does.Contain("_stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f)"));
         }
 
