@@ -12,6 +12,8 @@ namespace Bees.Tests.EditMode
     {
         private Type _optionsType;
         private Type _selectorType;
+        private Type _configDataType;
+        private object _previousConfiguration;
         private int _beeSide;
         private int _humanSide;
 
@@ -20,12 +22,28 @@ namespace Bees.Tests.EditMode
         {
             _optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _previousConfiguration = RuntimeAssembly.GetStaticField(_configDataType, "Configuration");
 
-            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            object configuration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
-            Assert.That(configuration, Is.Not.Null, "RL matchup tests require the loaded runtime Configuration.");
-            _beeSide = (int)RuntimeAssembly.GetField(configuration, "BeeSide");
-            _humanSide = (int)RuntimeAssembly.GetField(configuration, "HumanSide");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            IDictionary sideMap = (IDictionary)RuntimeAssembly.GetStaticField(
+                RuntimeAssembly.GetType("Assets.Scripts.Utilities"),
+                "ConvertShipTypeToSide");
+            Assert.That(sideMap, Is.Not.Null);
+
+            _beeSide = (int)sideMap[Enum.Parse(shipType, "Wasp")];
+            _humanSide = (int)sideMap[Enum.Parse(shipType, "Gunship")];
+
+            object configuration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "BeeSide", _beeSide);
+            RuntimeAssembly.SetField(configuration, "HumanSide", _humanSide);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", _previousConfiguration);
         }
 
         [Test]
