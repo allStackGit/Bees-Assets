@@ -118,10 +118,10 @@ namespace Assets.Scripts.Levels
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
                 ConfigData.ShipTypes type = global::RlOneVsOneTrainingBootstrap.GetShipTypeForSide(side, shipIndex);
-                if (!ConfigData.ArmedShipTypes.Contains(type) || Utilities.ConvertShipTypeToSide[type] != side)
+                if (Utilities.ConvertShipTypeToSide[type] != side)
                 {
                     throw new System.InvalidOperationException(
-                        $"RL training requires an armed ship belonging to side {side}; configured type at slot {shipIndex} was {type}.");
+                        $"RL training requires a ship belonging to side {side}; configured type at slot {shipIndex} was {type}.");
                 }
 
                 long fleetShipId = Utilities.GetNegativeFleetshipId();
