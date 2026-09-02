@@ -13,7 +13,10 @@ namespace Bees.Tests.EditMode
         {
             string source = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Scout.cs"));
 
-            Assert.That(source, Does.Contain("TimeSinceLastBeaconDropped = Time.realtimeSinceStartup - ConfigData.MinimumDelayPerBeacon;"));
+            Assert.That(source, Does.Contain("private float BeaconClock => Stage != null && Stage.IsTraining ? Time.time : Time.realtimeSinceStartup;"),
+                "Training must use scaled simulation time so accelerated workers do not wait wall-clock seconds.");
+            Assert.That(source, Does.Contain("TimeSinceLastBeaconDropped = BeaconClock - ConfigData.MinimumDelayPerBeacon;"),
+                "A freshly set up Scout must start with its first Beacon ready on whichever clock owns the current runtime.");
             Assert.That(source, Does.Contain("ChargingBar.Setup();"));
         }
 
