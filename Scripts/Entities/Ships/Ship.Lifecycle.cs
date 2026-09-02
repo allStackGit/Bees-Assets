@@ -23,7 +23,9 @@ namespace Assets.Scripts.Entities.Ships
             IsUserControlled = Side == ConfigData.Configuration.UserSide && Stage.DoesUserHaveController;
             RotationSpeed = Speed * ConfigData.Configuration.RotationMultiplier;
             IsMobile = Speed > 0;
-            IsHiveMindControlled = !IsUserControlled;
+            // Dedicated neural training always uses the shared Hive Mind vision mechanic, even if
+            // a scene/configuration also happens to mark one physical side as the user side.
+            IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsUserControlled;
 
             if (!Stage.IsTraining)
             {
@@ -102,7 +104,7 @@ namespace Assets.Scripts.Entities.Ships
             OriginalTsv = Utilities.GetMaxTsv(ShipType);
             SetCurrentSpeed(Speed);
 
-            if (IsUserControlled)
+            if (IsUserControlled && !Stage.IsTrainingNueralNetwork)
             {
                 if (IsMobile)
                 {
@@ -209,7 +211,7 @@ namespace Assets.Scripts.Entities.Ships
             if (IsWarpGate) Level.State.HasWarpGates = true;
             else if (IsBeehive) Level.State.HasBeehives = true;
 
-            if (IsUserControlled && IsMobile)
+            if (IsUserControlled && IsMobile && !Stage.IsTrainingNueralNetwork)
             {
                 MovementMarker.transform.SetParent(Level.Map.Transform);
                 MovementMarker.name = $"{Name}'s Movement Marker";
@@ -305,7 +307,7 @@ namespace Assets.Scripts.Entities.Ships
                     if (IsUserControlled && weapon.HasRangeCircle) weapon.RangeCircle.SetActive(false);
                 }
             }
-            if (!IsUserControlled) HiveMindVision.Deactivate();
+            if (IsHiveMindControlled && HiveMindVision != null) HiveMindVision.Deactivate();
             if (HasProximityCollider) ProximityCollider.Deactivate();
             if (!Stage.IsTraining)
             {
@@ -326,11 +328,14 @@ namespace Assets.Scripts.Entities.Ships
         public override void Activate()
         {
             base.Activate();
-            if (IsUserControlled)
+            if (IsHiveMindControlled)
             {
-                if (Level.ActivateFogOfWar) FogOfWarVision.Activate();
+                HiveMindVision.Activate();
             }
-            else HiveMindVision.Activate();
+            else if (IsUserControlled && Level.ActivateFogOfWar)
+            {
+                FogOfWarVision.Activate();
+            }
             if (HasProximityCollider) ProximityCollider.Activate();
             if (HasWeapons)
             {
