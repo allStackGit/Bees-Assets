@@ -108,7 +108,7 @@ namespace Bees.Tests.EditMode
 
         private object Parse(params string[] args)
         {
-            return RuntimeAssembly.InvokeStatic(_optionsType, "Parse", args);
+            return RuntimeAssembly.InvokeStatic(_optionsType, "Parse", (object)args);
         }
 
         private object CreateSelector(object options, int seed)
