@@ -35,9 +35,9 @@ internal sealed class RlOneVsOneAgent : Agent
         MaxWeaponSlots * WeaponObservationSize +
         MaxObservedMapObjects * MapObjectObservationSize;
 
-    // Broadly useful movement/aim remain continuous. Capability selection is discrete and masked,
-    // keeping simple ships' effective action space small while reserving a permanent schema for
-    // weapon, special, ally-target, enemy-target and strategic map-object targeting.
+    // Movement/aim remain continuous. The capability branch is intentionally primitive: it asks
+    // the ship to perform an action at its CURRENT location. It never invokes a Hive Mind command
+    // and never scripts movement toward an asteroid, Beehive or Warp Gate.
     internal const int ContinuousActionCount = 4; // move x/y, aim x/y
     internal const int WeaponCommandBranch = 0;
     internal const int SpecialActionBranch = 1;
@@ -45,7 +45,12 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int EnemyTargetBranch = 3;
     internal const int MapObjectTargetBranch = 4;
     internal const int WeaponCommandBranchSize = 1 + MaxWeaponSlots * 2; // none + (cease/fire) per slot
-    internal const int SpecialActionBranchSize = 2; // none/use
+    internal const int NoSpecialAction = 0;
+    internal const int ShipSpecialAction = 1;
+    internal const int MiningAction = 2;
+    internal const int HealingAction = 3;
+    internal const int WarpAction = 4;
+    internal const int SpecialActionBranchSize = 5;
     internal const int AllyTargetBranchSize = 1 + MaxObservedAllies;
     internal const int EnemyTargetBranchSize = 1 + MaxObservedEnemies;
     internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
@@ -54,6 +59,9 @@ internal sealed class RlOneVsOneAgent : Agent
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
     private const float LocalDistanceScale = 40f;
+    private const float MiningActionIntervalSeconds = 5f;
+    private const float HealingActionIntervalSeconds = 1f;
+    private const int HealingPerSuccessfulAction = 50;
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
     private static readonly Dictionary<int, int> AgentCounts = new Dictionary<int, int>();
@@ -69,6 +77,8 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private long _boundRuntimeShipId;
+    private float _nextMiningActionTime;
+    private float _nextHealingActionTime;
     private Vector2 _lastAimDirection = Vector2.up;
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly List<Ship> _allyCandidates = new List<Ship>();
@@ -273,6 +283,8 @@ internal sealed class RlOneVsOneAgent : Agent
         _hasParticipatedThisEpisode = false;
         _boundRuntimeShipId = 0;
         _decisionCounter = 0;
+        _nextMiningActionTime = 0f;
+        _nextHealingActionTime = 0f;
         _lastAimDirection = Vector2.up;
     }
 
@@ -321,14 +333,21 @@ internal sealed class RlOneVsOneAgent : Agent
             actionMask.SetActionEnabled(WeaponCommandBranch, 2 + slot * 2, enabled);
         }
 
-        actionMask.SetActionEnabled(
-            SpecialActionBranch,
-            1,
-            canControl && HasSpecialAction(_ship) && GetSpecialReadiness(_ship) > 0f);
+        // Masks describe permanent capability only. They deliberately do NOT reveal whether the ship
+        // is currently touching a valid target, damaged, off cooldown, or otherwise in a successful
+        // situation. Invalid attempts remain legal and simply have no effect.
+        actionMask.SetActionEnabled(SpecialActionBranch, ShipSpecialAction,
+            canControl && HasSpecialAction(_ship));
+        actionMask.SetActionEnabled(SpecialActionBranch, MiningAction,
+            canControl && CanUseMiningAction(_ship));
+        actionMask.SetActionEnabled(SpecialActionBranch, HealingAction,
+            canControl && CanUseHealingAction(_ship));
+        actionMask.SetActionEnabled(SpecialActionBranch, WarpAction,
+            canControl && CanUseWarpAction(_ship));
 
-        // Target-selection branches are permanent policy-contract capacity. Non-zero choices remain
-        // masked until the corresponding support/mining adapters consume them, so Wasp/Gunship and
-        // other simple ships do not pay an exploration cost for capabilities they cannot use.
+        // These branches remain reserved permanent capacity for a future mechanic that genuinely
+        // needs explicit entity selection. Mine/heal/warp are spatial primitive actions and do not
+        // consume target selections.
         for (int action = 1; action < AllyTargetBranchSize; action++)
         {
             actionMask.SetActionEnabled(AllyTargetBranch, action, false);
@@ -365,9 +384,21 @@ internal sealed class RlOneVsOneAgent : Agent
             int encoded = weaponCommand - 1;
             ApplyWeaponCommand(encoded / 2, (encoded & 1) == 1);
         }
-        if (discrete[SpecialActionBranch] == 1)
+
+        switch (discrete[SpecialActionBranch])
         {
-            ApplySpecialAction();
+            case ShipSpecialAction:
+                ApplySpecialAction();
+                break;
+            case MiningAction:
+                TryApplyMiningAction();
+                break;
+            case HealingAction:
+                TryApplyHealingAction();
+                break;
+            case WarpAction:
+                TryApplyWarpAction();
+                break;
         }
     }
 
@@ -465,6 +496,196 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    internal static bool CanUseMiningAction(Ship ship)
+    {
+        return ship != null && !ship.IsDead &&
+               (ship.ShipType == ConfigData.ShipTypes.Factory ||
+                ship.ShipType == ConfigData.ShipTypes.CarpenterBee);
+    }
+
+    internal static bool CanUseHealingAction(Ship ship)
+    {
+        if (ship == null || ship.IsDead || ConfigData.Configuration == null ||
+            ship.Side != ConfigData.Configuration.BeeSide)
+        {
+            return false;
+        }
+
+        if (!ConfigData.ShipSizes.TryGetValue(ship.ShipType, out Vector2Int shipSize) ||
+            !ConfigData.ShipSizes.TryGetValue(ConfigData.ShipTypes.Beehive, out Vector2Int beehiveSize))
+        {
+            return false;
+        }
+
+        // Healing eligibility is an inherent ship-size rule, not a statement about whether a live
+        // Beehive exists nearby. Requiring both dimensions to be strictly smaller also excludes the
+        // Beehive itself without a special-case positional check.
+        return shipSize.x < beehiveSize.x && shipSize.y < beehiveSize.y;
+    }
+
+    internal static bool CanUseWarpAction(Ship ship)
+    {
+        return ship != null && !ship.IsDead && ConfigData.Configuration != null &&
+               ship.Side == ConfigData.Configuration.HumanSide &&
+               ship.ShipType != ConfigData.ShipTypes.WarpGate;
+    }
+
+    private void TryApplyMiningAction()
+    {
+        if (!CanUseMiningAction(_ship) || Time.time < _nextMiningActionTime ||
+            _ship.Level == null || _ship.Level.State == null || _ship.Collider == null || _ship.FleetShip == null)
+        {
+            return;
+        }
+
+        MiningAsteroid asteroid = FindTouchingMiningAsteroid();
+        if (asteroid == null)
+        {
+            return;
+        }
+
+        int amountMined = Mathf.Min(ConfigData.MiningRate, asteroid.Health);
+        if (amountMined <= 0)
+        {
+            return;
+        }
+
+        _nextMiningActionTime = Time.time + MiningActionIntervalSeconds;
+        int oldTsv = _ship.Tsv;
+        asteroid.Health -= amountMined;
+        _ship.FleetShip.MineralsMinedThisLevel += amountMined;
+        _ship.Tsv = Utilities.CalculateTsv(_ship);
+        RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv);
+
+        if (asteroid.Health <= 0 && !asteroid.IsDead)
+        {
+            asteroid.Kill(false);
+        }
+    }
+
+    private MiningAsteroid FindTouchingMiningAsteroid()
+    {
+        MiningAsteroid selected = null;
+        foreach (MiningAsteroid asteroid in _ship.Level.State.MiningAsteroids)
+        {
+            if (asteroid == null || asteroid.IsDead || asteroid.Collider == null ||
+                !_ship.Collider.IsTouching(asteroid.Collider))
+            {
+                continue;
+            }
+
+            if (selected == null || asteroid.Id < selected.Id)
+            {
+                selected = asteroid;
+            }
+        }
+        return selected;
+    }
+
+    private void TryApplyHealingAction()
+    {
+        if (!CanUseHealingAction(_ship) || Time.time < _nextHealingActionTime ||
+            _ship.Health >= _ship.MaxHealth || _ship.Level == null || _ship.Level.State == null ||
+            _ship.Collider == null || _ship.FleetShip == null)
+        {
+            return;
+        }
+
+        Beehive beehive = FindTouchingBeehive();
+        if (beehive == null)
+        {
+            return;
+        }
+
+        int amountHealed = Mathf.Min(HealingPerSuccessfulAction, _ship.MaxHealth - _ship.Health);
+        if (amountHealed <= 0)
+        {
+            return;
+        }
+
+        _nextHealingActionTime = Time.time + HealingActionIntervalSeconds;
+        int oldTsv = _ship.Tsv;
+        _ship.Health += amountHealed;
+        _ship.Tsv = Utilities.CalculateTsv(_ship);
+        _ship.UpdateHealthBar();
+        if (_ship.Level.HasPlayer)
+        {
+            beehive.SpawnHealingCross();
+        }
+        RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv);
+    }
+
+    private Beehive FindTouchingBeehive()
+    {
+        Beehive selected = null;
+        List<Ship> allies = _ship.Level.State.GetShips(_ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
+                !beehive.HealCollider.IsTouching(_ship.Collider))
+            {
+                continue;
+            }
+
+            if (selected == null || beehive.Id < selected.Id)
+            {
+                selected = beehive;
+            }
+        }
+        return selected;
+    }
+
+    private void TryApplyWarpAction()
+    {
+        if (!CanUseWarpAction(_ship) || _ship.Level == null || _ship.Level.State == null || _ship.Collider == null)
+        {
+            return;
+        }
+
+        WarpGate warpGate = FindTouchingWarpGate();
+        if (warpGate == null)
+        {
+            return;
+        }
+
+        int preservedTsv = Mathf.Max(0, _ship.Tsv);
+        RewardSuccessfulCapabilityOutcome(preservedTsv);
+        if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
+        {
+            warpGate.EnteringWarpGateSound.Play();
+        }
+        _ship.EndKill();
+    }
+
+    private WarpGate FindTouchingWarpGate()
+    {
+        WarpGate selected = null;
+        List<Ship> allies = _ship.Level.State.GetShips(_ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is WarpGate warpGate) || warpGate.IsDead || warpGate.WarpCollider == null ||
+                !warpGate.WarpCollider.IsTouching(_ship.Collider))
+            {
+                continue;
+            }
+
+            if (selected == null || warpGate.Id < selected.Id)
+            {
+                selected = warpGate;
+            }
+        }
+        return selected;
+    }
+
+    private void RewardSuccessfulCapabilityOutcome(int tsvValue)
+    {
+        if (tsvValue <= 0 || _ship == null || _ship.Level == null || _ship.Level.State == null)
+        {
+            return;
+        }
+        RlOneVsOneEpisodeCoordinator.RecordSuccessfulCapabilityOutcome(_ship, tsvValue);
+    }
+
     private void HandleTsvRewardOccurred(int side, float reward)
     {
         if (side == _side && IsCurrentController() && _hasParticipatedThisEpisode)
@@ -550,6 +771,8 @@ internal sealed class RlOneVsOneAgent : Agent
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
         _hasParticipatedThisEpisode = true;
+        _nextMiningActionTime = 0f;
+        _nextHealingActionTime = 0f;
         if (_ship.Squad != null)
         {
             _ship.Squad.IsUserControlled = false;
@@ -789,8 +1012,6 @@ internal sealed class RlOneVsOneAgent : Agent
             }
         }
 
-        // Never expose HashSet iteration order to the network. Strategic objects use a deterministic
-        // priority/distance/runtime-id key so the same world state produces the same slot layout.
         _mapObjectCandidates.Sort((left, right) =>
         {
             int compare = ((Vector2)left.transform.localPosition - origin).sqrMagnitude.CompareTo(
@@ -845,10 +1066,11 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private static float GetSpecialReadiness(Ship ship)
     {
-        if (ship is YellowJacket yellowJacket)
+        // Readiness is limited to intrinsic cooldown/state. Spatial validity is learned from the
+        // observations and consequences, not exposed through either masks or this scalar.
+        if (ship is YellowJacket)
         {
-            return yellowJacket.TouchingShip != null && !yellowJacket.TouchingShip.IsDead &&
-                   yellowJacket.TouchingShip.Side != yellowJacket.Side ? 1f : 0f;
+            return 1f;
         }
         if (ship is Striker striker)
         {
