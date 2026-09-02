@@ -201,7 +201,7 @@ internal static class RlOneVsOneTrainingBootstrap
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void ApplyToLoadedTrainingScene()
+    private static void InstallStartupGate()
     {
         if (!IsDedicatedTrainingRuntime)
         {
@@ -215,9 +215,31 @@ internal static class RlOneVsOneTrainingBootstrap
             return;
         }
 
+        RlOneVsOneTrainingStartupGate gate = stage.GetComponent<RlOneVsOneTrainingStartupGate>();
+        if (gate == null)
+        {
+            gate = stage.gameObject.AddComponent<RlOneVsOneTrainingStartupGate>();
+        }
+        gate.Configure(stage);
+    }
+
+    internal static bool TryApplyAfterSettingsLoaded(Stage stage)
+    {
+        if (stage == null)
+        {
+            return false;
+        }
+
+        if (!ConfigData.AreAllSettingsLoaded)
+        {
+            throw new InvalidOperationException(
+                "RL 1v1 training bootstrap cannot run before all server settings have loaded.");
+        }
+
         try
         {
             Apply(stage);
+            return true;
         }
         catch (ArgumentException exception)
         {
@@ -228,6 +250,7 @@ internal static class RlOneVsOneTrainingBootstrap
             {
                 Application.Quit(2);
             }
+            return false;
         }
     }
 
@@ -236,6 +259,12 @@ internal static class RlOneVsOneTrainingBootstrap
         if (stage == null)
         {
             return;
+        }
+
+        if (!ConfigData.AreAllSettingsLoaded)
+        {
+            throw new InvalidOperationException(
+                "RL 1v1 training bootstrap requires all server settings to be loaded before applying training options.");
         }
 
         RlOneVsOneTrainingOptions options = RuntimeOptions;
@@ -321,6 +350,35 @@ internal static class RlOneVsOneTrainingBootstrap
         }
 
         stage.UIManager.SetActive(false);
+    }
+}
+
+/// <summary>
+/// Waits for the normal server-settings lifecycle before applying dedicated RL overrides. Its update
+/// order is earlier than Scene.Update so, on the frame settings finish loading, the Stage sees the RL
+/// flags before it can enter FinalizeSceneWithUserData and spawn/setup levels.
+/// </summary>
+[DefaultExecutionOrder(-10000)]
+internal sealed class RlOneVsOneTrainingStartupGate : MonoBehaviour
+{
+    private Stage _stage;
+    private bool _completed;
+
+    internal void Configure(Stage stage)
+    {
+        _stage = stage;
+    }
+
+    private void Update()
+    {
+        if (_completed || _stage == null || !ConfigData.AreAllSettingsLoaded)
+        {
+            return;
+        }
+
+        _completed = true;
+        enabled = false;
+        RlOneVsOneTrainingBootstrap.TryApplyAfterSettingsLoaded(_stage);
     }
 }
 
