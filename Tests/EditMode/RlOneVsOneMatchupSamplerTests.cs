@@ -20,9 +20,12 @@ namespace Bees.Tests.EditMode
         {
             _optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
-            Type configurationType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+Configuration");
-            _beeSide = (int)RuntimeAssembly.GetStaticField(configurationType, "BeeSide");
-            _humanSide = (int)RuntimeAssembly.GetStaticField(configurationType, "HumanSide");
+
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            object configuration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
+            Assert.That(configuration, Is.Not.Null, "RL matchup tests require the loaded runtime Configuration.");
+            _beeSide = (int)RuntimeAssembly.GetField(configuration, "BeeSide");
+            _humanSide = (int)RuntimeAssembly.GetField(configuration, "HumanSide");
         }
 
         [Test]
