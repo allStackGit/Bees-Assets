@@ -13,13 +13,17 @@ namespace Bees.Tests.EditMode
         public void IdleRoleAgentsDoNotEmitSyntheticZeroStepTrajectories()
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            int idleGuard = agent.IndexOf("if (_teamId != assignedTeamId)", StringComparison.Ordinal);
-            int activeReward = agent.IndexOf("// TSV shaping was already delivered", StringComparison.Ordinal);
-            int endEpisode = agent.IndexOf("EndEpisode();", idleGuard, StringComparison.Ordinal);
+            int assignedTeam = agent.IndexOf("int assignedTeam = _side == ConfigData.Configuration.BeeSide", StringComparison.Ordinal);
+            int idleGuard = agent.IndexOf("if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)", assignedTeam, StringComparison.Ordinal);
+            int idleReturn = agent.IndexOf("return;", idleGuard, StringComparison.Ordinal);
+            int activeReward = agent.IndexOf("AddReward(_side == ConfigData.Configuration.BeeSide", idleReturn, StringComparison.Ordinal);
+            int endEpisode = agent.IndexOf("EndEpisode();", activeReward, StringComparison.Ordinal);
 
-            Assert.That(idleGuard, Is.GreaterThanOrEqualTo(0));
-            Assert.That(agent, Does.Contain("zero-step trajectory"));
-            Assert.That(activeReward, Is.GreaterThan(idleGuard));
+            Assert.That(assignedTeam, Is.GreaterThanOrEqualTo(0));
+            Assert.That(idleGuard, Is.GreaterThan(assignedTeam));
+            Assert.That(idleReturn, Is.GreaterThan(idleGuard),
+                "An idle self-play role must return without creating an empty ML-Agents trajectory.");
+            Assert.That(activeReward, Is.GreaterThan(idleReturn));
             Assert.That(endEpisode, Is.GreaterThan(activeReward));
         }
 
