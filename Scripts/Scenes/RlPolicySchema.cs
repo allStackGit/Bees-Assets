@@ -5,12 +5,14 @@ using System.Collections.Generic;
 
 /// <summary>
 /// Frozen neural-policy ABI. A checkpoint is compatible only while this contract remains identical.
-/// Curriculum, rewards, maps, matchup distributions and trainer hyperparameters may evolve without
-/// changing this schema; observation/action meaning, ordering, normalization and capacities may not.
+/// Curriculum, rewards, maps, matchup distributions and non-architectural trainer hyperparameters
+/// may evolve without changing this schema; observation/action meaning, ordering, normalization,
+/// capacities, behavior identity and network architecture may not.
 /// </summary>
 internal static class RlPolicySchema
 {
     internal const int Version = 2;
+    internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int ExpectedObservationSize = 4685;
     internal const int ExpectedContinuousActions = 4;
     internal const int ExpectedWeaponCommandBranchSize = 33;
@@ -20,14 +22,20 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v2|obs=4685|cont=4|disc=33,5,65,65,65|shipbits=6|weaponbits=6|mapbits=4|" +
-        "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|" +
-        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
+        "bees-rl-v2|behavior=BeesRL1v1|network=ff-128x2|normalize=true|obs=4685|cont=4|disc=33,5,65,65,65|" +
+        "shipbits=6|weaponbits=6|mapbits=4|allies=64|enemies=64|weapons=16|enemy-mounts=16|" +
+        "mining=8|map-objects=64|moving-asteroids=48|self=29|capability=12|parent-carrier=19|entity=19|" +
+        "weapon=19|enemy-mount=22|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|" +
+        "entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
     {
         List<string> errors = new List<string>();
+        if (!string.Equals(RlOneVsOneAgent.BehaviorName, ExpectedBehaviorName, StringComparison.Ordinal))
+        {
+            errors.Add($"behavior expected {ExpectedBehaviorName} but was {RlOneVsOneAgent.BehaviorName}");
+        }
+
         Check(errors, RlCombatPerception.ObservationSize, ExpectedObservationSize, "observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
         Check(errors, RlOneVsOneAgent.WeaponCommandBranchSize, ExpectedWeaponCommandBranchSize, "weapon branch");
