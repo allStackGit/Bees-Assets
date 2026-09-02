@@ -28,15 +28,20 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MaxObservedMiningAsteroids = RlCombatPerception.MaxObservedMiningAsteroids;
     internal const int MaxObservedMapObjects = RlCombatPerception.MaxObservedMapObjects;
     internal const int MaxObservedCollisionAsteroids = RlCombatPerception.MaxObservedCollisionAsteroids;
+    internal const int MaxObservedEnemyWeaponMounts = RlCombatPerception.MaxObservedEnemyWeaponMounts;
     internal const int NavigationGridSize = RlCombatPerception.NavigationGridSize;
     internal const int NavigationGridCellCount = RlCombatPerception.NavigationGridCellCount;
     internal const int MaxWeaponSlots = RlCombatPerception.MaxWeaponSlots;
     internal const int SelfObservationSize = RlCombatPerception.SelfObservationSize;
+    internal const int CapabilityObservationSize = RlCombatPerception.CapabilityObservationSize;
+    internal const int ParentCarrierObservationSize = RlCombatPerception.ParentCarrierObservationSize;
     internal const int EntityObservationSize = RlCombatPerception.EntityObservationSize;
     internal const int WeaponObservationSize = RlCombatPerception.WeaponObservationSize;
+    internal const int EnemyWeaponMountObservationSize = RlCombatPerception.EnemyWeaponMountObservationSize;
     internal const int MiningAsteroidObservationSize = RlCombatPerception.MiningAsteroidObservationSize;
     internal const int MapObjectObservationSize = RlCombatPerception.MapObjectObservationSize;
     internal const int CollisionAsteroidObservationSize = RlCombatPerception.CollisionAsteroidObservationSize;
+    internal const int ObjectiveObservationSize = RlCombatPerception.ObjectiveObservationSize;
     internal const int ObservationSize = RlCombatPerception.ObservationSize;
 
     // Movement/aim remain continuous. The capability branch is intentionally primitive: it asks
@@ -119,6 +124,7 @@ internal sealed class RlOneVsOneAgent : Agent
             yield break;
         }
 
+        RlPolicySchema.ValidateOrThrow();
         AgentCounts.Clear();
         _lastProvisionFrame = -1;
         _invalidEnvironmentReported = false;
@@ -132,13 +138,15 @@ internal sealed class RlOneVsOneAgent : Agent
             CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, $"Human Team 1 Slot {slot}");
         }
 
-        Debug.Log($"RL combat policy schema observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
+        Debug.Log($"RL policy ABI v{RlPolicySchema.Version} {RlPolicySchema.Signature} " +
+                  $"observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
                   $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}," +
                   $"{AllyTargetBranchSize},{EnemyTargetBranchSize},{MapObjectTargetBranchSize}] " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} " +
                   $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
                   $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
-                  $"weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
+                  $"weapon_slots={MaxWeaponSlots} enemy_weapon_mounts={MaxObservedEnemyWeaponMounts} " +
+                  $"objective_channels={ObjectiveObservationSize} spawned_ship_control=dynamic");
     }
 
     private static int AgentCountKey(int side, int teamId)
@@ -246,7 +254,8 @@ internal sealed class RlOneVsOneAgent : Agent
     internal static bool RequiresPolicyControl(Ship ship)
     {
         return ship != null && !ship.IsDead &&
-               (ship.IsMobile || ship.HasWeapons || HasSpecialAction(ship));
+               (ship.IsMobile || ship.HasWeapons || HasSpecialAction(ship) ||
+                CanUseMiningAction(ship) || CanUseHealingAction(ship) || CanUseWarpAction(ship));
     }
 
     private static void EnsureAgentCount(Stage stage, int side, int teamId, int required)
@@ -434,36 +443,24 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ApplyWeaponCommand(int slot, bool fire)
     {
-        if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots)
+        if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= _ship.Weapons.Count)
         {
             return;
         }
 
-        for (int i = 0; i < _ship.Weapons.Count; i++)
+        if (!(_ship.Weapons[slot] is Turret turret))
         {
-            if (Mathf.Min(i, MaxWeaponSlots - 1) != slot || !(_ship.Weapons[i] is Turret turret))
-            {
-                continue;
-            }
-            Vector2 target = turret.GetPosition() + _lastAimDirection * Mathf.Max(1f, turret.Range);
-            turret.SetRlControl(target, fire);
+            return;
         }
+
+        Vector2 target = turret.GetPosition() + _lastAimDirection * Mathf.Max(1f, turret.Range);
+        turret.SetRlControl(target, fire);
     }
 
     private bool HasTurretForSlot(int slot)
     {
-        if (_ship == null || _ship.Weapons == null)
-        {
-            return false;
-        }
-        for (int i = 0; i < _ship.Weapons.Count; i++)
-        {
-            if (Mathf.Min(i, MaxWeaponSlots - 1) == slot && _ship.Weapons[i] is Turret)
-            {
-                return true;
-            }
-        }
-        return false;
+        return _ship != null && _ship.Weapons != null && slot >= 0 && slot < MaxWeaponSlots &&
+               slot < _ship.Weapons.Count && _ship.Weapons[slot] is Turret;
     }
 
     private void ApplySpecialAction()
@@ -756,6 +753,12 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _bindCandidates.Sort(CompareShipsForControl);
         _ship = _bindCandidates[0];
+        if (!RlPolicySchema.TryValidateShip(_ship, out string schemaError))
+        {
+            ReportInvalidEnvironment(schemaError);
+            _ship = null;
+            return false;
+        }
         if (!ValidateShipFitsArena(_ship))
         {
             _ship = null;
@@ -819,21 +822,28 @@ internal sealed class RlOneVsOneAgent : Agent
             return true;
         }
 
-        if (!_invalidEnvironmentReported)
-        {
-            _invalidEnvironmentReported = true;
-            Debug.LogError($"RL arena size {RlOneVsOneTrainingBootstrap.CurrentMapSize:0.###} cannot contain " +
-                           $"{ship.ShipType} (diameter {extent * 2f:0.###}).");
-            if (_stage != null)
-            {
-                _stage.IsTrainingNueralNetwork = false;
-            }
-            if (!Application.isEditor)
-            {
-                Application.Quit(3);
-            }
-        }
+        ReportInvalidEnvironment($"RL arena size {RlOneVsOneTrainingBootstrap.CurrentMapSize:0.###} cannot contain " +
+                                 $"{ship.ShipType} (diameter {extent * 2f:0.###}).");
         return false;
+    }
+
+    private void ReportInvalidEnvironment(string message)
+    {
+        if (_invalidEnvironmentReported)
+        {
+            return;
+        }
+
+        _invalidEnvironmentReported = true;
+        Debug.LogError(message);
+        if (_stage != null)
+        {
+            _stage.IsTrainingNueralNetwork = false;
+        }
+        if (!Application.isEditor)
+        {
+            Application.Quit(3);
+        }
     }
 
     private void ReleaseShip()
