@@ -76,13 +76,61 @@ namespace Assets.Scripts.Levels
 
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
+            RefreshHiveMindMapObjectVision(side);
             return VisionCache[side - 1];
         }
 
+        public bool RecordHiveMindObstacleSighting(Ship observer, Obstacle obstacle)
+        {
+            if (observer == null || obstacle == null || observer.IsDead || obstacle.IsDead ||
+                !observer.IsHiveMindControlled)
+            {
+                return false;
+            }
+
+            int sideIndex = observer.Side - 1;
+            if (sideIndex < 0 || sideIndex >= HiveMindObstacleCache.Length)
+            {
+                return false;
+            }
+            if (Level != null && (observer.Level != Level || obstacle.Level != Level))
+            {
+                return false;
+            }
+
+            bool isNew = HiveMindObstacleCache[sideIndex].Add(obstacle);
+            if (obstacle is MiningAsteroid miningAsteroid)
+            {
+                HiveMindMiningAsteroidCache[sideIndex].Add(miningAsteroid);
+            }
+            return isNew;
+        }
+
+        public bool RecordHiveMindMapObjectSighting(Ship observer, MapObject mapObject)
+        {
+            if (observer == null || mapObject == null || observer.IsDead || mapObject.IsDead ||
+                !observer.IsHiveMindControlled)
+            {
+                return false;
+            }
+
+            int sideIndex = observer.Side - 1;
+            if (sideIndex < 0 || sideIndex >= HiveMindMapObjectCache.Length)
+            {
+                return false;
+            }
+            if (Level != null && (observer.Level != Level || mapObject.Level != Level))
+            {
+                return false;
+            }
+
+            return HiveMindMapObjectCache[sideIndex].Add(mapObject);
+        }
+
         /// <summary>
-        /// Adds a mining asteroid to the side-wide Hive Mind memory. Unlike enemy-ship visibility,
-        /// strategic map-object knowledge is intentionally persistent after the observer moves away;
-        /// the object is forgotten only when it leaves this Level/lifecycle.
+        /// Adds a mining asteroid to the side-wide Hive Mind memory. Strategic/environment knowledge
+        /// remains shared after the observer moves away and is forgotten only when the object leaves
+        /// this Level lifecycle.
         /// </summary>
         public bool RecordHiveMindMiningAsteroidSighting(Ship observer, MiningAsteroid asteroid)
         {
@@ -101,19 +149,21 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            return HiveMindMiningAsteroidCache[sideIndex].Add(asteroid);
+            bool isNew = HiveMindMiningAsteroidCache[sideIndex].Add(asteroid);
+            HiveMindObstacleCache[sideIndex].Add(asteroid);
+            return isNew;
         }
 
         /// <summary>
-        /// Refreshes strategic-object discovery from every live Hive Mind observer on a side.
-        /// This deliberately uses the same per-ship sight radius as HiveMindVision rather than
-        /// exposing the omniscient MiningAsteroids registry to a policy. The per-frame guard makes
-        /// the shared computation independent of how many agents request observations that frame.
+        /// Refreshes side-wide RL/Hive Mind perception from every live observer. Trigger callbacks are
+        /// still the cheap normal path for ships/mining asteroids; this geometric pass makes perception
+        /// complete and independent of physics-layer filtering for large walls, moving asteroids,
+        /// HumanTarget-style ships and targetable MapObjects such as Fire Tanks.
         /// </summary>
         public void RefreshHiveMindMapObjectVision(int side)
         {
             int sideIndex = side - 1;
-            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length)
+            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length || Level == null || Level.Map == null)
             {
                 return;
             }
@@ -123,40 +173,74 @@ namespace Assets.Scripts.Levels
             }
             HiveMindMapObjectRefreshFrame[sideIndex] = Time.frameCount;
 
-            if (MiningAsteroids.Count == 0)
+            List<Ship> observers = ShipsBySide[sideIndex];
+            if (observers.Count == 0)
             {
                 return;
             }
 
-            List<Ship> observers = ShipsBySide[sideIndex];
+            GameObject[] activeObstacleObjects = null;
+            MapObject[] activeMapObjects = null;
             for (int observerIndex = 0; observerIndex < observers.Count; observerIndex++)
             {
                 Ship observer = observers[observerIndex];
-                if (observer == null || observer.IsDead || !observer.IsHiveMindControlled || observer.HiveMindVision == null)
+                if (observer == null || observer.IsDead || !observer.IsHiveMindControlled ||
+                    observer.HiveMindVision == null || !observer.HiveMindVision.enabled)
                 {
                     continue;
                 }
 
-                float visionRange = observer.HiveMindVision.Collider != null
-                    ? observer.HiveMindVision.Collider.radius
-                    : (observer.Sight > 0 ? observer.Sight : observer.MaxRange);
-                if (visionRange <= 0f)
+                // Enemy ships, including immobile target ships such as HumanTarget, use the same
+                // sight mechanic as ordinary combat ships.
+                for (int shipIndex = 0; shipIndex < Ships.Count; shipIndex++)
                 {
-                    continue;
-                }
-
-                Vector2 observerPosition = observer.GetPosition();
-                float visionRangeSquared = visionRange * visionRange;
-                foreach (MiningAsteroid asteroid in MiningAsteroids)
-                {
-                    if (asteroid == null || asteroid.IsDead || asteroid.Level != observer.Level)
+                    Ship spotted = Ships[shipIndex];
+                    if (spotted == null || spotted.IsDead || spotted.Side == observer.Side ||
+                        spotted.Level != observer.Level)
                     {
                         continue;
                     }
-                    Vector2 relative = (Vector2)asteroid.transform.localPosition - observerPosition;
-                    if (relative.sqrMagnitude <= visionRangeSquared)
+                    if (observer.HiveMindVision.CanSee(spotted.Collider, spotted.GetPosition()))
                     {
-                        RecordHiveMindMiningAsteroidSighting(observer, asteroid);
+                        RecordHiveMindSighting(observer, spotted);
+                    }
+                }
+
+                if (activeObstacleObjects == null)
+                {
+                    activeObstacleObjects = PathfinderObstacleScope.GetActiveObstacleObjects(Level);
+                }
+                for (int obstacleIndex = 0; obstacleIndex < activeObstacleObjects.Length; obstacleIndex++)
+                {
+                    Obstacle obstacle = activeObstacleObjects[obstacleIndex].GetComponent<Obstacle>();
+                    if (obstacle == null || obstacle.IsDead || obstacle.Level != observer.Level)
+                    {
+                        continue;
+                    }
+                    Collider2D sightCollider = obstacle.ClearanceMappingCollider != null
+                        ? obstacle.ClearanceMappingCollider
+                        : obstacle.Collider;
+                    if (observer.HiveMindVision.CanSee(sightCollider, obstacle.GetPosition()))
+                    {
+                        RecordHiveMindObstacleSighting(observer, obstacle);
+                    }
+                }
+
+                if (activeMapObjects == null)
+                {
+                    activeMapObjects = Level.Map.Transform.GetComponentsInChildren<MapObject>(false);
+                }
+                for (int objectIndex = 0; objectIndex < activeMapObjects.Length; objectIndex++)
+                {
+                    MapObject mapObject = activeMapObjects[objectIndex];
+                    if (mapObject == null || mapObject.IsDead || mapObject.Level != observer.Level)
+                    {
+                        continue;
+                    }
+                    Vector2 position = mapObject.transform.localPosition;
+                    if (observer.HiveMindVision.CanSee(mapObject.Collider, position))
+                    {
+                        RecordHiveMindMapObjectSighting(observer, mapObject);
                     }
                 }
             }
@@ -168,6 +252,18 @@ namespace Assets.Scripts.Levels
             return HiveMindMiningAsteroidCache[side - 1];
         }
 
+        public HashSet<Obstacle> GetObstaclesVisibleToHiveMind(int side)
+        {
+            RefreshHiveMindMapObjectVision(side);
+            return HiveMindObstacleCache[side - 1];
+        }
+
+        public HashSet<MapObject> GetMapObjectsVisibleToHiveMind(int side)
+        {
+            RefreshHiveMindMapObjectVision(side);
+            return HiveMindMapObjectCache[side - 1];
+        }
+
         public void ForgetHiveMindMiningAsteroid(MiningAsteroid asteroid)
         {
             if (asteroid == null)
@@ -177,6 +273,35 @@ namespace Assets.Scripts.Levels
             for (int sideIndex = 0; sideIndex < HiveMindMiningAsteroidCache.Length; sideIndex++)
             {
                 HiveMindMiningAsteroidCache[sideIndex]?.Remove(asteroid);
+                HiveMindObstacleCache[sideIndex]?.Remove(asteroid);
+            }
+        }
+
+        public void ForgetHiveMindObstacle(Obstacle obstacle)
+        {
+            if (obstacle == null)
+            {
+                return;
+            }
+            for (int sideIndex = 0; sideIndex < HiveMindObstacleCache.Length; sideIndex++)
+            {
+                HiveMindObstacleCache[sideIndex]?.Remove(obstacle);
+                if (obstacle is MiningAsteroid miningAsteroid)
+                {
+                    HiveMindMiningAsteroidCache[sideIndex]?.Remove(miningAsteroid);
+                }
+            }
+        }
+
+        public void ForgetHiveMindMapObject(MapObject mapObject)
+        {
+            if (mapObject == null)
+            {
+                return;
+            }
+            for (int sideIndex = 0; sideIndex < HiveMindMapObjectCache.Length; sideIndex++)
+            {
+                HiveMindMapObjectCache[sideIndex]?.Remove(mapObject);
             }
         }
 
@@ -266,10 +391,9 @@ namespace Assets.Scripts.Levels
         {
             for (int i = 0; i < Squads.Count; i++)
             {
-                Squad squad = Squads[i];
-                if (squad.Id == id)
+                if (Squads[i].Id == id)
                 {
-                    return squad;
+                    return Squads[i];
                 }
             }
             return null;
