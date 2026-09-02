@@ -19,25 +19,25 @@ internal sealed class RlOneVsOneAgent : Agent
 {
     internal const string BehaviorName = "BeesRL1v1";
     internal const int DecisionPeriod = 5;
-    internal const int ShipTypeBitCount = 5;
-    internal const int WeaponTypeBitCount = 4;
-    internal const int MapObjectTypeBitCount = 4;
-    internal const int ObstacleTypeBitCount = 4;
-    internal const int MaxObservedAllies = RlOneVsOneTrainingOptions.MaximumShipsPerSide - 1;
-    internal const int MaxObservedEnemies = RlOneVsOneTrainingOptions.MaximumShipsPerSide;
-    internal const int MaxObservedMapObjects = 16;
-    internal const int MaxObservedObstacles = 64;
-    internal const int MaxWeaponSlots = 8;
-    internal const int SelfObservationSize = 25;
-    internal const int EntityObservationSize = 18;
-    internal const int WeaponObservationSize = 17;
-    internal const int MapObjectObservationSize = 12;
-    internal const int ObstacleObservationSize = 15;
-    internal const int ObservationSize = SelfObservationSize +
-        (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
-        MaxWeaponSlots * WeaponObservationSize +
-        MaxObservedMapObjects * MapObjectObservationSize +
-        MaxObservedObstacles * ObstacleObservationSize;
+
+    internal const int ShipTypeBitCount = RlCombatPerception.ShipTypeBitCount;
+    internal const int WeaponTypeBitCount = RlCombatPerception.WeaponTypeBitCount;
+    internal const int MapObjectTypeBitCount = RlCombatPerception.MapObjectTypeBitCount;
+    internal const int MaxObservedAllies = RlCombatPerception.MaxObservedAllies;
+    internal const int MaxObservedEnemies = RlCombatPerception.MaxObservedEnemies;
+    internal const int MaxObservedMiningAsteroids = RlCombatPerception.MaxObservedMiningAsteroids;
+    internal const int MaxObservedMapObjects = RlCombatPerception.MaxObservedMapObjects;
+    internal const int MaxObservedCollisionAsteroids = RlCombatPerception.MaxObservedCollisionAsteroids;
+    internal const int NavigationGridSize = RlCombatPerception.NavigationGridSize;
+    internal const int NavigationGridCellCount = RlCombatPerception.NavigationGridCellCount;
+    internal const int MaxWeaponSlots = RlCombatPerception.MaxWeaponSlots;
+    internal const int SelfObservationSize = RlCombatPerception.SelfObservationSize;
+    internal const int EntityObservationSize = RlCombatPerception.EntityObservationSize;
+    internal const int WeaponObservationSize = RlCombatPerception.WeaponObservationSize;
+    internal const int MiningAsteroidObservationSize = RlCombatPerception.MiningAsteroidObservationSize;
+    internal const int MapObjectObservationSize = RlCombatPerception.MapObjectObservationSize;
+    internal const int CollisionAsteroidObservationSize = RlCombatPerception.CollisionAsteroidObservationSize;
+    internal const int ObservationSize = RlCombatPerception.ObservationSize;
 
     // Movement/aim remain continuous. The capability branch is intentionally primitive: it asks
     // the ship to perform an action at its CURRENT location. It never invokes a Hive Mind command
@@ -59,76 +59,11 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int EnemyTargetBranchSize = 1 + MaxObservedEnemies;
     internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
 
-    private const int MiningAsteroidObservationType = 1;
-    private const int GenericMapObjectObservationType = 2;
-    private const int FireTankObservationType = 3;
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
-    private const float LocalDistanceScale = 40f;
     private const float MiningActionIntervalSeconds = 5f;
     private const float HealingActionIntervalSeconds = 1f;
     private const int HealingPerSuccessfulAction = 50;
-
-    private readonly struct ObservedMapObject
-    {
-        internal readonly int Id;
-        internal readonly int Type;
-        internal readonly Vector2 Position;
-        internal readonly Vector2 HalfExtents;
-        internal readonly float HealthFraction;
-        internal readonly float Activity;
-        internal readonly bool Targetable;
-
-        internal ObservedMapObject(
-            int id,
-            int type,
-            Vector2 position,
-            Vector2 halfExtents,
-            float healthFraction,
-            float activity,
-            bool targetable)
-        {
-            Id = id;
-            Type = type;
-            Position = position;
-            HalfExtents = halfExtents;
-            HealthFraction = healthFraction;
-            Activity = activity;
-            Targetable = targetable;
-        }
-    }
-
-    private readonly struct ObservedObstacle
-    {
-        internal readonly int Id;
-        internal readonly int Type;
-        internal readonly Vector2 Position;
-        internal readonly Vector2 HalfExtents;
-        internal readonly float Rotation;
-        internal readonly Vector2 Velocity;
-        internal readonly float HealthFraction;
-        internal readonly bool Targetable;
-
-        internal ObservedObstacle(
-            int id,
-            int type,
-            Vector2 position,
-            Vector2 halfExtents,
-            float rotation,
-            Vector2 velocity,
-            float healthFraction,
-            bool targetable)
-        {
-            Id = id;
-            Type = type;
-            Position = position;
-            HalfExtents = halfExtents;
-            Rotation = rotation;
-            Velocity = velocity;
-            HealthFraction = healthFraction;
-            Targetable = targetable;
-        }
-    }
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
     private static readonly Dictionary<int, int> AgentCounts = new Dictionary<int, int>();
@@ -148,10 +83,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private float _nextHealingActionTime;
     private Vector2 _lastAimDirection = Vector2.up;
     private readonly List<Ship> _bindCandidates = new List<Ship>();
-    private readonly List<Ship> _allyCandidates = new List<Ship>();
-    private readonly List<Ship> _enemyCandidates = new List<Ship>();
-    private readonly List<ObservedMapObject> _mapObjectCandidates = new List<ObservedMapObject>();
-    private readonly List<ObservedObstacle> _obstacleCandidates = new List<ObservedObstacle>();
+    private readonly RlCombatPerception _perception = new RlCombatPerception();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallForDedicatedTrainingScene()
@@ -203,8 +135,10 @@ internal sealed class RlOneVsOneAgent : Agent
         Debug.Log($"RL combat policy schema observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
                   $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}," +
                   $"{AllyTargetBranchSize},{EnemyTargetBranchSize},{MapObjectTargetBranchSize}] " +
-                  $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} map_objects={MaxObservedMapObjects} " +
-                  $"obstacles={MaxObservedObstacles} weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
+                  $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} " +
+                  $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
+                  $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
+                  $"weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
     }
 
     private static int AgentCountKey(int side, int teamId)
@@ -380,17 +314,7 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        Vector2 origin = _ship.GetPosition();
-        AddSelfObservations(sensor, origin);
-        CollectAllies(origin);
-        AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin);
-        CollectVisibleEnemies(origin);
-        AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin);
-        AddWeaponSlots(sensor, origin);
-        CollectVisibleMapObjects(origin);
-        AddMapObjectSlots(sensor, origin);
-        CollectVisibleObstacles(origin);
-        AddObstacleSlots(sensor, origin);
+        _perception.Collect(_ship, _side, sensor);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -925,362 +849,32 @@ internal sealed class RlOneVsOneAgent : Agent
         _ship = null;
     }
 
-    private void AddSelfObservations(VectorSensor sensor, Vector2 position)
-    {
-        AddEnumBits(sensor, (int)_ship.ShipType, ShipTypeBitCount);
-        float halfMap = Mathf.Max(1f, RlOneVsOneTrainingBootstrap.CurrentMapSize * 0.5f);
-        sensor.AddObservation(Mathf.Clamp(position.x / halfMap, -1f, 1f));
-        sensor.AddObservation(Mathf.Clamp(position.y / halfMap, -1f, 1f));
-        sensor.AddObservation(NormalizePositive(RlOneVsOneTrainingBootstrap.CurrentMapSize, 30f));
-        AddHeading(sensor, _ship.Rotation);
-        sensor.AddObservation(GetHealthFraction(_ship));
-        sensor.AddObservation(NormalizePositive(_ship.Speed, 20f));
-        sensor.AddObservation(NormalizePositive(_ship.CurrentSpeed, 20f));
-        sensor.AddObservation(NormalizePositive(_ship.RotationSpeed, 240f));
-        sensor.AddObservation(NormalizePositive(_ship.LongestSide, 10f));
-        sensor.AddObservation(NormalizePositive(_ship.Sight, 80f));
-        sensor.AddObservation(NormalizePositive(_ship.MaxRange, 80f));
-        sensor.AddObservation(NormalizePositive(_ship.Firepower, 200f));
-        sensor.AddObservation(_ship.IsMobile ? 1f : 0f);
-        sensor.AddObservation(_ship.IsBomber ? 1f : 0f);
-        sensor.AddObservation(_ship.IsCarrierShip ? 1f : 0f);
-        sensor.AddObservation(_ship.HasWeapons ? 1f : 0f);
-        sensor.AddObservation(_ship.HasTurrets ? 1f : 0f);
-        sensor.AddObservation(HasSpecialAction(_ship) ? 1f : 0f);
-        sensor.AddObservation(GetSpecialReadiness(_ship));
-    }
-
-    private void CollectAllies(Vector2 origin)
-    {
-        _allyCandidates.Clear();
-        List<Ship> ships = _ship.Level.State.GetShips(_side);
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship candidate = ships[i];
-            if (candidate != null && candidate != _ship && !candidate.IsDead)
-            {
-                _allyCandidates.Add(candidate);
-            }
-        }
-        SortShipsForObservation(_allyCandidates, origin);
-    }
-
-    private void CollectVisibleEnemies(Vector2 origin)
-    {
-        _enemyCandidates.Clear();
-        foreach (Ship candidate in _ship.Level.State.GetShipsVisibleToHiveMind(_side))
-        {
-            if (candidate != null && !candidate.IsDead && candidate.Side != _side)
-            {
-                _enemyCandidates.Add(candidate);
-            }
-        }
-        SortShipsForObservation(_enemyCandidates, origin);
-    }
-
-    private static void SortShipsForObservation(List<Ship> ships, Vector2 origin)
-    {
-        ships.Sort((left, right) =>
-        {
-            int compare = (left.GetPosition() - origin).sqrMagnitude.CompareTo(
-                (right.GetPosition() - origin).sqrMagnitude);
-            if (compare != 0)
-            {
-                return compare;
-            }
-            compare = ((int)left.ShipType).CompareTo((int)right.ShipType);
-            if (compare != 0)
-            {
-                return compare;
-            }
-            long leftFleetId = left.FleetShip != null ? left.FleetShip.Id : long.MaxValue;
-            long rightFleetId = right.FleetShip != null ? right.FleetShip.Id : long.MaxValue;
-            compare = leftFleetId.CompareTo(rightFleetId);
-            return compare != 0 ? compare : left.Id.CompareTo(right.Id);
-        });
-    }
-
-    private static void AddEntitySlots(VectorSensor sensor, List<Ship> ships, int slots, Vector2 origin)
-    {
-        for (int slot = 0; slot < slots; slot++)
-        {
-            if (slot >= ships.Count)
-            {
-                AddZeroObservations(sensor, EntityObservationSize);
-                continue;
-            }
-
-            Ship ship = ships[slot];
-            Vector2 relative = ship.GetPosition() - origin;
-            sensor.AddObservation(1f);
-            sensor.AddObservation(SquashSignedDistance(relative.x));
-            sensor.AddObservation(SquashSignedDistance(relative.y));
-            AddHeading(sensor, ship.Rotation);
-            sensor.AddObservation(GetHealthFraction(ship));
-            sensor.AddObservation(NormalizePositive(ship.Speed, 20f));
-            sensor.AddObservation(NormalizePositive(ship.CurrentSpeed, 20f));
-            sensor.AddObservation(NormalizePositive(ship.LongestSide, 10f));
-            sensor.AddObservation(NormalizePositive(ship.MaxRange, 80f));
-            sensor.AddObservation(NormalizePositive(ship.Firepower, 200f));
-            sensor.AddObservation(ship.IsMobile ? 1f : 0f);
-            sensor.AddObservation(ship.IsBomber ? 1f : 0f);
-            AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
-        }
-    }
-
-    private void AddWeaponSlots(VectorSensor sensor, Vector2 origin)
-    {
-        // Weapon is an authored List rather than an unordered set. Its serialized/setup order is the
-        // stable slot identity, so do not re-sort it by transient range/target state.
-        for (int slot = 0; slot < MaxWeaponSlots; slot++)
-        {
-            if (_ship.Weapons == null || slot >= _ship.Weapons.Count || _ship.Weapons[slot] == null)
-            {
-                AddZeroObservations(sensor, WeaponObservationSize);
-                continue;
-            }
-
-            Weapon weapon = _ship.Weapons[slot];
-            sensor.AddObservation(1f);
-            AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
-            Vector2 relative = weapon.GetPosition() - origin;
-            float size = Mathf.Max(1f, _ship.LongestSide);
-            sensor.AddObservation(Mathf.Clamp(relative.x / size, -1f, 1f));
-            sensor.AddObservation(Mathf.Clamp(relative.y / size, -1f, 1f));
-            sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
-            sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
-            sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
-            sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
-            sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
-
-            if (weapon is Turret turret)
-            {
-                sensor.AddObservation(1f);
-                AddHeading(sensor, turret.Rotation);
-                sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
-                sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
-            }
-            else
-            {
-                sensor.AddObservation(0f);
-                sensor.AddObservation(0f);
-                sensor.AddObservation(0f);
-                sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
-                sensor.AddObservation(0f);
-            }
-        }
-    }
-
-    private void CollectVisibleMapObjects(Vector2 origin)
-    {
-        _mapObjectCandidates.Clear();
-        GameState state = _ship.Level.State;
-        foreach (MiningAsteroid asteroid in state.GetMiningAsteroidsVisibleToHiveMind(_side))
-        {
-            if (asteroid == null || asteroid.IsDead)
-            {
-                continue;
-            }
-
-            Collider2D collider = asteroid.ClearanceMappingCollider != null
-                ? asteroid.ClearanceMappingCollider
-                : asteroid.Collider;
-            GetColliderGeometry(_ship.Level, collider, asteroid.GetPosition(), out Vector2 position, out Vector2 halfExtents);
-            _mapObjectCandidates.Add(new ObservedMapObject(
-                asteroid.Id,
-                MiningAsteroidObservationType,
-                position,
-                halfExtents,
-                GetMiningAsteroidResourceFraction(asteroid),
-                asteroid.SquadsMining.Count,
-                false));
-        }
-
-        foreach (MapObject mapObject in state.GetMapObjectsVisibleToHiveMind(_side))
-        {
-            if (mapObject == null || mapObject.IsDead)
-            {
-                continue;
-            }
-
-            GetColliderGeometry(
-                _ship.Level,
-                mapObject.Collider,
-                mapObject.transform.localPosition,
-                out Vector2 position,
-                out Vector2 halfExtents);
-            int type = mapObject is CanisterBomb
-                ? FireTankObservationType
-                : GenericMapObjectObservationType;
-            float healthFraction = mapObject.MaxHealth > 0
-                ? Mathf.Clamp01((float)mapObject.Health / mapObject.MaxHealth)
-                : 0f;
-            _mapObjectCandidates.Add(new ObservedMapObject(
-                mapObject.Id,
-                type,
-                position,
-                halfExtents,
-                healthFraction,
-                0f,
-                true));
-        }
-
-        _mapObjectCandidates.Sort((left, right) =>
-        {
-            int compare = (left.Position - origin).sqrMagnitude.CompareTo((right.Position - origin).sqrMagnitude);
-            if (compare != 0)
-            {
-                return compare;
-            }
-            compare = left.Type.CompareTo(right.Type);
-            return compare != 0 ? compare : left.Id.CompareTo(right.Id);
-        });
-    }
-
-    private void AddMapObjectSlots(VectorSensor sensor, Vector2 origin)
-    {
-        for (int slot = 0; slot < MaxObservedMapObjects; slot++)
-        {
-            if (slot >= _mapObjectCandidates.Count)
-            {
-                AddZeroObservations(sensor, MapObjectObservationSize);
-                continue;
-            }
-
-            ObservedMapObject mapObject = _mapObjectCandidates[slot];
-            Vector2 relative = mapObject.Position - origin;
-            sensor.AddObservation(1f);
-            AddEnumBits(sensor, mapObject.Type, MapObjectTypeBitCount);
-            sensor.AddObservation(SquashSignedDistance(relative.x));
-            sensor.AddObservation(SquashSignedDistance(relative.y));
-            sensor.AddObservation(mapObject.HealthFraction);
-            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.x, 20f));
-            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.y, 20f));
-            sensor.AddObservation(mapObject.Targetable ? 1f : 0f);
-            sensor.AddObservation(NormalizePositive(mapObject.Activity, 4f));
-        }
-    }
-
-    private void CollectVisibleObstacles(Vector2 origin)
-    {
-        _obstacleCandidates.Clear();
-        foreach (Obstacle obstacle in _ship.Level.State.GetObstaclesVisibleToHiveMind(_side))
-        {
-            if (obstacle == null || obstacle.IsDead || obstacle is MiningAsteroid || obstacle is AsteroidPiece)
-            {
-                continue;
-            }
-
-            Collider2D collider = obstacle.ClearanceMappingCollider != null
-                ? obstacle.ClearanceMappingCollider
-                : obstacle.Collider;
-            GetColliderGeometry(_ship.Level, collider, obstacle.GetPosition(), out Vector2 position, out Vector2 halfExtents);
-
-            Vector2 velocity = Vector2.zero;
-            if (obstacle is CollisionAsteroid collisionAsteroid && collisionAsteroid.Body != null)
-            {
-                velocity = GetLevelLocalVelocity(_ship.Level, collisionAsteroid.Body.linearVelocity);
-            }
-
-            float healthFraction = obstacle.OriginalHealth > 0
-                ? Mathf.Clamp01((float)obstacle.Health / obstacle.OriginalHealth)
-                : 0f;
-            _obstacleCandidates.Add(new ObservedObstacle(
-                obstacle.Id,
-                (int)obstacle.ObstacleType,
-                position,
-                halfExtents,
-                obstacle.transform.localEulerAngles.z,
-                velocity,
-                healthFraction,
-                obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid));
-        }
-
-        _obstacleCandidates.Sort((left, right) =>
-        {
-            int compare = DistanceSquaredToBounds(left, origin).CompareTo(DistanceSquaredToBounds(right, origin));
-            if (compare != 0)
-            {
-                return compare;
-            }
-            compare = left.Type.CompareTo(right.Type);
-            return compare != 0 ? compare : left.Id.CompareTo(right.Id);
-        });
-    }
-
-    private void AddObstacleSlots(VectorSensor sensor, Vector2 origin)
-    {
-        for (int slot = 0; slot < MaxObservedObstacles; slot++)
-        {
-            if (slot >= _obstacleCandidates.Count)
-            {
-                AddZeroObservations(sensor, ObstacleObservationSize);
-                continue;
-            }
-
-            ObservedObstacle obstacle = _obstacleCandidates[slot];
-            Vector2 relative = obstacle.Position - origin;
-            sensor.AddObservation(1f);
-            AddEnumBits(sensor, obstacle.Type, ObstacleTypeBitCount);
-            sensor.AddObservation(SquashSignedDistance(relative.x));
-            sensor.AddObservation(SquashSignedDistance(relative.y));
-            sensor.AddObservation(NormalizePositive(obstacle.HalfExtents.x, 20f));
-            sensor.AddObservation(NormalizePositive(obstacle.HalfExtents.y, 20f));
-            AddHeading(sensor, obstacle.Rotation);
-            sensor.AddObservation(SquashSignedDistance(obstacle.Velocity.x));
-            sensor.AddObservation(SquashSignedDistance(obstacle.Velocity.y));
-            sensor.AddObservation(obstacle.HealthFraction);
-            sensor.AddObservation(obstacle.Targetable ? 1f : 0f);
-        }
-    }
-
-    private static void GetColliderGeometry(
-        Level level,
-        Collider2D collider,
-        Vector2 fallbackPosition,
-        out Vector2 position,
-        out Vector2 halfExtents)
-    {
-        position = fallbackPosition;
-        halfExtents = Vector2.zero;
-        if (collider == null || !collider.enabled)
-        {
-            return;
-        }
-
-        Bounds bounds = collider.bounds;
-        Vector2 min = PathfinderObstacleScope.WorldToLevel(level, bounds.min);
-        Vector2 max = PathfinderObstacleScope.WorldToLevel(level, bounds.max);
-        position = (min + max) * 0.5f;
-        halfExtents = new Vector2(
-            Mathf.Abs(max.x - min.x) * 0.5f,
-            Mathf.Abs(max.y - min.y) * 0.5f);
-    }
-
-    private static Vector2 GetLevelLocalVelocity(Level level, Vector2 worldVelocity)
-    {
-        Transform mapTransform = level?.Map?.Transform;
-        return mapTransform != null
-            ? (Vector2)mapTransform.InverseTransformVector(worldVelocity)
-            : worldVelocity;
-    }
-
-    private static float DistanceSquaredToBounds(ObservedObstacle obstacle, Vector2 origin)
-    {
-        Vector2 relative = obstacle.Position - origin;
-        float dx = Mathf.Max(0f, Mathf.Abs(relative.x) - obstacle.HalfExtents.x);
-        float dy = Mathf.Max(0f, Mathf.Abs(relative.y) - obstacle.HalfExtents.y);
-        return dx * dx + dy * dy;
-    }
-
     private Ship FindNearestVisibleEnemy()
     {
-        if (_ship == null)
+        if (_ship == null || _ship.Level == null || _ship.Level.State == null)
         {
             return null;
         }
-        CollectVisibleEnemies(_ship.GetPosition());
-        return _enemyCandidates.Count > 0 ? _enemyCandidates[0] : null;
+
+        Ship selected = null;
+        float selectedDistance = float.MaxValue;
+        Vector2 origin = _ship.GetPosition();
+        foreach (Ship candidate in _ship.Level.State.GetShipsVisibleToHiveMind(_side))
+        {
+            if (candidate == null || candidate.IsDead || candidate.Side == _side)
+            {
+                continue;
+            }
+
+            float distance = (candidate.GetPosition() - origin).sqrMagnitude;
+            if (selected == null || distance < selectedDistance ||
+                (Mathf.Approximately(distance, selectedDistance) && candidate.Id < selected.Id))
+            {
+                selected = candidate;
+                selectedDistance = distance;
+            }
+        }
+        return selected;
     }
 
     private static bool HasSpecialAction(Ship ship)
@@ -1288,72 +882,9 @@ internal sealed class RlOneVsOneAgent : Agent
         return ship is YellowJacket || ship is Striker || ship is FireBarge || ship is Barge || ship is Scout;
     }
 
-    private static float GetSpecialReadiness(Ship ship)
-    {
-        // Readiness is limited to intrinsic cooldown/state. Spatial validity is learned from the
-        // observations and consequences, not exposed through either masks or this scalar.
-        if (ship is YellowJacket)
-        {
-            return 1f;
-        }
-        if (ship is Striker striker)
-        {
-            return striker.IsBombReady ? 1f : 0f;
-        }
-        if (ship is Barge barge)
-        {
-            return !barge.HasStartedCharging && !barge.IsCharging ? 1f : 0f;
-        }
-        if (ship is FireBarge)
-        {
-            return 1f;
-        }
-        if (ship is Scout scout)
-        {
-            return scout.IsBeaconReady ? 1f : 0f;
-        }
-        return 0f;
-    }
-
-    private static float GetHealthFraction(Ship ship)
-    {
-        return ship != null && ship.MaxHealth > 0
-            ? Mathf.Clamp01((float)ship.Health / ship.MaxHealth)
-            : 0f;
-    }
-
-    private static float GetMiningAsteroidResourceFraction(MiningAsteroid asteroid)
-    {
-        return asteroid != null && asteroid.OriginalHealth > 0
-            ? Mathf.Clamp01((float)asteroid.Health / asteroid.OriginalHealth)
-            : 0f;
-    }
-
     internal static float SquashSignedDistance(float value)
     {
-        float absolute = Mathf.Abs(value);
-        return absolute <= 0f ? 0f : Mathf.Sign(value) * absolute / (absolute + LocalDistanceScale);
-    }
-
-    private static float NormalizePositive(float value, float scale)
-    {
-        float positive = Mathf.Max(0f, value);
-        return positive <= 0f ? 0f : positive / (positive + Mathf.Max(0.0001f, scale));
-    }
-
-    private static void AddEnumBits(VectorSensor sensor, int value, int bits)
-    {
-        for (int bit = 0; bit < bits; bit++)
-        {
-            sensor.AddObservation((value & (1 << bit)) != 0 ? 1f : 0f);
-        }
-    }
-
-    private static void AddHeading(VectorSensor sensor, float degrees)
-    {
-        float radians = degrees * Mathf.Deg2Rad;
-        sensor.AddObservation(Mathf.Sin(radians));
-        sensor.AddObservation(Mathf.Cos(radians));
+        return RlCombatPerception.SquashSignedDistance(value);
     }
 
     private static void AddZeroObservations(VectorSensor sensor, int count)
