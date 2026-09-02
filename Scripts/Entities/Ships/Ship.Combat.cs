@@ -59,6 +59,7 @@ namespace Assets.Scripts.Entities.Ships
             Health -= math.min(damage, Health);
             Tsv = Utilities.CalculateTsv(this);
             _tsvChange = Tsv - _oldTsv;
+            global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(this, -_tsvChange);
             FleetShip.DamageReceived += -_tsvChange;
             Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
             if (Squad.HasCommand) Squad.GetCommand().Tsv += _tsvChange;
