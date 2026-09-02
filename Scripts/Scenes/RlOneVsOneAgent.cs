@@ -30,11 +30,15 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int ObservationSize = SelfObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize;
-    internal const int MovementActionCount = 2;
-    internal const int ActionsPerWeaponSlot = 3;
-    internal const int SpecialActionCount = 1;
-    internal const int ContinuousActionCount = MovementActionCount +
-        MaxWeaponSlots * ActionsPerWeaponSlot + SpecialActionCount;
+
+    // Four continuous intentions stay relevant to almost every mobile combatant. Weapon selection,
+    // fire state and special abilities are discrete so unavailable capabilities can be masked instead
+    // of adding dozens of irrelevant continuous outputs to simple ships such as Wasp.
+    internal const int ContinuousActionCount = 4; // move x/y, aim x/y
+    internal const int WeaponCommandBranch = 0;
+    internal const int SpecialActionBranch = 1;
+    internal const int WeaponCommandBranchSize = 1 + MaxWeaponSlots * 2; // none + (cease/fire) per slot
+    internal const int SpecialActionBranchSize = 2; // none/use
 
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
@@ -51,7 +55,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private long _boundRuntimeShipId;
-    private readonly Vector2[] _lastAimDirections = new Vector2[MaxWeaponSlots];
+    private Vector2 _lastAimDirection = Vector2.up;
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly List<Ship> _allyCandidates = new List<Ship>();
     private readonly List<Ship> _enemyCandidates = new List<Ship>();
@@ -75,8 +79,9 @@ internal sealed class RlOneVsOneAgent : Agent
         if (stage == null || !RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime) yield break;
         if (stage.GetComponentsInChildren<RlOneVsOneAgent>(true).Length > 0) yield break;
 
-        // Reserve wrappers for starting ships plus episode-spawned children. Idle wrappers do not
-        // request decisions and never create a trajectory.
+        // Reserve wrappers for the maximum authored starting fleet plus one equally large wave of
+        // episode-spawned children. Extra physical weapons beyond the observed eight share slot 7,
+        // so neither weapon count nor later curriculum expansion changes the policy shape.
         for (int slot = 0; slot < MaxControlledShipsPerSide; slot++)
         {
             CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, $"Bee Team 0 Slot {slot}");
@@ -85,7 +90,8 @@ internal sealed class RlOneVsOneAgent : Agent
             CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, $"Human Team 1 Slot {slot}");
         }
 
-        Debug.Log($"RL combat policy schema observations={ObservationSize} actions={ContinuousActionCount} " +
+        Debug.Log($"RL combat policy schema observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
+                  $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}] " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} weapon_slots={MaxWeaponSlots} " +
                   $"control_slots_per_side={MaxControlledShipsPerSide}");
     }
@@ -99,7 +105,9 @@ internal sealed class RlOneVsOneAgent : Agent
         behavior.TeamId = teamId;
         behavior.BrainParameters.VectorObservationSize = ObservationSize;
         behavior.BrainParameters.NumStackedVectorObservations = 1;
-        behavior.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ContinuousActionCount);
+        behavior.BrainParameters.ActionSpec = new ActionSpec(
+            ContinuousActionCount,
+            new[] { WeaponCommandBranchSize, SpecialActionBranchSize });
         RlOneVsOneAgent agent = obj.AddComponent<RlOneVsOneAgent>();
         agent._stage = stage;
         agent._side = side;
@@ -111,7 +119,6 @@ internal sealed class RlOneVsOneAgent : Agent
         Instances.Add(this);
         RlOneVsOneEpisodeCoordinator.TsvRewardOccurred += HandleTsvRewardOccurred;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
-        ResetAimDirections();
     }
 
     protected override void OnDisable()
@@ -130,7 +137,7 @@ internal sealed class RlOneVsOneAgent : Agent
         _hasParticipatedThisEpisode = false;
         _boundRuntimeShipId = 0;
         _decisionCounter = 0;
-        ResetAimDirections();
+        _lastAimDirection = Vector2.up;
     }
 
     private void FixedUpdate()
@@ -150,7 +157,6 @@ internal sealed class RlOneVsOneAgent : Agent
             AddZeroObservations(sensor, ObservationSize);
             return;
         }
-
         Vector2 origin = _ship.GetPosition();
         AddSelfObservations(sensor, origin);
         CollectAllies(origin);
@@ -160,34 +166,49 @@ internal sealed class RlOneVsOneAgent : Agent
         AddWeaponSlots(sensor, origin);
     }
 
+    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+    {
+        bool canControl = IsCurrentController() && TryBindShip();
+        for (int slot = 0; slot < MaxWeaponSlots; slot++)
+        {
+            bool enabled = canControl && HasTurretForSlot(slot);
+            actionMask.SetActionEnabled(WeaponCommandBranch, 1 + slot * 2, enabled);
+            actionMask.SetActionEnabled(WeaponCommandBranch, 2 + slot * 2, enabled);
+        }
+        actionMask.SetActionEnabled(
+            SpecialActionBranch,
+            1,
+            canControl && HasSpecialAction(_ship) && GetSpecialReadiness(_ship) > 0f);
+    }
+
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (!IsCurrentController() || !TryBindShip()) return;
-        var values = actions.ContinuousActions;
-        ApplyMovement(new Vector2(values[0], values[1]));
+        var continuous = actions.ContinuousActions;
+        ApplyMovement(new Vector2(continuous[0], continuous[1]));
 
-        if (_ship.Weapons != null)
+        Vector2 aim = new Vector2(continuous[2], continuous[3]);
+        if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone) _lastAimDirection = aim.normalized;
+
+        var discrete = actions.DiscreteActions;
+        int weaponCommand = discrete[WeaponCommandBranch];
+        if (weaponCommand > 0)
         {
-            for (int i = 0; i < _ship.Weapons.Count; i++)
-            {
-                if (!(_ship.Weapons[i] is Turret turret)) continue;
-                int slot = Mathf.Min(i, MaxWeaponSlots - 1);
-                int action = MovementActionCount + slot * ActionsPerWeaponSlot;
-                Vector2 aim = new Vector2(values[action], values[action + 1]);
-                if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone) _lastAimDirections[slot] = aim.normalized;
-                Vector2 target = turret.GetPosition() + _lastAimDirections[slot] * Mathf.Max(1f, turret.Range);
-                turret.SetRlControl(target, values[action + 2] > 0f);
-            }
+            int encoded = weaponCommand - 1;
+            int slot = encoded / 2;
+            bool fire = (encoded & 1) == 1;
+            ApplyWeaponCommand(slot, fire);
         }
-
-        int special = MovementActionCount + MaxWeaponSlots * ActionsPerWeaponSlot;
-        if (values[special] > 0f) ApplySpecialAction();
+        if (discrete[SpecialActionBranch] == 1) ApplySpecialAction();
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
-        var values = actionsOut.ContinuousActions;
-        for (int i = 0; i < ContinuousActionCount; i++) values[i] = Random.Range(-1f, 1f);
+        var continuous = actionsOut.ContinuousActions;
+        for (int i = 0; i < ContinuousActionCount; i++) continuous[i] = Random.Range(-1f, 1f);
+        var discrete = actionsOut.DiscreteActions;
+        discrete[WeaponCommandBranch] = Random.Range(0, WeaponCommandBranchSize);
+        discrete[SpecialActionBranch] = Random.Range(0, SpecialActionBranchSize);
     }
 
     private void ApplyMovement(Vector2 movement)
@@ -197,10 +218,7 @@ internal sealed class RlOneVsOneAgent : Agent
             _ship.HasBrain = true;
             return;
         }
-        if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
-        {
-            _ship.Direction = 360;
-        }
+        if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone) _ship.Direction = 360;
         else
         {
             Vector2 point = _ship.GetPosition() + movement.normalized;
@@ -208,6 +226,27 @@ internal sealed class RlOneVsOneAgent : Agent
             _ship.Direction = ((direction % 360) + 360) % 360;
         }
         _ship.HasBrain = true;
+    }
+
+    private void ApplyWeaponCommand(int slot, bool fire)
+    {
+        if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots) return;
+        for (int i = 0; i < _ship.Weapons.Count; i++)
+        {
+            if (Mathf.Min(i, MaxWeaponSlots - 1) != slot || !(_ship.Weapons[i] is Turret turret)) continue;
+            Vector2 target = turret.GetPosition() + _lastAimDirection * Mathf.Max(1f, turret.Range);
+            turret.SetRlControl(target, fire);
+        }
+    }
+
+    private bool HasTurretForSlot(int slot)
+    {
+        if (_ship == null || _ship.Weapons == null) return false;
+        for (int i = 0; i < _ship.Weapons.Count; i++)
+        {
+            if (Mathf.Min(i, MaxWeaponSlots - 1) == slot && _ship.Weapons[i] is Turret) return true;
+        }
+        return false;
     }
 
     private void ApplySpecialAction()
@@ -230,7 +269,6 @@ internal sealed class RlOneVsOneAgent : Agent
         _lastRewardedEpisode = result.EpisodeNumber;
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
         if (_teamId != assignedTeam || !_hasParticipatedThisEpisode) return;
-
         AddReward(_side == ConfigData.Configuration.BeeSide
             ? result.BeeTerminalReward + result.BeeTimeReward
             : result.HumanTerminalReward + result.HumanTimeReward);
@@ -253,7 +291,7 @@ internal sealed class RlOneVsOneAgent : Agent
         if (_hasBoundShip)
         {
             if (_ship != null && !_ship.IsDead && _ship.Level == level && _ship.Id == _boundRuntimeShipId) return true;
-            _ship = null; // A dead participant never jumps to a surviving ship.
+            _ship = null;
             return false;
         }
 
@@ -515,10 +553,5 @@ internal sealed class RlOneVsOneAgent : Agent
     private static void AddZeroObservations(VectorSensor sensor, int count)
     {
         for (int i = 0; i < count; i++) sensor.AddObservation(0f);
-    }
-
-    private void ResetAimDirections()
-    {
-        for (int i = 0; i < _lastAimDirections.Length; i++) _lastAimDirections[i] = Vector2.up;
     }
 }
