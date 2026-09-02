@@ -54,7 +54,7 @@ env_settings:
   env_path: F:\RLDemo\Bees RL Training
   env_args:
   - --rl-health-ratio
-  - '1'
+  - '.5'
   - --rl-map-size
   - '30'
   - --rl-episode-timeout
