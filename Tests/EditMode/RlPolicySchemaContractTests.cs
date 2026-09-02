@@ -99,7 +99,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void BargeReservesChargeBeforeWindupCanYield()
+        public void BargeReservesRlChargePhaseBeforeWindupCanYield()
         {
             string source = Read("Scripts", "Entities", "Ships", "Barge.cs");
 
@@ -108,12 +108,18 @@ namespace Bees.Tests.EditMode
             int chargeMethod = source.IndexOf("public IEnumerator ChargeForward", reserveMethod, StringComparison.Ordinal);
             Assert.That(chargeMethod, Is.GreaterThan(reserveMethod));
             string reserve = source.Substring(reserveMethod, chargeMethod - reserveMethod);
-            Assert.That(reserve, Does.Contain("HasStartedCharging = true;"));
+            Assert.That(reserve, Does.Contain("SetChargePhase(1);"),
+                "RL wind-up must be reserved synchronously before the charge coroutine can yield.");
+            Assert.That(reserve, Does.Not.Contain("HasStartedCharging = true;"),
+                "RL wind-up reservation must not change the legacy flag that marks active-charge start timing.");
 
             int reserveCall = source.IndexOf("if (!TryReserveCharge())", chargeMethod, StringComparison.Ordinal);
             int firstYield = source.IndexOf("yield return _chargeBuildDelay;", chargeMethod, StringComparison.Ordinal);
+            int activeChargeFlag = source.IndexOf("HasStartedCharging = true;", chargeMethod, StringComparison.Ordinal);
             Assert.That(reserveCall, Is.GreaterThan(chargeMethod));
             Assert.That(firstYield, Is.GreaterThan(reserveCall));
+            Assert.That(activeChargeFlag, Is.GreaterThan(firstYield),
+                "HasStartedCharging must retain its historical meaning and flip only when the active charge begins.");
         }
 
         [Test]
