@@ -213,8 +213,14 @@ internal sealed class RlOneVsOneTrainingOptions
             return;
         }
 
-        ValidateSampledCandidatePool(_beeShipTypes, ConfigData.Configuration.BeeSide, BeeShipTypesFlag);
-        ValidateSampledCandidatePool(_humanShipTypes, ConfigData.Configuration.HumanSide, HumanShipTypesFlag);
+        // Command-line options are parsed immediately after the training scene loads, before the
+        // normal settings flow is guaranteed to populate ConfigData.Configuration. Faction
+        // membership is static ship metadata, so validate it against the always-available side map
+        // rather than introducing an unnecessary dependency on server-loaded configuration.
+        int beeSide = GetSideForShipType(ConfigData.ShipTypes.Wasp);
+        int humanSide = GetSideForShipType(ConfigData.ShipTypes.Gunship);
+        ValidateSampledCandidatePool(_beeShipTypes, beeSide, BeeShipTypesFlag);
+        ValidateSampledCandidatePool(_humanShipTypes, humanSide, HumanShipTypesFlag);
     }
 
     private void ValidateComposition(List<ConfigData.ShipTypes> shipTypes, string flag)
@@ -224,6 +230,16 @@ internal sealed class RlOneVsOneTrainingOptions
             throw new ArgumentException(
                 $"{flag} must contain either one type (repeated for every ship) or exactly {ShipsPerSide} comma-separated types.");
         }
+    }
+
+    private static int GetSideForShipType(ConfigData.ShipTypes shipType)
+    {
+        int side;
+        if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out side))
+        {
+            throw new InvalidOperationException($"No faction side is registered for ship type {shipType}.");
+        }
+        return side;
     }
 
     private static void ValidateSampledCandidatePool(
