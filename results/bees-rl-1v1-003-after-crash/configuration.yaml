@@ -36,7 +36,7 @@ behaviors:
           goal_conditioning_type: hyper
           deterministic: false
     init_path: null
-    keep_checkpoints: 5
+    keep_checkpoints: 5000
     even_checkpoints: false
     max_steps: 5000000000000
     time_horizon: 256
@@ -54,7 +54,7 @@ env_settings:
   env_path: F:\RLDemo\Bees RL Training
   env_args:
   - --rl-health-ratio
-  - '.25'
+  - '.50'
   - --rl-map-size
   - '30'
   - --rl-episode-timeout
@@ -69,7 +69,7 @@ env_settings:
   num_envs: 4
   num_areas: 1
   timeout_wait: 60
-  seed: -1
+  seed: 36
   max_lifetime_restarts: 10
   restarts_rate_limit_n: 1
   restarts_rate_limit_period_s: 60

@@ -30,7 +30,7 @@ behaviors:
           memory: null
           goal_conditioning_type: hyper
     init_path: null
-    keep_checkpoints: 5
+    keep_checkpoints: 5000
     checkpoint_interval: 50000
     max_steps: 1000000000
     time_horizon: 512
