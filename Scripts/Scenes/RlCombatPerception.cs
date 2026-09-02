@@ -9,38 +9,47 @@ using UnityEngine;
 
 /// <summary>
 /// Fixed-shape tactical perception for the shared combat policy. GameState/Hive Mind memory may
-/// track arbitrarily many discovered objects; each controlled ship receives only a bounded nearest
-/// subset plus a local occupancy grid for persistent static navigation geometry.
+/// track arbitrarily many discovered objects; each controlled ship receives a bounded deterministic
+/// subset plus permanently reserved capability/objective channels.
 /// </summary>
 internal sealed class RlCombatPerception
 {
-    internal const int ShipTypeBitCount = 5;
-    internal const int WeaponTypeBitCount = 4;
+    internal const int ShipTypeBitCount = 6;
+    internal const int WeaponTypeBitCount = 6;
     internal const int MapObjectTypeBitCount = 4;
 
-    internal const int MaxObservedAllies = 48;
-    internal const int MaxObservedEnemies = 48;
+    internal const int MaxObservedAllies = 64;
+    internal const int MaxObservedEnemies = 64;
     internal const int MaxObservedMiningAsteroids = 8;
     internal const int MaxObservedMapObjects = 64;
     internal const int MaxObservedCollisionAsteroids = 48;
-    internal const int MaxWeaponSlots = 8;
+    internal const int MaxWeaponSlots = 16;
+    internal const int MaxObservedEnemyWeaponMounts = 16;
 
     internal const int NavigationGridSize = 13;
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
     internal const float NavigationGridCellSize = 10f;
 
-    internal const int SelfObservationSize = 28;
-    internal const int EntityObservationSize = 18;
-    internal const int WeaponObservationSize = 17;
+    internal const int SelfObservationSize = 29;
+    internal const int CapabilityObservationSize = 12;
+    internal const int EntityObservationSize = 19;
+    internal const int ParentCarrierObservationSize = EntityObservationSize;
+    internal const int WeaponObservationSize = 19;
+    internal const int EnemyWeaponMountObservationSize = 22;
     internal const int MiningAsteroidObservationSize = 7;
     internal const int MapObjectObservationSize = 12;
     internal const int CollisionAsteroidObservationSize = 11;
+    internal const int ObjectiveObservationSize = 16;
     internal const int ObservationSize = SelfObservationSize +
+        CapabilityObservationSize +
+        ParentCarrierObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize +
+        MaxObservedEnemyWeaponMounts * EnemyWeaponMountObservationSize +
         MaxObservedMiningAsteroids * MiningAsteroidObservationSize +
         MaxObservedMapObjects * MapObjectObservationSize +
         MaxObservedCollisionAsteroids * CollisionAsteroidObservationSize +
+        ObjectiveObservationSize +
         NavigationGridCellCount;
 
     private const int GenericMapObjectObservationType = 2;
@@ -131,17 +140,21 @@ internal sealed class RlCombatPerception
     {
         Vector2 origin = ship.GetPosition();
         AddSelfObservations(ship, side, sensor, origin);
+        AddCapabilityObservations(ship, sensor);
+        AddParentCarrierObservations(ship, sensor, origin);
         CollectAllies(ship, side, origin);
         AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin);
         CollectVisibleEnemies(ship, side, origin);
         AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin);
         AddWeaponSlots(ship, sensor, origin);
+        AddEnemyWeaponMountSlots(sensor, origin);
         CollectVisibleMiningAsteroids(ship, side, origin);
         AddMiningAsteroidSlots(sensor, origin);
         CollectVisibleMapObjects(ship, side, origin);
         AddMapObjectSlots(sensor, origin);
         CollectVisibleEnvironment(ship, side, origin);
         AddCollisionAsteroidSlots(sensor, origin);
+        AddObjectiveObservations(sensor);
         AddNavigationGridObservations(sensor);
     }
 
@@ -171,8 +184,37 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(GetSpecialReadiness(ship));
 
         GameState state = level.State;
-        sensor.AddObservation(NormalizePositive(state.GetShips(side).Count, 32f));
-        sensor.AddObservation(NormalizePositive(state.GetShipsVisibleToHiveMind(side).Count, 32f));
+        sensor.AddObservation(NormalizePositive(state.GetShips(side).Count, 64f));
+        sensor.AddObservation(NormalizePositive(state.GetShipsVisibleToHiveMind(side).Count, 64f));
+    }
+
+    private static void AddCapabilityObservations(Ship ship, VectorSensor sensor)
+    {
+        bool isCarrierChild = ship is CarrierShip;
+        bool hasLiveCarrier = isCarrierChild && ((CarrierShip)ship).Carrier != null && !((CarrierShip)ship).Carrier.IsDead;
+
+        sensor.AddObservation(HasSpecialAction(ship) ? 1f : 0f);
+        sensor.AddObservation(GetSpecialReadiness(ship));
+        sensor.AddObservation(GetSpecialResourceFraction(ship));
+        sensor.AddObservation(GetSpecialCooldownFraction(ship));
+        sensor.AddObservation(GetSpecialPhase(ship));
+        sensor.AddObservation(RlOneVsOneAgent.CanUseMiningAction(ship) ? 1f : 0f);
+        sensor.AddObservation(RlOneVsOneAgent.CanUseHealingAction(ship) ? 1f : 0f);
+        sensor.AddObservation(RlOneVsOneAgent.CanUseWarpAction(ship) ? 1f : 0f);
+        sensor.AddObservation(isCarrierChild ? 1f : 0f);
+        sensor.AddObservation(hasLiveCarrier ? 1f : 0f);
+        sensor.AddObservation(0f); // Reserved capability channel.
+        sensor.AddObservation(0f); // Reserved capability channel.
+    }
+
+    private static void AddParentCarrierObservations(Ship ship, VectorSensor sensor, Vector2 origin)
+    {
+        if (ship is CarrierShip carrierShip && carrierShip.Carrier != null && !carrierShip.Carrier.IsDead)
+        {
+            AddEntityObservation(sensor, carrierShip.Carrier, origin);
+            return;
+        }
+        AddZeroObservations(sensor, ParentCarrierObservationSize);
     }
 
     private void CollectAllies(Ship ship, int side, Vector2 origin)
@@ -234,23 +276,26 @@ internal sealed class RlCombatPerception
                 AddZeroObservations(sensor, EntityObservationSize);
                 continue;
             }
-
-            Ship observed = ships[slot];
-            Vector2 relative = observed.GetPosition() - origin;
-            sensor.AddObservation(1f);
-            sensor.AddObservation(SquashSignedDistance(relative.x));
-            sensor.AddObservation(SquashSignedDistance(relative.y));
-            AddHeading(sensor, observed.Rotation);
-            sensor.AddObservation(GetHealthFraction(observed));
-            sensor.AddObservation(NormalizePositive(observed.Speed, 20f));
-            sensor.AddObservation(NormalizePositive(observed.CurrentSpeed, 20f));
-            sensor.AddObservation(NormalizePositive(observed.LongestSide, 10f));
-            sensor.AddObservation(NormalizePositive(observed.MaxRange, 80f));
-            sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
-            sensor.AddObservation(observed.IsMobile ? 1f : 0f);
-            sensor.AddObservation(observed.IsBomber ? 1f : 0f);
-            AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
+            AddEntityObservation(sensor, ships[slot], origin);
         }
+    }
+
+    private static void AddEntityObservation(VectorSensor sensor, Ship observed, Vector2 origin)
+    {
+        Vector2 relative = observed.GetPosition() - origin;
+        sensor.AddObservation(1f);
+        sensor.AddObservation(SquashSignedDistance(relative.x));
+        sensor.AddObservation(SquashSignedDistance(relative.y));
+        AddHeading(sensor, observed.Rotation);
+        sensor.AddObservation(GetHealthFraction(observed));
+        sensor.AddObservation(NormalizePositive(observed.Speed, 20f));
+        sensor.AddObservation(NormalizePositive(observed.CurrentSpeed, 20f));
+        sensor.AddObservation(NormalizePositive(observed.LongestSide, 10f));
+        sensor.AddObservation(NormalizePositive(observed.MaxRange, 80f));
+        sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
+        sensor.AddObservation(observed.IsMobile ? 1f : 0f);
+        sensor.AddObservation(observed.IsBomber ? 1f : 0f);
+        AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
     }
 
     private static void AddWeaponSlots(Ship ship, VectorSensor sensor, Vector2 origin)
@@ -292,6 +337,57 @@ internal sealed class RlCombatPerception
                 sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
                 sensor.AddObservation(0f);
             }
+        }
+    }
+
+    private void AddEnemyWeaponMountSlots(VectorSensor sensor, Vector2 origin)
+    {
+        int written = 0;
+        for (int enemyIndex = 0; enemyIndex < _enemyCandidates.Count && written < MaxObservedEnemyWeaponMounts; enemyIndex++)
+        {
+            Ship enemy = _enemyCandidates[enemyIndex];
+            if (enemy.Weapons == null)
+            {
+                continue;
+            }
+
+            for (int weaponIndex = 0; weaponIndex < enemy.Weapons.Count && written < MaxObservedEnemyWeaponMounts; weaponIndex++)
+            {
+                Weapon weapon = enemy.Weapons[weaponIndex];
+                if (weapon == null)
+                {
+                    continue;
+                }
+
+                Vector2 relative = weapon.GetPosition() - origin;
+                sensor.AddObservation(1f);
+                AddEnumBits(sensor, (int)enemy.ShipType, ShipTypeBitCount);
+                AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
+                sensor.AddObservation(SquashSignedDistance(relative.x));
+                sensor.AddObservation(SquashSignedDistance(relative.y));
+                sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
+                sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
+                sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
+                if (weapon is Turret turret)
+                {
+                    sensor.AddObservation(1f);
+                    AddHeading(sensor, turret.Rotation);
+                    sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
+                }
+                else
+                {
+                    sensor.AddObservation(0f);
+                    sensor.AddObservation(0f);
+                    sensor.AddObservation(0f);
+                    sensor.AddObservation(0f);
+                }
+                written++;
+            }
+        }
+
+        for (; written < MaxObservedEnemyWeaponMounts; written++)
+        {
+            AddZeroObservations(sensor, EnemyWeaponMountObservationSize);
         }
     }
 
@@ -491,6 +587,13 @@ internal sealed class RlCombatPerception
         }
     }
 
+    private static void AddObjectiveObservations(VectorSensor sensor)
+    {
+        // Permanent ABI reservation. Future escort/capture/defend/reach-location mechanics must
+        // populate these channels without changing their count or shifting any later observation.
+        AddZeroObservations(sensor, ObjectiveObservationSize);
+    }
+
     private void AddNavigationGridObservations(VectorSensor sensor)
     {
         for (int i = 0; i < _navigationOccupancy.Length; i++)
@@ -526,10 +629,6 @@ internal sealed class RlCombatPerception
         }
     }
 
-    /// <summary>
-    /// Marks an axis-aligned local occupancy footprint. Static geometry is persistent knowledge, so
-    /// iteration order is intentionally irrelevant: every overlapping cell is simply set to blocked.
-    /// </summary>
     internal static void MarkNavigationAabb(float[] occupancy, Vector2 origin, Vector2 position, Vector2 halfExtents)
     {
         if (occupancy == null || occupancy.Length != NavigationGridCellCount)
@@ -632,6 +731,64 @@ internal sealed class RlCombatPerception
         if (ship is Scout scout)
         {
             return scout.IsBeaconReady ? 1f : 0f;
+        }
+        return 0f;
+    }
+
+    private static float GetSpecialResourceFraction(Ship ship)
+    {
+        if (ship is Scout scout)
+        {
+            int maximum = Mathf.Max(1, ConfigData.MaxBeaconsDroppedPerScout);
+            return Mathf.Clamp01((maximum - scout.BeaconsDropped) / (float)maximum);
+        }
+        if (ship is Striker striker)
+        {
+            return striker.IsBombReady ? 1f : 0f;
+        }
+        if (ship is Barge barge)
+        {
+            return !barge.HasStartedCharging && !barge.IsCharging ? 1f : 0f;
+        }
+        return ship is YellowJacket || ship is FireBarge ? 1f : 0f;
+    }
+
+    private static float GetSpecialCooldownFraction(Ship ship)
+    {
+        if (ship is Barge barge)
+        {
+            return barge.RlChargeTimeUntilReadyFraction;
+        }
+        if (ship is Scout scout)
+        {
+            if (!scout.CanDropBeacons || scout.BeaconsDropped >= ConfigData.MaxBeaconsDroppedPerScout)
+            {
+                return 0f;
+            }
+            float delay = Mathf.Max(0.0001f, ConfigData.MinimumDelayPerBeacon);
+            float elapsed = Mathf.Max(0f, Time.time - scout.TimeSinceLastBeaconDropped);
+            return Mathf.Clamp01((delay - elapsed) / delay);
+        }
+        return 0f;
+    }
+
+    private static float GetSpecialPhase(Ship ship)
+    {
+        if (ship is Barge barge)
+        {
+            return barge.RlChargePhase;
+        }
+        if (ship is Striker striker)
+        {
+            return striker.IsBombReady ? 0f : 0.75f;
+        }
+        if (ship is Scout scout)
+        {
+            if (!scout.CanDropBeacons || scout.BeaconsDropped >= ConfigData.MaxBeaconsDroppedPerScout)
+            {
+                return 1f;
+            }
+            return scout.IsBeaconReady ? 0f : 0.75f;
         }
         return 0f;
     }
