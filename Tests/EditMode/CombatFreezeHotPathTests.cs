@@ -26,15 +26,21 @@ namespace Bees.Tests.EditMode
             string registry = ReadSource("Scripts", "Levels", "GameState.Registry.cs");
 
             Assert.That(queries, Does.Contain("public bool RecordHiveMindSighting(Ship observer, Ship spotted)"));
+            Assert.That(queries, Does.Contain("observerVisibility.Add(spotted);"));
             Assert.That(queries, Does.Contain("return VisionCache[sideIndex].Add(spotted);"));
             Assert.That(queries, Does.Contain("return VisionCache[side - 1];"));
             Assert.That(queries, Does.Not.Contain("HivemindShips[side - 1].Aggregate"),
                 "Pairwise sight triggers must not rebuild the entire faction visibility graph.");
             Assert.That(vision, Does.Contain("state.RecordHiveMindSighting(Ship, _shipEnter)"));
             Assert.That(vision, Does.Not.Contain("GetShipsVisibleToHiveMind(Ship.Side).Contains"));
-            Assert.That(registry, Does.Contain("int removedObserverSideIndex = ship.IsHiveMindControlled ? ship.Side - 1 : -1;"));
-            Assert.That(registry, Does.Contain("sideCache.Clear();"),
-                "Observer death must refresh the affected side cache so incremental visibility preserves the old live-observer semantics.");
+            Assert.That(registry, Does.Contain("observerMap.Remove(ship.Id);"),
+                "A dead observer may release its observer-local attribution set.");
+            Assert.That(registry, Does.Contain("visibleCache?.Remove(ship);"),
+                "A removed observed ship must leave faction memory because that object left the Level lifecycle.");
+            Assert.That(registry, Does.Not.Contain("removedObserverSideIndex"),
+                "Observer death must not trigger recomputation of persistent faction knowledge.");
+            Assert.That(registry, Does.Not.Contain("sideCache.Clear();"),
+                "Once any Hive Mind observer has seen a live target, observer death must not make the faction forget it.");
         }
 
         [Test]
