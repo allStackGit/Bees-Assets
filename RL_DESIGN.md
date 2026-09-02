@@ -1,25 +1,26 @@
 # Bees Reinforcement Learning Design
 
-This document records the agreed initial design for reinforcement learning in Bees. It is intentionally narrower than a full implementation plan. The first priority is to prove that learning works in a small, understandable experiment before building reusable RL infrastructure.
+This document records the canonical reinforcement-learning architecture for Bees. The original 1v1 proof has evolved into a reusable shared-policy training system. The policy interface described below is now a checkpoint compatibility contract: change training content freely where noted, but do not change the frozen observation/action/network ABI without intentionally starting a new incompatible policy generation.
 
 ## 1. End Goal
 
-Train a single shared neural-network policy capable of controlling either side and all ship types available to that side.
+Train one shared neural-network policy capable of controlling either side and all ship types available to that side.
 
-The same policy must be able to control different ship types according to their actual capabilities. It should ultimately learn to:
+The same policy must adapt its behavior to the ship it controls and ultimately learn to:
 
 - move and position ships;
-- aim and control their weapons;
-- select useful targets;
+- aim and independently control their weapons;
+- use ship-specific capabilities;
 - cooperate with friendly ships;
 - navigate around relevant obstacles;
-- adapt its behavior to its own ship type, friendly forces, enemy forces, and map state;
+- react to Hive Mind-known enemies and environmental state;
+- mine, heal, extract/warp, bomb, charge, deploy beacons, and use other represented ship mechanics where applicable;
 - win battles while preserving as much persistent fleet value as practical;
-- finish battles at a reasonable pace rather than wasting time or avoiding the opponent indefinitely.
+- finish battles at a reasonable pace rather than stalling indefinitely.
 
-Outside training, normally only one side will be NN-controlled. Training may use the same policy on both sides.
+Outside training, normally only one side will be NN-controlled. Training may use the same policy on both sides through self-play.
 
-Expected battle scale is usually far below 100 ships, with roughly 100 ships being a practical upper-end battle size.
+Expected battle scale is usually far below 100 ships, with roughly 100 ships being a practical upper-end battle size. The policy therefore uses bounded deterministic top-K tactical observations rather than an unbounded entity tensor.
 
 ## 2. Objective Priority
 
@@ -37,236 +38,303 @@ A generous battle timeout should exist. Failing to win before timeout must not b
 
 The terminal win/loss result must dominate the reward.
 
-A small elapsed-time cost is applied so that otherwise-equivalent strategies prefer the one that finishes sooner.
+TSV is used for intermediate reward shaping because it measures value destroyed or preserved rather than raw hit-point damage. Mining, healing, and successful extraction can also produce value-aligned capability reward through the episode coordinator. Reward magnitudes, curriculum distributions, matchup distributions, timeouts, map sizes, and other training parameters are tunable and do **not** form part of the neural-policy ABI.
 
-TSV is used for intermediate reward shaping because it measures value destroyed rather than raw hit-point damage. TSV shaping remains subordinate to actually winning the battle.
+Do **not** add tactical shaping such as rewards for moving toward an enemy, pointing at an enemy, flanking, or other hand-authored fighting behavior unless evidence proves it necessary. The network should be allowed to discover tactics itself.
 
-For the first Wasp-vs-Gunship proof, the initial tunable reward magnitudes are:
+### 3.1 Persistent fleet value
 
-- win: `+10`;
-- loss: `-10`;
-- TSV exchange: normalized by the combined starting TSV with scale `1`;
-- elapsed time: at most `-0.1` for lasting the entire 120-second timeout.
+Current ship TSV is based on the ship type's configured maximum TSV and remaining health, plus minerals carried during the level. A destroyed ship has zero current TSV.
 
-These numbers are initial proof settings rather than permanent balance constants. They are deliberately separated by an order of magnitude so that a win is always much more important than shaping.
+`MineralsMinedThisLevel` is intentionally part of TSV because minerals survive the battle if retained and can later be used to build ships.
 
-Do **not** add tactical shaping such as rewards for moving toward an enemy, pointing at an enemy, flanking, or other hand-authored fighting behavior unless later evidence proves it necessary. The network should be allowed to discover tactics itself.
+The preservation objective is therefore not simply "lose the fewest hulls." Losing one valuable ship can be worse than losing multiple cheap ships.
 
-### 3.1 Current TSV behavior
+### 3.2 Temporary spawned ships
 
-Current ship TSV is based on the ship type's configured maximum TSV and remaining health, plus minerals carried during the level:
+Some ships can spawn additional ships for free during a battle. Those spawned units are real tactical assets and are dynamically assigned shared-policy agents when they require policy control, but temporary spawning must not manufacture persistent fleet-value reward.
 
-`current TSV = max ship-type TSV * health factor + carried minerals while alive`
+## 4. Canonical Policy ABI v2
 
-For a living ship:
+`Scripts/Scenes/RlPolicySchema.cs` is the executable policy contract. Training startup validates it before agents are created. `Tests/EditMode/RlPolicySchemaContractTests.cs` guards the same contract against accidental drift.
 
-`health factor = (max health + current health) / (2 * max health)`
+Current identity:
 
-A destroyed ship has zero current TSV.
+- ABI version: `2`
+- behavior name: `BeesRL1v1`
+- vector observations: `4685`
+- continuous actions: `4`
+- discrete branches: `[33, 5, 65, 65, 65]`
+- network: feed-forward, `128` hidden units, `2` hidden layers, observation normalization enabled
+- recurrent memory: none
 
-This means damaging a ship removes part of its value, while destroying it removes the substantial remaining value. That is desirable for an intermediate combat signal because damaging a valuable target matters, but eliminating it matters more.
+The complete schema signature is emitted at training startup. A checkpoint should be resumed only when its ABI signature matches.
 
-### 3.2 Minerals are persistent value
+### 4.1 What is frozen
 
-`MineralsMinedThisLevel` is intentionally part of TSV.
+The following are checkpoint-sensitive and must not change for ABI v2:
 
-A ship carrying mined minerals has greater strategic value because those minerals survive the battle if retained and can later be used to build ships. The RL objective should therefore care more about preserving a mineral-carrying ship than an otherwise identical empty ship.
+- observation count, order, meaning, and normalization semantics;
+- entity ordering semantics;
+- action count, branch order, branch sizes, and action meanings;
+- ship/weapon/map-object identifier encodings;
+- fixed observation capacities;
+- behavior name;
+- network architecture and recurrence choice.
 
-### 3.3 Persistent fleet value, not raw casualty count
+Changing any of these requires an intentional new ABI version and should be treated as incompatible with existing canonical checkpoints.
 
-The preservation objective is **not** simply "lose the fewest hulls."
+### 4.2 What remains tunable
 
-It is better described as preserving as much persistent fleet value as possible. Losing one very valuable ship can therefore be worse than losing multiple cheap ships.
+The following may be changed while continuing an ABI-v2 network:
 
-### 3.4 Ships spawned during a level
+- reward magnitudes and reward balancing;
+- curriculum and matchup distributions;
+- ships per side, provided observation semantics remain top-K and individual ships fit the fixed weapon schema;
+- map size and environment generation;
+- episode duration/timeouts;
+- PPO optimization hyperparameters that do not alter network architecture;
+- self-play scheduling and opponent-window settings;
+- evaluation/qualification criteria.
 
-Some ships can spawn additional ships for free during the battle. Those spawned ships do not persist after the level.
+## 5. Observation Layout
 
-Therefore:
+The policy receives one fixed vector. Unused slots are zero-filled so curriculum expansion does not change shape.
 
-- spawning a temporary ship must not directly create persistent-value reward;
-- surviving temporary spawned ships must not inflate the final persistent fleet-value score;
-- losing a temporary spawned ship is not a persistent fleet casualty;
-- temporary spawned ships are still real tactical assets and threats during combat, so destroying an enemy temporary ship can still be useful to the combat-learning signal.
+### 5.1 Identifier capacity
 
-The exact dense-reward weighting for temporary spawned ships is not yet fixed. The important requirement is that free temporary spawning must not become a way to manufacture persistent reward.
+- ship type: 6 bits (`0-63`)
+- weapon type: 6 bits (`0-63`)
+- map-object type: 4 bits (`0-15`)
 
-### 3.5 Manual TSV values
+Current enum values are validated at training startup so an out-of-range new type cannot silently alias an existing identity.
 
-Current maximum TSV values are developer-rated. They are acceptable for the first RL experiments because they already provide a useful value-weighted combat signal.
+### 5.2 Self state — 29 values
 
-Longer term, it is desirable to reduce or eliminate manually assigned combat value. A possible future approach is to estimate a ship type's combat value empirically from battle outcomes/self-play, for example by measuring how much the presence of that ship changes expected battle success.
+Self state includes:
 
-Persistent economic value and learned combat usefulness do not necessarily need to be the same quantity.
-
-## 4. Observations
-
-The policy should use entity-based observations rather than fixed slots such as "enemy 1, enemy 2, enemy 3." Fleet sizes and obstacle counts vary.
-
-Most spatial information should be expressed relative to the ship being controlled where practical, so the same policy does not need to relearn identical geometry at different absolute map positions.
-
-### 4.1 Self
-
-Each controlled ship must at minimum know:
-
-- its position;
-- its ship type;
-- its current health / maximum health.
-
-Additional movement/orientation state that is required to control the real ship correctly should be included when the action interface is finalized.
-
-### 4.2 Friendly ships
-
-Each controlled ship should observe every friendly ship, including at minimum:
-
-- position relative to the controlled ship;
 - ship type;
-- health / maximum health.
+- normalized absolute position and map dimensions;
+- heading;
+- health;
+- movement/rotation values;
+- physical size;
+- sight, range, and firepower;
+- mobility/bomber/carrier/weapon/turret flags;
+- special-action presence/readiness;
+- normalized friendly and Hive Mind-known ship counts.
 
-Additional state should be included only where it is actually relevant to decision-making for real Bees ship mechanics.
+### 5.3 General capability state — 12 values
 
-### 4.3 Enemy ships and Hive Mind vision
+A permanent generalized capability block exposes:
 
-A controlled ship should observe every enemy currently known through its side's Hive Mind vision, including at minimum:
+- ship-specific special-action presence;
+- immediate readiness;
+- remaining resource/charges;
+- normalized time until ready;
+- current ability phase;
+- mining eligibility;
+- healing eligibility;
+- warp/extraction eligibility;
+- carrier-child identity;
+- whether a live parent carrier exists;
+- two reserved capability channels.
 
-- position relative to the controlled ship;
-- ship type;
-- health / maximum health.
+This block is intentionally generalized so additional state for existing capability classes can be mapped without changing tensor size.
 
-The intended Hive Mind knowledge rule is persistent: once any appropriate friendly observer has seen an enemy ship, that side's Hive Mind continues to know that living enemy's current location/state even after it leaves sensor range. The sighting should disappear when the enemy itself is removed/destroyed, and level reset should clear the memory.
+### 5.4 Parent carrier — 19 values
 
-A separate branch (`fix/persistent-hivemind-vision`) contains the change that prevents the death of the original observer from erasing the remembered enemy. This RL branch was intentionally created from `main`, so that dependency must be reconciled before RL relies on the corrected behavior.
+Carrier children receive a dedicated full entity observation for their live parent carrier. Other ships receive zeros.
 
-### 4.4 Weapons
+This is required especially for Strikers, which must return to their specific carrier to reload. The relationship must not disappear merely because that carrier falls outside the generic nearest-allies list.
 
-A controlled ship must know enough about each of its weapons to aim and use it correctly, including:
+### 5.5 Friendly and enemy ships — 64 + 64 slots
 
-- weapon position relative to the ship;
-- weapon orientation/aim state where applicable;
-- weapon identity/type and the state necessary to use its actual mechanics;
-- fire/charge state where applicable.
+Each entity slot contains 19 values including:
 
-For ordinary cooldown-based weapons with unlimited ammunition and no friendly-fire risk, repeatedly requesting fire while the weapon is cooling down is acceptable: the real weapon mechanics can enforce the rate of fire.
+- presence;
+- relative position;
+- heading;
+- health;
+- movement/size/range/firepower state;
+- mobility/bomber flags;
+- 6-bit ship type.
 
-Charge weapons are different. Their action and observation interfaces must expose enough information for the network to learn when to charge, hold, and release.
+Candidates are sorted deterministically by:
 
-There is no limited ammunition and no friendly-fire risk to manage.
+1. distance from the controlled ship;
+2. ship type;
+3. fleet ID;
+4. runtime ID.
 
-### 4.5 Collision obstacles
+The permanent policy semantic is **nearest/relevant bounded state**, not "observe every ship no matter how large a battle becomes." Hive Mind may remember more entities than fit in the vector.
 
-The network must observe obstacles that ships can collide with, including static obstacles and collision asteroids.
+### 5.6 Own weapons — 16 slots
 
-It needs enough information to understand the obstacle's relevant geometry rather than only its center point. For moving asteroids, it also needs enough movement state to predict and avoid their path.
+Each authored weapon slot receives 19 values including weapon identity, local position, combat characteristics, turret heading/readiness, and target/aim state where applicable.
 
-The exact geometric representation is not yet fixed.
+Weapon list order is the stable slot identity. Discrete weapon action slot N controls exactly authored weapon N.
 
-### 4.6 Mining asteroids
+Excess weapons are never collapsed onto the final action. If a policy-controlled ship has more than 16 authored weapon slots, training is rejected by `RlPolicySchema.TryValidateShip` so the incompatibility is discovered before silently training the wrong control mapping.
 
-Mining asteroids should be observable, but they are not collision hazards for ships.
+### 5.7 Enemy weapon mounts — 16 slots
 
-Their observation can therefore remain much simpler, initially including:
+The policy has 16 detailed enemy weapon-mount observations. They expose owner ship type, weapon type, relative mount position, range/power/rotation characteristics, and turret heading/readiness where relevant. These supplement the aggregate range/firepower state already carried by every observed enemy ship.
 
-- position relative to the controlled ship;
-- health / remaining mineable state as represented by the game.
+### 5.8 Mining asteroids — 8 slots
 
-### 4.7 Projectiles
+Mining asteroid observations include relative position, resource fraction, geometry, and mining activity. Mining asteroids are resources rather than ship collision hazards.
 
-Do **not** include projectile observations for projectile dodging. Dodging individual projectiles is outside the intended behavior and would create a large amount of unnecessary observation data.
+### 5.9 Map objects — 64 slots
 
-## 5. Actions
+Map objects use fixed typed slots with relative geometry, health/activity, and targetability state.
 
-The final policy must be capable of controlling, for each ship:
+### 5.10 Moving collision asteroids — 48 slots
 
-- movement;
-- weapon aiming;
-- firing;
-- charge-weapon behavior where applicable.
+Collision asteroid observations include geometry, heading, velocity, health, and destructibility.
 
-The exact numerical/discrete action representation has not yet been decided and should be based on the real movement and weapon mechanics rather than invented independently of them.
+### 5.11 Static navigation grid — 13 x 13
 
-## 6. Network Structure and Scaling
+Persistent static collision geometry and map boundaries are represented in a local `13 x 13` occupancy grid with 10-unit cells.
 
-Use one shared policy for all controlled ships and both factions. Ship type and relevant ship/weapon state allow the same network to behave differently for different units.
+### 5.12 Reserved objective state — 16 values
 
-The observation architecture should support variable-size sets of:
+Sixteen values are permanently reserved for explicit future objective state such as defend/capture/escort/reach-location summaries. They are currently zero-filled.
 
-- friendly ships;
-- Hive Mind-known enemy ships;
-- collision obstacles;
-- mining asteroids;
-- weapons belonging to the controlled ship.
+Future objective mechanics must populate this reserved block or use the already-reserved entity-target branches rather than increasing observation shape.
 
-A shared entity encoder with pooling or attention is a likely long-term structure. Avoid hard-coding a maximum sequence of semantically ordered entity slots.
+### 5.13 Projectiles
 
-At the expected scale (normally well below 100 total ships), inference should be practical. Outside training only one side normally requires NN inference.
+Individual projectiles are intentionally not observed for projectile dodging. Dodging individual shots is outside the intended policy behavior and would add large unnecessary state.
 
-If repeated per-ship encoding later becomes expensive, the world entities can be encoded once per decision step and queried by each controlled ship. Do not build that optimization before actual workload demonstrates a need.
+## 6. Action Layout
 
-## 7. First Learning Experiment
+### 6.1 Continuous actions — 4
 
-The first experiment must remain small and disposable. Its purpose is to prove that Bees RL can learn at all, not to construct the final training platform.
+- movement X
+- movement Y
+- aim X
+- aim Y
 
-The first proof is now fixed as:
+Movement controls the real ship movement primitive. Aim sets the current policy aim direction used when a weapon command is issued.
 
-1. Dedicated scene: `RL 1v1 Training`.
-2. Map: `120 x 120`, reusing the normal Space/Titania map plumbing but resizing it only for this scene.
-3. Bee ship: one **Wasp**.
-4. Human ship: one **Gunship**.
-5. No static obstacles, collision asteroids, mining asteroids, fog of war, reinforcements, or other environment dimensions.
-6. Starting positions are randomized on opposite points of a circle with radius 30, giving 60 units of initial separation.
-7. Initial ship facings are randomized independently.
-8. Both sides are intended to use the same shared policy during training.
-9. Episode ends when one side dies or after **120 seconds**.
-10. Reward uses dominant win/loss (`+10/-10`), smaller normalized net TSV exchange, and a maximum full-episode time penalty of `-0.1`.
-11. Repeat rapidly from fresh starts.
+### 6.2 Weapon command branch — 33 choices
 
-Wasp-versus-Gunship is intentionally allowed to be asymmetric. A nearly always-losing ship can still receive useful intermediate learning signal because better behavior destroys more enemy TSV before losing. Terminal win/loss remains dominant so dealing damage and dying cannot become preferable to winning.
+- `0`: no weapon command
+- for each of 16 weapon slots: cease fire / fire
 
-The first success criterion is behavioral learning from a fresh network: movement and weapon control should improve from random behavior toward engaging, aiming, firing, and producing progressively better combat outcomes. Fresh-start learning must be demonstrated rather than inferred from checkpoint continuation.
+Turrets retain their own RL aim target after being commanded, so different turrets can be aimed independently across decisions without requiring 16 simultaneous continuous aim vectors.
 
-## 8. Expansion Strategy
+### 6.3 Special-action branch — 5 choices
 
-Do not build a large curriculum, qualification framework, evaluator stack, or generalized RL system before the first experiment learns.
+- no special action
+- ship-specific special action
+- mine
+- heal
+- warp/extract
 
-Once a small experiment learns reliably:
+Ship-specific handling currently covers mechanics such as Yellow Jacket detonation, Striker bombing, Fire Barge detonation, Barge charging, and Scout beacon deployment. Mining, Beehive healing, and Warp Gate extraction are primitive spatial capabilities exposed separately.
 
-- change one major source of complexity at a time;
-- add additional ship types;
-- add multiple ships and coordination;
-- add collision obstacles and moving asteroids;
-- add mining/economic behavior where appropriate;
-- progress toward realistic battles.
+Queen/Carrier spawning behavior that is automatic game logic is intentionally not converted into an artificial policy button. Spawned units that need control are provisioned shared-policy agents dynamically.
 
-Uneven matchups are useful because the network should eventually learn how to behave when a direct fight is unfavorable. TSV shaping makes an asymmetric first duel usable because losing episodes can still distinguish better and worse combat behavior.
+### 6.4 Reserved entity-target branches
 
-## 9. Lessons Carried Forward From Ants
+Three target-selection branches are permanently reserved:
+
+- ally target: 65 choices (`none + 64 slots`)
+- enemy target: 65 choices (`none + 64 slots`)
+- map-object target: 65 choices (`none + 64 slots`)
+
+They are currently masked except for `none`. A future mechanic that genuinely requires explicit entity selection can use them without changing action shape.
+
+## 7. Special Mechanics and Temporal State
+
+ABI v2 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
+
+Examples:
+
+- Barge exposes wind-up, active charge, cooldown phase, and normalized time until ready.
+- Scout exposes remaining beacon capacity and cooldown.
+- Striker exposes bomb readiness and its dedicated live parent-carrier state.
+- mining/healing/warp eligibility is explicit.
+
+If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v2 is not checkpoint-compatible.
+
+## 8. Barge Charge Lifecycle
+
+The Barge charge action is reserved immediately when wind-up begins. `HasStartedCharging` is set before the first coroutine yield.
+
+This prevents repeated ML-Agent decisions during the two-second build-up from launching overlapping charge coroutines. Charge phase state is reset during pooled lifecycle cleanup and guarded by regression tests.
+
+## 9. Dynamic Agent Provisioning and Reset
+
+Training periodically counts all ships that require policy control, including dynamically spawned and capability-only ships, and provisions enough agents for the active side/team.
+
+An agent owns one physical ship lifecycle per trajectory. Episode begin resets:
+
+- bound ship state;
+- participation state;
+- runtime ship identity;
+- decision counter;
+- mining/healing action timers;
+- retained aim direction.
+
+Releasing a ship clears direct RL turret control. Ship-specific pooled lifecycle cleanup remains responsible for resetting its own gameplay state.
+
+## 10. Trainer Architecture
+
+The canonical ABI-v2 network is the current ML-Agents PPO network:
+
+- `normalize: true`
+- `hidden_units: 128`
+- `num_layers: 2`
+- no recurrent `memory` block
+
+The optimizer, reward, horizon, checkpoint, and self-play settings in `Training/rl_1v1_config.yaml` may be tuned as evidence accumulates so long as the network architecture itself remains compatible.
+
+## 11. Training Progression
+
+The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v2 network should be retained while training complexity expands.
+
+Recommended progression:
+
+1. small armed 1v1 matchups on tiny maps;
+2. broader randomized ship matchups, including asymmetric ones;
+3. multiple ships and coordination;
+4. collision/static environment complexity;
+5. mining, healing, extraction, carrier-child, and other special mechanics;
+6. larger squads and realistic battle compositions;
+7. explicit objective modes using the reserved objective/target channels when needed.
+
+Uneven matchups are useful. A weaker ship can still learn better survival, positioning, damage exchange, and cooperation behavior even when its isolated matchup is unfavorable.
+
+## 12. Validation Gate Before Canonical Long Training
+
+Before treating a long run as a keep-forever canonical checkpoint series:
+
+- Unity must compile the branch;
+- `RlPolicySchemaContractTests` and the relevant EditMode/Foundation tests must pass;
+- the training scene must start and print ABI v2 with `observations=4685`, continuous actions `4`, and branches `[33,5,65,65,65]`;
+- every ship type intended for the curriculum must successfully bind without a schema overflow error;
+- a short multi-episode smoke run must demonstrate clean resets and dynamic agent provisioning.
+
+Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v2 checkpoints.
+
+## 13. Lessons Carried Forward From Ants
 
 The Ants project never established reliable fresh-start learning despite long runs. Bees RL should explicitly avoid repeating that failure mode.
 
-Requirements for early Bees RL work:
+Requirements for Bees RL work:
 
-- prove actual learning before building extensive infrastructure;
-- keep the first experiment small enough that failure is understandable;
+- prove actual fresh-start learning before assuming long duration will solve a failure;
+- keep early curriculum stages small enough that failures are understandable;
 - distinguish evaluator/training-pipeline correctness from learner capability;
-- test fresh-start learning separately from checkpoint continuation;
-- do not interpret long training duration as evidence that learning will eventually appear;
-- do not call the system successful because tests are green while actual fresh-start behavior does not improve;
-- preserve enough evidence to see whether reward, policy behavior, and win rate actually improve;
-- add complexity only after the simpler predecessor works.
+- preserve evidence for reward, policy behavior, and win-rate trends;
+- add environmental complexity incrementally while retaining the same policy ABI;
+- do not call the system successful merely because infrastructure tests are green while actual behavior does not improve.
 
-## 10. Still Open
+## 14. Intentional Future Changes
 
-The following decisions have deliberately not yet been fixed:
+Reward design, curricula, environment distributions, self-play scheduling, qualification, and empirical TSV/value improvements remain open to evidence-driven iteration.
 
-- exact observation fields beyond the agreed minimum for movement/orientation and special ship states;
-- exact representation of obstacle geometry;
-- exact movement action representation;
-- exact weapon/charge action representation;
-- policy architecture details (pooling vs attention, embedding sizes, etc.);
-- RL algorithm and training hyperparameters;
-- exact treatment/weighting of temporary spawned ships in dense TSV shaping;
-- how and when manually assigned maximum TSV should be replaced by empirically learned combat value.
-
-The initial first-proof reward magnitudes are fixed for the first attempt but remain tunable based on actual learning evidence.
-
-These open decisions should be resolved from the real Bees mechanics and evidence from the smallest working experiments rather than by building speculative infrastructure in advance.
+Observation/action/network changes are no longer ordinary tuning. Any such change must be reviewed as a policy ABI change, assigned a new schema version, and assumed checkpoint-incompatible unless proven otherwise.
