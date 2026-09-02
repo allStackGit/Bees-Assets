@@ -239,33 +239,45 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Records a real enemy-ship hit after normal damage/TSV calculation has succeeded.
+    /// Records attributed ship damage after normal damage/TSV calculation has succeeded. Enemy
+    /// damage credits the attacker and penalizes the target. Friendly fire penalizes the damaged
+    /// side only, so same-side credit can never cancel the casualty-preservation signal.
     /// </summary>
     internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
-        if (_active == null || !_active._episodeActive || attacker == null || target == null ||
-            attacker.Level != _active._level || target.Level != _active._level || attacker.Side == target.Side)
+        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
+            attacker == null || target == null || attacker.Level != _active._level || target.Level != _active._level)
         {
             return;
         }
 
-        int appliedDamage = Mathf.Max(0, damage);
-        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
-        if (attacker.Side == beeSide)
-        {
-            _active._beeHitsThisEpisode++;
-            _active._beeDamageThisEpisode += appliedDamage;
-        }
-        else if (attacker.Side == humanSide)
-        {
-            _active._humanHitsThisEpisode++;
-            _active._humanDamageThisEpisode += appliedDamage;
-        }
-        else
+        bool attackerIsTrainingSide = attacker.Side == beeSide || attacker.Side == humanSide;
+        bool targetIsTrainingSide = target.Side == beeSide || target.Side == humanSide;
+        if (!attackerIsTrainingSide || !targetIsTrainingSide)
         {
             return;
+        }
+
+        bool isEnemyDamage = attacker.Side != target.Side;
+        int appliedDamage = Mathf.Max(0, damage);
+        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
+
+        // Hit-rate diagnostics remain enemy-combat diagnostics. Friendly fire still affects reward
+        // through TSV loss, but must not make either side appear more accurate in training summaries.
+        if (isEnemyDamage)
+        {
+            if (attacker.Side == beeSide)
+            {
+                _active._beeHitsThisEpisode++;
+                _active._beeDamageThisEpisode += appliedDamage;
+            }
+            else
+            {
+                _active._humanHitsThisEpisode++;
+                _active._humanDamageThisEpisode += appliedDamage;
+            }
         }
 
         if (appliedTsvLoss <= 0)
@@ -275,7 +287,41 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
-        _active.ApplyImmediateTsvReward(attacker.Side, reward);
+        if (isEnemyDamage)
+        {
+            _active.ApplyImmediateTsvReward(attacker.Side, reward);
+        }
+        _active.ApplyImmediateTsvReward(target.Side, -reward);
+    }
+
+    /// <summary>
+    /// Records TSV lost without an opposing attacker, such as self-damage, collision/environmental
+    /// damage, or a self-detonation that uses Ship.LogDamage. This is a casualty-preservation penalty
+    /// only; no opposing side receives artificial credit for an unattributed loss.
+    /// </summary>
+    internal static void RecordUnattributedTsvLoss(Ship target, int tsvLoss)
+    {
+        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
+            target == null || target.Level != _active._level)
+        {
+            return;
+        }
+
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (target.Side != beeSide && target.Side != humanSide)
+        {
+            return;
+        }
+
+        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
+        if (appliedTsvLoss <= 0)
+        {
+            return;
+        }
+
+        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
         _active.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
