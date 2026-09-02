@@ -30,19 +30,44 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             enabled = true;
         }
 
+        /// <summary>
+        /// Shared geometric visibility test used by RL perception. The target may be a ship,
+        /// obstacle, asteroid, wall or MapObject. Collider geometry is preferred so very large
+        /// objects become visible when their edge enters sight rather than only when their center does.
+        /// </summary>
+        public bool CanSee(Collider2D targetCollider, Vector2 fallbackLevelPosition)
+        {
+            if (Ship == null || Ship.IsDead || Ship.Level == null || !enabled ||
+                Collider == null || !Collider.enabled || Range <= 0)
+            {
+                return false;
+            }
+
+            Vector2 observerPosition = Ship.GetPosition();
+            Vector2 targetPosition = fallbackLevelPosition;
+            if (targetCollider != null && targetCollider.enabled)
+            {
+                Vector2 observerWorldPosition = PathfinderObstacleScope.LevelToWorld(Ship.Level, observerPosition);
+                Vector2 closestWorldPoint = targetCollider.ClosestPoint(observerWorldPosition);
+                targetPosition = PathfinderObstacleScope.WorldToLevel(Ship.Level, closestWorldPoint);
+            }
+
+            return (targetPosition - observerPosition).sqrMagnitude <= Range * Range;
+        }
+
         private Ship _shipEnter;
         private MiningAsteroid _miningAsteroidEnter;
 
         protected void OnTriggerEnter2D(Collider2D collider)
         {
-            _shipEnter = collider.GetComponent<Ship>();
+            _shipEnter = collider.GetComponentInParent<Ship>();
             if (_shipEnter != null)
             {
                 RecordShipSighting();
                 return;
             }
 
-            _miningAsteroidEnter = collider.GetComponent<MiningAsteroid>();
+            _miningAsteroidEnter = collider.GetComponentInParent<MiningAsteroid>();
             if (_miningAsteroidEnter != null && Ship != null && Ship.IsHiveMindControlled && !Ship.IsDead &&
                 Ship.Level != null && !_miningAsteroidEnter.IsDead)
             {
