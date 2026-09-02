@@ -216,8 +216,9 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin)"));
             Assert.That(perception, Does.Contain("AddEnemyWeaponMountSlots(sensor, origin)"));
             Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor)"));
-            Assert.That(perception, Does.Not.Contain("Projectile"),
-                "Projectile-evasion observations are intentionally outside the canonical policy.");
+            Assert.That(perception, Does.Not.Contain("MaxObservedProjectiles"));
+            Assert.That(perception, Does.Not.Contain("AddProjectileSlots"),
+                "Projectile-evasion slots are intentionally outside the canonical policy; weapon ProjectileValue remains a weapon characteristic.");
         }
 
         [Test]
