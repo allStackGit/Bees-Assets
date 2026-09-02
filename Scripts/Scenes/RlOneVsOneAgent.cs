@@ -750,8 +750,11 @@ internal sealed class RlOneVsOneAgent : Agent
             {
                 return true;
             }
-            _ship = null;
-            return false;
+
+            // Spawned ships can die and be replaced during one battle (for example, repeated Queen
+            // YellowJacket waves). Recycle this controller immediately rather than leaving the Agent
+            // permanently consumed until the next episode.
+            ReleaseStaleShipBinding();
         }
 
         _bindCandidates.Clear();
@@ -786,8 +789,10 @@ internal sealed class RlOneVsOneAgent : Agent
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
         _hasParticipatedThisEpisode = true;
+        _decisionCounter = 0;
         _nextMiningActionTime = 0f;
         _nextHealingActionTime = 0f;
+        ResetWeaponAimDirections();
         if (_ship.Squad != null)
         {
             _ship.Squad.IsUserControlled = false;
@@ -802,6 +807,16 @@ internal sealed class RlOneVsOneAgent : Agent
             turret.SetRlControl(turret.GetPosition() + Vector2.up * Mathf.Max(1f, turret.Range), false);
         }
         return true;
+    }
+
+    private void ReleaseStaleShipBinding()
+    {
+        ReleaseShip();
+        _hasBoundShip = false;
+        _boundRuntimeShipId = 0;
+        _decisionCounter = 0;
+        _nextMiningActionTime = 0f;
+        _nextHealingActionTime = 0f;
     }
 
     private bool IsControlledByAnotherAgent(Ship candidate)
