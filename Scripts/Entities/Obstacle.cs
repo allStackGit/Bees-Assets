@@ -177,6 +177,7 @@ namespace Assets.Scripts.Entities
             }
 
             IsDead = true;
+            Level?.State?.ForgetHiveMindObstacle(this);
             if (Level != null && Level.HasObstacles)
             {
                 Level.Pathfinder?.MarkObstacleLayerDirty();
