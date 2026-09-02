@@ -60,12 +60,22 @@ namespace Bees.Tests.EditMode
         public void PassiveVisionOnlyShipsDoNotRequirePolicyAgents()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
-            object beacon = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Entities.Ships.Beacon");
-            object mobileShip = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Entities.Ships.Ship");
-            RuntimeAssembly.SetField(mobileShip, "IsMobile", true);
+            GameObject beaconObject = new GameObject("RL Passive Beacon Test");
+            GameObject mobileObject = new GameObject("RL Mobile Ship Test");
+            try
+            {
+                Component beacon = beaconObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Beacon"));
+                Component mobileShip = mobileObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
+                RuntimeAssembly.SetField(mobileShip, "IsMobile", true);
 
-            Assert.That((bool)RuntimeAssembly.InvokeStatic(agentType, "RequiresPolicyControl", beacon), Is.False);
-            Assert.That((bool)RuntimeAssembly.InvokeStatic(agentType, "RequiresPolicyControl", mobileShip), Is.True);
+                Assert.That((bool)RuntimeAssembly.InvokeStatic(agentType, "RequiresPolicyControl", beacon), Is.False);
+                Assert.That((bool)RuntimeAssembly.InvokeStatic(agentType, "RequiresPolicyControl", mobileShip), Is.True);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mobileObject);
+                UnityEngine.Object.DestroyImmediate(beaconObject);
+            }
         }
 
         [Test]
