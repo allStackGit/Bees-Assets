@@ -36,7 +36,13 @@ namespace Assets.Scripts
 
         public const int Version = 5;
         public const string BaseFolder = "SaveData";
+#if UNITY_EDITOR
+        // Generated sprite PNGs must stay outside Assets or Unity's AssetDatabase will import them
+        // and create .meta files while the game is running. Library is already editor-local cache data.
+        public const string CacheFolder = "../Library/SpriteCache";
+#else
         public const string CacheFolder = "SpriteCache";
+#endif
 
         public const string UserProgressFilename = "user_progress";
         public static string[] FleetDataFilenames = { "fleet_data", "campaign_fleet_data", "challenge_fleet_data" };
