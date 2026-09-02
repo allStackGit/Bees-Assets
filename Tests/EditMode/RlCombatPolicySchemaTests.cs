@@ -23,7 +23,11 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(879));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ShipSpecialAction"), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "HealingAction"), Is.EqualTo(3));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WarpAction"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(16));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(17));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(17));
@@ -171,11 +175,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void ObservationCollectionsUseExplicitDeterministicOrdering()
         {
-            string source = File.ReadAllText(Path.Combine(
-                Application.dataPath,
-                "Scripts",
-                "Scenes",
-                "RlOneVsOneAgent.cs"));
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
 
             Assert.That(source, Does.Contain("SortShipsForObservation(_allyCandidates, origin)"));
             Assert.That(source, Does.Contain("SortShipsForObservation(_enemyCandidates, origin)"));
@@ -183,6 +183,72 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("left.Id.CompareTo(right.Id)"));
             Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
             Assert.That(source, Does.Contain("Weapon is an authored List rather than an unordered set"));
+        }
+
+        [Test]
+        public void PrimitiveCapabilityActionsAreMaskedByCapabilityNotCurrentSituation()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(source, Does.Contain("ship.ShipType == ConfigData.ShipTypes.Factory"));
+            Assert.That(source, Does.Contain("ship.ShipType == ConfigData.ShipTypes.CarpenterBee"));
+            Assert.That(source, Does.Contain("ship.Side != ConfigData.Configuration.BeeSide"));
+            Assert.That(source, Does.Contain("shipSize.x < beehiveSize.x && shipSize.y < beehiveSize.y"));
+            Assert.That(source, Does.Contain("ship.Side == ConfigData.Configuration.HumanSide"));
+            Assert.That(source, Does.Contain("ship.ShipType != ConfigData.ShipTypes.WarpGate"));
+
+            Assert.That(source, Does.Contain("canControl && CanUseMiningAction(_ship)"));
+            Assert.That(source, Does.Contain("canControl && CanUseHealingAction(_ship)"));
+            Assert.That(source, Does.Contain("canControl && CanUseWarpAction(_ship)"));
+            Assert.That(source, Does.Not.Contain("GetSpecialReadiness(_ship) > 0f"),
+                "Cooldown/contact validity must not leak through the action mask.");
+        }
+
+        [Test]
+        public void PrimitiveCapabilityExecutionUsesCurrentPhysicalContactAndNeverHiveMindCommands()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(source, Does.Contain("FindTouchingMiningAsteroid()"));
+            Assert.That(source, Does.Contain("_ship.Collider.IsTouching(asteroid.Collider)"));
+            Assert.That(source, Does.Contain("FindTouchingBeehive()"));
+            Assert.That(source, Does.Contain("beehive.HealCollider.IsTouching(_ship.Collider)"));
+            Assert.That(source, Does.Contain("FindTouchingWarpGate()"));
+            Assert.That(source, Does.Contain("warpGate.WarpCollider.IsTouching(_ship.Collider)"));
+            Assert.That(source, Does.Contain("_ship.EndKill()"));
+            Assert.That(source, Does.Not.Contain("CommandTypes.Mining"));
+            Assert.That(source, Does.Not.Contain("CommandTypes.Heal"));
+            Assert.That(source, Does.Not.Contain("CommandTypes.FullRetreat"));
+            Assert.That(source, Does.Not.Contain("MoveToTrackedPoint"),
+                "Mine/heal/warp actions must not navigate the ship for the policy.");
+        }
+
+        [Test]
+        public void SuccessfulPrimitiveOutcomesProduceRewardButInvalidAttemptsDoNot()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            string yellowJacket = ReadSource("Scripts", "Entities", "Ships", "YellowJacket.cs");
+
+            Assert.That(agent, Does.Contain("RewardSuccessfulCapabilityOutcome(_ship.Tsv - oldTsv)"));
+            Assert.That(agent, Does.Contain("RewardSuccessfulCapabilityOutcome(preservedTsv)"));
+            Assert.That(agent, Does.Contain("if (asteroid == null)"));
+            Assert.That(agent, Does.Contain("if (beehive == null)"));
+            Assert.That(agent, Does.Contain("if (warpGate == null)"));
+            Assert.That(coordinator, Does.Contain("RecordSuccessfulCapabilityOutcome"));
+            Assert.That(coordinator, Does.Contain("_active.ApplyImmediateTsvReward(ship.Side, reward)"));
+            Assert.That(yellowJacket, Does.Contain("RlOneVsOneEpisodeCoordinator.RecordHit"),
+                "Direct Yellow Jacket damage must receive the same real-outcome reward path as weapon impacts.");
+        }
+
+        private static string ReadSource(params string[] pathParts)
+        {
+            string path = Application.dataPath;
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                path = Path.Combine(path, pathParts[i]);
+            }
+            return File.ReadAllText(path);
         }
     }
 }
