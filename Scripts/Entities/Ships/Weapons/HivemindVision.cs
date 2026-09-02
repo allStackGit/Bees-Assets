@@ -1,10 +1,11 @@
-﻿using Assets.Scripts.Levels;
+﻿using Assets.Scripts.Entities;
+using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
 {
-    // A collider for identifying ships to the Hive Mind
+    // A collider for identifying ships and strategic objects to the Hive Mind.
     public class HiveMindVision : MonoBehaviour
     {
         public CircleCollider2D Collider;
@@ -19,6 +20,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 range = Ship.MaxRange;
             }
+            Range = range;
             Collider.radius = range;
         }
 
@@ -29,14 +31,26 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
         private Ship _shipEnter;
+        private MiningAsteroid _miningAsteroidEnter;
 
         protected void OnTriggerEnter2D(Collider2D collider)
         {
             _shipEnter = collider.GetComponent<Ship>();
-            RecordSighting();
+            if (_shipEnter != null)
+            {
+                RecordShipSighting();
+                return;
+            }
+
+            _miningAsteroidEnter = collider.GetComponent<MiningAsteroid>();
+            if (_miningAsteroidEnter != null && Ship != null && Ship.IsHiveMindControlled && !Ship.IsDead &&
+                Ship.Level != null && !_miningAsteroidEnter.IsDead)
+            {
+                Ship.Level.State.RecordHiveMindMiningAsteroidSighting(Ship, _miningAsteroidEnter);
+            }
         }
 
-        private void RecordSighting()
+        private void RecordShipSighting()
         {
             if (!Ship.IsHiveMindControlled || Ship.IsDead || _shipEnter == null || _shipEnter.IsDead || _shipEnter.Side == Ship.Side)
             {
