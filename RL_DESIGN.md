@@ -40,6 +40,8 @@ The terminal win/loss result must dominate the reward.
 
 TSV is used for intermediate reward shaping because it measures value destroyed or preserved rather than raw hit-point damage. Mining, healing, and successful extraction can also produce value-aligned capability reward through the episode coordinator. Reward magnitudes, curriculum distributions, matchup distributions, timeouts, map sizes, and other training parameters are tunable and do **not** form part of the neural-policy ABI.
 
+Any real loss of a policy-controlled side's TSV must contribute to casualty-preservation shaping. Enemy damage credits the attacker and penalizes the damaged side. Friendly fire and unattributed/self/environmental damage penalize the damaged side without manufacturing positive credit for the same side or an arbitrary opponent. Ordinary enemy damage is shaped at impact and is not reconciled again at episode end, preventing double counting.
+
 Do **not** add tactical shaping such as rewards for moving toward an enemy, pointing at an enemy, flanking, or other hand-authored fighting behavior unless evidence proves it necessary. The network should be allowed to discover tactics itself.
 
 ### 3.1 Persistent fleet value
@@ -54,27 +56,27 @@ The preservation objective is therefore not simply "lose the fewest hulls." Losi
 
 Some ships can spawn additional ships for free during a battle. Those spawned units are real tactical assets and are dynamically assigned shared-policy agents when they require policy control, but temporary spawning must not manufacture persistent fleet-value reward.
 
-## 4. Canonical Policy ABI v3
+## 4. Canonical Policy ABI v4
 
 `Scripts/Scenes/RlPolicySchema.cs` is the executable policy contract. Training startup validates it before agents are created. `Tests/EditMode/RlPolicySchemaContractTests.cs` guards the same contract against accidental drift.
 
 Current identity:
 
-- ABI version: `3`
+- ABI version: `4`
 - behavior name: `BeesRL1v1`
 - vector observations: `4685`
 - continuous actions: `34`
 - discrete branches: `16 x [2]`, then `[5, 65, 65, 65]`
-- network: feed-forward, `128` hidden units, `2` hidden layers, observation normalization enabled
+- network: feed-forward, `512` hidden units, `3` hidden layers, observation normalization enabled
 - recurrent memory: none
 
-The 34 continuous actions are two movement values plus two independent aim values for each of the 16 authored weapon slots. The first 16 discrete branches independently cease/fire those same weapon slots. ABI v3 intentionally supersedes the earlier shared-aim/single-weapon-command ABI before canonical long-term training.
+The 34 continuous actions are two movement values plus two independent aim values for each of the 16 authored weapon slots. The first 16 discrete branches independently cease/fire those same weapon slots. ABI v4 is the frozen canonical interface for long-term training; any observation/action/network change requires a new incompatible policy generation.
 
 The complete schema signature is emitted at training startup. A checkpoint should be resumed only when its ABI signature matches.
 
 ### 4.1 What is frozen
 
-The following are checkpoint-sensitive and must not change for ABI v3:
+The following are checkpoint-sensitive and must not change for ABI v4:
 
 - observation count, order, meaning, and normalization semantics;
 - entity ordering semantics;
@@ -88,7 +90,7 @@ Changing any of these requires an intentional new ABI version and should be trea
 
 ### 4.2 What remains tunable
 
-The following may be changed while continuing an ABI-v3 network:
+The following may be changed while continuing an ABI-v4 network:
 
 - reward magnitudes and reward balancing;
 - curriculum and matchup distributions;
@@ -255,7 +257,7 @@ They are currently masked except for `none`. A future mechanic that genuinely re
 
 ## 7. Special Mechanics and Temporal State
 
-ABI v3 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
+ABI v4 deliberately remains feed-forward. Bees already supplies persistent Hive Mind knowledge for discovered living enemies, and important ability timing is represented explicitly rather than forcing the network to infer it through recurrence.
 
 Examples:
 
@@ -264,7 +266,7 @@ Examples:
 - Striker exposes bomb readiness and its dedicated live parent-carrier state.
 - mining/healing/warp eligibility is explicit.
 
-If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v3 is not checkpoint-compatible.
+If a later mechanic needs history, prefer adding semantics to already-reserved fields where valid. Adding recurrent memory to ABI v4 is not checkpoint-compatible.
 
 ## 8. Barge Charge Lifecycle
 
@@ -289,18 +291,18 @@ Releasing a ship clears direct RL turret control. Ship-specific pooled lifecycle
 
 ## 10. Trainer Architecture
 
-The canonical ABI-v3 network is the current ML-Agents PPO network:
+The canonical ABI-v4 network is the current ML-Agents PPO network:
 
 - `normalize: true`
-- `hidden_units: 128`
-- `num_layers: 2`
+- `hidden_units: 512`
+- `num_layers: 3`
 - no recurrent `memory` block
 
 The optimizer, reward, horizon, checkpoint, and self-play settings in `Training/rl_1v1_config.yaml` may be tuned as evidence accumulates so long as the network architecture itself remains compatible.
 
 ## 11. Training Progression
 
-The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v3 network should be retained while training complexity expands.
+The original small 1v1 experiment remains useful as the first curriculum stage, but it is no longer the definition of the policy interface. The same ABI-v4 network should be retained while training complexity expands.
 
 Recommended progression:
 
@@ -314,17 +316,20 @@ Recommended progression:
 
 Uneven matchups are useful. A weaker ship can still learn better survival, positioning, damage exchange, and cooperation behavior even when its isolated matchup is unfavorable.
 
+Sampled 1v1 training uses a shuffled Cartesian Bee x Human cycle. Sampled multi-ship training uses independent deterministic side-specific shuffle bags so team compositions are mixed and no candidate ship type repeats on a side until that side's candidate pool has been exhausted.
+
 ## 12. Validation Gate Before Canonical Long Training
 
 Before treating a long run as a keep-forever canonical checkpoint series:
 
 - Unity must compile the branch;
 - `RlPolicySchemaContractTests` and the relevant EditMode/Foundation tests must pass;
-- the training scene must start and print ABI v3 with `observations=4685`, `continuous_actions=34`, `weapon_fire_branches=16x2`, `special_branch=5`, and 65-choice ally/enemy/map-object target branches;
+- the real training-scene PlayMode smoke must instantiate and bind the directly trainable roster through the shared policy path;
+- the training scene must start and print ABI v4 with `observations=4685`, `continuous_actions=34`, `weapon_fire_branches=16x2`, `special_branch=5`, and 65-choice ally/enemy/map-object target branches;
 - every ship type intended for the curriculum must successfully bind without a schema overflow error;
 - a short multi-episode smoke run must demonstrate clean resets and dynamic agent provisioning.
 
-Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v3 checkpoints.
+Once that gate passes, subsequent curriculum/reward tuning should not require discarding ABI-v4 checkpoints.
 
 ## 13. Lessons Carried Forward From Ants
 
