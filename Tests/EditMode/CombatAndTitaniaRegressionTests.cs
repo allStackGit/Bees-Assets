@@ -36,7 +36,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ShipType != ConfigData.ShipTypes.HumanTarget", killedStats);
             int exclusion = killedStats.IndexOf("ShipType != ConfigData.ShipTypes.HumanTarget", StringComparison.Ordinal);
             int score = killedStats.IndexOf("Level.State.PlayerScore -= FleetShip.GetTsv();", StringComparison.Ordinal);
-            int shipLoss = killedStats.IndexOf("Level.State.PlayerShipsLost++;", StringComparison.Ordinal);
+            int shipLoss = killedStats.IndexOf("Level.State.RecordPlayerShipLost(ShipType);", StringComparison.Ordinal);
 
             Assert.That(score, Is.GreaterThan(exclusion));
             Assert.That(shipLoss, Is.GreaterThan(exclusion));
