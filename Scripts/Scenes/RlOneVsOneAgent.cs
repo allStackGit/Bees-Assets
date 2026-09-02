@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -20,29 +21,36 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int DecisionPeriod = 5;
     internal const int ShipTypeBitCount = 5;
     internal const int WeaponTypeBitCount = 4;
+    internal const int MapObjectTypeBitCount = 4;
     internal const int MaxObservedAllies = RlOneVsOneTrainingOptions.MaximumShipsPerSide - 1;
     internal const int MaxObservedEnemies = RlOneVsOneTrainingOptions.MaximumShipsPerSide;
+    internal const int MaxObservedMapObjects = 16;
     internal const int MaxWeaponSlots = 8;
     internal const int SelfObservationSize = 25;
     internal const int EntityObservationSize = 18;
     internal const int WeaponObservationSize = 17;
+    internal const int MapObjectObservationSize = 10;
     internal const int ObservationSize = SelfObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
-        MaxWeaponSlots * WeaponObservationSize;
+        MaxWeaponSlots * WeaponObservationSize +
+        MaxObservedMapObjects * MapObjectObservationSize;
 
     // Broadly useful movement/aim remain continuous. Capability selection is discrete and masked,
     // keeping simple ships' effective action space small while reserving a permanent schema for
-    // weapon, special, ally-target and enemy-target control.
+    // weapon, special, ally-target, enemy-target and strategic map-object targeting.
     internal const int ContinuousActionCount = 4; // move x/y, aim x/y
     internal const int WeaponCommandBranch = 0;
     internal const int SpecialActionBranch = 1;
     internal const int AllyTargetBranch = 2;
     internal const int EnemyTargetBranch = 3;
+    internal const int MapObjectTargetBranch = 4;
     internal const int WeaponCommandBranchSize = 1 + MaxWeaponSlots * 2; // none + (cease/fire) per slot
     internal const int SpecialActionBranchSize = 2; // none/use
     internal const int AllyTargetBranchSize = 1 + MaxObservedAllies;
     internal const int EnemyTargetBranchSize = 1 + MaxObservedEnemies;
+    internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
 
+    private const int MiningAsteroidObservationType = 1;
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
     private const float LocalDistanceScale = 40f;
@@ -65,6 +73,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly List<Ship> _allyCandidates = new List<Ship>();
     private readonly List<Ship> _enemyCandidates = new List<Ship>();
+    private readonly List<MiningAsteroid> _mapObjectCandidates = new List<MiningAsteroid>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallForDedicatedTrainingScene()
@@ -115,8 +124,9 @@ internal sealed class RlOneVsOneAgent : Agent
 
         Debug.Log($"RL combat policy schema observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
                   $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}," +
-                  $"{AllyTargetBranchSize},{EnemyTargetBranchSize}] allies={MaxObservedAllies} " +
-                  $"enemies={MaxObservedEnemies} weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
+                  $"{AllyTargetBranchSize},{EnemyTargetBranchSize},{MapObjectTargetBranchSize}] " +
+                  $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} map_objects={MaxObservedMapObjects} " +
+                  $"weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
     }
 
     private static int AgentCountKey(int side, int teamId)
@@ -171,7 +181,8 @@ internal sealed class RlOneVsOneAgent : Agent
                 WeaponCommandBranchSize,
                 SpecialActionBranchSize,
                 AllyTargetBranchSize,
-                EnemyTargetBranchSize
+                EnemyTargetBranchSize,
+                MapObjectTargetBranchSize
             });
 
         RlOneVsOneAgent agent = obj.AddComponent<RlOneVsOneAgent>();
@@ -198,26 +209,32 @@ internal sealed class RlOneVsOneAgent : Agent
 
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
-        int beeRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountActiveShips(level, beeSide));
-        int humanRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountActiveShips(level, humanSide));
+        int beeRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, beeSide));
+        int humanRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, humanSide));
         EnsureAgentCount(stage, beeSide, 0, beeRequired);
         EnsureAgentCount(stage, beeSide, 1, beeRequired);
         EnsureAgentCount(stage, humanSide, 0, humanRequired);
         EnsureAgentCount(stage, humanSide, 1, humanRequired);
     }
 
-    private static int CountActiveShips(Level level, int side)
+    private static int CountPolicyControlledShips(Level level, int side)
     {
         int count = 0;
         List<Ship> ships = level.State.GetShips(side);
         for (int i = 0; i < ships.Count; i++)
         {
-            if (ships[i] != null && !ships[i].IsDead)
+            if (RequiresPolicyControl(ships[i]))
             {
                 count++;
             }
         }
         return count;
+    }
+
+    internal static bool RequiresPolicyControl(Ship ship)
+    {
+        return ship != null && !ship.IsDead &&
+               (ship.IsMobile || ship.HasWeapons || HasSpecialAction(ship));
     }
 
     private static void EnsureAgentCount(Stage stage, int side, int teamId, int required)
@@ -290,6 +307,8 @@ internal sealed class RlOneVsOneAgent : Agent
         CollectVisibleEnemies(origin);
         AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin);
         AddWeaponSlots(sensor, origin);
+        CollectVisibleMapObjects(origin);
+        AddMapObjectSlots(sensor, origin);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -307,9 +326,9 @@ internal sealed class RlOneVsOneAgent : Agent
             1,
             canControl && HasSpecialAction(_ship) && GetSpecialReadiness(_ship) > 0f);
 
-        // Target-selection branches are part of the permanent policy contract for support/targeted
-        // abilities. Current direct abilities do not need them, so non-zero choices stay masked and
-        // impose no exploration burden on the Wasp/Gunship baseline.
+        // Target-selection branches are permanent policy-contract capacity. Non-zero choices remain
+        // masked until the corresponding support/mining adapters consume them, so Wasp/Gunship and
+        // other simple ships do not pay an exploration cost for capabilities they cannot use.
         for (int action = 1; action < AllyTargetBranchSize; action++)
         {
             actionMask.SetActionEnabled(AllyTargetBranch, action, false);
@@ -317,6 +336,10 @@ internal sealed class RlOneVsOneAgent : Agent
         for (int action = 1; action < EnemyTargetBranchSize; action++)
         {
             actionMask.SetActionEnabled(EnemyTargetBranch, action, false);
+        }
+        for (int action = 1; action < MapObjectTargetBranchSize; action++)
+        {
+            actionMask.SetActionEnabled(MapObjectTargetBranch, action, false);
         }
     }
 
@@ -360,6 +383,7 @@ internal sealed class RlOneVsOneAgent : Agent
         discrete[SpecialActionBranch] = Random.Range(0, SpecialActionBranchSize);
         discrete[AllyTargetBranch] = 0;
         discrete[EnemyTargetBranch] = 0;
+        discrete[MapObjectTargetBranch] = 0;
     }
 
     private void ApplyMovement(Vector2 movement)
@@ -505,7 +529,7 @@ internal sealed class RlOneVsOneAgent : Agent
         for (int i = 0; i < ships.Count; i++)
         {
             Ship candidate = ships[i];
-            if (candidate != null && !candidate.IsDead && !IsControlledByAnotherAgent(candidate))
+            if (RequiresPolicyControl(candidate) && !IsControlledByAnotherAgent(candidate))
             {
                 _bindCandidates.Add(candidate);
             }
@@ -645,7 +669,7 @@ internal sealed class RlOneVsOneAgent : Agent
                 _allyCandidates.Add(candidate);
             }
         }
-        SortByDistanceThenId(_allyCandidates, origin);
+        SortShipsForObservation(_allyCandidates, origin);
     }
 
     private void CollectVisibleEnemies(Vector2 origin)
@@ -658,15 +682,27 @@ internal sealed class RlOneVsOneAgent : Agent
                 _enemyCandidates.Add(candidate);
             }
         }
-        SortByDistanceThenId(_enemyCandidates, origin);
+        SortShipsForObservation(_enemyCandidates, origin);
     }
 
-    private static void SortByDistanceThenId(List<Ship> ships, Vector2 origin)
+    private static void SortShipsForObservation(List<Ship> ships, Vector2 origin)
     {
         ships.Sort((left, right) =>
         {
             int compare = (left.GetPosition() - origin).sqrMagnitude.CompareTo(
                 (right.GetPosition() - origin).sqrMagnitude);
+            if (compare != 0)
+            {
+                return compare;
+            }
+            compare = ((int)left.ShipType).CompareTo((int)right.ShipType);
+            if (compare != 0)
+            {
+                return compare;
+            }
+            long leftFleetId = left.FleetShip != null ? left.FleetShip.Id : long.MaxValue;
+            long rightFleetId = right.FleetShip != null ? right.FleetShip.Id : long.MaxValue;
+            compare = leftFleetId.CompareTo(rightFleetId);
             return compare != 0 ? compare : left.Id.CompareTo(right.Id);
         });
     }
@@ -701,6 +737,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void AddWeaponSlots(VectorSensor sensor, Vector2 origin)
     {
+        // Weapon is an authored List rather than an unordered set. Its serialized/setup order is the
+        // stable slot identity, so do not re-sort it by transient range/target state.
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             if (_ship.Weapons == null || slot >= _ship.Weapons.Count || _ship.Weapons[slot] == null)
@@ -737,6 +775,56 @@ internal sealed class RlOneVsOneAgent : Agent
                 sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
                 sensor.AddObservation(0f);
             }
+        }
+    }
+
+    private void CollectVisibleMapObjects(Vector2 origin)
+    {
+        _mapObjectCandidates.Clear();
+        foreach (MiningAsteroid asteroid in _ship.Level.State.GetMiningAsteroidsVisibleToHiveMind(_side))
+        {
+            if (asteroid != null && !asteroid.IsDead)
+            {
+                _mapObjectCandidates.Add(asteroid);
+            }
+        }
+
+        // Never expose HashSet iteration order to the network. Strategic objects use a deterministic
+        // priority/distance/runtime-id key so the same world state produces the same slot layout.
+        _mapObjectCandidates.Sort((left, right) =>
+        {
+            int compare = ((Vector2)left.transform.localPosition - origin).sqrMagnitude.CompareTo(
+                ((Vector2)right.transform.localPosition - origin).sqrMagnitude);
+            return compare != 0 ? compare : left.Id.CompareTo(right.Id);
+        });
+    }
+
+    private void AddMapObjectSlots(VectorSensor sensor, Vector2 origin)
+    {
+        for (int slot = 0; slot < MaxObservedMapObjects; slot++)
+        {
+            if (slot >= _mapObjectCandidates.Count)
+            {
+                AddZeroObservations(sensor, MapObjectObservationSize);
+                continue;
+            }
+
+            MiningAsteroid asteroid = _mapObjectCandidates[slot];
+            Vector2 relative = (Vector2)asteroid.transform.localPosition - origin;
+            sensor.AddObservation(1f);
+            AddEnumBits(sensor, MiningAsteroidObservationType, MapObjectTypeBitCount);
+            sensor.AddObservation(SquashSignedDistance(relative.x));
+            sensor.AddObservation(SquashSignedDistance(relative.y));
+            sensor.AddObservation(GetMiningAsteroidResourceFraction(asteroid));
+
+            float extent = 0f;
+            if (asteroid.Collider != null)
+            {
+                Bounds bounds = asteroid.Collider.bounds;
+                extent = Mathf.Max(bounds.extents.x, bounds.extents.y);
+            }
+            sensor.AddObservation(NormalizePositive(extent, 20f));
+            sensor.AddObservation(NormalizePositive(asteroid.SquadsMining.Count, 4f));
         }
     }
 
@@ -785,6 +873,13 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         return ship != null && ship.MaxHealth > 0
             ? Mathf.Clamp01((float)ship.Health / ship.MaxHealth)
+            : 0f;
+    }
+
+    private static float GetMiningAsteroidResourceFraction(MiningAsteroid asteroid)
+    {
+        return asteroid != null && asteroid.OriginalHealth > 0
+            ? Mathf.Clamp01((float)asteroid.Health / asteroid.OriginalHealth)
             : 0f;
     }
 
