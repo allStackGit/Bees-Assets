@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using UnityEngine;
 
 namespace Assets.Scripts.Levels
 {
@@ -76,6 +77,107 @@ namespace Assets.Scripts.Levels
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
         {
             return VisionCache[side - 1];
+        }
+
+        /// <summary>
+        /// Adds a mining asteroid to the side-wide Hive Mind memory. Unlike enemy-ship visibility,
+        /// strategic map-object knowledge is intentionally persistent after the observer moves away;
+        /// the object is forgotten only when it leaves this Level/lifecycle.
+        /// </summary>
+        public bool RecordHiveMindMiningAsteroidSighting(Ship observer, MiningAsteroid asteroid)
+        {
+            if (observer == null || asteroid == null || observer.IsDead || asteroid.IsDead || !observer.IsHiveMindControlled)
+            {
+                return false;
+            }
+
+            int sideIndex = observer.Side - 1;
+            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length)
+            {
+                return false;
+            }
+            if (Level != null && (observer.Level != Level || asteroid.Level != Level))
+            {
+                return false;
+            }
+
+            return HiveMindMiningAsteroidCache[sideIndex].Add(asteroid);
+        }
+
+        /// <summary>
+        /// Refreshes strategic-object discovery from every live Hive Mind observer on a side.
+        /// This deliberately uses the same per-ship sight radius as HiveMindVision rather than
+        /// exposing the omniscient MiningAsteroids registry to a policy. The per-frame guard makes
+        /// the shared computation independent of how many agents request observations that frame.
+        /// </summary>
+        public void RefreshHiveMindMapObjectVision(int side)
+        {
+            int sideIndex = side - 1;
+            if (sideIndex < 0 || sideIndex >= HiveMindMiningAsteroidCache.Length)
+            {
+                return;
+            }
+            if (HiveMindMapObjectRefreshFrame[sideIndex] == Time.frameCount)
+            {
+                return;
+            }
+            HiveMindMapObjectRefreshFrame[sideIndex] = Time.frameCount;
+
+            if (MiningAsteroids.Count == 0)
+            {
+                return;
+            }
+
+            List<Ship> observers = ShipsBySide[sideIndex];
+            for (int observerIndex = 0; observerIndex < observers.Count; observerIndex++)
+            {
+                Ship observer = observers[observerIndex];
+                if (observer == null || observer.IsDead || !observer.IsHiveMindControlled || observer.HiveMindVision == null)
+                {
+                    continue;
+                }
+
+                float visionRange = observer.HiveMindVision.Collider != null
+                    ? observer.HiveMindVision.Collider.radius
+                    : (observer.Sight > 0 ? observer.Sight : observer.MaxRange);
+                if (visionRange <= 0f)
+                {
+                    continue;
+                }
+
+                Vector2 observerPosition = observer.GetPosition();
+                float visionRangeSquared = visionRange * visionRange;
+                foreach (MiningAsteroid asteroid in MiningAsteroids)
+                {
+                    if (asteroid == null || asteroid.IsDead || asteroid.Level != observer.Level)
+                    {
+                        continue;
+                    }
+                    Vector2 relative = (Vector2)asteroid.transform.localPosition - observerPosition;
+                    if (relative.sqrMagnitude <= visionRangeSquared)
+                    {
+                        RecordHiveMindMiningAsteroidSighting(observer, asteroid);
+                    }
+                }
+            }
+        }
+
+        public HashSet<MiningAsteroid> GetMiningAsteroidsVisibleToHiveMind(int side)
+        {
+            RefreshHiveMindMapObjectVision(side);
+            return HiveMindMiningAsteroidCache[side - 1];
+        }
+
+        public void ForgetHiveMindMiningAsteroid(MiningAsteroid asteroid)
+        {
+            if (asteroid == null)
+            {
+                return;
+            }
+            for (int sideIndex = 0; sideIndex < HiveMindMiningAsteroidCache.Length; sideIndex++)
+            {
+                HiveMindMiningAsteroidCache[sideIndex]?.Remove(asteroid);
+            }
         }
 
         public HashSet<ConfigData.ShipTypes> GetHumanShipTypes()
