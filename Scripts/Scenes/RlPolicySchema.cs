@@ -23,10 +23,10 @@ internal static class RlPolicySchema
 
     internal const string Signature =
         "bees-rl-v2|behavior=BeesRL1v1|network=ff-128x2|normalize=true|obs=4685|cont=4|disc=33,5,65,65,65|" +
-        "shipbits=6|weaponbits=6|mapbits=4|allies=64|enemies=64|weapons=16|enemy-mounts=16|" +
-        "mining=8|map-objects=64|moving-asteroids=48|self=29|capability=12|parent-carrier=19|entity=19|" +
-        "weapon=19|enemy-mount=22|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|" +
-        "entity-order=distance,type,fleet-id,runtime-id";
+        "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
+        "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
+        "self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|" +
+        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
     {
@@ -54,6 +54,7 @@ internal static class RlPolicySchema
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
 
+        ValidateFrozenEnumMappings(errors);
         ValidateEnumRange<ConfigData.ShipTypes>(errors, RlCombatPerception.ShipTypeBitCount, "ship type");
         ValidateEnumRange<ConfigData.WeaponTypes>(errors, RlCombatPerception.WeaponTypeBitCount, "weapon type");
 
@@ -112,6 +113,56 @@ internal static class RlPolicySchema
 
         error = null;
         return true;
+    }
+
+    private static void ValidateFrozenEnumMappings(List<string> errors)
+    {
+        // Existing identities are part of the policy vocabulary. New enum values may be appended
+        // within the reserved bit range, but existing values must never be renumbered for ABI v2.
+        CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Bumblebee, 3, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.CarpenterBee, 4, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Carrier, 5, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Cruiser, 6, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Dreadnought, 7, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Drone, 8, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Factory, 9, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.FireBarge, 10, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Flagship, 11, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Frigate, 12, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Gunship, 13, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Honeybee, 14, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Hornet, 15, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Leafcutter, 16, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Queen, 17, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Scout, 18, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Striker, 19, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.WarpGate, 20, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.Wasp, 21, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.YellowJacket, 22, "ship");
+        CheckEnum(errors, ConfigData.ShipTypes.HumanTarget, 23, "ship");
+
+        CheckEnum(errors, ConfigData.WeaponTypes.Bomb, 0, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.BeamCannon, 1, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.LightCannon, 2, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.Turret, 3, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.FullShipTurret, 4, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.RocketTurret, 5, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.DualCannon, 6, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.Eye, 7, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.QueenEye, 8, "weapon");
+        CheckEnum(errors, ConfigData.WeaponTypes.SplitShot, 9, "weapon");
+    }
+
+    private static void CheckEnum<T>(List<string> errors, T value, int expected, string label) where T : Enum
+    {
+        int actual = Convert.ToInt32(value);
+        if (actual != expected)
+        {
+            errors.Add($"{label} enum {value} expected id {expected} but was {actual}");
+        }
     }
 
     private static void Check(List<string> errors, int actual, int expected, string label)
