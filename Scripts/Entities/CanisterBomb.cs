@@ -155,6 +155,7 @@ namespace Assets.Scripts.Entities
                 }
 
                 IsDead = true;
+                Level?.State?.ForgetHiveMindMapObject(this);
 
                 if (TargetObstacle != null)
                 {

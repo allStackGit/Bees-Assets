@@ -4,6 +4,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
+internal enum RlOneVsOneMatchupMode
+{
+    Fixed,
+    Sampled,
+}
+
 /// <summary>
 /// Immutable command-line configuration for the dedicated ML-Agents combat scene. ML-Agents passes
 /// these arguments to standalone Unity workers through --env-args, keeping curriculum/environment
@@ -17,6 +23,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string ShipsPerSideFlag = "--rl-ships-per-side";
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
+    internal const string MatchupModeFlag = "--rl-matchup-mode";
 
     internal const float DefaultHealthRatio = 0.25f;
     internal const float DefaultMapSize = 30f;
@@ -24,14 +31,50 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const int DefaultShipsPerSide = 1;
     internal const int MaximumShipsPerSide = 16;
     internal const float MinimumMapSize = 10f;
+    internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
+
+    // These are the complete directly spawnable primary fleets. Drone, Striker and Beacon are
+    // spawned by their owning ships during play, while HumanTarget is a scripted objective.
+    // Keeping those children out of direct matchup sampling matches the established Hive Mind
+    // training roster and still exposes them through their owners in full-system training.
+    private static readonly ConfigData.ShipTypes[] DefaultSampledBeeShipTypes =
+    {
+        ConfigData.ShipTypes.Beehive,
+        ConfigData.ShipTypes.Bumblebee,
+        ConfigData.ShipTypes.CarpenterBee,
+        ConfigData.ShipTypes.Honeybee,
+        ConfigData.ShipTypes.Hornet,
+        ConfigData.ShipTypes.Leafcutter,
+        ConfigData.ShipTypes.Queen,
+        ConfigData.ShipTypes.Wasp,
+        ConfigData.ShipTypes.YellowJacket,
+    };
+
+    private static readonly ConfigData.ShipTypes[] DefaultSampledHumanShipTypes =
+    {
+        ConfigData.ShipTypes.Barge,
+        ConfigData.ShipTypes.Carrier,
+        ConfigData.ShipTypes.Cruiser,
+        ConfigData.ShipTypes.Dreadnought,
+        ConfigData.ShipTypes.Factory,
+        ConfigData.ShipTypes.FireBarge,
+        ConfigData.ShipTypes.Flagship,
+        ConfigData.ShipTypes.Frigate,
+        ConfigData.ShipTypes.Gunship,
+        ConfigData.ShipTypes.Scout,
+        ConfigData.ShipTypes.WarpGate,
+    };
 
     private readonly List<ConfigData.ShipTypes> _beeShipTypes;
     private readonly List<ConfigData.ShipTypes> _humanShipTypes;
+    private bool _beeShipTypesSpecified;
+    private bool _humanShipTypesSpecified;
 
     internal float HealthRatio { get; private set; }
     internal float MapSize { get; private set; }
     internal int EpisodeTimeoutSeconds { get; private set; }
     internal int ShipsPerSide { get; private set; }
+    internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
     internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
     internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
 
@@ -41,6 +84,7 @@ internal sealed class RlOneVsOneTrainingOptions
         MapSize = DefaultMapSize;
         EpisodeTimeoutSeconds = DefaultEpisodeTimeoutSeconds;
         ShipsPerSide = DefaultShipsPerSide;
+        MatchupMode = DefaultMatchupMode;
         _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
         _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
     }
@@ -81,10 +125,16 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadOption(argument, BeeShipTypesFlag, args, ref i, out value))
             {
                 ReplaceShipTypes(options._beeShipTypes, value, BeeShipTypesFlag);
+                options._beeShipTypesSpecified = true;
             }
             else if (TryReadOption(argument, HumanShipTypesFlag, args, ref i, out value))
             {
                 ReplaceShipTypes(options._humanShipTypes, value, HumanShipTypesFlag);
+                options._humanShipTypesSpecified = true;
+            }
+            else if (TryReadOption(argument, MatchupModeFlag, args, ref i, out value))
+            {
+                options.MatchupMode = ParseMatchupMode(value);
             }
             else if (argument.StartsWith("--rl-", StringComparison.OrdinalIgnoreCase))
             {
@@ -92,6 +142,7 @@ internal sealed class RlOneVsOneTrainingOptions
             }
         }
 
+        options.ApplySampledRosterDefaults();
         options.Validate();
         return options;
     }
@@ -111,7 +162,25 @@ internal sealed class RlOneVsOneTrainingOptions
         return $"health_ratio={HealthRatio.ToString("0.###", CultureInfo.InvariantCulture)} " +
                $"map_size={MapSize.ToString("0.###", CultureInfo.InvariantCulture)} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
+               $"matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
+    }
+
+    private void ApplySampledRosterDefaults()
+    {
+        if (MatchupMode != RlOneVsOneMatchupMode.Sampled)
+        {
+            return;
+        }
+
+        if (!_beeShipTypesSpecified)
+        {
+            ReplaceShipTypes(_beeShipTypes, DefaultSampledBeeShipTypes);
+        }
+        if (!_humanShipTypesSpecified)
+        {
+            ReplaceShipTypes(_humanShipTypes, DefaultSampledHumanShipTypes);
+        }
     }
 
     private void Validate()
@@ -136,8 +205,16 @@ internal sealed class RlOneVsOneTrainingOptions
             throw new ArgumentException($"{ShipsPerSideFlag} must be between 1 and {MaximumShipsPerSide}.");
         }
 
-        ValidateComposition(_beeShipTypes, BeeShipTypesFlag);
-        ValidateComposition(_humanShipTypes, HumanShipTypesFlag);
+        if (MatchupMode == RlOneVsOneMatchupMode.Fixed)
+        {
+            // Preserve the original fixed-composition contract exactly.
+            ValidateComposition(_beeShipTypes, BeeShipTypesFlag);
+            ValidateComposition(_humanShipTypes, HumanShipTypesFlag);
+            return;
+        }
+
+        ValidateSampledCandidatePool(_beeShipTypes, ConfigData.Configuration.BeeSide, BeeShipTypesFlag);
+        ValidateSampledCandidatePool(_humanShipTypes, ConfigData.Configuration.HumanSide, HumanShipTypesFlag);
     }
 
     private void ValidateComposition(List<ConfigData.ShipTypes> shipTypes, string flag)
@@ -146,6 +223,32 @@ internal sealed class RlOneVsOneTrainingOptions
         {
             throw new ArgumentException(
                 $"{flag} must contain either one type (repeated for every ship) or exactly {ShipsPerSide} comma-separated types.");
+        }
+    }
+
+    private static void ValidateSampledCandidatePool(
+        List<ConfigData.ShipTypes> shipTypes,
+        int expectedSide,
+        string flag)
+    {
+        if (shipTypes.Count == 0)
+        {
+            throw new ArgumentException($"{flag} requires at least one ship type in sampled mode.");
+        }
+
+        HashSet<ConfigData.ShipTypes> seen = new HashSet<ConfigData.ShipTypes>();
+        for (int i = 0; i < shipTypes.Count; i++)
+        {
+            ConfigData.ShipTypes shipType = shipTypes[i];
+            int actualSide;
+            if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out actualSide) || actualSide != expectedSide)
+            {
+                throw new ArgumentException($"{flag} contains {shipType}, which does not belong to side {expectedSide}.");
+            }
+            if (!seen.Add(shipType))
+            {
+                throw new ArgumentException($"{flag} contains duplicate sampled candidate {shipType}.");
+            }
         }
     }
 
@@ -220,6 +323,16 @@ internal sealed class RlOneVsOneTrainingOptions
         return parsed;
     }
 
+    private static RlOneVsOneMatchupMode ParseMatchupMode(string value)
+    {
+        RlOneVsOneMatchupMode parsed;
+        if (!Enum.TryParse(value, true, out parsed))
+        {
+            throw new ArgumentException($"{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
+        }
+        return parsed;
+    }
+
     private static void ReplaceShipTypes(List<ConfigData.ShipTypes> destination, string value, string flag)
     {
         destination.Clear();
@@ -243,6 +356,17 @@ internal sealed class RlOneVsOneTrainingOptions
         if (destination.Count == 0)
         {
             throw new ArgumentException($"{flag} requires at least one ship type.");
+        }
+    }
+
+    private static void ReplaceShipTypes(
+        List<ConfigData.ShipTypes> destination,
+        IReadOnlyList<ConfigData.ShipTypes> source)
+    {
+        destination.Clear();
+        for (int i = 0; i < source.Count; i++)
+        {
+            destination.Add(source[i]);
         }
     }
 

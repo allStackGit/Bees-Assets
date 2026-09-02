@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Reward definition for the dedicated RL combat proof.
-/// Terminal victory is deliberately an order of magnitude larger than all shaping.
+/// Terminal victory is deliberately an order of magnitude larger than ordinary shaping.
 /// </summary>
 internal static class RlOneVsOneReward
 {
@@ -12,19 +12,24 @@ internal static class RlOneVsOneReward
     internal const float MaximumEpisodeTimePenalty = 0.1f;
 
     /// <summary>
-    /// Converts one real combat TSV loss into immediate shaping. Normalizing by the combined
-    /// starting TSV keeps the sum of all hit rewards on the same scale as the original
-    /// full-episode TSV exchange reward while making credit assignment local to the hit.
+    /// Converts a real positive TSV-valued outcome into immediate shaping. This is shared by enemy
+    /// damage, restored health, mined resources and successful ship preservation so all of those
+    /// outcomes use the same value scale instead of rewarding the attempted action itself.
     /// </summary>
-    internal static float CalculateTsvLossReward(int tsvLost, int combinedStartingTsv)
+    internal static float CalculateTsvValueReward(int tsvValue, int combinedStartingTsv)
     {
         float denominator = Mathf.Max(1, combinedStartingTsv);
-        return (Mathf.Max(0, tsvLost) / denominator) * TsvRewardScale;
+        return (Mathf.Max(0, tsvValue) / denominator) * TsvRewardScale;
+    }
+
+    internal static float CalculateTsvLossReward(int tsvLost, int combinedStartingTsv)
+    {
+        return CalculateTsvValueReward(tsvLost, combinedStartingTsv);
     }
 
     /// <summary>
     /// Calculates the equivalent net full-episode TSV exchange. This remains useful as a reference
-    /// and for validation; live training emits the same shaping incrementally as hits occur.
+    /// and for validation; live combat training emits the same shaping incrementally as hits occur.
     /// </summary>
     internal static float CalculateTsvDeltaReward(
         int previousFriendlyTsv,

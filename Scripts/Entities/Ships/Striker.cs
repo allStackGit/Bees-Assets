@@ -123,6 +123,13 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (TouchingShip != null && TouchingShip.Side != Side && IsBombReady)
             {
+                // Scripted BombingRun resets this per run. The direct RL controller deliberately
+                // does not create BombingRun commands, so a Striker that has physically returned to
+                // its Carrier and reloaded must be allowed to make another primitive bomb attempt.
+                if (Stage.IsTrainingNueralNetwork)
+                {
+                    HasDroppedBomb = false;
+                }
                 ContactedShip = TouchingShip;
                 DropBomb();
             }
