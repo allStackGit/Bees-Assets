@@ -21,8 +21,8 @@ namespace Assets.Scripts.Entities.Ships
 
         public bool HasCompletedRun;
         /// <summary>
-        /// Whether the ship has reserved or started the charge action. This becomes true at the
-        /// beginning of wind-up so repeated RL decisions cannot start overlapping charge coroutines.
+        /// Existing gameplay/campaign flag. This retains its historical meaning: the wind-up has
+        /// completed and the active charge is beginning. RL wind-up reservation is tracked separately.
         /// </summary>
         public bool HasStartedCharging, WaitingForNewCharge;
         public bool IsCharging;
@@ -45,6 +45,11 @@ namespace Assets.Scripts.Entities.Ships
         /// Stable RL phase channel: 0 ready, 1/3 wind-up, 2/3 active charge, 1 cooldown.
         /// </summary>
         internal float RlChargePhase => _chargePhase / 3f;
+
+        /// <summary>
+        /// True only when no wind-up, active charge, or cooldown is already reserved.
+        /// </summary>
+        internal bool IsRlChargeReady => _chargePhase == 0;
 
         /// <summary>
         /// Normalized scaled-game time until another charge can begin. Zero means ready.
@@ -224,12 +229,11 @@ namespace Assets.Scripts.Entities.Ships
 
         internal bool TryReserveCharge()
         {
-            if (HasStartedCharging || IsCharging)
+            if (_chargePhase != 0 || IsCharging)
             {
                 return false;
             }
 
-            HasStartedCharging = true;
             SetChargePhase(1);
             return true;
         }
@@ -265,6 +269,7 @@ namespace Assets.Scripts.Entities.Ships
                 BargeChargeImageAnimation.SetActive(true);
                 BargeChargeImageAnimator.StartCharge();
             }
+            HasStartedCharging = true;
             IsCharging = true;
             SetChargePhase(2);
             CannotChangeMovementOrders = false;
