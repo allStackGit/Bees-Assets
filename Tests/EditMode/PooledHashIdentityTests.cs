@@ -52,7 +52,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void HivemindVisibilityUsesStableSetsAndCleansDepartingShips()
+        public void HivemindVisibilityUsesStableSetsAndPreservesLearnedSightingsWhenObserversDepart()
         {
             string state = Read("Scripts", "Levels", "GameState.cs");
             string registry = Read("Scripts", "Levels", "GameState.Registry.cs");
@@ -61,8 +61,12 @@ namespace Bees.Tests.EditMode
             Assert.That(state, Does.Contain("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)"));
             Assert.That(registry, Does.Contain("observerMap.Remove(ship.Id)"));
             Assert.That(registry, Does.Contain("visibleShips?.Remove(ship)"));
-            Assert.That(registry, Does.Contain("visibleCache?.Remove(ship)"));
-            Assert.That(registry, Does.Contain("HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex]"));
+            Assert.That(registry, Does.Contain("visibleCache?.Remove(ship)"),
+                "The removed ship itself must leave every faction's learned-target cache.");
+            Assert.That(registry, Does.Not.Contain("HashSet<Ship> sideCache = VisionCache[removedObserverSideIndex]"),
+                "Removing an observer must not rebuild or erase the faction-wide Hive Mind memory it helped create.");
+            Assert.That(registry, Does.Not.Contain("sideCache.Clear()"),
+                "Hive Mind sightings persist after the observing ship dies; only the observed object's own removal or Level reset may forget them.");
         }
     }
 }
