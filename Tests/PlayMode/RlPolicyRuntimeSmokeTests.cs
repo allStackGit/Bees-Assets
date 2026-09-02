@@ -49,6 +49,7 @@ namespace Bees.Tests.PlayMode
 
         private Type _agentType;
         private Type _bootstrapType;
+        private Type _coordinatorType;
         private Type _matchupsType;
         private Type _optionsType;
         private Type _selectorType;
@@ -60,6 +61,7 @@ namespace Bees.Tests.PlayMode
         {
             _agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             _bootstrapType = RuntimeAssembly.GetType("RlOneVsOneTrainingBootstrap");
+            _coordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
             _matchupsType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchups");
             _optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
@@ -85,7 +87,7 @@ namespace Bees.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator FullDirectRosterBindsToFrozenPolicyAndExecutesObservationAndActionPaths()
+        public IEnumerator FullDirectRosterBindsToFrozenPolicyAndExecutesObservationActionAndRewardPaths()
         {
             object options = ParseOptions(
                 "--rl-matchup-mode", "sampled",
@@ -117,8 +119,8 @@ namespace Bees.Tests.PlayMode
             }
 
             Assert.That(boundAgents, Is.Not.Null);
-            Assert.That(boundAgents.Count, Is.EqualTo(SmokeShipsPerSide * 2),
-                "Exactly one active self-play controller should bind each live direct-roster ship.");
+            Assert.That(boundAgents.Count, Is.GreaterThanOrEqualTo(SmokeShipsPerSide * 2),
+                "Every direct-roster ship must acquire its active self-play controller; spawned children may add more bindings.");
 
             object configuration = RuntimeAssembly.GetStaticField(
                 RuntimeAssembly.GetType("Assets.Scripts.ConfigData"), "Configuration");
@@ -128,6 +130,8 @@ namespace Bees.Tests.PlayMode
 
             HashSet<string> beeTypes = new HashSet<string>();
             HashSet<string> humanTypes = new HashSet<string>();
+            List<Component> beeAgents = new List<Component>();
+            List<Component> humanAgents = new List<Component>();
             MethodInfo validateShip = _schemaType.GetMethod(
                 "TryValidateShip",
                 BindingFlags.Static | BindingFlags.NonPublic);
@@ -148,10 +152,12 @@ namespace Bees.Tests.PlayMode
                 if (side == beeSide)
                 {
                     beeTypes.Add(shipType);
+                    beeAgents.Add(agent);
                 }
                 else if (side == humanSide)
                 {
                     humanTypes.Add(shipType);
+                    humanAgents.Add(agent);
                 }
                 else
                 {
@@ -179,7 +185,9 @@ namespace Bees.Tests.PlayMode
             Assert.That(collectObservations, Is.Not.Null);
             collectObservations.Invoke(waspAgent, new[] { sensor });
 
-            MethodInfo getObservations = sensor.GetType().GetMethod("GetObservations", BindingFlags.Instance | BindingFlags.Public);
+            MethodInfo getObservations = sensor.GetType().GetMethod(
+                "GetObservations",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.That(getObservations, Is.Not.Null, "ML-Agents VectorSensor must expose its collected vector for smoke validation.");
             object observations = getObservations.Invoke(sensor, null);
             Assert.That(RuntimeAssembly.GetCount(observations), Is.EqualTo(4685),
@@ -193,6 +201,86 @@ namespace Bees.Tests.PlayMode
             object wasp = RuntimeAssembly.GetField(waspAgent, "_ship");
             Assert.That((bool)GetMember(wasp, "HasBrain"), Is.True,
                 "A zero-action smoke decision must still traverse the live movement control primitive.");
+
+            AssertRewardRouting(beeAgents, humanAgents, beeSide, humanSide);
+        }
+
+        private void AssertRewardRouting(
+            List<Component> beeAgents,
+            List<Component> humanAgents,
+            int beeSide,
+            int humanSide)
+        {
+            Assert.That(beeAgents.Count, Is.GreaterThanOrEqualTo(2));
+            Assert.That(humanAgents.Count, Is.GreaterThanOrEqualTo(1));
+
+            object beeShipA = RuntimeAssembly.GetField(beeAgents[0], "_ship");
+            object beeShipB = RuntimeAssembly.GetField(beeAgents[1], "_ship");
+            object humanShip = RuntimeAssembly.GetField(humanAgents[0], "_ship");
+
+            MethodInfo recordHit = _coordinatorType.GetMethod("RecordHit", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo recordUnattributed = _coordinatorType.GetMethod(
+                "RecordUnattributedTsvLoss",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            EventInfo rewardEvent = _coordinatorType.GetEvent(
+                "TsvRewardOccurred",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(recordHit, Is.Not.Null);
+            Assert.That(recordUnattributed, Is.Not.Null);
+            Assert.That(rewardEvent, Is.Not.Null);
+
+            List<int> rewardSides = new List<int>();
+            List<float> rewards = new List<float>();
+            Action<int, float> handler = (side, reward) =>
+            {
+                rewardSides.Add(side);
+                rewards.Add(reward);
+            };
+            MethodInfo addHandler = rewardEvent.GetAddMethod(true);
+            MethodInfo removeHandler = rewardEvent.GetRemoveMethod(true);
+            Assert.That(addHandler, Is.Not.Null);
+            Assert.That(removeHandler, Is.Not.Null);
+            addHandler.Invoke(null, new object[] { handler });
+
+            try
+            {
+                rewardSides.Clear();
+                rewards.Clear();
+                recordHit.Invoke(null, new[] { beeShipA, humanShip, (object)10, (object)10 });
+                Assert.That(rewards.Count, Is.EqualTo(2), "Enemy TSV loss should produce attacker credit and target penalty exactly once each.");
+                Assert.That(HasReward(rewardSides, rewards, beeSide, positive: true), Is.True);
+                Assert.That(HasReward(rewardSides, rewards, humanSide, positive: false), Is.True);
+
+                rewardSides.Clear();
+                rewards.Clear();
+                recordHit.Invoke(null, new[] { beeShipA, beeShipB, (object)10, (object)10 });
+                Assert.That(rewards.Count, Is.EqualTo(1), "Friendly fire must produce only the damaged side penalty.");
+                Assert.That(rewardSides[0], Is.EqualTo(beeSide));
+                Assert.That(rewards[0], Is.LessThan(0f));
+
+                rewardSides.Clear();
+                rewards.Clear();
+                recordUnattributed.Invoke(null, new[] { humanShip, (object)10 });
+                Assert.That(rewards.Count, Is.EqualTo(1), "Unattributed/self/environmental loss must produce one casualty penalty and no opponent credit.");
+                Assert.That(rewardSides[0], Is.EqualTo(humanSide));
+                Assert.That(rewards[0], Is.LessThan(0f));
+            }
+            finally
+            {
+                removeHandler.Invoke(null, new object[] { handler });
+            }
+        }
+
+        private static bool HasReward(List<int> sides, List<float> rewards, int side, bool positive)
+        {
+            for (int i = 0; i < rewards.Count; i++)
+            {
+                if (sides[i] == side && (positive ? rewards[i] > 0f : rewards[i] < 0f))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private object ParseOptions(params string[] args)
@@ -260,16 +348,10 @@ namespace Bees.Tests.PlayMode
 
         private static object CreateZeroActionBuffers(int continuousCount, int discreteCount)
         {
-            Type segmentDefinition = FindLoadedType("Unity.MLAgents.Actuators.ActionSegment`1");
-            Type floatSegmentType = segmentDefinition.MakeGenericType(typeof(float));
-            Type intSegmentType = segmentDefinition.MakeGenericType(typeof(int));
-            object continuous = Activator.CreateInstance(floatSegmentType, new object[] { new float[continuousCount] });
-            object discrete = Activator.CreateInstance(intSegmentType, new object[] { new int[discreteCount] });
-
             Type actionBuffersType = FindLoadedType("Unity.MLAgents.Actuators.ActionBuffers");
-            ConstructorInfo constructor = actionBuffersType.GetConstructor(new[] { floatSegmentType, intSegmentType });
+            ConstructorInfo constructor = actionBuffersType.GetConstructor(new[] { typeof(float[]), typeof(int[]) });
             Assert.That(constructor, Is.Not.Null);
-            return constructor.Invoke(new[] { continuous, discrete });
+            return constructor.Invoke(new object[] { new float[continuousCount], new int[discreteCount] });
         }
 
         private static Type FindLoadedType(string fullName)
