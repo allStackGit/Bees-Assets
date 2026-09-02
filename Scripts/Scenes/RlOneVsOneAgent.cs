@@ -23,7 +23,6 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MaxObservedAllies = RlOneVsOneTrainingOptions.MaximumShipsPerSide - 1;
     internal const int MaxObservedEnemies = RlOneVsOneTrainingOptions.MaximumShipsPerSide;
     internal const int MaxWeaponSlots = 8;
-    internal const int MaxControlledShipsPerSide = RlOneVsOneTrainingOptions.MaximumShipsPerSide * 2;
     internal const int SelfObservationSize = 25;
     internal const int EntityObservationSize = 18;
     internal const int WeaponObservationSize = 17;
@@ -31,9 +30,9 @@ internal sealed class RlOneVsOneAgent : Agent
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize;
 
-    // Four continuous intentions stay relevant to almost every mobile combatant. Weapon selection,
-    // fire state and special abilities are discrete so unavailable capabilities can be masked instead
-    // of adding dozens of irrelevant continuous outputs to simple ships such as Wasp.
+    // Keep broadly useful continuous intentions small. Weapon selection/fire and special abilities
+    // are discrete so unavailable capabilities can be masked instead of injecting irrelevant output
+    // dimensions into simple ships.
     internal const int ContinuousActionCount = 4; // move x/y, aim x/y
     internal const int WeaponCommandBranch = 0;
     internal const int SpecialActionBranch = 1;
@@ -45,6 +44,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private const float LocalDistanceScale = 40f;
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
     private static bool _invalidEnvironmentReported;
+    private static int _lastProvisionFrame = -1;
 
     private Stage _stage;
     private Ship _ship;
@@ -79,10 +79,8 @@ internal sealed class RlOneVsOneAgent : Agent
         if (stage == null || !RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime) yield break;
         if (stage.GetComponentsInChildren<RlOneVsOneAgent>(true).Length > 0) yield break;
 
-        // Reserve wrappers for the maximum authored starting fleet plus one equally large wave of
-        // episode-spawned children. Extra physical weapons beyond the observed eight share slot 7,
-        // so neither weapon count nor later curriculum expansion changes the policy shape.
-        for (int slot = 0; slot < MaxControlledShipsPerSide; slot++)
+        int initialSlots = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
+        for (int slot = 0; slot < initialSlots; slot++)
         {
             CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, $"Bee Team 0 Slot {slot}");
             CreateAgent(stage, ConfigData.Configuration.BeeSide, 1, $"Bee Team 1 Slot {slot}");
@@ -93,7 +91,7 @@ internal sealed class RlOneVsOneAgent : Agent
         Debug.Log($"RL combat policy schema observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
                   $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}] " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} weapon_slots={MaxWeaponSlots} " +
-                  $"control_slots_per_side={MaxControlledShipsPerSide}");
+                  "spawned_ship_control=dynamic");
     }
 
     private static void CreateAgent(Stage stage, int side, int teamId, string label)
@@ -112,6 +110,41 @@ internal sealed class RlOneVsOneAgent : Agent
         agent._stage = stage;
         agent._side = side;
         agent._teamId = teamId;
+    }
+
+    private static void ProvisionAgentsForSpawnedShips(Stage stage)
+    {
+        if (stage == null || Time.frameCount == _lastProvisionFrame || ConfigData.Configuration == null) return;
+        _lastProvisionFrame = Time.frameCount;
+        Level level = stage.PrimaryLevel;
+        if (level == null || level.State == null) return;
+
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        int beeRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountActiveShips(level, beeSide));
+        int humanRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountActiveShips(level, humanSide));
+        EnsureAgentCount(stage, beeSide, 0, beeRequired);
+        EnsureAgentCount(stage, beeSide, 1, beeRequired);
+        EnsureAgentCount(stage, humanSide, 0, humanRequired);
+        EnsureAgentCount(stage, humanSide, 1, humanRequired);
+    }
+
+    private static int CountActiveShips(Level level, int side)
+    {
+        int count = 0;
+        List<Ship> ships = level.State.GetShips(side);
+        for (int i = 0; i < ships.Count; i++) if (ships[i] != null && !ships[i].IsDead) count++;
+        return count;
+    }
+
+    private static void EnsureAgentCount(Stage stage, int side, int teamId, int required)
+    {
+        RlOneVsOneAgent[] agents = stage.GetComponentsInChildren<RlOneVsOneAgent>(true);
+        int existing = 0;
+        for (int i = 0; i < agents.Length; i++)
+            if (agents[i]._side == side && agents[i]._teamId == teamId) existing++;
+        for (int slot = existing; slot < required; slot++)
+            CreateAgent(stage, side, teamId, $"Dynamic Side {side} Team {teamId} Slot {slot}");
     }
 
     public override void Initialize()
@@ -142,6 +175,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void FixedUpdate()
     {
+        ProvisionAgentsForSpawnedShips(_stage);
         if (_stage == null || !_stage.IsTrainingNueralNetwork || !IsCurrentController() || !TryBindShip()) return;
         if (++_decisionCounter >= DecisionPeriod)
         {
@@ -186,7 +220,6 @@ internal sealed class RlOneVsOneAgent : Agent
         if (!IsCurrentController() || !TryBindShip()) return;
         var continuous = actions.ContinuousActions;
         ApplyMovement(new Vector2(continuous[0], continuous[1]));
-
         Vector2 aim = new Vector2(continuous[2], continuous[3]);
         if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone) _lastAimDirection = aim.normalized;
 
@@ -195,9 +228,7 @@ internal sealed class RlOneVsOneAgent : Agent
         if (weaponCommand > 0)
         {
             int encoded = weaponCommand - 1;
-            int slot = encoded / 2;
-            bool fire = (encoded & 1) == 1;
-            ApplyWeaponCommand(slot, fire);
+            ApplyWeaponCommand(encoded / 2, (encoded & 1) == 1);
         }
         if (discrete[SpecialActionBranch] == 1) ApplySpecialAction();
     }
@@ -243,9 +274,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (_ship == null || _ship.Weapons == null) return false;
         for (int i = 0; i < _ship.Weapons.Count; i++)
-        {
             if (Mathf.Min(i, MaxWeaponSlots - 1) == slot && _ship.Weapons[i] is Turret) return true;
-        }
         return false;
     }
 
@@ -291,7 +320,7 @@ internal sealed class RlOneVsOneAgent : Agent
         if (_hasBoundShip)
         {
             if (_ship != null && !_ship.IsDead && _ship.Level == level && _ship.Id == _boundRuntimeShipId) return true;
-            _ship = null;
+            _ship = null; // One trajectory owns one physical ship lifecycle.
             return false;
         }
 
@@ -417,9 +446,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         _enemyCandidates.Clear();
         foreach (Ship candidate in _ship.Level.State.GetShipsVisibleToHiveMind(_side))
-        {
             if (candidate != null && !candidate.IsDead && candidate.Side != _side) _enemyCandidates.Add(candidate);
-        }
         SortByDistanceThenId(_enemyCandidates, origin);
     }
 
