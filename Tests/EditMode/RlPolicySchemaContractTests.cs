@@ -45,11 +45,13 @@ namespace Bees.Tests.EditMode
         public void WeaponSlotsNeverAliasOverflowOntoLastAction()
         {
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
             Assert.That(agent, Does.Not.Contain("Mathf.Min(i, MaxWeaponSlots - 1)"));
             Assert.That(agent, Does.Contain("slot >= _ship.Weapons.Count"));
             Assert.That(agent, Does.Contain("_ship.Weapons[slot] is Turret turret"));
-            Assert.That(agent, Does.Contain("ship.Weapons.Count > RlCombatPerception.MaxWeaponSlots"));
+            Assert.That(schema, Does.Contain("ship.Weapons.Count > RlCombatPerception.MaxWeaponSlots"));
+            Assert.That(agent, Does.Contain("RlPolicySchema.TryValidateShip(_ship, out string schemaError)"));
         }
 
         [Test]
