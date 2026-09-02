@@ -208,7 +208,11 @@ namespace Assets.Scripts.Entities.Ships
                 HasStartedCharging = true;
                 CannotChangeMovementOrders = false;
                 SetCurrentSpeed(80, 80);
-                if (target != null && !target.IsDead)
+
+                // Scripted commands may supply a target and retain their historical auto-aim.
+                // The RL primitive action must charge along the heading the policy established; it
+                // may not outsource aiming to nearest-target script logic.
+                if (!Stage.IsTrainingNueralNetwork && target != null && !target.IsDead)
                 {
                     MoveToDirectionOfPoint(target.GetPosition());
                 }
