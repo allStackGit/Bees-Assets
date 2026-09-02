@@ -79,6 +79,54 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PassiveBeaconVisionCanDiscoverMiningAsteroidsForTheWholeSide()
+        {
+            GameObject stateObject = new GameObject("RL Shared Vision State Test");
+            GameObject beaconObject = new GameObject("RL Shared Vision Beacon Test");
+            GameObject visionObject = new GameObject("RL Shared Vision Collider Test");
+            GameObject asteroidObject = new GameObject("RL Shared Vision Asteroid Test");
+            try
+            {
+                Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
+                Component beacon = beaconObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Beacon"));
+                Component vision = visionObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.HiveMindVision"));
+                CircleCollider2D visionCollider = visionObject.AddComponent<CircleCollider2D>();
+                Component asteroid = asteroidObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.MiningAsteroid"));
+
+                RuntimeAssembly.SetField(beacon, "Side", 1);
+                RuntimeAssembly.SetField(beacon, "IsHiveMindControlled", true);
+                RuntimeAssembly.SetField(beacon, "Transform", beaconObject.transform);
+                RuntimeAssembly.SetField(beacon, "HiveMindVision", vision);
+                RuntimeAssembly.SetField(vision, "Collider", visionCollider);
+                RuntimeAssembly.SetField(vision, "Ship", beacon);
+                visionCollider.radius = 10f;
+                asteroidObject.transform.localPosition = new Vector3(5f, 0f, 0f);
+
+                Array shipsBySide = (Array)RuntimeAssembly.GetField(state, "ShipsBySide");
+                RuntimeAssembly.AddToCollection(shipsBySide.GetValue(0), beacon);
+                RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(state, "MiningAsteroids"), asteroid);
+
+                RuntimeAssembly.Invoke(state, "RefreshHiveMindMapObjectVision", 1);
+
+                Array caches = (Array)RuntimeAssembly.GetField(state, "HiveMindMiningAsteroidCache");
+                Assert.That(RuntimeAssembly.GetCount(caches.GetValue(0)), Is.EqualTo(1));
+                Assert.That(RuntimeAssembly.GetCount(caches.GetValue(1)), Is.Zero);
+                Assert.That((bool)RuntimeAssembly.InvokeStatic(
+                    RuntimeAssembly.GetType("RlOneVsOneAgent"),
+                    "RequiresPolicyControl",
+                    beacon), Is.False,
+                    "Beacon vision should contribute knowledge without giving the Beacon its own policy trajectory.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(asteroidObject);
+                UnityEngine.Object.DestroyImmediate(visionObject);
+                UnityEngine.Object.DestroyImmediate(beaconObject);
+                UnityEngine.Object.DestroyImmediate(stateObject);
+            }
+        }
+
+        [Test]
         public void HiveMindMiningKnowledgeIsSideWidePersistentAndResettable()
         {
             GameObject stateObject = new GameObject("RL Hive Mind State Test");
