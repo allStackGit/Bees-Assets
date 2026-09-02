@@ -56,6 +56,16 @@ namespace Assets.Scripts.Levels
             new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance),
             new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance)
         };
+        public HashSet<Obstacle>[] HiveMindObstacleCache =
+        {
+            new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance),
+            new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance)
+        };
+        public HashSet<MapObject>[] HiveMindMapObjectCache =
+        {
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance),
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance)
+        };
         internal readonly int[] HiveMindMapObjectRefreshFrame = { -1, -1 };
         public Dictionary<long, HashSet<Ship>>[] HivemindShips =
         {
@@ -200,6 +210,12 @@ namespace Assets.Scripts.Levels
                 if (HiveMindMiningAsteroidCache[side] == null)
                     HiveMindMiningAsteroidCache[side] = new HashSet<MiningAsteroid>(ReferenceIdentityComparer<MiningAsteroid>.Instance);
                 else HiveMindMiningAsteroidCache[side].Clear();
+                if (HiveMindObstacleCache[side] == null)
+                    HiveMindObstacleCache[side] = new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
+                else HiveMindObstacleCache[side].Clear();
+                if (HiveMindMapObjectCache[side] == null)
+                    HiveMindMapObjectCache[side] = new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance);
+                else HiveMindMapObjectCache[side].Clear();
                 HiveMindMapObjectRefreshFrame[side] = -1;
                 ShipDamageStatuses[side].Clear();
                 ShipDamageStatusesById[side].Clear();
