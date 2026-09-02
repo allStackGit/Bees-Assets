@@ -54,6 +54,7 @@ namespace Bees.Tests.PlayMode
         private Type _optionsType;
         private Type _selectorType;
         private Type _schemaType;
+        private Type _shipType;
         private Scene _trainingScene;
 
         [SetUp]
@@ -66,6 +67,7 @@ namespace Bees.Tests.PlayMode
             _optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
             _schemaType = RuntimeAssembly.GetType("RlPolicySchema");
+            _shipType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship");
         }
 
         [UnityTearDown]
@@ -107,20 +109,32 @@ namespace Bees.Tests.PlayMode
             _trainingScene = SceneManager.GetActiveScene();
             Assert.That(_trainingScene.name, Is.EqualTo(TrainingSceneName));
 
+            MethodInfo requiresPolicyControl = _agentType.GetMethod(
+                "RequiresPolicyControl",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(requiresPolicyControl, Is.Not.Null);
+
+            List<Component> liveShips = null;
             List<Component> boundAgents = null;
+            int requiredPolicyControllers = int.MaxValue;
             for (int frame = 0; frame < MaximumReadyFrames; frame++)
             {
+                liveShips = FindLiveShipsInTrainingScene();
                 boundAgents = FindBoundAgentsInTrainingScene();
-                if (boundAgents.Count >= SmokeShipsPerSide * 2)
+                requiredPolicyControllers = CountPolicyControlledShips(liveShips, requiresPolicyControl);
+                if (liveShips.Count >= SmokeShipsPerSide * 2 && boundAgents.Count >= requiredPolicyControllers)
                 {
                     break;
                 }
                 yield return null;
             }
 
+            Assert.That(liveShips, Is.Not.Null);
+            Assert.That(liveShips.Count, Is.GreaterThanOrEqualTo(SmokeShipsPerSide * 2),
+                "The real training scene must instantiate both sampled primary fleets.");
             Assert.That(boundAgents, Is.Not.Null);
-            Assert.That(boundAgents.Count, Is.GreaterThanOrEqualTo(SmokeShipsPerSide * 2),
-                "Every direct-roster ship must acquire its active self-play controller; spawned children may add more bindings.");
+            Assert.That(boundAgents.Count, Is.GreaterThanOrEqualTo(requiredPolicyControllers),
+                "Every live ship that requires policy control must acquire its active self-play controller.");
 
             object configuration = RuntimeAssembly.GetStaticField(
                 RuntimeAssembly.GetType("Assets.Scripts.ConfigData"), "Configuration");
@@ -128,53 +142,63 @@ namespace Bees.Tests.PlayMode
             int beeSide = Convert.ToInt32(GetMember(configuration, "BeeSide"));
             int humanSide = Convert.ToInt32(GetMember(configuration, "HumanSide"));
 
-            HashSet<string> beeTypes = new HashSet<string>();
-            HashSet<string> humanTypes = new HashSet<string>();
-            List<Component> beeAgents = new List<Component>();
-            List<Component> humanAgents = new List<Component>();
             MethodInfo validateShip = _schemaType.GetMethod(
                 "TryValidateShip",
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(validateShip, Is.Not.Null);
 
+            HashSet<string> beeTypes = new HashSet<string>();
+            HashSet<string> humanTypes = new HashSet<string>();
+            foreach (Component ship in liveShips)
+            {
+                object[] validationArguments = { ship, null };
+                bool valid = (bool)validateShip.Invoke(null, validationArguments);
+                Assert.That(valid, Is.True, validationArguments[1] as string);
+
+                int side = Convert.ToInt32(GetMember(ship, "Side"));
+                string shipTypeName = GetMember(ship, "ShipType").ToString();
+                if (side == beeSide)
+                {
+                    beeTypes.Add(shipTypeName);
+                }
+                else if (side == humanSide)
+                {
+                    humanTypes.Add(shipTypeName);
+                }
+            }
+
+            CollectionAssert.IsSubsetOf(ExpectedBeeRoster, beeTypes,
+                "One sampled multi-ship episode must instantiate every directly trainable Bee type before repeats.");
+            CollectionAssert.IsSubsetOf(ExpectedHumanRoster, humanTypes,
+                "One sampled multi-ship episode must instantiate every directly trainable Human type before repeats.");
+
+            List<Component> beeAgents = new List<Component>();
+            List<Component> humanAgents = new List<Component>();
             Component waspAgent = null;
             foreach (Component agent in boundAgents)
             {
                 object ship = RuntimeAssembly.GetField(agent, "_ship");
                 Assert.That(ship, Is.Not.Null);
-
-                object[] validationArguments = { ship, null };
-                bool valid = (bool)validateShip.Invoke(null, validationArguments);
-                Assert.That(valid, Is.True, validationArguments[1] as string);
-
                 int side = (int)RuntimeAssembly.GetField(agent, "_side");
-                string shipType = GetMember(ship, "ShipType").ToString();
                 if (side == beeSide)
                 {
-                    beeTypes.Add(shipType);
                     beeAgents.Add(agent);
                 }
                 else if (side == humanSide)
                 {
-                    humanTypes.Add(shipType);
                     humanAgents.Add(agent);
                 }
                 else
                 {
-                    Assert.Fail($"RL agent bound unexpected side {side} for {shipType}.");
+                    Assert.Fail($"RL agent bound unexpected side {side}.");
                 }
 
-                if (shipType == "Wasp")
+                if (GetMember(ship, "ShipType").ToString() == "Wasp")
                 {
                     waspAgent = agent;
                 }
             }
-
-            CollectionAssert.IsSubsetOf(ExpectedBeeRoster, beeTypes,
-                "One sampled multi-ship episode must instantiate and bind every directly trainable Bee type before repeats.");
-            CollectionAssert.IsSubsetOf(ExpectedHumanRoster, humanTypes,
-                "One sampled multi-ship episode must instantiate and bind every directly trainable Human type before repeats.");
-            Assert.That(waspAgent, Is.Not.Null, "The full Bee roster smoke episode must contain a Wasp.");
+            Assert.That(waspAgent, Is.Not.Null, "The full Bee roster smoke episode must bind a Wasp policy agent.");
 
             Assert.That(RuntimeAssembly.GetStaticField(_schemaType, "Version"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(_agentType, "ObservationSize"), Is.EqualTo(4685));
@@ -203,6 +227,19 @@ namespace Bees.Tests.PlayMode
                 "A zero-action smoke decision must still traverse the live movement control primitive.");
 
             AssertRewardRouting(beeAgents, humanAgents, beeSide, humanSide);
+        }
+
+        private int CountPolicyControlledShips(List<Component> ships, MethodInfo requiresPolicyControl)
+        {
+            int count = 0;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if ((bool)requiresPolicyControl.Invoke(null, new object[] { ships[i] }))
+                {
+                    count++;
+                }
+            }
+            return count;
         }
 
         private void AssertRewardRouting(
@@ -318,6 +355,27 @@ namespace Bees.Tests.PlayMode
                 }
             }
             return bound;
+        }
+
+        private List<Component> FindLiveShipsInTrainingScene()
+        {
+            UnityEngine.Object[] objects = Resources.FindObjectsOfTypeAll(_shipType);
+            List<Component> ships = new List<Component>();
+            for (int i = 0; i < objects.Length; i++)
+            {
+                Component ship = objects[i] as Component;
+                if (ship == null || ship.gameObject.scene != _trainingScene)
+                {
+                    continue;
+                }
+                if (GetMember(ship, "Level") == null || GetMember(ship, "FleetShip") == null ||
+                    (bool)GetMember(ship, "IsDead"))
+                {
+                    continue;
+                }
+                ships.Add(ship);
+            }
+            return ships;
         }
 
         private static object CreateVectorSensor(int observationSize)
