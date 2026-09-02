@@ -54,7 +54,7 @@ env_settings:
   env_path: F:\RLDemo\Bees RL Training
   env_args:
   - --rl-health-ratio
-  - '.5'
+  - '.25'
   - --rl-map-size
   - '30'
   - --rl-episode-timeout
@@ -84,10 +84,10 @@ engine_settings:
   no_graphics_monitor: false
 environment_parameters: null
 checkpoint_settings:
-  run_id: bees-rl-1v1-003
+  run_id: bees-rl-1v1-003-after-crash
   initialize_from: null
   load_model: false
-  resume: false
+  resume: true
   force: false
   train_model: false
   inference: false
