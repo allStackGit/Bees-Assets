@@ -69,7 +69,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SampledModeCanParseBeforeGlobalConfigurationLoads()
+        public void SampledModeRequiresLoadedConfigurationSettings()
         {
             Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
             object previousConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
@@ -77,11 +77,10 @@ namespace Bees.Tests.EditMode
             try
             {
                 RuntimeAssembly.SetStaticField(configDataType, "Configuration", null);
-                object options = Parse("--rl-matchup-mode=sampled");
+                TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
+                    Parse("--rl-matchup-mode=sampled"));
 
-                Assert.That(GetProperty(options, "MatchupMode").ToString(), Is.EqualTo("Sampled"));
-                CollectionAssert.Contains(GetShipTypeNames(options, "BeeShipTypes"), "Wasp");
-                CollectionAssert.Contains(GetShipTypeNames(options, "HumanShipTypes"), "Gunship");
+                Assert.That(exception.InnerException, Is.TypeOf<InvalidOperationException>());
             }
             finally
             {
@@ -105,6 +104,9 @@ namespace Bees.Tests.EditMode
         public void RuntimeTrainingPathConsumesOptionsForDurabilityArenaTimeoutRosterAgentsAndDiagnostics()
         {
             string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
+            Assert.That(bootstrap, Does.Contain("[DefaultExecutionOrder(-10000)]"));
+            Assert.That(bootstrap, Does.Contain("!ConfigData.AreAllSettingsLoaded"));
+            Assert.That(bootstrap, Does.Contain("RlOneVsOneTrainingBootstrap.TryApplyAfterSettingsLoaded(_stage);"));
             Assert.That(bootstrap, Does.Contain("stage.TimeoutTime = options.EpisodeTimeoutSeconds;"));
             Assert.That(bootstrap, Does.Contain("float mapSize = CurrentMapSize;"));
             Assert.That(bootstrap, Does.Contain("CurrentShipsPerSide => RuntimeOptions.ShipsPerSide"));
