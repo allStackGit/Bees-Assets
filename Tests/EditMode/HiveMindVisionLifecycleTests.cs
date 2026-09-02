@@ -48,5 +48,23 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("HivemindShips[ship.Side - 1][ship.Id] =", registry);
             StringAssert.Contains("new HashSet<Ship>(ReferenceIdentityComparer<Ship>.Instance)", registry);
         }
+
+        [Test]
+        public void ObserverDeathDoesNotEraseFactionWideLearnedSightings()
+        {
+            string registry = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.Registry.cs"));
+            string queries = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "GameState.Queries.cs"));
+
+            StringAssert.Contains("observerVisibility.Add(spotted);", queries);
+            StringAssert.Contains("return VisionCache[sideIndex].Add(spotted);", queries);
+            StringAssert.Contains("observerMap.Remove(ship.Id);", registry,
+                "The dead observer's attribution set should be retired.");
+            StringAssert.DoesNotContain("removedObserverSideIndex", registry,
+                "Observer removal must not use observer ownership to recompute persistent Hive Mind knowledge.");
+            StringAssert.DoesNotContain("sideCache.Clear()", registry,
+                "Once the Hive Mind has seen a live target, observer death must not make the faction forget it.");
+        }
     }
 }
