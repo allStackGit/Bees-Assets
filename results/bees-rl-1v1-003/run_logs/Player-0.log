@@ -13,7 +13,7 @@ NullGfxDevice:
     Renderer: Null Device
     Vendor:   Unity Technologies
 Begin MonoManager ReloadAssembly
-- Finished resetting the current domain, in  0.007 seconds
+- Finished resetting the current domain, in  0.005 seconds
 [Physics::Module] Selected backend.
 [Physics::Module] Name: PhysX
 [Physics::Module] Id: 0xf2b8ea05
@@ -25,7 +25,7 @@ Texture with ID 114 and with size 13376x6920 was too large for graphics device m
 Texture with ID 210 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 221 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 238 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
-UnloadTime: 1.024200 ms
+UnloadTime: 0.871000 ms
 RL training configuration health_ratio=0.5 map_size=30 episode_timeout=120s ships_per_side=1 bee_ship_types=Wasp human_ship_types=Gunship
 DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
 Trying to connect to ws://clashofempire.net:7146
@@ -35,3 +35,10 @@ Steam API is unavailable; using local fallback identity.
 User id is 2013868892
 Can not play a disabled audio source
 Registered Communicator in Agent.
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input Polling Thread exited.
+Input System module state changed to: Shutdown.
+CodeReloadManager destroyed
+GarbageCollector disposing of ComputeBuffer. Please use ComputeBuffer.Release() or .Dispose() to manually release the buffer.
