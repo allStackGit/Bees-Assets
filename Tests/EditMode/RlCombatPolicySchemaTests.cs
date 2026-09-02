@@ -17,7 +17,9 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(8));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxControlledShipsPerSide"), Is.EqualTo(32));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(719));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(27));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(2));
         }
 
         [Test]
