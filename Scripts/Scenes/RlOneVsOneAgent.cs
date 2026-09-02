@@ -22,18 +22,22 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int ShipTypeBitCount = 5;
     internal const int WeaponTypeBitCount = 4;
     internal const int MapObjectTypeBitCount = 4;
+    internal const int ObstacleTypeBitCount = 4;
     internal const int MaxObservedAllies = RlOneVsOneTrainingOptions.MaximumShipsPerSide - 1;
     internal const int MaxObservedEnemies = RlOneVsOneTrainingOptions.MaximumShipsPerSide;
     internal const int MaxObservedMapObjects = 16;
+    internal const int MaxObservedObstacles = 64;
     internal const int MaxWeaponSlots = 8;
     internal const int SelfObservationSize = 25;
     internal const int EntityObservationSize = 18;
     internal const int WeaponObservationSize = 17;
-    internal const int MapObjectObservationSize = 10;
+    internal const int MapObjectObservationSize = 12;
+    internal const int ObstacleObservationSize = 15;
     internal const int ObservationSize = SelfObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize +
-        MaxObservedMapObjects * MapObjectObservationSize;
+        MaxObservedMapObjects * MapObjectObservationSize +
+        MaxObservedObstacles * ObstacleObservationSize;
 
     // Movement/aim remain continuous. The capability branch is intentionally primitive: it asks
     // the ship to perform an action at its CURRENT location. It never invokes a Hive Mind command
@@ -56,12 +60,75 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
 
     private const int MiningAsteroidObservationType = 1;
+    private const int GenericMapObjectObservationType = 2;
+    private const int FireTankObservationType = 3;
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
     private const float LocalDistanceScale = 40f;
     private const float MiningActionIntervalSeconds = 5f;
     private const float HealingActionIntervalSeconds = 1f;
     private const int HealingPerSuccessfulAction = 50;
+
+    private readonly struct ObservedMapObject
+    {
+        internal readonly int Id;
+        internal readonly int Type;
+        internal readonly Vector2 Position;
+        internal readonly Vector2 HalfExtents;
+        internal readonly float HealthFraction;
+        internal readonly float Activity;
+        internal readonly bool Targetable;
+
+        internal ObservedMapObject(
+            int id,
+            int type,
+            Vector2 position,
+            Vector2 halfExtents,
+            float healthFraction,
+            float activity,
+            bool targetable)
+        {
+            Id = id;
+            Type = type;
+            Position = position;
+            HalfExtents = halfExtents;
+            HealthFraction = healthFraction;
+            Activity = activity;
+            Targetable = targetable;
+        }
+    }
+
+    private readonly struct ObservedObstacle
+    {
+        internal readonly int Id;
+        internal readonly int Type;
+        internal readonly Vector2 Position;
+        internal readonly Vector2 HalfExtents;
+        internal readonly float Rotation;
+        internal readonly Vector2 Velocity;
+        internal readonly float HealthFraction;
+        internal readonly bool Targetable;
+
+        internal ObservedObstacle(
+            int id,
+            int type,
+            Vector2 position,
+            Vector2 halfExtents,
+            float rotation,
+            Vector2 velocity,
+            float healthFraction,
+            bool targetable)
+        {
+            Id = id;
+            Type = type;
+            Position = position;
+            HalfExtents = halfExtents;
+            Rotation = rotation;
+            Velocity = velocity;
+            HealthFraction = healthFraction;
+            Targetable = targetable;
+        }
+    }
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
     private static readonly Dictionary<int, int> AgentCounts = new Dictionary<int, int>();
@@ -83,7 +150,8 @@ internal sealed class RlOneVsOneAgent : Agent
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly List<Ship> _allyCandidates = new List<Ship>();
     private readonly List<Ship> _enemyCandidates = new List<Ship>();
-    private readonly List<MiningAsteroid> _mapObjectCandidates = new List<MiningAsteroid>();
+    private readonly List<ObservedMapObject> _mapObjectCandidates = new List<ObservedMapObject>();
+    private readonly List<ObservedObstacle> _obstacleCandidates = new List<ObservedObstacle>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallForDedicatedTrainingScene()
@@ -136,7 +204,7 @@ internal sealed class RlOneVsOneAgent : Agent
                   $"discrete_branches=[{WeaponCommandBranchSize},{SpecialActionBranchSize}," +
                   $"{AllyTargetBranchSize},{EnemyTargetBranchSize},{MapObjectTargetBranchSize}] " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} map_objects={MaxObservedMapObjects} " +
-                  $"weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
+                  $"obstacles={MaxObservedObstacles} weapon_slots={MaxWeaponSlots} spawned_ship_control=dynamic");
     }
 
     private static int AgentCountKey(int side, int teamId)
@@ -321,6 +389,8 @@ internal sealed class RlOneVsOneAgent : Agent
         AddWeaponSlots(sensor, origin);
         CollectVisibleMapObjects(origin);
         AddMapObjectSlots(sensor, origin);
+        CollectVisibleObstacles(origin);
+        AddObstacleSlots(sensor, origin);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -1004,18 +1074,65 @@ internal sealed class RlOneVsOneAgent : Agent
     private void CollectVisibleMapObjects(Vector2 origin)
     {
         _mapObjectCandidates.Clear();
-        foreach (MiningAsteroid asteroid in _ship.Level.State.GetMiningAsteroidsVisibleToHiveMind(_side))
+        GameState state = _ship.Level.State;
+        foreach (MiningAsteroid asteroid in state.GetMiningAsteroidsVisibleToHiveMind(_side))
         {
-            if (asteroid != null && !asteroid.IsDead)
+            if (asteroid == null || asteroid.IsDead)
             {
-                _mapObjectCandidates.Add(asteroid);
+                continue;
             }
+
+            Collider2D collider = asteroid.ClearanceMappingCollider != null
+                ? asteroid.ClearanceMappingCollider
+                : asteroid.Collider;
+            GetColliderGeometry(_ship.Level, collider, asteroid.GetPosition(), out Vector2 position, out Vector2 halfExtents);
+            _mapObjectCandidates.Add(new ObservedMapObject(
+                asteroid.Id,
+                MiningAsteroidObservationType,
+                position,
+                halfExtents,
+                GetMiningAsteroidResourceFraction(asteroid),
+                asteroid.SquadsMining.Count,
+                false));
+        }
+
+        foreach (MapObject mapObject in state.GetMapObjectsVisibleToHiveMind(_side))
+        {
+            if (mapObject == null || mapObject.IsDead)
+            {
+                continue;
+            }
+
+            GetColliderGeometry(
+                _ship.Level,
+                mapObject.Collider,
+                mapObject.transform.localPosition,
+                out Vector2 position,
+                out Vector2 halfExtents);
+            int type = mapObject is CanisterBomb
+                ? FireTankObservationType
+                : GenericMapObjectObservationType;
+            float healthFraction = mapObject.MaxHealth > 0
+                ? Mathf.Clamp01((float)mapObject.Health / mapObject.MaxHealth)
+                : 0f;
+            _mapObjectCandidates.Add(new ObservedMapObject(
+                mapObject.Id,
+                type,
+                position,
+                halfExtents,
+                healthFraction,
+                0f,
+                true));
         }
 
         _mapObjectCandidates.Sort((left, right) =>
         {
-            int compare = ((Vector2)left.transform.localPosition - origin).sqrMagnitude.CompareTo(
-                ((Vector2)right.transform.localPosition - origin).sqrMagnitude);
+            int compare = (left.Position - origin).sqrMagnitude.CompareTo((right.Position - origin).sqrMagnitude);
+            if (compare != 0)
+            {
+                return compare;
+            }
+            compare = left.Type.CompareTo(right.Type);
             return compare != 0 ? compare : left.Id.CompareTo(right.Id);
         });
     }
@@ -1030,23 +1147,130 @@ internal sealed class RlOneVsOneAgent : Agent
                 continue;
             }
 
-            MiningAsteroid asteroid = _mapObjectCandidates[slot];
-            Vector2 relative = (Vector2)asteroid.transform.localPosition - origin;
+            ObservedMapObject mapObject = _mapObjectCandidates[slot];
+            Vector2 relative = mapObject.Position - origin;
             sensor.AddObservation(1f);
-            AddEnumBits(sensor, MiningAsteroidObservationType, MapObjectTypeBitCount);
+            AddEnumBits(sensor, mapObject.Type, MapObjectTypeBitCount);
             sensor.AddObservation(SquashSignedDistance(relative.x));
             sensor.AddObservation(SquashSignedDistance(relative.y));
-            sensor.AddObservation(GetMiningAsteroidResourceFraction(asteroid));
-
-            float extent = 0f;
-            if (asteroid.Collider != null)
-            {
-                Bounds bounds = asteroid.Collider.bounds;
-                extent = Mathf.Max(bounds.extents.x, bounds.extents.y);
-            }
-            sensor.AddObservation(NormalizePositive(extent, 20f));
-            sensor.AddObservation(NormalizePositive(asteroid.SquadsMining.Count, 4f));
+            sensor.AddObservation(mapObject.HealthFraction);
+            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.x, 20f));
+            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.y, 20f));
+            sensor.AddObservation(mapObject.Targetable ? 1f : 0f);
+            sensor.AddObservation(NormalizePositive(mapObject.Activity, 4f));
         }
+    }
+
+    private void CollectVisibleObstacles(Vector2 origin)
+    {
+        _obstacleCandidates.Clear();
+        foreach (Obstacle obstacle in _ship.Level.State.GetObstaclesVisibleToHiveMind(_side))
+        {
+            if (obstacle == null || obstacle.IsDead || obstacle is MiningAsteroid || obstacle is AsteroidPiece)
+            {
+                continue;
+            }
+
+            Collider2D collider = obstacle.ClearanceMappingCollider != null
+                ? obstacle.ClearanceMappingCollider
+                : obstacle.Collider;
+            GetColliderGeometry(_ship.Level, collider, obstacle.GetPosition(), out Vector2 position, out Vector2 halfExtents);
+
+            Vector2 velocity = Vector2.zero;
+            if (obstacle is CollisionAsteroid collisionAsteroid && collisionAsteroid.Body != null)
+            {
+                velocity = GetLevelLocalVelocity(_ship.Level, collisionAsteroid.Body.linearVelocity);
+            }
+
+            float healthFraction = obstacle.OriginalHealth > 0
+                ? Mathf.Clamp01((float)obstacle.Health / obstacle.OriginalHealth)
+                : 0f;
+            _obstacleCandidates.Add(new ObservedObstacle(
+                obstacle.Id,
+                (int)obstacle.ObstacleType,
+                position,
+                halfExtents,
+                obstacle.transform.localEulerAngles.z,
+                velocity,
+                healthFraction,
+                obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid));
+        }
+
+        _obstacleCandidates.Sort((left, right) =>
+        {
+            int compare = DistanceSquaredToBounds(left, origin).CompareTo(DistanceSquaredToBounds(right, origin));
+            if (compare != 0)
+            {
+                return compare;
+            }
+            compare = left.Type.CompareTo(right.Type);
+            return compare != 0 ? compare : left.Id.CompareTo(right.Id);
+        });
+    }
+
+    private void AddObstacleSlots(VectorSensor sensor, Vector2 origin)
+    {
+        for (int slot = 0; slot < MaxObservedObstacles; slot++)
+        {
+            if (slot >= _obstacleCandidates.Count)
+            {
+                AddZeroObservations(sensor, ObstacleObservationSize);
+                continue;
+            }
+
+            ObservedObstacle obstacle = _obstacleCandidates[slot];
+            Vector2 relative = obstacle.Position - origin;
+            sensor.AddObservation(1f);
+            AddEnumBits(sensor, obstacle.Type, ObstacleTypeBitCount);
+            sensor.AddObservation(SquashSignedDistance(relative.x));
+            sensor.AddObservation(SquashSignedDistance(relative.y));
+            sensor.AddObservation(NormalizePositive(obstacle.HalfExtents.x, 20f));
+            sensor.AddObservation(NormalizePositive(obstacle.HalfExtents.y, 20f));
+            AddHeading(sensor, obstacle.Rotation);
+            sensor.AddObservation(SquashSignedDistance(obstacle.Velocity.x));
+            sensor.AddObservation(SquashSignedDistance(obstacle.Velocity.y));
+            sensor.AddObservation(obstacle.HealthFraction);
+            sensor.AddObservation(obstacle.Targetable ? 1f : 0f);
+        }
+    }
+
+    private static void GetColliderGeometry(
+        Level level,
+        Collider2D collider,
+        Vector2 fallbackPosition,
+        out Vector2 position,
+        out Vector2 halfExtents)
+    {
+        position = fallbackPosition;
+        halfExtents = Vector2.zero;
+        if (collider == null || !collider.enabled)
+        {
+            return;
+        }
+
+        Bounds bounds = collider.bounds;
+        Vector2 min = PathfinderObstacleScope.WorldToLevel(level, bounds.min);
+        Vector2 max = PathfinderObstacleScope.WorldToLevel(level, bounds.max);
+        position = (min + max) * 0.5f;
+        halfExtents = new Vector2(
+            Mathf.Abs(max.x - min.x) * 0.5f,
+            Mathf.Abs(max.y - min.y) * 0.5f);
+    }
+
+    private static Vector2 GetLevelLocalVelocity(Level level, Vector2 worldVelocity)
+    {
+        Transform mapTransform = level?.Map?.Transform;
+        return mapTransform != null
+            ? (Vector2)mapTransform.InverseTransformVector(worldVelocity)
+            : worldVelocity;
+    }
+
+    private static float DistanceSquaredToBounds(ObservedObstacle obstacle, Vector2 origin)
+    {
+        Vector2 relative = obstacle.Position - origin;
+        float dx = Mathf.Max(0f, Mathf.Abs(relative.x) - obstacle.HalfExtents.x);
+        float dy = Mathf.Max(0f, Mathf.Abs(relative.y) - obstacle.HalfExtents.y);
+        return dx * dx + dy * dy;
     }
 
     private Ship FindNearestVisibleEnemy()
