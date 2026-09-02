@@ -78,7 +78,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void OneVsOneSetupUsesOneExplicitFleetShipInsteadOfRandomSquadSizes()
+        public void OneVsOneSetupUsesExplicitFleetShipsWithoutArmedTypeRestriction()
         {
             string source = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
             int methodStart = source.IndexOf("private void AddRlOneVsOneSquadForSetup", StringComparison.Ordinal);
@@ -91,7 +91,10 @@ namespace Bees.Tests.EditMode
             Assert.That(method, Does.Contain("new FleetShip("));
             Assert.That(method, Does.Contain("new SquadShip(fleetShip, Vector2.zero)"));
             Assert.That(method, Does.Not.Contain("SetupRandomShips"));
-            Assert.That(method, Does.Contain("ConfigData.ArmedShipTypes.Contains(type)"));
+            Assert.That(method, Does.Not.Contain("ConfigData.ArmedShipTypes.Contains(type)"),
+                "Dedicated RL training must accept utility, special, stationary, and spawned-only ship types.");
+            Assert.That(method, Does.Contain("Utilities.ConvertShipTypeToSide[type] != side"),
+                "Dedicated RL training must still reject a ship configured for the wrong faction.");
         }
 
         [Test]
