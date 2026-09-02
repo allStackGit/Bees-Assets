@@ -1,6 +1,7 @@
 default_settings: null
 behaviors:
   BeesRL1v1:
+    init_path: "results/bees-rl-1v1-003/BeesRL1v1/BeesRL1v1-3676068.pt"
     trainer_type: ppo
     hyperparameters:
       batch_size: 128
@@ -36,7 +37,7 @@ behaviors:
           goal_conditioning_type: hyper
           deterministic: false
     init_path: null
-    keep_checkpoints: 5
+    keep_checkpoints: 500
     even_checkpoints: false
     max_steps: 5000000000000
     time_horizon: 256
@@ -51,10 +52,22 @@ behaviors:
       initial_elo: 1200.0
     behavioral_cloning: null
 env_settings:
-  env_path: null
-  env_args: null
+  env_path: F:\RLDemo\Bees RL Training
+  env_args:
+  - --rl-health-ratio
+  - '1'
+  - --rl-map-size
+  - '45'
+  - --rl-episode-timeout
+  - '120'
+  - --rl-ships-per-side
+  - '1'
+  - --rl-bee-ship-types
+  - Wasp
+  - --rl-human-ship-types
+  - Gunship
   base_port: 5005
-  num_envs: 1
+  num_envs: 4
   num_areas: 1
   timeout_wait: 60
   seed: -1
@@ -68,7 +81,7 @@ engine_settings:
   time_scale: 20
   target_frame_rate: -1
   capture_frame_rate: 60
-  no_graphics: false
+  no_graphics: true
   no_graphics_monitor: false
 environment_parameters: null
 checkpoint_settings:
