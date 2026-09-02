@@ -18,9 +18,11 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(15));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(16));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedObstacles"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(8));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(10));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(879));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObstacleObservationSize"), Is.EqualTo(15));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(1871));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
@@ -34,16 +36,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void EnumIdentityEncodingHasCapacityForEveryCurrentShipAndWeaponType()
+        public void EnumIdentityEncodingHasCapacityForEveryCurrentShipWeaponAndObstacleType()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             int shipBits = (int)RuntimeAssembly.GetStaticField(agentType, "ShipTypeBitCount");
             int weaponBits = (int)RuntimeAssembly.GetStaticField(agentType, "WeaponTypeBitCount");
+            int obstacleBits = (int)RuntimeAssembly.GetStaticField(agentType, "ObstacleTypeBitCount");
             int shipTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes")).Length;
             int weaponTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+WeaponTypes")).Length;
+            int obstacleTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ObstacleTypes")).Length;
 
             Assert.That(1 << shipBits, Is.GreaterThanOrEqualTo(shipTypeCount));
             Assert.That(1 << weaponBits, Is.GreaterThanOrEqualTo(weaponTypeCount));
+            Assert.That(1 << obstacleBits, Is.GreaterThanOrEqualTo(obstacleTypeCount));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTypeBitCount"), Is.EqualTo(4));
         }
 
@@ -83,34 +88,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PassiveBeaconVisionCanDiscoverMiningAsteroidsForTheWholeSide()
+        public void PassiveBeaconCanContributeMiningKnowledgeWithoutReceivingPolicy()
         {
             GameObject stateObject = new GameObject("RL Shared Vision State Test");
             GameObject beaconObject = new GameObject("RL Shared Vision Beacon Test");
-            GameObject visionObject = new GameObject("RL Shared Vision Collider Test");
             GameObject asteroidObject = new GameObject("RL Shared Vision Asteroid Test");
             try
             {
                 Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
                 Component beacon = beaconObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Beacon"));
-                Component vision = visionObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.HiveMindVision"));
-                CircleCollider2D visionCollider = visionObject.AddComponent<CircleCollider2D>();
                 Component asteroid = asteroidObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.MiningAsteroid"));
 
                 RuntimeAssembly.SetField(beacon, "Side", 1);
                 RuntimeAssembly.SetField(beacon, "IsHiveMindControlled", true);
-                RuntimeAssembly.SetField(beacon, "Transform", beaconObject.transform);
-                RuntimeAssembly.SetField(beacon, "HiveMindVision", vision);
-                RuntimeAssembly.SetField(vision, "Collider", visionCollider);
-                RuntimeAssembly.SetField(vision, "Ship", beacon);
-                visionCollider.radius = 10f;
-                asteroidObject.transform.localPosition = new Vector3(5f, 0f, 0f);
 
-                Array shipsBySide = (Array)RuntimeAssembly.GetField(state, "ShipsBySide");
-                RuntimeAssembly.AddToCollection(shipsBySide.GetValue(0), beacon);
-                RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(state, "MiningAsteroids"), asteroid);
-
-                RuntimeAssembly.Invoke(state, "RefreshHiveMindMapObjectVision", 1);
+                Assert.That((bool)RuntimeAssembly.Invoke(
+                    state,
+                    "RecordHiveMindMiningAsteroidSighting",
+                    beacon,
+                    asteroid), Is.True);
 
                 Array caches = (Array)RuntimeAssembly.GetField(state, "HiveMindMiningAsteroidCache");
                 Assert.That(RuntimeAssembly.GetCount(caches.GetValue(0)), Is.EqualTo(1));
@@ -124,23 +120,26 @@ namespace Bees.Tests.EditMode
             finally
             {
                 UnityEngine.Object.DestroyImmediate(asteroidObject);
-                UnityEngine.Object.DestroyImmediate(visionObject);
                 UnityEngine.Object.DestroyImmediate(beaconObject);
                 UnityEngine.Object.DestroyImmediate(stateObject);
             }
         }
 
         [Test]
-        public void HiveMindMiningKnowledgeIsSideWidePersistentAndResettable()
+        public void HiveMindEnvironmentalKnowledgeIsSideWidePersistentAndResettable()
         {
             GameObject stateObject = new GameObject("RL Hive Mind State Test");
             GameObject observerObject = new GameObject("RL Hive Mind Observer Test");
             GameObject asteroidObject = new GameObject("RL Hive Mind Asteroid Test");
+            GameObject obstacleObject = new GameObject("RL Hive Mind Obstacle Test");
+            GameObject mapObjectObject = new GameObject("RL Hive Mind Map Object Test");
             try
             {
                 Component state = stateObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.GameState"));
                 Component observer = observerObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
                 Component asteroid = asteroidObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.MiningAsteroid"));
+                Component obstacle = obstacleObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.StaticObstacle"));
+                Component mapObject = mapObjectObject.AddComponent(RuntimeAssembly.GetType("MapObject"));
                 RuntimeAssembly.SetField(observer, "Side", 1);
                 RuntimeAssembly.SetField(observer, "IsHiveMindControlled", true);
 
@@ -155,21 +154,100 @@ namespace Bees.Tests.EditMode
                     observer,
                     asteroid), Is.False,
                     "Repeated sightings should preserve one side-wide memory entry.");
+                Assert.That((bool)RuntimeAssembly.Invoke(
+                    state,
+                    "RecordHiveMindObstacleSighting",
+                    observer,
+                    obstacle), Is.True);
+                Assert.That((bool)RuntimeAssembly.Invoke(
+                    state,
+                    "RecordHiveMindMapObjectSighting",
+                    observer,
+                    mapObject), Is.True);
 
-                Array caches = (Array)RuntimeAssembly.GetField(state, "HiveMindMiningAsteroidCache");
-                Assert.That(RuntimeAssembly.GetCount(caches.GetValue(0)), Is.EqualTo(1));
-                Assert.That(RuntimeAssembly.GetCount(caches.GetValue(1)), Is.Zero);
+                Array miningCaches = (Array)RuntimeAssembly.GetField(state, "HiveMindMiningAsteroidCache");
+                Array obstacleCaches = (Array)RuntimeAssembly.GetField(state, "HiveMindObstacleCache");
+                Array mapObjectCaches = (Array)RuntimeAssembly.GetField(state, "HiveMindMapObjectCache");
+                Assert.That(RuntimeAssembly.GetCount(miningCaches.GetValue(0)), Is.EqualTo(1));
+                Assert.That(RuntimeAssembly.GetCount(obstacleCaches.GetValue(0)), Is.EqualTo(2),
+                    "Mining asteroids are also obstacle knowledge even though the policy emits them in strategic slots only.");
+                Assert.That(RuntimeAssembly.GetCount(mapObjectCaches.GetValue(0)), Is.EqualTo(1));
 
                 RuntimeAssembly.Invoke(state, "ResetState");
-                Assert.That(RuntimeAssembly.GetCount(caches.GetValue(0)), Is.Zero,
-                    "Level reset must clear discovered strategic objects from the prior lifecycle.");
+                Assert.That(RuntimeAssembly.GetCount(miningCaches.GetValue(0)), Is.Zero);
+                Assert.That(RuntimeAssembly.GetCount(obstacleCaches.GetValue(0)), Is.Zero);
+                Assert.That(RuntimeAssembly.GetCount(mapObjectCaches.GetValue(0)), Is.Zero,
+                    "Level reset must clear discovered environment from the prior lifecycle.");
             }
             finally
             {
+                UnityEngine.Object.DestroyImmediate(mapObjectObject);
+                UnityEngine.Object.DestroyImmediate(obstacleObject);
                 UnityEngine.Object.DestroyImmediate(asteroidObject);
                 UnityEngine.Object.DestroyImmediate(observerObject);
                 UnityEngine.Object.DestroyImmediate(stateObject);
             }
+        }
+
+        [Test]
+        public void NeuralTrainingKeepsEveryShipOnActivatedHiveMindVisionPath()
+        {
+            string lifecycle = ReadSource("Scripts", "Entities", "Ships", "Ship.Lifecycle.cs");
+            string vision = ReadSource("Scripts", "Entities", "Ships", "Weapons", "HivemindVision.cs");
+
+            Assert.That(lifecycle, Does.Contain("IsHiveMindControlled = Stage.IsTrainingNueralNetwork || !IsUserControlled"));
+            Assert.That(lifecycle, Does.Contain("IsUserControlled && !Stage.IsTrainingNueralNetwork"));
+            Assert.That(lifecycle, Does.Contain("if (IsHiveMindControlled)"));
+            Assert.That(lifecycle, Does.Contain("HiveMindVision.Activate()"));
+            Assert.That(vision, Does.Contain("public bool CanSee(Collider2D targetCollider"));
+            Assert.That(vision, Does.Contain("targetCollider.ClosestPoint(observerWorldPosition)"),
+                "Large targets and walls should become visible when their collider edge enters sight, not only when their center does.");
+        }
+
+        [Test]
+        public void SharedVisionRefreshCoversEnemyShipsObstaclesAndTargetableMapObjects()
+        {
+            string queries = ReadSource("Scripts", "Levels", "GameState.Queries.cs");
+
+            Assert.That(queries, Does.Contain("observer.HiveMindVision.CanSee(spotted.Collider, spotted.GetPosition())"));
+            Assert.That(queries, Does.Contain("RecordHiveMindSighting(observer, spotted)"),
+                "HumanTarget and every other enemy Ship type must use the ordinary shared enemy-ship vision path.");
+            Assert.That(queries, Does.Contain("PathfinderObstacleScope.GetActiveObstacleObjects(Level)"));
+            Assert.That(queries, Does.Contain("RecordHiveMindObstacleSighting(observer, obstacle)"));
+            Assert.That(queries, Does.Contain("GetComponentsInChildren<MapObject>(false)"));
+            Assert.That(queries, Does.Contain("RecordHiveMindMapObjectSighting(observer, mapObject)"));
+        }
+
+        [Test]
+        public void EnvironmentObservationsExposeGeometryMotionAndTargetability()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(source, Does.Contain("GetObstaclesVisibleToHiveMind(_side)"));
+            Assert.That(source, Does.Contain("collisionAsteroid.Body.linearVelocity"));
+            Assert.That(source, Does.Contain("obstacle.HalfExtents.x"));
+            Assert.That(source, Does.Contain("obstacle.HalfExtents.y"));
+            Assert.That(source, Does.Contain("AddHeading(sensor, obstacle.Rotation)"));
+            Assert.That(source, Does.Contain("obstacle.ObstacleType == ConfigData.ObstacleTypes.CollisionAsteroid"));
+            Assert.That(source, Does.Contain("mapObject is CanisterBomb"));
+            Assert.That(source, Does.Contain("FireTankObservationType"));
+            Assert.That(source, Does.Contain("mapObject.Targetable ? 1f : 0f"));
+        }
+
+        [Test]
+        public void TargetableNonShipObjectsCanBeHitByRlPointFire()
+        {
+            string projectile = ReadSource("Scripts", "Entities", "Projectiles", "Projectile.cs");
+            string mapObject = ReadSource("Scripts", "Entities", "MapObject.cs");
+            string turret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
+
+            Assert.That(projectile, Does.Contain("DamageObstacle((CollisionAsteroid)obstacle)"),
+                "Collision asteroids must remain destructible by ordinary projectiles.");
+            Assert.That(mapObject, Does.Contain("Health -= LastHitProjectile.Power"),
+                "Targetable MapObjects such as the Fire Tank must remain destructible by projectile contact.");
+            Assert.That(turret, Does.Contain("if (IsRlControlled)"));
+            Assert.That(turret, Does.Contain("FireAtPoint()"),
+                "RL turrets must be able to shoot an observed point without a scripted Ship target.");
         }
 
         [Test]
@@ -182,6 +260,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("((int)left.ShipType).CompareTo((int)right.ShipType)"));
             Assert.That(source, Does.Contain("left.Id.CompareTo(right.Id)"));
             Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
+            Assert.That(source, Does.Contain("_obstacleCandidates.Sort"));
+            Assert.That(source, Does.Contain("left.Type.CompareTo(right.Type)"));
             Assert.That(source, Does.Contain("Weapon is an authored List rather than an unordered set"));
         }
 
