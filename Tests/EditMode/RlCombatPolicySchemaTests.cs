@@ -15,28 +15,31 @@ namespace Bees.Tests.EditMode
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
 
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(48));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMiningAsteroids"), Is.EqualTo(8));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedCollisionAsteroids"), Is.EqualTo(48));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemyWeaponMounts"), Is.EqualTo(16));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridSize"), Is.EqualTo(13));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridCellCount"), Is.EqualTo(169));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(8));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(28));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(29));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "CapabilityObservationSize"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(19));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(3413));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4685));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(17));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponCommandBranchSize"), Is.EqualTo(33));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ShipSpecialAction"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "HealingAction"), Is.EqualTo(3));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WarpAction"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(49));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(49));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(65));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(65));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(65));
         }
 
@@ -47,9 +50,9 @@ namespace Bees.Tests.EditMode
             Type optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
 
             int trainingMaximum = (int)RuntimeAssembly.GetStaticField(optionsType, "MaximumShipsPerSide");
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(48));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(48));
-            Assert.That(48, Is.GreaterThan(trainingMaximum),
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(64));
+            Assert.That(64, Is.GreaterThan(trainingMaximum),
                 "Deployment-scale tactical perception must not be capped by the current curriculum population limit.");
         }
 
