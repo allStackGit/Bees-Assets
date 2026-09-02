@@ -343,7 +343,9 @@ internal sealed class RlCombatPerception
     private void AddEnemyWeaponMountSlots(VectorSensor sensor, Vector2 origin)
     {
         int written = 0;
-        for (int enemyIndex = 0; enemyIndex < _enemyCandidates.Count && written < MaxObservedEnemyWeaponMounts; enemyIndex++)
+        for (int enemyIndex = 0;
+             enemyIndex < _enemyCandidates.Count && enemyIndex < MaxObservedEnemies && written < MaxObservedEnemyWeaponMounts;
+             enemyIndex++)
         {
             Ship enemy = _enemyCandidates[enemyIndex];
             if (enemy.Weapons == null)
@@ -722,7 +724,7 @@ internal sealed class RlCombatPerception
         }
         if (ship is Barge barge)
         {
-            return !barge.HasStartedCharging && !barge.IsCharging ? 1f : 0f;
+            return barge.IsRlChargeReady ? 1f : 0f;
         }
         if (ship is FireBarge)
         {
@@ -748,7 +750,7 @@ internal sealed class RlCombatPerception
         }
         if (ship is Barge barge)
         {
-            return !barge.HasStartedCharging && !barge.IsCharging ? 1f : 0f;
+            return barge.IsRlChargeReady ? 1f : 0f;
         }
         return ship is YellowJacket || ship is FireBarge ? 1f : 0f;
     }
