@@ -45,14 +45,16 @@ internal sealed class RlOneVsOneMatchupSampler
             throw new ArgumentException("At least one Human ship type is required.", nameof(humanShipTypes));
         }
 
+        int beeSide = GetSideForShipType(ConfigData.ShipTypes.Wasp);
+        int humanSide = GetSideForShipType(ConfigData.ShipTypes.Gunship);
         for (int beeIndex = 0; beeIndex < beeShipTypes.Count; beeIndex++)
         {
             ConfigData.ShipTypes beeShipType = beeShipTypes[beeIndex];
-            ValidateSide(beeShipType, ConfigData.Configuration.BeeSide, nameof(beeShipTypes));
+            ValidateSide(beeShipType, beeSide, nameof(beeShipTypes));
             for (int humanIndex = 0; humanIndex < humanShipTypes.Count; humanIndex++)
             {
                 ConfigData.ShipTypes humanShipType = humanShipTypes[humanIndex];
-                ValidateSide(humanShipType, ConfigData.Configuration.HumanSide, nameof(humanShipTypes));
+                ValidateSide(humanShipType, humanSide, nameof(humanShipTypes));
                 _cycle.Add(new RlOneVsOneMatchup(beeShipType, humanShipType));
             }
         }
@@ -81,6 +83,16 @@ internal sealed class RlOneVsOneMatchupSampler
             _cycle[swapIndex] = temporary;
         }
         _nextIndex = 0;
+    }
+
+    internal static int GetSideForShipType(ConfigData.ShipTypes shipType)
+    {
+        int side;
+        if (!Utilities.ConvertShipTypeToSide.TryGetValue(shipType, out side))
+        {
+            throw new InvalidOperationException($"No faction side is registered for ship type {shipType}.");
+        }
+        return side;
     }
 
     internal static void ValidateSide(ConfigData.ShipTypes shipType, int expectedSide, string parameterName)
@@ -188,13 +200,15 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             return;
         }
 
+        int beeSide = RlOneVsOneMatchupSampler.GetSideForShipType(ConfigData.ShipTypes.Wasp);
+        int humanSide = RlOneVsOneMatchupSampler.GetSideForShipType(ConfigData.ShipTypes.Gunship);
         _beeShuffleBag = new RlShipTypeShuffleBag(
             options.BeeShipTypes,
-            ConfigData.Configuration.BeeSide,
+            beeSide,
             unchecked(seed * 31 + BeeShuffleSeedOffset));
         _humanShuffleBag = new RlShipTypeShuffleBag(
             options.HumanShipTypes,
-            ConfigData.Configuration.HumanSide,
+            humanSide,
             unchecked(seed * 31 + HumanShuffleSeedOffset));
         _currentBeeComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _currentHumanComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
