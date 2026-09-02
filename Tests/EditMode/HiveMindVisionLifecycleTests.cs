@@ -14,13 +14,15 @@ namespace Bees.Tests.EditMode
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Weapons", "HivemindVision.cs");
             string source = File.ReadAllText(path);
 
-            int methodStart = source.IndexOf("private void RecordSighting(");
+            int methodStart = source.IndexOf("private void RecordShipSighting()");
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
 
-            int addVisibility = source.IndexOf("RecordHiveMindSighting(Ship, _shipEnter)", methodStart);
+            int addVisibility = source.IndexOf("state.RecordHiveMindSighting(Ship, _shipEnter)", methodStart);
+            int rewardSquad = source.IndexOf("Squad rewardSquad", methodStart);
             int commandEligibility = source.IndexOf("!rewardSquad.HasCommand", methodStart);
             Assert.That(addVisibility, Is.GreaterThan(methodStart));
-            Assert.That(commandEligibility, Is.GreaterThan(addVisibility));
+            Assert.That(rewardSquad, Is.GreaterThan(addVisibility));
+            Assert.That(commandEligibility, Is.GreaterThan(rewardSquad));
         }
 
         [Test]
