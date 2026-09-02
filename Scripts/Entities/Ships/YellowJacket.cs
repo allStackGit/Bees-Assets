@@ -11,7 +11,6 @@ namespace Assets.Scripts.Entities.Ships
 {
     public class YellowJacket : Ship
     {
-
         public bool HasCompletedRun;
         public Ship ContactedShip, TouchingShip;
 
@@ -19,7 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void Create(Stage stage)
         {
             base.Create(stage);
-            Bomb = (Bomb) Weapons.First();
+            Bomb = (Bomb)Weapons.First();
             Destroy(Bomb.Piece);
             IsBomber = true;
         }
@@ -55,7 +54,6 @@ namespace Assets.Scripts.Entities.Ships
                 {
                     ContactedShip = TouchingShip;
                     Detonate();
-
                 }
             }
         }
@@ -82,9 +80,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ContactedShip = TouchingShip;
                 Detonate();
-                return;
             }
-
         }
         private void Detonate()
         {
@@ -103,7 +99,6 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad);
-
         }
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
@@ -115,18 +110,22 @@ namespace Assets.Scripts.Entities.Ships
         private int _targetOldTSV, _targetTSVLoss;
         private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
         {
+            int appliedDamage = math.min(target.Health, power);
             _targetOldTSV = target.Tsv;
-            target.Health -= math.min(target.Health, power);
+            target.Health -= appliedDamage;
             target.Tsv = Utilities.CalculateTsv(target);
 
-
             _targetTSVLoss = target.Tsv - _targetOldTSV;
+
+            // Yellow Jacket detonation applies damage directly rather than through a Projectile, so
+            // emit the same immediate RL outcome signal used by ordinary weapon impacts. Outside the
+            // dedicated RL runtime the coordinator is inactive and this is a no-op.
+            global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
+
             // LogHitStats owns attacker/target command TSV accounting as well as persistent
             // combat stats. Do not apply the same command reward/penalty again here.
             LogHitStats(attacker, attacker.FleetShip, attacker.Squad.SavedSquad, target, target.Squad, -_targetTSVLoss);
             target.UpdateHealthBar();
-
-
         }
     }
 }

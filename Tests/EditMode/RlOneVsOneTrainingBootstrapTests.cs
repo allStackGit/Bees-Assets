@@ -78,7 +78,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void OneVsOneSetupUsesOneExplicitFleetShipInsteadOfRandomSquadSizes()
+        public void OneVsOneSetupUsesExplicitFleetShipsWithoutArmedTypeRestriction()
         {
             string source = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
             int methodStart = source.IndexOf("private void AddRlOneVsOneSquadForSetup", StringComparison.Ordinal);
@@ -91,7 +91,10 @@ namespace Bees.Tests.EditMode
             Assert.That(method, Does.Contain("new FleetShip("));
             Assert.That(method, Does.Contain("new SquadShip(fleetShip, Vector2.zero)"));
             Assert.That(method, Does.Not.Contain("SetupRandomShips"));
-            Assert.That(method, Does.Contain("ConfigData.ArmedShipTypes.Contains(type)"));
+            Assert.That(method, Does.Not.Contain("ConfigData.ArmedShipTypes.Contains(type)"),
+                "Dedicated RL training must accept utility, special, stationary, and spawned-only ship types.");
+            Assert.That(method, Does.Contain("Utilities.ConvertShipTypeToSide[type] != side"),
+                "Dedicated RL training must still reject a ship configured for the wrong faction.");
         }
 
         [Test]
@@ -173,14 +176,16 @@ namespace Bees.Tests.EditMode
         [Test]
         public void PolicyUsesOneSharedBehaviorAndOnlyHiveMindEnemyKnowledge()
         {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("BehaviorName = \"BeesRL1v1\""));
-            Assert.That(agent, Does.Contain("ContinuousActionCount = 5"));
+
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "BehaviorName"), Is.EqualTo("BeesRL1v1"));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(34));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 1"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 1"));
-            Assert.That(agent, Does.Contain("GetShipsVisibleToHiveMind(_side)"));
+            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor)"));
             Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
         }
 
@@ -199,26 +204,32 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PolicyObservationsUseMovementFlagsAndWeaponPower()
+        public void PolicyObservationsUseFrozenTacticalPerception()
         {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(agent, Does.Contain("ObservationSize = 24"));
-            Assert.That(agent, Does.Contain("_ship.IsMoving ? 1f : 0f"));
-            Assert.That(agent, Does.Contain("enemy.IsMoving ? 1f : 0f"));
-            Assert.That(agent, Does.Contain("sensor.AddObservation((float)turret.Power);"));
-            Assert.That(agent, Does.Not.Contain("GetVelocity("));
-            Assert.That(agent, Does.Not.Contain("relativeVelocity"));
-            Assert.That(agent, Does.Contain("AddZeroObservations(sensor, 8)"));
-            Assert.That(agent, Does.Contain("AddZeroObservations(sensor, 9)"));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4685));
+            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor)"));
+            Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin)"));
+            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin)"));
+            Assert.That(perception, Does.Contain("AddEnemyWeaponMountSlots(sensor, origin)"));
+            Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor)"));
+            Assert.That(perception, Does.Not.Contain("Projectile"),
+                "Projectile-evasion observations are intentionally outside the canonical policy.");
         }
 
         [Test]
-        public void PolicyOwnsMovementAimAndFireWhileWeaponTimerOwnsRateOfFire()
+        public void PolicyOwnsMovementAndIndependentWeaponAimFireWhileWeaponTimerOwnsRateOfFire()
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             Assert.That(agent, Does.Contain("_ship.Direction = 360"));
-            Assert.That(agent, Does.Contain("turret.SetRlControl(targetPoint, fireRequested)"));
+            Assert.That(agent, Does.Contain("for (int slot = 0; slot < MaxWeaponSlots; slot++)"));
+            Assert.That(agent, Does.Contain("WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot"));
+            Assert.That(agent, Does.Contain("discrete[WeaponFireBranchStart + slot] == FireWeaponAction"));
+            Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire)"));
+            Assert.That(agent, Does.Contain("turret.SetRlControl(target, fire)"));
 
             string aiming = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
             int rlAim = aiming.IndexOf("if (IsRlControlled)", StringComparison.Ordinal);

@@ -108,8 +108,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     /// <summary>
     /// Trainer adapters can subscribe to these without putting trainer-specific dependencies into
-    /// the battle scene or the core Level lifecycle. TSV shaping is emitted at the hit that caused it;
-    /// the episode event carries terminal/time rewards and diagnostic totals.
+    /// the battle scene or the core Level lifecycle. TSV shaping is emitted when the real outcome
+    /// occurs; the episode event carries terminal/time rewards and diagnostic totals.
     /// </summary>
     internal static event Action<int, float> TsvRewardOccurred;
     internal static event Action<EpisodeResult> EpisodeEnded;
@@ -201,11 +201,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns whether this fixed ML-Agents team instance owns the physical side in the current battle.
-    /// Both team IDs alternate across physical factions every episode so GhostTrainer never equates one
-    /// learning team with one faction or configured ship composition.
-    /// </summary>
     internal static bool IsControllerForSide(int side, int teamId)
     {
         if (_active == null || !_active._episodeActive || ConfigData.Configuration == null)
@@ -244,8 +239,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Records a real enemy-ship hit after normal damage/TSV calculation has succeeded. Diagnostics
-    /// are updated and the exact TSV exchange is rewarded immediately instead of waiting for timeout.
+    /// Records a real enemy-ship hit after normal damage/TSV calculation has succeeded.
     /// </summary>
     internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
@@ -286,8 +280,28 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     }
 
     /// <summary>
-    /// Called by Level.LevelOver before the legacy neural-training reset path executes.
+    /// Rewards a primitive capability only after it produced a real useful outcome. The action that
+    /// attempted it is never rewarded by itself: mining must actually extract minerals, healing must
+    /// actually restore TSV, and warping must actually remove a valid ship through a gate.
     /// </summary>
+    internal static void RecordSuccessfulCapabilityOutcome(Ship ship, int tsvValue)
+    {
+        if (_active == null || !_active._episodeActive || ship == null || ship.Level != _active._level)
+        {
+            return;
+        }
+
+        int value = Mathf.Max(0, tsvValue);
+        if (value <= 0)
+        {
+            return;
+        }
+
+        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        float reward = RlOneVsOneReward.CalculateTsvLossReward(value, combinedStartingTsv);
+        _active.ApplyImmediateTsvReward(ship.Side, reward);
+    }
+
     internal static void CompleteElimination(Level level)
     {
         if (!CanHandle(level))
@@ -305,10 +319,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _active.CompleteEpisode(level, winningSide, false);
     }
 
-    /// <summary>
-    /// Called by Level.LevelTimeOut before SaveAndEnd tears the timed-out episode down.
-    /// A timeout deliberately has no winner, making the terminal reward a loss for both sides.
-    /// </summary>
     internal static void CompleteTimeout(Level level)
     {
         if (!CanHandle(level))
@@ -351,9 +361,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         List<Ship> humanShips = level.State.GetShips(humanSide);
         int expectedShips = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
 
-        // Initial TSV is populated while squads are spawned. Waiting for the complete configured
-        // rosters keeps the coordinator out of Stage/Level construction ordering and prevents the
-        // first few ships from beginning an episode before their teammates exist.
         if (beeStartingTsv <= 0 || humanStartingTsv <= 0 ||
             CountActiveShips(beeShips) < expectedShips || CountActiveShips(humanShips) < expectedShips ||
             level.State.GameOver)
@@ -425,8 +432,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide);
         float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide);
 
-        // Time is a tertiary preference among victories. Penalizing a losing side for elapsed time
-        // would teach it to die faster; timeouts are already a full terminal loss for both sides.
         float beeTimeReward = winningSide == beeSide
             ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)
             : 0f;

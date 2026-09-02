@@ -125,6 +125,7 @@ namespace Assets.Scripts.Levels
 
         public void RemoveObstacle(Obstacle obstacle)
         {
+            ForgetHiveMindObstacle(obstacle);
             Obstacles.Remove(obstacle);
         }
 
