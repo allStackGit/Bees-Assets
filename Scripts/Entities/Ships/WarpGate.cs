@@ -47,6 +47,11 @@ namespace Assets.Scripts.Entities.Ships
         public override void Setup(Level level, FleetShip fleetShip, Squad squad, Vector2 offsetFromCenter)
         {
             base.Setup(level, fleetShip, squad, offsetFromCenter);
+
+            // Warp Gates are mobile ships. Keep the shared capability flag explicit so generic
+            // controller discovery (including the RL policy adapter) never mistakes one for a
+            // stationary object because of stale or incomplete authored ship data.
+            IsMobile = true;
             ShipAnimationController.Deactivate();
             
         }
