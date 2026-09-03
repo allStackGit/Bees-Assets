@@ -10,12 +10,16 @@ It also accepts --bees-torch-threads N (or --bees-torch-threads=N) so small
 policy-inference workloads can benchmark PyTorch intra-op thread counts without
 patching the virtual environment.
 
---bees-batch-inference enables a Bees-specific optimization for ML-Agents 1.1.0:
+--bees-batch-inference enables Bees-specific ML-Agents 1.1.0 optimizations:
 idle subprocess workers that need an action for the same behavior are evaluated
 as one policy batch instead of one TorchPolicy.evaluate() call per worker. The
 result is split back into worker-local ActionInfo objects before Unity steps.
 Worker-qualified global agent IDs are preserved, so recurrent memory ownership
 and AgentProcessor indexing remain compatible with normal ML-Agents behavior.
+The batched path also replaces ML-Agents' tight Queue.get_nowait() worker-wait
+spin with a blocking wait for the first result, then drains all immediately ready
+workers. This preserves the original asynchronous stepping contract while giving
+CPU time back to Unity workers instead of burning a trainer core while waiting.
 
 --bees-cpu-inference extends batched inference with a CPU actor replica while
 leaving the trainer-owned policy, optimizer, checkpoints, normalization updates,
@@ -326,24 +330,25 @@ def _install_batched_inference(cpu_inference: bool = False):
         if not idle_workers:
             return
 
-        worker_actions: Dict[int, Dict[str, ActionInfo]] = {
-            worker.worker_id: {} for worker in idle_workers
-        }
-        behavior_entries = {}
+        with hierarchical_timer("BeesBatch.collect"):
+            worker_actions: Dict[int, Dict[str, ActionInfo]] = {
+                worker.worker_id: {} for worker in idle_workers
+            }
+            behavior_entries = {}
 
-        # Preserve the original _take_step contract: every behavior with a policy
-        # gets an ActionInfo entry, including behaviors with zero decision agents.
-        for worker in idle_workers:
-            for behavior_name, step_tuple in worker.previous_step.current_all_step_result.items():
-                if behavior_name not in self.policies:
-                    continue
-                decision_steps = step_tuple[0]
-                if len(decision_steps) == 0:
-                    worker_actions[worker.worker_id][behavior_name] = ActionInfo.empty()
-                    continue
-                behavior_entries.setdefault(behavior_name, []).append(
-                    (worker, decision_steps)
-                )
+            # Preserve the original _take_step contract: every behavior with a
+            # policy gets an ActionInfo entry, including zero-decision behaviors.
+            for worker in idle_workers:
+                for behavior_name, step_tuple in worker.previous_step.current_all_step_result.items():
+                    if behavior_name not in self.policies:
+                        continue
+                    decision_steps = step_tuple[0]
+                    if len(decision_steps) == 0:
+                        worker_actions[worker.worker_id][behavior_name] = ActionInfo.empty()
+                        continue
+                    behavior_entries.setdefault(behavior_name, []).append(
+                        (worker, decision_steps)
+                    )
 
         for behavior_name, entries in behavior_entries.items():
             policy = self.policies[behavior_name]
@@ -358,20 +363,21 @@ def _install_batched_inference(cpu_inference: bool = False):
                     )
                 continue
 
-            batched_steps = concatenate_decision_steps(
-                entries, policy.behavior_spec.action_spec
-            )
-            global_agent_ids = []
-            ranges = []
-            start = 0
-            for worker, decision_steps in entries:
-                end = start + len(decision_steps)
-                ranges.append((worker, decision_steps, start, end))
-                global_agent_ids.extend(
-                    get_global_agent_id(worker.worker_id, int(agent_id))
-                    for agent_id in decision_steps.agent_id
+            with hierarchical_timer("BeesBatch.prepare"):
+                batched_steps = concatenate_decision_steps(
+                    entries, policy.behavior_spec.action_spec
                 )
-                start = end
+                global_agent_ids = []
+                ranges = []
+                start = 0
+                for worker, decision_steps in entries:
+                    end = start + len(decision_steps)
+                    ranges.append((worker, decision_steps, start, end))
+                    global_agent_ids.extend(
+                        get_global_agent_id(worker.worker_id, int(agent_id))
+                        for agent_id in decision_steps.agent_id
+                    )
+                    start = end
 
             if cpu_actor_cache is None:
                 run_out = policy.evaluate(batched_steps, global_agent_ids)
@@ -389,26 +395,117 @@ def _install_batched_inference(cpu_inference: bool = False):
             policy.save_memories(global_agent_ids, run_out.get("memory_out"))
             policy.check_nan_action(run_out.get("action"))
 
-            for worker, decision_steps, start, end in ranges:
-                local_outputs = split_outputs(run_out, start, end)
-                worker_actions[worker.worker_id][behavior_name] = ActionInfo(
-                    action=local_outputs.get("action", ActionTuple()),
-                    env_action=local_outputs.get("env_action", ActionTuple()),
-                    outputs=local_outputs,
-                    agent_ids=list(decision_steps.agent_id),
-                )
+            with hierarchical_timer("BeesBatch.split"):
+                for worker, decision_steps, start, end in ranges:
+                    local_outputs = split_outputs(run_out, start, end)
+                    worker_actions[worker.worker_id][behavior_name] = ActionInfo(
+                        action=local_outputs.get("action", ActionTuple()),
+                        env_action=local_outputs.get("env_action", ActionTuple()),
+                        outputs=local_outputs,
+                        agent_ids=list(decision_steps.agent_id),
+                    )
 
         # Compute all available actions first, then release workers together. This
         # retains the original manager's parallel Unity stepping behavior while
         # replacing serial per-worker policy evaluation with per-behavior batches.
-        for worker in idle_workers:
-            all_action_info = worker_actions[worker.worker_id]
-            worker.previous_all_action_info = all_action_info
-            worker.send(EnvironmentCommand.STEP, all_action_info)
-            worker.waiting = True
+        with hierarchical_timer("BeesBatch.send"):
+            for worker in idle_workers:
+                all_action_info = worker_actions[worker.worker_id]
+                worker.previous_all_action_info = all_action_info
+                worker.send(EnvironmentCommand.STEP, all_action_info)
+                worker.waiting = True
 
     SubprocessEnvManager._queue_steps = batched_queue_steps
     return original_queue_steps
+
+
+def _install_fast_env_manager():
+    """Remove ML-Agents 1.1.0's busy-spin while waiting for Unity workers.
+
+    Upstream _step() repeatedly calls multiprocessing.Queue.get_nowait() until at
+    least one worker responds. On a heavily CPU-bound multi-environment run that
+    needlessly occupies a trainer CPU core while Unity is trying to advance. The
+    replacement blocks for the first response, then keeps the original behavior
+    of draining all responses that are already available before returning.
+
+    The experience-processing wrapper is timing-only. It makes the remaining
+    env_step cost attributable without changing AgentProcessor behavior.
+    """
+
+    from queue import Empty as EmptyQueueException
+
+    from mlagents.trainers.env_manager import EnvManager
+    from mlagents.trainers.subprocess_env_manager import (
+        EnvironmentCommand,
+        SubprocessEnvManager,
+    )
+    from mlagents_envs.timers import hierarchical_timer
+
+    original_step = SubprocessEnvManager._step
+    original_process_step_infos = EnvManager._process_step_infos
+
+    def fast_step(self):
+        # Queue actions for every worker that is ready, exactly as upstream does.
+        self._queue_steps()
+
+        worker_steps = []
+        step_workers = set()
+
+        # Upstream busy-polls get_nowait() here. A blocking Queue.get() has the
+        # same externally visible condition (do not return until >=1 result), but
+        # sleeps the trainer process while no worker is ready.
+        while not worker_steps:
+            with hierarchical_timer("BeesEnv.wait_first_worker"):
+                first_step = self.step_queue.get()
+
+            if first_step.cmd == EnvironmentCommand.ENV_EXITED:
+                self._restart_failed_workers(first_step)
+                worker_steps.clear()
+                step_workers.clear()
+                self._queue_steps()
+                continue
+
+            if first_step.worker_id not in step_workers:
+                self.env_workers[first_step.worker_id].waiting = False
+                worker_steps.append(first_step)
+                step_workers.add(first_step.worker_id)
+
+            restarted = False
+            with hierarchical_timer("BeesEnv.drain_ready_workers"):
+                while True:
+                    try:
+                        step = self.step_queue.get_nowait()
+                    except EmptyQueueException:
+                        break
+
+                    if step.cmd == EnvironmentCommand.ENV_EXITED:
+                        # Preserve upstream recovery semantics. This helper drains
+                        # any other concurrent failures before reset/restart.
+                        self._restart_failed_workers(step)
+                        worker_steps.clear()
+                        step_workers.clear()
+                        self._queue_steps()
+                        restarted = True
+                        break
+
+                    if step.worker_id not in step_workers:
+                        self.env_workers[step.worker_id].waiting = False
+                        worker_steps.append(step)
+                        step_workers.add(step.worker_id)
+
+            if restarted:
+                continue
+
+        with hierarchical_timer("BeesEnv.postprocess_steps"):
+            return self._postprocess_steps(worker_steps)
+
+    def timed_process_step_infos(self, step_infos):
+        with hierarchical_timer("BeesEnv.process_step_infos"):
+            return original_process_step_infos(self, step_infos)
+
+    SubprocessEnvManager._step = fast_step
+    EnvManager._process_step_infos = timed_process_step_infos
+    return original_step, original_process_step_infos
 
 
 def main() -> None:
@@ -428,6 +525,7 @@ def main() -> None:
     import mlagents.trainers
     from mlagents import torch_utils
     from mlagents.trainers import learn
+    from mlagents.trainers.env_manager import EnvManager
     from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
 
     actual_version = mlagents.trainers.__version__
@@ -444,11 +542,15 @@ def main() -> None:
         print(f"[Bees RL] PyTorch intra-op threads: {torch_threads}")
 
     original_queue_steps = None
+    original_env_step = None
+    original_process_step_infos = None
     if batch_inference:
         original_queue_steps = _install_batched_inference(
             cpu_inference=cpu_inference
         )
+        original_env_step, original_process_step_infos = _install_fast_env_manager()
         print("[Bees RL] Cross-worker policy inference batching: enabled")
+        print("[Bees RL] Blocking Unity-worker wait: enabled")
         if cpu_inference:
             print(
                 "[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; "
@@ -473,6 +575,10 @@ def main() -> None:
         torch_utils.torch.load = original_torch_load
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
+        if original_env_step is not None:
+            SubprocessEnvManager._step = original_env_step
+        if original_process_step_infos is not None:
+            EnvManager._process_step_infos = original_process_step_infos
 
 
 if __name__ == "__main__":
