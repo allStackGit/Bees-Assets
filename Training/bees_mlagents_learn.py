@@ -1,34 +1,15 @@
 """Bees launcher for ML-Agents 1.1.0 training.
 
-ML-Agents 1.1.0 loads PyTorch checkpoints without a map_location. A checkpoint
-saved while CUDA was active can therefore fail to resume on a CPU-only run
-before ML-Agents has a chance to restore the policy, optimizer, or running
-normalization state. This launcher keeps normal ML-Agents behavior but remaps
-all torch.load() checkpoint tensors to the device selected by --torch-device.
+This launcher keeps the project's ML-Agents 1.1.0 training/checkpoint behavior
+while applying Bees-specific performance and device fixes:
 
-It also accepts --bees-torch-threads N (or --bees-torch-threads=N) so small
-policy-inference workloads can benchmark PyTorch intra-op thread counts without
-patching the virtual environment.
-
---bees-batch-inference enables Bees-specific ML-Agents 1.1.0 optimizations:
-idle subprocess workers that need an action for the same behavior are evaluated
-as one policy batch instead of one TorchPolicy.evaluate() call per worker. The
-result is split back into worker-local ActionInfo objects before Unity steps.
-Worker-qualified global agent IDs are preserved, so recurrent memory ownership
-and AgentProcessor indexing remain compatible with normal ML-Agents behavior.
-The batched path also replaces ML-Agents' tight Queue.get_nowait() worker-wait
-spin with a blocking wait for the first result, then drains all immediately ready
-workers. This preserves the original asynchronous stepping contract while giving
-CPU time back to Unity workers instead of burning a trainer core while waiting.
-
---bees-cpu-inference extends batched inference with a CPU actor replica while
-leaving the trainer-owned policy, optimizer, checkpoints, normalization updates,
-and self-play policies on the device selected by --torch-device. It is intended
-for hybrid runs such as --torch-device=cuda: PPO updates stay on CUDA while
-environment action inference runs on CPU. Actor parameters are copied only after
-they change; normalization buffers are synchronized independently so normalize:
-true retains the same current statistics without copying the full network for
-every trajectory.
+* CUDA-saved checkpoints are remapped to the selected --torch-device on load.
+* --bees-torch-threads controls PyTorch intra-op CPU threads.
+* --bees-batch-inference batches idle workers by exact behavior id, keeps full
+  policy outputs in the trainer process, sends Unity only the environment action,
+  coalesces near-ready workers for 2 ms, and samples worker timer-tree IPC.
+* --bees-cpu-inference keeps PPO/optimizer state on --torch-device while using a
+  synchronized CPU actor replica for environment inference.
 
 All other arguments are passed unchanged to mlagents-learn.
 """
@@ -44,6 +25,9 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 THREAD_FLAG = "--bees-torch-threads"
 BATCH_INFERENCE_FLAG = "--bees-batch-inference"
 CPU_INFERENCE_FLAG = "--bees-cpu-inference"
+WORKER_COALESCE_SECONDS = 0.002
+WORKER_TIMER_SAMPLE_STEPS = 64
+_ORIGINAL_MLAGENTS_WORKER = None
 
 
 def _parse_positive_int(value: str, flag: str) -> int:
@@ -147,9 +131,6 @@ class _CpuInferenceActorCache:
         entry = self._entries.get(behavior_name)
 
         if entry is None or entry["source_actor"] is not source_actor:
-            # deepcopy preserves the exact actor architecture and all policy-specific
-            # settings. Moving only the replica to CPU leaves the trainer-owned actor
-            # and optimizer parameters on their original device.
             with hierarchical_timer("BeesCpuInference.create_replica"):
                 replica = copy.deepcopy(source_actor)
                 replica.to(torch.device("cpu"))
@@ -167,18 +148,12 @@ class _CpuInferenceActorCache:
         replica.train(source_actor.training)
 
         if parameter_signature != entry["parameter_signature"]:
-            # An optimizer step or self-play load_weights() changes parameters.
-            # Copy the whole actor state once before the next environment action.
             with hierarchical_timer("BeesCpuInference.sync_parameters"):
                 self._copy_parameters(source_actor, replica)
                 self._copy_buffers(source_actor, replica)
             entry["parameter_signature"] = parameter_signature
             entry["buffer_signature"] = buffer_signature
         elif buffer_signature != entry["buffer_signature"]:
-            # With normalize: true, ML-Agents replaces the running-normalization
-            # buffer tensors for each processed trajectory. Those buffers are tiny
-            # compared with the network, so keep them current without re-copying
-            # all actor parameters.
             with hierarchical_timer("BeesCpuInference.sync_buffers"):
                 self._copy_buffers(source_actor, replica)
             entry["buffer_signature"] = buffer_signature
@@ -186,16 +161,71 @@ class _CpuInferenceActorCache:
         return replica
 
 
+class _WorkerTimerSampler:
+    """Accumulate worker timers and transfer one tree every N environment steps."""
+
+    def __init__(self, get_timer_root, reset_timers, sample_steps: int) -> None:
+        self._get_timer_root = get_timer_root
+        self._reset_timers = reset_timers
+        self._sample_steps = sample_steps
+        self._step_count = 0
+        self._sample_due = False
+
+    def get_timer_root(self):
+        self._step_count += 1
+        self._sample_due = self._step_count % self._sample_steps == 0
+        if self._sample_due:
+            return self._get_timer_root()
+        return None
+
+    def reset_timers(self) -> None:
+        # The upstream worker calls reset_timers immediately after get_timer_root.
+        # Keep accumulating unsampled steps so the sampled tree still represents
+        # all worker work instead of under-reporting by the sampling factor.
+        if self._sample_due:
+            self._reset_timers()
+
+
+def _bees_sampled_worker(*args, **kwargs) -> None:
+    """Process target that reduces timer-tree IPC without changing Unity steps."""
+
+    import mlagents.trainers.subprocess_env_manager as subprocess_env_manager
+
+    global _ORIGINAL_MLAGENTS_WORKER
+    original_worker = _ORIGINAL_MLAGENTS_WORKER or subprocess_env_manager.worker
+    if original_worker is _bees_sampled_worker:
+        raise RuntimeError("Unable to resolve the original ML-Agents worker entry point.")
+
+    original_get_timer_root = subprocess_env_manager.get_timer_root
+    original_reset_timers = subprocess_env_manager.reset_timers
+    sampler = _WorkerTimerSampler(
+        original_get_timer_root,
+        original_reset_timers,
+        WORKER_TIMER_SAMPLE_STEPS,
+    )
+    subprocess_env_manager.get_timer_root = sampler.get_timer_root
+    subprocess_env_manager.reset_timers = sampler.reset_timers
+    try:
+        original_worker(*args, **kwargs)
+    finally:
+        subprocess_env_manager.get_timer_root = original_get_timer_root
+        subprocess_env_manager.reset_timers = original_reset_timers
+
+
+def _install_sampled_worker_timers():
+    """Make newly created subprocess workers use sampled timer-tree transfer."""
+
+    import mlagents.trainers.subprocess_env_manager as subprocess_env_manager
+
+    global _ORIGINAL_MLAGENTS_WORKER
+    original_worker = subprocess_env_manager.worker
+    _ORIGINAL_MLAGENTS_WORKER = original_worker
+    subprocess_env_manager.worker = _bees_sampled_worker
+    return original_worker
+
+
 def _install_batched_inference(cpu_inference: bool = False):
-    """Patch ML-Agents 1.1.0 to batch policy inference across idle workers.
-
-    When cpu_inference is true, the trainer-owned TorchPolicy remains untouched
-    and a lazily synchronized CPU actor replica performs environment inference.
-
-    Returns the original SubprocessEnvManager._queue_steps method so the caller
-    can restore it after training. Imports stay local so parsing/tests for this
-    launcher do not require ML-Agents to be imported at module import time.
-    """
+    """Batch exact-behavior policy inference across all currently idle workers."""
 
     import numpy as np
 
@@ -254,9 +284,6 @@ def _install_batched_inference(cpu_inference: bool = False):
         )
 
     def evaluate_on_cpu(policy, actor, decision_requests, global_agent_ids):
-        # ML-Agents sets PyTorch's global default device to CUDA for a CUDA run.
-        # The device context is therefore required in addition to explicit input
-        # placement: actor/distribution code may create intermediate tensors.
         with hierarchical_timer("BeesCpuInference.evaluate"):
             with torch.device(cpu_device):
                 masks = None
@@ -277,12 +304,16 @@ def _install_batched_inference(cpu_inference: bool = False):
                     torch.as_tensor(observation, device=cpu_device)
                     for observation in decision_requests.obs
                 ]
-                memories = torch.as_tensor(
-                    policy.retrieve_memories(global_agent_ids),
-                    device=cpu_device,
-                ).unsqueeze(0)
+                memories = None
+                if policy.use_recurrent:
+                    memories = torch.as_tensor(
+                        policy.retrieve_memories(global_agent_ids),
+                        device=cpu_device,
+                    ).unsqueeze(0)
 
-                with torch.no_grad():
+                # Inference mode skips autograd/version bookkeeping that is not
+                # needed for environment action selection.
+                with torch.inference_mode():
                     action, run_out, memories = actor.get_action_and_stats(
                         tensor_obs,
                         masks=masks,
@@ -302,9 +333,7 @@ def _install_batched_inference(cpu_inference: bool = False):
         continuous = value.continuous
         discrete = value.discrete
         return type(value)(
-            continuous=(
-                continuous[start:end] if continuous is not None else None
-            ),
+            continuous=(continuous[start:end] if continuous is not None else None),
             discrete=(discrete[start:end] if discrete is not None else None),
         )
 
@@ -325,6 +354,19 @@ def _install_batched_inference(cpu_inference: bool = False):
             for key, value in outputs.items()
         }
 
+    def make_ipc_action_info(info: ActionInfo) -> ActionInfo:
+        if not info.agent_ids:
+            return ActionInfo.empty()
+        # The Unity subprocess only reads agent_ids and env_action. Keep action,
+        # log-probs, entropy and other training outputs in the main process where
+        # AgentProcessor consumes them; do not pickle/send them across the pipe.
+        return ActionInfo(
+            action=[],
+            env_action=info.env_action,
+            outputs={},
+            agent_ids=info.agent_ids,
+        )
+
     def batched_queue_steps(self) -> None:
         idle_workers = [worker for worker in self.env_workers if not worker.waiting]
         if not idle_workers:
@@ -335,9 +377,6 @@ def _install_batched_inference(cpu_inference: bool = False):
                 worker.worker_id: {} for worker in idle_workers
             }
             behavior_entries = {}
-
-            # Preserve the original _take_step contract: every behavior with a
-            # policy gets an ActionInfo entry, including zero-decision behaviors.
             for worker in idle_workers:
                 for behavior_name, step_tuple in worker.previous_step.current_all_step_result.items():
                     if behavior_name not in self.policies:
@@ -352,10 +391,6 @@ def _install_batched_inference(cpu_inference: bool = False):
 
         for behavior_name, entries in behavior_entries.items():
             policy = self.policies[behavior_name]
-
-            # This optimization relies on TorchPolicy actor outputs and memory
-            # helpers. Fall back to ML-Agents' public get_action() contract for
-            # any other policy implementation.
             if not isinstance(policy, TorchPolicy):
                 for worker, decision_steps in entries:
                     worker_actions[worker.worker_id][behavior_name] = policy.get_action(
@@ -390,8 +425,6 @@ def _install_batched_inference(cpu_inference: bool = False):
                     global_agent_ids,
                 )
 
-            # Memory belongs to the source policy, not the ephemeral CPU actor,
-            # so recurrent state ownership remains identical to ML-Agents.
             policy.save_memories(global_agent_ids, run_out.get("memory_out"))
             policy.check_nan_action(run_out.get("action"))
 
@@ -405,14 +438,17 @@ def _install_batched_inference(cpu_inference: bool = False):
                         agent_ids=list(decision_steps.agent_id),
                     )
 
-        # Compute all available actions first, then release workers together. This
-        # retains the original manager's parallel Unity stepping behavior while
-        # replacing serial per-worker policy evaluation with per-behavior batches.
         with hierarchical_timer("BeesBatch.send"):
             for worker in idle_workers:
                 all_action_info = worker_actions[worker.worker_id]
+                # This full object never leaves the trainer process and remains
+                # the source of PPO trajectory action/log-prob/entropy data.
                 worker.previous_all_action_info = all_action_info
-                worker.send(EnvironmentCommand.STEP, all_action_info)
+                ipc_action_info = {
+                    behavior_name: make_ipc_action_info(info)
+                    for behavior_name, info in all_action_info.items()
+                }
+                worker.send(EnvironmentCommand.STEP, ipc_action_info)
                 worker.waiting = True
 
     SubprocessEnvManager._queue_steps = batched_queue_steps
@@ -420,18 +456,9 @@ def _install_batched_inference(cpu_inference: bool = False):
 
 
 def _install_fast_env_manager():
-    """Remove ML-Agents 1.1.0's busy-spin while waiting for Unity workers.
+    """Block for the first result and briefly coalesce near-ready workers."""
 
-    Upstream _step() repeatedly calls multiprocessing.Queue.get_nowait() until at
-    least one worker responds. On a heavily CPU-bound multi-environment run that
-    needlessly occupies a trainer CPU core while Unity is trying to advance. The
-    replacement blocks for the first response, then keeps the original behavior
-    of draining all responses that are already available before returning.
-
-    The experience-processing wrapper is timing-only. It makes the remaining
-    env_step cost attributable without changing AgentProcessor behavior.
-    """
-
+    import time
     from queue import Empty as EmptyQueueException
 
     from mlagents.trainers.env_manager import EnvManager
@@ -445,30 +472,29 @@ def _install_fast_env_manager():
     original_process_step_infos = EnvManager._process_step_infos
 
     def fast_step(self):
-        # Queue actions for every worker that is ready, exactly as upstream does.
         self._queue_steps()
-
         worker_steps = []
         step_workers = set()
 
-        # Upstream busy-polls get_nowait() here. A blocking Queue.get() has the
-        # same externally visible condition (do not return until >=1 result), but
-        # sleeps the trainer process while no worker is ready.
-        while not worker_steps:
-            with hierarchical_timer("BeesEnv.wait_first_worker"):
-                first_step = self.step_queue.get()
-
-            if first_step.cmd == EnvironmentCommand.ENV_EXITED:
-                self._restart_failed_workers(first_step)
+        def accept_response(step) -> bool:
+            """Return True when a worker failure caused a manager restart."""
+            if step.cmd == EnvironmentCommand.ENV_EXITED:
+                self._restart_failed_workers(step)
                 worker_steps.clear()
                 step_workers.clear()
                 self._queue_steps()
-                continue
+                return True
+            if step.worker_id not in step_workers:
+                self.env_workers[step.worker_id].waiting = False
+                worker_steps.append(step)
+                step_workers.add(step.worker_id)
+            return False
 
-            if first_step.worker_id not in step_workers:
-                self.env_workers[first_step.worker_id].waiting = False
-                worker_steps.append(first_step)
-                step_workers.add(first_step.worker_id)
+        while not worker_steps:
+            with hierarchical_timer("BeesEnv.wait_first_worker"):
+                first_step = self.step_queue.get()
+            if accept_response(first_step):
+                continue
 
             restarted = False
             with hierarchical_timer("BeesEnv.drain_ready_workers"):
@@ -477,22 +503,29 @@ def _install_fast_env_manager():
                         step = self.step_queue.get_nowait()
                     except EmptyQueueException:
                         break
-
-                    if step.cmd == EnvironmentCommand.ENV_EXITED:
-                        # Preserve upstream recovery semantics. This helper drains
-                        # any other concurrent failures before reset/restart.
-                        self._restart_failed_workers(step)
-                        worker_steps.clear()
-                        step_workers.clear()
-                        self._queue_steps()
+                    if accept_response(step):
                         restarted = True
                         break
+            if restarted:
+                continue
 
-                    if step.worker_id not in step_workers:
-                        self.env_workers[step.worker_id].waiting = False
-                        worker_steps.append(step)
-                        step_workers.add(step.worker_id)
-
+            # The previous profile averaged about 25/32 workers per returned
+            # manager step. Give already-running stragglers a tiny bounded window
+            # to join this batch; never wait for all workers or a slow outlier.
+            if any(worker.waiting for worker in self.env_workers):
+                deadline = time.perf_counter() + WORKER_COALESCE_SECONDS
+                with hierarchical_timer("BeesEnv.coalesce_workers"):
+                    while any(worker.waiting for worker in self.env_workers):
+                        remaining = deadline - time.perf_counter()
+                        if remaining <= 0:
+                            break
+                        try:
+                            step = self.step_queue.get(timeout=remaining)
+                        except EmptyQueueException:
+                            break
+                        if accept_response(step):
+                            restarted = True
+                            break
             if restarted:
                 continue
 
@@ -523,6 +556,7 @@ def main() -> None:
         )
 
     import mlagents.trainers
+    import mlagents.trainers.subprocess_env_manager as subprocess_env_manager_module
     from mlagents import torch_utils
     from mlagents.trainers import learn
     from mlagents.trainers.env_manager import EnvManager
@@ -544,12 +578,23 @@ def main() -> None:
     original_queue_steps = None
     original_env_step = None
     original_process_step_infos = None
+    original_worker = None
     if batch_inference:
+        original_worker = _install_sampled_worker_timers()
         original_queue_steps = _install_batched_inference(
             cpu_inference=cpu_inference
         )
         original_env_step, original_process_step_infos = _install_fast_env_manager()
         print("[Bees RL] Cross-worker policy inference batching: enabled")
+        print("[Bees RL] Slim subprocess action IPC: enabled")
+        print(
+            f"[Bees RL] Worker coalescing window: "
+            f"{WORKER_COALESCE_SECONDS * 1000.0:.1f} ms"
+        )
+        print(
+            f"[Bees RL] Worker timer transfer: every "
+            f"{WORKER_TIMER_SAMPLE_STEPS} steps"
+        )
         print("[Bees RL] Blocking Unity-worker wait: enabled")
         if cpu_inference:
             print(
@@ -560,8 +605,6 @@ def main() -> None:
     original_torch_load = torch_utils.torch.load
 
     def device_safe_torch_load(*args, **kwargs):
-        # learn.run_training() selects --torch-device before TorchModelSaver loads
-        # checkpoints, so resolve default_device() at load time rather than here.
         kwargs.setdefault("map_location", torch_utils.default_device())
         return original_torch_load(*args, **kwargs)
 
@@ -579,6 +622,8 @@ def main() -> None:
             SubprocessEnvManager._step = original_env_step
         if original_process_step_infos is not None:
             EnvManager._process_step_infos = original_process_step_infos
+        if original_worker is not None:
+            subprocess_env_manager_module.worker = original_worker
 
 
 if __name__ == "__main__":
