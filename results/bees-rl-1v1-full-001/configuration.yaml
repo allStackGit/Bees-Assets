@@ -66,7 +66,7 @@ env_settings:
   - --rl-human-ship-types
   - Gunship
   base_port: 5005
-  num_envs: 4
+  num_envs: 32
   num_areas: 1
   timeout_wait: 60
   seed: 36
@@ -93,5 +93,5 @@ checkpoint_settings:
   inference: false
   results_dir: results
 torch_settings:
-  device: cpu
+  device: cuda
 debug: false
