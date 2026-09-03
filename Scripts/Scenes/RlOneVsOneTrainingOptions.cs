@@ -21,6 +21,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string MapSizeFlag = "--rl-map-size";
     internal const string EpisodeTimeoutFlag = "--rl-episode-timeout";
     internal const string ShipsPerSideFlag = "--rl-ships-per-side";
+    internal const string DecisionPeriodFlag = "--rl-decision-period";
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
     internal const string MatchupModeFlag = "--rl-matchup-mode";
@@ -29,6 +30,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const float DefaultMapSize = 30f;
     internal const int DefaultEpisodeTimeoutSeconds = 120;
     internal const int DefaultShipsPerSide = 1;
+    internal const int DefaultDecisionPeriod = 5;
     internal const int MaximumShipsPerSide = 16;
     internal const float MinimumMapSize = 10f;
     internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
@@ -74,6 +76,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal float MapSize { get; private set; }
     internal int EpisodeTimeoutSeconds { get; private set; }
     internal int ShipsPerSide { get; private set; }
+    internal int DecisionPeriod { get; private set; }
     internal RlOneVsOneMatchupMode MatchupMode { get; private set; }
     internal IReadOnlyList<ConfigData.ShipTypes> BeeShipTypes => _beeShipTypes;
     internal IReadOnlyList<ConfigData.ShipTypes> HumanShipTypes => _humanShipTypes;
@@ -84,6 +87,7 @@ internal sealed class RlOneVsOneTrainingOptions
         MapSize = DefaultMapSize;
         EpisodeTimeoutSeconds = DefaultEpisodeTimeoutSeconds;
         ShipsPerSide = DefaultShipsPerSide;
+        DecisionPeriod = DefaultDecisionPeriod;
         MatchupMode = DefaultMatchupMode;
         _beeShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Wasp };
         _humanShipTypes = new List<ConfigData.ShipTypes> { ConfigData.ShipTypes.Gunship };
@@ -121,6 +125,10 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadOption(argument, ShipsPerSideFlag, args, ref i, out value))
             {
                 options.ShipsPerSide = ParseInt(value, ShipsPerSideFlag);
+            }
+            else if (TryReadOption(argument, DecisionPeriodFlag, args, ref i, out value))
+            {
+                options.DecisionPeriod = ParseInt(value, DecisionPeriodFlag);
             }
             else if (TryReadOption(argument, BeeShipTypesFlag, args, ref i, out value))
             {
@@ -162,7 +170,7 @@ internal sealed class RlOneVsOneTrainingOptions
         return $"health_ratio={HealthRatio.ToString("0.###", CultureInfo.InvariantCulture)} " +
                $"map_size={MapSize.ToString("0.###", CultureInfo.InvariantCulture)} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
-               $"matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"decision_period={DecisionPeriod} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
     }
 
@@ -203,6 +211,11 @@ internal sealed class RlOneVsOneTrainingOptions
         if (ShipsPerSide < 1 || ShipsPerSide > MaximumShipsPerSide)
         {
             throw new ArgumentException($"{ShipsPerSideFlag} must be between 1 and {MaximumShipsPerSide}.");
+        }
+
+        if (DecisionPeriod <= 0)
+        {
+            throw new ArgumentException($"{DecisionPeriodFlag} must be a positive whole number of physics steps.");
         }
 
         if (MatchupMode == RlOneVsOneMatchupMode.Fixed)
