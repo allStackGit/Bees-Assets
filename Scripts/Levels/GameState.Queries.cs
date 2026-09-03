@@ -71,7 +71,12 @@ namespace Assets.Scripts.Levels
             }
 
             observerVisibility.Add(spotted);
-            return VisionCache[sideIndex].Add(spotted);
+            bool isFirstSideWideSighting = VisionCache[sideIndex].Add(spotted);
+            if (isFirstSideWideSighting)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordShipDiscovery(observer, spotted);
+            }
+            return isFirstSideWideSighting;
         }
 
         public HashSet<Ship> GetShipsVisibleToHiveMind(int side)
@@ -101,7 +106,15 @@ namespace Assets.Scripts.Levels
             bool isNew = HiveMindObstacleCache[sideIndex].Add(obstacle);
             if (obstacle is MiningAsteroid miningAsteroid)
             {
-                HiveMindMiningAsteroidCache[sideIndex].Add(miningAsteroid);
+                bool isNewMiningAsteroid = HiveMindMiningAsteroidCache[sideIndex].Add(miningAsteroid);
+                if (isNewMiningAsteroid)
+                {
+                    global::RlOneVsOneEpisodeCoordinator.RecordMiningAsteroidDiscovery(observer, miningAsteroid);
+                }
+            }
+            else if (isNew)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordObstacleDiscovery(observer, obstacle);
             }
             return isNew;
         }
@@ -124,7 +137,12 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
-            return HiveMindMapObjectCache[sideIndex].Add(mapObject);
+            bool isNew = HiveMindMapObjectCache[sideIndex].Add(mapObject);
+            if (isNew)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordMapObjectDiscovery(observer, mapObject);
+            }
+            return isNew;
         }
 
         /// <summary>
@@ -151,6 +169,10 @@ namespace Assets.Scripts.Levels
 
             bool isNew = HiveMindMiningAsteroidCache[sideIndex].Add(asteroid);
             HiveMindObstacleCache[sideIndex].Add(asteroid);
+            if (isNew)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordMiningAsteroidDiscovery(observer, asteroid);
+            }
             return isNew;
         }
 
