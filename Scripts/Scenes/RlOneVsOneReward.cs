@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Reward definition for the dedicated RL combat proof.
-/// Terminal victory is deliberately an order of magnitude larger than ordinary shaping.
+/// Terminal victory is deliberately much larger than all positive non-terminal shaping.
 /// </summary>
 internal static class RlOneVsOneReward
 {
@@ -10,6 +10,20 @@ internal static class RlOneVsOneReward
     internal const float LossReward = -10f;
     internal const float TsvRewardScale = 1f;
     internal const float MaximumEpisodeTimePenalty = 0.1f;
+
+    // Positive shaping is transformed through an asymptotic bound rather than hard-clamped. Every
+    // finite useful outcome therefore keeps a positive learning signal while the entire episode's
+    // positive non-terminal shaping remains strictly below the value of winning the battle.
+    internal const float MaximumPositiveShapingReward = 2f;
+
+    // Discovery is intentionally a small fraction of combat outcome shaping. Static categories are
+    // normalized against the value present when the episode begins. Collision asteroids can spawn
+    // indefinitely, so they use a convergent sequence instead of an episode-start denominator.
+    internal const float EnemyShipDiscoveryBudget = 0.06f;
+    internal const float MiningAsteroidDiscoveryBudget = 0.015f;
+    internal const float StaticObstacleDiscoveryBudget = 0.015f;
+    internal const float MapObjectDiscoveryBudget = 0.01f;
+    internal const float CollisionAsteroidDiscoveryBudget = 0.025f;
 
     /// <summary>
     /// Converts a real positive TSV-valued outcome into immediate shaping. This is shared by enemy
@@ -25,6 +39,59 @@ internal static class RlOneVsOneReward
     internal static float CalculateTsvLossReward(int tsvLost, int combinedStartingTsv)
     {
         return CalculateTsvValueReward(tsvLost, combinedStartingTsv);
+    }
+
+    /// <summary>
+    /// Gives a first-discovery reward proportional to this object's strategic value. If the entire
+    /// episode-start category is eventually discovered, its raw rewards sum to at most the category
+    /// budget. The discovered value also participates in the denominator so an unexpected spawned
+    /// object can never yield more than the whole category budget by itself.
+    /// </summary>
+    internal static float CalculateStaticDiscoveryReward(
+        int discoveryValue,
+        int episodeStartCategoryValue,
+        float categoryBudget)
+    {
+        int value = Mathf.Max(0, discoveryValue);
+        if (value <= 0 || categoryBudget <= 0f)
+        {
+            return 0f;
+        }
+
+        float denominator = Mathf.Max(value, Mathf.Max(1, episodeStartCategoryValue));
+        return Mathf.Max(0f, categoryBudget) * value / denominator;
+    }
+
+    /// <summary>
+    /// Collision asteroids are dynamic discoveries, so the Nth first-sighting receives a term from
+    /// 1/((n+1)(n+2)). Those terms sum to one even for infinitely many spawns. Size scales each term
+    /// monotonically but remains below one, preserving the overall collision-asteroid budget while
+    /// ensuring every finite discovery still has positive value.
+    /// </summary>
+    internal static float CalculateCollisionAsteroidDiscoveryReward(int sizeClass, int discoveryIndex)
+    {
+        int size = Mathf.Max(0, sizeClass);
+        if (size <= 0)
+        {
+            return 0f;
+        }
+
+        int index = Mathf.Max(0, discoveryIndex);
+        float sequenceWeight = 1f / ((index + 1f) * (index + 2f));
+        float sizeWeight = size / (size + 1f);
+        return CollisionAsteroidDiscoveryBudget * sizeWeight * sequenceWeight;
+    }
+
+    /// <summary>
+    /// Maps cumulative raw positive shaping onto [0, MaximumPositiveShapingReward). This is not a
+    /// cutoff: every additional finite positive outcome increases the bounded total, with gradually
+    /// diminishing marginal weight. Negative shaping and terminal rewards are intentionally outside
+    /// this transform.
+    /// </summary>
+    internal static float CalculateBoundedPositiveShapingReward(float cumulativeRawPositiveReward)
+    {
+        float raw = Mathf.Max(0f, cumulativeRawPositiveReward);
+        return MaximumPositiveShapingReward * (1f - Mathf.Exp(-raw / MaximumPositiveShapingReward));
     }
 
     /// <summary>
