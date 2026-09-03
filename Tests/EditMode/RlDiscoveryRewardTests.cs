@@ -105,26 +105,32 @@ namespace Bees.Tests.EditMode
         [Test]
         public void PositiveShapingApproachesItsLimitWithoutAHardCutoff()
         {
-            float maximum = (float)RuntimeAssembly.GetStaticField(_rewardType, "MaximumPositiveShapingReward");
-            float atOne = (float)RuntimeAssembly.InvokeStatic(
+            double maximum = (float)RuntimeAssembly.GetStaticField(_rewardType, "MaximumPositiveShapingReward");
+            double atOne = (double)RuntimeAssembly.InvokeStatic(
                 _rewardType,
                 "CalculateBoundedPositiveShapingReward",
-                1f);
-            float atTwo = (float)RuntimeAssembly.InvokeStatic(
+                1d);
+            double atTwo = (double)RuntimeAssembly.InvokeStatic(
                 _rewardType,
                 "CalculateBoundedPositiveShapingReward",
-                2f);
-            float atTen = (float)RuntimeAssembly.InvokeStatic(
+                2d);
+            double atTen = (double)RuntimeAssembly.InvokeStatic(
                 _rewardType,
                 "CalculateBoundedPositiveShapingReward",
-                10f);
+                10d);
+            double veryLateIncrement = (double)RuntimeAssembly.InvokeStatic(
+                _rewardType,
+                "CalculateBoundedPositiveShapingIncrement",
+                1000000d,
+                1d);
 
-            Assert.That(atOne, Is.GreaterThan(0f));
+            Assert.That(atOne, Is.GreaterThan(0d));
             Assert.That(atTwo, Is.GreaterThan(atOne));
             Assert.That(atTen, Is.GreaterThan(atTwo));
             Assert.That(atTen, Is.LessThan(maximum));
-            Assert.That(atTwo - atOne, Is.GreaterThan(0f));
-            Assert.That(atTen - atTwo, Is.GreaterThan(0f));
+            Assert.That(atTwo - atOne, Is.GreaterThan(0d));
+            Assert.That(atTen - atTwo, Is.GreaterThan(0d));
+            Assert.That(veryLateIncrement, Is.GreaterThan(0d));
         }
 
         [Test]
@@ -145,6 +151,24 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("RecordMiningAsteroidDiscovery(observer, asteroid);", source);
             StringAssert.Contains("bool isNew = HiveMindObstacleCache[sideIndex].Add(obstacle);", source);
             StringAssert.Contains("RecordObstacleDiscovery(observer, obstacle);", source);
+        }
+
+        [Test]
+        public void InitialDiscoveriesWaitUntilPolicyControlledShipsAreBound()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "RlOneVsOneEpisodeCoordinator.cs"));
+
+            StringAssert.Contains("private bool _discoveryRewardsReady;", source);
+            StringAssert.Contains("TryEnableDiscoveryRewards(currentLevel);", source);
+            StringAssert.Contains("ArePolicyControlledShipsReady(level, beeSide)", source);
+            StringAssert.Contains("ArePolicyControlledShipsReady(level, humanSide)", source);
+            StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain", source);
+            StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
+            StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
         }
     }
 }
