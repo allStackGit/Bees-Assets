@@ -18,6 +18,7 @@ namespace Assets.Scripts.Entities.Ships
         public GameObject LaserBuilderAnimation;
         public Animator Animator;
         private bool _rlShotQueued;
+        private bool _animatorResetPending;
 
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
@@ -36,20 +37,41 @@ namespace Assets.Scripts.Entities.Ships
             _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
             Animator.speed = 1f;
-            Animator.Rebind();
-            Animator.Update(0f);
+            ResetAnimatorWhenSafe();
             //IsReadyForFiring = false;
         }
         public override void Activate()
         {
             base.Activate();
             Animator.enabled = true;
+            if (_animatorResetPending)
+            {
+                ResetAnimatorWhenSafe();
+            }
         }
         public override void Deactivate()
         {
             base.Deactivate();
             _rlShotQueued = false;
             Animator.enabled = false;
+        }
+        private void ResetAnimatorWhenSafe()
+        {
+            if (Animator == null)
+            {
+                _animatorResetPending = false;
+                return;
+            }
+
+            if (!Animator.isActiveAndEnabled || !Animator.gameObject.activeInHierarchy)
+            {
+                _animatorResetPending = true;
+                return;
+            }
+
+            Animator.Rebind();
+            Animator.Update(0f);
+            _animatorResetPending = false;
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
