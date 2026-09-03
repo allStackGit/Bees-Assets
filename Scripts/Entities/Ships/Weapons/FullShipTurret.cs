@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -81,7 +81,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             }
 
-            if (!IsAimedAtTarget)
+            if (IsRlControlled)
+            {
+                // LaserBuilder.SendProjectile owns activation for queued RL shots. Aim only controls
+                // whether an active charge animation may advance while the hull is on target.
+                Animator.speed = IsAimedAtTarget ? 1 : 0;
+            }
+            else if (!IsAimedAtTarget)
             {
                 //LaserBuilderAnimation.SetActive(false);
                 Animator.speed = 0;
@@ -108,8 +114,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //Debug.Log($"Difference in angles {difference}, {(difference > closeEnough ? "counter-clockwise" : "clockwise")}");
             if (_difference > 3)
             {
-                PieceTransform.Rotate(_rightRotationRate);
-                Ship.Rotation += _rightRotationRate.z;
+                RotateShipAndTurrets(_rightRotationRate);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -127,8 +132,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else if (_difference < -3)
             {
-                PieceTransform.Rotate(_leftRotationRate);
-                Ship.Rotation += _leftRotationRate.z;
+                RotateShipAndTurrets(_leftRotationRate);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -146,8 +150,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                PieceTransform.localEulerAngles = _forward * rotation;
-                Ship.Rotation = rotation;
+                SnapShipAndTurretsToRotation(rotation);
 
                 if (Ship.HasRocketFlares)
                 {
@@ -168,10 +171,26 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             return false;
         }
+        private void RotateShipAndTurrets(Vector3 rotationDelta)
+        {
+            PieceTransform.Rotate(rotationDelta);
+            Ship.Rotation += rotationDelta.z;
+            Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta.z);
+        }
+        private void SnapShipAndTurretsToRotation(float rotation)
+        {
+            float rotationDelta = Mathf.DeltaAngle(Ship.Rotation, rotation);
+            PieceTransform.localEulerAngles = _forward * rotation;
+            Ship.Rotation = rotation;
+            Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta);
+        }
         protected override void SendProjectile()
         {
             base.SendProjectile();
-            LaserBuilderAnimation.SetActive(false);
+            if (!IsRlControlled)
+            {
+                LaserBuilderAnimation.SetActive(false);
+            }
             //_chargingSound.Stop();
         }
     }
