@@ -539,6 +539,10 @@ def main() -> None:
     from mlagents.trainers import learn
     from mlagents.trainers.env_manager import EnvManager
     from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
+    from bees_mlagents_ppo_compat import (
+        install_value_estimate_key_fix,
+        restore_value_estimate_key,
+    )
 
     actual_version = mlagents.trainers.__version__
     if actual_version != EXPECTED_MLAGENTS_VERSION:
@@ -548,6 +552,9 @@ def main() -> None:
             f"{actual_version} is installed. Verify the newer internals before changing "
             "this version guard."
         )
+
+    original_value_estimate_key = install_value_estimate_key_fix()
+    print("[Bees RL] PPO value-estimate/return buffer key separation: enabled")
 
     if torch_threads is not None:
         torch_utils.torch.set_num_threads(torch_threads)
@@ -590,6 +597,7 @@ def main() -> None:
     finally:
         sys.argv = previous_argv
         torch_utils.torch.load = original_torch_load
+        restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
         if original_env_step is not None:
