@@ -46,5 +46,49 @@ namespace Bees.Tests.EditMode
                 "if (Rotation != Ship.Rotation && (Ship.IsCeaseFire || !HasValidTarget()))",
                 source);
         }
+
+        [TestCase("LaserBuilder.cs")]
+        [TestCase("BeamCannon.cs")]
+        public void SpecializedTurretRlAimPrecedesMouseInput(string filename)
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                filename));
+
+            int aim = source.IndexOf("protected override void Aim()");
+            int rlControl = source.IndexOf("if (IsRlControlled)", aim);
+            int mouseInput = source.IndexOf("Stage.InputManager.GetMousePosition()", aim);
+
+            Assert.That(aim, Is.GreaterThanOrEqualTo(0));
+            Assert.That(rlControl, Is.GreaterThan(aim), $"{filename} must handle RL control inside Aim().");
+            Assert.That(mouseInput, Is.GreaterThan(rlControl), $"{filename} must not route RL control through mouse input.");
+        }
+
+        [Test]
+        public void LaserBuilderRlFireIsQueuedByTheTurretFireGate()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "LaserBuilder.cs"));
+
+            int sendProjectile = source.IndexOf("protected override void SendProjectile()");
+            int actuallyShoot = source.IndexOf("public void ActuallyShoot()", sendProjectile);
+            Assert.That(sendProjectile, Is.GreaterThanOrEqualTo(0));
+            Assert.That(actuallyShoot, Is.GreaterThan(sendProjectile));
+
+            string queuedFirePath = source.Substring(sendProjectile, actuallyShoot - sendProjectile);
+            StringAssert.Contains("if (IsRlControlled)", queuedFirePath);
+            StringAssert.Contains("_rlShotQueued = true;", queuedFirePath);
+            StringAssert.Contains("LaserBuilderAnimation.SetActive(true);", queuedFirePath);
+            StringAssert.Contains("bool directPointFire = IsRlControlled ? _rlShotQueued : IsFiringManually;", source);
+        }
     }
 }
