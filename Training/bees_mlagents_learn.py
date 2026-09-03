@@ -16,11 +16,22 @@ as one policy batch instead of one TorchPolicy.evaluate() call per worker. The
 result is split back into worker-local ActionInfo objects before Unity steps.
 Worker-qualified global agent IDs are preserved, so recurrent memory ownership
 and AgentProcessor indexing remain compatible with normal ML-Agents behavior.
+
+--bees-cpu-inference extends batched inference with a CPU actor replica while
+leaving the trainer-owned policy, optimizer, checkpoints, normalization updates,
+and self-play policies on the device selected by --torch-device. It is intended
+for hybrid runs such as --torch-device=cuda: PPO updates stay on CUDA while
+environment action inference runs on CPU. Actor parameters are copied only after
+they change; normalization buffers are synchronized independently so normalize:
+true retains the same current statistics without copying the full network for
+every trajectory.
+
 All other arguments are passed unchanged to mlagents-learn.
 """
 
 from __future__ import annotations
 
+import copy
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -28,6 +39,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 EXPECTED_MLAGENTS_VERSION = "1.1.0"
 THREAD_FLAG = "--bees-torch-threads"
 BATCH_INFERENCE_FLAG = "--bees-batch-inference"
+CPU_INFERENCE_FLAG = "--bees-cpu-inference"
 
 
 def _parse_positive_int(value: str, flag: str) -> int:
@@ -42,10 +54,11 @@ def _parse_positive_int(value: str, flag: str) -> int:
 
 def _extract_bees_options(
     argv: Sequence[str],
-) -> Tuple[List[str], Optional[int], bool]:
+) -> Tuple[List[str], Optional[int], bool, bool]:
     trainer_args: List[str] = []
     torch_threads: Optional[int] = None
     batch_inference = False
+    cpu_inference = False
     index = 0
 
     while index < len(argv):
@@ -71,14 +84,109 @@ def _extract_bees_options(
             index += 1
             continue
 
+        if argument == CPU_INFERENCE_FLAG:
+            cpu_inference = True
+            index += 1
+            continue
+
         trainer_args.append(argument)
         index += 1
 
-    return trainer_args, torch_threads, batch_inference
+    return trainer_args, torch_threads, batch_inference, cpu_inference
 
 
-def _install_batched_inference():
+class _CpuInferenceActorCache:
+    """CPU replicas of trainer-owned actors, synchronized only when state changes."""
+
+    def __init__(self) -> None:
+        self._entries = {}
+
+    @staticmethod
+    def _parameter_signature(actor):
+        return tuple(
+            (name, id(parameter), parameter._version)
+            for name, parameter in actor.named_parameters()
+        )
+
+    @staticmethod
+    def _buffer_signature(actor):
+        return tuple(
+            (name, id(buffer), buffer._version)
+            for name, buffer in actor.named_buffers()
+        )
+
+    @staticmethod
+    def _copy_parameters(source_actor, target_actor) -> None:
+        from mlagents.torch_utils import torch
+
+        target_parameters = dict(target_actor.named_parameters())
+        with torch.no_grad():
+            for name, source in source_actor.named_parameters():
+                target_parameters[name].copy_(source.detach(), non_blocking=False)
+
+    @staticmethod
+    def _copy_buffers(source_actor, target_actor) -> None:
+        from mlagents.torch_utils import torch
+
+        target_buffers = dict(target_actor.named_buffers())
+        with torch.no_grad():
+            for name, source in source_actor.named_buffers():
+                target_buffers[name].copy_(source.detach(), non_blocking=False)
+
+    def get(self, behavior_name: str, policy):
+        from mlagents.torch_utils import torch
+        from mlagents_envs.timers import hierarchical_timer
+
+        source_actor = policy.actor
+        parameter_signature = self._parameter_signature(source_actor)
+        buffer_signature = self._buffer_signature(source_actor)
+        entry = self._entries.get(behavior_name)
+
+        if entry is None or entry["source_actor"] is not source_actor:
+            # deepcopy preserves the exact actor architecture and all policy-specific
+            # settings. Moving only the replica to CPU leaves the trainer-owned actor
+            # and optimizer parameters on their original device.
+            with hierarchical_timer("BeesCpuInference.create_replica"):
+                replica = copy.deepcopy(source_actor)
+                replica.to(torch.device("cpu"))
+                replica.train(source_actor.training)
+            entry = {
+                "source_actor": source_actor,
+                "replica": replica,
+                "parameter_signature": parameter_signature,
+                "buffer_signature": buffer_signature,
+            }
+            self._entries[behavior_name] = entry
+            return replica
+
+        replica = entry["replica"]
+        replica.train(source_actor.training)
+
+        if parameter_signature != entry["parameter_signature"]:
+            # An optimizer step or self-play load_weights() changes parameters.
+            # Copy the whole actor state once before the next environment action.
+            with hierarchical_timer("BeesCpuInference.sync_parameters"):
+                self._copy_parameters(source_actor, replica)
+                self._copy_buffers(source_actor, replica)
+            entry["parameter_signature"] = parameter_signature
+            entry["buffer_signature"] = buffer_signature
+        elif buffer_signature != entry["buffer_signature"]:
+            # With normalize: true, ML-Agents replaces the running-normalization
+            # buffer tensors for each processed trajectory. Those buffers are tiny
+            # compared with the network, so keep them current without re-copying
+            # all actor parameters.
+            with hierarchical_timer("BeesCpuInference.sync_buffers"):
+                self._copy_buffers(source_actor, replica)
+            entry["buffer_signature"] = buffer_signature
+
+        return replica
+
+
+def _install_batched_inference(cpu_inference: bool = False):
     """Patch ML-Agents 1.1.0 to batch policy inference across idle workers.
+
+    When cpu_inference is true, the trainer-owned TorchPolicy remains untouched
+    and a lazily synchronized CPU actor replica performs environment inference.
 
     Returns the original SubprocessEnvManager._queue_steps method so the caller
     can restore it after training. Imports stay local so parsing/tests for this
@@ -95,9 +203,13 @@ def _install_batched_inference():
         EnvironmentCommand,
         SubprocessEnvManager,
     )
+    from mlagents.trainers.torch_entities.utils import ModelUtils
     from mlagents_envs.base_env import ActionTuple, DecisionSteps, _ActionTupleBase
+    from mlagents_envs.timers import hierarchical_timer
 
     original_queue_steps = SubprocessEnvManager._queue_steps
+    cpu_actor_cache = _CpuInferenceActorCache() if cpu_inference else None
+    cpu_device = torch.device("cpu")
 
     def concatenate_decision_steps(entries, action_spec):
         first_steps = entries[0][1]
@@ -136,6 +248,51 @@ def _install_batched_inference():
             group_id=group_id,
             group_reward=group_reward,
         )
+
+    def evaluate_on_cpu(policy, actor, decision_requests, global_agent_ids):
+        # ML-Agents sets PyTorch's global default device to CUDA for a CUDA run.
+        # The device context is therefore required in addition to explicit input
+        # placement: actor/distribution code may create intermediate tensors.
+        with hierarchical_timer("BeesCpuInference.evaluate"):
+            with torch.device(cpu_device):
+                masks = None
+                action_spec = policy.behavior_spec.action_spec
+                if action_spec.discrete_size > 0:
+                    num_discrete_flat = int(np.sum(action_spec.discrete_branches))
+                    masks = torch.ones(
+                        [len(decision_requests), num_discrete_flat],
+                        device=cpu_device,
+                    )
+                    if decision_requests.action_mask is not None:
+                        masks = torch.as_tensor(
+                            1 - np.concatenate(decision_requests.action_mask, axis=1),
+                            device=cpu_device,
+                        )
+
+                tensor_obs = [
+                    torch.as_tensor(observation, device=cpu_device)
+                    for observation in decision_requests.obs
+                ]
+                memories = torch.as_tensor(
+                    policy.retrieve_memories(global_agent_ids),
+                    device=cpu_device,
+                ).unsqueeze(0)
+
+                with torch.no_grad():
+                    action, run_out, memories = actor.get_action_and_stats(
+                        tensor_obs,
+                        masks=masks,
+                        memories=memories,
+                    )
+
+                run_out["action"] = action.to_action_tuple()
+                if "log_probs" in run_out:
+                    run_out["log_probs"] = run_out["log_probs"].to_log_probs_tuple()
+                if "entropy" in run_out:
+                    run_out["entropy"] = ModelUtils.to_numpy(run_out["entropy"])
+                if policy.use_recurrent:
+                    run_out["memory_out"] = ModelUtils.to_numpy(memories).squeeze(0)
+                return run_out
 
     def slice_action_tuple(value, start: int, end: int):
         continuous = value.continuous
@@ -191,7 +348,7 @@ def _install_batched_inference():
         for behavior_name, entries in behavior_entries.items():
             policy = self.policies[behavior_name]
 
-            # This optimization relies on TorchPolicy.evaluate() and its memory
+            # This optimization relies on TorchPolicy actor outputs and memory
             # helpers. Fall back to ML-Agents' public get_action() contract for
             # any other policy implementation.
             if not isinstance(policy, TorchPolicy):
@@ -216,7 +373,19 @@ def _install_batched_inference():
                 )
                 start = end
 
-            run_out = policy.evaluate(batched_steps, global_agent_ids)
+            if cpu_actor_cache is None:
+                run_out = policy.evaluate(batched_steps, global_agent_ids)
+            else:
+                cpu_actor = cpu_actor_cache.get(behavior_name, policy)
+                run_out = evaluate_on_cpu(
+                    policy,
+                    cpu_actor,
+                    batched_steps,
+                    global_agent_ids,
+                )
+
+            # Memory belongs to the source policy, not the ephemeral CPU actor,
+            # so recurrent state ownership remains identical to ML-Agents.
             policy.save_memories(global_agent_ids, run_out.get("memory_out"))
             policy.check_nan_action(run_out.get("action"))
 
@@ -243,7 +412,18 @@ def _install_batched_inference():
 
 
 def main() -> None:
-    trainer_args, torch_threads, batch_inference = _extract_bees_options(sys.argv[1:])
+    (
+        trainer_args,
+        torch_threads,
+        batch_inference,
+        cpu_inference,
+    ) = _extract_bees_options(sys.argv[1:])
+
+    if cpu_inference and not batch_inference:
+        raise SystemExit(
+            f"{CPU_INFERENCE_FLAG} requires {BATCH_INFERENCE_FLAG}; "
+            "hybrid CPU inference is implemented by the cross-worker batching path."
+        )
 
     import mlagents.trainers
     from mlagents import torch_utils
@@ -265,8 +445,15 @@ def main() -> None:
 
     original_queue_steps = None
     if batch_inference:
-        original_queue_steps = _install_batched_inference()
+        original_queue_steps = _install_batched_inference(
+            cpu_inference=cpu_inference
+        )
         print("[Bees RL] Cross-worker policy inference batching: enabled")
+        if cpu_inference:
+            print(
+                "[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; "
+                "environment inference uses synchronized CPU actor replicas"
+            )
 
     original_torch_load = torch_utils.torch.load
 
