@@ -98,7 +98,6 @@ class CpuInferenceActorCacheTests(unittest.TestCase):
 
         with torch.no_grad():
             policy.actor.linear.weight.add_(1.0)
-            # ML-Agents' normalizer replaces registered buffer tensor references.
             policy.actor.running = policy.actor.running + 3.0
 
         refreshed = cache.get("BeesRL1v1?team=0", policy)
@@ -141,6 +140,29 @@ class CpuInferenceActorCacheTests(unittest.TestCase):
         self.assertIsNot(first_replica, second_replica)
         self.assertIsNot(second_replica, second_policy.actor)
         self.assertEqual(next(second_replica.parameters()).device.type, "cpu")
+
+
+class WorkerTimerSamplerTests(unittest.TestCase):
+    def test_unsampled_steps_accumulate_until_sample_boundary(self):
+        roots_returned = []
+        resets = []
+
+        def get_root():
+            roots_returned.append("root")
+            return "root"
+
+        def reset():
+            resets.append(True)
+
+        sampler = launcher._WorkerTimerSampler(get_root, reset, 3)
+        results = []
+        for _ in range(6):
+            results.append(sampler.get_timer_root())
+            sampler.reset_timers()
+
+        self.assertEqual(results, [None, None, "root", None, None, "root"])
+        self.assertEqual(roots_returned, ["root", "root"])
+        self.assertEqual(len(resets), 2)
 
 
 class BatchedInferenceTests(unittest.TestCase):
@@ -245,7 +267,7 @@ class BatchedInferenceTests(unittest.TestCase):
 
         return FakeTorchPolicy()
 
-    def test_same_behavior_workers_are_evaluated_once_and_split_back(self):
+    def test_same_behavior_workers_are_evaluated_once_and_ipc_is_slim(self):
         from mlagents.trainers.behavior_id_utils import get_global_agent_id
         from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
 
@@ -282,26 +304,35 @@ class BatchedInferenceTests(unittest.TestCase):
             self.assertEqual(len(worker.sent), 1)
             command, payload = worker.sent[0]
             self.assertEqual(command, EnvironmentCommand.STEP)
-            info = payload[behavior]
-            self.assertEqual(info.agent_ids, [expected_agent])
+
+            # The trainer retains every output required for PPO trajectory
+            # construction.
+            trainer_info = worker.previous_all_action_info[behavior]
+            self.assertEqual(trainer_info.agent_ids, [expected_agent])
             np.testing.assert_array_equal(
-                info.action.continuous,
+                trainer_info.action.continuous,
                 np.asarray([[expected_action]], dtype=np.float32),
             )
             np.testing.assert_array_equal(
-                info.env_action.continuous,
-                np.asarray([[expected_action + 100.0]], dtype=np.float32),
-            )
-            np.testing.assert_array_equal(
-                info.outputs["entropy"],
+                trainer_info.outputs["entropy"],
                 np.asarray([expected_action + 0.25], dtype=np.float32),
             )
             np.testing.assert_array_equal(
-                info.outputs["memory_out"],
+                trainer_info.outputs["memory_out"],
                 np.asarray(
                     [[expected_action, expected_action + 1.0]],
                     dtype=np.float32,
                 ),
+            )
+
+            # The subprocess receives only what ML-Agents' worker actually reads.
+            ipc_info = payload[behavior]
+            self.assertEqual(ipc_info.agent_ids, [expected_agent])
+            self.assertEqual(ipc_info.action, [])
+            self.assertEqual(ipc_info.outputs, {})
+            np.testing.assert_array_equal(
+                ipc_info.env_action.continuous,
+                np.asarray([[expected_action + 100.0]], dtype=np.float32),
             )
 
         self.assertEqual(len(policy.saved_memories), 1)
@@ -365,6 +396,7 @@ class BatchedInferenceTests(unittest.TestCase):
         self.SubprocessEnvManager._queue_steps(manager)
 
         self.assertEqual(len(policy.evaluate_calls), 0)
+        self.assertEqual(worker.previous_all_action_info[behavior].agent_ids, [])
         info = worker.sent[0][1][behavior]
         self.assertEqual(info.agent_ids, [])
         self.assertEqual(info.outputs, {})
@@ -406,8 +438,10 @@ class FastEnvManagerTests(unittest.TestCase):
                 self.blocking_get_calls = 0
                 self.nonblocking_get_calls = 0
 
-            def get(self):
+            def get(self, timeout=None):
                 self.blocking_get_calls += 1
+                if not self.values:
+                    raise Empty()
                 return self.values.pop(0)
 
             def get_nowait(self):
@@ -444,6 +478,68 @@ class FastEnvManagerTests(unittest.TestCase):
         self.assertFalse(manager.env_workers[0].waiting)
         self.assertFalse(manager.env_workers[1].waiting)
         self.assertEqual(result, responses)
+
+    def test_coalescing_window_collects_near_ready_straggler(self):
+        from queue import Empty
+        from types import SimpleNamespace
+
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        first = EnvironmentResponse(EnvironmentCommand.STEP, 0, "worker-0")
+        straggler = EnvironmentResponse(EnvironmentCommand.STEP, 1, "worker-1")
+
+        class FakeQueue:
+            def __init__(self):
+                self.first_sent = False
+                self.straggler_sent = False
+                self.timed_get_calls = 0
+
+            def get(self, timeout=None):
+                if timeout is None:
+                    self.first_sent = True
+                    return first
+                self.timed_get_calls += 1
+                if not self.straggler_sent:
+                    self.straggler_sent = True
+                    return straggler
+                raise Empty()
+
+            @staticmethod
+            def get_nowait():
+                # Model the second worker becoming ready just after the immediate
+                # drain observes an empty queue.
+                raise Empty()
+
+        class FakeManager:
+            def __init__(self):
+                self.step_queue = FakeQueue()
+                self.env_workers = [
+                    SimpleNamespace(waiting=True),
+                    SimpleNamespace(waiting=True),
+                ]
+
+            @staticmethod
+            def _queue_steps():
+                return None
+
+            @staticmethod
+            def _restart_failed_workers(step):
+                raise AssertionError("No worker should fail in this test")
+
+            @staticmethod
+            def _postprocess_steps(worker_steps):
+                return worker_steps
+
+        manager = FakeManager()
+        result = self.SubprocessEnvManager._step(manager)
+
+        self.assertEqual(result, [first, straggler])
+        self.assertEqual(manager.step_queue.timed_get_calls, 1)
+        self.assertFalse(manager.env_workers[0].waiting)
+        self.assertFalse(manager.env_workers[1].waiting)
 
 
 if __name__ == "__main__":
