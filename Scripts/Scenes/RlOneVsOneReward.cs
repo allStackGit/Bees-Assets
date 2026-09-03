@@ -145,14 +145,19 @@ internal static class RlOneVsOneReward
     }
 
     /// <summary>
-    /// A timeout or simultaneous no-winner result is a failure for both sides. Otherwise a weak ship
-    /// could learn that indefinitely avoiding combat is preferable to accepting a likely loss.
+    /// Timeouts remain failures for both sides so avoiding combat is never preferable to engaging.
+    /// A simultaneous elimination is a neutral terminal draw; previously earned TSV/discovery shaping
+    /// remains untouched and can still distinguish which side fought the more valuable exchange.
     /// </summary>
-    internal static float CalculateTerminalReward(int side, int winningSide)
+    internal static float CalculateTerminalReward(int side, int winningSide, bool timedOut)
     {
-        if (winningSide == 0)
+        if (timedOut)
         {
             return LossReward;
+        }
+        if (winningSide == 0)
+        {
+            return 0f;
         }
         return side == winningSide ? WinReward : LossReward;
     }
