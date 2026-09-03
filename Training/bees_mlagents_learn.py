@@ -7,7 +7,7 @@ while applying Bees-specific performance and device fixes:
 * --bees-torch-threads controls PyTorch intra-op CPU threads.
 * --bees-batch-inference batches idle workers by exact behavior id, keeps full
   policy outputs in the trainer process, sends Unity only the environment action,
-  coalesces near-ready workers for 2 ms, and samples worker timer-tree IPC.
+  and samples worker timer-tree IPC.
 * --bees-cpu-inference keeps PPO/optimizer state on --torch-device while using a
   synchronized CPU actor replica for environment inference.
 
@@ -25,7 +25,6 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 THREAD_FLAG = "--bees-torch-threads"
 BATCH_INFERENCE_FLAG = "--bees-batch-inference"
 CPU_INFERENCE_FLAG = "--bees-cpu-inference"
-WORKER_COALESCE_SECONDS = 0.002
 WORKER_TIMER_SAMPLE_STEPS = 64
 _ORIGINAL_MLAGENTS_WORKER = None
 
@@ -456,9 +455,8 @@ def _install_batched_inference(cpu_inference: bool = False):
 
 
 def _install_fast_env_manager():
-    """Block for the first result and briefly coalesce near-ready workers."""
+    """Block for the first result, then drain every worker already ready."""
 
-    import time
     from queue import Empty as EmptyQueueException
 
     from mlagents.trainers.env_manager import EnvManager
@@ -506,26 +504,6 @@ def _install_fast_env_manager():
                     if accept_response(step):
                         restarted = True
                         break
-            if restarted:
-                continue
-
-            # The previous profile averaged about 25/32 workers per returned
-            # manager step. Give already-running stragglers a tiny bounded window
-            # to join this batch; never wait for all workers or a slow outlier.
-            if any(worker.waiting for worker in self.env_workers):
-                deadline = time.perf_counter() + WORKER_COALESCE_SECONDS
-                with hierarchical_timer("BeesEnv.coalesce_workers"):
-                    while any(worker.waiting for worker in self.env_workers):
-                        remaining = deadline - time.perf_counter()
-                        if remaining <= 0:
-                            break
-                        try:
-                            step = self.step_queue.get(timeout=remaining)
-                        except EmptyQueueException:
-                            break
-                        if accept_response(step):
-                            restarted = True
-                            break
             if restarted:
                 continue
 
@@ -587,10 +565,6 @@ def main() -> None:
         original_env_step, original_process_step_infos = _install_fast_env_manager()
         print("[Bees RL] Cross-worker policy inference batching: enabled")
         print("[Bees RL] Slim subprocess action IPC: enabled")
-        print(
-            f"[Bees RL] Worker coalescing window: "
-            f"{WORKER_COALESCE_SECONDS * 1000.0:.1f} ms"
-        )
         print(
             f"[Bees RL] Worker timer transfer: every "
             f"{WORKER_TIMER_SAMPLE_STEPS} steps"
