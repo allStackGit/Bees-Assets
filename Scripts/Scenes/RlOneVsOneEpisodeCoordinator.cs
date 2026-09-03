@@ -122,6 +122,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private Stage _stage;
     private Level _level;
     private bool _episodeActive;
+    private bool _discoveryRewardsReady;
     private int _episodeNumber;
     private int _beeTeamId;
     private int _humanTeamId;
@@ -229,6 +230,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (!_episodeActive || _level != currentLevel)
         {
             TryBeginEpisode(currentLevel);
+        }
+        if (_episodeActive && !_discoveryRewardsReady)
+        {
+            TryEnableDiscoveryRewards(currentLevel);
         }
     }
 
@@ -437,7 +442,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         _active.TryBeginEpisode(observer.Level);
-        if (!_active._episodeActive || observer.Level != _active._level)
+        if (!_active._episodeActive || observer.Level != _active._level || !_active._discoveryRewardsReady)
         {
             return false;
         }
@@ -613,13 +618,45 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
+        _discoveryRewardsReady = false;
         _episodeActive = true;
+    }
 
-        // Physics callbacks can populate a Hive Mind cache before this coordinator's first Update.
-        // Replaying the already-known cache through ID-deduplicated award helpers prevents those real
-        // first discoveries from being lost while still guaranteeing exactly one reward per side.
+    private void TryEnableDiscoveryRewards(Level level)
+    {
+        if (!_episodeActive || _discoveryRewardsReady || level != _level || ConfigData.Configuration == null)
+        {
+            return;
+        }
+
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (!ArePolicyControlledShipsReady(level, beeSide) || !ArePolicyControlledShipsReady(level, humanSide))
+        {
+            return;
+        }
+
+        _discoveryRewardsReady = true;
+
+        // Physics callbacks may have populated side-wide caches before all of the active team Agents
+        // acquired their ships. Replay that knowledge only after every policy-controlled live ship is
+        // bound; the ID guards make the replay and normal cache-insertion path exactly-once.
         RewardExistingDiscoveries(level, beeSide);
         RewardExistingDiscoveries(level, humanSide);
+    }
+
+    private static bool ArePolicyControlledShipsReady(Level level, int side)
+    {
+        List<Ship> ships = level.State.GetShips(side);
+        for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+        {
+            Ship ship = ships[shipIndex];
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void CaptureDiscoveryBaselines(Level level, int beeSide, int humanSide)
@@ -862,6 +899,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         _episodeActive = false;
+        _discoveryRewardsReady = false;
         EpisodeEnded?.Invoke(LastEpisodeResult);
     }
 
