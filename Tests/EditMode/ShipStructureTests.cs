@@ -54,6 +54,22 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("(double)ship.Health / ship.OriginalHealth", geometry);
         }
 
+        [Test]
+        public void DualCannonRecordsBothProjectilesInRlShotTelemetry()
+        {
+            string source = File.ReadAllText(Path.Combine(_folder, "Weapons", "DualCannon.cs"));
+            const string marker = "global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);";
+
+            StringAssert.Contains("Ship.FleetShip.ShotsFired += 2;", source);
+            int first = source.IndexOf(marker);
+            int second = source.IndexOf(marker, first + marker.Length);
+            int third = source.IndexOf(marker, second + marker.Length);
+
+            Assert.That(first, Is.GreaterThanOrEqualTo(0));
+            Assert.That(second, Is.GreaterThan(first));
+            Assert.That(third, Is.EqualTo(-1));
+        }
+
         private void AssertPartial(string filename, params string[] markers)
         {
             string source = File.ReadAllText(Path.Combine(_folder, filename));
