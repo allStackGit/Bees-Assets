@@ -49,6 +49,7 @@ namespace Bees.Tests.EditMode
 
         [TestCase("LaserBuilder.cs")]
         [TestCase("BeamCannon.cs")]
+        [TestCase("FullShipTurret.cs")]
         public void SpecializedTurretRlAimPrecedesMouseInput(string filename)
         {
             string source = File.ReadAllText(Path.Combine(
@@ -89,6 +90,85 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("_rlShotQueued = true;", queuedFirePath);
             StringAssert.Contains("LaserBuilderAnimation.SetActive(true);", queuedFirePath);
             StringAssert.Contains("bool directPointFire = IsRlControlled ? _rlShotQueued : IsFiringManually;", source);
+        }
+
+        [Test]
+        public void FullShipTurretKeepsLogicalTurretHeadingsSynchronizedWithHullTurns()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "FullShipTurret.cs"));
+
+            StringAssert.Contains("RotateShipAndTurrets(_rightRotationRate);", source);
+            StringAssert.Contains("RotateShipAndTurrets(_leftRotationRate);", source);
+            StringAssert.Contains("Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta.z);", source);
+            StringAssert.Contains("float rotationDelta = Mathf.DeltaAngle(Ship.Rotation, rotation);", source);
+            StringAssert.Contains("Ship.Turrets.ForEach((turret) => turret.Rotation += rotationDelta);", source);
+        }
+
+        [Test]
+        public void FullShipTurretLeavesRlChargeAnimationOwnedByLaserBuilderQueue()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "FullShipTurret.cs"));
+
+            int ownershipComment = source.IndexOf("LaserBuilder.SendProjectile owns activation for queued RL shots");
+            int nonRlAimBranch = source.IndexOf("else if (!IsAimedAtTarget)", ownershipComment);
+            int aimActivation = source.IndexOf("LaserBuilderAnimation.SetActive(true);", nonRlAimBranch);
+            Assert.That(ownershipComment, Is.GreaterThanOrEqualTo(0));
+            Assert.That(nonRlAimBranch, Is.GreaterThan(ownershipComment));
+            Assert.That(aimActivation, Is.GreaterThan(nonRlAimBranch));
+
+            int sendProjectile = source.IndexOf("protected override void SendProjectile()");
+            int baseFire = source.IndexOf("base.SendProjectile();", sendProjectile);
+            int nonRlSendGuard = source.IndexOf("if (!IsRlControlled)", baseFire);
+            int sendDeactivation = source.IndexOf("LaserBuilderAnimation.SetActive(false);", nonRlSendGuard);
+            Assert.That(sendProjectile, Is.GreaterThanOrEqualTo(0));
+            Assert.That(baseFire, Is.GreaterThan(sendProjectile));
+            Assert.That(nonRlSendGuard, Is.GreaterThan(baseFire));
+            Assert.That(sendDeactivation, Is.GreaterThan(nonRlSendGuard));
+        }
+
+        [Test]
+        public void RlWeaponReadinessLatchesUntilARequestedShotFires()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "Turret.Targeting.cs"));
+
+            StringAssert.Contains("if (!ReadyToFire)", source);
+            StringAssert.Contains("if (TargetingPasses >= PassesPerFire)", source);
+            StringAssert.Contains("TargetingPasses = PassesPerFire;", source);
+            StringAssert.Contains("ReadyToFire = true;", source);
+            StringAssert.Contains("if (ReadyToFire && RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)", source);
+            StringAssert.Contains("ReadyToFire = false;", source);
+        }
+
+        [Test]
+        public void LatchedRlWeaponReadinessIsVersionedInThePolicyAbi()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "RlPolicySchema.cs"));
+
+            StringAssert.Contains("internal const int Version = 5;", source);
+            StringAssert.Contains("bees-rl-v5", source);
+            StringAssert.Contains("weapon-ready=rl-latched-until-fire", source);
         }
     }
 }
