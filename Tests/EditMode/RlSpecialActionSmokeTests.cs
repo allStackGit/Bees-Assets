@@ -42,6 +42,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void BargeRlSpecialActionLeavesChargeReservationToBarge()
+        {
+            string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            int start = agent.IndexOf("private void ApplySpecialAction()");
+            int end = agent.IndexOf("private void TryApplyMiningAction()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+
+            string method = agent.Substring(start, end - start);
+            StringAssert.Contains("barge.StartCoroutine(barge.ChargeForward(FindNearestVisibleEnemy()));", method);
+            StringAssert.DoesNotContain("TryReserveCharge", method);
+        }
+
+        [Test]
         public void BargeRlChargeLocksHeadingAndUsesAuthoredChargeSpeed()
         {
             string source = ReadSource("Scripts", "Entities", "Ships", "Barge.cs");
