@@ -1,0 +1,30 @@
+{
+    "BeesRL1v1": {
+        "elo": 1199.0014391117093,
+        "checkpoints": [
+            {
+                "steps": 24741,
+                "file_path": "results\\bees-rl-full-001\\BeesRL1v1\\BeesRL1v1-24741.onnx",
+                "reward": -4.9329011011868715,
+                "creation_time": 1788389509.4502294,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-full-001\\BeesRL1v1\\BeesRL1v1-24741.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 24741,
+            "file_path": "results\\bees-rl-full-001\\BeesRL1v1.onnx",
+            "reward": -4.9329011011868715,
+            "creation_time": 1788389509.4502294,
+            "auxillary_file_paths": [
+                "results\\bees-rl-full-001\\BeesRL1v1\\BeesRL1v1-24741.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}
