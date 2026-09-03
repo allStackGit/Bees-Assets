@@ -255,7 +255,9 @@ namespace Assets.Scripts.Entities.Ships
 
         private void NNDirectionalMovement()
         {
-            if (ShouldDetonate)
+            // The historical Brain owns ShouldDetonate. Dedicated ML-Agents training disables
+            // that Brain and controls suicide/special actions through its explicit special branch.
+            if (ShouldDetonate && Stage.ActivateBrains)
             {
                 if (ShipType == ConfigData.ShipTypes.Striker) ((Striker)this).TryToDropBombs();
                 else if (ShipType == ConfigData.ShipTypes.YellowJacket) ((YellowJacket)this).TryToDetonate();
@@ -273,7 +275,9 @@ namespace Assets.Scripts.Entities.Ships
                 Utilities.TimedRotationDifference(this, Direction, RotationSpeed);
             }
             _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
-            _tempVelocity = new Vector2(Speed * Mathf.Sin(_tempAngle), -Speed * Mathf.Cos(_tempAngle));
+            // Directional controllers must honor gameplay speed state just like the normal movement
+            // path. This is required for Barge charge speed and any other temporary speed changes.
+            _tempVelocity = new Vector2(CurrentSpeed * Mathf.Sin(_tempAngle), -CurrentSpeed * Mathf.Cos(_tempAngle));
             Body.linearVelocity = _tempVelocity;
             IsMoving = true;
         }
@@ -415,6 +419,12 @@ namespace Assets.Scripts.Entities.Ships
             FinalDestination = Vector2.zero;
             Body.linearVelocity = Vector2.zero;
             IsMoving = false;
+            // HasBrain directional movement does not consume HasTargetCoordinates/HasTargetDirection.
+            // Reset its sentinel too so a gameplay StopMoving call actually stops an RL-controlled ship.
+            if (HasBrain && !Squad.IsUserControlled)
+            {
+                Direction = 360;
+            }
             ClearPreviousDesintation();
             if (HasRocketFlares)
             {
