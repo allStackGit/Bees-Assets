@@ -42,6 +42,21 @@ TSV is used for intermediate reward shaping because it measures value destroyed 
 
 Any real loss of a policy-controlled side's TSV must contribute to casualty-preservation shaping. Enemy damage credits the attacker and penalizes the damaged side. Friendly fire and unattributed/self/environmental damage penalize the damaged side without manufacturing positive credit for the same side or an arbitrary opponent. Ordinary enemy damage is shaped at impact and is not reconciled again at episode end, preventing double counting.
 
+First side-wide discovery of strategically useful information also receives a deliberately small shaping reward. Discovery is defined by insertion into the side's shared Hive Mind/RL cache, not by each individual observer, so a second ship seeing an already-known object earns nothing. Enemy ships are valued by TSV. Mining asteroids, static obstacles, and map objects use their episode-start health/resource value as the available neutral-object value signal. Collision asteroids use size class because they can spawn dynamically throughout an episode.
+
+Static discovery categories are normalized against the total discoverable value present when the episode begins. Current raw category budgets are:
+
+- enemy ships: `0.06`;
+- mining asteroids: `0.015`;
+- static obstacles: `0.015`;
+- map objects: `0.01`.
+
+Collision asteroids have a separate raw budget of `0.025`. The Nth first side-wide collision-asteroid discovery uses the convergent weight `1 / ((N + 1) * (N + 2))`, multiplied by a bounded size-class weight. Therefore collision asteroids do not require a predicted episode-start spawn count, every finite new discovery retains a positive signal, and even an unbounded stream of spawned asteroids cannot consume more than the collision-asteroid discovery budget.
+
+All **positive non-terminal shaping**, including combat/value outcomes, capability outcomes, and discovery, passes through one smooth asymptotic episode transform with a current maximum of `+2`. This is intentionally far below the `+10` terminal win reward. It is not a hard cap: the exact marginal transform remains positive for every finite positive outcome, so reaching a threshold never causes useful actions to stop receiving reward. Negative casualty/environmental shaping is not limited by this positive bound and cannot be used to reopen positive shaping headroom.
+
+Discovery events that occur during battle startup remain represented in the shared caches until all currently policy-controlled ships have bound to their active RL agents. The coordinator then replays the cached first discoveries through per-episode ID guards, so startup timing cannot lose the discovery signal or award it twice.
+
 Do **not** add tactical shaping such as rewards for moving toward an enemy, pointing at an enemy, flanking, or other hand-authored fighting behavior unless evidence proves it necessary. The network should be allowed to discover tactics itself.
 
 ### 3.1 Persistent fleet value
