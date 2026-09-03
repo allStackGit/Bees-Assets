@@ -53,7 +53,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 {
                     if (!IsFiringLaserBeam)
                     {
-                        //Debug.Log($"TargetShip is null, rotating back");
                         IsAimedAtTarget = false;
                         Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
                     }
@@ -72,26 +71,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (!IsFiringLaserBeam)
             {
-                //Debug.Log($"Setting target ship to {targetShip.Name}");
                 base.SetTargetShip(targetShip);
             }
         }
         private LaserBeam _beam;
-        protected override void SendProjectile() // [projectile-method] [note] [stats-method]
+        protected override void SendProjectile()
         {
             if (!IsFiringLaserBeam)
             {
-                //Debug.Log("Sending beam cannon projectile");
-
-
-
-                //Vector2 mapTransformPoint = Ship.Level.Map.Transform.InverseTransformPoint(Piece.transform.position);
-                //Vector2 shipOffset = Ship.GetPosition() + (Vector2) transform.position;
-
-                //Debug.Log($"Potential spawn point for laser beam, mapTransformPoint: {mapTransformPoint}, shipOffset: {shipOffset}");
-
-                //Projectile beam = Level.AddProjectile(ConfigData.ProjectileTypes.Beam, this, GetPosition(), angle);
-
                 _beam = (LaserBeam) Stage.Pool.GetProjectileFromPool(ConfigData.ProjectileTypes.Beam);
                 _beam.Transform.parent = Level.Map.Transform;
 
@@ -100,7 +87,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     SetTargetShipNull();
                 }
 
-                //Debug.Log($"Position before setup for {projectile.Id}: {instance.transform.localPosition}, {projectile.GetPosition()}");
                 _beam.Setup(Level, this, Ship, TargetShip, GetPosition(), AngleToPoint(TargetPoint), Range, Power);
                 Ship.ProjectilesInFlight.Add(_beam);
 
@@ -114,6 +100,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
                 Ship.FleetShip.ShotsFired++;
+                global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
                     Level.State.GetShipDamageStatus(Side, TargetShip).TotalDamageSentToShip += Power;
@@ -122,8 +109,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 IsFiringLaserBeam = true;
                 PlaySoundEffect();
             }
-
-
         }
     }
 }
