@@ -55,6 +55,7 @@ namespace Bees.Tests.PlayMode
         private Type _selectorType;
         private Type _schemaType;
         private Type _shipType;
+        private Type _stageType;
         private Scene _trainingScene;
 
         [SetUp]
@@ -68,6 +69,7 @@ namespace Bees.Tests.PlayMode
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
             _schemaType = RuntimeAssembly.GetType("RlPolicySchema");
             _shipType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship");
+            _stageType = RuntimeAssembly.GetType("Stage");
         }
 
         [UnityTearDown]
@@ -95,17 +97,32 @@ namespace Bees.Tests.PlayMode
                 "--rl-matchup-mode", "sampled",
                 "--rl-ships-per-side", SmokeShipsPerSide.ToString(),
                 "--rl-health-ratio", "1",
-                "--rl-map-size", "120",
+                "--rl-map-size", "256",
                 "--rl-episode-timeout", "600");
             RuntimeAssembly.SetStaticField(_bootstrapType, "_runtimeOptions", options);
             RuntimeAssembly.SetStaticField(_matchupsType, "_selector", CreateSelector(options, SmokeSeed));
 
-            AsyncOperation load = SceneManager.LoadSceneAsync(TrainingSceneName, LoadSceneMode.Single);
-            Assert.That(load, Is.Not.Null, $"Could not request {TrainingSceneName} scene load.");
-            while (!load.isDone)
+            // RuntimeInitializeOnLoadMethod runs when a player starts, not reliably for every scene
+            // that a PlayMode test loads later. Mirror the real AfterSceneLoad hooks explicitly in
+            // sceneLoaded, which Unity invokes before Start, so this exercises the same production
+            // bootstrap/coordinator/agent installer without depending on test-runner startup order.
+            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> sceneLoaded = BootstrapLoadedTrainingScene;
+            SceneManager.sceneLoaded += sceneLoaded;
+            AsyncOperation load;
+            try
             {
-                yield return null;
+                load = SceneManager.LoadSceneAsync(TrainingSceneName, LoadSceneMode.Single);
+                Assert.That(load, Is.Not.Null, $"Could not request {TrainingSceneName} scene load.");
+                while (!load.isDone)
+                {
+                    yield return null;
+                }
             }
+            finally
+            {
+                SceneManager.sceneLoaded -= sceneLoaded;
+            }
+
             _trainingScene = SceneManager.GetActiveScene();
             Assert.That(_trainingScene.name, Is.EqualTo(TrainingSceneName));
 
@@ -227,6 +244,23 @@ namespace Bees.Tests.PlayMode
                 "A zero-action smoke decision must still traverse the live movement control primitive.");
 
             AssertRewardRouting(beeAgents, humanAgents, beeSide, humanSide);
+        }
+
+        private void BootstrapLoadedTrainingScene(Scene scene, LoadSceneMode mode)
+        {
+            if (scene.name != TrainingSceneName)
+            {
+                return;
+            }
+
+            _trainingScene = scene;
+            SceneManager.SetActiveScene(scene);
+            Component stage = FindComponentInScene(_stageType, scene);
+            Assert.That(stage, Is.Not.Null, "RL runtime smoke could not find the training Stage before Start.");
+
+            InvokeStatic(_bootstrapType, "Apply", stage);
+            InvokeStatic(_coordinatorType, "AttachToDedicatedTrainingScene");
+            InvokeStatic(_agentType, "InstallForDedicatedTrainingScene");
         }
 
         private int CountPolicyControlledShips(List<Component> ships, MethodInfo requiresPolicyControl)
@@ -376,6 +410,27 @@ namespace Bees.Tests.PlayMode
                 ships.Add(ship);
             }
             return ships;
+        }
+
+        private static Component FindComponentInScene(Type type, Scene scene)
+        {
+            UnityEngine.Object[] objects = Resources.FindObjectsOfTypeAll(type);
+            for (int i = 0; i < objects.Length; i++)
+            {
+                Component component = objects[i] as Component;
+                if (component != null && component.gameObject.scene == scene)
+                {
+                    return component;
+                }
+            }
+            return null;
+        }
+
+        private static void InvokeStatic(Type type, string methodName, params object[] arguments)
+        {
+            MethodInfo method = type.GetMethod(methodName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null, $"Missing {type.FullName}.{methodName}.");
+            method.Invoke(null, arguments);
         }
 
         private static object CreateVectorSensor(int observationSize)
