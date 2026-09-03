@@ -23,7 +23,12 @@ SPEC.loader.exec_module(launcher)
 
 class BeesOptionParsingTests(unittest.TestCase):
     def test_batch_flag_is_removed_before_mlagents_parsing(self):
-        trainer_args, torch_threads, batch_inference = launcher._extract_bees_options(
+        (
+            trainer_args,
+            torch_threads,
+            batch_inference,
+            cpu_inference,
+        ) = launcher._extract_bees_options(
             [
                 "Training/rl_1v1_config.yaml",
                 "--bees-batch-inference",
@@ -37,13 +42,20 @@ class BeesOptionParsingTests(unittest.TestCase):
         )
         self.assertIsNone(torch_threads)
         self.assertTrue(batch_inference)
+        self.assertFalse(cpu_inference)
 
-    def test_thread_flag_and_batch_flag_can_be_combined(self):
-        trainer_args, torch_threads, batch_inference = launcher._extract_bees_options(
+    def test_thread_batch_and_cpu_inference_flags_can_be_combined(self):
+        (
+            trainer_args,
+            torch_threads,
+            batch_inference,
+            cpu_inference,
+        ) = launcher._extract_bees_options(
             [
                 "Training/rl_1v1_config.yaml",
                 "--bees-torch-threads=2",
                 "--bees-batch-inference",
+                "--bees-cpu-inference",
                 "--resume",
             ]
         )
@@ -54,6 +66,81 @@ class BeesOptionParsingTests(unittest.TestCase):
         )
         self.assertEqual(torch_threads, 2)
         self.assertTrue(batch_inference)
+        self.assertTrue(cpu_inference)
+
+
+class CpuInferenceActorCacheTests(unittest.TestCase):
+    @staticmethod
+    def _cpu_numpy(tensor):
+        return tensor.detach().cpu().numpy().copy()
+
+    def test_replica_stays_on_cpu_and_refreshes_parameters_and_buffers(self):
+        from mlagents.torch_utils import torch
+
+        class FakeActor(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 1, bias=False)
+                self.register_buffer("running", torch.zeros(2))
+
+        class FakePolicy:
+            def __init__(self):
+                self.actor = FakeActor()
+
+        policy = FakePolicy()
+        cache = launcher._CpuInferenceActorCache()
+
+        replica = cache.get("BeesRL1v1?team=0", policy)
+
+        self.assertIsNot(replica, policy.actor)
+        self.assertEqual(next(replica.parameters()).device.type, "cpu")
+        original_replica_weight = self._cpu_numpy(replica.linear.weight)
+
+        with torch.no_grad():
+            policy.actor.linear.weight.add_(1.0)
+            # ML-Agents' normalizer replaces registered buffer tensor references.
+            policy.actor.running = policy.actor.running + 3.0
+
+        refreshed = cache.get("BeesRL1v1?team=0", policy)
+
+        self.assertIs(refreshed, replica)
+        self.assertFalse(
+            np.array_equal(
+                original_replica_weight,
+                self._cpu_numpy(refreshed.linear.weight),
+            )
+        )
+        np.testing.assert_allclose(
+            self._cpu_numpy(refreshed.linear.weight),
+            self._cpu_numpy(policy.actor.linear.weight),
+        )
+        np.testing.assert_allclose(
+            self._cpu_numpy(refreshed.running),
+            np.asarray([3.0, 3.0], dtype=np.float32),
+        )
+
+    def test_behavior_rebuilds_replica_when_source_actor_changes(self):
+        from mlagents.torch_utils import torch
+
+        class FakeActor(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.ones(1))
+
+        class FakePolicy:
+            def __init__(self):
+                self.actor = FakeActor()
+
+        cache = launcher._CpuInferenceActorCache()
+        first_policy = FakePolicy()
+        second_policy = FakePolicy()
+
+        first_replica = cache.get("BeesRL1v1?team=1", first_policy)
+        second_replica = cache.get("BeesRL1v1?team=1", second_policy)
+
+        self.assertIsNot(first_replica, second_replica)
+        self.assertIsNot(second_replica, second_policy.actor)
+        self.assertEqual(next(second_replica.parameters()).device.type, "cpu")
 
 
 class BatchedInferenceTests(unittest.TestCase):
