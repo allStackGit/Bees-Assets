@@ -84,10 +84,10 @@ engine_settings:
   no_graphics_monitor: false
 environment_parameters: null
 checkpoint_settings:
-  run_id: bees-rl-1v1-full-001
+  run_id: bees-rl-1v1-full-002
   initialize_from: null
   load_model: false
-  resume: true
+  resume: false
   force: false
   train_model: false
   inference: false

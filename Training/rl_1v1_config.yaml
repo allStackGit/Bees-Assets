@@ -1,3 +1,5 @@
+torch_settings:
+  device: cpu
 behaviors:
   BeesRL1v1:
     trainer_type: ppo

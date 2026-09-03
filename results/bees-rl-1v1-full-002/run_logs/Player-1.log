@@ -13,7 +13,7 @@ NullGfxDevice:
     Renderer: Null Device
     Vendor:   Unity Technologies
 Begin MonoManager ReloadAssembly
-- Finished resetting the current domain, in  0.045 seconds
+- Finished resetting the current domain, in  0.046 seconds
 [Physics::Module] Selected backend.
 [Physics::Module] Name: PhysX
 [Physics::Module] Id: 0xf2b8ea05
@@ -25,7 +25,7 @@ Texture with ID 114 and with size 13376x6920 was too large for graphics device m
 Texture with ID 210 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 221 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 238 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
-UnloadTime: 0.848000 ms
+UnloadTime: 1.087300 ms
 UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
 Trying to connect to ws://clashofempire.net:7146
 Connection with WebSocketSharp open!
@@ -36,6 +36,7 @@ RL training configuration health_ratio=0.25 map_size=30 episode_timeout=120s shi
 Can not play a disabled audio source
 Registered Communicator in Agent.
 RL policy ABI v5 bees-rl-v5|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4685|cont=34|disc=2x16,5,65,65,65|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id observations=4685 continuous_actions=34 weapon_fire_branches=16x2 special_branch=5 ally_target_branch=65 enemy_target_branch=65 map_object_target_branch=65 allies=64 enemies=64 moving_asteroids=48 mining_asteroids=8 map_objects=64 navigation_grid=13x13 weapon_slots=16 enemy_weapon_mounts=16 objective_channels=16 spawned_ship_control=dynamic
+Unable to save timers to file F:/RLDemo/Bees RL Training/Bees_Data\ML-Agents\Timers\RL 1v1 Training_timers.json
 [Physics::Module] Cleanup current backend.
 [Physics::Module] Id: 0xf2b8ea05
 Input System module state changed to: ShutdownInProgress.
