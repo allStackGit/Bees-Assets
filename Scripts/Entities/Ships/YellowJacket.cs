@@ -50,7 +50,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 TouchingShip = _collidingThing.GetComponent<Ship>();
 
-                if (TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
+                if (TouchingShip != null && !TouchingShip.IsDead && TouchingShip.Side != Side && Squad.HasCommand && Bomb.TargetShip == TouchingShip)
                 {
                     ContactedShip = TouchingShip;
                     Detonate();
@@ -76,7 +76,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         public void TryToDetonate()
         {
-            if (TouchingShip != null && TouchingShip.Side != Side)
+            if (TouchingShip != null && !TouchingShip.IsDead && TouchingShip.Side != Side)
             {
                 ContactedShip = TouchingShip;
                 Detonate();
@@ -84,6 +84,12 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void Detonate()
         {
+            if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Side == Side)
+            {
+                ContactedShip = null;
+                return;
+            }
+
             HasCompletedRun = true;
 
             // The selected bombing-run target is being resolved synchronously rather than
@@ -93,12 +99,15 @@ namespace Assets.Scripts.Entities.Ships
             LogDetonationDamage(Bomb.Power, this, ContactedShip);
             LogDetonationDamage(Bomb.Power, ContactedShip, this);
 
-            if (ContactedShip.Health <= 0)
+            Ship detonationTarget = ContactedShip;
+            FleetShip targetFleetShip = detonationTarget.FleetShip;
+            SavedSquad targetSavedSquad = detonationTarget.Squad.SavedSquad;
+            if (detonationTarget.Health <= 0)
             {
-                ContactedShip.Kill(this, FleetShip, Squad.SavedSquad);
+                detonationTarget.Kill(this, FleetShip, Squad.SavedSquad);
             }
 
-            Kill(ContactedShip, ContactedShip.FleetShip, ContactedShip.Squad.SavedSquad);
+            Kill(detonationTarget, targetFleetShip, targetSavedSquad);
         }
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
