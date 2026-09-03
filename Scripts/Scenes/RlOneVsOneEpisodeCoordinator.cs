@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Data;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using System;
@@ -108,8 +109,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     /// <summary>
     /// Trainer adapters can subscribe to these without putting trainer-specific dependencies into
-    /// the battle scene or the core Level lifecycle. TSV shaping is emitted when the real outcome
-    /// occurs; the episode event carries terminal/time rewards and diagnostic totals.
+    /// the battle scene or the core Level lifecycle. Immediate shaping is emitted when the real
+    /// outcome/discovery occurs; the episode event carries terminal/time rewards and diagnostics.
     /// </summary>
     internal static event Action<int, float> TsvRewardOccurred;
     internal static event Action<EpisodeResult> EpisodeEnded;
@@ -135,6 +136,36 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private int _humanDamageThisEpisode;
     private float _beeTsvRewardThisEpisode;
     private float _humanTsvRewardThisEpisode;
+
+    // Discovery denominators are captured before an episode starts rewarding observations. Enemy
+    // ships are side-specific; neutral environmental categories have the same denominator for both
+    // sides. Collision asteroids are deliberately absent because they can spawn throughout battle.
+    private readonly int[] _enemyShipDiscoveryValue = new int[2];
+    private readonly int[] _miningAsteroidDiscoveryValue = new int[2];
+    private readonly int[] _staticObstacleDiscoveryValue = new int[2];
+    private readonly int[] _mapObjectDiscoveryValue = new int[2];
+    private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
+    private readonly float[] _rawPositiveShapingReward = new float[2];
+    private readonly HashSet<long>[] _rewardedShipDiscoveryIds =
+    {
+        new HashSet<long>(),
+        new HashSet<long>()
+    };
+    private readonly HashSet<int>[] _rewardedMiningAsteroidDiscoveryIds =
+    {
+        new HashSet<int>(),
+        new HashSet<int>()
+    };
+    private readonly HashSet<int>[] _rewardedObstacleDiscoveryIds =
+    {
+        new HashSet<int>(),
+        new HashSet<int>()
+    };
+    private readonly HashSet<int>[] _rewardedMapObjectDiscoveryIds =
+    {
+        new HashSet<int>(),
+        new HashSet<int>()
+    };
 
     private int _completedEpisodes;
     private int _beeWins;
@@ -348,6 +379,153 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _active.ApplyImmediateTsvReward(ship.Side, reward);
     }
 
+    /// <summary>
+    /// Rewards only the first side-wide discovery of an enemy ship. The GameState cache insertion is
+    /// the source of truth; this additional ID guard also protects startup races and pooled objects.
+    /// </summary>
+    internal static void RecordShipDiscovery(Ship observer, Ship spotted)
+    {
+        if (!TryPrepareDiscovery(observer, out int sideIndex) || spotted == null || spotted.IsDead ||
+            spotted.Level != observer.Level || spotted.Side == observer.Side)
+        {
+            return;
+        }
+
+        _active.AwardShipDiscovery(observer.Side, sideIndex, spotted);
+    }
+
+    internal static void RecordMiningAsteroidDiscovery(Ship observer, MiningAsteroid asteroid)
+    {
+        if (!TryPrepareDiscovery(observer, out int sideIndex) || asteroid == null || asteroid.IsDead ||
+            asteroid.Level != observer.Level)
+        {
+            return;
+        }
+
+        _active.AwardMiningAsteroidDiscovery(observer.Side, sideIndex, asteroid);
+    }
+
+    internal static void RecordMapObjectDiscovery(Ship observer, MapObject mapObject)
+    {
+        if (!TryPrepareDiscovery(observer, out int sideIndex) || mapObject == null || mapObject.IsDead ||
+            mapObject.Level != observer.Level)
+        {
+            return;
+        }
+
+        _active.AwardMapObjectDiscovery(observer.Side, sideIndex, mapObject);
+    }
+
+    internal static void RecordObstacleDiscovery(Ship observer, Obstacle obstacle)
+    {
+        if (!TryPrepareDiscovery(observer, out int sideIndex) || obstacle == null || obstacle.IsDead ||
+            obstacle.Level != observer.Level)
+        {
+            return;
+        }
+
+        _active.AwardObstacleDiscovery(observer.Side, sideIndex, obstacle);
+    }
+
+    private static bool TryPrepareDiscovery(Ship observer, out int sideIndex)
+    {
+        sideIndex = -1;
+        if (_active == null || ConfigData.Configuration == null || observer == null || observer.IsDead ||
+            observer.Level == null)
+        {
+            return false;
+        }
+
+        _active.TryBeginEpisode(observer.Level);
+        if (!_active._episodeActive || observer.Level != _active._level)
+        {
+            return false;
+        }
+
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        if (observer.Side != beeSide && observer.Side != humanSide)
+        {
+            return false;
+        }
+
+        sideIndex = observer.Side - 1;
+        return sideIndex >= 0 && sideIndex < 2;
+    }
+
+    private void AwardShipDiscovery(int side, int sideIndex, Ship spotted)
+    {
+        if (!_rewardedShipDiscoveryIds[sideIndex].Add(spotted.Id))
+        {
+            return;
+        }
+
+        float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
+            Mathf.Max(1, spotted.Tsv),
+            _enemyShipDiscoveryValue[sideIndex],
+            RlOneVsOneReward.EnemyShipDiscoveryBudget);
+        ApplyImmediateTsvReward(side, reward);
+    }
+
+    private void AwardMiningAsteroidDiscovery(int side, int sideIndex, MiningAsteroid asteroid)
+    {
+        if (!_rewardedMiningAsteroidDiscoveryIds[sideIndex].Add(asteroid.Id))
+        {
+            return;
+        }
+
+        float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
+            GetObstacleDiscoveryValue(asteroid),
+            _miningAsteroidDiscoveryValue[sideIndex],
+            RlOneVsOneReward.MiningAsteroidDiscoveryBudget);
+        ApplyImmediateTsvReward(side, reward);
+    }
+
+    private void AwardMapObjectDiscovery(int side, int sideIndex, MapObject mapObject)
+    {
+        if (!_rewardedMapObjectDiscoveryIds[sideIndex].Add(mapObject.Id))
+        {
+            return;
+        }
+
+        float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
+            GetMapObjectDiscoveryValue(mapObject),
+            _mapObjectDiscoveryValue[sideIndex],
+            RlOneVsOneReward.MapObjectDiscoveryBudget);
+        ApplyImmediateTsvReward(side, reward);
+    }
+
+    private void AwardObstacleDiscovery(int side, int sideIndex, Obstacle obstacle)
+    {
+        if (obstacle is MiningAsteroid miningAsteroid)
+        {
+            AwardMiningAsteroidDiscovery(side, sideIndex, miningAsteroid);
+            return;
+        }
+        if (obstacle is AsteroidPiece || !_rewardedObstacleDiscoveryIds[sideIndex].Add(obstacle.Id))
+        {
+            return;
+        }
+
+        float reward;
+        if (obstacle is CollisionAsteroid collisionAsteroid)
+        {
+            int discoveryIndex = _collisionAsteroidDiscoveryCount[sideIndex]++;
+            reward = RlOneVsOneReward.CalculateCollisionAsteroidDiscoveryReward(
+                collisionAsteroid.SizeClass,
+                discoveryIndex);
+        }
+        else
+        {
+            reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
+                GetObstacleDiscoveryValue(obstacle),
+                _staticObstacleDiscoveryValue[sideIndex],
+                RlOneVsOneReward.StaticObstacleDiscoveryBudget);
+        }
+
+        ApplyImmediateTsvReward(side, reward);
+    }
+
     internal static void CompleteElimination(Level level)
     {
         if (!CanHandle(level))
@@ -389,7 +567,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void TryBeginEpisode(Level level)
     {
-        if (level == null || level.State == null)
+        if (level == null || level.State == null || ConfigData.Configuration == null)
         {
             return;
         }
@@ -434,27 +612,182 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanDamageThisEpisode = 0;
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
+        CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _episodeActive = true;
+
+        // Physics callbacks can populate a Hive Mind cache before this coordinator's first Update.
+        // Replaying the already-known cache through ID-deduplicated award helpers prevents those real
+        // first discoveries from being lost while still guaranteeing exactly one reward per side.
+        RewardExistingDiscoveries(level, beeSide);
+        RewardExistingDiscoveries(level, humanSide);
+    }
+
+    private void CaptureDiscoveryBaselines(Level level, int beeSide, int humanSide)
+    {
+        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+        {
+            _enemyShipDiscoveryValue[sideIndex] = 0;
+            _miningAsteroidDiscoveryValue[sideIndex] = 0;
+            _staticObstacleDiscoveryValue[sideIndex] = 0;
+            _mapObjectDiscoveryValue[sideIndex] = 0;
+            _collisionAsteroidDiscoveryCount[sideIndex] = 0;
+            _rawPositiveShapingReward[sideIndex] = 0f;
+            _rewardedShipDiscoveryIds[sideIndex].Clear();
+            _rewardedMiningAsteroidDiscoveryIds[sideIndex].Clear();
+            _rewardedObstacleDiscoveryIds[sideIndex].Clear();
+            _rewardedMapObjectDiscoveryIds[sideIndex].Clear();
+        }
+
+        int beeSideIndex = beeSide - 1;
+        int humanSideIndex = humanSide - 1;
+        if (beeSideIndex >= 0 && beeSideIndex < 2 && humanSideIndex >= 0 && humanSideIndex < 2)
+        {
+            _enemyShipDiscoveryValue[beeSideIndex] = SumShipDiscoveryValue(level.State.GetShips(humanSide));
+            _enemyShipDiscoveryValue[humanSideIndex] = SumShipDiscoveryValue(level.State.GetShips(beeSide));
+        }
+
+        int miningValue = 0;
+        int staticObstacleValue = 0;
+        HashSet<Obstacle> countedObstacles = new HashSet<Obstacle>();
+        GameObject[] activeObstacleObjects = PathfinderObstacleScope.GetActiveObstacleObjects(level);
+        for (int obstacleIndex = 0; obstacleIndex < activeObstacleObjects.Length; obstacleIndex++)
+        {
+            GameObject obstacleObject = activeObstacleObjects[obstacleIndex];
+            Obstacle obstacle = obstacleObject != null ? obstacleObject.GetComponent<Obstacle>() : null;
+            if (obstacle == null || obstacle.IsDead || obstacle.Level != level || !countedObstacles.Add(obstacle))
+            {
+                continue;
+            }
+
+            if (obstacle is MiningAsteroid)
+            {
+                miningValue += GetObstacleDiscoveryValue(obstacle);
+            }
+            else if (!(obstacle is CollisionAsteroid) && !(obstacle is AsteroidPiece))
+            {
+                staticObstacleValue += GetObstacleDiscoveryValue(obstacle);
+            }
+        }
+
+        int mapObjectValue = 0;
+        if (level.Map != null && level.Map.Transform != null)
+        {
+            MapObject[] activeMapObjects = level.Map.Transform.GetComponentsInChildren<MapObject>(false);
+            for (int objectIndex = 0; objectIndex < activeMapObjects.Length; objectIndex++)
+            {
+                MapObject mapObject = activeMapObjects[objectIndex];
+                if (mapObject != null && !mapObject.IsDead && mapObject.Level == level)
+                {
+                    mapObjectValue += GetMapObjectDiscoveryValue(mapObject);
+                }
+            }
+        }
+
+        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+        {
+            _miningAsteroidDiscoveryValue[sideIndex] = miningValue;
+            _staticObstacleDiscoveryValue[sideIndex] = staticObstacleValue;
+            _mapObjectDiscoveryValue[sideIndex] = mapObjectValue;
+        }
+    }
+
+    private void RewardExistingDiscoveries(Level level, int side)
+    {
+        int sideIndex = side - 1;
+        if (sideIndex < 0 || sideIndex >= 2)
+        {
+            return;
+        }
+
+        foreach (Ship spotted in level.State.VisionCache[sideIndex])
+        {
+            if (spotted != null && !spotted.IsDead && spotted.Side != side)
+            {
+                AwardShipDiscovery(side, sideIndex, spotted);
+            }
+        }
+        foreach (MiningAsteroid asteroid in level.State.HiveMindMiningAsteroidCache[sideIndex])
+        {
+            if (asteroid != null && !asteroid.IsDead)
+            {
+                AwardMiningAsteroidDiscovery(side, sideIndex, asteroid);
+            }
+        }
+        foreach (Obstacle obstacle in level.State.HiveMindObstacleCache[sideIndex])
+        {
+            if (obstacle != null && !obstacle.IsDead)
+            {
+                AwardObstacleDiscovery(side, sideIndex, obstacle);
+            }
+        }
+        foreach (MapObject mapObject in level.State.HiveMindMapObjectCache[sideIndex])
+        {
+            if (mapObject != null && !mapObject.IsDead)
+            {
+                AwardMapObjectDiscovery(side, sideIndex, mapObject);
+            }
+        }
+    }
+
+    private static int SumShipDiscoveryValue(List<Ship> ships)
+    {
+        int total = 0;
+        for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+        {
+            Ship ship = ships[shipIndex];
+            if (ship != null && !ship.IsDead)
+            {
+                total += Mathf.Max(1, ship.Tsv);
+            }
+        }
+        return total;
+    }
+
+    private static int GetObstacleDiscoveryValue(Obstacle obstacle)
+    {
+        return Mathf.Max(1, obstacle.OriginalHealth > 0 ? obstacle.OriginalHealth : obstacle.Health);
+    }
+
+    private static int GetMapObjectDiscoveryValue(MapObject mapObject)
+    {
+        return Mathf.Max(1, mapObject.MaxHealth > 0 ? mapObject.MaxHealth : mapObject.Health);
     }
 
     private void ApplyImmediateTsvReward(int side, float reward)
     {
+        int sideIndex = side - 1;
+        if (sideIndex < 0 || sideIndex >= _rawPositiveShapingReward.Length)
+        {
+            return;
+        }
+
+        float emittedReward = reward;
+        if (reward > 0f)
+        {
+            float previousBounded = RlOneVsOneReward.CalculateBoundedPositiveShapingReward(
+                _rawPositiveShapingReward[sideIndex]);
+            _rawPositiveShapingReward[sideIndex] += reward;
+            float nextBounded = RlOneVsOneReward.CalculateBoundedPositiveShapingReward(
+                _rawPositiveShapingReward[sideIndex]);
+            emittedReward = Mathf.Max(0f, nextBounded - previousBounded);
+        }
+
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         if (side == beeSide)
         {
-            _beeTsvRewardThisEpisode += reward;
+            _beeTsvRewardThisEpisode += emittedReward;
         }
         else if (side == humanSide)
         {
-            _humanTsvRewardThisEpisode += reward;
+            _humanTsvRewardThisEpisode += emittedReward;
         }
         else
         {
             return;
         }
 
-        TsvRewardOccurred?.Invoke(side, reward);
+        TsvRewardOccurred?.Invoke(side, emittedReward);
     }
 
     private void CompleteEpisode(Level level, int winningSide, bool timedOut)
