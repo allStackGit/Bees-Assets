@@ -29,7 +29,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (!Ship.IsMoving)
             {
-                if (IsFiringManually)
+                if (IsRlControlled)
+                {
+                    TargetPoint = RlTargetPoint;
+                    IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
+                }
+                else if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
                     IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
@@ -54,7 +59,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
             else
             {
-                if (IsFiringManually)
+                if (IsRlControlled)
+                {
+                    TargetPoint = RlTargetPoint;
+                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+                }
+                else if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
                     IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
