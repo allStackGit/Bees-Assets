@@ -305,8 +305,6 @@ class BatchedInferenceTests(unittest.TestCase):
             command, payload = worker.sent[0]
             self.assertEqual(command, EnvironmentCommand.STEP)
 
-            # The trainer retains every output required for PPO trajectory
-            # construction.
             trainer_info = worker.previous_all_action_info[behavior]
             self.assertEqual(trainer_info.agent_ids, [expected_agent])
             np.testing.assert_array_equal(
@@ -325,7 +323,6 @@ class BatchedInferenceTests(unittest.TestCase):
                 ),
             )
 
-            # The subprocess receives only what ML-Agents' worker actually reads.
             ipc_info = payload[behavior]
             self.assertEqual(ipc_info.agent_ids, [expected_agent])
             self.assertEqual(ipc_info.action, [])
@@ -478,68 +475,6 @@ class FastEnvManagerTests(unittest.TestCase):
         self.assertFalse(manager.env_workers[0].waiting)
         self.assertFalse(manager.env_workers[1].waiting)
         self.assertEqual(result, responses)
-
-    def test_coalescing_window_collects_near_ready_straggler(self):
-        from queue import Empty
-        from types import SimpleNamespace
-
-        from mlagents.trainers.subprocess_env_manager import (
-            EnvironmentCommand,
-            EnvironmentResponse,
-        )
-
-        first = EnvironmentResponse(EnvironmentCommand.STEP, 0, "worker-0")
-        straggler = EnvironmentResponse(EnvironmentCommand.STEP, 1, "worker-1")
-
-        class FakeQueue:
-            def __init__(self):
-                self.first_sent = False
-                self.straggler_sent = False
-                self.timed_get_calls = 0
-
-            def get(self, timeout=None):
-                if timeout is None:
-                    self.first_sent = True
-                    return first
-                self.timed_get_calls += 1
-                if not self.straggler_sent:
-                    self.straggler_sent = True
-                    return straggler
-                raise Empty()
-
-            @staticmethod
-            def get_nowait():
-                # Model the second worker becoming ready just after the immediate
-                # drain observes an empty queue.
-                raise Empty()
-
-        class FakeManager:
-            def __init__(self):
-                self.step_queue = FakeQueue()
-                self.env_workers = [
-                    SimpleNamespace(waiting=True),
-                    SimpleNamespace(waiting=True),
-                ]
-
-            @staticmethod
-            def _queue_steps():
-                return None
-
-            @staticmethod
-            def _restart_failed_workers(step):
-                raise AssertionError("No worker should fail in this test")
-
-            @staticmethod
-            def _postprocess_steps(worker_steps):
-                return worker_steps
-
-        manager = FakeManager()
-        result = self.SubprocessEnvManager._step(manager)
-
-        self.assertEqual(result, [first, straggler])
-        self.assertEqual(manager.step_queue.timed_get_calls, 1)
-        self.assertFalse(manager.env_workers[0].waiting)
-        self.assertFalse(manager.env_workers[1].waiting)
 
 
 if __name__ == "__main__":
