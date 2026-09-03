@@ -2,6 +2,7 @@ using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
@@ -95,26 +96,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
-    private readonly struct ShotBaseline
-    {
-        internal readonly FleetShip FleetShip;
-        internal readonly int ShotsAtStart;
-
-        internal ShotBaseline(FleetShip fleetShip)
-        {
-            FleetShip = fleetShip;
-            ShotsAtStart = fleetShip != null ? fleetShip.ShotsFired : 0;
-        }
-    }
-
-    /// <summary>
-    /// Trainer adapters can subscribe to these without putting trainer-specific dependencies into
-    /// the battle scene or the core Level lifecycle. Immediate shaping is emitted when the real
-    /// outcome/discovery occurs; the episode event carries terminal/time rewards and diagnostics.
-    /// </summary>
     internal static event Action<int, float> TsvRewardOccurred;
     internal static event Action<EpisodeResult> EpisodeEnded;
-
     internal static EpisodeResult LastEpisodeResult { get; private set; }
 
     private static RlOneVsOneEpisodeCoordinator _active;
@@ -129,14 +112,37 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _episodeStartedAt;
     private int _beeStartingTsv;
     private int _humanStartingTsv;
-    private readonly List<ShotBaseline> _beeShotBaselines = new List<ShotBaseline>();
-    private readonly List<ShotBaseline> _humanShotBaselines = new List<ShotBaseline>();
+    private int _beeShotsThisEpisode;
+    private int _humanShotsThisEpisode;
+    private int _beeFireRequestsThisEpisode;
+    private int _humanFireRequestsThisEpisode;
     private int _beeHitsThisEpisode;
     private int _humanHitsThisEpisode;
     private int _beeDamageThisEpisode;
     private int _humanDamageThisEpisode;
     private float _beeTsvRewardThisEpisode;
     private float _humanTsvRewardThisEpisode;
+    private float _beeFirstContactSeconds;
+    private float _humanFirstContactSeconds;
+    private float _beeFirstFireSeconds;
+    private float _humanFirstFireSeconds;
+    private float _beeFirstHitSeconds;
+    private float _humanFirstHitSeconds;
+
+    private readonly HashSet<long>[] _initialShipIds = { new HashSet<long>(), new HashSet<long>() };
+    private readonly HashSet<long>[] _seenShipIds = { new HashSet<long>(), new HashSet<long>() };
+    private readonly HashSet<long>[] _policyEligibleShipIds = { new HashSet<long>(), new HashSet<long>() };
+    private readonly HashSet<long>[] _policyControlledShipIds = { new HashSet<long>(), new HashSet<long>() };
+    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _fireRequestsByWeapon =
+    {
+        new Dictionary<ConfigData.WeaponTypes, int>(),
+        new Dictionary<ConfigData.WeaponTypes, int>()
+    };
+    private readonly Dictionary<ConfigData.WeaponTypes, int>[] _shotsByWeapon =
+    {
+        new Dictionary<ConfigData.WeaponTypes, int>(),
+        new Dictionary<ConfigData.WeaponTypes, int>()
+    };
 
     // Discovery denominators are captured before an episode starts rewarding observations. Enemy
     // ships are side-specific; neutral environmental categories have the same denominator for both
@@ -147,32 +153,17 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
-    private readonly HashSet<long>[] _rewardedShipDiscoveryIds =
-    {
-        new HashSet<long>(),
-        new HashSet<long>()
-    };
-    private readonly HashSet<int>[] _rewardedMiningAsteroidDiscoveryIds =
-    {
-        new HashSet<int>(),
-        new HashSet<int>()
-    };
-    private readonly HashSet<int>[] _rewardedObstacleDiscoveryIds =
-    {
-        new HashSet<int>(),
-        new HashSet<int>()
-    };
-    private readonly HashSet<int>[] _rewardedMapObjectDiscoveryIds =
-    {
-        new HashSet<int>(),
-        new HashSet<int>()
-    };
+    private readonly HashSet<long>[] _rewardedShipDiscoveryIds = { new HashSet<long>(), new HashSet<long>() };
+    private readonly HashSet<int>[] _rewardedMiningAsteroidDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
+    private readonly HashSet<int>[] _rewardedObstacleDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
+    private readonly HashSet<int>[] _rewardedMapObjectDiscoveryIds = { new HashSet<int>(), new HashSet<int>() };
 
     private int _completedEpisodes;
     private int _beeWins;
     private int _beeLosses;
     private int _humanWins;
     private int _humanLosses;
+    private int _draws;
     private int _timeouts;
     private long _beeShotsTotal;
     private long _beeHitsTotal;
@@ -231,6 +222,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             TryBeginEpisode(currentLevel);
         }
+        if (_episodeActive)
+        {
+            TrackEpisodeShips(currentLevel);
+        }
         if (_episodeActive && !_discoveryRewardsReady)
         {
             TryEnableDiscoveryRewards(currentLevel);
@@ -274,6 +269,82 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return -1;
     }
 
+    internal static void RecordFireRequest(Ship ship, Weapon weapon)
+    {
+        if (!TryGetTrackedSide(ship, out int sideIndex))
+        {
+            return;
+        }
+
+        if (sideIndex == 0)
+        {
+            _active._beeFireRequestsThisEpisode++;
+        }
+        else
+        {
+            _active._humanFireRequestsThisEpisode++;
+        }
+        IncrementWeaponCount(_active._fireRequestsByWeapon[sideIndex], weapon);
+    }
+
+    internal static void RecordShotFired(Ship ship, Weapon weapon)
+    {
+        if (!TryGetTrackedSide(ship, out int sideIndex))
+        {
+            return;
+        }
+
+        if (sideIndex == 0)
+        {
+            _active._beeShotsThisEpisode++;
+            if (_active._beeFirstFireSeconds < 0f)
+            {
+                _active._beeFirstFireSeconds = _active.ElapsedEpisodeSeconds;
+            }
+        }
+        else
+        {
+            _active._humanShotsThisEpisode++;
+            if (_active._humanFirstFireSeconds < 0f)
+            {
+                _active._humanFirstFireSeconds = _active.ElapsedEpisodeSeconds;
+            }
+        }
+        IncrementWeaponCount(_active._shotsByWeapon[sideIndex], weapon);
+    }
+
+    private static bool TryGetTrackedSide(Ship ship, out int sideIndex)
+    {
+        sideIndex = -1;
+        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
+            ship == null || ship.Level != _active._level)
+        {
+            return false;
+        }
+
+        if (ship.Side == ConfigData.Configuration.BeeSide)
+        {
+            sideIndex = 0;
+            return true;
+        }
+        if (ship.Side == ConfigData.Configuration.HumanSide)
+        {
+            sideIndex = 1;
+            return true;
+        }
+        return false;
+    }
+
+    private static void IncrementWeaponCount(Dictionary<ConfigData.WeaponTypes, int> counts, Weapon weapon)
+    {
+        if (weapon == null)
+        {
+            return;
+        }
+        counts.TryGetValue(weapon.Type, out int current);
+        counts[weapon.Type] = current + 1;
+    }
+
     /// <summary>
     /// Records attributed ship damage after normal damage/TSV calculation has succeeded. Enemy
     /// damage credits the attacker and penalizes the target. Friendly fire penalizes the damaged
@@ -300,19 +371,25 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int appliedDamage = Mathf.Max(0, damage);
         int appliedTsvLoss = Mathf.Max(0, tsvLoss);
 
-        // Hit-rate diagnostics remain enemy-combat diagnostics. Friendly fire still affects reward
-        // through TSV loss, but must not make either side appear more accurate in training summaries.
-        if (isEnemyDamage)
+        if (isEnemyDamage && appliedDamage > 0)
         {
             if (attacker.Side == beeSide)
             {
                 _active._beeHitsThisEpisode++;
                 _active._beeDamageThisEpisode += appliedDamage;
+                if (_active._beeFirstHitSeconds < 0f)
+                {
+                    _active._beeFirstHitSeconds = _active.ElapsedEpisodeSeconds;
+                }
             }
             else
             {
                 _active._humanHitsThisEpisode++;
                 _active._humanDamageThisEpisode += appliedDamage;
+                if (_active._humanFirstHitSeconds < 0f)
+                {
+                    _active._humanFirstHitSeconds = _active.ElapsedEpisodeSeconds;
+                }
             }
         }
 
@@ -330,11 +407,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _active.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
-    /// <summary>
-    /// Records TSV lost without an opposing attacker, such as self-damage, collision/environmental
-    /// damage, or a self-detonation that uses Ship.LogDamage. This is a casualty-preservation penalty
-    /// only; no opposing side receives artificial credit for an unattributed loss.
-    /// </summary>
     internal static void RecordUnattributedTsvLoss(Ship target, int tsvLoss)
     {
         if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
@@ -361,11 +433,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _active.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
-    /// <summary>
-    /// Rewards a primitive capability only after it produced a real useful outcome. The action that
-    /// attempted it is never rewarded by itself: mining must actually extract minerals, healing must
-    /// actually restore TSV, and warping must actually remove a valid ship through a gate.
-    /// </summary>
     internal static void RecordSuccessfulCapabilityOutcome(Ship ship, int tsvValue)
     {
         if (_active == null || !_active._episodeActive || ship == null || ship.Level != _active._level)
@@ -384,10 +451,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _active.ApplyImmediateTsvReward(ship.Side, reward);
     }
 
-    /// <summary>
-    /// Rewards only the first side-wide discovery of an enemy ship. The GameState cache insertion is
-    /// the source of truth; this additional ID guard also protects startup races and pooled objects.
-    /// </summary>
     internal static void RecordShipDiscovery(Ship observer, Ship spotted)
     {
         if (!TryPrepareDiscovery(observer, out int sideIndex) || spotted == null || spotted.IsDead ||
@@ -406,7 +469,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         _active.AwardMiningAsteroidDiscovery(observer.Side, sideIndex, asteroid);
     }
 
@@ -417,7 +479,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         _active.AwardMapObjectDiscovery(observer.Side, sideIndex, mapObject);
     }
 
@@ -428,7 +489,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         _active.AwardObstacleDiscovery(observer.Side, sideIndex, obstacle);
     }
 
@@ -454,8 +514,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return false;
         }
 
-        sideIndex = observer.Side - 1;
-        return sideIndex >= 0 && sideIndex < 2;
+        sideIndex = observer.Side == beeSide ? 0 : 1;
+        return true;
     }
 
     private void AwardShipDiscovery(int side, int sideIndex, Ship spotted)
@@ -463,6 +523,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (!_rewardedShipDiscoveryIds[sideIndex].Add(spotted.Id))
         {
             return;
+        }
+
+        if (sideIndex == 0 && _beeFirstContactSeconds < 0f)
+        {
+            _beeFirstContactSeconds = ElapsedEpisodeSeconds;
+        }
+        else if (sideIndex == 1 && _humanFirstContactSeconds < 0f)
+        {
+            _humanFirstContactSeconds = ElapsedEpisodeSeconds;
         }
 
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
@@ -478,7 +547,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
             GetObstacleDiscoveryValue(asteroid),
             _miningAsteroidDiscoveryValue[sideIndex],
@@ -492,7 +560,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
             GetMapObjectDiscoveryValue(mapObject),
             _mapObjectDiscoveryValue[sideIndex],
@@ -516,9 +583,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (obstacle is CollisionAsteroid collisionAsteroid)
         {
             int discoveryIndex = _collisionAsteroidDiscoveryCount[sideIndex]++;
-            reward = RlOneVsOneReward.CalculateCollisionAsteroidDiscoveryReward(
-                collisionAsteroid.SizeClass,
-                discoveryIndex);
+            reward = RlOneVsOneReward.CalculateCollisionAsteroidDiscoveryReward(collisionAsteroid.SizeClass, discoveryIndex);
         }
         else
         {
@@ -527,7 +592,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 _staticObstacleDiscoveryValue[sideIndex],
                 RlOneVsOneReward.StaticObstacleDiscoveryBudget);
         }
-
         ApplyImmediateTsvReward(side, reward);
     }
 
@@ -537,15 +601,11 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         _active.TryBeginEpisode(level);
-        if (!_active._episodeActive)
+        if (_active._episodeActive)
         {
-            return;
+            _active.CompleteEpisode(level, DetermineWinner(level), false);
         }
-
-        int winningSide = DetermineWinner(level);
-        _active.CompleteEpisode(level, winningSide, false);
     }
 
     internal static void CompleteTimeout(Level level)
@@ -554,7 +614,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         _active.TryBeginEpisode(level);
         if (_active._episodeActive)
         {
@@ -564,9 +623,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private static bool CanHandle(Level level)
     {
-        return _active != null &&
-               level != null &&
-               level.Stage != null &&
+        return _active != null && level != null && level.Stage != null &&
                RlOneVsOneTrainingBootstrap.IsActiveFor(level.Stage);
     }
 
@@ -576,7 +633,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-
         if (_episodeActive && _level == level)
         {
             return;
@@ -597,13 +653,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        CaptureShotBaselines(beeShips, _beeShotBaselines);
-        CaptureShotBaselines(humanShips, _humanShotBaselines);
-        if (_beeShotBaselines.Count < expectedShips || _humanShotBaselines.Count < expectedShips)
-        {
-            return;
-        }
-
         _level = level;
         _episodeNumber++;
         _beeTeamId = GetTeamIdForSide(beeSide, _episodeNumber);
@@ -611,15 +660,85 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _episodeStartedAt = Time.time;
         _beeStartingTsv = beeStartingTsv;
         _humanStartingTsv = humanStartingTsv;
+        _beeShotsThisEpisode = 0;
+        _humanShotsThisEpisode = 0;
+        _beeFireRequestsThisEpisode = 0;
+        _humanFireRequestsThisEpisode = 0;
         _beeHitsThisEpisode = 0;
         _humanHitsThisEpisode = 0;
         _beeDamageThisEpisode = 0;
         _humanDamageThisEpisode = 0;
         _beeTsvRewardThisEpisode = 0f;
         _humanTsvRewardThisEpisode = 0f;
+        _beeFirstContactSeconds = -1f;
+        _humanFirstContactSeconds = -1f;
+        _beeFirstFireSeconds = -1f;
+        _humanFirstFireSeconds = -1f;
+        _beeFirstHitSeconds = -1f;
+        _humanFirstHitSeconds = -1f;
+        ResetShipDiagnostics(beeShips, humanShips);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
+        TrackEpisodeShips(level);
+    }
+
+    private void ResetShipDiagnostics(List<Ship> beeShips, List<Ship> humanShips)
+    {
+        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+        {
+            _initialShipIds[sideIndex].Clear();
+            _seenShipIds[sideIndex].Clear();
+            _policyEligibleShipIds[sideIndex].Clear();
+            _policyControlledShipIds[sideIndex].Clear();
+            _fireRequestsByWeapon[sideIndex].Clear();
+            _shotsByWeapon[sideIndex].Clear();
+        }
+        AddInitialShipIds(beeShips, _initialShipIds[0]);
+        AddInitialShipIds(humanShips, _initialShipIds[1]);
+    }
+
+    private static void AddInitialShipIds(List<Ship> ships, HashSet<long> destination)
+    {
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship != null && !ship.IsDead)
+            {
+                destination.Add(ship.Id);
+            }
+        }
+    }
+
+    private void TrackEpisodeShips(Level level)
+    {
+        if (ConfigData.Configuration == null)
+        {
+            return;
+        }
+        TrackSideShips(level.State.GetShips(ConfigData.Configuration.BeeSide), 0);
+        TrackSideShips(level.State.GetShips(ConfigData.Configuration.HumanSide), 1);
+    }
+
+    private void TrackSideShips(List<Ship> ships, int sideIndex)
+    {
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship == null)
+            {
+                continue;
+            }
+            _seenShipIds[sideIndex].Add(ship.Id);
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship))
+            {
+                _policyEligibleShipIds[sideIndex].Add(ship.Id);
+                if (ship.HasBrain)
+                {
+                    _policyControlledShipIds[sideIndex].Add(ship.Id);
+                }
+            }
+        }
     }
 
     private void TryEnableDiscoveryRewards(Level level)
@@ -637,10 +756,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
 
         _discoveryRewardsReady = true;
-
-        // Physics callbacks may have populated side-wide caches before all of the active team Agents
-        // acquired their ships. Replay that knowledge only after every policy-controlled live ship is
-        // bound; the ID guards make the replay and normal cache-insertion path exactly-once.
         RewardExistingDiscoveries(level, beeSide);
         RewardExistingDiscoveries(level, humanSide);
     }
@@ -675,13 +790,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _rewardedMapObjectDiscoveryIds[sideIndex].Clear();
         }
 
-        int beeSideIndex = beeSide - 1;
-        int humanSideIndex = humanSide - 1;
-        if (beeSideIndex >= 0 && beeSideIndex < 2 && humanSideIndex >= 0 && humanSideIndex < 2)
-        {
-            _enemyShipDiscoveryValue[beeSideIndex] = SumShipDiscoveryValue(level.State.GetShips(humanSide));
-            _enemyShipDiscoveryValue[humanSideIndex] = SumShipDiscoveryValue(level.State.GetShips(beeSide));
-        }
+        _enemyShipDiscoveryValue[0] = SumShipDiscoveryValue(level.State.GetShips(humanSide));
+        _enemyShipDiscoveryValue[1] = SumShipDiscoveryValue(level.State.GetShips(beeSide));
 
         int miningValue = 0;
         int staticObstacleValue = 0;
@@ -730,34 +840,30 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void RewardExistingDiscoveries(Level level, int side)
     {
-        int sideIndex = side - 1;
-        if (sideIndex < 0 || sideIndex >= 2)
-        {
-            return;
-        }
-
-        foreach (Ship spotted in level.State.VisionCache[sideIndex])
+        int sideIndex = side == ConfigData.Configuration.BeeSide ? 0 : 1;
+        int cacheIndex = side - 1;
+        foreach (Ship spotted in level.State.VisionCache[cacheIndex])
         {
             if (spotted != null && !spotted.IsDead && spotted.Side != side)
             {
                 AwardShipDiscovery(side, sideIndex, spotted);
             }
         }
-        foreach (MiningAsteroid asteroid in level.State.HiveMindMiningAsteroidCache[sideIndex])
+        foreach (MiningAsteroid asteroid in level.State.HiveMindMiningAsteroidCache[cacheIndex])
         {
             if (asteroid != null && !asteroid.IsDead)
             {
                 AwardMiningAsteroidDiscovery(side, sideIndex, asteroid);
             }
         }
-        foreach (Obstacle obstacle in level.State.HiveMindObstacleCache[sideIndex])
+        foreach (Obstacle obstacle in level.State.HiveMindObstacleCache[cacheIndex])
         {
             if (obstacle != null && !obstacle.IsDead)
             {
                 AwardObstacleDiscovery(side, sideIndex, obstacle);
             }
         }
-        foreach (MapObject mapObject in level.State.HiveMindMapObjectCache[sideIndex])
+        foreach (MapObject mapObject in level.State.HiveMindMapObjectCache[cacheIndex])
         {
             if (mapObject != null && !mapObject.IsDead)
             {
@@ -792,8 +898,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void ApplyImmediateTsvReward(int side, float reward)
     {
-        int sideIndex = side - 1;
-        if (sideIndex < 0 || sideIndex >= _rawPositiveShapingReward.Length)
+        int sideIndex = side == ConfigData.Configuration.BeeSide ? 0 :
+            side == ConfigData.Configuration.HumanSide ? 1 : -1;
+        if (sideIndex < 0)
         {
             return;
         }
@@ -807,21 +914,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             emittedReward = (float)Math.Max(0d, boundedIncrement);
         }
 
-        int beeSide = ConfigData.Configuration.BeeSide;
-        int humanSide = ConfigData.Configuration.HumanSide;
-        if (side == beeSide)
+        if (sideIndex == 0)
         {
             _beeTsvRewardThisEpisode += emittedReward;
         }
-        else if (side == humanSide)
+        else
         {
             _humanTsvRewardThisEpisode += emittedReward;
         }
-        else
-        {
-            return;
-        }
-
         TsvRewardOccurred?.Invoke(side, emittedReward);
     }
 
@@ -832,64 +932,45 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
+        TrackEpisodeShips(level);
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         int beeFinalTsv = level.State.GetTsvBySide(beeSide);
         int humanFinalTsv = level.State.GetTsvBySide(humanSide);
-        int beeShotsFired = CalculateShotsFired(_beeShotBaselines);
-        int humanShotsFired = CalculateShotsFired(_humanShotBaselines);
-        float durationSeconds = Mathf.Clamp(
-            Time.time - _episodeStartedAt,
-            0f,
-            RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds);
+        float durationSeconds = Mathf.Clamp(ElapsedEpisodeSeconds, 0f, RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds);
 
-        float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide);
-        float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide);
-
-        float beeTimeReward = winningSide == beeSide
-            ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)
-            : 0f;
-        float humanTimeReward = winningSide == humanSide
-            ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds)
-            : 0f;
+        float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide, timedOut);
+        float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide, timedOut);
+        float beeTimeReward = winningSide == beeSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
+        float humanTimeReward = winningSide == humanSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
 
         LastEpisodeResult = new EpisodeResult(
-            _episodeNumber,
-            _beeTeamId,
-            _humanTeamId,
-            winningSide,
-            timedOut,
-            durationSeconds,
-            _beeStartingTsv,
-            beeFinalTsv,
-            _humanStartingTsv,
-            humanFinalTsv,
-            beeShotsFired,
-            _beeHitsThisEpisode,
-            _beeDamageThisEpisode,
-            humanShotsFired,
-            _humanHitsThisEpisode,
-            _humanDamageThisEpisode,
-            beeTerminal,
-            _beeTsvRewardThisEpisode,
-            beeTimeReward,
-            humanTerminal,
-            _humanTsvRewardThisEpisode,
-            humanTimeReward);
+            _episodeNumber, _beeTeamId, _humanTeamId, winningSide, timedOut, durationSeconds,
+            _beeStartingTsv, beeFinalTsv, _humanStartingTsv, humanFinalTsv,
+            _beeShotsThisEpisode, _beeHitsThisEpisode, _beeDamageThisEpisode,
+            _humanShotsThisEpisode, _humanHitsThisEpisode, _humanDamageThisEpisode,
+            beeTerminal, _beeTsvRewardThisEpisode, beeTimeReward,
+            humanTerminal, _humanTsvRewardThisEpisode, humanTimeReward);
 
         UpdateRunningDiagnostics(LastEpisodeResult, beeSide, humanSide);
 
+        string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
+        int beeSpawned = CountSpawnedShips(0);
+        int humanSpawned = CountSpawnedShips(1);
         Debug.Log(
-            $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} bee_team={_beeTeamId} human_team={_humanTeamId} " +
-            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} " +
-            $"winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+            $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
+            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
             $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
-            $"bee_shots={beeShotsFired} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-            $"bee_tsv_reward={_beeTsvRewardThisEpisode:F4} " +
-            $"human_shots={humanShotsFired} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-            $"human_tsv_reward={_humanTsvRewardThisEpisode:F4} " +
-            $"bee_reward={LastEpisodeResult.BeeTotalReward:F4} " +
-            $"human_reward={LastEpisodeResult.HumanTotalReward:F4}");
+            $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
+            $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
+            $"bee_weapons={FormatWeaponActivity(0)} " +
+            $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{LastEpisodeResult.BeeTotalReward:F4} " +
+            $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
+            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
+            $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
+            $"human_weapons={FormatWeaponActivity(1)} " +
+            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{LastEpisodeResult.HumanTotalReward:F4}");
 
         if (_completedEpisodes % SummaryIntervalEpisodes == 0)
         {
@@ -912,14 +993,15 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanHitsTotal += result.HumanShotsHit;
         _humanDamageTotal += result.HumanDamageDealt;
 
-        if (result.TimedOut || result.WinningSide == 0)
+        if (result.TimedOut)
         {
             _beeLosses++;
             _humanLosses++;
-            if (result.TimedOut)
-            {
-                _timeouts++;
-            }
+            _timeouts++;
+        }
+        else if (result.WinningSide == 0)
+        {
+            _draws++;
         }
         else if (result.WinningSide == beeSide)
         {
@@ -938,13 +1020,57 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
         float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
         float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
-
         Debug.Log(
-            $"RL 1v1 summary episodes={_completedEpisodes} " +
-            $"bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
-            $"timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
+            $"RL 1v1 summary episodes={_completedEpisodes} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
+            $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
+    }
+
+    private float ElapsedEpisodeSeconds => Mathf.Max(0f, Time.time - _episodeStartedAt);
+
+    private int CountSpawnedShips(int sideIndex)
+    {
+        int count = 0;
+        foreach (long shipId in _seenShipIds[sideIndex])
+        {
+            if (!_initialShipIds[sideIndex].Contains(shipId))
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private string FormatWeaponActivity(int sideIndex)
+    {
+        HashSet<ConfigData.WeaponTypes> weaponTypes = new HashSet<ConfigData.WeaponTypes>();
+        foreach (ConfigData.WeaponTypes type in _fireRequestsByWeapon[sideIndex].Keys)
+        {
+            weaponTypes.Add(type);
+        }
+        foreach (ConfigData.WeaponTypes type in _shotsByWeapon[sideIndex].Keys)
+        {
+            weaponTypes.Add(type);
+        }
+        if (weaponTypes.Count == 0)
+        {
+            return "none";
+        }
+
+        List<string> values = new List<string>();
+        foreach (ConfigData.WeaponTypes type in weaponTypes)
+        {
+            _fireRequestsByWeapon[sideIndex].TryGetValue(type, out int requests);
+            _shotsByWeapon[sideIndex].TryGetValue(type, out int shots);
+            values.Add($"{type}:{requests}/{shots}");
+        }
+        return string.Join("|", values);
+    }
+
+    private static string FormatTime(float seconds)
+    {
+        return seconds < 0f ? "none" : $"{seconds:F2}s";
     }
 
     private static int CountActiveShips(List<Ship> ships)
@@ -961,38 +1087,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return count;
     }
 
-    private static void CaptureShotBaselines(List<Ship> ships, List<ShotBaseline> destination)
-    {
-        destination.Clear();
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship != null && !ship.IsDead && ship.FleetShip != null)
-            {
-                destination.Add(new ShotBaseline(ship.FleetShip));
-            }
-        }
-    }
-
-    private static int CalculateShotsFired(List<ShotBaseline> baselines)
-    {
-        int shots = 0;
-        for (int i = 0; i < baselines.Count; i++)
-        {
-            ShotBaseline baseline = baselines[i];
-            int currentShots = baseline.FleetShip != null ? baseline.FleetShip.ShotsFired : baseline.ShotsAtStart;
-            shots += Mathf.Max(0, currentShots - baseline.ShotsAtStart);
-        }
-        return shots;
-    }
-
     private static int DetermineWinner(Level level)
     {
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
         bool beesKilled = level.State.IsSideKilled(beeSide);
         bool humansKilled = level.State.IsSideKilled(humanSide);
-
         if (beesKilled == humansKilled)
         {
             return 0;
