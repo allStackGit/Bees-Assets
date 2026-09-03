@@ -11,7 +11,7 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 4;
+    internal const int Version = 5;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int ExpectedObservationSize = 4685;
     internal const int ExpectedContinuousActions = 34;
@@ -24,8 +24,8 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v4|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4685|cont=34|disc=2x16,5,65,65,65|" +
-        "weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|" +
+        "bees-rl-v5|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4685|cont=34|disc=2x16,5,65,65,65|" +
+        "weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
         "self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|" +
@@ -143,7 +143,7 @@ internal static class RlPolicySchema
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
         // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v4.
+        // within the reserved bit range, but existing values must never be renumbered for ABI v5.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
