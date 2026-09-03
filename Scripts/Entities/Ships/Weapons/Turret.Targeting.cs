@@ -10,23 +10,32 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         private void TargetingSequence()
         {
             FreezeDiagnostics.RecordTurretTargetingPass(Level, ShipsWithinRange.Count);
-            TargetingPasses++;
 
             if (IsRlControlled)
             {
-                // The policy may continuously request fire, but the authored targeting timer remains
-                // the sole gate on when a shot can actually leave the weapon.
-                if (TargetingPasses >= PassesPerFire)
+                // The authored targeting timer remains the sole cooldown clock, but readiness now
+                // latches once that cooldown completes. A policy that does not request fire on the
+                // exact timer pass therefore does not lose the firing opportunity for another cycle.
+                if (!ReadyToFire)
                 {
-                    if (RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)
+                    TargetingPasses++;
+                    if (TargetingPasses >= PassesPerFire)
                     {
-                        FireAtPoint();
+                        TargetingPasses = PassesPerFire;
+                        ReadyToFire = true;
                     }
+                }
+
+                if (ReadyToFire && RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)
+                {
+                    FireAtPoint();
+                    ReadyToFire = false;
                     TargetingPasses = 0;
                 }
                 return;
             }
 
+            TargetingPasses++;
             if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
             {
                 TryToFire();
