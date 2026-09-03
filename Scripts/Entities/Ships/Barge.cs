@@ -275,10 +275,14 @@ namespace Assets.Scripts.Entities.Ships
             CannotChangeMovementOrders = false;
             SetCurrentSpeed(80, 80);
 
-            // Scripted commands may supply a target and retain their historical auto-aim.
-            // The RL primitive action must charge along the heading the policy established; it
-            // may not outsource aiming to nearest-target script logic.
-            if (!Stage.IsTrainingNueralNetwork && target != null && !target.IsDead)
+            // Scripted commands may supply a target and retain their historical auto-aim. The
+            // ML-Agents directional movement path ignores HasTargetDirection, so its charge must
+            // explicitly lock the Direction field to the heading established before wind-up.
+            if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)
+            {
+                Direction = NormalizeDirection(Rotation);
+            }
+            else if (target != null && !target.IsDead)
             {
                 MoveToDirectionOfPoint(target.GetPosition());
             }
@@ -386,6 +390,12 @@ namespace Assets.Scripts.Entities.Ships
                     StartCoroutine(ChargeForward());
                 }
             }
+        }
+
+        private static int NormalizeDirection(float rotation)
+        {
+            int direction = Mathf.RoundToInt(rotation) % 360;
+            return direction < 0 ? direction + 360 : direction;
         }
 
         private void SetChargePhase(int phase)
