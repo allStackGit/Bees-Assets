@@ -177,7 +177,10 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            _healthPercent = (float)Math.Round((double)Health / MaxHealth, 2);
+            // Presentation must never extend outside the authored health-bar bounds. Training can
+            // reduce MaxHealth after pooled Ship.Setup restores authored Health, and healing/state
+            // transitions can also transiently present values outside the normal range.
+            _healthPercent = MaxHealth > 0 ? Mathf.Clamp01((float)Health / MaxHealth) : 0f;
             _healthBarFiller.localScale = new Vector2(_healthPercent, _healthBarFiller.localScale.y);
             if (_healthPercent > .5f) _healthBarFillerSprite.color = ConfigData.GetUIColor("good");
             else if (_healthPercent > .25f) _healthBarFillerSprite.color = ConfigData.GetUIColor("medium");
