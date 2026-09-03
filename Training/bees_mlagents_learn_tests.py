@@ -370,5 +370,81 @@ class BatchedInferenceTests(unittest.TestCase):
         self.assertEqual(info.outputs, {})
 
 
+class FastEnvManagerTests(unittest.TestCase):
+    def setUp(self):
+        from mlagents.trainers.env_manager import EnvManager
+        from mlagents.trainers.subprocess_env_manager import SubprocessEnvManager
+
+        self.EnvManager = EnvManager
+        self.SubprocessEnvManager = SubprocessEnvManager
+        (
+            self.original_step,
+            self.original_process_step_infos,
+        ) = launcher._install_fast_env_manager()
+
+    def tearDown(self):
+        self.SubprocessEnvManager._step = self.original_step
+        self.EnvManager._process_step_infos = self.original_process_step_infos
+
+    def test_blocking_first_result_then_drains_ready_workers(self):
+        from queue import Empty
+        from types import SimpleNamespace
+
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        responses = [
+            EnvironmentResponse(EnvironmentCommand.STEP, 0, "worker-0"),
+            EnvironmentResponse(EnvironmentCommand.STEP, 1, "worker-1"),
+        ]
+
+        class FakeQueue:
+            def __init__(self):
+                self.values = list(responses)
+                self.blocking_get_calls = 0
+                self.nonblocking_get_calls = 0
+
+            def get(self):
+                self.blocking_get_calls += 1
+                return self.values.pop(0)
+
+            def get_nowait(self):
+                self.nonblocking_get_calls += 1
+                if not self.values:
+                    raise Empty()
+                return self.values.pop(0)
+
+        class FakeManager:
+            def __init__(self):
+                self.step_queue = FakeQueue()
+                self.env_workers = [
+                    SimpleNamespace(waiting=True),
+                    SimpleNamespace(waiting=True),
+                ]
+                self.queue_steps_calls = 0
+
+            def _queue_steps(self):
+                self.queue_steps_calls += 1
+
+            def _restart_failed_workers(self, step):
+                raise AssertionError("No worker should fail in this test")
+
+            @staticmethod
+            def _postprocess_steps(worker_steps):
+                return worker_steps
+
+        manager = FakeManager()
+        result = self.SubprocessEnvManager._step(manager)
+
+        self.assertEqual(manager.step_queue.blocking_get_calls, 1)
+        self.assertGreaterEqual(manager.step_queue.nonblocking_get_calls, 1)
+        self.assertEqual(manager.queue_steps_calls, 1)
+        self.assertFalse(manager.env_workers[0].waiting)
+        self.assertFalse(manager.env_workers[1].waiting)
+        self.assertEqual(result, responses)
+
+
 if __name__ == "__main__":
     unittest.main()
