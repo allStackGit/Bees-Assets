@@ -18,7 +18,7 @@ using UnityEngine;
 internal sealed class RlOneVsOneAgent : Agent
 {
     internal const string BehaviorName = "BeesRL1v1";
-    internal const int DecisionPeriod = 5;
+    internal const int DecisionPeriod = RlOneVsOneTrainingOptions.DefaultDecisionPeriod;
 
     internal const int ShipTypeBitCount = RlCombatPerception.ShipTypeBitCount;
     internal const int WeaponTypeBitCount = RlCombatPerception.WeaponTypeBitCount;
@@ -230,7 +230,8 @@ internal sealed class RlOneVsOneAgent : Agent
     private static void ProvisionAgentsForSpawnedShips(Stage stage)
     {
         if (stage == null || ConfigData.Configuration == null ||
-            Time.frameCount == _lastProvisionFrame || Time.frameCount % DecisionPeriod != 0)
+            Time.frameCount == _lastProvisionFrame ||
+            Time.frameCount % RlOneVsOneTrainingBootstrap.CurrentDecisionPeriod != 0)
         {
             return;
         }
@@ -332,7 +333,7 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _decisionCounter++;
-        if (_decisionCounter >= DecisionPeriod)
+        if (_decisionCounter >= RlOneVsOneTrainingBootstrap.CurrentDecisionPeriod)
         {
             _decisionCounter = 0;
             RequestDecision();
