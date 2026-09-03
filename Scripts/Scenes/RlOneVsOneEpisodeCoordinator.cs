@@ -146,7 +146,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _staticObstacleDiscoveryValue = new int[2];
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
-    private readonly float[] _rawPositiveShapingReward = new float[2];
+    private readonly double[] _rawPositiveShapingReward = new double[2];
     private readonly HashSet<long>[] _rewardedShipDiscoveryIds =
     {
         new HashSet<long>(),
@@ -668,7 +668,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _staticObstacleDiscoveryValue[sideIndex] = 0;
             _mapObjectDiscoveryValue[sideIndex] = 0;
             _collisionAsteroidDiscoveryCount[sideIndex] = 0;
-            _rawPositiveShapingReward[sideIndex] = 0f;
+            _rawPositiveShapingReward[sideIndex] = 0d;
             _rewardedShipDiscoveryIds[sideIndex].Clear();
             _rewardedMiningAsteroidDiscoveryIds[sideIndex].Clear();
             _rewardedObstacleDiscoveryIds[sideIndex].Clear();
@@ -801,12 +801,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float emittedReward = reward;
         if (reward > 0f)
         {
-            float previousBounded = RlOneVsOneReward.CalculateBoundedPositiveShapingReward(
-                _rawPositiveShapingReward[sideIndex]);
-            _rawPositiveShapingReward[sideIndex] += reward;
-            float nextBounded = RlOneVsOneReward.CalculateBoundedPositiveShapingReward(
-                _rawPositiveShapingReward[sideIndex]);
-            emittedReward = Mathf.Max(0f, nextBounded - previousBounded);
+            double rawBefore = _rawPositiveShapingReward[sideIndex];
+            double boundedIncrement = RlOneVsOneReward.CalculateBoundedPositiveShapingIncrement(rawBefore, reward);
+            _rawPositiveShapingReward[sideIndex] = rawBefore + reward;
+            emittedReward = (float)Math.Max(0d, boundedIncrement);
         }
 
         int beeSide = ConfigData.Configuration.BeeSide;
