@@ -169,6 +169,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
+            StringAssert.Contains("CalculateBoundedPositiveShapingIncrement(rawBefore, reward)", source);
         }
     }
 }
