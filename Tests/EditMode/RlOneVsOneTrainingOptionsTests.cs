@@ -139,6 +139,26 @@ namespace Bees.Tests.EditMode
             Assert.That(coordinator, Does.Contain("ships_per_side="));
         }
 
+        [Test]
+        public void FullShipTurretPrioritizesRlTargetBeforePlayerMouseInput()
+        {
+            string fullShipTurret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "FullShipTurret.cs");
+
+            int stationaryRl = fullShipTurret.IndexOf("if (IsRlControlled)", StringComparison.Ordinal);
+            int stationaryRlTarget = fullShipTurret.IndexOf("TargetPoint = RlTargetPoint;", stationaryRl, StringComparison.Ordinal);
+            int stationaryMouse = fullShipTurret.IndexOf("Stage.InputManager.GetMousePosition();", StringComparison.Ordinal);
+            Assert.That(stationaryRl, Is.GreaterThanOrEqualTo(0));
+            Assert.That(stationaryRlTarget, Is.GreaterThan(stationaryRl));
+            Assert.That(stationaryMouse, Is.GreaterThan(stationaryRlTarget));
+
+            int movingRl = fullShipTurret.IndexOf("if (IsRlControlled)", stationaryRl + 1, StringComparison.Ordinal);
+            int movingRlTarget = fullShipTurret.IndexOf("TargetPoint = RlTargetPoint;", stationaryRlTarget + 1, StringComparison.Ordinal);
+            int movingMouse = fullShipTurret.IndexOf("Stage.InputManager.GetMousePosition();", stationaryMouse + 1, StringComparison.Ordinal);
+            Assert.That(movingRl, Is.GreaterThan(stationaryMouse));
+            Assert.That(movingRlTarget, Is.GreaterThan(movingRl));
+            Assert.That(movingMouse, Is.GreaterThan(movingRlTarget));
+        }
+
         private object Parse(params string[] args)
         {
             return _parse.Invoke(null, new object[] { args });
