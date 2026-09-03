@@ -1,4 +1,4 @@
-$path = 'R:\Bees\Assets\results\bees-rl-1v1-full-001\run_logs'
+$path = 'R:\Bees\Assets\results\bees-full-001\run_logs'
 $N = 50
 
 $rx = 'RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?bee_fire_requests=(\d+) bee_shots=(\d+) bee_hits=(\d+) bee_damage=(\d+).*?human_fire_requests=(\d+) human_shots=(\d+) human_hits=(\d+) human_damage=(\d+)'

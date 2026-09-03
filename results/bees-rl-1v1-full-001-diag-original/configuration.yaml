@@ -14,7 +14,7 @@ behaviors:
       learning_rate_schedule: constant
       beta_schedule: constant
       epsilon_schedule: constant
-    checkpoint_interval: 50000
+    checkpoint_interval: 250000
     network_settings:
       normalize: true
       hidden_units: 512
@@ -56,7 +56,7 @@ env_settings:
   - --rl-health-ratio
   - '.25'
   - --rl-map-size
-  - '35'
+  - '30'
   - --rl-episode-timeout
   - '120'
   - --rl-ships-per-side
@@ -66,7 +66,7 @@ env_settings:
   - --rl-human-ship-types
   - Gunship
   base_port: 5005
-  num_envs: 32
+  num_envs: 4
   num_areas: 1
   timeout_wait: 60
   seed: 36
@@ -84,7 +84,7 @@ engine_settings:
   no_graphics_monitor: false
 environment_parameters: null
 checkpoint_settings:
-  run_id: bees-rl-1v1-full-001
+  run_id: bees-rl-1v1-full-001-diag-original
   initialize_from: null
   load_model: false
   resume: true
@@ -93,5 +93,5 @@ checkpoint_settings:
   inference: false
   results_dir: results
 torch_settings:
-  device: cuda
+  device: cpu
 debug: false

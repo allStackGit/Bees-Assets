@@ -274,13 +274,13 @@ def _install_diagnostics(fresh_optimizer_state: bool, diagnostic_every: int):
     original_load_model = TorchModelSaver._load_model
 
     def diagnostic_process_trajectory(self, trajectory):
-        key = f"{self.behavior_name}:{trajectory.agent_id}"
+        key = f"{self.brain_name}:{trajectory.agent_id}"
         segment_steps = len(trajectory.steps)
         accumulated_steps = state.episode_steps.get(key, 0) + segment_steps
         state.episode_steps[key] = accumulated_steps
         previous_context = state.active_trajectory
         state.active_trajectory = {
-            "behavior": self.behavior_name,
+            "behavior": self.brain_name,
             "agent_id": trajectory.agent_id,
             "segment_steps": segment_steps,
             "episode_steps": accumulated_steps if trajectory.done_reached else None,

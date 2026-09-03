@@ -900,16 +900,34 @@
                 "auxillary_file_paths": [
                     "results\\bees-rl-1v1-full-001\\BeesRL1v1\\BeesRL1v1-3833335.pt"
                 ]
+            },
+            {
+                "steps": 3833335,
+                "file_path": "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1\\BeesRL1v1-3833335.onnx",
+                "reward": null,
+                "creation_time": 1788471372.6365342,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1\\BeesRL1v1-3833335.pt"
+                ]
+            },
+            {
+                "steps": 3845707,
+                "file_path": "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1\\BeesRL1v1-3845707.onnx",
+                "reward": -0.35797321509856445,
+                "creation_time": 1788472263.4856331,
+                "auxillary_file_paths": [
+                    "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1\\BeesRL1v1-3845707.pt"
+                ]
             }
         ],
         "elo": 1177.7966927385307,
         "final_checkpoint": {
-            "steps": 3833335,
-            "file_path": "results\\bees-rl-1v1-full-001\\BeesRL1v1.onnx",
-            "reward": 0.17306045061204492,
-            "creation_time": 1788469222.5130887,
+            "steps": 3845707,
+            "file_path": "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1.onnx",
+            "reward": -0.35797321509856445,
+            "creation_time": 1788472263.4856331,
             "auxillary_file_paths": [
-                "results\\bees-rl-1v1-full-001\\BeesRL1v1\\BeesRL1v1-3833335.pt"
+                "results\\bees-rl-1v1-full-001-diag-original\\BeesRL1v1\\BeesRL1v1-3845707.pt"
             ]
         }
     },
