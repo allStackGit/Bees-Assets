@@ -19,7 +19,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected override void Aim()
         {
-            if (IsFiringManually)
+            if (IsRlControlled)
+            {
+                TargetPoint = RlTargetPoint;
+                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsFiringAtAsteroid = false;
+            }
+            else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
                 IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
