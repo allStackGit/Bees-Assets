@@ -21,6 +21,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             IsFiringManually = true;
             RlTargetPoint = targetPoint;
             RlFireRequested = fireRequested;
+            if (fireRequested)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordFireRequest(Ship, this);
+            }
         }
 
         public void ClearRlControl()
