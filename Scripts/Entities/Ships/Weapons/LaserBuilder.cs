@@ -17,6 +17,7 @@ namespace Assets.Scripts.Entities.Ships
         public LaserBuilderControl LaserBuilderControl;
         public GameObject LaserBuilderAnimation;
         public Animator Animator;
+        private bool _rlShotQueued;
 
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
@@ -32,6 +33,7 @@ namespace Assets.Scripts.Entities.Ships
         public override void ClearData()
         {
             base.ClearData();
+            _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
             Animator.speed = 1f;
             Animator.Rebind();
@@ -46,23 +48,31 @@ namespace Assets.Scripts.Entities.Ships
         public override void Deactivate()
         {
             base.Deactivate();
+            _rlShotQueued = false;
             Animator.enabled = false;
         }
         protected override void SendProjectile() // [projectile-method] [note] this doesn't actually send the projectile because we need to wait for the animation to finish
         {
-            //IsReadyForFiring = true;
-            //Debug.Log($"{Name} send projectile called");
-
+            // Normal gameplay starts the animation when a target/manual point is selected. RL point
+            // fire reaches this method only after the shared turret timer has accepted a fire request,
+            // so queue the animation here instead of continuously driving it from Aim().
+            if (IsRlControlled)
+            {
+                _rlShotQueued = true;
+                LaserBuilderAnimation.SetActive(true);
+            }
         }
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
+            bool directPointFire = IsRlControlled ? _rlShotQueued : IsFiringManually;
             bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire && IsAimedAtTarget &&
-                (IsFiringManually || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire));
+                (directPointFire || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire));
 
             if (canShoot)
             {
                 base.SendProjectile();
             }
+            _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
 
         }
@@ -70,14 +80,27 @@ namespace Assets.Scripts.Entities.Ships
         {
             //Debug.Log($"{Name} set target ship to {ship}");
             base.SetTargetShip(ship);
-            LaserBuilderAnimation.SetActive(true);
+            if (!IsRlControlled)
+            {
+                LaserBuilderAnimation.SetActive(true);
+            }
         }
         protected override void Aim()
         {
             //Debug.Log("Leafcutter aiming");
             //base.Aim();
 
-            if (IsFiringManually)
+            if (IsRlControlled)
+            {
+                TargetPoint = RlTargetPoint;
+                IsAimedAtTarget = true;
+                IsFiringAtAsteroid = false;
+                if (!_rlShotQueued && LaserBuilderAnimation.activeSelf)
+                {
+                    LaserBuilderAnimation.SetActive(false);
+                }
+            }
+            else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
                 IsAimedAtTarget = true;
@@ -103,6 +126,11 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
             MoveTargetingMarker();
+
+            if (IsRlControlled)
+            {
+                return;
+            }
 
             if ((IsFiringManually && IsAimedAtTarget) || (IsFiringAtAsteroid && IsAimedAtTarget))
             {
