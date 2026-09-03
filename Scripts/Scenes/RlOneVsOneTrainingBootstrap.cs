@@ -48,6 +48,7 @@ internal static class RlOneVsOneTrainingBootstrap
     internal static float CurrentSpawnRadius => CurrentMapSize / 4f;
     internal static int CurrentTimeoutSeconds => RuntimeOptions.EpisodeTimeoutSeconds;
     internal static int CurrentShipsPerSide => RuntimeOptions.ShipsPerSide;
+    internal static int CurrentDecisionPeriod => RuntimeOptions.DecisionPeriod;
 
     private static RlOneVsOneTrainingOptions RuntimeOptions
     {
