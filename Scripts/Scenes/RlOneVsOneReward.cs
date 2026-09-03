@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -83,15 +84,35 @@ internal static class RlOneVsOneReward
     }
 
     /// <summary>
-    /// Maps cumulative raw positive shaping onto [0, MaximumPositiveShapingReward). This is not a
-    /// cutoff: every additional finite positive outcome increases the bounded total, with gradually
-    /// diminishing marginal weight. Negative shaping and terminal rewards are intentionally outside
-    /// this transform.
+    /// Maps cumulative raw positive shaping onto [0, MaximumPositiveShapingReward). The rational
+    /// form approaches the limit smoothly and is also used to derive an exact positive increment,
+    /// avoiding a subtract-two-nearly-equal-floats cutoff late in a long episode.
     /// </summary>
-    internal static float CalculateBoundedPositiveShapingReward(float cumulativeRawPositiveReward)
+    internal static double CalculateBoundedPositiveShapingReward(double cumulativeRawPositiveReward)
     {
-        float raw = Mathf.Max(0f, cumulativeRawPositiveReward);
-        return MaximumPositiveShapingReward * (1f - Mathf.Exp(-raw / MaximumPositiveShapingReward));
+        double raw = Math.Max(0d, cumulativeRawPositiveReward);
+        double maximum = MaximumPositiveShapingReward;
+        return maximum * raw / (maximum + raw);
+    }
+
+    /// <summary>
+    /// Exact difference of the bounded-positive function before and after one new raw reward. For
+    /// positive finite inputs this remains positive without ever consuming a hard episode budget.
+    /// </summary>
+    internal static double CalculateBoundedPositiveShapingIncrement(
+        double cumulativeRawPositiveReward,
+        double additionalRawPositiveReward)
+    {
+        double raw = Math.Max(0d, cumulativeRawPositiveReward);
+        double added = Math.Max(0d, additionalRawPositiveReward);
+        if (added <= 0d)
+        {
+            return 0d;
+        }
+
+        double maximum = MaximumPositiveShapingReward;
+        return maximum * maximum * added /
+               ((maximum + raw) * (maximum + raw + added));
     }
 
     /// <summary>
