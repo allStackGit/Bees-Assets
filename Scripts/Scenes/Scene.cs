@@ -231,65 +231,88 @@ namespace Assets.Scripts.Scenes
                 level == null || level.IsLevelConnectedToServer);
         }
 
+        /// <summary>
+        /// The dedicated ML-Agents scene only needs the normal server lifecycle while startup data is
+        /// being materialized. Once that Stage is finalized, episodes and resets are entirely local;
+        /// continuing to poll/reconnect the socket can only pause or otherwise disturb training.
+        /// </summary>
+        private bool CanRunWithoutServer()
+        {
+            if (!(this is Stage stage))
+            {
+                return false;
+            }
+
+            return global::RlOneVsOneTrainingBootstrap.IsActiveFor(stage) &&
+                   IsFinalized &&
+                   ConfigData.AreAllSettingsLoaded &&
+                   ConfigData.IsAllUserDataLoaded;
+        }
+
         // Update is called once per frame
         protected virtual void Update()
         {
             __Updates++;
-            SocketTimer.Update();
+            bool canRunWithoutServer = CanRunWithoutServer();
 
-            // Do not feed standing requests into a dead WebSocket. They remain in
-            // Socket.StandingRequests and the normal resend timer resumes once a connection
-            // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
-            if (ConfigData.Socket.IsOpen)
+            if (!canRunWithoutServer)
             {
-                ResendTimer.Update();
-            }
+                SocketTimer.Update();
 
-            // Retry any socket that remains unopened, including an initial transport failure that
-            // reports OnError without OnClose. Keep the disconnect UI below tied to HasClosed so
-            // the normal initial connection window does not show a false disconnect dialogue.
-            if (IsSocketManager && !ConfigData.Socket.IsOpen && !ConfigData.Socket.KeepClosed)
-            {
-                AutomaticReconnectTimer.Update();
-            }
-
-            if (ConfigData.Socket.HasClosed && IsSocketManager)
-            {
-                //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
-
-                if (!NetworkDisconnection.IsOpen)
+                // Do not feed standing requests into a dead WebSocket. They remain in
+                // Socket.StandingRequests and the normal resend timer resumes once a connection
+                // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
+                if (ConfigData.Socket.IsOpen)
                 {
-                    Debug.Log($"Network disconnected!");
-                    if (Type == ConfigData.SceneTypes.Stage)
+                    ResendTimer.Update();
+                }
+
+                // Retry any socket that remains unopened, including an initial transport failure that
+                // reports OnError without OnClose. Keep the disconnect UI below tied to HasClosed so
+                // the normal initial connection window does not show a false disconnect dialogue.
+                if (IsSocketManager && !ConfigData.Socket.IsOpen && !ConfigData.Socket.KeepClosed)
+                {
+                    AutomaticReconnectTimer.Update();
+                }
+
+                if (ConfigData.Socket.HasClosed && IsSocketManager)
+                {
+                    //Debug.Log($"Updating the AutoReconnect Timer. {AutomaticReconnectTimer.Elapsed} seconds have elapsed");
+
+                    if (!NetworkDisconnection.IsOpen)
                     {
-                        Level primaryLevel = ((Stage)this).PrimaryLevel;
-                        if (primaryLevel != null && primaryLevel.State != null)
+                        Debug.Log($"Network disconnected!");
+                        if (Type == ConfigData.SceneTypes.Stage)
                         {
-                            _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
-                            if (_pausedForNetworkDisconnect)
+                            Level primaryLevel = ((Stage)this).PrimaryLevel;
+                            if (primaryLevel != null && primaryLevel.State != null)
                             {
-                                primaryLevel.Pause();
+                                _pausedForNetworkDisconnect = !primaryLevel.State.IsPaused;
+                                if (_pausedForNetworkDisconnect)
+                                {
+                                    primaryLevel.Pause();
+                                }
+                            }
+                            else
+                            {
+                                _pausedForNetworkDisconnect = false;
                             }
                         }
-                        else
-                        {
-                            _pausedForNetworkDisconnect = false;
-                        }
+                        NetworkDisconnection.Show();
                     }
-                    NetworkDisconnection.Show();
                 }
-            }
-            
-            else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
-            {
-                _automaticReconnectAttempts = 0;
-                NetworkDisconnection.Hide();
-                if (Type == ConfigData.SceneTypes.Stage && _pausedForNetworkDisconnect)
+                else if (ConfigData.Socket.IsOpen && IsSocketManager && NetworkDisconnection.IsOpen && AreOpenLevelsReconnected())
                 {
-                    ((Stage)this).PrimaryLevel.UnPause();
+                    _automaticReconnectAttempts = 0;
+                    NetworkDisconnection.Hide();
+                    if (Type == ConfigData.SceneTypes.Stage && _pausedForNetworkDisconnect)
+                    {
+                        ((Stage)this).PrimaryLevel.UnPause();
+                    }
+                    _pausedForNetworkDisconnect = false;
                 }
-                _pausedForNetworkDisconnect = false;
             }
+
             if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
