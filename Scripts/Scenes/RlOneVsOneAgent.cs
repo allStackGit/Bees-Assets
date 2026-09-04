@@ -721,14 +721,10 @@ internal sealed class RlOneVsOneAgent : Agent
         AddReward(_side == ConfigData.Configuration.BeeSide
             ? result.BeeTerminalReward + result.BeeTimeReward
             : result.HumanTerminalReward + result.HumanTimeReward);
-        if (result.TimedOut)
-        {
-            EpisodeInterrupted();
-        }
-        else
-        {
-            EndEpisode();
-        }
+
+        // Timeouts are explicit terminal losses in this environment, not external truncations.
+        // End normally so PPO does not bootstrap through a game-terminal state.
+        EndEpisode();
     }
 
     private bool IsCurrentController()
