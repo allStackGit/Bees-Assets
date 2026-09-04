@@ -232,9 +232,10 @@ namespace Assets.Scripts.Scenes
         }
 
         /// <summary>
-        /// The dedicated ML-Agents scene only needs the normal server lifecycle while startup data is
-        /// being materialized. Once that Stage is finalized, episodes and resets are entirely local;
-        /// continuing to poll/reconnect the socket can only pause or otherwise disturb training.
+        /// The dedicated ML-Agents scene only needs the server while startup data is being
+        /// materialized. Once that Stage is finalized, episodes and resets are entirely local.
+        /// Keep the bounded socket pump alive so close/error/late-response callbacks can retire
+        /// transport state, but stop reconnects, resends, and disconnect UI/pause behavior.
         /// </summary>
         private bool CanRunWithoutServer()
         {
@@ -253,12 +254,15 @@ namespace Assets.Scripts.Scenes
         protected virtual void Update()
         {
             __Updates++;
-            bool canRunWithoutServer = CanRunWithoutServer();
 
+            // WebSocketSharp dispatches open/error/close events through Socket.Update's bounded
+            // main-thread queue. Keep pumping it even when RL no longer depends on the server so
+            // IsOpen/HasClosed and any already-arrived response state remain truthful.
+            SocketTimer.Update();
+
+            bool canRunWithoutServer = CanRunWithoutServer();
             if (!canRunWithoutServer)
             {
-                SocketTimer.Update();
-
                 // Do not feed standing requests into a dead WebSocket. They remain in
                 // Socket.StandingRequests and the normal resend timer resumes once a connection
                 // is open again. Socket.Open first submits ReconnectLevel requests for active levels.
