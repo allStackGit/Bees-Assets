@@ -20,6 +20,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void FifteenMinuteEpisodeTimeoutIsAccepted()
+        {
+            Type optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
+            object options = RuntimeAssembly.InvokeStatic(
+                optionsType,
+                "Parse",
+                new string[] { "--rl-episode-timeout", "900" });
+
+            string description = (string)RuntimeAssembly.Invoke(options, "Describe");
+            Assert.That(description, Does.Contain("episode_timeout=900s"));
+        }
+
+        [Test]
         public void TimeoutIsATerminalLossRatherThanAnInterruptedTrajectory()
         {
             Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
