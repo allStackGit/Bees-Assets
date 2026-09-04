@@ -47,7 +47,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DedicatedRlTrainingStopsManagingSocketOnlyAfterStartupIsComplete()
+        public void DedicatedRlTrainingKeepsTransportPumpButStopsConnectionManagementAfterStartup()
         {
             string sceneSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Scenes", "Scene.cs"));
@@ -66,8 +66,26 @@ namespace Bees.Tests.EditMode
             Assert.That(policy, Does.Contain("ConfigData.AreAllSettingsLoaded"));
             Assert.That(policy, Does.Contain("ConfigData.IsAllUserDataLoaded"));
 
-            Assert.That(sceneSource, Does.Contain("if (!canRunWithoutServer)"),
-                "Normal socket polling/reconnect/disconnect UI must be bypassed only after dedicated RL startup is complete.");
+            int socketPump = sceneSource.IndexOf("SocketTimer.Update();", updateStart, StringComparison.Ordinal);
+            int connectionManagementGate = sceneSource.IndexOf("if (!canRunWithoutServer)", updateStart, StringComparison.Ordinal);
+            int finalizationGate = sceneSource.IndexOf(
+                "if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)",
+                connectionManagementGate,
+                StringComparison.Ordinal);
+
+            Assert.That(socketPump, Is.GreaterThan(updateStart));
+            Assert.That(connectionManagementGate, Is.GreaterThan(socketPump),
+                "The bounded socket pump must keep draining WebSocketSharp close/error/response callbacks after RL becomes server-independent.");
+            Assert.That(finalizationGate, Is.GreaterThan(connectionManagementGate));
+
+            string managedConnectionSection = sceneSource.Substring(
+                connectionManagementGate,
+                finalizationGate - connectionManagementGate);
+            Assert.That(managedConnectionSection, Does.Not.Contain("SocketTimer.Update();"));
+            Assert.That(managedConnectionSection, Does.Contain("ResendTimer.Update();"));
+            Assert.That(managedConnectionSection, Does.Contain("AutomaticReconnectTimer.Update();"));
+            Assert.That(managedConnectionSection, Does.Contain("NetworkDisconnection.Show();"));
+
             Assert.That(levelSource, Does.Contain("if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))"));
             Assert.That(levelSource, Does.Contain("IsLevelSetupOnServer = true;"));
             Assert.That(levelSource, Does.Contain("IsLevelConnectedToServer = true;"));
