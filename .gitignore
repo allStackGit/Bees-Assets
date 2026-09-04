@@ -2,3 +2,4 @@
 SaveData/PathCache.json
 /SpriteCache
 .venv-mlagents
+/results/bees-full-001/BeesRL1v1
