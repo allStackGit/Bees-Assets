@@ -26,7 +26,7 @@ namespace Bees.Tests.EditMode
             object options = RuntimeAssembly.InvokeStatic(
                 optionsType,
                 "Parse",
-                new string[] { "--rl-episode-timeout", "900" });
+                (object)new string[] { "--rl-episode-timeout", "900" });
 
             string description = (string)RuntimeAssembly.Invoke(options, "Describe");
             Assert.That(description, Does.Contain("episode_timeout=900s"));
