@@ -42,6 +42,10 @@ When execution is available, widen evidence proportionally:
 
 Never claim old XML/logs validate changed source.
 
+## GitHub Actions prohibition
+
+**Do not use GitHub Actions for development, testing, patch application, builds, qualification, or verification. Do not trigger, dispatch, rerun, wait for, inspect, or cite GitHub Actions workflow runs as task evidence. Required validation must be run locally or by an explicitly user-controlled non-Actions environment.**
+
 ## Repository learning must make future work cheaper
 
 Use `.agents/skills/search-index/SKILL.md`, `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` when their procedures are needed; do not preload them all at task start.
