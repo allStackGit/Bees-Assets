@@ -68,9 +68,11 @@ namespace Bees.Tests.EditMode
 
             Assert.That(sceneSource, Does.Contain("if (!canRunWithoutServer)"),
                 "Normal socket polling/reconnect/disconnect UI must be bypassed only after dedicated RL startup is complete.");
-            Assert.That(levelSource, Does.Contain("if (!global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))"));
+            Assert.That(levelSource, Does.Contain("if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))"));
+            Assert.That(levelSource, Does.Contain("IsLevelSetupOnServer = true;"));
+            Assert.That(levelSource, Does.Contain("IsLevelConnectedToServer = true;"));
             Assert.That(levelSource, Does.Contain("LevelConstructor.RequestServerSetup();"),
-                "Ordinary levels must retain their server setup request while the dedicated RL level skips it.");
+                "Ordinary levels must retain their server setup request while the dedicated RL level stays local.");
         }
     }
 }
