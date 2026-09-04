@@ -110,9 +110,9 @@ namespace Assets.Scripts.Levels
             //__TimerIds = _currentTimerIDs.Select((t) => t.ToString()).ToList(); 
 
             //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
-            //Texture2D dest = new Texture2D( MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
+            //Texture2D dest = new Texture2D( MapWidth, MapHeight, TextureFormat.RGB24, false);
             //RenderTexture.active = MiniMapTexture;
-            //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
+            //dest.ReadPixels(new Rect(0, 0, MapWidth, MapHeight), 0, 0);
             //dest.Apply();
             //File.WriteAllBytes(path, dest.EncodeToPNG());
             State.UpdateDebugVariables();
@@ -130,7 +130,13 @@ namespace Assets.Scripts.Levels
             }
 
             LevelConstructor = new LevelConstructor(this);
-            LevelConstructor.RequestServerSetup();
+            // Dedicated ML-Agents training is fully local once startup settings/user data have loaded.
+            // Do not register its level with the server; no RL runtime behavior consumes ServerGameId
+            // or IsLevelSetupOnServer, and avoiding this request removes the last steady-state server tie.
+            if (!global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
+            {
+                LevelConstructor.RequestServerSetup();
+            }
 
             if (Stage.DoesUserHaveController)
             {
