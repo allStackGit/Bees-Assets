@@ -216,8 +216,28 @@ namespace Assets.Scripts.Entities.Ships
             {
                 ShipsHit.Add(ship);
                 int damage = math.min(Charge.Power, ship.Health);
-                LogAttackingDamage(damage, this, FleetShip, Squad.SavedSquad, ship);
-                LogAttackingDamage((int)(damage * .75f), ship, ship.FleetShip, ship.Squad.SavedSquad, this);
+                LogAttackingDamage(
+                    damage,
+                    this,
+                    FleetShip,
+                    Squad.SavedSquad,
+                    ship,
+                    rlDamageSource: "charge");
+
+                int recoilDamage = (int)(damage * .75f);
+                if (Health <= recoilDamage)
+                {
+                    global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, null, false, "self_charge");
+                }
+                LogAttackingDamage(
+                    recoilDamage,
+                    ship,
+                    ship.FleetShip,
+                    ship.Squad.SavedSquad,
+                    this,
+                    rlDamageSource: "charge",
+                    rlDamageOwner: this);
+
                 if (!Stage.IsTraining) Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf)
