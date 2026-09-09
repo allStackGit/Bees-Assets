@@ -52,13 +52,15 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public void LogDamage(int damage)
+        public void LogDamage(int damage, string rlDamageSource = "unattributed", bool rlSelfInflicted = false)
         {
             if (Health <= 0) return;
             _oldTsv = Tsv;
-            Health -= math.min(damage, Health);
+            int appliedDamage = math.min(damage, Health);
+            Health -= appliedDamage;
             Tsv = Utilities.CalculateTsv(this);
             _tsvChange = Tsv - _oldTsv;
+            global::RlOneVsOneEpisodeDiagnostics.RecordUnattributedDamage(this, appliedDamage, rlDamageSource, rlSelfInflicted);
             global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(this, -_tsvChange);
             FleetShip.DamageReceived += -_tsvChange;
             Squad.SavedSquad.Stats.DamageReceived += -_tsvChange;
@@ -80,6 +82,7 @@ namespace Assets.Scripts.Entities.Ships
 
             // The exact combat TSV loss only exists after health and TSV have been recalculated.
             // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(attacker, target, appliedDamage);
             global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
@@ -270,6 +273,10 @@ namespace Assets.Scripts.Entities.Ships
         public virtual void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
             if (IsDead) return;
+            string rlDeathCause = this is YellowJacket yellowJacket && yellowJacket.HasCompletedRun
+                ? "self_detonate"
+                : null;
+            global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
             IsDead = true;
             if (!endKill)
             {

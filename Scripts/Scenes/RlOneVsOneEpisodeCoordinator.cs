@@ -199,6 +199,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     private void OnDestroy()
     {
+        RlOneVsOneEpisodeDiagnostics.End(_level);
         if (_active == this)
         {
             _active = null;
@@ -677,6 +678,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeFirstHitSeconds = -1f;
         _humanFirstHitSeconds = -1f;
         ResetShipDiagnostics(beeShips, humanShips);
+        RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
@@ -718,6 +720,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.BeeSide), 0);
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.HumanSide), 1);
+        RlOneVsOneEpisodeDiagnostics.Track(level);
     }
 
     private void TrackSideShips(List<Ship> ships, int sideIndex)
@@ -957,6 +960,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
         int beeSpawned = CountSpawnedShips(0);
         int humanSpawned = CountSpawnedShips(1);
+        string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut);
         Debug.Log(
             $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
             $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
@@ -970,7 +974,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
             $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
             $"human_weapons={FormatWeaponActivity(1)} " +
-            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{LastEpisodeResult.HumanTotalReward:F4}");
+            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{LastEpisodeResult.HumanTotalReward:F4} " +
+            behaviorDiagnostics);
+        RlOneVsOneEpisodeDiagnostics.End(level);
 
         if (_completedEpisodes % SummaryIntervalEpisodes == 0)
         {
