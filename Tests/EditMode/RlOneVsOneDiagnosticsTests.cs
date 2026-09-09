@@ -52,6 +52,7 @@ namespace Bees.Tests.EditMode
         {
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             string diagnostics = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeDiagnostics.cs");
+            string registry = ReadSource("Scripts", "Levels", "GameState.Registry.cs");
             string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
             string fireBarge = ReadSource("Scripts", "Entities", "Ships", "FireBarge.cs");
             string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
@@ -62,8 +63,13 @@ namespace Bees.Tests.EditMode
             string scout = ReadSource("Scripts", "Entities", "Ships", "Scout.cs");
 
             Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Begin(level)"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Track(level)"));
             Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut)"));
+            Assert.That(registry, Does.Contain("RlOneVsOneEpisodeDiagnostics.TrackShip(ship)"),
+                "Newly added ships should register once instead of requiring another whole-fleet diagnostics pass.");
+            Assert.That(diagnostics, Does.Not.Contain("private static void TrackSide("),
+                "Diagnostics must not duplicate the coordinator's per-frame fleet traversal.");
+            Assert.That(diagnostics, Does.Not.Contain("TrackSide(level.State.GetShips"),
+                "Diagnostics must not perform a second whole-fleet scan.");
 
             Assert.That(diagnostics, Does.Contain("bee_ships="));
             Assert.That(diagnostics, Does.Contain("human_ships="));
