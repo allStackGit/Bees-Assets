@@ -25,6 +25,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 global::RlOneVsOneEpisodeCoordinator.RecordFireRequest(Ship, this);
             }
+            OnRlControlUpdated();
         }
 
         public void ClearRlControl()
@@ -33,6 +34,10 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             RlFireRequested = false;
             RlTargetPoint = Vector2.zero;
             IsFiringManually = false;
+            OnRlControlCleared();
         }
+
+        protected virtual void OnRlControlUpdated() { }
+        protected virtual void OnRlControlCleared() { }
     }
 }
