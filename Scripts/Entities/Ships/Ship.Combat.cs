@@ -69,7 +69,15 @@ namespace Assets.Scripts.Entities.Ships
             else UpdateHealthBar();
         }
 
-        public static void LogAttackingDamage(int power, Ship attacker, FleetShip attackerFleetShip, SavedSquad attackerSavedSquad, Ship target, long attackerCommandOutcomeId = 0)
+        public static void LogAttackingDamage(
+            int power,
+            Ship attacker,
+            FleetShip attackerFleetShip,
+            SavedSquad attackerSavedSquad,
+            Ship target,
+            long attackerCommandOutcomeId = 0,
+            string rlDamageSource = "gun",
+            Ship rlDamageOwner = null)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -80,9 +88,18 @@ namespace Assets.Scripts.Entities.Ships
             target.Tsv = Utilities.CalculateTsv(target);
             _targetTSVChange = target.Tsv - _targetOldTSV;
 
+            // Gameplay/learning attribution remains owned by the historical attacker path. RL
+            // diagnostics may identify a different physical source for recoil/self-damage without
+            // changing command TSV credit, rewards, kills, or any other gameplay behavior.
+            Ship diagnosticOwner = rlDamageOwner ?? attacker;
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(
+                diagnosticOwner,
+                target,
+                appliedDamage,
+                rlDamageSource);
+
             // The exact combat TSV loss only exists after health and TSV have been recalculated.
             // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
-            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(attacker, target, appliedDamage);
             global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
