@@ -14,6 +14,7 @@ namespace Assets.Scripts.Entities.Ships
         public Bomb Bomb;
         private readonly ScaledTimer _delayedKillTimer = new ScaledTimer();
         private bool _waitingForDelayedRelease;
+        private bool _rlSelfDetonationRequested;
 
         public override void Create(Stage stage)
         {
@@ -30,12 +31,20 @@ namespace Assets.Scripts.Entities.Ships
                 Level.CancelTimer(_delayedKillTimer);
             }
             _waitingForDelayedRelease = false;
+            _rlSelfDetonationRequested = false;
             KillerCommandOutcomeId = 0;
             base.ClearData();
         }
 
         public void Detonate()
         {
+            if (IsDead)
+            {
+                return;
+            }
+
+            _rlSelfDetonationRequested = true;
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "fire_barge_detonate");
             Kill(null, null, null);
         }
 
@@ -45,6 +54,9 @@ namespace Assets.Scripts.Entities.Ships
             {
                 return;
             }
+
+            string rlDeathCause = _rlSelfDetonationRequested && !endKill ? "self_detonate" : null;
+            global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, killer, endKill, rlDeathCause);
 
             Bomb.ReleaseTargetReservation();
             StopMoving();
@@ -68,7 +80,7 @@ namespace Assets.Scripts.Entities.Ships
 
                 // The Fire Barge is killing itself so it takes full damage, but there is
                 // no external shooter for this part of the damage accounting.
-                LogDamage(Health);
+                LogDamage(Health, "FireBarge", true);
 
                 if (killer != null)
                 {
