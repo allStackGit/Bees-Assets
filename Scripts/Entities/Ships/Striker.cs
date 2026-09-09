@@ -147,7 +147,12 @@ namespace Assets.Scripts.Entities.Ships
         {
             if (IsBombReady != status)
             {
+                bool replenished = status;
                 IsBombReady = status;
+                if (replenished)
+                {
+                    global::RlOneVsOneEpisodeDiagnostics.RecordStrikerReplenished(this);
+                }
                 SetIndicatorColor();
             }
         }
@@ -178,6 +183,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 HasDroppedBomb = true;
                 SetBombsReadyStatus(false);
+                global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "striker_bomb_drop");
 
                 if (!Level.Stage.IsTraining)
                 {
