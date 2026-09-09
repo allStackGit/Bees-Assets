@@ -1,3 +1,4 @@
+using Assets.Scripts;
 using Assets.Scripts.Data;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
@@ -106,7 +107,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
     /// <summary>
     /// Kept as a compatibility hook for the coordinator. Initial ships are captured in Begin and
-    /// newly spawned ships register from Ship.Setup, so this no longer performs a per-frame fleet scan.
+    /// newly spawned ships register from GameState.AddShip, so this no longer performs a per-frame fleet scan.
     /// </summary>
     internal static void Track(Level level)
     {
