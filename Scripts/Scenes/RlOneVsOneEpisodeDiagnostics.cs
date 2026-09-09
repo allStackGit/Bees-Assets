@@ -6,8 +6,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Collects compact, episode-scoped combat behavior diagnostics for RL training. This class never
-/// logs events itself; the coordinator appends one formatted snapshot to the existing episode line.
+/// Collects compact, episode-scoped combat diagnostics for RL training. Events update in-memory
+/// counters only; the coordinator appends one formatted snapshot to the existing episode log line.
 /// </summary>
 internal static class RlOneVsOneEpisodeDiagnostics
 {
@@ -17,10 +17,11 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal string Type;
     }
 
-    private sealed class CarrierRecord
+    private sealed class ChildSummary
     {
-        internal long Id;
-        internal readonly Dictionary<string, int> Children = new Dictionary<string, int>(StringComparer.Ordinal);
+        internal int Spawned;
+        internal int Alive;
+        internal int Damage;
     }
 
     private static readonly Dictionary<long, RootShipRecord>[] RootShips =
@@ -29,37 +30,25 @@ internal static class RlOneVsOneEpisodeDiagnostics
         new Dictionary<long, RootShipRecord>()
     };
 
-    private static readonly HashSet<long>[] SeenChildren =
-    {
-        new HashSet<long>(),
-        new HashSet<long>()
-    };
-
     private static readonly Dictionary<long, string>[] ChildShipTypes =
     {
         new Dictionary<long, string>(),
         new Dictionary<long, string>()
     };
 
-    private static readonly Dictionary<string, int>[] ChildTypes =
+    private static readonly Dictionary<string, int>[] DamageSources =
     {
         new Dictionary<string, int>(StringComparer.Ordinal),
         new Dictionary<string, int>(StringComparer.Ordinal)
     };
 
-    private static readonly Dictionary<long, CarrierRecord>[] CarrierChildren =
+    private static readonly Dictionary<string, int>[] DamageByShipType =
     {
-        new Dictionary<long, CarrierRecord>(),
-        new Dictionary<long, CarrierRecord>()
+        new Dictionary<string, int>(StringComparer.Ordinal),
+        new Dictionary<string, int>(StringComparer.Ordinal)
     };
 
-    private static readonly Dictionary<long, int>[] StrikerReloads =
-    {
-        new Dictionary<long, int>(),
-        new Dictionary<long, int>()
-    };
-
-    private static readonly Dictionary<string, int>[] DamageSources =
+    private static readonly Dictionary<string, int>[] ChildDamageByShipType =
     {
         new Dictionary<string, int>(StringComparer.Ordinal),
         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -77,6 +66,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
         new Dictionary<long, string>()
     };
 
+    private static readonly int[] StrikerReloads = new int[2];
     private static readonly int[] SelfDamage = new int[2];
     private static readonly int[] FriendlyDamage = new int[2];
     private static readonly int[] UnattributedDamage = new int[2];
@@ -103,17 +93,6 @@ internal static class RlOneVsOneEpisodeDiagnostics
         CaptureInitialSide(level.State.GetShips(_humanSide), 1);
     }
 
-    internal static void Track(Level level)
-    {
-        if (!_active || level == null || level != _level || level.State == null)
-        {
-            return;
-        }
-
-        TrackSide(level.State.GetShips(_beeSide), 0);
-        TrackSide(level.State.GetShips(_humanSide), 1);
-    }
-
     internal static void End(Level level)
     {
         if (_active && level == _level)
@@ -123,43 +102,74 @@ internal static class RlOneVsOneEpisodeDiagnostics
         }
     }
 
-    internal static void RecordAttributedDamage(Ship attacker, Ship target, int damage)
+    /// <summary>
+    /// Reuses the coordinator's existing ship scan so diagnostics do not add another per-frame
+    /// traversal of every ship in the episode.
+    /// </summary>
+    internal static void TrackShip(Ship ship)
     {
-        if (!TryGetSideIndex(attacker, out int attackerIndex) || !TryGetSideIndex(target, out int targetIndex))
+        if (!TryGetSideIndex(ship, out int sideIndex))
+        {
+            return;
+        }
+        TrackShip(ship, sideIndex);
+    }
+
+    /// <summary>
+    /// Records actual health damage. Enemy damage is broken down both by broad mechanism and by
+    /// attacking ship type. Same-side damage is kept separate so it cannot masquerade as damage done.
+    /// </summary>
+    internal static void RecordAttributedDamage(Ship sourceShip, Ship target, int damage, string source = "gun")
+    {
+        if (!TryGetSideIndex(sourceShip, out int sourceIndex) || !TryGetSideIndex(target, out int targetIndex))
         {
             return;
         }
 
-        TrackShip(attacker, attackerIndex, false);
-        TrackShip(target, targetIndex, false);
+        TrackShip(sourceShip, sourceIndex);
+        TrackShip(target, targetIndex);
         int appliedDamage = Mathf.Max(0, damage);
         if (appliedDamage <= 0)
         {
             return;
         }
 
-        Increment(DamageSources[attackerIndex], attacker.ShipType.ToString(), appliedDamage);
-        if (attacker.Side == target.Side)
+        if (sourceShip.Side != target.Side)
         {
-            if (attacker.Id == target.Id)
+            string sourceName = string.IsNullOrEmpty(source) ? "other" : source;
+            string shipType = sourceShip.ShipType.ToString();
+            Increment(DamageSources[sourceIndex], sourceName, appliedDamage);
+            Increment(DamageByShipType[sourceIndex], shipType, appliedDamage);
+            if (ChildShipTypes[sourceIndex].ContainsKey(sourceShip.Id))
             {
-                SelfDamage[attackerIndex] += appliedDamage;
+                Increment(ChildDamageByShipType[sourceIndex], shipType, appliedDamage);
             }
-            else
-            {
-                FriendlyDamage[attackerIndex] += appliedDamage;
-            }
+            return;
+        }
+
+        if (sourceShip.Id == target.Id)
+        {
+            SelfDamage[sourceIndex] += appliedDamage;
+        }
+        else
+        {
+            FriendlyDamage[sourceIndex] += appliedDamage;
         }
     }
 
-    internal static void RecordUnattributedDamage(Ship target, int damage, string source = "unattributed", bool selfInflicted = false)
+    /// <summary>
+    /// Records damage that does not have a normal attacker path, such as hazards or explicit
+    /// self-damage. The optional source label is intentionally not emitted as a separate field;
+    /// self/friendly/unattributed totals stay compact and unambiguous.
+    /// </summary>
+    internal static void RecordUnattributedDamage(Ship target, int damage, string source = "other", bool selfInflicted = false)
     {
         if (!TryGetSideIndex(target, out int sideIndex))
         {
             return;
         }
 
-        TrackShip(target, sideIndex, false);
+        TrackShip(target, sideIndex);
         int appliedDamage = Mathf.Max(0, damage);
         if (appliedDamage <= 0)
         {
@@ -169,7 +179,6 @@ internal static class RlOneVsOneEpisodeDiagnostics
         if (selfInflicted)
         {
             SelfDamage[sideIndex] += appliedDamage;
-            Increment(DamageSources[sideIndex], string.IsNullOrEmpty(source) ? target.ShipType.ToString() : source, appliedDamage);
         }
         else
         {
@@ -184,7 +193,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return;
         }
 
-        TrackShip(ship, sideIndex, false);
+        TrackShip(ship, sideIndex);
         Increment(SpecialActions[sideIndex], action, 1);
     }
 
@@ -195,9 +204,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return;
         }
 
-        TrackShip(striker, sideIndex, false);
-        StrikerReloads[sideIndex].TryGetValue(striker.Id, out int count);
-        StrikerReloads[sideIndex][striker.Id] = count + 1;
+        TrackShip(striker, sideIndex);
+        StrikerReloads[sideIndex]++;
     }
 
     internal static void RecordShipDeath(Ship victim, Ship killer, bool endKill, string causeOverride = null)
@@ -207,7 +215,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return;
         }
 
-        TrackShip(victim, sideIndex, false);
+        TrackShip(victim, sideIndex);
         if ((!RootShips[sideIndex].ContainsKey(victim.Id) && !ChildShipTypes[sideIndex].ContainsKey(victim.Id)) ||
             DeathCauses[sideIndex].ContainsKey(victim.Id))
         {
@@ -246,19 +254,18 @@ internal static class RlOneVsOneEpisodeDiagnostics
         if (!_active)
         {
             return "bee_ships=none human_ships=none bee_children=none human_children=none " +
-                   "bee_child_outcomes=none human_child_outcomes=none bee_carriers=none human_carriers=none " +
-                   "bee_striker_reloads=none human_striker_reloads=none " +
-                   "bee_damage_sources=none human_damage_sources=none bee_self_damage=0 human_self_damage=0 " +
-                   "bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 " +
+                   "bee_striker_reloads=0 human_striker_reloads=0 " +
+                   "bee_damage_sources=none human_damage_sources=none bee_damage_by_ship=none human_damage_by_ship=none " +
+                   "bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 " +
+                   "bee_unattributed_damage=0 human_unattributed_damage=0 " +
                    "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none";
         }
 
         return $"bee_ships={FormatRootShips(0)} human_ships={FormatRootShips(1)} " +
-               $"bee_children={FormatCounts(ChildTypes[0])} human_children={FormatCounts(ChildTypes[1])} " +
-               $"bee_child_outcomes={FormatChildOutcomes(0, timedOut)} human_child_outcomes={FormatChildOutcomes(1, timedOut)} " +
-               $"bee_carriers={FormatCarriers(0)} human_carriers={FormatCarriers(1)} " +
-               $"bee_striker_reloads={FormatStrikerReloads(0)} human_striker_reloads={FormatStrikerReloads(1)} " +
+               $"bee_children={FormatChildren(0)} human_children={FormatChildren(1)} " +
+               $"bee_striker_reloads={StrikerReloads[0]} human_striker_reloads={StrikerReloads[1]} " +
                $"bee_damage_sources={FormatCounts(DamageSources[0])} human_damage_sources={FormatCounts(DamageSources[1])} " +
+               $"bee_damage_by_ship={FormatCounts(DamageByShipType[0])} human_damage_by_ship={FormatCounts(DamageByShipType[1])} " +
                $"bee_self_damage={SelfDamage[0]} human_self_damage={SelfDamage[1]} " +
                $"bee_friendly_damage={FriendlyDamage[0]} human_friendly_damage={FriendlyDamage[1]} " +
                $"bee_unattributed_damage={UnattributedDamage[0]} human_unattributed_damage={UnattributedDamage[1]} " +
@@ -279,69 +286,23 @@ internal static class RlOneVsOneEpisodeDiagnostics
             if (!ship.IsCarrierShip && !ship.IsMinionShip)
             {
                 RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
-                RegisterStriker(ship, sideIndex);
             }
             else
             {
-                TrackShip(ship, sideIndex, true);
+                TrackShip(ship, sideIndex);
             }
         }
     }
 
-    private static void TrackSide(List<Ship> ships, int sideIndex)
+    private static void TrackShip(Ship ship, int sideIndex)
     {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship != null)
-            {
-                TrackShip(ship, sideIndex, false);
-            }
-        }
-    }
-
-    private static void TrackShip(Ship ship, int sideIndex, bool initialChild)
-    {
-        if (ship == null || ship.Level != _level)
+        if (ship == null || ship.Level != _level || RootShips[sideIndex].ContainsKey(ship.Id) ||
+            ChildShipTypes[sideIndex].ContainsKey(ship.Id))
         {
             return;
         }
 
-        RegisterStriker(ship, sideIndex);
-        if (RootShips[sideIndex].ContainsKey(ship.Id))
-        {
-            return;
-        }
-        if (!initialChild && SeenChildren[sideIndex].Contains(ship.Id))
-        {
-            return;
-        }
-        if (!SeenChildren[sideIndex].Add(ship.Id))
-        {
-            return;
-        }
-
-        string shipType = ship.ShipType.ToString();
-        ChildShipTypes[sideIndex][ship.Id] = shipType;
-        Increment(ChildTypes[sideIndex], shipType, 1);
-        if (ship is CarrierShip carrierShip && carrierShip.Carrier != null)
-        {
-            long carrierId = carrierShip.Carrier.Id;
-            if (!CarrierChildren[sideIndex].TryGetValue(carrierId, out CarrierRecord record))
-            {
-                record = new CarrierRecord { Id = carrierId };
-                CarrierChildren[sideIndex][carrierId] = record;
-            }
-            Increment(record.Children, shipType, 1);
-        }
-    }
-
-    private static void RegisterStriker(Ship ship, int sideIndex)
-    {
-        if (ship is Striker && !StrikerReloads[sideIndex].ContainsKey(ship.Id))
-        {
-            StrikerReloads[sideIndex][ship.Id] = 0;
-        }
+        ChildShipTypes[sideIndex][ship.Id] = ship.ShipType.ToString();
     }
 
     private static bool TryGetSideIndex(Ship ship, out int sideIndex)
@@ -380,22 +341,48 @@ internal static class RlOneVsOneEpisodeDiagnostics
         return FormatCounts(counts);
     }
 
-    private static string FormatChildOutcomes(int sideIndex, bool timedOut)
+    private static string FormatChildren(int sideIndex)
     {
         if (ChildShipTypes[sideIndex].Count == 0)
         {
             return "none";
         }
 
-        Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        Dictionary<string, ChildSummary> summaries = new Dictionary<string, ChildSummary>(StringComparer.Ordinal);
         foreach (KeyValuePair<long, string> child in ChildShipTypes[sideIndex])
         {
-            string outcome = DeathCauses[sideIndex].TryGetValue(child.Key, out string cause)
-                ? cause
-                : timedOut ? "timeout-alive" : "alive";
-            Increment(counts, $"{child.Value}/{outcome}", 1);
+            if (!summaries.TryGetValue(child.Value, out ChildSummary summary))
+            {
+                summary = new ChildSummary();
+                summaries[child.Value] = summary;
+            }
+            summary.Spawned++;
+            if (!DeathCauses[sideIndex].ContainsKey(child.Key))
+            {
+                summary.Alive++;
+            }
         }
-        return FormatCounts(counts);
+
+        foreach (KeyValuePair<string, int> damage in ChildDamageByShipType[sideIndex])
+        {
+            if (!summaries.TryGetValue(damage.Key, out ChildSummary summary))
+            {
+                summary = new ChildSummary();
+                summaries[damage.Key] = summary;
+            }
+            summary.Damage = damage.Value;
+        }
+
+        List<string> types = new List<string>(summaries.Keys);
+        types.Sort(StringComparer.Ordinal);
+        List<string> values = new List<string>(types.Count);
+        for (int i = 0; i < types.Count; i++)
+        {
+            string type = types[i];
+            ChildSummary summary = summaries[type];
+            values.Add($"{type}:spawn{summary.Spawned},alive{summary.Alive},dmg{summary.Damage}");
+        }
+        return string.Join("|", values);
     }
 
     private static string FormatCounts(Dictionary<string, int> counts)
@@ -415,41 +402,6 @@ internal static class RlOneVsOneEpisodeDiagnostics
         return string.Join("|", values);
     }
 
-    private static string FormatCarriers(int sideIndex)
-    {
-        if (CarrierChildren[sideIndex].Count == 0)
-        {
-            return "none";
-        }
-
-        List<long> ids = new List<long>(CarrierChildren[sideIndex].Keys);
-        ids.Sort();
-        List<string> values = new List<string>(ids.Count);
-        for (int i = 0; i < ids.Count; i++)
-        {
-            CarrierRecord record = CarrierChildren[sideIndex][ids[i]];
-            values.Add($"Carrier#{record.Id}[{FormatCounts(record.Children)}]");
-        }
-        return string.Join("|", values);
-    }
-
-    private static string FormatStrikerReloads(int sideIndex)
-    {
-        if (StrikerReloads[sideIndex].Count == 0)
-        {
-            return "none";
-        }
-
-        List<long> ids = new List<long>(StrikerReloads[sideIndex].Keys);
-        ids.Sort();
-        List<string> values = new List<string>(ids.Count);
-        for (int i = 0; i < ids.Count; i++)
-        {
-            values.Add($"Striker#{ids[i]}:{StrikerReloads[sideIndex][ids[i]]}");
-        }
-        return string.Join("|", values);
-    }
-
     private static string FormatRootOutcomes(int sideIndex, bool timedOut)
     {
         if (RootShips[sideIndex].Count == 0)
@@ -457,23 +409,15 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return "none";
         }
 
-        List<RootShipRecord> roots = new List<RootShipRecord>(RootShips[sideIndex].Values);
-        roots.Sort((left, right) =>
+        Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (RootShipRecord root in RootShips[sideIndex].Values)
         {
-            int byType = string.CompareOrdinal(left.Type, right.Type);
-            return byType != 0 ? byType : left.Id.CompareTo(right.Id);
-        });
-
-        List<string> values = new List<string>(roots.Count);
-        for (int i = 0; i < roots.Count; i++)
-        {
-            RootShipRecord root = roots[i];
             string outcome = DeathCauses[sideIndex].TryGetValue(root.Id, out string cause)
                 ? cause
                 : timedOut ? "timeout-alive" : "alive";
-            values.Add($"{root.Type}#{root.Id}:{outcome}");
+            Increment(counts, $"{root.Type}/{outcome}", 1);
         }
-        return string.Join("|", values);
+        return FormatCounts(counts);
     }
 
     private static void Reset()
@@ -481,14 +425,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
         for (int sideIndex = 0; sideIndex < 2; sideIndex++)
         {
             RootShips[sideIndex].Clear();
-            SeenChildren[sideIndex].Clear();
             ChildShipTypes[sideIndex].Clear();
-            ChildTypes[sideIndex].Clear();
-            CarrierChildren[sideIndex].Clear();
-            StrikerReloads[sideIndex].Clear();
             DamageSources[sideIndex].Clear();
+            DamageByShipType[sideIndex].Clear();
+            ChildDamageByShipType[sideIndex].Clear();
             SpecialActions[sideIndex].Clear();
             DeathCauses[sideIndex].Clear();
+            StrikerReloads[sideIndex] = 0;
             SelfDamage[sideIndex] = 0;
             FriendlyDamage[sideIndex] = 0;
             UnattributedDamage[sideIndex] = 0;
