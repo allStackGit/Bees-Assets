@@ -65,6 +65,8 @@ namespace Bees.Tests.EditMode
             Assert.That(diagnostics, Does.Contain("human_ships="));
             Assert.That(diagnostics, Does.Contain("bee_children="));
             Assert.That(diagnostics, Does.Contain("human_children="));
+            Assert.That(diagnostics, Does.Contain("bee_child_outcomes="));
+            Assert.That(diagnostics, Does.Contain("human_child_outcomes="));
             Assert.That(diagnostics, Does.Contain("bee_carriers="));
             Assert.That(diagnostics, Does.Contain("human_carriers="));
             Assert.That(diagnostics, Does.Contain("bee_striker_reloads="));
@@ -81,6 +83,8 @@ namespace Bees.Tests.EditMode
             Assert.That(diagnostics, Does.Contain("human_specials="));
             Assert.That(diagnostics, Does.Contain("bee_root_outcomes="));
             Assert.That(diagnostics, Does.Contain("human_root_outcomes="));
+            Assert.That(diagnostics, Does.Contain("ChildShipTypes"));
+            Assert.That(diagnostics, Does.Contain("FormatChildOutcomes"));
 
             Assert.That(combat, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordShipDeath"));
             Assert.That(fireBarge, Does.Contain("RecordSpecialAction(this, \"fire_barge_detonate\")"));
