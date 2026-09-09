@@ -62,9 +62,11 @@ env_settings:
   - --rl-ships-per-side
   - '1'
   - --rl-bee-ship-types
-  - Wasp
+  - Wasp,Hornet
   - --rl-human-ship-types
-  - Gunship
+  - Gunship,Frigate
+  - --rl-matchup-mode
+  - sampled
   base_port: 5005
   num_envs: 32
   num_areas: 1
