@@ -51,18 +51,19 @@ internal static class RlOneVsOneCombatTelemetry
     }
 
     /// <summary>
-    /// Samples range and aim quality only when a projectile is actually launched. RL point-fire can
-    /// intentionally have no TargetShip, so aim error is measured against the best-aligned live enemy.
+    /// Samples range and aim quality only when an RL-controlled turret actually launches a projectile.
+    /// RL point-fire can intentionally have no TargetShip, so aim error is measured against the
+    /// best-aligned live enemy from the policy's requested aim point.
     /// </summary>
     internal static void RecordShotFired(Ship ship, Weapon weapon)
     {
-        if (!TryGetSideIndex(ship, out int sideIndex) || !(weapon is Turret turret))
+        if (!TryGetSideIndex(ship, out int sideIndex) || !(weapon is Turret turret) || !turret.IsRlControlled)
         {
             return;
         }
 
         Vector2 origin = turret.GetPosition();
-        if (TryFindBestAimedEnemy(_level, ship.Side, origin, turret.TargetPoint, out float distance, out float errorDegrees))
+        if (TryFindBestAimedEnemy(_level, ship.Side, origin, turret.RlTargetPoint, out float distance, out float errorDegrees))
         {
             if (FirstFireDistance[sideIndex] < 0f)
             {
