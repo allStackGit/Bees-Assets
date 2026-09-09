@@ -40,8 +40,59 @@ namespace Bees.Tests.EditMode
         {
             string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
 
+            Assert.That(combat, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage"));
             Assert.That(combat, Does.Contain("RlOneVsOneEpisodeCoordinator.RecordHit"));
             Assert.That(combat, Does.Contain("math.min(power, target.Health)"));
+        }
+
+        [Test]
+        public void CompactBehaviorDiagnosticsCaptureCompositionSpecialActionsAndRootOutcomes()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            string diagnostics = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeDiagnostics.cs");
+            string combat = ReadSource("Scripts", "Entities", "Ships", "Ship.Combat.cs");
+            string fireBarge = ReadSource("Scripts", "Entities", "Ships", "FireBarge.cs");
+            string striker = ReadSource("Scripts", "Entities", "Ships", "Striker.cs");
+            string yellowJacket = ReadSource("Scripts", "Entities", "Ships", "YellowJacket.cs");
+            string barge = ReadSource("Scripts", "Entities", "Ships", "Barge.cs");
+            string scout = ReadSource("Scripts", "Entities", "Ships", "Scout.cs");
+
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Begin(level)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Track(level)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut)"));
+
+            Assert.That(diagnostics, Does.Contain("bee_ships="));
+            Assert.That(diagnostics, Does.Contain("human_ships="));
+            Assert.That(diagnostics, Does.Contain("bee_children="));
+            Assert.That(diagnostics, Does.Contain("human_children="));
+            Assert.That(diagnostics, Does.Contain("bee_carriers="));
+            Assert.That(diagnostics, Does.Contain("human_carriers="));
+            Assert.That(diagnostics, Does.Contain("bee_striker_reloads="));
+            Assert.That(diagnostics, Does.Contain("human_striker_reloads="));
+            Assert.That(diagnostics, Does.Contain("bee_damage_sources="));
+            Assert.That(diagnostics, Does.Contain("human_damage_sources="));
+            Assert.That(diagnostics, Does.Contain("bee_self_damage="));
+            Assert.That(diagnostics, Does.Contain("human_self_damage="));
+            Assert.That(diagnostics, Does.Contain("bee_friendly_damage="));
+            Assert.That(diagnostics, Does.Contain("human_friendly_damage="));
+            Assert.That(diagnostics, Does.Contain("bee_unattributed_damage="));
+            Assert.That(diagnostics, Does.Contain("human_unattributed_damage="));
+            Assert.That(diagnostics, Does.Contain("bee_specials="));
+            Assert.That(diagnostics, Does.Contain("human_specials="));
+            Assert.That(diagnostics, Does.Contain("bee_root_outcomes="));
+            Assert.That(diagnostics, Does.Contain("human_root_outcomes="));
+
+            Assert.That(combat, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordShipDeath"));
+            Assert.That(fireBarge, Does.Contain("RecordSpecialAction(this, \"fire_barge_detonate\")"));
+            Assert.That(fireBarge, Does.Contain("LogDamage(Health, \"FireBarge\", true)"));
+            Assert.That(fireBarge, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordShipDeath"));
+            Assert.That(striker, Does.Contain("RecordSpecialAction(this, \"striker_bomb_drop\")"));
+            Assert.That(striker, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordStrikerReplenished"));
+            Assert.That(yellowJacket, Does.Contain("RecordSpecialAction(this, \"yellow_jacket_detonate\")"));
+            Assert.That(yellowJacket, Does.Contain("RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage"));
+            Assert.That(barge, Does.Contain("RecordSpecialAction(this, \"barge_charge\")"));
+            Assert.That(barge, Does.Contain("LogDamage(200, \"Barge\", true)"));
+            Assert.That(scout, Does.Contain("RecordSpecialAction(this, \"scout_beacon\")"));
         }
 
         [Test]
