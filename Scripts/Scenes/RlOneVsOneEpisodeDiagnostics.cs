@@ -289,16 +289,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
         for (int i = 0; i < ships.Count; i++)
         {
             Ship ship = ships[i];
-            if (ship == null || ship.IsDead)
-            {
-                continue;
-            }
-
-            if (!ship.IsCarrierShip && !ship.IsMinionShip)
-            {
-                RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
-            }
-            else
+            if (ship != null && !ship.IsDead)
             {
                 TrackShip(ship, sideIndex);
             }
@@ -322,6 +313,12 @@ internal static class RlOneVsOneEpisodeDiagnostics
         if (ship == null || ship.Level != _level || RootShips[sideIndex].ContainsKey(ship.Id) ||
             ChildShipTypes[sideIndex].ContainsKey(ship.Id))
         {
+            return;
+        }
+
+        if (!ship.IsCarrierShip && !ship.IsMinionShip)
+        {
+            RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
             return;
         }
 
