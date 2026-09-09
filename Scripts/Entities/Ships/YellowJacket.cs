@@ -91,6 +91,7 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             HasCompletedRun = true;
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "yellow_jacket_detonate");
 
             // The selected bombing-run target is being resolved synchronously rather than
             // by a projectile, so release the inbound-damage reservation before applying it.
@@ -129,6 +130,7 @@ namespace Assets.Scripts.Entities.Ships
             // Yellow Jacket detonation applies damage directly rather than through a Projectile, so
             // emit the same immediate RL outcome signal used by ordinary weapon impacts. Outside the
             // dedicated RL runtime the coordinator is inactive and this is a no-op.
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(attacker, target, appliedDamage);
             global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
 
             // LogHitStats owns attacker/target command TSV accounting as well as persistent
