@@ -56,6 +56,8 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
             // RL shot telemetry counts launched projectiles, matching FleetShip.ShotsFired.
             // A Dual Cannon volley launches two projectiles, so record both.
+            global::RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);
+            global::RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);
             global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
             global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
 
