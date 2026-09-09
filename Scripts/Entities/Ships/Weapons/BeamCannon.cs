@@ -100,6 +100,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 }
 
                 Ship.FleetShip.ShotsFired++;
+                global::RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);
                 global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
                 if (!IsFiringManually && !IsFiringAtAsteroid)
                 {
