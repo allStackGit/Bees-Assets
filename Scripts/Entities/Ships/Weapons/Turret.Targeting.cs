@@ -26,7 +26,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     }
                 }
 
-                if (ReadyToFire && RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)
+                if (ReadyToFire && RlFireRequested && CanAcceptRlFireRequest() && !Ship.IsCeaseFire)
                 {
                     FireAtPoint();
                     ReadyToFire = false;
@@ -56,6 +56,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 TryToFindAsteroidTarget();
             }
+        }
+
+        protected virtual bool CanAcceptRlFireRequest()
+        {
+            return IsAimedAtTarget;
         }
 
         public void TryToFindAsteroidTarget()
