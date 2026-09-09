@@ -44,6 +44,7 @@ namespace Assets.Scripts.Levels
                 ShipsBySide[sideIndex].Add(ship);
             }
             ShipsById.Add(ship.Id, ship);
+            global::RlOneVsOneEpisodeDiagnostics.TrackShip(ship);
             if (ship.IsHiveMindControlled)
             {
                 HivemindShips[ship.Side - 1][ship.Id] =
@@ -61,7 +62,7 @@ namespace Assets.Scripts.Levels
                     Squad existing = Squads[i];
                     if (existing.Side == squad.Side && existing.SquadNumber > maximumSquadNumber)
                     {
-                        maximumSquadNumber = existing.SquadNumber;
+                        maximumSquadNumber = existing.SquadNumber + 1;
                     }
                 }
                 squad.SquadNumber = maximumSquadNumber + 1;
