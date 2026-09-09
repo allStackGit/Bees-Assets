@@ -62,9 +62,9 @@ env_settings:
   - --rl-ships-per-side
   - '1'
   - --rl-bee-ship-types
-  - Wasp,Hornet
+  - Wasp,Hornet,Leafcutter,Bumblebee,Yellow Jacket
   - --rl-human-ship-types
-  - Gunship,Frigate
+  - Gunship,Frigate,Dreadnought,Cruiser,Barge,Carrier,Fire Barge,Flagship
   - --rl-matchup-mode
   - sampled
   base_port: 5005
