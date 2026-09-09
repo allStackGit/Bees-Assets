@@ -2,6 +2,41 @@ using Assets.Scripts;
 using System;
 using System.Collections.Generic;
 
+internal static class RlShipCombatCapability
+{
+    internal static bool IsWeaponless(ConfigData.ShipTypes shipType)
+    {
+        switch (shipType)
+        {
+            case ConfigData.ShipTypes.Honeybee:
+            case ConfigData.ShipTypes.Scout:
+            case ConfigData.ShipTypes.WarpGate:
+            case ConfigData.ShipTypes.Factory:
+            case ConfigData.ShipTypes.CarpenterBee:
+            case ConfigData.ShipTypes.Beehive:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    internal static bool HasAnyWeapon(IReadOnlyList<ConfigData.ShipTypes> composition)
+    {
+        if (composition == null)
+        {
+            return false;
+        }
+        for (int i = 0; i < composition.Count; i++)
+        {
+            if (!IsWeaponless(composition[i]))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 internal struct RlOneVsOneMatchup
 {
     internal ConfigData.ShipTypes BeeShipType;
@@ -15,8 +50,8 @@ internal struct RlOneVsOneMatchup
 }
 
 /// <summary>
-/// Produces a shuffled Cartesian cycle of Bee x Human matchups. Every pair is emitted exactly once
-/// before the cycle is reshuffled and repeated, preventing random sampling from starving rare pairs.
+/// Produces a shuffled Cartesian cycle of valid one-ship Bee x Human matchups. A one-ship side made
+/// from a weaponless type is excluded because that side cannot participate in combat.
 /// </summary>
 internal sealed class RlOneVsOneMatchupSampler
 {
@@ -55,8 +90,18 @@ internal sealed class RlOneVsOneMatchupSampler
             {
                 ConfigData.ShipTypes humanShipType = humanShipTypes[humanIndex];
                 ValidateSide(humanShipType, humanSide, nameof(humanShipTypes));
+                if (RlShipCombatCapability.IsWeaponless(beeShipType) ||
+                    RlShipCombatCapability.IsWeaponless(humanShipType))
+                {
+                    continue;
+                }
                 _cycle.Add(new RlOneVsOneMatchup(beeShipType, humanShipType));
             }
+        }
+
+        if (_cycle.Count == 0)
+        {
+            throw new ArgumentException("Sampled one-ship matchups require an armed candidate on both sides.");
         }
 
         _random = new Random(seed);
@@ -69,7 +114,6 @@ internal sealed class RlOneVsOneMatchupSampler
         {
             ShuffleCycle();
         }
-
         return _cycle[_nextIndex++];
     }
 
@@ -106,17 +150,23 @@ internal sealed class RlOneVsOneMatchupSampler
 }
 
 /// <summary>
-/// Deterministic side-specific shuffle bag used by sampled multi-ship episodes. A ship type cannot
-/// repeat on a side until every candidate in that side's pool has been emitted once.
+/// Uniformly samples unordered fleet compositions with replacement. For N candidate ship types and K
+/// ships there are C(N+K-1,K) compositions; each rank in that set is equally likely. Ranks whose
+/// complete composition is weaponless are rejected, leaving every combat-capable composition with
+/// the same accepted probability. Slot order is shuffled after the multiset is selected so formation
+/// positions do not become coupled to the canonical combination ordering.
 /// </summary>
-internal sealed class RlShipTypeShuffleBag
+internal sealed class RlShipCompositionSampler
 {
-    private readonly List<ConfigData.ShipTypes> _cycle = new List<ConfigData.ShipTypes>();
+    private readonly ConfigData.ShipTypes[] _shipTypes;
+    private readonly int _shipsPerSide;
     private readonly Random _random;
-    private int _nextIndex;
 
-    internal RlShipTypeShuffleBag(
+    internal long CombinationCount { get; }
+
+    internal RlShipCompositionSampler(
         IReadOnlyList<ConfigData.ShipTypes> shipTypes,
+        int shipsPerSide,
         int expectedSide,
         int seed)
     {
@@ -124,56 +174,132 @@ internal sealed class RlShipTypeShuffleBag
         {
             throw new ArgumentException("At least one ship type is required.", nameof(shipTypes));
         }
+        if (shipsPerSide <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shipsPerSide));
+        }
 
+        _shipTypes = new ConfigData.ShipTypes[shipTypes.Count];
+        bool hasArmedCandidate = false;
         for (int index = 0; index < shipTypes.Count; index++)
         {
             ConfigData.ShipTypes shipType = shipTypes[index];
             RlOneVsOneMatchupSampler.ValidateSide(shipType, expectedSide, nameof(shipTypes));
-            _cycle.Add(shipType);
+            _shipTypes[index] = shipType;
+            hasArmedCandidate |= !RlShipCombatCapability.IsWeaponless(shipType);
         }
-
-        _random = new Random(seed);
-        ShuffleCycle();
-    }
-
-    internal ConfigData.ShipTypes Next()
-    {
-        if (_nextIndex >= _cycle.Count)
+        if (!hasArmedCandidate)
         {
-            ShuffleCycle();
+            throw new ArgumentException("At least one sampled ship type must have a weapon.", nameof(shipTypes));
         }
 
-        return _cycle[_nextIndex++];
+        _shipsPerSide = shipsPerSide;
+        CombinationCount = Choose(_shipTypes.Length + shipsPerSide - 1, shipsPerSide);
+        if (CombinationCount <= 0)
+        {
+            throw new InvalidOperationException("RL fleet composition count overflowed or was empty.");
+        }
+        _random = new Random(seed);
     }
 
-    private void ShuffleCycle()
+    internal ConfigData.ShipTypes[] Next()
     {
-        for (int index = _cycle.Count - 1; index > 0; index--)
+        while (true)
+        {
+            long rank = NextLong(_random, CombinationCount);
+            ConfigData.ShipTypes[] composition = CreateCompositionForRank(rank);
+            if (!RlShipCombatCapability.HasAnyWeapon(composition))
+            {
+                continue;
+            }
+            ShuffleSlots(composition);
+            return composition;
+        }
+    }
+
+    internal ConfigData.ShipTypes[] CreateCompositionForRank(long rank)
+    {
+        if (rank < 0 || rank >= CombinationCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rank));
+        }
+
+        ConfigData.ShipTypes[] composition = new ConfigData.ShipTypes[_shipsPerSide];
+        int minimumTypeIndex = 0;
+        long remainingRank = rank;
+        for (int slot = 0; slot < _shipsPerSide; slot++)
+        {
+            int remainingSlots = _shipsPerSide - slot;
+            for (int typeIndex = minimumTypeIndex; typeIndex < _shipTypes.Length; typeIndex++)
+            {
+                long suffixCount = remainingSlots == 1
+                    ? 1
+                    : Choose((_shipTypes.Length - typeIndex) + remainingSlots - 2, remainingSlots - 1);
+                if (remainingRank < suffixCount)
+                {
+                    composition[slot] = _shipTypes[typeIndex];
+                    minimumTypeIndex = typeIndex;
+                    break;
+                }
+                remainingRank -= suffixCount;
+            }
+        }
+        return composition;
+    }
+
+    private void ShuffleSlots(ConfigData.ShipTypes[] composition)
+    {
+        for (int index = composition.Length - 1; index > 0; index--)
         {
             int swapIndex = _random.Next(index + 1);
-            ConfigData.ShipTypes temporary = _cycle[index];
-            _cycle[index] = _cycle[swapIndex];
-            _cycle[swapIndex] = temporary;
+            ConfigData.ShipTypes temporary = composition[index];
+            composition[index] = composition[swapIndex];
+            composition[swapIndex] = temporary;
         }
-        _nextIndex = 0;
+    }
+
+    private static long Choose(int n, int k)
+    {
+        if (k < 0 || n < 0 || k > n)
+        {
+            return 0;
+        }
+        k = Math.Min(k, n - k);
+        long result = 1;
+        for (int i = 1; i <= k; i++)
+        {
+            checked
+            {
+                result = result * (n - k + i) / i;
+            }
+        }
+        return result;
+    }
+
+    private static long NextLong(Random random, long maxExclusive)
+    {
+        if (maxExclusive <= 1)
+        {
+            return 0;
+        }
+        return (long)(random.NextDouble() * maxExclusive);
     }
 }
 
 /// <summary>
-/// Holds the sampled composition selected for the current episode. One-ship sampled training keeps
-/// the original shuffled Cartesian pair sequence exactly. Multi-ship sampled training uses one
-/// deterministic shuffle bag per side so an episode can contain mixed ship types without starving
-/// any candidate. GetShipType is stable for the full episode; only PrepareEpisode advances sampling.
+/// Holds the sampled composition selected for the current episode. One-ship training preserves the
+/// shuffled Cartesian coverage contract, while multi-ship training samples unordered compositions
+/// uniformly and then randomizes their formation-slot order.
 /// </summary>
 internal sealed class RlOneVsOneEpisodeMatchupSelector
 {
-    private const int BeeShuffleSeedOffset = 48611;
-    private const int HumanShuffleSeedOffset = 104729;
+    private const int BeeCompositionSeedOffset = 48611;
+    private const int HumanCompositionSeedOffset = 104729;
 
     private readonly RlOneVsOneTrainingOptions _options;
     private readonly RlOneVsOneMatchupSampler _sampler;
-    private readonly RlShipTypeShuffleBag _beeShuffleBag;
-    private readonly RlShipTypeShuffleBag _humanShuffleBag;
+    private readonly RlShipCompositionSampler _beeCompositionSampler;
+    private readonly RlShipCompositionSampler _humanCompositionSampler;
     private readonly ConfigData.ShipTypes[] _currentBeeComposition;
     private readonly ConfigData.ShipTypes[] _currentHumanComposition;
     private RlOneVsOneMatchup _currentMatchup;
@@ -194,22 +320,22 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
 
         if (_options.ShipsPerSide == 1)
         {
-            // This is intentionally the exact historical construction so seeded 1v1 training keeps
-            // its existing shuffled Cartesian sequence byte-for-byte in behavior.
             _sampler = new RlOneVsOneMatchupSampler(options.BeeShipTypes, options.HumanShipTypes, seed);
             return;
         }
 
         int beeSide = RlOneVsOneMatchupSampler.GetSideForShipType(ConfigData.ShipTypes.Wasp);
         int humanSide = RlOneVsOneMatchupSampler.GetSideForShipType(ConfigData.ShipTypes.Gunship);
-        _beeShuffleBag = new RlShipTypeShuffleBag(
+        _beeCompositionSampler = new RlShipCompositionSampler(
             options.BeeShipTypes,
+            options.ShipsPerSide,
             beeSide,
-            unchecked(seed * 31 + BeeShuffleSeedOffset));
-        _humanShuffleBag = new RlShipTypeShuffleBag(
+            unchecked(seed * 31 + BeeCompositionSeedOffset));
+        _humanCompositionSampler = new RlShipCompositionSampler(
             options.HumanShipTypes,
+            options.ShipsPerSide,
             humanSide,
-            unchecked(seed * 31 + HumanShuffleSeedOffset));
+            unchecked(seed * 31 + HumanCompositionSeedOffset));
         _currentBeeComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _currentHumanComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
     }
@@ -222,17 +348,13 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             _hasPreparedSampledMatchup = true;
             return;
         }
-
-        if (_beeShuffleBag == null || _humanShuffleBag == null)
+        if (_beeCompositionSampler == null || _humanCompositionSampler == null)
         {
             return;
         }
 
-        for (int shipIndex = 0; shipIndex < _options.ShipsPerSide; shipIndex++)
-        {
-            _currentBeeComposition[shipIndex] = _beeShuffleBag.Next();
-            _currentHumanComposition[shipIndex] = _humanShuffleBag.Next();
-        }
+        CopyComposition(_beeCompositionSampler.Next(), _currentBeeComposition);
+        CopyComposition(_humanCompositionSampler.Next(), _currentHumanComposition);
         _hasPreparedSampledMatchup = true;
     }
 
@@ -285,12 +407,16 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
 
         throw new ArgumentOutOfRangeException(nameof(side), side, "RL training side must be Bees or Humans.");
     }
+
+    private static void CopyComposition(ConfigData.ShipTypes[] source, ConfigData.ShipTypes[] destination)
+    {
+        for (int i = 0; i < destination.Length; i++)
+        {
+            destination[i] = source[i];
+        }
+    }
 }
 
-/// <summary>
-/// Process-wide training-only facade. Level.SetupShips always prepares the AI side first, so the
-/// episode composition is advanced once before either side is spawned and then remains fixed for both sides.
-/// </summary>
 internal static class RlOneVsOneEpisodeMatchups
 {
     private static RlOneVsOneEpisodeMatchupSelector _selector;
