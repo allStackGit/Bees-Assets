@@ -88,6 +88,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
         _beeSide = ConfigData.Configuration.BeeSide;
         _humanSide = ConfigData.Configuration.HumanSide;
         _active = true;
+        RlOneVsOneCombatTelemetry.Begin(level);
 
         CaptureInitialSide(level.State.GetShips(_beeSide), 0);
         CaptureInitialSide(level.State.GetShips(_humanSide), 1);
@@ -97,25 +98,26 @@ internal static class RlOneVsOneEpisodeDiagnostics
     {
         if (_active && level == _level)
         {
+            RlOneVsOneCombatTelemetry.End(level);
             _active = false;
             _level = null;
         }
     }
 
+    /// <summary>
+    /// Kept as a compatibility hook for the coordinator. Initial ships are captured in Begin and
+    /// newly spawned ships register from Ship.Setup, so this no longer performs a per-frame fleet scan.
+    /// </summary>
     internal static void Track(Level level)
     {
-        if (!_active || level == null || level != _level || level.State == null)
+        if (!_active || level == null || level != _level)
         {
             return;
         }
-
-        TrackSide(level.State.GetShips(_beeSide), 0);
-        TrackSide(level.State.GetShips(_humanSide), 1);
     }
 
     /// <summary>
-    /// Allows event paths to register a newly spawned ship immediately if it acts before the next
-    /// coordinator scan.
+    /// Allows ship lifecycle and event paths to register a newly spawned ship immediately.
     /// </summary>
     internal static void TrackShip(Ship ship)
     {
@@ -147,6 +149,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
         if (sourceShip.Side != target.Side)
         {
+            RlOneVsOneCombatTelemetry.RecordHit(sourceShip, target, appliedDamage);
             string sourceName = string.IsNullOrEmpty(source) ? "other" : source;
             string shipType = sourceShip.ShipType.ToString();
             Increment(DamageSources[sourceIndex], sourceName, appliedDamage);
@@ -262,6 +265,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
     internal static string BuildEpisodeFields(bool timedOut)
     {
+        string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields();
         if (!_active)
         {
             return "bee_ships=none human_ships=none bee_children=none human_children=none " +
@@ -269,7 +273,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
                    "bee_damage_sources=none human_damage_sources=none bee_damage_by_ship=none human_damage_by_ship=none " +
                    "bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 " +
                    "bee_unattributed_damage=0 human_unattributed_damage=0 " +
-                   "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none";
+                   "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none " +
+                   combatTelemetry;
         }
 
         return $"bee_ships={FormatRootShips(0)} human_ships={FormatRootShips(1)} " +
@@ -281,7 +286,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
                $"bee_friendly_damage={FriendlyDamage[0]} human_friendly_damage={FriendlyDamage[1]} " +
                $"bee_unattributed_damage={UnattributedDamage[0]} human_unattributed_damage={UnattributedDamage[1]} " +
                $"bee_specials={FormatCounts(SpecialActions[0])} human_specials={FormatCounts(SpecialActions[1])} " +
-               $"bee_root_outcomes={FormatRootOutcomes(0, timedOut)} human_root_outcomes={FormatRootOutcomes(1, timedOut)}";
+               $"bee_root_outcomes={FormatRootOutcomes(0, timedOut)} human_root_outcomes={FormatRootOutcomes(1, timedOut)} " +
+               combatTelemetry;
     }
 
     private static void CaptureInitialSide(List<Ship> ships, int sideIndex)
@@ -290,18 +296,6 @@ internal static class RlOneVsOneEpisodeDiagnostics
         {
             Ship ship = ships[i];
             if (ship != null && !ship.IsDead)
-            {
-                TrackShip(ship, sideIndex);
-            }
-        }
-    }
-
-    private static void TrackSide(List<Ship> ships, int sideIndex)
-    {
-        for (int i = 0; i < ships.Count; i++)
-        {
-            Ship ship = ships[i];
-            if (ship != null)
             {
                 TrackShip(ship, sideIndex);
             }
