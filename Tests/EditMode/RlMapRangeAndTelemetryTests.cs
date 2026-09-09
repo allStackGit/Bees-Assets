@@ -54,9 +54,13 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TrainingTelemetryReportsAimQualityAndFirstEngagementDistancesWithoutRewards()
+        public void TrainingTelemetryReportsAimQualityAndFirstEngagementDistancesWithoutPerFrameScanning()
         {
             string telemetry = ReadSource("Scripts", "Scenes", "RlOneVsOneCombatTelemetry.cs");
+            string diagnostics = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeDiagnostics.cs");
+            string turret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
+            string beamCannon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "BeamCannon.cs");
+            string dualCannon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "DualCannon.cs");
 
             Assert.That(telemetry, Does.Contain("bee_aim_error="));
             Assert.That(telemetry, Does.Contain("bee_aim_within_5deg="));
@@ -67,8 +71,20 @@ namespace Bees.Tests.EditMode
             Assert.That(telemetry, Does.Contain("human_first_fire_distance="));
             Assert.That(telemetry, Does.Contain("human_first_hit_distance="));
             Assert.That(telemetry, Does.Contain("map_size="));
+            Assert.That(telemetry, Does.Contain("RecordShotFired"));
+            Assert.That(telemetry, Does.Contain("RecordHit"));
+            Assert.That(telemetry, Does.Not.Contain("MonoBehaviour"));
+            Assert.That(telemetry, Does.Not.Contain("private void Update()"));
+            Assert.That(telemetry, Does.Not.Contain("Debug.Log("),
+                "Combat telemetry must be appended to the existing episode line rather than emitting a second line.");
             Assert.That(telemetry, Does.Not.Contain("AddReward("));
             Assert.That(telemetry, Does.Not.Contain("SetReward("));
+
+            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.BuildEpisodeFields()"));
+            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.RecordHit(sourceShip, target, appliedDamage)"));
+            Assert.That(CountOccurrences(turret, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
+            Assert.That(CountOccurrences(beamCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
+            Assert.That(CountOccurrences(dualCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(2));
         }
 
         [Test]
@@ -103,6 +119,18 @@ namespace Bees.Tests.EditMode
         {
             TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() => Parse(args));
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
+        }
+
+        private static int CountOccurrences(string source, string value)
+        {
+            int count = 0;
+            int index = 0;
+            while ((index = source.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                index += value.Length;
+            }
+            return count;
         }
 
         private static string ReadSource(params string[] parts)
