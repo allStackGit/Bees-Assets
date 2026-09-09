@@ -83,12 +83,30 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SampledCycleCoversEveryCartesianPairBeforeRecycle()
+        public void SampledModeRejectsPoolsThatCanOnlyProduceWeaponlessSides()
+        {
+            TargetInvocationException beeException = Assert.Throws<TargetInvocationException>(() =>
+                Parse(
+                    "--rl-matchup-mode=sampled",
+                    "--rl-bee-ship-types=Beehive,Honeybee,CarpenterBee",
+                    "--rl-human-ship-types=Gunship"));
+            TargetInvocationException humanException = Assert.Throws<TargetInvocationException>(() =>
+                Parse(
+                    "--rl-matchup-mode=sampled",
+                    "--rl-bee-ship-types=Wasp",
+                    "--rl-human-ship-types=Scout,Factory,WarpGate"));
+
+            Assert.That(beeException.InnerException, Is.TypeOf<ArgumentException>());
+            Assert.That(humanException.InnerException, Is.TypeOf<ArgumentException>());
+        }
+
+        [Test]
+        public void SampledOneShipCycleExcludesWeaponlessCandidatesAndCoversEveryCombatPair()
         {
             object options = Parse(
                 "--rl-matchup-mode=sampled",
-                "--rl-bee-ship-types=Wasp,Hornet",
-                "--rl-human-ship-types=Gunship,Scout");
+                "--rl-bee-ship-types=Wasp,Hornet,Honeybee",
+                "--rl-human-ship-types=Gunship,Frigate,Scout");
             object selector = CreateSelector(options, 12345);
             HashSet<string> firstCycle = new HashSet<string>();
 
@@ -99,32 +117,38 @@ namespace Bees.Tests.EditMode
             }
 
             CollectionAssert.AreEquivalent(
-                new[] { "Wasp|Gunship", "Wasp|Scout", "Hornet|Gunship", "Hornet|Scout" },
+                new[] { "Wasp|Gunship", "Wasp|Frigate", "Hornet|Gunship", "Hornet|Frigate" },
                 firstCycle);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             Assert.That(
-                new HashSet<string> { "Wasp|Gunship", "Wasp|Scout", "Hornet|Gunship", "Hornet|Scout" },
+                new HashSet<string> { "Wasp|Gunship", "Wasp|Frigate", "Hornet|Gunship", "Hornet|Frigate" },
                 Does.Contain(GetPreparedPair(selector)));
         }
 
         [Test]
-        public void PreparedMatchupRemainsStableWithinEpisode()
+        public void PreparedMultiShipCompositionRemainsStableWithinEpisode()
         {
             object options = Parse(
                 "--rl-matchup-mode=sampled",
                 "--rl-ships-per-side=3",
-                "--rl-bee-ship-types=Wasp,Hornet",
-                "--rl-human-ship-types=Gunship,Scout");
+                "--rl-bee-ship-types=Wasp,Hornet,Honeybee",
+                "--rl-human-ship-types=Gunship,Frigate,Scout");
             object selector = CreateSelector(options, 9876);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
-            string firstPair = GetPreparedPair(selector, 0);
-
-            for (int shipIndex = 0; shipIndex < 3; shipIndex++)
+            string[] preparedPairs = new string[3];
+            for (int shipIndex = 0; shipIndex < preparedPairs.Length; shipIndex++)
             {
-                Assert.That(GetPreparedPair(selector, shipIndex), Is.EqualTo(firstPair));
-                Assert.That(GetPreparedPair(selector, shipIndex), Is.EqualTo(firstPair));
+                preparedPairs[shipIndex] = GetPreparedPair(selector, shipIndex);
+            }
+
+            for (int repetition = 0; repetition < 3; repetition++)
+            {
+                for (int shipIndex = 0; shipIndex < preparedPairs.Length; shipIndex++)
+                {
+                    Assert.That(GetPreparedPair(selector, shipIndex), Is.EqualTo(preparedPairs[shipIndex]));
+                }
             }
         }
 
