@@ -1,4 +1,3 @@
-using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Entities.Ships.Weapons
@@ -9,9 +8,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     public class FullShipTurret : LaserBuilder
     {
         private Vector3 _rightRotationRate, _leftRotationRate;
-        private bool _rlHullAimActive;
-        private Vector2 _rlCommittedTargetPoint;
-        private float _rlPreviousCurrentSpeed, _rlPreviousRotationSpeed;
         //private AudioSource _chargingSound;
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece, ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
         {
@@ -23,17 +19,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             //_chargingSound = Instantiate(Stage.Audio.FlagshipLaserChargingSound);
             //_chargingSound.transform.parent = PieceTransform;
             //_chargingSound.transform.localPosition = Vector2.zero;
-        }
-        public override void ClearData()
-        {
-            ReleaseRlHullAim();
-            _rlCommittedTargetPoint = Vector2.zero;
-            base.ClearData();
-        }
-        public override void Deactivate()
-        {
-            ReleaseRlHullAim();
-            base.Deactivate();
         }
         public override void ResetRotation()
         {
@@ -112,75 +97,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         private void AimRlMainCannon()
         {
-            bool shouldOwnHullAim = IsRlShotQueued || (RlFireRequested && ReadyToFire && !Ship.IsCeaseFire);
-            if (shouldOwnHullAim)
-            {
-                BeginRlHullAim();
-                MaintainRlHullAim();
-            }
-            else
-            {
-                ReleaseRlHullAim();
-            }
-
-            TargetPoint = IsRlShotQueued ? _rlCommittedTargetPoint : RlTargetPoint;
+            // The policy owns the hull. This method observes whether the current hull/cannon heading
+            // happens to line up with the requested point for diagnostics, but never rotates or slows
+            // the ship. A queued shot is allowed to charge regardless of that alignment.
+            TargetPoint = RlTargetPoint;
             IsFiringAtAsteroid = false;
-            IsAimedAtTarget = _rlHullAimActive
-                ? RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint))
-                : Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
-
-            // LaserBuilder.SendProjectile owns activation for queued RL shots. Aim only controls
-            // whether an active charge animation may advance while the hull is on target.
-            Animator.speed = IsAimedAtTarget ? 1 : 0;
+            IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+            Animator.speed = 1f;
             MoveTargetingMarker();
         }
-        private void BeginRlHullAim()
+        protected override bool CanAcceptRlFireRequest()
         {
-            if (_rlHullAimActive)
-            {
-                return;
-            }
-
-            _rlHullAimActive = true;
-            _rlPreviousCurrentSpeed = Ship.CurrentSpeed;
-            _rlPreviousRotationSpeed = Ship.RotationSpeed;
-        }
-        private void MaintainRlHullAim()
-        {
-            if (!_rlHullAimActive)
-            {
-                return;
-            }
-
-            // Preserve the policy's Direction/order while temporarily giving the fixed cannon the
-            // hull. Zeroing speed and normal hull-turn rate prevents navigation from fighting the
-            // cannon; both are restored as soon as this shot resolves or is cancelled.
-            Ship.CurrentSpeed = 0f;
-            Ship.RotationSpeed = 0f;
-            Ship.Body.linearVelocity = Vector2.zero;
-            Ship.IsMoving = false;
-        }
-        private void ReleaseRlHullAim()
-        {
-            if (!_rlHullAimActive)
-            {
-                return;
-            }
-
-            Ship.CurrentSpeed = _rlPreviousCurrentSpeed;
-            Ship.RotationSpeed = _rlPreviousRotationSpeed;
-            _rlHullAimActive = false;
-        }
-        protected override void OnRlControlUpdated()
-        {
-            if ((!RlFireRequested || Ship.IsCeaseFire) && !IsRlShotQueued)
-            {
-                ReleaseRlHullAim();
-            }
-        }
-        protected override void OnRlControlCleared()
-        {
-            ReleaseRlHullAim();
+            // Unlike an independently rotating turret, this fixed cannon must not hide hull aiming
+            // behind scripted assistance. If the weapon is ready, the policy may commit the shot at
+            // any heading and learn from the resulting hit or miss.
+            return true;
         }
         private float _difference;
         private static Vector3 _forward = Vector3.forward;
@@ -262,13 +193,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
         protected override void SendProjectile()
         {
-            if (IsRlControlled)
-            {
-                _rlCommittedTargetPoint = TargetPoint;
-                BeginRlHullAim();
-                MaintainRlHullAim();
-            }
-
             base.SendProjectile();
             if (!IsRlControlled)
             {
@@ -283,13 +207,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return base.CanCompleteQueuedShot();
             }
 
-            TargetPoint = _rlCommittedTargetPoint;
-            return Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+            // Turret.SendProjectile launches toward TargetPoint. For the fixed RL cannon, replace the
+            // policy's diagnostic aim point at the final animation event with a point directly ahead
+            // of the cannon's current physical heading. The ship may keep moving and turning while it
+            // charges, so the heading at the instant of firing determines the actual shot direction.
+            TargetPoint = GetRlForwardFirePoint();
+            return true;
         }
-        protected override void OnShotResolved(bool fired)
+        private Vector2 GetRlForwardFirePoint()
         {
-            base.OnShotResolved(fired);
-            ReleaseRlHullAim();
+            float radians = Rotation * Mathf.Deg2Rad;
+            Vector2 forwardDirection = new Vector2(-Mathf.Sin(radians), Mathf.Cos(radians));
+            return GetPosition() + forwardDirection;
         }
     }
 }
