@@ -97,8 +97,11 @@ namespace Assets.Scripts.Entities.Ships
             // by a projectile, so release the inbound-damage reservation before applying it.
             Bomb.ReleaseTargetReservation();
 
-            LogDetonationDamage(Bomb.Power, this, ContactedShip);
-            LogDetonationDamage(Bomb.Power, ContactedShip, this);
+            LogDetonationDamage(Bomb.Power, this, ContactedShip, this);
+            // Existing gameplay accounting intentionally treats the contacted ship as the attacker
+            // for the reciprocal damage. Diagnostics identify the physical cause as the Yellow
+            // Jacket's own bomb so this damage appears under self_damage instead of enemy gun damage.
+            LogDetonationDamage(Bomb.Power, ContactedShip, this, this);
 
             Ship detonationTarget = ContactedShip;
             FleetShip targetFleetShip = detonationTarget.FleetShip;
@@ -118,7 +121,7 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         private int _targetOldTSV, _targetTSVLoss;
-        private void LogDetonationDamage(int power, Ship attacker, Ship target) // [damage-method] [note]
+        private void LogDetonationDamage(int power, Ship attacker, Ship target, Ship diagnosticOwner) // [damage-method] [note]
         {
             int appliedDamage = math.min(target.Health, power);
             _targetOldTSV = target.Tsv;
@@ -130,7 +133,7 @@ namespace Assets.Scripts.Entities.Ships
             // Yellow Jacket detonation applies damage directly rather than through a Projectile, so
             // emit the same immediate RL outcome signal used by ordinary weapon impacts. Outside the
             // dedicated RL runtime the coordinator is inactive and this is a no-op.
-            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(attacker, target, appliedDamage);
+            global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(diagnosticOwner, target, appliedDamage, "bomb");
             global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
 
             // LogHitStats owns attacker/target command TSV accounting as well as persistent
