@@ -113,6 +113,7 @@ namespace Assets.Scripts.Entities.Ships
             squad.AddShip(ship);
             squad.CanAcceptUserInput = false;
             ship.LookForShips();
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "scout_beacon");
 
             if (BeaconsDropped == ConfigData.MaxBeaconsDroppedPerScout)
             {
