@@ -94,6 +94,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             base.SendProjectile();
             Level.AddProjectile(ProjectileType, this, GetPosition(), AngleToPoint(TargetPoint));
             Ship.FleetShip.ShotsFired++;
+            global::RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);
             global::RlOneVsOneEpisodeCoordinator.RecordShotFired(Ship, this);
         }
     }
