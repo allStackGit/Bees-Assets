@@ -73,6 +73,10 @@ namespace Bees.Tests.EditMode
             Assert.That(telemetry, Does.Contain("map_size="));
             Assert.That(telemetry, Does.Contain("RecordShotFired"));
             Assert.That(telemetry, Does.Contain("RecordHit"));
+            Assert.That(telemetry, Does.Contain("!turret.IsRlControlled"),
+                "Aim aggregates should describe policy-controlled fire rather than automatic pre-bind shots.");
+            Assert.That(telemetry, Does.Contain("turret.RlTargetPoint"),
+                "Aim error should be measured from the policy's requested aim point.");
             Assert.That(telemetry, Does.Not.Contain("MonoBehaviour"));
             Assert.That(telemetry, Does.Not.Contain("private void Update()"));
             Assert.That(telemetry, Does.Not.Contain("Debug.Log("),
