@@ -62,7 +62,7 @@ namespace Assets.Scripts.Levels
                     Squad existing = Squads[i];
                     if (existing.Side == squad.Side && existing.SquadNumber > maximumSquadNumber)
                     {
-                        maximumSquadNumber = existing.SquadNumber + 1;
+                        maximumSquadNumber = existing.SquadNumber;
                     }
                 }
                 squad.SquadNumber = maximumSquadNumber + 1;
