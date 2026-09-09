@@ -14,6 +14,7 @@ namespace Bees.Tests.EditMode
         private Type _optionsType;
         private Type _samplerType;
         private Type _selectorType;
+        private Type _compositionSamplerType;
 
         [SetUp]
         public void SetUp()
@@ -21,10 +22,11 @@ namespace Bees.Tests.EditMode
             _optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
             _samplerType = RuntimeAssembly.GetType("RlOneVsOneMatchupSampler");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
+            _compositionSamplerType = RuntimeAssembly.GetType("RlShipCompositionSampler");
         }
 
         [Test]
-        public void SampledOneVsOneSelectorKeepsExactSeededCartesianSamplerSequence()
+        public void SampledOneVsOneSelectorKeepsExactSeededCartesianSamplerSequenceForArmedPools()
         {
             const int seed = 424242;
             object options = Parse(
@@ -56,72 +58,98 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SampledMultiShipCompositionsAreDeterministicAndDoNotRepeatBeforePoolExhaustion()
+        public void MultiShipRankSpaceContainsEachUnorderedCompositionExactlyOnce()
         {
-            const int seed = 8080;
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            Array candidates = Array.CreateInstance(shipType, 3);
+            candidates.SetValue(Enum.Parse(shipType, "Wasp"), 0);
+            candidates.SetValue(Enum.Parse(shipType, "Hornet"), 1);
+            candidates.SetValue(Enum.Parse(shipType, "YellowJacket"), 2);
+
+            int beeSide = (int)RuntimeAssembly.InvokeStatic(
+                _samplerType,
+                "GetSideForShipType",
+                Enum.Parse(shipType, "Wasp"));
+            object sampler = CreateCompositionSampler(candidates, 2, beeSide, 1001);
+
+            Assert.That(GetProperty(sampler, "CombinationCount"), Is.EqualTo(6L));
+
+            HashSet<string> compositions = new HashSet<string>();
+            MethodInfo createForRank = _compositionSamplerType.GetMethod(
+                "CreateCompositionForRank",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(createForRank, Is.Not.Null);
+            for (long rank = 0; rank < 6; rank++)
+            {
+                compositions.Add(Canonicalize((Array)createForRank.Invoke(sampler, new object[] { rank })));
+            }
+
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    "Hornet,Hornet",
+                    "Hornet,Wasp",
+                    "Hornet,YellowJacket",
+                    "Wasp,Wasp",
+                    "Wasp,YellowJacket",
+                    "YellowJacket,YellowJacket",
+                },
+                compositions);
+        }
+
+        [Test]
+        public void UniformCompositionSamplerNeverReturnsAnAllWeaponlessSide()
+        {
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            Array candidates = Array.CreateInstance(shipType, 3);
+            candidates.SetValue(Enum.Parse(shipType, "Wasp"), 0);
+            candidates.SetValue(Enum.Parse(shipType, "Honeybee"), 1);
+            candidates.SetValue(Enum.Parse(shipType, "CarpenterBee"), 2);
+
+            int beeSide = (int)RuntimeAssembly.InvokeStatic(
+                _samplerType,
+                "GetSideForShipType",
+                Enum.Parse(shipType, "Wasp"));
+            object sampler = CreateCompositionSampler(candidates, 3, beeSide, 8080);
+            MethodInfo next = _compositionSamplerType.GetMethod("Next", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(next, Is.Not.Null);
+
+            HashSet<string> observed = new HashSet<string>();
+            for (int episode = 0; episode < 200; episode++)
+            {
+                Array composition = (Array)next.Invoke(sampler, null);
+                string canonical = Canonicalize(composition);
+                observed.Add(canonical);
+                Assert.That(canonical.Split(',').Contains("Wasp"), Is.True,
+                    "With Wasp as the only armed candidate, every accepted composition must contain a Wasp.");
+            }
+
+            Assert.That(observed.Count, Is.GreaterThan(1), "Sampling should still retain mixed utility/armed fleets.");
+        }
+
+        [Test]
+        public void MultiShipCompositionStreamsRemainDeterministicForIdenticalSeeds()
+        {
+            const int seed = 5150;
             object options = Parse(
                 "--rl-matchup-mode", "sampled",
                 "--rl-ships-per-side", "4",
                 "--rl-bee-ship-types", "Wasp,Hornet,YellowJacket",
-                "--rl-human-ship-types", "Gunship,Frigate");
-
+                "--rl-human-ship-types", "Gunship,Frigate,Cruiser");
             object first = CreateSelector(options, seed);
             object second = CreateSelector(options, seed);
-            List<string> firstBee = new List<string>();
-            List<string> firstHuman = new List<string>();
-            List<string> secondBee = new List<string>();
-            List<string> secondHuman = new List<string>();
 
-            for (int episode = 0; episode < 6; episode++)
+            for (int episode = 0; episode < 32; episode++)
             {
-                AppendComposition(first, firstBee, firstHuman);
-                AppendComposition(second, secondBee, secondHuman);
-            }
+                RuntimeAssembly.Invoke(first, "PrepareEpisode");
+                RuntimeAssembly.Invoke(second, "PrepareEpisode");
 
-            CollectionAssert.AreEqual(firstBee, secondBee, "Identical seeds must produce identical Bee composition streams.");
-            CollectionAssert.AreEqual(firstHuman, secondHuman, "Identical seeds must produce identical Human composition streams.");
-
-            AssertEveryPoolCycleContainsAllCandidates(
-                firstBee,
-                new[] { "Wasp", "Hornet", "YellowJacket" });
-            AssertEveryPoolCycleContainsAllCandidates(
-                firstHuman,
-                new[] { "Gunship", "Frigate" });
-        }
-
-        private void AppendComposition(
-            object selector,
-            List<string> beeDestination,
-            List<string> humanDestination)
-        {
-            MethodInfo prepare = _selectorType.GetMethod("PrepareEpisode", BindingFlags.Instance | BindingFlags.NonPublic);
-            Assert.That(prepare, Is.Not.Null);
-            prepare.Invoke(selector, null);
-
-            AppendNames((Array)RuntimeAssembly.GetField(selector, "_currentBeeComposition"), beeDestination);
-            AppendNames((Array)RuntimeAssembly.GetField(selector, "_currentHumanComposition"), humanDestination);
-        }
-
-        private static void AppendNames(Array values, List<string> destination)
-        {
-            Assert.That(values, Is.Not.Null);
-            for (int i = 0; i < values.Length; i++)
-            {
-                destination.Add(values.GetValue(i).ToString());
-            }
-        }
-
-        private static void AssertEveryPoolCycleContainsAllCandidates(
-            List<string> stream,
-            string[] candidates)
-        {
-            HashSet<string> expected = new HashSet<string>(candidates);
-            Assert.That(stream.Count % candidates.Length, Is.EqualTo(0));
-            for (int start = 0; start < stream.Count; start += candidates.Length)
-            {
-                HashSet<string> cycle = new HashSet<string>(stream.Skip(start).Take(candidates.Length));
-                Assert.That(cycle.SetEquals(expected), Is.True,
-                    $"Sample stream repeated a type before exhausting [{string.Join(",", candidates)}] at offset {start}.");
+                Assert.That(
+                    Canonicalize((Array)RuntimeAssembly.GetField(first, "_currentBeeComposition")),
+                    Is.EqualTo(Canonicalize((Array)RuntimeAssembly.GetField(second, "_currentBeeComposition"))));
+                Assert.That(
+                    Canonicalize((Array)RuntimeAssembly.GetField(first, "_currentHumanComposition")),
+                    Is.EqualTo(Canonicalize((Array)RuntimeAssembly.GetField(second, "_currentHumanComposition"))));
             }
         }
 
@@ -150,11 +178,31 @@ namespace Bees.Tests.EditMode
             return constructor.Invoke(new[] { beeTypes, humanTypes, (object)seed });
         }
 
+        private object CreateCompositionSampler(object shipTypes, int shipsPerSide, int side, int seed)
+        {
+            ConstructorInfo constructor = _compositionSamplerType.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Single(candidate => candidate.GetParameters().Length == 4);
+            return constructor.Invoke(new[] { shipTypes, (object)shipsPerSide, (object)side, (object)seed });
+        }
+
         private object GetProperty(object instance, string propertyName)
         {
-            PropertyInfo property = _optionsType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.NonPublic);
+            PropertyInfo property = instance.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.That(property, Is.Not.Null);
             return property.GetValue(instance);
+        }
+
+        private static string Canonicalize(Array values)
+        {
+            List<string> names = new List<string>();
+            for (int i = 0; i < values.Length; i++)
+            {
+                names.Add(values.GetValue(i).ToString());
+            }
+            names.Sort(StringComparer.Ordinal);
+            return string.Join(",", names);
         }
     }
 }
