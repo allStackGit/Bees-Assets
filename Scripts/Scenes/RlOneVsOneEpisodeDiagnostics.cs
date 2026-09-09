@@ -35,6 +35,12 @@ internal static class RlOneVsOneEpisodeDiagnostics
         new HashSet<long>()
     };
 
+    private static readonly Dictionary<long, string>[] ChildShipTypes =
+    {
+        new Dictionary<long, string>(),
+        new Dictionary<long, string>()
+    };
+
     private static readonly Dictionary<string, int>[] ChildTypes =
     {
         new Dictionary<string, int>(StringComparer.Ordinal),
@@ -196,7 +202,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
     internal static void RecordShipDeath(Ship victim, Ship killer, bool endKill, string causeOverride = null)
     {
-        if (!TryGetSideIndex(victim, out int sideIndex) || !RootShips[sideIndex].ContainsKey(victim.Id) ||
+        if (!TryGetSideIndex(victim, out int sideIndex))
+        {
+            return;
+        }
+
+        TrackShip(victim, sideIndex, false);
+        if ((!RootShips[sideIndex].ContainsKey(victim.Id) && !ChildShipTypes[sideIndex].ContainsKey(victim.Id)) ||
             DeathCauses[sideIndex].ContainsKey(victim.Id))
         {
             return;
@@ -234,7 +246,8 @@ internal static class RlOneVsOneEpisodeDiagnostics
         if (!_active)
         {
             return "bee_ships=none human_ships=none bee_children=none human_children=none " +
-                   "bee_carriers=none human_carriers=none bee_striker_reloads=none human_striker_reloads=none " +
+                   "bee_child_outcomes=none human_child_outcomes=none bee_carriers=none human_carriers=none " +
+                   "bee_striker_reloads=none human_striker_reloads=none " +
                    "bee_damage_sources=none human_damage_sources=none bee_self_damage=0 human_self_damage=0 " +
                    "bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 " +
                    "bee_specials=none human_specials=none bee_root_outcomes=none human_root_outcomes=none";
@@ -242,6 +255,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
         return $"bee_ships={FormatRootShips(0)} human_ships={FormatRootShips(1)} " +
                $"bee_children={FormatCounts(ChildTypes[0])} human_children={FormatCounts(ChildTypes[1])} " +
+               $"bee_child_outcomes={FormatChildOutcomes(0, timedOut)} human_child_outcomes={FormatChildOutcomes(1, timedOut)} " +
                $"bee_carriers={FormatCarriers(0)} human_carriers={FormatCarriers(1)} " +
                $"bee_striker_reloads={FormatStrikerReloads(0)} human_striker_reloads={FormatStrikerReloads(1)} " +
                $"bee_damage_sources={FormatCounts(DamageSources[0])} human_damage_sources={FormatCounts(DamageSources[1])} " +
@@ -307,7 +321,9 @@ internal static class RlOneVsOneEpisodeDiagnostics
             return;
         }
 
-        Increment(ChildTypes[sideIndex], ship.ShipType.ToString(), 1);
+        string shipType = ship.ShipType.ToString();
+        ChildShipTypes[sideIndex][ship.Id] = shipType;
+        Increment(ChildTypes[sideIndex], shipType, 1);
         if (ship is CarrierShip carrierShip && carrierShip.Carrier != null)
         {
             long carrierId = carrierShip.Carrier.Id;
@@ -316,7 +332,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
                 record = new CarrierRecord { Id = carrierId };
                 CarrierChildren[sideIndex][carrierId] = record;
             }
-            Increment(record.Children, ship.ShipType.ToString(), 1);
+            Increment(record.Children, shipType, 1);
         }
     }
 
@@ -360,6 +376,24 @@ internal static class RlOneVsOneEpisodeDiagnostics
         foreach (RootShipRecord record in RootShips[sideIndex].Values)
         {
             Increment(counts, record.Type, 1);
+        }
+        return FormatCounts(counts);
+    }
+
+    private static string FormatChildOutcomes(int sideIndex, bool timedOut)
+    {
+        if (ChildShipTypes[sideIndex].Count == 0)
+        {
+            return "none";
+        }
+
+        Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (KeyValuePair<long, string> child in ChildShipTypes[sideIndex])
+        {
+            string outcome = DeathCauses[sideIndex].TryGetValue(child.Key, out string cause)
+                ? cause
+                : timedOut ? "timeout-alive" : "alive";
+            Increment(counts, $"{child.Value}/{outcome}", 1);
         }
         return FormatCounts(counts);
     }
@@ -448,6 +482,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
         {
             RootShips[sideIndex].Clear();
             SeenChildren[sideIndex].Clear();
+            ChildShipTypes[sideIndex].Clear();
             ChildTypes[sideIndex].Clear();
             CarrierChildren[sideIndex].Clear();
             StrikerReloads[sideIndex].Clear();
