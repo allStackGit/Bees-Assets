@@ -15,6 +15,8 @@ namespace Bees.Tests.EditMode
         private Type _samplerType;
         private Type _selectorType;
         private Type _compositionSamplerType;
+        private Type _configDataType;
+        private object _previousConfiguration;
 
         [SetUp]
         public void SetUp()
@@ -23,6 +25,27 @@ namespace Bees.Tests.EditMode
             _samplerType = RuntimeAssembly.GetType("RlOneVsOneMatchupSampler");
             _selectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
             _compositionSamplerType = RuntimeAssembly.GetType("RlShipCompositionSampler");
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _previousConfiguration = RuntimeAssembly.GetStaticField(_configDataType, "Configuration");
+
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            IDictionary sideMap = (IDictionary)RuntimeAssembly.GetStaticField(
+                RuntimeAssembly.GetType("Assets.Scripts.Utilities"),
+                "ConvertShipTypeToSide");
+            int beeSide = (int)sideMap[Enum.Parse(shipType, "Wasp")];
+            int humanSide = (int)sideMap[Enum.Parse(shipType, "Gunship")];
+
+            object configuration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "IsLoaded", true);
+            RuntimeAssembly.SetField(configuration, "BeeSide", beeSide);
+            RuntimeAssembly.SetField(configuration, "HumanSide", humanSide);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", _previousConfiguration);
         }
 
         [Test]
