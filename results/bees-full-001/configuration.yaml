@@ -56,7 +56,7 @@ env_settings:
   - --rl-health-ratio
   - '.5'
   - --rl-map-size
-  - '96'
+  - '112'
   - --rl-episode-timeout
   - '120'
   - --rl-ships-per-side
