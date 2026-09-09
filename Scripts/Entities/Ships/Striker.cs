@@ -211,7 +211,13 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
             Bomb.ReleaseTargetReservation();
-            LogAttackingDamage(Bomb.Power, this, FleetShip, Squad.SavedSquad, ContactedShip);
+            LogAttackingDamage(
+                Bomb.Power,
+                this,
+                FleetShip,
+                Squad.SavedSquad,
+                ContactedShip,
+                rlDamageSource: "bomb");
         }
 
         public void CompleteRun()
