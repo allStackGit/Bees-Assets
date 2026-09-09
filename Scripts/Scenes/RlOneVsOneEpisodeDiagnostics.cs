@@ -102,9 +102,20 @@ internal static class RlOneVsOneEpisodeDiagnostics
         }
     }
 
+    internal static void Track(Level level)
+    {
+        if (!_active || level == null || level != _level || level.State == null)
+        {
+            return;
+        }
+
+        TrackSide(level.State.GetShips(_beeSide), 0);
+        TrackSide(level.State.GetShips(_humanSide), 1);
+    }
+
     /// <summary>
-    /// Reuses the coordinator's existing ship scan so diagnostics do not add another per-frame
-    /// traversal of every ship in the episode.
+    /// Allows event paths to register a newly spawned ship immediately if it acts before the next
+    /// coordinator scan.
     /// </summary>
     internal static void TrackShip(Ship ship)
     {
@@ -288,6 +299,18 @@ internal static class RlOneVsOneEpisodeDiagnostics
                 RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
             }
             else
+            {
+                TrackShip(ship, sideIndex);
+            }
+        }
+    }
+
+    private static void TrackSide(List<Ship> ships, int sideIndex)
+    {
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship != null)
             {
                 TrackShip(ship, sideIndex);
             }
