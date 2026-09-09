@@ -19,6 +19,7 @@ namespace Assets.Scripts.Entities.Ships
         public Animator Animator;
         private bool _rlShotQueued;
         private bool _animatorResetPending;
+        protected bool IsRlShotQueued => _rlShotQueued;
 
         public override void Create(Ship ship, ConfigData.WeaponTypes type, ConfigData.WeaponSoundTypes weaponSound, int range, int power, float rateOfFire, float projectileValue, GameObject piece,
             ConfigData.ProjectileTypes projectileType, bool fireAtFrontOfShip, float rotationRate)
@@ -87,17 +88,26 @@ namespace Assets.Scripts.Entities.Ships
         public void ActuallyShoot() // [projectile-method] [note] this actually sends the projectile once the animation is finished
         {
             bool directPointFire = IsRlControlled ? _rlShotQueued : IsFiringManually;
-            bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire && IsAimedAtTarget &&
-                (directPointFire || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire));
+            bool canShoot = !Ship.IsDead && !Ship.IsCeaseFire &&
+                (directPointFire || (IsFiringAtAsteroid ? ShouldFireAtAsteroid : ShouldFire)) &&
+                CanCompleteQueuedShot();
+            bool fired = false;
 
             if (canShoot)
             {
                 base.SendProjectile();
+                fired = true;
             }
             _rlShotQueued = false;
             LaserBuilderAnimation.SetActive(false);
+            OnShotResolved(fired);
 
         }
+        protected virtual bool CanCompleteQueuedShot()
+        {
+            return IsAimedAtTarget;
+        }
+        protected virtual void OnShotResolved(bool fired) { }
         protected override void SetTargetShip(Ship ship)
         {
             //Debug.Log($"{Name} set target ship to {ship}");
