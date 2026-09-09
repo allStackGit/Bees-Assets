@@ -99,7 +99,14 @@ namespace Assets.Scripts.Entities.Projectiles
             // attributing it to the new occupant of that pooled Ship object.
             if (Shooter != null && Shooter.FleetShip != null && Shooter.FleetShip.Id == _shooterFleetShipId)
             {
-                Ship.LogAttackingDamage(Power, Shooter, FleetShip, SavedSquad, ContactedShip, CommandOutcomeId);
+                Ship.LogAttackingDamage(
+                    Power,
+                    Shooter,
+                    FleetShip,
+                    SavedSquad,
+                    ContactedShip,
+                    CommandOutcomeId,
+                    rlDamageSource: "bomb");
             }
             else
             {
