@@ -245,6 +245,7 @@ namespace Assets.Scripts.Entities.Ships
                 yield break;
             }
 
+            global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "barge_charge");
             int lifecycleId = ++_chargeLifecycleId;
             StopMoving("Pausing to build up steam before charging");
             CannotChangeMovementOrders = true;
@@ -329,7 +330,11 @@ namespace Assets.Scripts.Entities.Ships
 
                 StopMoving($"Finished charging");
                 Charge.Power = OriginalPower;
-                LogDamage(200);
+                if (Health <= 200)
+                {
+                    global::RlOneVsOneEpisodeDiagnostics.RecordShipDeath(this, null, false, "self_charge");
+                }
+                LogDamage(200, "Barge", true);
 
                 if (IsUserControlled)
                 {
