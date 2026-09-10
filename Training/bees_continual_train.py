@@ -3,6 +3,8 @@
 This is an opt-in wrapper around Training/bees_mlagents_learn.py. Existing training commands
 remain valid and unchanged. When --continual-root is supplied, stable exported ONNX checkpoints
 are copied into the immutable continual-learning registry as candidates while training continues.
+The configured historical-league share can also replace the non-learning GhostTrainer policy with
+an immutable historical ONNX policy at ordinary self-play swap boundaries.
 
 Example:
     python Training/bees_continual_train.py Training/rl_1v1_config.yaml \
@@ -14,12 +16,13 @@ Example:
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 CONTINUAL_ROOT_FLAG = "--continual-root"
@@ -155,6 +158,42 @@ def infer_run_context(argv: Sequence[str]) -> Tuple[Path, str, Path]:
             "Could not identify the ML-Agents trainer YAML for continual model metadata."
         )
     return results_dir / run_id, run_id, training_config
+
+
+def historical_training_settings(
+    config: Mapping[str, object],
+    trainer_args: Sequence[str],
+) -> Tuple[float, Optional[str], int]:
+    settings = config.get("historical_league", {})
+    if not isinstance(settings, dict):
+        raise SystemExit("historical_league configuration must be an object.")
+
+    raw_ratio = settings.get("training_ratio", 0.0)
+    if isinstance(raw_ratio, bool):
+        raise SystemExit("historical_league.training_ratio must be in [0,1].")
+    try:
+        ratio = float(raw_ratio)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("historical_league.training_ratio must be in [0,1].") from exc
+    if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
+        raise SystemExit("historical_league.training_ratio must be in [0,1].")
+
+    raw_provider = settings.get("training_onnx_provider")
+    if raw_provider is None:
+        provider = None
+    elif not isinstance(raw_provider, str) or not raw_provider.strip():
+        raise SystemExit(
+            "historical_league.training_onnx_provider must be a non-empty string or null."
+        )
+    else:
+        provider = raw_provider.strip()
+
+    seed_text = _trainer_arg(trainer_args, "--seed")
+    try:
+        seed = 0 if seed_text is None else int(seed_text)
+    except ValueError as exc:
+        raise SystemExit("ML-Agents --seed must be an integer for continual league sampling.") from exc
+    return ratio, provider, seed
 
 
 _STEP_PATTERNS = (
@@ -311,18 +350,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     from bees_continual_learning import ContinualLearningStore, load_config
+    from bees_continual_historical import install_historical_opponents
     import bees_mlagents_learn as launcher
 
     results_run_dir, run_id, training_config = infer_run_context(trainer_args)
-    store = ContinualLearningStore(
-        options.root,
-        load_config(options.config) if options.config else None,
-    )
+    continual_config = load_config(options.config) if options.config else load_config()
+    store = ContinualLearningStore(options.root, continual_config)
     store.initialize()
 
     parent_model_id = options.parent_model_id or store.current_champion_id()
     if parent_model_id:
         store.get_model(parent_model_id)  # Fail before training if lineage metadata is invalid.
+
+    historical_ratio, historical_provider, historical_seed = historical_training_settings(
+        continual_config,
+        trainer_args,
+    )
+    historical_patch = None
+    if historical_ratio > 0.0:
+        historical_patch = install_historical_opponents(
+            store,
+            ratio=historical_ratio,
+            seed=historical_seed,
+            provider=historical_provider,
+        )
+        print(
+            f"[Bees continual] persistent historical opponent share={historical_ratio:.1%} "
+            f"provider={historical_provider or 'CPUExecutionProvider'}"
+        )
 
     monitor = CandidateMonitor(
         store,
@@ -345,6 +400,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         launcher.main()
     finally:
         sys.argv = original_argv
+        if historical_patch is not None:
+            historical_patch.restore()
         monitor.stop()
 
     if monitor.errors:
