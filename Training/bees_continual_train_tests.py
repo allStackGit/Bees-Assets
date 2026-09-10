@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -88,6 +89,79 @@ class StepInferenceTests(unittest.TestCase):
         self.assertIsNone(
             wrapper.infer_training_step(Path("results/run/BeesRL1v1.onnx"))
         )
+
+
+class _FakeStore:
+    def __init__(self):
+        self.registrations = []
+
+    def register_model(self, path, **kwargs):
+        self.registrations.append((Path(path), kwargs))
+        return {"model_id": f"model-{kwargs['training_step']}"}
+
+
+class CandidateMonitorTests(unittest.TestCase):
+    def make_monitor(self, root: Path, store: _FakeStore) -> wrapper.CandidateMonitor:
+        return wrapper.CandidateMonitor(
+            store,
+            results_run_dir=root,
+            run_id="resume-run",
+            game_build="build-7",
+            training_config=Path("Training/rl_1v1_config.yaml"),
+            parent_model_id="champion-1",
+            interval_seconds=1.0,
+        )
+
+    def test_preexisting_resume_checkpoints_are_not_backfilled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            old_checkpoint = root / "BeesRL1v1-10000.onnx"
+            old_checkpoint.write_bytes(b"old")
+            store = _FakeStore()
+            monitor = self.make_monitor(root, store)
+
+            monitor.prime_existing()
+            monitor.scan_once()
+            monitor.scan_once()
+
+            self.assertEqual(store.registrations, [])
+
+    def test_new_checkpoint_after_baseline_is_registered_when_stable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            old_checkpoint = root / "BeesRL1v1-10000.onnx"
+            old_checkpoint.write_bytes(b"old")
+            store = _FakeStore()
+            monitor = self.make_monitor(root, store)
+            monitor.prime_existing()
+
+            new_checkpoint = root / "BeesRL1v1-20000.onnx"
+            new_checkpoint.write_bytes(b"new")
+            monitor.scan_once()
+            self.assertEqual(store.registrations, [])
+            monitor.scan_once()
+
+            self.assertEqual(len(store.registrations), 1)
+            registered_path, metadata = store.registrations[0]
+            self.assertEqual(registered_path, new_checkpoint)
+            self.assertEqual(metadata["training_step"], 20000)
+            self.assertEqual(metadata["parent_model_id"], "champion-1")
+
+    def test_changed_preexisting_checkpoint_becomes_eligible_again(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            checkpoint = root / "BeesRL1v1-30000.onnx"
+            checkpoint.write_bytes(b"old")
+            store = _FakeStore()
+            monitor = self.make_monitor(root, store)
+            monitor.prime_existing()
+
+            checkpoint.write_bytes(b"replacement-checkpoint")
+            monitor.scan_once()
+            monitor.scan_once()
+
+            self.assertEqual(len(store.registrations), 1)
+            self.assertEqual(store.registrations[0][1]["training_step"], 30000)
 
 
 if __name__ == "__main__":
