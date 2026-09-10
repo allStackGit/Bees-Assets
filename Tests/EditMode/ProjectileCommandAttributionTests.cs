@@ -56,13 +56,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ExplosionAndDelayedStrikerDamagePassSnapshottedOutcome()
+        public void ExplosionAndDelayedStrikerDamagePassSnapshottedOutcomeAlongsideTelemetrySource()
         {
             string explosion = Read("Scripts", "Entities", "Projectiles", "RocketExplosion.cs");
             string strikerBomb = Read("Scripts", "Entities", "Projectiles", "StrikerBomb.cs");
 
-            StringAssert.Contains("ship, CommandOutcomeId);", explosion);
-            StringAssert.Contains("ContactedShip, CommandOutcomeId);", strikerBomb);
+            StringAssert.Contains("CommandOutcomeId,", explosion);
+            StringAssert.Contains("rlDamageSource", explosion);
+            StringAssert.Contains("ContactedShip,", strikerBomb);
+            StringAssert.Contains("CommandOutcomeId,", strikerBomb);
+            StringAssert.Contains("rlDamageSource: \"bomb\"", strikerBomb);
         }
     }
 }
