@@ -416,7 +416,8 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("if (beehive == null)"));
             Assert.That(agent, Does.Contain("if (warpGate == null)"));
             Assert.That(coordinator, Does.Contain("RecordSuccessfulCapabilityOutcome"));
-            Assert.That(coordinator, Does.Contain("_active.ApplyImmediateTsvReward(ship.Side, reward)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(ship)"));
+            Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(ship.Side, reward)"));
             Assert.That(yellowJacket, Does.Contain("RlOneVsOneEpisodeCoordinator.RecordHit"),
                 "Direct Yellow Jacket damage must receive the same real-outcome reward path as weapon impacts.");
         }
@@ -430,9 +431,13 @@ namespace Bees.Tests.EditMode
             Assert.That(striker, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
             Assert.That(striker, Does.Contain("HasDroppedBomb = false;"),
                 "A policy-controlled Striker must be able to drop again after its proximity reload without BombingRun resetting a new run.");
-            Assert.That(barge, Does.Contain("if (!Stage.IsTrainingNueralNetwork && target != null && !target.IsDead)"));
+            Assert.That(barge, Does.Contain("if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)"));
+            Assert.That(barge, Does.Contain("Direction = NormalizeDirection(Rotation)"),
+                "A policy-controlled Barge must retain the heading established by the policy through charge wind-up.");
+            Assert.That(barge, Does.Contain("else if (target != null && !target.IsDead)"),
+                "Scripted non-policy charges must retain their target-following behavior.");
             Assert.That(barge, Does.Contain("MoveInDirection(Rotation)"),
-                "RL Barge charge must follow the heading established by the policy rather than auto-aiming at a scripted target.");
+                "Untargeted charge must continue along the ship's established heading.");
         }
 
         private static string ReadSource(params string[] pathParts)

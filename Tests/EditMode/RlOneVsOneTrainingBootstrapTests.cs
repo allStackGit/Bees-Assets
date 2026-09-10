@@ -273,7 +273,7 @@ namespace Bees.Tests.EditMode
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             Assert.That(coordinator, Does.Contain("EpisodeEnded?.Invoke(level, result);"));
-            Assert.That(coordinator, Does.Contain("int winningSide = DetermineWinner(level);"));
+            Assert.That(coordinator, Does.Contain("coordinator.CompleteEpisode(level, DetermineWinner(level), false);"));
 
             string runtime = ReadSource("Scripts", "Levels", "Level.Runtime.cs");
             int report = runtime.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteElimination(this);", StringComparison.Ordinal);
