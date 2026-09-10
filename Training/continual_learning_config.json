@@ -19,7 +19,8 @@
     "weakness_bonus_scale": 10.0,
     "max_weight_multiplier": 4.0,
     "training_ratio": 0.2,
-    "training_onnx_provider": "CPUExecutionProvider"
+    "training_onnx_provider": "CPUExecutionProvider",
+    "training_policy_cache_size": 4
   },
   "ingestion": {
     "max_payload_bytes": 16777216,
