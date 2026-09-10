@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -19,6 +21,20 @@ namespace Bees.Tests.EditMode
         private Type _multiArenaBootstrapType;
         private MethodInfo _readRequestedArenaCount;
         private MethodInfo _buildLayout;
+        private Type _perArenaMatchupsType;
+        private Type _trainingOptionsType;
+        private Type _matchupSelectorType;
+        private Type _arenaMapSizeStateType;
+        private Type _episodeResultType;
+        private MethodInfo _prepareMatchupEpisode;
+        private MethodInfo _handleMatchupEpisodeEnded;
+        private MethodInfo _getSelectorCountForTests;
+        private MethodInfo _resetMatchupsForTests;
+        private MethodInfo _setMapSizeForTests;
+        private MethodInfo _getMapSize;
+        private MethodInfo _handleMapEpisodeEnded;
+        private MethodInfo _getTrackedMapLevelCountForTests;
+        private MethodInfo _resetMapSizesForTests;
         private GameObject _arenaAObject;
         private GameObject _arenaBObject;
         private Component _arenaA;
@@ -40,6 +56,26 @@ namespace Bees.Tests.EditMode
             _readRequestedArenaCount = _multiArenaBootstrapType.GetMethod("ReadRequestedArenaCount", flags);
             _buildLayout = _multiArenaBootstrapType.GetMethod("BuildLayout", flags);
 
+            _perArenaMatchupsType = RuntimeAssembly.GetType("RlOneVsOnePerArenaMatchups");
+            _trainingOptionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
+            _matchupSelectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
+            _prepareMatchupEpisode = _perArenaMatchupsType.GetMethod("PrepareEpisode", flags);
+            _handleMatchupEpisodeEnded = _perArenaMatchupsType.GetMethod("HandleEpisodeEnded", flags);
+            _getSelectorCountForTests = _perArenaMatchupsType.GetMethod("GetSelectorCountForTests", flags);
+            _resetMatchupsForTests = _perArenaMatchupsType.GetMethod("ResetForTests", flags);
+
+            _arenaMapSizeStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
+            _setMapSizeForTests = _arenaMapSizeStateType.GetMethod("SetMapSizeForTests", flags);
+            _getMapSize = _arenaMapSizeStateType.GetMethod("GetMapSize", flags);
+            _handleMapEpisodeEnded = _arenaMapSizeStateType.GetMethod("HandleEpisodeEnded", flags);
+            _getTrackedMapLevelCountForTests = _arenaMapSizeStateType.GetMethod("GetTrackedLevelCountForTests", flags);
+            _resetMapSizesForTests = _arenaMapSizeStateType.GetMethod("ResetForTests", flags);
+
+            Type episodeCoordinatorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator");
+            _episodeResultType = episodeCoordinatorType.GetNestedType(
+                "EpisodeResult",
+                BindingFlags.Public | BindingFlags.NonPublic);
+
             Assert.That(_getQuarterTurns, Is.Not.Null);
             Assert.That(_endEpisode, Is.Not.Null);
             Assert.That(_getAssignmentGeneration, Is.Not.Null);
@@ -47,8 +83,20 @@ namespace Bees.Tests.EditMode
             Assert.That(_resetForTests, Is.Not.Null);
             Assert.That(_readRequestedArenaCount, Is.Not.Null);
             Assert.That(_buildLayout, Is.Not.Null);
+            Assert.That(_prepareMatchupEpisode, Is.Not.Null);
+            Assert.That(_handleMatchupEpisodeEnded, Is.Not.Null);
+            Assert.That(_getSelectorCountForTests, Is.Not.Null);
+            Assert.That(_resetMatchupsForTests, Is.Not.Null);
+            Assert.That(_setMapSizeForTests, Is.Not.Null);
+            Assert.That(_getMapSize, Is.Not.Null);
+            Assert.That(_handleMapEpisodeEnded, Is.Not.Null);
+            Assert.That(_getTrackedMapLevelCountForTests, Is.Not.Null);
+            Assert.That(_resetMapSizesForTests, Is.Not.Null);
+            Assert.That(_episodeResultType, Is.Not.Null);
 
             _resetForTests.Invoke(null, null);
+            _resetMatchupsForTests.Invoke(null, null);
+            _resetMapSizesForTests.Invoke(null, null);
             Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
             _arenaAObject = new GameObject("RL Test Arena A");
             _arenaBObject = new GameObject("RL Test Arena B");
@@ -60,6 +108,8 @@ namespace Bees.Tests.EditMode
         public void TearDown()
         {
             _resetForTests?.Invoke(null, null);
+            _resetMatchupsForTests?.Invoke(null, null);
+            _resetMapSizesForTests?.Invoke(null, null);
             if (_arenaAObject != null)
             {
                 UnityEngine.Object.DestroyImmediate(_arenaAObject);
@@ -107,6 +157,89 @@ namespace Bees.Tests.EditMode
 
             Assert.That(GetAssignmentGeneration(), Is.EqualTo(3));
             Assert.That(GetActiveFrameCount(), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SampledMatchupOutcomeIsRecordedOnlyForTheArenaThatEnded()
+        {
+            object options = RuntimeAssembly.InvokeStatic(
+                _trainingOptionsType,
+                "Parse",
+                (object)new[]
+                {
+                    "--rl-matchup-mode=sampled",
+                    "--rl-bee-ship-types=Wasp,Hornet",
+                    "--rl-human-ship-types=Gunship,Frigate"
+                });
+            ConstructorInfo selectorConstructor = _matchupSelectorType.GetConstructor(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new[] { _trainingOptionsType, typeof(int) },
+                null);
+            Assert.That(selectorConstructor, Is.Not.Null);
+
+            object selectorA = selectorConstructor.Invoke(new[] { options, (object)101 });
+            object selectorB = selectorConstructor.Invoke(new[] { options, (object)202 });
+            FieldInfo selectorsField = _perArenaMatchupsType.GetField(
+                "Selectors",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(selectorsField, Is.Not.Null);
+            IDictionary selectors = (IDictionary)selectorsField.GetValue(null);
+            selectors[_arenaA] = selectorA;
+            selectors[_arenaB] = selectorB;
+
+            _prepareMatchupEpisode.Invoke(null, new object[] { _arenaA });
+            _prepareMatchupEpisode.Invoke(null, new object[] { _arenaB });
+            Assert.That((int)_getSelectorCountForTests.Invoke(null, null), Is.EqualTo(2));
+
+            FieldInfo outcomeRecorded = _matchupSelectorType.GetField(
+                "_currentOutcomeRecorded",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(outcomeRecorded, Is.Not.Null);
+            Assert.That((bool)outcomeRecorded.GetValue(selectorA), Is.False);
+            Assert.That((bool)outcomeRecorded.GetValue(selectorB), Is.False);
+
+            object drawResult = Activator.CreateInstance(_episodeResultType);
+            _handleMatchupEpisodeEnded.Invoke(null, new[] { _arenaA, drawResult });
+
+            Assert.That((bool)outcomeRecorded.GetValue(selectorA), Is.True,
+                "The completed arena must record the outcome against its own prepared matchup.");
+            Assert.That((bool)outcomeRecorded.GetValue(selectorB), Is.False,
+                "An asynchronously running arena must not consume or mutate another arena's outcome.");
+        }
+
+        [Test]
+        public void EndingOneArenaInvalidatesOnlyItsOwnSampledMapSize()
+        {
+            _setMapSizeForTests.Invoke(null, new object[] { _arenaA, 64f });
+            _setMapSizeForTests.Invoke(null, new object[] { _arenaB, 128f });
+
+            Assert.That((int)_getTrackedMapLevelCountForTests.Invoke(null, null), Is.EqualTo(2));
+            Assert.That((float)_getMapSize.Invoke(null, new object[] { _arenaA }), Is.EqualTo(64f));
+            Assert.That((float)_getMapSize.Invoke(null, new object[] { _arenaB }), Is.EqualTo(128f));
+
+            object drawResult = Activator.CreateInstance(_episodeResultType);
+            _handleMapEpisodeEnded.Invoke(null, new[] { _arenaA, drawResult });
+
+            Assert.That((int)_getTrackedMapLevelCountForTests.Invoke(null, null), Is.EqualTo(1));
+            Assert.That((float)_getMapSize.Invoke(null, new object[] { _arenaB }), Is.EqualTo(128f),
+                "Ending one arena must not replace the sampled map size of another active arena.");
+        }
+
+        [Test]
+        public void SecondaryArenasApplyTheSameDurabilityCurriculumAsPrimaryArena()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "RlOneVsOneMultiArenaBootstrap.cs"));
+
+            Assert.That(source, Does.Contain("for (int levelIndex = 1; levelIndex < _stage.Levels.Count; levelIndex++)"),
+                "The multi-arena bootstrap must explicitly process every non-primary Level.");
+            Assert.That(source, Does.Contain("RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability("));
+            Assert.That(source, Does.Contain("RlOneVsOneTrainingDurabilityGuard.TrainingHealthFraction"),
+                "Secondary arenas must receive the same configured health fraction as PrimaryLevel.");
         }
 
         [Test]
