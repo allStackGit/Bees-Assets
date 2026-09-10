@@ -25,6 +25,7 @@ from bees_continual_learning import (
     ContinualLearningStore,
     ValidationError,
     load_config,
+    sha256_file,
 )
 
 EVALUATION_CHANNEL_ID = uuid.UUID("7ca0e8e5-47f7-49ce-b44a-738ae7f1ad15")
@@ -628,6 +629,16 @@ def _model_path(store: ContinualLearningStore, model_id: str) -> Path:
     if not path.is_file():
         raise EvaluationError(
             f"Registered model {model_id} is missing its artifact: {path}"
+        )
+    expected_sha256 = str(model.get("artifact_sha256", "")).strip().lower()
+    if not expected_sha256:
+        raise EvaluationError(
+            f"Registered model {model_id} is missing its artifact SHA-256."
+        )
+    actual_sha256 = sha256_file(path).lower()
+    if actual_sha256 != expected_sha256:
+        raise EvaluationError(
+            f"Registered model {model_id} failed SHA-256 integrity verification."
         )
     return path
 
