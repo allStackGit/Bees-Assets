@@ -104,7 +104,7 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("AddHeading(sensor, ship.Rotation, frameQuarterTurns);"));
             Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns);"));
             Assert.That(agent, Does.Contain("ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));"));
-            Assert.That(agent, Does.Contain("RlPolicyCoordinateFrame.EndEpisode();"));
+            Assert.That(agent, Does.Contain("RlPolicyCoordinateFrame.EndEpisode(level);"));
         }
 
         [Test]
@@ -205,8 +205,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("ProvisionAgentsForSpawnedShips(_stage);"));
             Assert.That(source, Does.Contain("CountPolicyControlledShips(level, beeSide)"));
             Assert.That(source, Does.Contain("CountPolicyControlledShips(level, humanSide)"));
-            Assert.That(source, Does.Contain("EnsureAgentCount(stage, beeSide"));
-            Assert.That(source, Does.Contain("EnsureAgentCount(stage, humanSide"));
+            Assert.That(source, Does.Contain("EnsureAgentCount(stage, level, beeSide"));
+            Assert.That(source, Does.Contain("EnsureAgentCount(stage, level, humanSide"));
 
             int methodStart = source.IndexOf("internal static bool RequiresPolicyControl(Ship ship)", StringComparison.Ordinal);
             Assert.That(methodStart, Is.GreaterThanOrEqualTo(0));
