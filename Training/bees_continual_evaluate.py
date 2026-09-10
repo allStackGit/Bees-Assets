@@ -849,19 +849,20 @@ def evaluate_and_record(
         baseline = historical.get("baseline_win_rate")
         if baseline is None:
             continue
-        league_updates.append(
-            store.record_historical_matchup(
-                current_model_id=report["candidate_model_id"],
-                historical_model_id=historical["opponent_model_id"],
-                current_win_rate=historical["candidate_win_rate"],
-                previous_win_rate=baseline,
-                matches=historical["matches"],
-                metadata={
-                    "source": "authoritative_candidate_evaluation",
-                    "evaluation_report_id": recorded["report_id"],
-                },
-            )
-        )
+        tags = [
+            "authoritative_candidate_evaluation",
+            f"evaluation:{recorded['report_id']}",
+        ]
+        update = {
+            "current_model_id": report["candidate_model_id"],
+            "opponent_model_id": historical["opponent_model_id"],
+            "current_win_rate": historical["candidate_win_rate"],
+            "previous_win_rate": baseline,
+            "match_count": historical["matches"],
+            "tags": tags,
+        }
+        store.record_historical_matchup(**update)
+        league_updates.append(update)
     return {"report": report, "recorded": recorded, "league_updates": league_updates}
 
 
