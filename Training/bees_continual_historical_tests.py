@@ -11,6 +11,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -157,6 +158,7 @@ class HistoricalSchedulerTests(unittest.TestCase):
         self.assertEqual(trainer._team_to_name_to_policy_queue[0]["BeesRL1v1"].values, [])
         self.assertEqual(len(trainer._team_to_name_to_policy_queue[1]["BeesRL1v1"].values), 1)
         self.assertTrue(getattr(trainer, historical.HISTORICAL_ACTIVE_ATTRIBUTE))
+        self.assertTrue(scheduler.external_history_used)
 
     def test_policy_is_cached_across_swap_intervals(self):
         store = _FakeStore(self.artifact)
@@ -183,6 +185,33 @@ class HistoricalSchedulerTests(unittest.TestCase):
             2,
         )
 
+    def test_policy_cache_is_bounded_lru(self):
+        store = _FakeStore(self.artifact)
+        created = []
+
+        def policy_factory(template, path, provider):
+            value = object()
+            created.append(value)
+            return value
+
+        scheduler = historical.HistoricalOpponentScheduler(
+            store,
+            ratio=1.0,
+            cache_size=2,
+            policy_factory=policy_factory,
+        )
+        template = _TemplatePolicy()
+
+        first_a = scheduler._policy_for("a", "BeesRL1v1?team=1", template)
+        scheduler._policy_for("b", "BeesRL1v1?team=1", template)
+        self.assertIs(scheduler._policy_for("a", "BeesRL1v1?team=1", template), first_a)
+        scheduler._policy_for("c", "BeesRL1v1?team=1", template)
+        second_b = scheduler._policy_for("b", "BeesRL1v1?team=1", template)
+
+        self.assertEqual(len(scheduler._policy_cache), 2)
+        self.assertIsNot(second_b, created[1])
+        self.assertEqual(len(created), 4)
+
     def test_no_champion_or_history_falls_back_without_override(self):
         for store in (
             _FakeStore(self.artifact, champion=None),
@@ -197,6 +226,7 @@ class HistoricalSchedulerTests(unittest.TestCase):
 
             self.assertEqual(scheduler.override_non_learning_teams(trainer), [])
             self.assertFalse(getattr(trainer, historical.HISTORICAL_ACTIVE_ATTRIBUTE))
+            self.assertFalse(scheduler.external_history_used)
 
     def test_weighted_selection_is_deterministic_for_seed(self):
         weighted = [
@@ -213,12 +243,38 @@ class HistoricalSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(first["model_id"], second["model_id"])
 
-    def test_invalid_ratio_is_rejected(self):
+    def test_invalid_ratio_and_cache_size_are_rejected(self):
         store = _FakeStore(self.artifact)
         for value in (-0.01, 1.01, float("nan"), True, "not-a-number"):
-            with self.subTest(value=value):
+            with self.subTest(ratio=value):
                 with self.assertRaises(historical.HistoricalOpponentError):
                     historical.HistoricalOpponentScheduler(store, ratio=value)
+        for value in (0, -1, 1.5, True, "not-a-number"):
+            with self.subTest(cache_size=value):
+                with self.assertRaises(historical.HistoricalOpponentError):
+                    historical.HistoricalOpponentScheduler(
+                        store,
+                        ratio=1.0,
+                        cache_size=value,
+                    )
+
+    def test_onnx_provider_preflight_rejects_unavailable_provider(self):
+        previous = sys.modules.get("onnxruntime")
+        sys.modules["onnxruntime"] = types.SimpleNamespace(
+            get_available_providers=lambda: ["CPUExecutionProvider"]
+        )
+        try:
+            with self.assertRaisesRegex(
+                historical.HistoricalOpponentError,
+                "unavailable",
+            ):
+                historical._preflight_onnx_runtime("CUDAExecutionProvider")
+            historical._preflight_onnx_runtime("CPUExecutionProvider")
+        finally:
+            if previous is None:
+                del sys.modules["onnxruntime"]
+            else:
+                sys.modules["onnxruntime"] = previous
 
     def test_artifact_path_rereads_once_across_status_move_race(self):
         replacement = Path(self.temp.name) / "moved.onnx"
@@ -256,7 +312,7 @@ class GhostTrainerPatchTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_patch_preserves_normal_swap_then_overrides_and_skips_false_elo(self):
+    def test_patch_preserves_normal_swap_then_overrides_and_disables_false_elo(self):
         store = _FakeStore(self.artifact)
 
         class FakeGhostTrainer(_Trainer):
@@ -294,6 +350,14 @@ class GhostTrainerPatchTests(unittest.TestCase):
             )
             self.assertIsNone(elo_result)
             self.assertEqual(trainer.elo_updates, 0)
+
+            # Even after returning to an internal snapshot, an episode can have
+            # crossed the prior external-opponent boundary. Keep snapshot ELO off.
+            store.weighted = []
+            trainer._swap_snapshots()
+            self.assertFalse(getattr(trainer, historical.HISTORICAL_ACTIVE_ATTRIBUTE))
+            self.assertIsNone(trainer._process_trajectory(object()))
+            self.assertEqual(trainer.elo_updates, 0)
         finally:
             patch.restore()
 
@@ -301,7 +365,7 @@ class GhostTrainerPatchTests(unittest.TestCase):
         self.assertEqual(trainer._process_trajectory(object()), "elo")
         self.assertEqual(trainer.elo_updates, 1)
 
-    def test_patch_keeps_normal_elo_when_history_not_active(self):
+    def test_patch_keeps_normal_elo_when_history_is_never_active(self):
         store = _FakeStore(self.artifact, weighted=[])
 
         class FakeGhostTrainer(_Trainer):
