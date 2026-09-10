@@ -5,9 +5,9 @@ behaviors:
     hyperparameters:
       batch_size: 512
       buffer_size: 16384
-      learning_rate: 0.0003
+      learning_rate: 0.00015
       beta: 0.005
-      epsilon: 0.2
+      epsilon: 0.15
       lambd: 0.99
       num_epoch: 3
       shared_critic: false
@@ -43,32 +43,18 @@ behaviors:
     summary_freq: 5000
     threaded: false
     self_play:
-      save_steps: 10000
-      team_change: 50000
-      swap_steps: 10000
-      window: 10
-      play_against_latest_model_ratio: 0.5
+      save_steps: 20000
+      team_change: 100000
+      swap_steps: 20000
+      window: 20
+      play_against_latest_model_ratio: 0.25
       initial_elo: 1200.0
     behavioral_cloning: null
 env_settings:
-  env_path: F:\RLDemo\Bees RL Training
-  env_args:
-  - --rl-health-ratio
-  - '1'
-  - --rl-map-size
-  - '128'
-  - --rl-episode-timeout
-  - '120'
-  - --rl-ships-per-side
-  - '1'
-  - --rl-bee-ship-types
-  - Wasp,Hornet,Leafcutter,Bumblebee,Yellow Jacket
-  - --rl-human-ship-types
-  - Gunship,Frigate,Dreadnought,Cruiser,Barge,Carrier,Fire Barge,Flagship
-  - --rl-matchup-mode
-  - sampled
+  env_path: null
+  env_args: null
   base_port: 5005
-  num_envs: 32
+  num_envs: 1
   num_areas: 1
   timeout_wait: 300
   seed: 36
@@ -82,7 +68,7 @@ engine_settings:
   time_scale: 20
   target_frame_rate: -1
   capture_frame_rate: 60
-  no_graphics: true
+  no_graphics: false
   no_graphics_monitor: false
 environment_parameters: null
 checkpoint_settings:
