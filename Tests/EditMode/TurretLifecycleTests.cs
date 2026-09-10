@@ -113,29 +113,41 @@ namespace Bees.Tests.EditMode
         [Test]
         public void FullShipTurretLeavesRlChargeAnimationOwnedByLaserBuilderQueue()
         {
-            string source = File.ReadAllText(Path.Combine(
+            string fullShipTurret = File.ReadAllText(Path.Combine(
                 Application.dataPath,
                 "Scripts",
                 "Entities",
                 "Ships",
                 "Weapons",
                 "FullShipTurret.cs"));
+            string laserBuilder = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Entities",
+                "Ships",
+                "Weapons",
+                "LaserBuilder.cs"));
 
-            int ownershipComment = source.IndexOf("LaserBuilder.SendProjectile owns activation for queued RL shots");
-            int nonRlAimBranch = source.IndexOf("else if (!IsAimedAtTarget)", ownershipComment);
-            int aimActivation = source.IndexOf("LaserBuilderAnimation.SetActive(true);", nonRlAimBranch);
-            Assert.That(ownershipComment, Is.GreaterThanOrEqualTo(0));
-            Assert.That(nonRlAimBranch, Is.GreaterThan(ownershipComment));
-            Assert.That(aimActivation, Is.GreaterThan(nonRlAimBranch));
+            int rlAimStart = fullShipTurret.IndexOf("private void AimRlMainCannon()");
+            int nextMethod = fullShipTurret.IndexOf("protected override void SendProjectile()", rlAimStart);
+            Assert.That(rlAimStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(nextMethod, Is.GreaterThan(rlAimStart));
+            string rlAim = fullShipTurret.Substring(rlAimStart, nextMethod - rlAimStart);
+            StringAssert.DoesNotContain("LaserBuilderAnimation.SetActive(true);", rlAim,
+                "Aiming the RL main cannon must not start the charge animation before a shot is accepted.");
 
-            int sendProjectile = source.IndexOf("protected override void SendProjectile()");
-            int baseFire = source.IndexOf("base.SendProjectile();", sendProjectile);
-            int nonRlSendGuard = source.IndexOf("if (!IsRlControlled)", baseFire);
-            int sendDeactivation = source.IndexOf("LaserBuilderAnimation.SetActive(false);", nonRlSendGuard);
+            int sendProjectile = fullShipTurret.IndexOf("protected override void SendProjectile()");
+            int baseFire = fullShipTurret.IndexOf("base.SendProjectile();", sendProjectile);
+            int nonRlSendGuard = fullShipTurret.IndexOf("if (!IsRlControlled)", baseFire);
+            int sendDeactivation = fullShipTurret.IndexOf("LaserBuilderAnimation.SetActive(false);", nonRlSendGuard);
             Assert.That(sendProjectile, Is.GreaterThanOrEqualTo(0));
             Assert.That(baseFire, Is.GreaterThan(sendProjectile));
             Assert.That(nonRlSendGuard, Is.GreaterThan(baseFire));
             Assert.That(sendDeactivation, Is.GreaterThan(nonRlSendGuard));
+
+            StringAssert.Contains("_rlShotQueued = true;", laserBuilder);
+            StringAssert.Contains("LaserBuilderAnimation.SetActive(true);", laserBuilder,
+                "LaserBuilder must remain the owner that starts the animation for an accepted queued RL shot.");
         }
 
         [Test]
@@ -153,7 +165,7 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("if (TargetingPasses >= PassesPerFire)", source);
             StringAssert.Contains("TargetingPasses = PassesPerFire;", source);
             StringAssert.Contains("ReadyToFire = true;", source);
-            StringAssert.Contains("if (ReadyToFire && RlFireRequested && IsAimedAtTarget && !Ship.IsCeaseFire)", source);
+            StringAssert.Contains("if (ReadyToFire && RlFireRequested && CanAcceptRlFireRequest() && !Ship.IsCeaseFire)", source);
             StringAssert.Contains("ReadyToFire = false;", source);
         }
 
@@ -166,8 +178,8 @@ namespace Bees.Tests.EditMode
                 "Scenes",
                 "RlPolicySchema.cs"));
 
-            StringAssert.Contains("internal const int Version = 5;", source);
-            StringAssert.Contains("bees-rl-v5", source);
+            StringAssert.Contains("internal const int Version = 6;", source);
+            StringAssert.Contains("bees-rl-v6", source);
             StringAssert.Contains("weapon-ready=rl-latched-until-fire", source);
         }
     }
