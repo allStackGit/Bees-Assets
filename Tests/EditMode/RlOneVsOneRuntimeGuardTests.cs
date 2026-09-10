@@ -10,7 +10,7 @@ namespace Bees.Tests.EditMode
     public class RlOneVsOneRuntimeGuardTests
     {
         [Test]
-        public void TrainingViewFitsThirtyUnitArenaInsteadOfFishTankMaxZoom()
+        public void TrainingViewInitializesAtWorldOriginOnceAndThenLeavesCameraAlone()
         {
             Type bootstrapType = RuntimeAssembly.GetType("RlOneVsOneTrainingBootstrap");
             Assert.That(RuntimeAssembly.GetStaticField(bootstrapType, "TrainingMapSize"), Is.EqualTo(30f));
@@ -18,9 +18,13 @@ namespace Bees.Tests.EditMode
 
             string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
             Assert.That(bootstrap, Does.Contain("internal static float CurrentCameraSize => CurrentMapSize / 2f;"));
+            Assert.That(bootstrap, Does.Contain("stage.DefaultCameraPosition = Vector2.zero;"));
             Assert.That(bootstrap, Does.Contain("private void LateUpdate()"));
+            Assert.That(bootstrap, Does.Contain("if (_cameraInitialized)"));
             Assert.That(bootstrap, Does.Contain("_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize"));
-            Assert.That(bootstrap, Does.Contain("_stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f)"));
+            Assert.That(bootstrap, Does.Contain("_stage.Camera.transform.position = new Vector3(0f, 0f, -10f)"));
+            Assert.That(bootstrap, Does.Not.Contain("Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();"),
+                "The RL camera must not be snapped back to the primary arena every LateUpdate.");
         }
 
         [Test]
