@@ -27,7 +27,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(queries, Does.Contain("public bool RecordHiveMindSighting(Ship observer, Ship spotted)"));
             Assert.That(queries, Does.Contain("observerVisibility.Add(spotted);"));
-            Assert.That(queries, Does.Contain("return VisionCache[sideIndex].Add(spotted);"));
+            Assert.That(queries, Does.Contain("bool isFirstSideWideSighting = VisionCache[sideIndex].Add(spotted);"));
+            Assert.That(queries, Does.Contain("if (isFirstSideWideSighting)"));
+            Assert.That(queries, Does.Contain("RecordShipDiscovery(observer, spotted);"));
+            Assert.That(queries, Does.Contain("return isFirstSideWideSighting;"));
             Assert.That(queries, Does.Contain("return VisionCache[side - 1];"));
             Assert.That(queries, Does.Not.Contain("HivemindShips[side - 1].Aggregate"),
                 "Pairwise sight triggers must not rebuild the entire faction visibility graph.");
