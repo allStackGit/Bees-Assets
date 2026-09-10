@@ -58,7 +58,10 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Levels", "GameState.Queries.cs"));
 
             StringAssert.Contains("observerVisibility.Add(spotted);", queries);
-            StringAssert.Contains("return VisionCache[sideIndex].Add(spotted);", queries);
+            StringAssert.Contains("bool isFirstSideWideSighting = VisionCache[sideIndex].Add(spotted);", queries);
+            StringAssert.Contains("if (isFirstSideWideSighting)", queries);
+            StringAssert.Contains("RecordShipDiscovery(observer, spotted);", queries);
+            StringAssert.Contains("return isFirstSideWideSighting;", queries);
             StringAssert.Contains("observerMap.Remove(ship.Id);", registry,
                 "The dead observer's attribution set should be retired.");
             StringAssert.DoesNotContain("removedObserverSideIndex", registry,
