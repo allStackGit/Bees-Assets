@@ -110,24 +110,22 @@ namespace Bees.Tests.EditMode
             Assert.That(GetActiveFrameCount(), Is.EqualTo(2));
         }
 
-        [TestCase(null, 1)]
-        [TestCase(new string[0], 1)]
-        [TestCase(new[] { "--bees-rl-arenas-per-env", "4" }, 4)]
-        [TestCase(new[] { "--bees-rl-arenas-per-env=8" }, 8)]
-        public void ArenaCountParserPreservesSingleArenaDefaultAndAcceptsExplicitCounts(string[] args, int expected)
+        [Test]
+        public void ArenaCountParserPreservesSingleArenaDefaultAndAcceptsExplicitCounts()
         {
-            Assert.That(ReadRequestedArenaCount(args), Is.EqualTo(expected));
+            Assert.That(ReadRequestedArenaCount(null), Is.EqualTo(1));
+            Assert.That(ReadRequestedArenaCount(Array.Empty<string>()), Is.EqualTo(1));
+            Assert.That(ReadRequestedArenaCount(new[] { "--bees-rl-arenas-per-env", "4" }), Is.EqualTo(4));
+            Assert.That(ReadRequestedArenaCount(new[] { "--bees-rl-arenas-per-env=8" }), Is.EqualTo(8));
         }
 
-        [TestCase(new[] { "--bees-rl-arenas-per-env", "0" })]
-        [TestCase(new[] { "--bees-rl-arenas-per-env", "17" })]
-        [TestCase(new[] { "--bees-rl-arenas-per-env", "nope" })]
-        [TestCase(new[] { "--bees-rl-arenas-per-env" })]
-        public void ArenaCountParserRejectsInvalidCounts(string[] args)
+        [Test]
+        public void ArenaCountParserRejectsInvalidCounts()
         {
-            TargetInvocationException exception = Assert.Throws<TargetInvocationException>(
-                () => _readRequestedArenaCount.Invoke(null, new object[] { args }));
-            Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
+            AssertInvalidArenaCount(new[] { "--bees-rl-arenas-per-env", "0" });
+            AssertInvalidArenaCount(new[] { "--bees-rl-arenas-per-env", "17" });
+            AssertInvalidArenaCount(new[] { "--bees-rl-arenas-per-env", "nope" });
+            AssertInvalidArenaCount(new[] { "--bees-rl-arenas-per-env" });
         }
 
         [Test]
@@ -153,6 +151,13 @@ namespace Bees.Tests.EditMode
                         $"Arena centers {left} and {right} are not separated by the expected guard spacing.");
                 }
             }
+        }
+
+        private void AssertInvalidArenaCount(string[] args)
+        {
+            TargetInvocationException exception = Assert.Throws<TargetInvocationException>(
+                () => _readRequestedArenaCount.Invoke(null, new object[] { args }));
+            Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
         }
 
         private int GetQuarterTurns(Level level, int teamId)
