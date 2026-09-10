@@ -13,12 +13,14 @@ GhostTrainer exactly like ordinary ghost-policy trajectories.
 
 from __future__ import annotations
 
+import json
 import math
 import random
+import sqlite3
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from bees_continual_learning import (
     ContinualLearningError,
@@ -31,6 +33,7 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 HISTORICAL_ACTIVE_ATTRIBUTE = "_bees_external_historical_active"
 PATCHED_ATTRIBUTE = "_bees_historical_opponent_patch"
 DEFAULT_POLICY_CACHE_SIZE = 4
+AUTHORITATIVE_EVALUATION_TAG = "authoritative_candidate_evaluation"
 
 
 class HistoricalOpponentError(ContinualLearningError):
@@ -145,6 +148,130 @@ def _validated_model_path(store: ContinualLearningStore, model_id: str) -> Path:
     raise HistoricalOpponentError(
         f"Historical opponent {model_id} artifact is missing: {last_missing}"
     )
+
+
+def _latest_authoritative_pressure(
+    store: ContinualLearningStore,
+) -> Dict[str, Dict[str, Any]]:
+    """Return the newest compatible authoritative regression evidence per opponent."""
+    db_path = getattr(store, "db_path", None)
+    if db_path is None or not Path(db_path).is_file():
+        return {}
+
+    compatibility = store.compatibility.to_dict()
+    try:
+        db = sqlite3.connect(str(db_path), timeout=30.0)
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """
+            SELECT h.rowid AS matchup_rowid,
+                   h.current_model_id, h.opponent_model_id,
+                   h.current_win_rate, h.previous_win_rate,
+                   h.match_count, h.updated_at, h.tags_json
+            FROM historical_matchups h
+            JOIN models current_model
+              ON current_model.model_id = h.current_model_id
+            WHERE current_model.behavior_name = ?
+              AND current_model.policy_abi_version = ?
+              AND current_model.observation_schema_version = ?
+              AND current_model.action_schema_version = ?
+              AND current_model.reward_schema_version = ?
+              AND current_model.scenario_schema_version = ?
+              AND h.tags_json LIKE ?
+            ORDER BY h.updated_at DESC, h.rowid DESC
+            """,
+            (
+                compatibility["behavior_name"],
+                compatibility["policy_abi_version"],
+                compatibility["observation_schema_version"],
+                compatibility["action_schema_version"],
+                compatibility["reward_schema_version"],
+                compatibility["scenario_schema_version"],
+                f'%"{AUTHORITATIVE_EVALUATION_TAG}"%',
+            ),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise HistoricalOpponentError(
+            f"Could not read authoritative historical regression pressure: {exc}"
+        ) from exc
+    finally:
+        if "db" in locals():
+            db.close()
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        opponent_id = str(row["opponent_model_id"])
+        if opponent_id in result:
+            continue
+        try:
+            tags = json.loads(row["tags_json"])
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise HistoricalOpponentError(
+                f"Historical matchup tags are corrupted for opponent {opponent_id}."
+            ) from exc
+        if not isinstance(tags, list) or AUTHORITATIVE_EVALUATION_TAG not in tags:
+            continue
+        result[opponent_id] = {
+            "current_model_id": str(row["current_model_id"]),
+            "current_win_rate": row["current_win_rate"],
+            "previous_win_rate": row["previous_win_rate"],
+            "match_count": int(row["match_count"]),
+            "tags": tags,
+        }
+    return result
+
+
+def _historical_training_weights(
+    store: ContinualLearningStore,
+    champion_model_id: str,
+) -> List[Dict[str, Any]]:
+    """Overlay post-champion candidate regressions onto persistent league weights.
+
+    The registry's normal weight calculation is keyed by model ID. During ongoing
+    training, however, authoritative evaluations are recorded against candidate IDs
+    while the historical scheduler previously queried only the production champion.
+    Preserve the champion's weights for opponents a candidate did not retest, and
+    replace an opponent's pressure only when newer authoritative candidate evidence
+    exists for that opponent. A later recovery evaluation therefore returns the
+    opponent toward the configured base weight.
+    """
+    weighted = [
+        dict(item)
+        for item in store.historical_sampling_weights(champion_model_id)
+    ]
+    if not weighted:
+        return weighted
+
+    pressure = _latest_authoritative_pressure(store)
+    if not pressure:
+        return weighted
+
+    settings = store.config["historical_league"]
+    base = float(settings["base_weight"])
+    trigger = float(settings["weakness_trigger_regression"])
+    scale = float(settings["weakness_bonus_scale"])
+    cap = float(settings["max_weight_multiplier"])
+
+    for item in weighted:
+        opponent_id = str(item["model_id"])
+        evidence = pressure.get(opponent_id)
+        if evidence is None:
+            continue
+        current = evidence["current_win_rate"]
+        previous = evidence["previous_win_rate"]
+        regression = 0.0
+        if current is not None and previous is not None:
+            regression = max(
+                0.0,
+                float(previous) - float(current) - trigger,
+            )
+        multiplier = min(cap, 1.0 + regression * scale)
+        item["weight"] = base * multiplier
+        item["regression"] = regression
+        item["match_count"] = evidence["match_count"]
+        item["tags"] = list(evidence["tags"])
+        item["pressure_model_id"] = evidence["current_model_id"]
+    return weighted
 
 
 def _build_frozen_onnx_policy(
@@ -323,7 +450,7 @@ class HistoricalOpponentScheduler:
             self._record_active_stat(trainer, False)
             return []
 
-        weighted = self.store.historical_sampling_weights(current_model_id)
+        weighted = _historical_training_weights(self.store, current_model_id)
         if not weighted:
             self._record_active_stat(trainer, False)
             return []
