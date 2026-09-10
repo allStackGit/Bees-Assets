@@ -10,18 +10,20 @@ namespace Bees.Tests.EditMode
     public class RlTrainingRegressionTests
     {
         [Test]
-        public void CanonicalDesignDocumentMatchesExecutableAbiV4()
+        public void CanonicalDesignDocumentMatchesExecutableAbiV6()
         {
             string design = File.ReadAllText(Path.Combine(Application.dataPath, "RL_DESIGN.md"));
 
-            Assert.That(design, Does.Contain("## 4. Canonical Policy ABI v4"));
-            Assert.That(design, Does.Contain("- ABI version: `4`"));
+            Assert.That(design, Does.Contain("## 4. Canonical Policy ABI v6"));
+            Assert.That(design, Does.Contain("- ABI version: `6`"));
             Assert.That(design, Does.Contain("- vector observations: `4685`"));
             Assert.That(design, Does.Contain("- continuous actions: `34`"));
             Assert.That(design, Does.Contain("`512` hidden units, `3` hidden layers"));
             Assert.That(design, Does.Contain("`hidden_units: 512`"));
             Assert.That(design, Does.Contain("`num_layers: 3`"));
-            Assert.That(design, Does.Not.Contain("ABI v3"));
+            Assert.That(design, Does.Contain("distinct random quarter-turn coordinate frame"));
+            Assert.That(design, Does.Contain("RL weapon readiness is latched"));
+            Assert.That(design, Does.Not.Contain("Canonical Policy ABI v4"));
             Assert.That(design, Does.Not.Contain("hidden_units: 128"));
             Assert.That(design, Does.Not.Contain("num_layers: 2"));
         }
@@ -37,9 +39,9 @@ namespace Bees.Tests.EditMode
             Assert.That(coordinator, Does.Not.Contain("attacker.Side == target.Side)"),
                 "Friendly fire must reach TSV penalty routing instead of being discarded.");
             Assert.That(coordinator, Does.Contain("bool isEnemyDamage = attacker.Side != target.Side;"));
-            Assert.That(coordinator, Does.Contain("if (isEnemyDamage)\n        {\n            _active.ApplyImmediateTsvReward(attacker.Side, reward);"),
+            Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(attacker.Side, reward);"),
                 "Only enemy damage should grant positive attacker credit.");
-            Assert.That(coordinator, Does.Contain("_active.ApplyImmediateTsvReward(target.Side, -reward);"),
+            Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(target.Side, -reward);"),
                 "Every attributed TSV loss must penalize the damaged side.");
             Assert.That(coordinator, Does.Contain("internal static void RecordUnattributedTsvLoss"));
             Assert.That(combat, Does.Contain("RecordUnattributedTsvLoss(this, -_tsvChange);"));
@@ -56,20 +58,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void SampledMultiShipCurriculumUsesSideShuffleBagsWhileOneVsOneKeepsCartesianSampler()
+        public void SampledMultiShipCurriculumUsesUniformCompositionsWhileOneVsOneKeepsCartesianSampler()
         {
             string source = Read("Scripts", "Scenes", "RlOneVsOneMatchupSampler.cs");
 
             Assert.That(source, Does.Contain("if (_options.ShipsPerSide == 1)"));
             Assert.That(source, Does.Contain("_sampler = new RlOneVsOneMatchupSampler(options.BeeShipTypes, options.HumanShipTypes, seed);"),
                 "Seeded 1v1 must keep the existing shuffled Cartesian sampler.");
-            Assert.That(source, Does.Contain("internal sealed class RlShipTypeShuffleBag"));
-            Assert.That(source, Does.Contain("_beeShuffleBag.Next()"));
-            Assert.That(source, Does.Contain("_humanShuffleBag.Next()"));
-            Assert.That(source, Does.Contain("if (_nextIndex >= _cycle.Count)\n        {\n            ShuffleCycle();"),
-                "A side may only reshuffle after its current candidate cycle is exhausted.");
-            Assert.That(source, Does.Not.Contain("return _currentMatchup.BeeShipType;\n        }\n        if (side == ConfigData.Configuration.HumanSide)\n        {\n            return _currentMatchup.HumanShipType;\n        }\n        throw"),
-                "Sampled multi-ship selection must not reuse one pair for every team slot.");
+            Assert.That(source, Does.Contain("internal sealed class RlShipCompositionSampler"));
+            Assert.That(source, Does.Contain("CombinationCount = Choose(_shipTypes.Length + shipsPerSide - 1, shipsPerSide);"));
+            Assert.That(source, Does.Contain("ValidCombinationCount = CombinationCount - weaponlessCombinationCount;"));
+            Assert.That(source, Does.Contain("if (!RlShipCombatCapability.HasAnyWeapon(composition))"),
+                "Entirely weaponless sampled sides must be rejected.");
+            Assert.That(source, Does.Contain("ShuffleSlots(composition);"),
+                "Accepted unordered compositions must not become tied to formation slot order.");
+            Assert.That(source, Does.Contain("CopyComposition(_beeCompositionSampler.Next(), _currentBeeComposition);"));
+            Assert.That(source, Does.Contain("CopyComposition(_humanCompositionSampler.Next(), _currentHumanComposition);"));
+            Assert.That(source, Does.Not.Contain("RlShipTypeShuffleBag"),
+                "The old no-repeat shuffle bag is no longer the multi-ship sampling contract.");
         }
 
         private static string Read(params string[] parts)

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Assets.Scripts.Levels;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -22,23 +21,22 @@ namespace Bees.Tests.EditMode
         private MethodInfo _buildLayout;
         private GameObject _arenaAObject;
         private GameObject _arenaBObject;
-        private Level _arenaA;
-        private Level _arenaB;
+        private Component _arenaA;
+        private Component _arenaB;
 
         [SetUp]
         public void SetUp()
         {
-            Assembly gameAssembly = typeof(Stage).Assembly;
             const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
 
-            _policyFrameType = gameAssembly.GetType("RlPolicyCoordinateFrame", true);
+            _policyFrameType = RuntimeAssembly.GetType("RlPolicyCoordinateFrame");
             _getQuarterTurns = _policyFrameType.GetMethod("GetQuarterTurns", flags);
             _endEpisode = _policyFrameType.GetMethod("EndEpisode", flags);
             _getAssignmentGeneration = _policyFrameType.GetMethod("GetAssignmentGenerationForTests", flags);
             _getActiveFrameCount = _policyFrameType.GetMethod("GetActiveFrameCountForTests", flags);
             _resetForTests = _policyFrameType.GetMethod("ResetForTests", flags);
 
-            _multiArenaBootstrapType = gameAssembly.GetType("RlOneVsOneMultiArenaBootstrap", true);
+            _multiArenaBootstrapType = RuntimeAssembly.GetType("RlOneVsOneMultiArenaBootstrap");
             _readRequestedArenaCount = _multiArenaBootstrapType.GetMethod("ReadRequestedArenaCount", flags);
             _buildLayout = _multiArenaBootstrapType.GetMethod("BuildLayout", flags);
 
@@ -51,10 +49,11 @@ namespace Bees.Tests.EditMode
             Assert.That(_buildLayout, Is.Not.Null);
 
             _resetForTests.Invoke(null, null);
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
             _arenaAObject = new GameObject("RL Test Arena A");
             _arenaBObject = new GameObject("RL Test Arena B");
-            _arenaA = _arenaAObject.AddComponent<Level>();
-            _arenaB = _arenaBObject.AddComponent<Level>();
+            _arenaA = _arenaAObject.AddComponent(levelType);
+            _arenaB = _arenaBObject.AddComponent(levelType);
         }
 
         [TearDown]
@@ -160,7 +159,7 @@ namespace Bees.Tests.EditMode
             Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
         }
 
-        private int GetQuarterTurns(Level level, int teamId)
+        private int GetQuarterTurns(Component level, int teamId)
         {
             return (int)_getQuarterTurns.Invoke(null, new object[] { level, teamId });
         }

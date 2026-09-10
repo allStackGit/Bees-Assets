@@ -36,6 +36,7 @@ namespace Bees.Tests.EditMode
                     "The regression requires the controller to remain outside the visible UI Canvas, matching Squad Maker.unity.");
 
                 Component guard = manager.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+                RuntimeAssembly.Invoke(guard, "Initialize", squadMaker);
                 object resolvedCanvas = RuntimeAssembly.GetField(guard, "_canvas");
 
                 Assert.That(resolvedCanvas, Is.SameAs(expectedCanvas),
@@ -74,8 +75,8 @@ namespace Bees.Tests.EditMode
                 Component squadMaker = manager.AddComponent(RuntimeAssembly.GetType(SquadMakerTypeName));
                 RuntimeAssembly.SetField(squadMaker, "ChosenSquadList", chosenSquadList);
 
-                // AddComponent invokes Awake synchronously, which performs the first initialization.
                 Component guard = manager.AddComponent(RuntimeAssembly.GetType(GuardTypeName));
+                RuntimeAssembly.Invoke(guard, "Initialize", squadMaker);
                 Vector2 firstBaselineSize = GetFirstReferenceBranchSizeDelta(guard);
 
                 Assert.That(firstBaselineSize.x, Is.EqualTo(321f).Within(0.001f));
@@ -83,9 +84,8 @@ namespace Bees.Tests.EditMode
                 Assert.That(chosenRect.sizeDelta, Is.EqualTo(Vector2.zero),
                     "The first responsive pass should have converted the authored fixed rect into proportional anchors.");
 
-                // Scene-load bootstrap calls Initialize after AddComponent. That second call must be
-                // idempotent; otherwise it captures the already-responsive zero-sizeDelta geometry
-                // as the new reference and future display changes accumulate drift.
+                // The scene-load bootstrap may invoke Initialize again after Awake. That second call
+                // must be idempotent; otherwise already-responsive geometry becomes the new baseline.
                 RuntimeAssembly.Invoke(guard, "Initialize", squadMaker);
 
                 Vector2 secondBaselineSize = GetFirstReferenceBranchSizeDelta(guard);

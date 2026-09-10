@@ -78,9 +78,10 @@ namespace Bees.Tests.EditMode
                     AssertHorizontalFractions(settings, preview, previewFractions);
                     Bounds rail = BoundsIn(composition, formations);
                     Bounds work = BoundsIn(composition, dropZone);
+                    Bounds actions = BoundsIn(composition, actionRow);
                     Assert.That(rail.min.x, Is.GreaterThanOrEqualTo(composition.rect.xMin - 0.02f));
                     Assert.That(rail.max.x, Is.LessThanOrEqualTo(work.min.x - 3.9f));
-                    Assert.That(actionRow.rect.yMin, Is.EqualTo(composition.rect.yMin).Within(0.02f));
+                    Assert.That(actions.min.y, Is.EqualTo(composition.rect.yMin).Within(0.02f));
                 }
             }
             finally

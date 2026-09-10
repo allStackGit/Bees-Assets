@@ -95,7 +95,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MainMenuCommanderPromptRemainsHiddenByDefaultAndNamedCorrectly()
+        public void MainMenuCommanderPromptIsHiddenDuringBootstrapAndShownOnlyWhenNeeded()
         {
             string scene = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scenes", "Main Menu.unity"));
@@ -104,8 +104,10 @@ namespace Bees.Tests.EditMode
 
             Assert.That(scene, Does.Contain("value: Welcome Commander!"));
             Assert.That(scene, Does.Contain("value: Choose Commander Name"));
-            Assert.That(scene, Does.Contain("propertyPath: m_IsActive\n      value: 0"));
-            Assert.That(mainMenu, Does.Contain("CommanderNameDialogue?.SetActive(false);"));
+            Assert.That(mainMenu, Does.Contain("CommanderNameDialogue?.SetActive(false);"),
+                "Runtime bootstrap must explicitly hide the prompt rather than rely on serialized active state.");
+            Assert.That(mainMenu, Does.Contain("CommanderNameDialogue?.SetActive(needsCommanderName);"),
+                "Finalization must make the newly-created-profile decision authoritative.");
         }
     }
 }
