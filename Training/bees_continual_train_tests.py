@@ -75,12 +75,13 @@ class RunContextTests(unittest.TestCase):
 
 
 class HistoricalTrainingSettingsTests(unittest.TestCase):
-    def test_settings_use_configured_ratio_provider_and_mlagents_seed(self):
-        ratio, provider, seed = wrapper.historical_training_settings(
+    def test_settings_use_configured_ratio_provider_seed_and_cache(self):
+        ratio, provider, seed, cache_size = wrapper.historical_training_settings(
             {
                 "historical_league": {
                     "training_ratio": 0.2,
                     "training_onnx_provider": "CPUExecutionProvider",
+                    "training_policy_cache_size": 7,
                 }
             },
             ["Training/rl_1v1_config.yaml", "--seed=36"],
@@ -88,15 +89,17 @@ class HistoricalTrainingSettingsTests(unittest.TestCase):
         self.assertEqual(ratio, 0.2)
         self.assertEqual(provider, "CPUExecutionProvider")
         self.assertEqual(seed, 36)
+        self.assertEqual(cache_size, 7)
 
-    def test_missing_historical_training_settings_disable_bridge(self):
-        ratio, provider, seed = wrapper.historical_training_settings(
+    def test_missing_historical_training_settings_disable_bridge_with_bounded_cache(self):
+        ratio, provider, seed, cache_size = wrapper.historical_training_settings(
             {"historical_league": {}},
             ["Training/rl_1v1_config.yaml"],
         )
         self.assertEqual(ratio, 0.0)
         self.assertIsNone(provider)
         self.assertEqual(seed, 0)
+        self.assertEqual(cache_size, wrapper.DEFAULT_HISTORICAL_POLICY_CACHE_SIZE)
 
     def test_invalid_historical_training_settings_are_rejected(self):
         cases = (
@@ -105,6 +108,10 @@ class HistoricalTrainingSettingsTests(unittest.TestCase):
             {"historical_league": {"training_ratio": float("nan")}},
             {"historical_league": {"training_ratio": True}},
             {"historical_league": {"training_onnx_provider": ""}},
+            {"historical_league": {"training_policy_cache_size": 0}},
+            {"historical_league": {"training_policy_cache_size": -1}},
+            {"historical_league": {"training_policy_cache_size": 1.5}},
+            {"historical_league": {"training_policy_cache_size": True}},
         )
         for config in cases:
             with self.subTest(config=config):
