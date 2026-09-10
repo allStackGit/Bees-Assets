@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import random
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -29,6 +30,7 @@ from bees_continual_learning import (
 EXPECTED_MLAGENTS_VERSION = "1.1.0"
 HISTORICAL_ACTIVE_ATTRIBUTE = "_bees_external_historical_active"
 PATCHED_ATTRIBUTE = "_bees_historical_opponent_patch"
+DEFAULT_POLICY_CACHE_SIZE = 4
 
 
 class HistoricalOpponentError(ContinualLearningError):
@@ -58,6 +60,39 @@ def _validate_ratio(value: Any) -> float:
     if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
         raise HistoricalOpponentError("Historical training ratio must be in [0,1].")
     return ratio
+
+
+def _validate_cache_size(value: Any) -> int:
+    if isinstance(value, bool):
+        raise HistoricalOpponentError("Historical policy cache size must be a positive integer.")
+    try:
+        cache_size = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HistoricalOpponentError(
+            "Historical policy cache size must be a positive integer."
+        ) from exc
+    if cache_size <= 0 or isinstance(value, float) and not value.is_integer():
+        raise HistoricalOpponentError("Historical policy cache size must be a positive integer.")
+    return cache_size
+
+
+def _preflight_onnx_runtime(provider: Optional[str]) -> None:
+    """Fail before training starts when frozen-policy inference cannot run."""
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise HistoricalOpponentError(
+            "Persistent historical-opponent training requires onnxruntime in the "
+            "Bees ML-Agents virtual environment."
+        ) from exc
+
+    requested = provider or "CPUExecutionProvider"
+    available = tuple(ort.get_available_providers())
+    if requested not in available:
+        raise HistoricalOpponentError(
+            f"ONNX Runtime provider {requested!r} is unavailable; available providers: "
+            + ", ".join(available)
+        )
 
 
 def _behavior_signature(policy: Any) -> Tuple[Any, ...]:
@@ -200,14 +235,21 @@ class HistoricalOpponentScheduler:
         ratio: float,
         seed: int = 0,
         provider: Optional[str] = None,
+        cache_size: int = DEFAULT_POLICY_CACHE_SIZE,
         policy_factory: Optional[PolicyFactory] = None,
     ) -> None:
         self.store = store
         self.ratio = _validate_ratio(ratio)
         self.provider = provider
+        self.cache_size = _validate_cache_size(cache_size)
         self.rng = random.Random(seed)
         self.policy_factory = policy_factory or _build_frozen_onnx_policy
-        self._policy_cache: Dict[Tuple[Any, ...], Any] = {}
+        self._policy_cache: OrderedDict[Tuple[Any, ...], Any] = OrderedDict()
+        # Once an external opponent participates, ML-Agents' built-in ELO can no
+        # longer attribute episode outcomes solely to entries in its Torch snapshot
+        # table. Keep it disabled for the remainder of this process; authoritative
+        # continual evaluation owns cross-generation performance instead.
+        self.external_history_used = False
 
     @staticmethod
     def _choose_weighted(
@@ -252,11 +294,18 @@ class HistoricalOpponentScheduler:
         key = (model_id, behavior_id, _behavior_signature(template_policy), self.provider)
         cached = self._policy_cache.get(key)
         if cached is not None:
+            self._policy_cache.move_to_end(key)
             return cached
         path = _validated_model_path(self.store, model_id)
         policy = self.policy_factory(template_policy, path, self.provider)
         self._policy_cache[key] = policy
+        self._policy_cache.move_to_end(key)
+        while len(self._policy_cache) > self.cache_size:
+            self._policy_cache.popitem(last=False)
         return policy
+
+    def clear_cache(self) -> None:
+        self._policy_cache.clear()
 
     def override_non_learning_teams(self, trainer: Any) -> List[HistoricalOverride]:
         setattr(trainer, HISTORICAL_ACTIVE_ATTRIBUTE, False)
@@ -308,6 +357,8 @@ class HistoricalOpponentScheduler:
             overrides.append(override)
 
         active = bool(overrides)
+        if active:
+            self.external_history_used = True
         setattr(trainer, HISTORICAL_ACTIVE_ATTRIBUTE, active)
         self._record_active_stat(trainer, active)
         if active:
@@ -355,6 +406,7 @@ class HistoricalOpponentPatch:
         self.ghost_trainer_cls._process_trajectory = self.original_process_trajectory
         if getattr(self.ghost_trainer_cls, PATCHED_ATTRIBUTE, None) is self:
             delattr(self.ghost_trainer_cls, PATCHED_ATTRIBUTE)
+        self.scheduler.clear_cache()
         self._restored = True
 
 
@@ -364,11 +416,16 @@ def install_historical_opponents(
     ratio: float,
     seed: int = 0,
     provider: Optional[str] = None,
+    cache_size: int = DEFAULT_POLICY_CACHE_SIZE,
     ghost_trainer_cls: Optional[Any] = None,
     policy_factory: Optional[PolicyFactory] = None,
 ) -> HistoricalOpponentPatch:
     """Patch ML-Agents 1.1.0 GhostTrainer for persistent ONNX league opponents."""
     validated_ratio = _validate_ratio(ratio)
+    validated_cache_size = _validate_cache_size(cache_size)
+    if validated_ratio > 0.0 and policy_factory is None:
+        _preflight_onnx_runtime(provider)
+
     if ghost_trainer_cls is None:
         try:
             import mlagents.trainers
@@ -396,6 +453,7 @@ def install_historical_opponents(
         ratio=validated_ratio,
         seed=seed,
         provider=provider,
+        cache_size=validated_cache_size,
         policy_factory=policy_factory,
     )
     original_swap = ghost_trainer_cls._swap_snapshots
@@ -407,11 +465,12 @@ def install_historical_opponents(
         return result
 
     def process_trajectory_without_false_elo(trainer: Any, trajectory: Any) -> Any:
-        # ML-Agents' ELO table only knows its in-memory snapshot window. Updating
-        # one of those ratings from a match actually played against an external
-        # persistent ONNX policy would corrupt the diagnostic. PPO training is
-        # unaffected because this method only owns GhostTrainer's ELO accounting.
-        if bool(getattr(trainer, HISTORICAL_ACTIVE_ATTRIBUTE, False)):
+        # An episode may span a snapshot swap boundary. Once the external league
+        # has been used, a later terminal result cannot be safely attributed to
+        # ML-Agents' in-memory opponent index, even if the current interval has
+        # switched back to an internal snapshot. Disable that diagnostic rather
+        # than write a confidently wrong ELO update.
+        if scheduler.external_history_used:
             return None
         return original_process(trainer, trajectory)
 
