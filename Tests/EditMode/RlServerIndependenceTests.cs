@@ -90,13 +90,32 @@ namespace Bees.Tests.EditMode
             Assert.That(runtime, Does.Contain(
                 "(State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining"));
 
-            string levelOver = Slice(runtime, "public void LevelOver()", "    }\n}");
+            int levelOverStart = runtime.IndexOf("public void LevelOver()", StringComparison.Ordinal);
+            Assert.That(levelOverStart, Is.GreaterThanOrEqualTo(0));
+            string levelOver = runtime.Substring(levelOverStart);
             Assert.That(levelOver, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
             Assert.That(levelOver, Does.Contain("ResetLevel(false);"));
 
             string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
             Assert.That(bootstrap, Does.Contain("stage.ActivateHiveMind = false;"),
                 "Dedicated ML-Agents training must not start the server-backed Hive Mind command loop.");
+        }
+
+        [Test]
+        public void DedicatedTrainingGeneratedIdsDoNotRequirePlayerFleetData()
+        {
+            string setup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            string rlSetup = Slice(
+                setup,
+                "private void AddRlOneVsOneSquadForSetup(int side)",
+                "private void AddRandomSquadsForSetup(int side)");
+
+            Assert.That(rlSetup, Does.Contain("long squadId = -Utilities.Hash();"));
+            Assert.That(rlSetup, Does.Contain("long fleetShipId = -Utilities.Hash();"));
+            Assert.That(rlSetup, Does.Not.Contain("ConfigData.CurrentShips"),
+                "Dedicated training must be able to create transient squads before any player profile/fleet facade exists.");
+            Assert.That(rlSetup, Does.Not.Contain("GetNegativeSavedSquadId"));
+            Assert.That(rlSetup, Does.Not.Contain("GetNegativeFleetshipId"));
         }
 
         [Test]
