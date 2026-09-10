@@ -1,3 +1,4 @@
+import hashlib
 import json
 import struct
 import sys
@@ -117,6 +118,7 @@ class FakeStore:
                 "model_id": model_id,
                 "status": status,
                 "artifact_path": str(path),
+                "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 **self.compatibility.to_dict(),
                 "metadata": {"critical_regression": model_id == "history"},
             }
@@ -255,6 +257,25 @@ class ContinualEvaluateTests(unittest.TestCase):
                 ),
                 0.8,
             )
+
+    def test_evaluate_candidate_rejects_tampered_registered_model(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = FakeStore(temp)
+            (Path(temp) / "candidate.onnx").write_bytes(b"tampered")
+            calls = []
+
+            def fake_runner(**kwargs):
+                calls.append(kwargs)
+                return MatchSummary(kwargs["matches"], kwargs["matches"], 0, 0, 0, 1.0)
+
+            with self.assertRaises(EvaluationError):
+                evaluate_candidate(
+                    store,
+                    candidate_model_id="candidate",
+                    environment_path="fake.exe",
+                    match_runner=fake_runner,
+                )
+            self.assertEqual(calls, [])
 
     def test_evaluate_candidate_builds_champion_historical_and_competency_report(self):
         with tempfile.TemporaryDirectory() as temp:
