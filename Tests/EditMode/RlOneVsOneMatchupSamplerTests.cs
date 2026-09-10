@@ -155,7 +155,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PriorityWeightBandsAddPressureOnlyToImbalancedMatchups()
+        public void PriorityWeightBandsProduceOneToThreeTimesTotalSamplingWeight()
         {
             Assert.That(CalculatePriorityExtraWeight(0.50f), Is.EqualTo(0f));
             Assert.That(CalculatePriorityExtraWeight(0.35f), Is.EqualTo(0.5f));
@@ -167,13 +167,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PriorityReplayProbabilityUsesBaselinePlusExtraWeightInsteadOfFixedReplayShare()
+        {
+            double probability = CalculatePriorityReplayProbability(40d, 2d);
+
+            Assert.That(probability, Is.EqualTo(2d / 42d).Within(1e-12));
+        }
+
+        [Test]
         public void PriorityReplayRepeatsAnImbalancedMatchupWithoutAdvancingBaselineCoverage()
         {
             object options = Parse(
                 "--rl-matchup-mode=sampled",
                 "--rl-bee-ship-types=Wasp,Hornet",
                 "--rl-human-ship-types=Gunship");
-            object selector = CreateSelector(options, 13579, 1d, 4, 1);
+            object selector = CreateSelector(options, 13579, 1000000000000d, 4, 1);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             string first = GetPreparedPair(selector);
@@ -190,7 +198,7 @@ namespace Bees.Tests.EditMode
                 "--rl-matchup-mode=sampled",
                 "--rl-bee-ship-types=Wasp,Hornet",
                 "--rl-human-ship-types=Gunship");
-            object selector = CreateSelector(options, 24680, 1d, 4, 1);
+            object selector = CreateSelector(options, 24680, 1000000000000d, 4, 1);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             string first = GetPreparedPair(selector);
@@ -207,7 +215,7 @@ namespace Bees.Tests.EditMode
                 "--rl-matchup-mode=sampled",
                 "--rl-bee-ship-types=Wasp,Hornet",
                 "--rl-human-ship-types=Gunship");
-            object selector = CreateSelector(options, 11223, 1d, 2, 1);
+            object selector = CreateSelector(options, 11223, 1000000000000d, 2, 1);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             string first = GetPreparedPair(selector);
@@ -254,7 +262,7 @@ namespace Bees.Tests.EditMode
         private object CreateSelector(
             object options,
             int seed,
-            double priorityReplayRatio,
+            double priorityWeightScale,
             int priorityOutcomeWindow,
             int priorityMinimumSamples)
         {
@@ -268,7 +276,7 @@ namespace Bees.Tests.EditMode
             {
                 options,
                 seed,
-                priorityReplayRatio,
+                priorityWeightScale,
                 priorityOutcomeWindow,
                 priorityMinimumSamples
             });
@@ -278,6 +286,16 @@ namespace Bees.Tests.EditMode
         {
             object value = RuntimeAssembly.InvokeStatic(_selectorType, "CalculatePriorityExtraWeight", beeScoreRate);
             return (float)value;
+        }
+
+        private double CalculatePriorityReplayProbability(double baselineWeight, double totalExtraWeight)
+        {
+            object value = RuntimeAssembly.InvokeStatic(
+                _selectorType,
+                "CalculatePriorityReplayProbability",
+                baselineWeight,
+                totalExtraWeight);
+            return (double)value;
         }
 
         private string GetPreparedPair(object selector, int shipIndex = 0)
