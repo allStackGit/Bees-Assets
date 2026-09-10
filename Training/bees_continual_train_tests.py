@@ -74,6 +74,44 @@ class RunContextTests(unittest.TestCase):
             wrapper.infer_run_context(["Training/rl_1v1_config.yaml"])
 
 
+class HistoricalTrainingSettingsTests(unittest.TestCase):
+    def test_settings_use_configured_ratio_provider_and_mlagents_seed(self):
+        ratio, provider, seed = wrapper.historical_training_settings(
+            {
+                "historical_league": {
+                    "training_ratio": 0.2,
+                    "training_onnx_provider": "CPUExecutionProvider",
+                }
+            },
+            ["Training/rl_1v1_config.yaml", "--seed=36"],
+        )
+        self.assertEqual(ratio, 0.2)
+        self.assertEqual(provider, "CPUExecutionProvider")
+        self.assertEqual(seed, 36)
+
+    def test_missing_historical_training_settings_disable_bridge(self):
+        ratio, provider, seed = wrapper.historical_training_settings(
+            {"historical_league": {}},
+            ["Training/rl_1v1_config.yaml"],
+        )
+        self.assertEqual(ratio, 0.0)
+        self.assertIsNone(provider)
+        self.assertEqual(seed, 0)
+
+    def test_invalid_historical_training_settings_are_rejected(self):
+        cases = (
+            {"historical_league": {"training_ratio": -0.1}},
+            {"historical_league": {"training_ratio": 1.1}},
+            {"historical_league": {"training_ratio": float("nan")}},
+            {"historical_league": {"training_ratio": True}},
+            {"historical_league": {"training_onnx_provider": ""}},
+        )
+        for config in cases:
+            with self.subTest(config=config):
+                with self.assertRaises(SystemExit):
+                    wrapper.historical_training_settings(config, [])
+
+
 class StepInferenceTests(unittest.TestCase):
     def test_extracts_step_from_common_checkpoint_names(self):
         self.assertEqual(
