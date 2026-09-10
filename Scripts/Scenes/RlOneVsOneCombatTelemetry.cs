@@ -37,7 +37,7 @@ internal static class RlOneVsOneCombatTelemetry
         _level = level;
         _beeSide = ConfigData.Configuration.BeeSide;
         _humanSide = ConfigData.Configuration.HumanSide;
-        _episodeMapSize = RlOneVsOneTrainingBootstrap.CurrentMapSize;
+        _episodeMapSize = RlOneVsOneArenaMapSizeState.GetMapSize(level);
         _active = true;
     }
 

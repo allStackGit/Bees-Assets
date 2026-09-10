@@ -108,8 +108,9 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return;
         }
 
+        // Do not disable this component after setup. FixedUpdate below owns confinement and training
+        // durability for every non-primary arena for the lifetime of the training process.
         _applied = true;
-        enabled = false;
 
         try
         {
@@ -171,8 +172,8 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return;
         }
 
-        // The legacy runtime guard already constrains PrimaryLevel. Handle only the additional Levels
-        // here so the single-arena path remains byte-for-byte equivalent in its per-step work.
+        // The legacy runtime and durability guards already handle PrimaryLevel. Handle only the
+        // additional Levels here so every arena receives the same curriculum and confinement rules.
         IReadOnlyList<Level> levels = _stage.Levels;
         for (int levelIndex = 1; levelIndex < levels.Count; levelIndex++)
         {
@@ -185,9 +186,20 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             List<Ship> ships = level.State.GetShips();
             for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
             {
-                ConstrainShipToArena(level, ships[shipIndex]);
+                Ship ship = ships[shipIndex];
+                RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(ship);
+                ConstrainShipToArena(level, ship);
             }
         }
+    }
+
+    internal static Vector2 GetWorldPositionForLocalShipPosition(Transform shipTransform, Vector3 localPosition)
+    {
+        Transform parent = shipTransform.parent;
+        Vector3 worldPosition = parent == null
+            ? localPosition
+            : parent.TransformPoint(localPosition);
+        return worldPosition;
     }
 
     private static void ConstrainShipToArena(Level level, Ship ship)
@@ -220,8 +232,9 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
         Vector3 localPosition = ship.transform.localPosition;
         localPosition.x = clampedPosition.x;
         localPosition.y = clampedPosition.y;
+        Vector2 worldPosition = GetWorldPositionForLocalShipPosition(ship.transform, localPosition);
         ship.transform.localPosition = localPosition;
-        ship.Body.position = clampedPosition;
+        ship.Body.position = worldPosition;
 
         Vector2 velocity = ship.Body.linearVelocity;
         if ((Mathf.Approximately(clampedPosition.x, minX) && velocity.x < 0f) ||
