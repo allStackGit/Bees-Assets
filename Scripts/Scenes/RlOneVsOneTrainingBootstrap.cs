@@ -297,6 +297,7 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.ActivateAudio = false;
         stage.PlayMusic = false;
         stage.LevelCount = TrainingLevelCount;
+        stage.DefaultCameraPosition = Vector2.zero;
 
         // The dedicated RL path always creates one explicit squad per side; CurrentShipsPerSide
         // controls the number of explicit FleetShips inside that squad.
@@ -427,16 +428,16 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
             return;
         }
 
-        // Establish the training view once, then leave orthographicSize alone so an operator can
-        // adjust the Camera manually while observing a visible Editor/standalone training run.
-        if (!_cameraInitialized)
+        // Establish the visible training view exactly once. After initialization the camera is left
+        // alone so an operator can move or zoom it freely while observing training.
+        if (_cameraInitialized)
         {
-            _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
-            _cameraInitialized = true;
+            return;
         }
 
-        Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();
-        _stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f);
+        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
+        _stage.Camera.transform.position = new Vector3(0f, 0f, -10f);
+        _cameraInitialized = true;
     }
 
     private static void ConstrainShipToArena(Level level, Ship ship)
