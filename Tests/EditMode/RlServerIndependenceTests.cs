@@ -90,13 +90,43 @@ namespace Bees.Tests.EditMode
             Assert.That(runtime, Does.Contain(
                 "(State.IsPaused || ConfigData.SocketManager.NetworkDisconnection.IsOpen || !IsLevelConnectedToServer) && !Stage.IsTraining"));
 
-            string levelOver = Slice(runtime, "public void LevelOver()", "    }\n}");
+            int levelOverStart = runtime.IndexOf("public void LevelOver()", StringComparison.Ordinal);
+            Assert.That(levelOverStart, Is.GreaterThanOrEqualTo(0));
+            string levelOver = runtime.Substring(levelOverStart);
             Assert.That(levelOver, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
             Assert.That(levelOver, Does.Contain("ResetLevel(false);"));
 
             string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
             Assert.That(bootstrap, Does.Contain("stage.ActivateHiveMind = false;"),
                 "Dedicated ML-Agents training must not start the server-backed Hive Mind command loop.");
+        }
+
+        [Test]
+        public void TransientGeneratedIdsDoNotRequirePlayerFleetData()
+        {
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            Type utilitiesType = RuntimeAssembly.GetType("Assets.Scripts.Utilities");
+            object previousCurrentShips = RuntimeAssembly.GetStaticField(configDataType, "CurrentShips");
+
+            try
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", null);
+
+                long firstSquad = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeSavedSquadId");
+                long secondSquad = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeSavedSquadId");
+                long firstFleetShip = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeFleetshipId");
+                long secondFleetShip = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeFleetshipId");
+
+                Assert.That(firstSquad, Is.LessThan(0));
+                Assert.That(secondSquad, Is.LessThan(0));
+                Assert.That(firstFleetShip, Is.LessThan(0));
+                Assert.That(secondFleetShip, Is.LessThan(0));
+                CollectionAssert.AllItemsAreUnique(new[] { firstSquad, secondSquad, firstFleetShip, secondFleetShip });
+            }
+            finally
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", previousCurrentShips);
+            }
         }
 
         [Test]
