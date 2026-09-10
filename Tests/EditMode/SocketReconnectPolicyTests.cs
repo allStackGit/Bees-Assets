@@ -61,10 +61,14 @@ namespace Bees.Tests.EditMode
             Assert.That(updateStart, Is.GreaterThan(policyStart));
 
             string policy = sceneSource.Substring(policyStart, updateStart - policyStart);
-            Assert.That(policy, Does.Contain("RlOneVsOneTrainingBootstrap.IsActiveFor(stage)"));
-            Assert.That(policy, Does.Contain("IsFinalized"));
+            Assert.That(policy, Does.Contain("RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime"));
             Assert.That(policy, Does.Contain("ConfigData.AreAllSettingsLoaded"));
-            Assert.That(policy, Does.Contain("ConfigData.IsAllUserDataLoaded"));
+            Assert.That(policy, Does.Contain("!ConfigData.Configuration.IsDeadVersion"));
+            Assert.That(policy, Does.Not.Contain("RlOneVsOneTrainingBootstrap.IsActiveFor(stage)"),
+                "The detach gate must work on the settings-completion frame before the Stage training flags are applied.");
+            Assert.That(policy, Does.Not.Contain("IsFinalized"));
+            Assert.That(policy, Does.Not.Contain("ConfigData.IsAllUserDataLoaded"),
+                "Dedicated RL must not wait for player profile data before becoming server-independent.");
 
             int socketPump = sceneSource.IndexOf("SocketTimer.Update();", updateStart, StringComparison.Ordinal);
             int connectionManagementGate = sceneSource.IndexOf("if (!canRunWithoutServer)", updateStart, StringComparison.Ordinal);
