@@ -7,7 +7,7 @@ behaviors:
       batch_size: 512
       buffer_size: 16384
       learning_rate: 0.00015
-      beta: 0.005
+      beta: 0.008
       epsilon: 0.15
       lambd: 0.99
       num_epoch: 3
@@ -32,6 +32,6 @@ behaviors:
       save_steps: 20000
       team_change: 100000
       swap_steps: 20000
-      window: 20
-      play_against_latest_model_ratio: 0.25
+      window: 30
+      play_against_latest_model_ratio: 0.20
       initial_elo: 1200.0

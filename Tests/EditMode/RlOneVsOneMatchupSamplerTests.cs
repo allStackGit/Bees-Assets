@@ -1,8 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -152,6 +154,87 @@ namespace Bees.Tests.EditMode
             }
         }
 
+        [Test]
+        public void PriorityWeightBandsAddPressureOnlyToImbalancedMatchups()
+        {
+            Assert.That(CalculatePriorityExtraWeight(0.50f), Is.EqualTo(0f));
+            Assert.That(CalculatePriorityExtraWeight(0.35f), Is.EqualTo(0.5f));
+            Assert.That(CalculatePriorityExtraWeight(0.65f), Is.EqualTo(0.5f));
+            Assert.That(CalculatePriorityExtraWeight(0.20f), Is.EqualTo(1f));
+            Assert.That(CalculatePriorityExtraWeight(0.80f), Is.EqualTo(1f));
+            Assert.That(CalculatePriorityExtraWeight(0.05f), Is.EqualTo(2f));
+            Assert.That(CalculatePriorityExtraWeight(0.95f), Is.EqualTo(2f));
+        }
+
+        [Test]
+        public void PriorityReplayRepeatsAnImbalancedMatchupWithoutAdvancingBaselineCoverage()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship");
+            object selector = CreateSelector(options, 13579, 1d, 4, 1);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string first = GetPreparedPair(selector);
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", _beeSide, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+        }
+
+        [Test]
+        public void BalancedHistoryFallsBackToTheNextBaselineMatchup()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship");
+            object selector = CreateSelector(options, 24680, 1d, 4, 1);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string first = GetPreparedPair(selector);
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.Not.EqualTo(first));
+        }
+
+        [Test]
+        public void RollingWindowStopsPrioritizingAFormerlyImbalancedMatchupOnceRecentResultsBalance()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship");
+            object selector = CreateSelector(options, 11223, 1d, 2, 1);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string first = GetPreparedPair(selector);
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", _beeSide, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.Not.EqualTo(first));
+        }
+
+        [Test]
+        public void TrainerUsesMoreExplorationAndBroaderHistoricalOpponentPool()
+        {
+            string yaml = ReadSource("Training", "rl_1v1_config.yaml");
+
+            Assert.That(yaml, Does.Contain("beta: 0.008"));
+            Assert.That(yaml, Does.Contain("window: 30"));
+            Assert.That(yaml, Does.Contain("play_against_latest_model_ratio: 0.20"));
+        }
+
         private object Parse(params string[] args)
         {
             return RuntimeAssembly.InvokeStatic(_optionsType, "Parse", (object)args);
@@ -166,6 +249,35 @@ namespace Bees.Tests.EditMode
                 null);
             Assert.That(constructor, Is.Not.Null);
             return constructor.Invoke(new[] { options, (object)seed });
+        }
+
+        private object CreateSelector(
+            object options,
+            int seed,
+            double priorityReplayRatio,
+            int priorityOutcomeWindow,
+            int priorityMinimumSamples)
+        {
+            ConstructorInfo constructor = _selectorType.GetConstructor(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new[] { _optionsType, typeof(int), typeof(double), typeof(int), typeof(int) },
+                null);
+            Assert.That(constructor, Is.Not.Null);
+            return constructor.Invoke(new object[]
+            {
+                options,
+                seed,
+                priorityReplayRatio,
+                priorityOutcomeWindow,
+                priorityMinimumSamples
+            });
+        }
+
+        private float CalculatePriorityExtraWeight(float beeScoreRate)
+        {
+            object value = RuntimeAssembly.InvokeStatic(_selectorType, "CalculatePriorityExtraWeight", beeScoreRate);
+            return (float)value;
         }
 
         private string GetPreparedPair(object selector, int shipIndex = 0)
@@ -193,6 +305,16 @@ namespace Bees.Tests.EditMode
                 names.Add(value.ToString());
             }
             return names;
+        }
+
+        private static string ReadSource(params string[] parts)
+        {
+            string path = Application.dataPath;
+            for (int i = 0; i < parts.Length; i++)
+            {
+                path = Path.Combine(path, parts[i]);
+            }
+            return File.ReadAllText(path);
         }
     }
 }
