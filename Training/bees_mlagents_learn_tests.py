@@ -267,6 +267,31 @@ class BatchedInferenceTests(unittest.TestCase):
 
         return FakeTorchPolicy()
 
+    @staticmethod
+    def _external_policy(*, batch_safe: bool):
+        from mlagents.trainers.action_info import ActionInfo
+        from mlagents_envs.base_env import ActionSpec, ActionTuple, BehaviorSpec
+
+        class FakeExternalPolicy:
+            def __init__(self):
+                self.behavior_spec = BehaviorSpec([], ActionSpec.create_continuous(1))
+                self.bees_batch_inference_safe = batch_safe
+                self.calls = []
+
+            def get_action(self, decision_requests, worker_id=0):
+                self.calls.append((decision_requests, worker_id))
+                values = decision_requests.obs[0].astype(np.float32, copy=True)
+                action = ActionTuple(continuous=values)
+                env_action = ActionTuple(continuous=values + 50.0)
+                return ActionInfo(
+                    action=action,
+                    env_action=env_action,
+                    outputs={"external_marker": values[:, 0] + 5.0},
+                    agent_ids=list(decision_requests.agent_id),
+                )
+
+        return FakeExternalPolicy()
+
     def test_same_behavior_workers_are_evaluated_once_and_ipc_is_slim(self):
         from mlagents.trainers.behavior_id_utils import get_global_agent_id
         from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
@@ -334,6 +359,94 @@ class BatchedInferenceTests(unittest.TestCase):
 
         self.assertEqual(len(policy.saved_memories), 1)
         self.assertEqual(len(policy.checked_actions), 1)
+
+    def test_batch_safe_external_policy_is_evaluated_once_and_split_per_worker(self):
+        from mlagents.trainers.subprocess_env_manager import EnvironmentCommand
+
+        behavior = "BeesRL1v1?team=1"
+        worker0 = self._worker(0, {behavior: self._decision_steps(11, 3.0)})
+        worker1 = self._worker(1, {behavior: self._decision_steps(22, 7.0)})
+        policy = self._external_policy(batch_safe=True)
+
+        class FakeManager:
+            pass
+
+        manager = FakeManager()
+        manager.env_workers = [worker0, worker1]
+        manager.policies = {behavior: policy}
+
+        self.SubprocessEnvManager._queue_steps(manager)
+
+        self.assertEqual(len(policy.calls), 1)
+        batched_steps, worker_id = policy.calls[0]
+        self.assertEqual(worker_id, 0)
+        np.testing.assert_array_equal(
+            batched_steps.obs[0],
+            np.asarray([[3.0], [7.0]], dtype=np.float32),
+        )
+        self.assertEqual(list(batched_steps.agent_id), [11, 22])
+
+        for worker, expected_agent, expected_action in (
+            (worker0, 11, 3.0),
+            (worker1, 22, 7.0),
+        ):
+            self.assertTrue(worker.waiting)
+            command, payload = worker.sent[0]
+            self.assertEqual(command, EnvironmentCommand.STEP)
+
+            trainer_info = worker.previous_all_action_info[behavior]
+            self.assertEqual(trainer_info.agent_ids, [expected_agent])
+            np.testing.assert_array_equal(
+                trainer_info.action.continuous,
+                np.asarray([[expected_action]], dtype=np.float32),
+            )
+            np.testing.assert_array_equal(
+                trainer_info.env_action.continuous,
+                np.asarray([[expected_action + 50.0]], dtype=np.float32),
+            )
+            np.testing.assert_array_equal(
+                trainer_info.outputs["action"].continuous,
+                np.asarray([[expected_action]], dtype=np.float32),
+            )
+            np.testing.assert_array_equal(
+                trainer_info.outputs["external_marker"],
+                np.asarray([expected_action + 5.0], dtype=np.float32),
+            )
+
+            ipc_info = payload[behavior]
+            self.assertEqual(ipc_info.agent_ids, [expected_agent])
+            self.assertEqual(ipc_info.action, [])
+            self.assertEqual(ipc_info.outputs, {})
+            np.testing.assert_array_equal(
+                ipc_info.env_action.continuous,
+                np.asarray([[expected_action + 50.0]], dtype=np.float32),
+            )
+
+    def test_unmarked_external_policy_keeps_per_worker_inference(self):
+        behavior = "BeesRL1v1?team=1"
+        worker0 = self._worker(0, {behavior: self._decision_steps(11, 3.0)})
+        worker1 = self._worker(1, {behavior: self._decision_steps(22, 7.0)})
+        policy = self._external_policy(batch_safe=False)
+
+        class FakeManager:
+            pass
+
+        manager = FakeManager()
+        manager.env_workers = [worker0, worker1]
+        manager.policies = {behavior: policy}
+
+        self.SubprocessEnvManager._queue_steps(manager)
+
+        self.assertEqual(len(policy.calls), 2)
+        self.assertEqual([worker_id for _, worker_id in policy.calls], [0, 1])
+        np.testing.assert_array_equal(
+            policy.calls[0][0].obs[0],
+            np.asarray([[3.0]], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(
+            policy.calls[1][0].obs[0],
+            np.asarray([[7.0]], dtype=np.float32),
+        )
 
     def test_distinct_self_play_behaviors_are_not_merged(self):
         team0 = "BeesRL1v1?team=0"
