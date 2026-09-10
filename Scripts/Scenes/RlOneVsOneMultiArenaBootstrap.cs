@@ -190,6 +190,15 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
         }
     }
 
+    internal static Vector2 GetWorldPositionForLocalShipPosition(Transform shipTransform, Vector3 localPosition)
+    {
+        Transform parent = shipTransform.parent;
+        Vector3 worldPosition = parent == null
+            ? localPosition
+            : parent.TransformPoint(localPosition);
+        return worldPosition;
+    }
+
     private static void ConstrainShipToArena(Level level, Ship ship)
     {
         if (ship == null || ship.IsDead || ship.CanOverrideBounds || ship.Body == null)
@@ -220,8 +229,9 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
         Vector3 localPosition = ship.transform.localPosition;
         localPosition.x = clampedPosition.x;
         localPosition.y = clampedPosition.y;
+        Vector2 worldPosition = GetWorldPositionForLocalShipPosition(ship.transform, localPosition);
         ship.transform.localPosition = localPosition;
-        ship.Body.position = clampedPosition;
+        ship.Body.position = worldPosition;
 
         Vector2 velocity = ship.Body.linearVelocity;
         if ((Mathf.Approximately(clampedPosition.x, minX) && velocity.x < 0f) ||
