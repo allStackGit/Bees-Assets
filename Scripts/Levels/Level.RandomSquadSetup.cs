@@ -15,9 +15,9 @@ namespace Assets.Scripts.Levels
             bool rlOneVsOneTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
             if (rlOneVsOneTraining && side == ConfigData.Configuration.AISide)
             {
-                // SetupShips always processes the AI side first. Advance the balanced matchup cycle
-                // exactly once here so both sides use the same prepared pair for the whole episode.
-                global::RlOneVsOneEpisodeMatchups.PrepareEpisode();
+                // SetupShips always processes the AI side first. Advance this arena's balanced matchup
+                // cycle exactly once here so both sides use the same prepared pair for the whole episode.
+                global::RlOneVsOnePerArenaMatchups.PrepareEpisode(this);
                 ConfigureRlOneVsOneSpawnPositions();
             }
 
@@ -76,7 +76,7 @@ namespace Assets.Scripts.Levels
         {
             float angle = Random.Range(0f, Mathf.PI * 2f);
             Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) *
-                             global::RlOneVsOneTrainingBootstrap.CurrentSpawnRadius;
+                             global::RlOneVsOneArenaMapSizeState.GetSpawnRadius(this);
 
             StartingPositions[ConfigData.Configuration.BeeSide - 1] = -offset;
             StartingPositions[ConfigData.Configuration.HumanSide - 1] = offset;
@@ -124,7 +124,7 @@ namespace Assets.Scripts.Levels
 
             for (int shipIndex = 0; shipIndex < shipCount; shipIndex++)
             {
-                ConfigData.ShipTypes type = global::RlOneVsOneEpisodeMatchups.GetShipType(side, shipIndex);
+                ConfigData.ShipTypes type = global::RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex);
                 if (Utilities.ConvertShipTypeToSide[type] != side)
                 {
                     throw new System.InvalidOperationException(
@@ -153,7 +153,7 @@ namespace Assets.Scripts.Levels
                 }
                 else
                 {
-                    Vector2 shipOffset = global::RlOneVsOneTrainingBootstrap.GetShipFormationOffset(shipIndex);
+                    Vector2 shipOffset = global::RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex);
                     savedSquad.AddShipToSquad(new SquadShip(fleetShip, shipOffset));
                 }
             }
