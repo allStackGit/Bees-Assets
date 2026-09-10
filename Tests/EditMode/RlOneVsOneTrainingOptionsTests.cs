@@ -133,30 +133,30 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("GetShipsVisibleToHiveMind(side)"));
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(coordinator, Does.Contain("CaptureShotBaselines"));
-            Assert.That(coordinator, Does.Contain("CalculateShotsFired"));
+            Assert.That(coordinator, Does.Contain("internal static void RecordShotFired"));
+            Assert.That(coordinator, Does.Contain("_beeShotsThisEpisode++"));
+            Assert.That(coordinator, Does.Contain("_humanShotsThisEpisode++"));
             Assert.That(coordinator, Does.Contain("CurrentTimeoutSeconds"));
             Assert.That(coordinator, Does.Contain("ships_per_side="));
         }
 
         [Test]
-        public void FullShipTurretPrioritizesRlTargetBeforePlayerMouseInput()
+        public void FullShipTurretPrioritizesRlControlBeforePlayerMouseInput()
         {
             string fullShipTurret = ReadSource("Scripts", "Entities", "Ships", "Weapons", "FullShipTurret.cs");
 
-            int stationaryRl = fullShipTurret.IndexOf("if (IsRlControlled)", StringComparison.Ordinal);
-            int stationaryRlTarget = fullShipTurret.IndexOf("TargetPoint = RlTargetPoint;", stationaryRl, StringComparison.Ordinal);
-            int stationaryMouse = fullShipTurret.IndexOf("Stage.InputManager.GetMousePosition();", StringComparison.Ordinal);
-            Assert.That(stationaryRl, Is.GreaterThanOrEqualTo(0));
-            Assert.That(stationaryRlTarget, Is.GreaterThan(stationaryRl));
-            Assert.That(stationaryMouse, Is.GreaterThan(stationaryRlTarget));
+            int aim = fullShipTurret.IndexOf("protected override void Aim()", StringComparison.Ordinal);
+            int rlControl = fullShipTurret.IndexOf("if (IsRlControlled)", aim, StringComparison.Ordinal);
+            int rlAim = fullShipTurret.IndexOf("AimRlMainCannon();", rlControl, StringComparison.Ordinal);
+            int rlReturn = fullShipTurret.IndexOf("return;", rlAim, StringComparison.Ordinal);
+            int mouseInput = fullShipTurret.IndexOf("Stage.InputManager.GetMousePosition();", rlReturn, StringComparison.Ordinal);
 
-            int movingRl = fullShipTurret.IndexOf("if (IsRlControlled)", stationaryRl + 1, StringComparison.Ordinal);
-            int movingRlTarget = fullShipTurret.IndexOf("TargetPoint = RlTargetPoint;", stationaryRlTarget + 1, StringComparison.Ordinal);
-            int movingMouse = fullShipTurret.IndexOf("Stage.InputManager.GetMousePosition();", stationaryMouse + 1, StringComparison.Ordinal);
-            Assert.That(movingRl, Is.GreaterThan(stationaryMouse));
-            Assert.That(movingRlTarget, Is.GreaterThan(movingRl));
-            Assert.That(movingMouse, Is.GreaterThan(movingRlTarget));
+            Assert.That(aim, Is.GreaterThanOrEqualTo(0));
+            Assert.That(rlControl, Is.GreaterThan(aim));
+            Assert.That(rlAim, Is.GreaterThan(rlControl));
+            Assert.That(rlReturn, Is.GreaterThan(rlAim));
+            Assert.That(mouseInput, Is.GreaterThan(rlReturn),
+                "RL fixed-cannon aiming must return before any player mouse-input branch can run.");
         }
 
         private object Parse(params string[] args)
