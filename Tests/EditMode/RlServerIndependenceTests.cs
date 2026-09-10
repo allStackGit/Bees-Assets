@@ -102,31 +102,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TransientGeneratedIdsDoNotRequirePlayerFleetData()
+        public void DedicatedTrainingGeneratedIdsDoNotRequirePlayerFleetData()
         {
-            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
-            Type utilitiesType = RuntimeAssembly.GetType("Assets.Scripts.Utilities");
-            object previousCurrentShips = RuntimeAssembly.GetStaticField(configDataType, "CurrentShips");
+            string setup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
+            string rlSetup = Slice(
+                setup,
+                "private void AddRlOneVsOneSquadForSetup(int side)",
+                "private void AddRandomSquadsForSetup(int side)");
 
-            try
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", null);
-
-                long firstSquad = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeSavedSquadId");
-                long secondSquad = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeSavedSquadId");
-                long firstFleetShip = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeFleetshipId");
-                long secondFleetShip = (long)RuntimeAssembly.InvokeStatic(utilitiesType, "GetNegativeFleetshipId");
-
-                Assert.That(firstSquad, Is.LessThan(0));
-                Assert.That(secondSquad, Is.LessThan(0));
-                Assert.That(firstFleetShip, Is.LessThan(0));
-                Assert.That(secondFleetShip, Is.LessThan(0));
-                CollectionAssert.AllItemsAreUnique(new[] { firstSquad, secondSquad, firstFleetShip, secondFleetShip });
-            }
-            finally
-            {
-                RuntimeAssembly.SetStaticField(configDataType, "CurrentShips", previousCurrentShips);
-            }
+            Assert.That(rlSetup, Does.Contain("long squadId = -Utilities.Hash();"));
+            Assert.That(rlSetup, Does.Contain("long fleetShipId = -Utilities.Hash();"));
+            Assert.That(rlSetup, Does.Not.Contain("ConfigData.CurrentShips"),
+                "Dedicated training must be able to create transient squads before any player profile/fleet facade exists.");
+            Assert.That(rlSetup, Does.Not.Contain("GetNegativeSavedSquadId"));
+            Assert.That(rlSetup, Does.Not.Contain("GetNegativeFleetshipId"));
         }
 
         [Test]
