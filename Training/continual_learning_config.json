@@ -17,7 +17,9 @@
     "base_weight": 1.0,
     "weakness_trigger_regression": 0.05,
     "weakness_bonus_scale": 10.0,
-    "max_weight_multiplier": 4.0
+    "max_weight_multiplier": 4.0,
+    "training_ratio": 0.2,
+    "training_onnx_provider": "CPUExecutionProvider"
   },
   "ingestion": {
     "max_payload_bytes": 16777216,
