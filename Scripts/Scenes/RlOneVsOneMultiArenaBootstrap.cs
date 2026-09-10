@@ -46,6 +46,14 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
 
     internal static int ReadRequestedArenaCount(string[] args)
     {
+        // Authoritative candidate evaluation intentionally scores one primary arena per Unity
+        // process. Ignore any inherited training arena setting so unscored arenas cannot consume
+        // compute or make the evaluator's result stream ambiguous.
+        if (RlOneVsOneEvaluationSideChannel.IsEvaluationMode(args))
+        {
+            return 1;
+        }
+
         if (args == null)
         {
             return DefaultArenasPerEnvironment;

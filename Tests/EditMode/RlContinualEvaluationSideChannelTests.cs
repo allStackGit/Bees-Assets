@@ -11,6 +11,7 @@ namespace Bees.Tests.EditMode
     public class RlContinualEvaluationSideChannelTests
     {
         private const string EvaluationChannelId = "7ca0e8e5-47f7-49ce-b44a-738ae7f1ad15";
+        private const string EvaluationModeFlag = "--bees-rl-evaluator";
 
         [Test]
         public void UnityResultChannelMatchesPythonEvaluatorProtocol()
@@ -22,6 +23,8 @@ namespace Bees.Tests.EditMode
             Assert.That(python, Does.Contain($"EVALUATION_CHANNEL_ID = uuid.UUID(\"{EvaluationChannelId}\")"));
             Assert.That(unity, Does.Contain("internal const int ProtocolVersion = 1;"));
             Assert.That(python, Does.Contain("EVALUATION_PROTOCOL_VERSION = 1"));
+            Assert.That(unity, Does.Contain($"EvaluationModeFlag = \"{EvaluationModeFlag}\";"));
+            Assert.That(python, Does.Contain($"EVALUATION_MODE_FLAG = \"{EvaluationModeFlag}\""));
 
             AssertTokensInOrder(
                 unity,
@@ -64,6 +67,35 @@ namespace Bees.Tests.EditMode
                 "human_shots=message.read_int32(),",
                 "human_hits=message.read_int32(),",
                 "human_damage=message.read_int32(),");
+        }
+
+        [Test]
+        public void ResultChannelRegistersOnlyForExplicitEvaluatorRuns()
+        {
+            Type channelType = RuntimeAssembly.GetType("RlOneVsOneEvaluationSideChannel");
+            MethodInfo shouldRegister = channelType.GetMethod(
+                "ShouldRegister",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(shouldRegister, Is.Not.Null);
+
+            object normalTraining = shouldRegister.Invoke(
+                null,
+                new object[] { "RL 1v1 Training", Array.Empty<string>(), false });
+            object evaluator = shouldRegister.Invoke(
+                null,
+                new object[] { "RL 1v1 Training", new[] { EvaluationModeFlag }, false });
+            object wrongScene = shouldRegister.Invoke(
+                null,
+                new object[] { "Title", new[] { EvaluationModeFlag }, false });
+            object alreadyRegistered = shouldRegister.Invoke(
+                null,
+                new object[] { "RL 1v1 Training", new[] { EvaluationModeFlag }, true });
+
+            Assert.That(normalTraining, Is.False,
+                "Ordinary training must not register a side channel that its Python trainer does not know about.");
+            Assert.That(evaluator, Is.True);
+            Assert.That(wrongScene, Is.False);
+            Assert.That(alreadyRegistered, Is.False);
         }
 
         [Test]
@@ -135,6 +167,7 @@ namespace Bees.Tests.EditMode
             string channel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
             Assert.That(channel, Does.Contain("RlOneVsOneEpisodeCoordinator.EpisodeEnded += OnEpisodeEnded;"));
             Assert.That(channel, Does.Contain("SideChannelManager.RegisterSideChannel(_instance);"));
+            Assert.That(channel, Does.Contain("IsEvaluationMode(args)"));
             Assert.That(channel, Does.Not.Contain("msg.Read"),
                 "The authoritative result channel must remain output-only; evaluation configuration belongs to command-line options.");
         }

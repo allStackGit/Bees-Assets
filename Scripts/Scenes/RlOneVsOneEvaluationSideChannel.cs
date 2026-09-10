@@ -17,6 +17,7 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
 {
     internal const int ProtocolVersion = 1;
     internal const string ChannelIdText = "7ca0e8e5-47f7-49ce-b44a-738ae7f1ad15";
+    internal const string EvaluationModeFlag = "--bees-rl-evaluator";
 
     private static RlOneVsOneEvaluationSideChannel _instance;
 
@@ -35,7 +36,10 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void RegisterForDedicatedTrainingScene()
     {
-        if (!RlOneVsOneTrainingBootstrap.ShouldApply(SceneManager.GetActiveScene().name) || _instance != null)
+        if (!ShouldRegister(
+            SceneManager.GetActiveScene().name,
+            Environment.GetCommandLineArgs(),
+            _instance != null))
         {
             return;
         }
@@ -44,6 +48,30 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
         SideChannelManager.RegisterSideChannel(_instance);
         RlOneVsOneEpisodeCoordinator.EpisodeEnded -= OnEpisodeEnded;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += OnEpisodeEnded;
+    }
+
+    internal static bool IsEvaluationMode(string[] args)
+    {
+        if (args == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i]?.Trim(), EvaluationModeFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    internal static bool ShouldRegister(string sceneName, string[] args, bool alreadyRegistered)
+    {
+        return !alreadyRegistered &&
+            RlOneVsOneTrainingBootstrap.ShouldApply(sceneName) &&
+            IsEvaluationMode(args);
     }
 
     protected override void OnMessageReceived(IncomingMessage msg)

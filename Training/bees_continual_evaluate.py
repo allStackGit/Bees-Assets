@@ -30,6 +30,7 @@ from bees_continual_learning import (
 
 EVALUATION_CHANNEL_ID = uuid.UUID("7ca0e8e5-47f7-49ce-b44a-738ae7f1ad15")
 EVALUATION_PROTOCOL_VERSION = 1
+EVALUATION_MODE_FLAG = "--bees-rl-evaluator"
 TEAM_PATTERN = re.compile(r"(?:\?|&)team=(\d+)(?:&|$)")
 DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH = 200_000
 
@@ -464,6 +465,17 @@ def _validate_environment_behaviors(
     return teams
 
 
+def _evaluation_environment_args(env_args: Sequence[str]) -> List[str]:
+    result = list(env_args)
+    if not any(
+        isinstance(value, str)
+        and value.strip().casefold() == EVALUATION_MODE_FLAG.casefold()
+        for value in result
+    ):
+        result.append(EVALUATION_MODE_FLAG)
+    return result
+
+
 def run_match_group(
     *,
     environment_path: os.PathLike[str] | str,
@@ -494,7 +506,7 @@ def run_match_group(
         seed=seed,
         no_graphics=no_graphics,
         timeout_wait=timeout_wait,
-        additional_args=list(env_args),
+        additional_args=_evaluation_environment_args(env_args),
         side_channels=[channel],
     )
 

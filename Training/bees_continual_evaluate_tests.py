@@ -11,11 +11,13 @@ from unittest.mock import patch
 import numpy as np
 
 from bees_continual_evaluate import (
+    EVALUATION_MODE_FLAG,
     EVALUATION_PROTOCOL_VERSION,
     EpisodeResult,
     EvaluationError,
     MatchSummary,
     OnnxPolicy,
+    _evaluation_environment_args,
     behavior_team_id,
     build_allow_action_mask,
     competency_score,
@@ -195,6 +197,16 @@ class ContinualEvaluateTests(unittest.TestCase):
         self.assertEqual(behavior_team_id("BeesRL1v1?team=1"), 1)
         with self.assertRaises(EvaluationError):
             behavior_team_id("BeesRL1v1")
+
+    def test_evaluation_launcher_adds_mode_flag_exactly_once(self):
+        args = _evaluation_environment_args(
+            ["--bees-rl-arenas-per-env=8", "--rl-map-size=128"]
+        )
+        self.assertEqual(args[-1], EVALUATION_MODE_FLAG)
+        self.assertEqual(args.count(EVALUATION_MODE_FLAG), 1)
+
+        existing = ["--rl-map-size=96", EVALUATION_MODE_FLAG]
+        self.assertEqual(_evaluation_environment_args(existing), existing)
 
     def test_action_mask_is_inverted_for_onnx_allow_semantics(self):
         class Decisions:

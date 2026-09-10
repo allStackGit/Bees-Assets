@@ -46,6 +46,45 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EvaluatorModeForcesSingleArenaWithoutChangingNormalTrainingCount()
+        {
+            Type bootstrapType = RuntimeAssembly.GetType("RlOneVsOneMultiArenaBootstrap");
+            MethodInfo readRequestedArenaCount = bootstrapType.GetMethod(
+                "ReadRequestedArenaCount",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(readRequestedArenaCount, Is.Not.Null);
+
+            object normalTrainingCount = readRequestedArenaCount.Invoke(
+                null,
+                new object[] { new[] { "--bees-rl-arenas-per-env", "4" } });
+            object evaluatorCount = readRequestedArenaCount.Invoke(
+                null,
+                new object[]
+                {
+                    new[]
+                    {
+                        "--bees-rl-evaluator",
+                        "--bees-rl-arenas-per-env",
+                        "4",
+                    }
+                });
+            object evaluatorEqualsCount = readRequestedArenaCount.Invoke(
+                null,
+                new object[]
+                {
+                    new[]
+                    {
+                        "--bees-rl-arenas-per-env=12",
+                        "--bees-rl-evaluator",
+                    }
+                });
+
+            Assert.That(normalTrainingCount, Is.EqualTo(4));
+            Assert.That(evaluatorCount, Is.EqualTo(1));
+            Assert.That(evaluatorEqualsCount, Is.EqualTo(1));
+        }
+
+        [Test]
         public void MultiArenaBootstrapStaysEnabledAfterApplyingSoFixedUpdateCanConstrainShips()
         {
             string source = ReadSource("Scripts", "Scenes", "RlOneVsOneMultiArenaBootstrap.cs");
