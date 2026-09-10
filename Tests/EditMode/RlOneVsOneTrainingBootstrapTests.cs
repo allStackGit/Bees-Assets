@@ -101,7 +101,7 @@ namespace Bees.Tests.EditMode
         public void FirstProofEnvironmentDisablesExtraDimensionsAndRandomizesFacing()
         {
             string setup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
-            Assert.That(setup, Does.Contain("ConfigureTrainingMap(Map)"));
+            Assert.That(setup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map)"));
             Assert.That(setup, Does.Contain("CurrentLevelOptions.Mining = 0"));
             Assert.That(setup, Does.Contain("CurrentLevelOptions.AsteroidOption = 0"));
             Assert.That(setup, Does.Contain("CurrentLevelOptions.Obstacles = \"No\""));
