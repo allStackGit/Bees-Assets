@@ -425,13 +425,13 @@ class ContinualLearningStore:
         created_at = utc_now()
         destination_dir = self.models_dir / self._directory_for_status(status)
         destination = destination_dir / f"{model_id}{source.suffix.lower() or '.model'}"
-        destination_preexisted = destination.exists()
         metadata_dict = dict(metadata or {})
         metadata_dict.setdefault("registered_from", str(source))
         metadata_dict.setdefault("artifact_size", source.stat().st_size)
 
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            destination_preexisted = destination.exists()
             existing = db.execute(
                 "SELECT * FROM models WHERE artifact_sha256 = ?", (artifact_hash,)
             ).fetchone()
@@ -570,29 +570,35 @@ class ContinualLearningStore:
                 f"Registered model artifact failed SHA-256 integrity verification: {path}"
             )
 
-    def _move_artifact_for_status(
-        self,
-        db: sqlite3.Connection,
-        row: sqlite3.Row,
-        status: str,
-    ) -> str:
+    def _stage_artifact_for_status(self, row: sqlite3.Row, status: str) -> str:
         current = Path(row["artifact_path"])
         expected_sha256 = row["artifact_sha256"]
         target_dir = self.models_dir / self._directory_for_status(status)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / current.name
-        if current.resolve() == target.resolve():
-            self._assert_artifact_hash(current, expected_sha256)
-            return str(current)
-        if target.exists():
-            self._assert_artifact_hash(target, expected_sha256)
-            if current.exists():
-                self._assert_artifact_hash(current, expected_sha256)
-                current.unlink()
-            return str(target)
         self._assert_artifact_hash(current, expected_sha256)
-        os.replace(current, target)
+        if current.resolve() == target.resolve():
+            return str(current)
+        self._copy_immutable(current, target, expected_sha256)
         return str(target)
+
+    def _cleanup_staged_source(
+        self,
+        source: Path,
+        target: Path,
+        expected_sha256: str,
+    ) -> None:
+        if source.resolve() == target.resolve() or not source.exists():
+            return
+        self._assert_artifact_hash(target, expected_sha256)
+        try:
+            self._assert_artifact_hash(source, expected_sha256)
+            source.unlink()
+        except (ContinualLearningError, OSError) as exc:
+            print(
+                f"warning: could not remove obsolete model artifact {source}: {exc}",
+                file=sys.stderr,
+            )
 
     def assess_evaluation(self, report: Mapping[str, Any]) -> PromotionDecision:
         promotion = self.config["promotion"]
@@ -806,6 +812,7 @@ class ContinualLearningStore:
 
     def promote(self, candidate_model_id: str, evaluation_report_id: str) -> Dict[str, Any]:
         self._require_initialized()
+        cleanup: List[Tuple[Path, Path, str]] = []
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             candidate = self._model_row(db, candidate_model_id)
@@ -854,14 +861,18 @@ class ContinualLearningStore:
 
             if current is not None:
                 old = self._model_row(db, current)
-                old_path = self._move_artifact_for_status(db, old, "historical")
+                old_source = Path(old["artifact_path"])
+                old_path = self._stage_artifact_for_status(old, "historical")
+                cleanup.append((old_source, Path(old_path), old["artifact_sha256"]))
                 db.execute(
                     "UPDATE models SET status = 'historical', artifact_path = ? WHERE model_id = ?",
                     (old_path, current),
                 )
                 self._set_state(db, STATE_PREVIOUS_CHAMPION, current)
 
-            new_path = self._move_artifact_for_status(db, candidate, "champion")
+            candidate_source = Path(candidate["artifact_path"])
+            new_path = self._stage_artifact_for_status(candidate, "champion")
+            cleanup.append((candidate_source, Path(new_path), candidate["artifact_sha256"]))
             db.execute(
                 """
                 UPDATE models
@@ -871,10 +882,15 @@ class ContinualLearningStore:
                 (new_path, evaluation_report_id, candidate_model_id),
             )
             self._set_state(db, STATE_CHAMPION, candidate_model_id)
-            return self._row_dict(self._model_row(db, candidate_model_id))
+            result = self._row_dict(self._model_row(db, candidate_model_id))
+
+        for source, target, expected_sha256 in cleanup:
+            self._cleanup_staged_source(source, target, expected_sha256)
+        return result
 
     def reject(self, candidate_model_id: str, evaluation_report_id: str) -> Dict[str, Any]:
         self._require_initialized()
+        cleanup: List[Tuple[Path, Path, str]] = []
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             candidate = self._model_row(db, candidate_model_id)
@@ -885,7 +901,9 @@ class ContinualLearningStore:
             ).fetchone()
             if evaluation is None or evaluation["candidate_model_id"] != candidate_model_id:
                 raise PromotionError("A matching evaluation report is required.")
-            target = self._move_artifact_for_status(db, candidate, "rejected")
+            candidate_source = Path(candidate["artifact_path"])
+            target = self._stage_artifact_for_status(candidate, "rejected")
+            cleanup.append((candidate_source, Path(target), candidate["artifact_sha256"]))
             db.execute(
                 """
                 UPDATE models
@@ -894,10 +912,15 @@ class ContinualLearningStore:
                 """,
                 (target, evaluation_report_id, candidate_model_id),
             )
-            return self._row_dict(self._model_row(db, candidate_model_id))
+            result = self._row_dict(self._model_row(db, candidate_model_id))
+
+        for source, target, expected_sha256 in cleanup:
+            self._cleanup_staged_source(source, target, expected_sha256)
+        return result
 
     def rollback(self, target_model_id: Optional[str] = None) -> Dict[str, Any]:
         self._require_initialized()
+        cleanup: List[Tuple[Path, Path, str]] = []
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             current_id = self._state(db, STATE_CHAMPION)
@@ -918,8 +941,12 @@ class ContinualLearningStore:
                     f"Rollback target {target_model_id} has status {target['status']}."
                 )
 
-            old_path = self._move_artifact_for_status(db, current, "historical")
-            target_path = self._move_artifact_for_status(db, target, "champion")
+            current_source = Path(current["artifact_path"])
+            target_source = Path(target["artifact_path"])
+            old_path = self._stage_artifact_for_status(current, "historical")
+            target_path = self._stage_artifact_for_status(target, "champion")
+            cleanup.append((current_source, Path(old_path), current["artifact_sha256"]))
+            cleanup.append((target_source, Path(target_path), target["artifact_sha256"]))
             db.execute(
                 "UPDATE models SET status='historical', artifact_path=? WHERE model_id=?",
                 (old_path, current_id),
@@ -930,7 +957,11 @@ class ContinualLearningStore:
             )
             self._set_state(db, STATE_CHAMPION, target_model_id)
             self._set_state(db, STATE_PREVIOUS_CHAMPION, current_id)
-            return self._row_dict(self._model_row(db, target_model_id))
+            result = self._row_dict(self._model_row(db, target_model_id))
+
+        for source, target, expected_sha256 in cleanup:
+            self._cleanup_staged_source(source, target, expected_sha256)
+        return result
 
     def record_historical_matchup(
         self,
@@ -1123,7 +1154,7 @@ class ContinualLearningStore:
         if not isinstance(steps, list):
             raise ValidationError("steps must be a list when provided.")
         if len(steps) > int(ingestion["max_steps_per_match"]):
-            raise ValidationError("Telemetry step count exceeds configured maximum size.")
+            raise ValidationError("Telemetry step count exceeds configured maximum.")
 
         payload_hash = sha256_bytes(encoded)
         batch_id = f"telemetry-{payload_hash[:24]}"
