@@ -60,6 +60,8 @@ internal sealed class RlOneVsOneMatchupSampler
     private readonly Random _random;
     private int _nextIndex;
 
+    internal int MatchupCount => _cycle.Count;
+
     internal RlOneVsOneMatchupSampler(
         IReadOnlyList<ConfigData.ShipTypes> beeShipTypes,
         IReadOnlyList<ConfigData.ShipTypes> humanShipTypes)
@@ -164,6 +166,7 @@ internal sealed class RlShipCompositionSampler
     private readonly Random _random;
 
     internal long CombinationCount { get; }
+    internal long ValidCombinationCount { get; }
 
     internal RlShipCompositionSampler(
         IReadOnlyList<ConfigData.ShipTypes> shipTypes,
@@ -182,12 +185,20 @@ internal sealed class RlShipCompositionSampler
 
         _shipTypes = new ConfigData.ShipTypes[shipTypes.Count];
         bool hasArmedCandidate = false;
+        int weaponlessCandidateCount = 0;
         for (int index = 0; index < shipTypes.Count; index++)
         {
             ConfigData.ShipTypes shipType = shipTypes[index];
             RlOneVsOneMatchupSampler.ValidateSide(shipType, expectedSide, nameof(shipTypes));
             _shipTypes[index] = shipType;
-            hasArmedCandidate |= !RlShipCombatCapability.IsWeaponless(shipType);
+            if (RlShipCombatCapability.IsWeaponless(shipType))
+            {
+                weaponlessCandidateCount++;
+            }
+            else
+            {
+                hasArmedCandidate = true;
+            }
         }
         if (!hasArmedCandidate)
         {
@@ -199,6 +210,14 @@ internal sealed class RlShipCompositionSampler
         if (CombinationCount <= 0)
         {
             throw new InvalidOperationException("RL fleet composition count overflowed or was empty.");
+        }
+        long weaponlessCombinationCount = weaponlessCandidateCount == 0
+            ? 0
+            : Choose(weaponlessCandidateCount + shipsPerSide - 1, shipsPerSide);
+        ValidCombinationCount = CombinationCount - weaponlessCombinationCount;
+        if (ValidCombinationCount <= 0)
+        {
+            throw new InvalidOperationException("RL fleet composition sampler has no combat-capable combinations.");
         }
         _random = new Random(seed);
     }
@@ -290,12 +309,12 @@ internal sealed class RlShipCompositionSampler
 /// <summary>
 /// Holds the sampled composition selected for the current episode. One-ship training preserves the
 /// shuffled Cartesian coverage contract, while multi-ship training samples unordered compositions
-/// uniformly and then randomizes their formation-slot order. A separate prioritized replay lane gives
-/// persistently imbalanced matchups extra attempts without removing baseline matchup coverage.
+/// uniformly and then randomizes their formation-slot order. Imbalanced recent matchup results add
+/// 0.5x, 1x or 2x replay weight on top of every matchup's permanent 1x baseline weight.
 /// </summary>
 internal sealed class RlOneVsOneEpisodeMatchupSelector
 {
-    internal const double DefaultPriorityReplayRatio = 0.5;
+    internal const double DefaultPriorityWeightScale = 1.0;
     internal const int DefaultPriorityOutcomeWindow = 32;
     internal const int DefaultPriorityMinimumSamples = 4;
 
@@ -341,11 +360,12 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
     private readonly Dictionary<string, MatchupHistoryState> _priorityHistory =
         new Dictionary<string, MatchupHistoryState>();
     private readonly Random _priorityRandom;
-    private readonly double _priorityReplayRatio;
+    private readonly double _priorityWeightScale;
     private readonly int _priorityOutcomeWindow;
     private readonly int _priorityMinimumSamples;
     private readonly int _beeSide;
     private readonly int _humanSide;
+    private readonly double _baselineMatchupWeight;
     private RlOneVsOneMatchup _currentMatchup;
     private bool _hasPreparedSampledMatchup;
     private bool _currentOutcomeRecorded;
@@ -359,7 +379,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         : this(
             options,
             seed,
-            DefaultPriorityReplayRatio,
+            DefaultPriorityWeightScale,
             DefaultPriorityOutcomeWindow,
             DefaultPriorityMinimumSamples)
     {
@@ -368,15 +388,14 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
     internal RlOneVsOneEpisodeMatchupSelector(
         RlOneVsOneTrainingOptions options,
         int seed,
-        double priorityReplayRatio,
+        double priorityWeightScale,
         int priorityOutcomeWindow,
         int priorityMinimumSamples)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        if (double.IsNaN(priorityReplayRatio) || double.IsInfinity(priorityReplayRatio) ||
-            priorityReplayRatio < 0d || priorityReplayRatio > 1d)
+        if (double.IsNaN(priorityWeightScale) || double.IsInfinity(priorityWeightScale) || priorityWeightScale < 0d)
         {
-            throw new ArgumentOutOfRangeException(nameof(priorityReplayRatio));
+            throw new ArgumentOutOfRangeException(nameof(priorityWeightScale));
         }
         if (priorityOutcomeWindow <= 0)
         {
@@ -387,7 +406,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             throw new ArgumentOutOfRangeException(nameof(priorityMinimumSamples));
         }
 
-        _priorityReplayRatio = priorityReplayRatio;
+        _priorityWeightScale = priorityWeightScale;
         _priorityOutcomeWindow = priorityOutcomeWindow;
         _priorityMinimumSamples = priorityMinimumSamples;
 
@@ -403,6 +422,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         if (_options.ShipsPerSide == 1)
         {
             _sampler = new RlOneVsOneMatchupSampler(options.BeeShipTypes, options.HumanShipTypes, seed);
+            _baselineMatchupWeight = _sampler.MatchupCount;
             return;
         }
 
@@ -418,6 +438,8 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             unchecked(seed * 31 + HumanCompositionSeedOffset));
         _currentBeeComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _currentHumanComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
+        _baselineMatchupWeight = (double)_beeCompositionSampler.ValidCombinationCount *
+            _humanCompositionSampler.ValidCombinationCount;
     }
 
     internal void PrepareEpisode()
@@ -543,6 +565,15 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         return 2f;
     }
 
+    internal static double CalculatePriorityReplayProbability(double baselineWeight, double totalExtraWeight)
+    {
+        if (baselineWeight <= 0d || totalExtraWeight <= 0d)
+        {
+            return 0d;
+        }
+        return totalExtraWeight / (baselineWeight + totalExtraWeight);
+    }
+
     private void PrepareBaselineMatchup()
     {
         if (_sampler != null)
@@ -561,8 +592,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
 
     private bool TryPreparePrioritizedMatchup()
     {
-        if (_priorityRandom == null || _priorityReplayRatio <= 0d || _priorityHistory.Count == 0 ||
-            _priorityRandom.NextDouble() >= _priorityReplayRatio)
+        if (_priorityRandom == null || _priorityWeightScale <= 0d || _priorityHistory.Count == 0)
         {
             return false;
         }
@@ -570,9 +600,10 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         double totalExtraWeight = 0d;
         foreach (MatchupHistoryState state in _priorityHistory.Values)
         {
-            totalExtraWeight += GetEligiblePriorityExtraWeight(state);
+            totalExtraWeight += GetEligiblePriorityExtraWeight(state) * _priorityWeightScale;
         }
-        if (totalExtraWeight <= 0d)
+        double replayProbability = CalculatePriorityReplayProbability(_baselineMatchupWeight, totalExtraWeight);
+        if (replayProbability <= 0d || _priorityRandom.NextDouble() >= replayProbability)
         {
             return false;
         }
@@ -581,8 +612,8 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         MatchupHistoryState lastEligible = null;
         foreach (MatchupHistoryState state in _priorityHistory.Values)
         {
-            float extraWeight = GetEligiblePriorityExtraWeight(state);
-            if (extraWeight <= 0f)
+            double extraWeight = GetEligiblePriorityExtraWeight(state) * _priorityWeightScale;
+            if (extraWeight <= 0d)
             {
                 continue;
             }
