@@ -2,39 +2,43 @@
 
 Mandatory engineering rules for every coding agent and development task in this repository.
 
-## Optional cold-start primer
-
-`PROJECT_PRIMER.md` is deliberately excluded from normal required reading. Read it only when the user explicitly requests cold-start onboarding, broad re-orientation, or use of the primer. Do not preload or refresh it as part of routine development tasks. Routine learning belongs in the smaller owner documents and context index below; refresh the primer only during an explicit curation/onboarding task or when the user specifically requests it.
-
-## Minimum bootstrap and context budget
+## Minimal bootstrap
 
 1. Follow the user's explicit request and branch target.
-2. After this file, the only unconditional repository read is `docs/engineering/CONTEXT_INDEX.md`.
-3. Read `docs/engineering/CONTEXT_INDEX.md` as the compact router. Start with the row that best matches the task and inspect the named current source/assets/tests before expanding.
-4. For a focused task, load only the relevant owner-document section(s), current implementation/assets, and focused evidence identified by the router. **Do not preload** `PROJECT_CONSTITUTION.md`, all of `SYSTEM_MAP.md`, all of `INVARIANTS.md`, `DEVELOPMENT_MEMORY.md`, validation/regression history, or the generic skill stack merely because they exist.
-5. Read `PROJECT_CONSTITUTION.md` when the task can change gameplay/product meaning, persistence/network contracts, lifecycle/ownership semantics, evidence/validation rules, required quality, or another project-definition boundary.
-6. Read the relevant sections of `SYSTEM_MAP.md` and/or `INVARIANTS.md` when the change crosses ownership/lifecycle boundaries, touches a high-risk system, or the context index routes there. Read a specialist skill only when the task actually invokes that procedure. Generic skills are reference procedures, not mandatory startup payload.
-7. Broad audits, architecture work, unfamiliar cross-cutting changes, or unresolved focused investigations may deliberately widen to the full maintained model.
+2. This root `AGENTS.md` is the only unconditional repository read. After this file, no other repository document is unconditional.
+3. For a focused task, go directly to the named/current source, asset, configuration, or focused test when the affected area is obvious. Use the direct routes below only as hints; do not preload route documents merely because they exist.
+4. Read `docs/engineering/CONTEXT_INDEX.md` only when the subsystem is unclear, the task crosses subsystem boundaries, the initial exact/direct lookup misses, or the task is a broad audit/architecture review.
+5. `PROJECT_PRIMER.md` is opt-in: read it only for explicit cold-start onboarding, broad re-orientation, or when the user asks for it.
+
+### Direct routes
+
+- RL / ML-Agents / training: exact `RlOneVsOne*` symbols, `Training/`, focused RL tests; use `docs/engineering/context/RL.md` when contract/background routing is needed. Unified/continual-training design starts at `Training/bees_continual_learning_rl_implementation.md`.
+- Tests / release gate: affected test and source first; use `docs/TESTING.md` only when runner/category/gate mechanics matter.
+- Runtime / identity / persistence / pooling: exact `Level`, `GameState`, `ConfigData`, `Ships`, `DataFile` symbols; use `docs/engineering/context/RUNTIME.md` when needed.
+- Pathfinding / movement / performance: exact `Pathfinder*` / movement / obstacle symbols and focused tests; use `docs/engineering/context/PATHFINDING.md` when needed.
+- Combat / targeting / visibility: exact `Ship`, `Weapon`, `RangeCollider`, damage/command symbols; use `docs/engineering/context/COMBAT.md` when needed.
+- Socket / server / reconnect / WebGL: exact socket/request/bridge symbols; use `docs/engineering/context/NETWORKING.md` when needed. Inspect BeesServer too before changing a wire, persistence, reconnect, learning-key, or shared identity contract.
+- UI / Squad Maker / viewport: exact guard/controller/prefab/scene first; use `docs/engineering/context/UI.md` when needed.
+- Campaign / maps / prefabs: exact mission/asset first; use `docs/engineering/context/CAMPAIGN_ASSETS.md` when needed.
+- Replay / engineering workflow / repository learning: exact implementation/test first; use `docs/engineering/context/ENGINEERING.md` when needed.
 
 ### Retrieval stop rule
 
-Once you can name the affected contract, current symbols/assets, important caller/callee or owner boundary, and the evidence needed to validate the change, **stop loading context**. Expand only for a concrete unresolved dependency, contradiction, retrieval miss, or failed hypothesis.
+Once you can name the affected contract, current symbols/assets, important caller/callee or owner boundary, and evidence needed to validate the change, **stop loading context**. Expand only for a concrete unresolved dependency, contradiction, retrieval miss, or failed hypothesis. Do not preload broad architecture, memory, regression history, or generic skills for a focused task.
 
-For documentation/skill/agent-workflow-only changes, the normal fast path is: `AGENTS.md -> CONTEXT_INDEX.md -> affected docs/skills -> any guardrail tests that directly enforce them`. Do not load gameplay architecture simply because the repository contains it.
+Read `PROJECT_CONSTITUTION.md` only when a task can change gameplay/product meaning, persistence/network contracts, lifecycle/ownership semantics, evidence/validation rules, required quality, or another project-definition boundary. Read relevant `SYSTEM_MAP.md` / `INVARIANTS.md` sections only for high-risk or cross-boundary work, or when a focused route identifies a concrete need.
 
-Maintained documentation is a source-grounded navigation model, not unquestioned truth. Revalidate material facts against current code, assets, configuration and tests when correctness depends on them; repair stale knowledge when found.
+Maintained documentation is navigation, not unquestioned truth. Revalidate material facts against current code/assets/configuration/tests when correctness depends on them.
 
 ## Branch discipline
 
 Respect an explicitly named branch. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialist skills may impose stricter rules.
 
-## Change safety
+## Change safety and validation
 
-Before a behavior-affecting edit, trace the affected path far enough to understand the enduring contract, important callers/callees, state/lifecycle ownership, serialized assets, persistence/network boundaries, UI/frame/physics behavior, and performance implications that are actually relevant. A narrow symptom fix is incomplete if a known indirect dependency can invalidate it, but this is not permission for an unrelated repository-wide scan.
+Before a behavior-affecting edit, trace the affected path far enough to understand the enduring contract and relevant callers/callees, ownership/lifecycle, serialized assets, persistence/network boundaries, UI/frame/physics behavior, and performance implications. This is not permission for an unrelated repository-wide scan.
 
-If implementation conflicts with the constitution or a confirmed invariant, implementation is presumed defective unless the project owner explicitly changes the requirement.
-
-For every behavior-affecting change, classify affected tests as **still valid**, **update required**, **obsolete and replaced**, or **missing**. Never delete, skip, weaken, loosen or rewrite a test merely to make a change pass. A reproducible regression should gain focused automated protection that would have caught it whenever practical; otherwise record the strongest repeatable protection in `docs/engineering/REGRESSIONS.md`.
+For every behavior-affecting change, classify affected tests as **still valid**, **update required**, **obsolete and replaced**, or **missing**. Never delete, skip, weaken, loosen, or rewrite a test merely to make a change pass. Add focused automated protection for a reproducible regression whenever practical; otherwise record the strongest repeatable protection in `docs/engineering/REGRESSIONS.md`.
 
 When execution is available, widen evidence proportionally:
 
@@ -42,20 +46,16 @@ When execution is available, widen evidence proportionally:
 
 Never claim old XML/logs validate changed source.
 
-## Repository learning must make future work cheaper
+## GitHub Actions prohibition
 
-Use `.agents/skills/search-index/SKILL.md`, `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, and `.agents/skills/code-quality/SKILL.md` when their procedures are needed; do not preload them all at task start.
+**Do not use GitHub Actions for development, testing, patch application, builds, qualification, or verification. Do not trigger, dispatch, rerun, wait for, inspect, or cite GitHub Actions workflow runs as task evidence.** Required validation must run locally or in an explicitly user-controlled non-Actions environment.
 
-- `CONTEXT_INDEX.md` is the primary reusable routing layer. Prefer improving a route over adding another mandatory document.
-- Persist only verified knowledge that was expensive to rediscover, prevents a likely repeated mistake, or materially shortens future retrieval.
-- A new durable note, index entry, or required read should have positive context ROI: it should remove more future searching/reading than it adds.
-- Update existing owner documents rather than accumulating overlapping notebooks. Replace stale statements; Git history already stores chronology.
-- Retrieval misses or repeated agent mistakes should trigger the smallest routing/skill/test guardrail repair that prevents recurrence.
-- A task may legitimately produce no documentation change. Do not create filler learning artifacts.
-- Code-quality review is scoped to touched code and the immediate interfaces needed to judge it; documentation-only tasks do not require a code-quality scan.
+## Repository learning
+
+Use `.agents/skills/search-index/SKILL.md`, `.agents/skills/repo-learning/SKILL.md`, `.agents/skills/continuous-learning/SKILL.md`, `.agents/skills/code-quality/SKILL.md`, and specialist skills only when their procedures are actually needed.
+
+Persist only verified knowledge that prevents a likely repeated mistake or materially reduces future retrieval. Prefer fixing a direct route, subsystem route, or owner statement over adding another mandatory read. New durable guidance should have positive context ROI: it should remove more future searching/reading than it adds. A task may legitimately produce no documentation change.
 
 ## Completion gate
 
-Do not call a behavior-affecting task complete until applicable items are true: root cause/intent is understood; important indirect dependencies were checked; affected tests were classified and stale/missing coverage handled; validation reached the strongest practical level; no safety/test contract was weakened for convenience; touched code received proportionate quality review; any durable learning/retrieval miss was reconciled; and remaining uncertainty or unexecuted validation is reported.
-
-The target is evidence that intended behavior works and that the next similar task requires **less** context, not more.
+Do not call a behavior-affecting task complete until applicable items are true: intent/root cause is understood; important indirect dependencies were checked; affected tests were classified and stale/missing coverage handled; validation reached the strongest practical level; no safety/test contract was weakened; touched code received proportionate quality review; durable retrieval misses were reconciled when worthwhile; and remaining uncertainty or unexecuted validation is reported.
