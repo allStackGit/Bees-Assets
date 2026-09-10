@@ -234,7 +234,7 @@ internal sealed class RlOneVsOneTrainingOptions
         _mapSizeEpisodeSubscriptionInstalled = true;
     }
 
-    private static void HandleEpisodeEnded(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
+    private static void HandleEpisodeEnded(Assets.Scripts.Levels.Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
         _sampledMapSizeValid = false;
     }
