@@ -22,7 +22,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void MapSizeRangeSamplesOneStableEpisodeValueWithinInclusiveBounds()
+        public void MapSizeRangeKeepsGlobalFallbackStableWhileArenaSamplerUsesConfiguredBounds()
         {
             object options = Parse(
                 "--rl-map-size-min", "64",
@@ -31,12 +31,17 @@ namespace Bees.Tests.EditMode
             Assert.That(GetProperty(options, "HasMapSizeRange"), Is.EqualTo(true));
             Assert.That((float)GetProperty(options, "MapSizeMinimum"), Is.EqualTo(64f));
             Assert.That((float)GetProperty(options, "MapSizeMaximum"), Is.EqualTo(128f));
+            Assert.That((float)GetProperty(options, "MapSize"), Is.EqualTo(64f),
+                "Process-global callers must use the conservative minimum instead of mutable episode state.");
 
-            float first = (float)GetProperty(options, "MapSize");
-            float second = (float)GetProperty(options, "MapSize");
-            Assert.That(first, Is.InRange(64f, 128f));
-            Assert.That(second, Is.EqualTo(first),
-                "The sampled map size must remain fixed for the duration of an episode.");
+            Type mapStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
+            MethodInfo sample = mapStateType.GetMethod("SampleMapSize", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(sample, Is.Not.Null);
+            for (int i = 0; i < 32; i++)
+            {
+                float value = (float)sample.Invoke(null, new object[] { 64f, 128f });
+                Assert.That(value, Is.InRange(64f, 128f));
+            }
         }
 
         [Test]
@@ -71,6 +76,7 @@ namespace Bees.Tests.EditMode
             Assert.That(telemetry, Does.Contain("human_first_fire_distance="));
             Assert.That(telemetry, Does.Contain("human_first_hit_distance="));
             Assert.That(telemetry, Does.Contain("map_size="));
+            Assert.That(telemetry, Does.Contain("RlOneVsOneArenaMapSizeState.GetMapSize(level)"));
             Assert.That(telemetry, Does.Contain("RecordShotFired"));
             Assert.That(telemetry, Does.Contain("RecordHit"));
             Assert.That(telemetry, Does.Contain("!turret.IsRlControlled"),
