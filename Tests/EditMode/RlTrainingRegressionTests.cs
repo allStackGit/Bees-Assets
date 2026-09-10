@@ -45,8 +45,8 @@ namespace Bees.Tests.EditMode
                 "Every attributed TSV loss must penalize the damaged side.");
             Assert.That(coordinator, Does.Contain("internal static void RecordUnattributedTsvLoss"));
             Assert.That(combat, Does.Contain("RecordUnattributedTsvLoss(this, -_tsvChange);"));
-            Assert.That(fireBarge, Does.Contain("LogDamage(Health);"),
-                "Fire Barge self-destruction must flow through unattributed TSV loss accounting.");
+            Assert.That(fireBarge, Does.Contain("LogDamage(Health, \"FireBarge\", true);"),
+                "Fire Barge self-destruction must flow through unattributed TSV loss accounting while preserving self-damage diagnostics.");
 
             Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, this, ContactedShip);"));
             Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, ContactedShip, this);"));
