@@ -289,12 +289,14 @@ class OnnxPolicy:
             (name for name in self.input_info if name.startswith("obs_")),
             key=lambda name: int(name.split("_", 1)[1]),
         )
-        required_inputs = {"action_masks", "recurrent_in"}
-        missing_inputs = required_inputs.difference(self.input_info)
-        if not self.obs_names or missing_inputs:
+        if not self.obs_names or "action_masks" not in self.input_info:
+            missing = []
+            if not self.obs_names:
+                missing.append("obs_*")
+            if "action_masks" not in self.input_info:
+                missing.append("action_masks")
             raise EvaluationError(
-                f"ONNX policy {self.path} is missing ML-Agents inputs: "
-                f"{sorted(missing_inputs) or ['obs_*']}."
+                f"ONNX policy {self.path} is missing ML-Agents inputs: {missing}."
             )
         if "deterministic_continuous_actions" not in self.output_names:
             raise EvaluationError(
@@ -305,17 +307,24 @@ class OnnxPolicy:
                 f"ONNX policy {self.path} lacks deterministic_discrete_actions."
             )
 
-        memory_shape = self.input_info["recurrent_in"].shape
-        if len(memory_shape) != 3:
+        self.has_recurrent_input = "recurrent_in" in self.input_info
+        self.memory_size = 0
+        if self.has_recurrent_input:
+            memory_shape = self.input_info["recurrent_in"].shape
+            if len(memory_shape) != 3:
+                raise EvaluationError(
+                    f"ONNX recurrent_in shape {memory_shape!r} is not [batch, sequence, memory]."
+                )
+            memory_dim = memory_shape[-1]
+            if not isinstance(memory_dim, int):
+                raise EvaluationError(
+                    f"ONNX recurrent memory dimension must be static; got {memory_dim!r}."
+                )
+            self.memory_size = memory_dim
+        if self.memory_size > 0 and "recurrent_out" not in self.output_names:
             raise EvaluationError(
-                f"ONNX recurrent_in shape {memory_shape!r} is not [batch, sequence, memory]."
+                f"{self.path.name} uses recurrent memory but lacks recurrent_out."
             )
-        memory_dim = memory_shape[-1]
-        if not isinstance(memory_dim, int):
-            raise EvaluationError(
-                f"ONNX recurrent memory dimension must be static; got {memory_dim!r}."
-            )
-        self.memory_size = memory_dim
         self.memories: Dict[int, np.ndarray] = {}
         self._validated_signature: Optional[Tuple[Any, ...]] = None
 
@@ -387,27 +396,24 @@ class OnnxPolicy:
 
         branches = tuple(int(value) for value in behavior_spec.action_spec.discrete_branches)
         inputs["action_masks"] = build_allow_action_mask(decision_steps, branches)
-        if self.memory_size > 0:
-            memories = [
-                self.memories.get(
-                    agent_id,
-                    np.zeros((1, self.memory_size), dtype=np.float32),
-                )
-                for agent_id in agent_ids
-            ]
-            inputs["recurrent_in"] = np.stack(memories, axis=0)
-        else:
-            inputs["recurrent_in"] = np.zeros((agent_count, 1, 0), dtype=np.float32)
+        if self.has_recurrent_input:
+            if self.memory_size > 0:
+                memories = [
+                    self.memories.get(
+                        agent_id,
+                        np.zeros((1, self.memory_size), dtype=np.float32),
+                    )
+                    for agent_id in agent_ids
+                ]
+                inputs["recurrent_in"] = np.stack(memories, axis=0)
+            else:
+                inputs["recurrent_in"] = np.zeros((agent_count, 1, 0), dtype=np.float32)
 
         requested = [
             "deterministic_continuous_actions",
             "deterministic_discrete_actions",
         ]
         if self.memory_size > 0:
-            if "recurrent_out" not in self.output_names:
-                raise EvaluationError(
-                    f"{self.path.name} uses recurrent memory but lacks recurrent_out."
-                )
             requested.append("recurrent_out")
         try:
             outputs = self.session.run(requested, inputs)
@@ -764,11 +770,11 @@ def evaluate_candidate(
                 no_graphics=no_graphics,
                 max_environment_steps_per_match=max_environment_steps_per_match,
             )
-            baseline_rate = baseline_summary.score_rate
+            baseline_rate = baseline_summary.win_rate
         entry: Dict[str, Any] = {
             "opponent_model_id": opponent_id,
             "matches": candidate_summary.matches,
-            "candidate_win_rate": candidate_summary.score_rate,
+            "candidate_win_rate": candidate_summary.win_rate,
             "critical": _historical_is_critical(historical),
             "candidate_summary": candidate_summary.to_dict(),
         }
@@ -827,7 +833,25 @@ def evaluate_and_record(
 ) -> Dict[str, Any]:
     report = evaluate_candidate(store, **kwargs)
     recorded = store.record_evaluation(report)
-    return {"report": report, "recorded": recorded}
+    league_updates = []
+    for historical in report["historical"]:
+        baseline = historical.get("baseline_win_rate")
+        if baseline is None:
+            continue
+        league_updates.append(
+            store.record_historical_matchup(
+                current_model_id=report["candidate_model_id"],
+                historical_model_id=historical["opponent_model_id"],
+                current_win_rate=historical["candidate_win_rate"],
+                previous_win_rate=baseline,
+                matches=historical["matches"],
+                metadata={
+                    "source": "authoritative_candidate_evaluation",
+                    "evaluation_report_id": recorded["report_id"],
+                },
+            )
+        )
+    return {"report": report, "recorded": recorded, "league_updates": league_updates}
 
 
 def _load_env_args_file(path: Optional[str]) -> List[str]:
