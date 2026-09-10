@@ -18,7 +18,7 @@ import random
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 from bees_continual_learning import (
     ContinualLearningError,
@@ -174,6 +174,11 @@ def _build_frozen_onnx_policy(
     engine.validate_behavior_spec(template_policy.behavior_spec)
 
     class FrozenOnnxPolicy(Policy):
+        # Bees' cross-worker batching path may combine calls for policies that set
+        # this marker. Recurrent policies must never set it because local agent IDs
+        # are not globally unique across environment workers.
+        bees_batch_inference_safe = True
+
         def __init__(self) -> None:
             super().__init__(
                 int(getattr(template_policy, "seed", 0)),
