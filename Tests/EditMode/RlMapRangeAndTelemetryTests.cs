@@ -101,8 +101,8 @@ namespace Bees.Tests.EditMode
             Assert.That(config, Does.Contain("save_steps: 20000"));
             Assert.That(config, Does.Contain("team_change: 100000"));
             Assert.That(config, Does.Contain("swap_steps: 20000"));
-            Assert.That(config, Does.Contain("window: 20"));
-            Assert.That(config, Does.Contain("play_against_latest_model_ratio: 0.25"));
+            Assert.That(config, Does.Contain("window: 30"));
+            Assert.That(config, Does.Contain("play_against_latest_model_ratio: 0.20"));
         }
 
         private object Parse(params string[] args)
