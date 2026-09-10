@@ -35,9 +35,10 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 4;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 6;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = 4685;"));
-            Assert.That(schema, Does.Contain("bees-rl-v4"));
+            Assert.That(schema, Does.Contain("bees-rl-v6"));
+            Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
             Assert.That(schema, Does.Contain("cont=34"));
             Assert.That(schema, Does.Contain("disc=2x16,5,65,65,65"));
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
@@ -82,7 +83,8 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("internal const int WeaponFireBranchCount = MaxWeaponSlots;"));
             Assert.That(agent, Does.Contain("internal const int WeaponFireBranchSize = 2;"));
             Assert.That(agent, Does.Contain("int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;"));
-            Assert.That(agent, Does.Contain("_weaponAimDirections[slot] = aim.normalized;"));
+            Assert.That(agent, Does.Contain("Vector2 policyAim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);"));
+            Assert.That(agent, Does.Contain("_weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld("));
             Assert.That(agent, Does.Contain("bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;"));
             Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);"));
             Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
@@ -92,11 +94,25 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CoordinateFrameTransformsObservationsAndDirectionalActionsTogether()
+        {
+            string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
+            string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+
+            Assert.That(perception, Does.Contain("RlPolicyCoordinateFrame.WorldToPolicy("));
+            Assert.That(perception, Does.Contain("WorldGridIndexForPolicyIndex("));
+            Assert.That(perception, Does.Contain("AddHeading(sensor, ship.Rotation, frameQuarterTurns);"));
+            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns);"));
+            Assert.That(agent, Does.Contain("ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));"));
+            Assert.That(agent, Does.Contain("RlPolicyCoordinateFrame.EndEpisode();"));
+        }
+
+        [Test]
         public void CarrierAndFutureObjectiveInformationHaveDedicatedStableBlocks()
         {
             string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(perception, Does.Contain("AddParentCarrierObservations(ship, sensor, origin);"));
+            Assert.That(perception, Does.Contain("AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("carrierShip.Carrier"));
             Assert.That(perception, Does.Contain("AddObjectiveObservations(sensor);"));
             Assert.That(perception, Does.Contain("Permanent ABI reservation"));
@@ -178,7 +194,7 @@ namespace Bees.Tests.EditMode
             Assert.That(reset, Does.Contain("_nextMiningActionTime = 0f;"));
             Assert.That(reset, Does.Contain("_nextHealingActionTime = 0f;"));
             Assert.That(reset, Does.Contain("ResetWeaponAimDirections();"));
-            Assert.That(source, Does.Contain("_weaponAimDirections[slot] = Vector2.up;"));
+            Assert.That(source, Does.Contain("Vector2 defaultAim = RlPolicyCoordinateFrame.PolicyToWorld(Vector2.up, frameQuarterTurns);"));
         }
 
         [Test]

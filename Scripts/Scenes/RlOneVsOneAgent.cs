@@ -318,9 +318,13 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ResetWeaponAimDirections()
     {
+        int frameQuarterTurns = _ship != null
+            ? RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId)
+            : 0;
+        Vector2 defaultAim = RlPolicyCoordinateFrame.PolicyToWorld(Vector2.up, frameQuarterTurns);
         for (int slot = 0; slot < _weaponAimDirections.Length; slot++)
         {
-            _weaponAimDirections[slot] = Vector2.up;
+            _weaponAimDirections[slot] = defaultAim;
         }
     }
 
@@ -348,7 +352,8 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
-        _perception.Collect(_ship, _side, sensor);
+        int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
+        _perception.Collect(_ship, _side, sensor, frameQuarterTurns);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -390,17 +395,21 @@ internal sealed class RlOneVsOneAgent : Agent
             return;
         }
 
+        int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         var continuous = actions.ContinuousActions;
-        ApplyMovement(new Vector2(continuous[0], continuous[1]));
+        Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
+        ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
 
         var discrete = actions.DiscreteActions;
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;
-            Vector2 aim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);
-            if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone)
+            Vector2 policyAim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);
+            if (policyAim.sqrMagnitude >= AimDeadZone * AimDeadZone)
             {
-                _weaponAimDirections[slot] = aim.normalized;
+                _weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld(
+                    policyAim.normalized,
+                    frameQuarterTurns);
             }
 
             bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
@@ -706,6 +715,11 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void HandleEpisodeEnded(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
+        // The coordinator raises this once per environment episode. Every agent receives the event,
+        // but repeated invalidation is harmless and guarantees a fresh randomized frame even if the
+        // training lifecycle reuses the same Level instance for the following episode.
+        RlPolicyCoordinateFrame.EndEpisode();
+
         if (result.EpisodeNumber <= _lastRewardedEpisode)
         {
             return;
@@ -798,10 +812,13 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _ship.HasBrain = true;
+        Vector2 initialAim = RlPolicyCoordinateFrame.PolicyToWorld(
+            Vector2.up,
+            RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId));
         for (int i = 0; i < _ship.Turrets.Count; i++)
         {
             Turret turret = _ship.Turrets[i];
-            turret.SetRlControl(turret.GetPosition() + Vector2.up * Mathf.Max(1f, turret.Range), false);
+            turret.SetRlControl(turret.GetPosition() + initialAim * Mathf.Max(1f, turret.Range), false);
         }
         return true;
     }
@@ -933,5 +950,146 @@ internal sealed class RlOneVsOneAgent : Agent
         {
             sensor.AddObservation(0f);
         }
+    }
+}
+
+/// <summary>
+/// Gives each self-play policy team a stable, randomly rotated coordinate frame for one environment
+/// episode. Opposing teams receive different quarter-turn frames, so a constant policy-space action
+/// cannot produce the same absolute world direction for both sides. The square arena/grid makes
+/// quarter turns lossless while keeping observations and actions exactly equivariant.
+/// </summary>
+internal static class RlPolicyCoordinateFrame
+{
+    private const int QuarterTurnCount = 4;
+    private const int DistinctOrderedPairCount = QuarterTurnCount * (QuarterTurnCount - 1);
+    private static readonly System.Random FrameRandom = new System.Random(System.Guid.NewGuid().GetHashCode());
+
+    private static Level _episodeLevel;
+    private static int _team0QuarterTurns;
+    private static int _team1QuarterTurns;
+    private static int _assignmentGeneration;
+
+    internal static int GetQuarterTurns(Level level, int teamId)
+    {
+        if (level == null || (teamId != 0 && teamId != 1))
+        {
+            return 0;
+        }
+
+        if (_episodeLevel != level)
+        {
+            AssignNewEpisode(level, FrameRandom.Next(DistinctOrderedPairCount));
+        }
+
+        return teamId == 0 ? _team0QuarterTurns : _team1QuarterTurns;
+    }
+
+    internal static void EndEpisode()
+    {
+        _episodeLevel = null;
+    }
+
+    private static void AssignNewEpisode(Level level, int pairIndex)
+    {
+        DecodeDistinctPair(pairIndex, out _team0QuarterTurns, out _team1QuarterTurns);
+        _episodeLevel = level;
+        _assignmentGeneration++;
+    }
+
+    internal static void DecodeDistinctPair(int pairIndex, out int team0QuarterTurns, out int team1QuarterTurns)
+    {
+        int normalizedPair = ((pairIndex % DistinctOrderedPairCount) + DistinctOrderedPairCount) % DistinctOrderedPairCount;
+        team0QuarterTurns = normalizedPair / (QuarterTurnCount - 1);
+        int remainingIndex = normalizedPair % (QuarterTurnCount - 1);
+        team1QuarterTurns = remainingIndex >= team0QuarterTurns ? remainingIndex + 1 : remainingIndex;
+    }
+
+    internal static Vector2 WorldToPolicy(Vector2 worldVector, int quarterTurns)
+    {
+        switch (NormalizeQuarterTurns(quarterTurns))
+        {
+            case 1:
+                return new Vector2(-worldVector.y, worldVector.x);
+            case 2:
+                return new Vector2(-worldVector.x, -worldVector.y);
+            case 3:
+                return new Vector2(worldVector.y, -worldVector.x);
+            default:
+                return worldVector;
+        }
+    }
+
+    internal static Vector2 PolicyToWorld(Vector2 policyVector, int quarterTurns)
+    {
+        switch (NormalizeQuarterTurns(quarterTurns))
+        {
+            case 1:
+                return new Vector2(policyVector.y, -policyVector.x);
+            case 2:
+                return new Vector2(-policyVector.x, -policyVector.y);
+            case 3:
+                return new Vector2(-policyVector.y, policyVector.x);
+            default:
+                return policyVector;
+        }
+    }
+
+    internal static Vector2 TransformExtents(Vector2 worldExtents, int quarterTurns)
+    {
+        return (NormalizeQuarterTurns(quarterTurns) & 1) == 0
+            ? worldExtents
+            : new Vector2(worldExtents.y, worldExtents.x);
+    }
+
+    internal static int WorldGridIndexForPolicyIndex(int policyIndex, int gridSize, int quarterTurns)
+    {
+        if (gridSize <= 0 || (gridSize & 1) == 0 || policyIndex < 0 || policyIndex >= gridSize * gridSize)
+        {
+            return 0;
+        }
+
+        int center = gridSize / 2;
+        Vector2Int policyOffset = new Vector2Int(
+            policyIndex % gridSize - center,
+            policyIndex / gridSize - center);
+        Vector2Int worldOffset = PolicyToWorldGrid(policyOffset, quarterTurns);
+        int worldX = center + worldOffset.x;
+        int worldY = center + worldOffset.y;
+        return worldY * gridSize + worldX;
+    }
+
+    private static Vector2Int PolicyToWorldGrid(Vector2Int policyVector, int quarterTurns)
+    {
+        switch (NormalizeQuarterTurns(quarterTurns))
+        {
+            case 1:
+                return new Vector2Int(policyVector.y, -policyVector.x);
+            case 2:
+                return new Vector2Int(-policyVector.x, -policyVector.y);
+            case 3:
+                return new Vector2Int(-policyVector.y, policyVector.x);
+            default:
+                return policyVector;
+        }
+    }
+
+    private static int NormalizeQuarterTurns(int quarterTurns)
+    {
+        int normalized = quarterTurns % QuarterTurnCount;
+        return normalized < 0 ? normalized + QuarterTurnCount : normalized;
+    }
+
+    internal static int GetAssignmentGenerationForTests()
+    {
+        return _assignmentGeneration;
+    }
+
+    internal static void ResetForTests()
+    {
+        _episodeLevel = null;
+        _team0QuarterTurns = 0;
+        _team1QuarterTurns = 0;
+        _assignmentGeneration = 0;
     }
 }

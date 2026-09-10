@@ -136,37 +136,52 @@ internal sealed class RlCombatPerception
     private readonly List<ObservedCollisionAsteroid> _collisionAsteroidCandidates = new List<ObservedCollisionAsteroid>();
     private readonly float[] _navigationOccupancy = new float[NavigationGridCellCount];
 
-    internal void Collect(Ship ship, int side, VectorSensor sensor)
+    internal void Collect(Ship ship, int side, VectorSensor sensor, int frameQuarterTurns)
     {
         Vector2 origin = ship.GetPosition();
-        AddSelfObservations(ship, side, sensor, origin);
+        AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns);
         AddCapabilityObservations(ship, sensor);
-        AddParentCarrierObservations(ship, sensor, origin);
+        AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns);
         CollectAllies(ship, side, origin);
-        AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin);
+        AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
         CollectVisibleEnemies(ship, side, origin);
-        AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin);
-        AddWeaponSlots(ship, sensor, origin);
-        AddEnemyWeaponMountSlots(sensor, origin);
+        AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);
+        AddWeaponSlots(ship, sensor, origin, frameQuarterTurns);
+        AddEnemyWeaponMountSlots(sensor, origin, frameQuarterTurns);
         CollectVisibleMiningAsteroids(ship, side, origin);
-        AddMiningAsteroidSlots(sensor, origin);
+        AddMiningAsteroidSlots(sensor, origin, frameQuarterTurns);
         CollectVisibleMapObjects(ship, side, origin);
-        AddMapObjectSlots(sensor, origin);
+        AddMapObjectSlots(sensor, origin, frameQuarterTurns);
         CollectVisibleEnvironment(ship, side, origin);
-        AddCollisionAsteroidSlots(sensor, origin);
+        AddCollisionAsteroidSlots(sensor, origin, frameQuarterTurns);
         AddObjectiveObservations(sensor);
-        AddNavigationGridObservations(sensor);
+        AddNavigationGridObservations(sensor, frameQuarterTurns);
     }
 
-    private static void AddSelfObservations(Ship ship, int side, VectorSensor sensor, Vector2 position)
+    private static void AddSelfObservations(
+        Ship ship,
+        int side,
+        VectorSensor sensor,
+        Vector2 position,
+        int frameQuarterTurns)
     {
         AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
         Level level = ship.Level;
-        sensor.AddObservation(NormalizeSignedCoordinate(position.x, level.MinX, level.MaxX));
-        sensor.AddObservation(NormalizeSignedCoordinate(position.y, level.MinY, level.MaxY));
-        sensor.AddObservation(NormalizePositive(Mathf.Max(0f, level.MaxX - level.MinX), 100f));
-        sensor.AddObservation(NormalizePositive(Mathf.Max(0f, level.MaxY - level.MinY), 100f));
-        AddHeading(sensor, ship.Rotation);
+        Vector2 normalizedPosition = new Vector2(
+            NormalizeSignedCoordinate(position.x, level.MinX, level.MaxX),
+            NormalizeSignedCoordinate(position.y, level.MinY, level.MaxY));
+        normalizedPosition = RlPolicyCoordinateFrame.WorldToPolicy(normalizedPosition, frameQuarterTurns);
+        sensor.AddObservation(normalizedPosition.x);
+        sensor.AddObservation(normalizedPosition.y);
+
+        Vector2 levelSize = RlPolicyCoordinateFrame.TransformExtents(
+            new Vector2(
+                Mathf.Max(0f, level.MaxX - level.MinX),
+                Mathf.Max(0f, level.MaxY - level.MinY)),
+            frameQuarterTurns);
+        sensor.AddObservation(NormalizePositive(levelSize.x, 100f));
+        sensor.AddObservation(NormalizePositive(levelSize.y, 100f));
+        AddHeading(sensor, ship.Rotation, frameQuarterTurns);
         sensor.AddObservation(GetHealthFraction(ship));
         sensor.AddObservation(NormalizePositive(ship.Speed, 20f));
         sensor.AddObservation(NormalizePositive(ship.CurrentSpeed, 20f));
@@ -207,11 +222,15 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(0f); // Reserved capability channel.
     }
 
-    private static void AddParentCarrierObservations(Ship ship, VectorSensor sensor, Vector2 origin)
+    private static void AddParentCarrierObservations(
+        Ship ship,
+        VectorSensor sensor,
+        Vector2 origin,
+        int frameQuarterTurns)
     {
         if (ship is CarrierShip carrierShip && carrierShip.Carrier != null && !carrierShip.Carrier.IsDead)
         {
-            AddEntityObservation(sensor, carrierShip.Carrier, origin);
+            AddEntityObservation(sensor, carrierShip.Carrier, origin, frameQuarterTurns);
             return;
         }
         AddZeroObservations(sensor, ParentCarrierObservationSize);
@@ -267,7 +286,12 @@ internal sealed class RlCombatPerception
         });
     }
 
-    private static void AddEntitySlots(VectorSensor sensor, List<Ship> ships, int slots, Vector2 origin)
+    private static void AddEntitySlots(
+        VectorSensor sensor,
+        List<Ship> ships,
+        int slots,
+        Vector2 origin,
+        int frameQuarterTurns)
     {
         for (int slot = 0; slot < slots; slot++)
         {
@@ -276,17 +300,23 @@ internal sealed class RlCombatPerception
                 AddZeroObservations(sensor, EntityObservationSize);
                 continue;
             }
-            AddEntityObservation(sensor, ships[slot], origin);
+            AddEntityObservation(sensor, ships[slot], origin, frameQuarterTurns);
         }
     }
 
-    private static void AddEntityObservation(VectorSensor sensor, Ship observed, Vector2 origin)
+    private static void AddEntityObservation(
+        VectorSensor sensor,
+        Ship observed,
+        Vector2 origin,
+        int frameQuarterTurns)
     {
-        Vector2 relative = observed.GetPosition() - origin;
+        Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+            observed.GetPosition() - origin,
+            frameQuarterTurns);
         sensor.AddObservation(1f);
         sensor.AddObservation(SquashSignedDistance(relative.x));
         sensor.AddObservation(SquashSignedDistance(relative.y));
-        AddHeading(sensor, observed.Rotation);
+        AddHeading(sensor, observed.Rotation, frameQuarterTurns);
         sensor.AddObservation(GetHealthFraction(observed));
         sensor.AddObservation(NormalizePositive(observed.Speed, 20f));
         sensor.AddObservation(NormalizePositive(observed.CurrentSpeed, 20f));
@@ -298,7 +328,7 @@ internal sealed class RlCombatPerception
         AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
     }
 
-    private static void AddWeaponSlots(Ship ship, VectorSensor sensor, Vector2 origin)
+    private static void AddWeaponSlots(Ship ship, VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
         // Weapon is an authored List rather than an unordered set. Its setup order is the stable slot identity.
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
@@ -312,7 +342,9 @@ internal sealed class RlCombatPerception
             Weapon weapon = ship.Weapons[slot];
             sensor.AddObservation(1f);
             AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
-            Vector2 relative = weapon.GetPosition() - origin;
+            Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+                weapon.GetPosition() - origin,
+                frameQuarterTurns);
             float size = Mathf.Max(1f, ship.LongestSide);
             sensor.AddObservation(Mathf.Clamp(relative.x / size, -1f, 1f));
             sensor.AddObservation(Mathf.Clamp(relative.y / size, -1f, 1f));
@@ -325,7 +357,7 @@ internal sealed class RlCombatPerception
             if (weapon is Turret turret)
             {
                 sensor.AddObservation(1f);
-                AddHeading(sensor, turret.Rotation);
+                AddHeading(sensor, turret.Rotation, frameQuarterTurns);
                 sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
                 sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
             }
@@ -340,7 +372,7 @@ internal sealed class RlCombatPerception
         }
     }
 
-    private void AddEnemyWeaponMountSlots(VectorSensor sensor, Vector2 origin)
+    private void AddEnemyWeaponMountSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
         int written = 0;
         for (int enemyIndex = 0;
@@ -361,7 +393,9 @@ internal sealed class RlCombatPerception
                     continue;
                 }
 
-                Vector2 relative = weapon.GetPosition() - origin;
+                Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+                    weapon.GetPosition() - origin,
+                    frameQuarterTurns);
                 sensor.AddObservation(1f);
                 AddEnumBits(sensor, (int)enemy.ShipType, ShipTypeBitCount);
                 AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
@@ -373,7 +407,7 @@ internal sealed class RlCombatPerception
                 if (weapon is Turret turret)
                 {
                     sensor.AddObservation(1f);
-                    AddHeading(sensor, turret.Rotation);
+                    AddHeading(sensor, turret.Rotation, frameQuarterTurns);
                     sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
                 }
                 else
@@ -422,7 +456,7 @@ internal sealed class RlCombatPerception
         });
     }
 
-    private void AddMiningAsteroidSlots(VectorSensor sensor, Vector2 origin)
+    private void AddMiningAsteroidSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
         for (int slot = 0; slot < MaxObservedMiningAsteroids; slot++)
         {
@@ -433,13 +467,18 @@ internal sealed class RlCombatPerception
             }
 
             ObservedMiningAsteroid asteroid = _miningAsteroidCandidates[slot];
-            Vector2 relative = asteroid.Position - origin;
+            Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+                asteroid.Position - origin,
+                frameQuarterTurns);
+            Vector2 halfExtents = RlPolicyCoordinateFrame.TransformExtents(
+                asteroid.HalfExtents,
+                frameQuarterTurns);
             sensor.AddObservation(1f);
             sensor.AddObservation(SquashSignedDistance(relative.x));
             sensor.AddObservation(SquashSignedDistance(relative.y));
             sensor.AddObservation(asteroid.ResourceFraction);
-            sensor.AddObservation(NormalizePositive(asteroid.HalfExtents.x, 20f));
-            sensor.AddObservation(NormalizePositive(asteroid.HalfExtents.y, 20f));
+            sensor.AddObservation(NormalizePositive(halfExtents.x, 20f));
+            sensor.AddObservation(NormalizePositive(halfExtents.y, 20f));
             sensor.AddObservation(NormalizePositive(asteroid.Activity, 4f));
         }
     }
@@ -488,7 +527,7 @@ internal sealed class RlCombatPerception
         });
     }
 
-    private void AddMapObjectSlots(VectorSensor sensor, Vector2 origin)
+    private void AddMapObjectSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
         for (int slot = 0; slot < MaxObservedMapObjects; slot++)
         {
@@ -499,14 +538,19 @@ internal sealed class RlCombatPerception
             }
 
             ObservedMapObject mapObject = _mapObjectCandidates[slot];
-            Vector2 relative = mapObject.Position - origin;
+            Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+                mapObject.Position - origin,
+                frameQuarterTurns);
+            Vector2 halfExtents = RlPolicyCoordinateFrame.TransformExtents(
+                mapObject.HalfExtents,
+                frameQuarterTurns);
             sensor.AddObservation(1f);
             AddEnumBits(sensor, mapObject.Type, MapObjectTypeBitCount);
             sensor.AddObservation(SquashSignedDistance(relative.x));
             sensor.AddObservation(SquashSignedDistance(relative.y));
             sensor.AddObservation(mapObject.HealthFraction);
-            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.x, 20f));
-            sensor.AddObservation(NormalizePositive(mapObject.HalfExtents.y, 20f));
+            sensor.AddObservation(NormalizePositive(halfExtents.x, 20f));
+            sensor.AddObservation(NormalizePositive(halfExtents.y, 20f));
             sensor.AddObservation(mapObject.Targetable ? 1f : 0f);
             sensor.AddObservation(NormalizePositive(mapObject.Activity, 4f));
         }
@@ -564,7 +608,7 @@ internal sealed class RlCombatPerception
         });
     }
 
-    private void AddCollisionAsteroidSlots(VectorSensor sensor, Vector2 origin)
+    private void AddCollisionAsteroidSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
     {
         for (int slot = 0; slot < MaxObservedCollisionAsteroids; slot++)
         {
@@ -575,15 +619,30 @@ internal sealed class RlCombatPerception
             }
 
             ObservedCollisionAsteroid asteroid = _collisionAsteroidCandidates[slot];
-            Vector2 relative = asteroid.Position - origin;
+            Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+                asteroid.Position - origin,
+                frameQuarterTurns);
+            Vector2 halfExtents = RlPolicyCoordinateFrame.TransformExtents(
+                new Vector2(asteroid.HalfExtents.x, asteroid.HalfExtents.y),
+                frameQuarterTurns);
+            Vector2 velocity = RlPolicyCoordinateFrame.WorldToPolicy(
+                asteroid.Velocity,
+                frameQuarterTurns);
             sensor.AddObservation(1f);
             sensor.AddObservation(SquashSignedDistance(relative.x));
             sensor.AddObservation(SquashSignedDistance(relative.y));
-            sensor.AddObservation(NormalizePositive(asteroid.HalfExtents.x, 20f));
-            sensor.AddObservation(NormalizePositive(asteroid.HalfExtents.y, 20f));
-            AddHeading(sensor, asteroid.Rotation);
-            sensor.AddObservation(SquashSignedDistance(asteroid.Velocity.x));
-            sensor.AddObservation(SquashSignedDistance(asteroid.Velocity.y));
+            sensor.AddObservation(NormalizePositive(halfExtents.x, 20f));
+            sensor.AddObservation(NormalizePositive(halfExtents.y, 20f));
+            if (frameQuarterTurns == 0)
+            {
+                AddHeading(sensor, asteroid.Rotation);
+            }
+            else
+            {
+                AddHeading(sensor, asteroid.Rotation, frameQuarterTurns);
+            }
+            sensor.AddObservation(SquashSignedDistance(velocity.x));
+            sensor.AddObservation(SquashSignedDistance(velocity.y));
             sensor.AddObservation(asteroid.HealthFraction);
             sensor.AddObservation(1f); // Collision asteroids are destructible point-fire targets.
         }
@@ -596,11 +655,15 @@ internal sealed class RlCombatPerception
         AddZeroObservations(sensor, ObjectiveObservationSize);
     }
 
-    private void AddNavigationGridObservations(VectorSensor sensor)
+    private void AddNavigationGridObservations(VectorSensor sensor, int frameQuarterTurns)
     {
-        for (int i = 0; i < _navigationOccupancy.Length; i++)
+        for (int policyIndex = 0; policyIndex < _navigationOccupancy.Length; policyIndex++)
         {
-            sensor.AddObservation(_navigationOccupancy[i]);
+            int worldIndex = RlPolicyCoordinateFrame.WorldGridIndexForPolicyIndex(
+                policyIndex,
+                NavigationGridSize,
+                frameQuarterTurns);
+            sensor.AddObservation(_navigationOccupancy[worldIndex]);
         }
     }
 
@@ -841,9 +904,17 @@ internal sealed class RlCombatPerception
 
     private static void AddHeading(VectorSensor sensor, float degrees)
     {
+        AddHeading(sensor, degrees, 0);
+    }
+
+    private static void AddHeading(VectorSensor sensor, float degrees, int frameQuarterTurns)
+    {
         float radians = degrees * Mathf.Deg2Rad;
-        sensor.AddObservation(Mathf.Sin(radians));
-        sensor.AddObservation(Mathf.Cos(radians));
+        Vector2 heading = RlPolicyCoordinateFrame.WorldToPolicy(
+            new Vector2(Mathf.Sin(radians), Mathf.Cos(radians)),
+            frameQuarterTurns);
+        sensor.AddObservation(heading.x);
+        sensor.AddObservation(heading.y);
     }
 
     private static void AddZeroObservations(VectorSensor sensor, int count)
