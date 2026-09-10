@@ -9,9 +9,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Owns episode reward bookkeeping and lightweight training diagnostics for the dedicated RL combat scene.
-/// The existing Level lifecycle calls the static completion hooks before it tears an episode down,
-/// while this component detects each newly spawned battle and captures its starting state/time.
+/// Owns episode reward bookkeeping and lightweight training diagnostics for one dedicated RL combat
+/// arena. Static combat hooks route to the coordinator registered for the affected Level so multiple
+/// Levels can train independently inside one Unity process.
 /// </summary>
 [DefaultExecutionOrder(-5000)]
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
@@ -96,11 +96,12 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
-    internal static event Action<int, float> TsvRewardOccurred;
-    internal static event Action<EpisodeResult> EpisodeEnded;
+    internal static event Action<Level, int, float> TsvRewardOccurred;
+    internal static event Action<Level, EpisodeResult> EpisodeEnded;
     internal static EpisodeResult LastEpisodeResult { get; private set; }
 
-    private static RlOneVsOneEpisodeCoordinator _active;
+    private static readonly Dictionary<Level, RlOneVsOneEpisodeCoordinator> Coordinators =
+        new Dictionary<Level, RlOneVsOneEpisodeCoordinator>();
 
     private Stage _stage;
     private Level _level;
@@ -174,79 +175,98 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _totalDurationSeconds;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void AttachToDedicatedTrainingScene()
+    private static void ResetCoordinatorRegistry()
     {
-        if (!RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
-        {
-            return;
-        }
-
-        Stage stage = FindFirstObjectByType<Stage>();
-        if (stage == null)
-        {
-            Debug.LogError("RL 1v1 training scene cannot attach its episode coordinator because no Stage exists.");
-            return;
-        }
-
-        RlOneVsOneEpisodeCoordinator coordinator = stage.GetComponent<RlOneVsOneEpisodeCoordinator>();
-        if (coordinator == null)
-        {
-            coordinator = stage.gameObject.AddComponent<RlOneVsOneEpisodeCoordinator>();
-        }
-        coordinator._stage = stage;
-        _active = coordinator;
+        Coordinators.Clear();
     }
+
+    private static RlOneVsOneEpisodeCoordinator GetCoordinator(Level level, bool createIfMissing = true)
+    {
+        if (level == null || level.Stage == null || !RlOneVsOneTrainingBootstrap.IsActiveFor(level.Stage))
+        {
+            return null;
+        }
+
+        if (Coordinators.TryGetValue(level, out RlOneVsOneEpisodeCoordinator coordinator) && coordinator != null)
+        {
+            return coordinator;
+        }
+        Coordinators.Remove(level);
+
+        coordinator = level.GetComponent<RlOneVsOneEpisodeCoordinator>();
+        if (coordinator == null && createIfMissing)
+        {
+            coordinator = level.gameObject.AddComponent<RlOneVsOneEpisodeCoordinator>();
+        }
+        if (coordinator != null)
+        {
+            coordinator._stage = level.Stage;
+            coordinator._level = level;
+            Coordinators[level] = coordinator;
+        }
+        return coordinator;
+    }
+
+    private static RlOneVsOneEpisodeCoordinator GetCoordinator(Ship ship)
+    {
+        return ship != null ? GetCoordinator(ship.Level) : null;
+    }
+
+    private bool IsPrimaryArena => _stage != null && _level != null && _stage.PrimaryLevel == _level;
 
     private void OnDestroy()
     {
-        RlOneVsOneEpisodeDiagnostics.End(_level);
-        if (_active == this)
+        if (IsPrimaryArena)
         {
-            _active = null;
+            RlOneVsOneEpisodeDiagnostics.End(_level);
+        }
+        if (_level != null && Coordinators.TryGetValue(_level, out RlOneVsOneEpisodeCoordinator coordinator) && coordinator == this)
+        {
+            Coordinators.Remove(_level);
         }
     }
 
     private void Update()
     {
-        if (_stage == null || !_stage.IsTrainingNueralNetwork)
+        if (_stage == null || !_stage.IsTrainingNueralNetwork || _level == null || _level.State == null)
         {
             return;
         }
 
-        Level currentLevel = _stage.PrimaryLevel;
-        if (currentLevel == null || currentLevel.State == null)
+        if (!_episodeActive)
         {
-            return;
-        }
-
-        if (!_episodeActive || _level != currentLevel)
-        {
-            TryBeginEpisode(currentLevel);
+            TryBeginEpisode(_level);
         }
         if (_episodeActive)
         {
-            TrackEpisodeShips(currentLevel);
+            TrackEpisodeShips(_level);
         }
         if (_episodeActive && !_discoveryRewardsReady)
         {
-            TryEnableDiscoveryRewards(currentLevel);
+            TryEnableDiscoveryRewards(_level);
         }
     }
 
-    internal static bool IsControllerForSide(int side, int teamId)
+    internal static bool IsControllerForSide(Level level, int side, int teamId)
     {
-        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null)
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level);
+        if (coordinator == null || ConfigData.Configuration == null)
+        {
+            return false;
+        }
+        coordinator.TryBeginEpisode(level);
+        if (!coordinator._episodeActive)
         {
             return false;
         }
 
         if (side == ConfigData.Configuration.BeeSide)
         {
-            return teamId == _active._beeTeamId;
+            return teamId == coordinator._beeTeamId;
         }
         if (side == ConfigData.Configuration.HumanSide)
         {
-            return teamId == _active._humanTeamId;
+            return teamId == coordinator._humanTeamId;
         }
         return false;
     }
@@ -272,53 +292,61 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     internal static void RecordFireRequest(Ship ship, Weapon weapon)
     {
-        if (!TryGetTrackedSide(ship, out int sideIndex))
+        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
         {
             return;
         }
 
         if (sideIndex == 0)
         {
-            _active._beeFireRequestsThisEpisode++;
+            coordinator._beeFireRequestsThisEpisode++;
         }
         else
         {
-            _active._humanFireRequestsThisEpisode++;
+            coordinator._humanFireRequestsThisEpisode++;
         }
-        IncrementWeaponCount(_active._fireRequestsByWeapon[sideIndex], weapon);
+        IncrementWeaponCount(coordinator._fireRequestsByWeapon[sideIndex], weapon);
     }
 
     internal static void RecordShotFired(Ship ship, Weapon weapon)
     {
-        if (!TryGetTrackedSide(ship, out int sideIndex))
+        if (!TryGetTrackedSide(ship, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex))
         {
             return;
         }
 
         if (sideIndex == 0)
         {
-            _active._beeShotsThisEpisode++;
-            if (_active._beeFirstFireSeconds < 0f)
+            coordinator._beeShotsThisEpisode++;
+            if (coordinator._beeFirstFireSeconds < 0f)
             {
-                _active._beeFirstFireSeconds = _active.ElapsedEpisodeSeconds;
+                coordinator._beeFirstFireSeconds = coordinator.ElapsedEpisodeSeconds;
             }
         }
         else
         {
-            _active._humanShotsThisEpisode++;
-            if (_active._humanFirstFireSeconds < 0f)
+            coordinator._humanShotsThisEpisode++;
+            if (coordinator._humanFirstFireSeconds < 0f)
             {
-                _active._humanFirstFireSeconds = _active.ElapsedEpisodeSeconds;
+                coordinator._humanFirstFireSeconds = coordinator.ElapsedEpisodeSeconds;
             }
         }
-        IncrementWeaponCount(_active._shotsByWeapon[sideIndex], weapon);
+        IncrementWeaponCount(coordinator._shotsByWeapon[sideIndex], weapon);
     }
 
-    private static bool TryGetTrackedSide(Ship ship, out int sideIndex)
+    private static bool TryGetTrackedSide(
+        Ship ship,
+        out RlOneVsOneEpisodeCoordinator coordinator,
+        out int sideIndex)
     {
+        coordinator = GetCoordinator(ship);
         sideIndex = -1;
-        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
-            ship == null || ship.Level != _active._level)
+        if (coordinator == null || ConfigData.Configuration == null || ship == null)
+        {
+            return false;
+        }
+        coordinator.TryBeginEpisode(ship.Level);
+        if (!coordinator._episodeActive || ship.Level != coordinator._level)
         {
             return false;
         }
@@ -353,8 +381,19 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     /// </summary>
     internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
-        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
-            attacker == null || target == null || attacker.Level != _active._level || target.Level != _active._level)
+        if (ConfigData.Configuration == null || attacker == null || target == null ||
+            attacker.Level == null || attacker.Level != target.Level)
+        {
+            return;
+        }
+
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(attacker.Level);
+        if (coordinator == null)
+        {
+            return;
+        }
+        coordinator.TryBeginEpisode(attacker.Level);
+        if (!coordinator._episodeActive)
         {
             return;
         }
@@ -376,20 +415,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             if (attacker.Side == beeSide)
             {
-                _active._beeHitsThisEpisode++;
-                _active._beeDamageThisEpisode += appliedDamage;
-                if (_active._beeFirstHitSeconds < 0f)
+                coordinator._beeHitsThisEpisode++;
+                coordinator._beeDamageThisEpisode += appliedDamage;
+                if (coordinator._beeFirstHitSeconds < 0f)
                 {
-                    _active._beeFirstHitSeconds = _active.ElapsedEpisodeSeconds;
+                    coordinator._beeFirstHitSeconds = coordinator.ElapsedEpisodeSeconds;
                 }
             }
             else
             {
-                _active._humanHitsThisEpisode++;
-                _active._humanDamageThisEpisode += appliedDamage;
-                if (_active._humanFirstHitSeconds < 0f)
+                coordinator._humanHitsThisEpisode++;
+                coordinator._humanDamageThisEpisode += appliedDamage;
+                if (coordinator._humanFirstHitSeconds < 0f)
                 {
-                    _active._humanFirstHitSeconds = _active.ElapsedEpisodeSeconds;
+                    coordinator._humanFirstHitSeconds = coordinator.ElapsedEpisodeSeconds;
                 }
             }
         }
@@ -399,19 +438,29 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
         if (isEnemyDamage)
         {
-            _active.ApplyImmediateTsvReward(attacker.Side, reward);
+            coordinator.ApplyImmediateTsvReward(attacker.Side, reward);
         }
-        _active.ApplyImmediateTsvReward(target.Side, -reward);
+        coordinator.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
     internal static void RecordUnattributedTsvLoss(Ship target, int tsvLoss)
     {
-        if (_active == null || !_active._episodeActive || ConfigData.Configuration == null ||
-            target == null || target.Level != _active._level)
+        if (ConfigData.Configuration == null || target == null)
+        {
+            return;
+        }
+
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(target);
+        if (coordinator == null)
+        {
+            return;
+        }
+        coordinator.TryBeginEpisode(target.Level);
+        if (!coordinator._episodeActive)
         {
             return;
         }
@@ -429,14 +478,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(appliedTsvLoss, combinedStartingTsv);
-        _active.ApplyImmediateTsvReward(target.Side, -reward);
+        coordinator.ApplyImmediateTsvReward(target.Side, -reward);
     }
 
     internal static void RecordSuccessfulCapabilityOutcome(Ship ship, int tsvValue)
     {
-        if (_active == null || !_active._episodeActive || ship == null || ship.Level != _active._level)
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(ship);
+        if (coordinator == null || ship == null)
+        {
+            return;
+        }
+        coordinator.TryBeginEpisode(ship.Level);
+        if (!coordinator._episodeActive)
         {
             return;
         }
@@ -447,63 +502,71 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        int combinedStartingTsv = Mathf.Max(1, _active._beeStartingTsv + _active._humanStartingTsv);
+        int combinedStartingTsv = Mathf.Max(1, coordinator._beeStartingTsv + coordinator._humanStartingTsv);
         float reward = RlOneVsOneReward.CalculateTsvLossReward(value, combinedStartingTsv);
-        _active.ApplyImmediateTsvReward(ship.Side, reward);
+        coordinator.ApplyImmediateTsvReward(ship.Side, reward);
     }
 
     internal static void RecordShipDiscovery(Ship observer, Ship spotted)
     {
-        if (!TryPrepareDiscovery(observer, out int sideIndex) || spotted == null || spotted.IsDead ||
-            spotted.Level != observer.Level || spotted.Side == observer.Side)
+        if (!TryPrepareDiscovery(observer, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex) ||
+            spotted == null || spotted.IsDead || spotted.Level != observer.Level || spotted.Side == observer.Side)
         {
             return;
         }
 
-        _active.AwardShipDiscovery(observer.Side, sideIndex, spotted);
+        coordinator.AwardShipDiscovery(observer.Side, sideIndex, spotted);
     }
 
     internal static void RecordMiningAsteroidDiscovery(Ship observer, MiningAsteroid asteroid)
     {
-        if (!TryPrepareDiscovery(observer, out int sideIndex) || asteroid == null || asteroid.IsDead ||
-            asteroid.Level != observer.Level)
+        if (!TryPrepareDiscovery(observer, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex) ||
+            asteroid == null || asteroid.IsDead || asteroid.Level != observer.Level)
         {
             return;
         }
-        _active.AwardMiningAsteroidDiscovery(observer.Side, sideIndex, asteroid);
+        coordinator.AwardMiningAsteroidDiscovery(observer.Side, sideIndex, asteroid);
     }
 
     internal static void RecordMapObjectDiscovery(Ship observer, MapObject mapObject)
     {
-        if (!TryPrepareDiscovery(observer, out int sideIndex) || mapObject == null || mapObject.IsDead ||
-            mapObject.Level != observer.Level)
+        if (!TryPrepareDiscovery(observer, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex) ||
+            mapObject == null || mapObject.IsDead || mapObject.Level != observer.Level)
         {
             return;
         }
-        _active.AwardMapObjectDiscovery(observer.Side, sideIndex, mapObject);
+        coordinator.AwardMapObjectDiscovery(observer.Side, sideIndex, mapObject);
     }
 
     internal static void RecordObstacleDiscovery(Ship observer, Obstacle obstacle)
     {
-        if (!TryPrepareDiscovery(observer, out int sideIndex) || obstacle == null || obstacle.IsDead ||
-            obstacle.Level != observer.Level)
+        if (!TryPrepareDiscovery(observer, out RlOneVsOneEpisodeCoordinator coordinator, out int sideIndex) ||
+            obstacle == null || obstacle.IsDead || obstacle.Level != observer.Level)
         {
             return;
         }
-        _active.AwardObstacleDiscovery(observer.Side, sideIndex, obstacle);
+        coordinator.AwardObstacleDiscovery(observer.Side, sideIndex, obstacle);
     }
 
-    private static bool TryPrepareDiscovery(Ship observer, out int sideIndex)
+    private static bool TryPrepareDiscovery(
+        Ship observer,
+        out RlOneVsOneEpisodeCoordinator coordinator,
+        out int sideIndex)
     {
+        coordinator = null;
         sideIndex = -1;
-        if (_active == null || ConfigData.Configuration == null || observer == null || observer.IsDead ||
-            observer.Level == null)
+        if (ConfigData.Configuration == null || observer == null || observer.IsDead || observer.Level == null)
         {
             return false;
         }
 
-        _active.TryBeginEpisode(observer.Level);
-        if (!_active._episodeActive || observer.Level != _active._level || !_active._discoveryRewardsReady)
+        coordinator = GetCoordinator(observer.Level);
+        if (coordinator == null)
+        {
+            return false;
+        }
+        coordinator.TryBeginEpisode(observer.Level);
+        if (!coordinator._episodeActive || !coordinator._discoveryRewardsReady)
         {
             return false;
         }
@@ -598,43 +661,39 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
     internal static void CompleteElimination(Level level)
     {
-        if (!CanHandle(level))
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level);
+        if (coordinator == null)
         {
             return;
         }
-        _active.TryBeginEpisode(level);
-        if (_active._episodeActive)
+        coordinator.TryBeginEpisode(level);
+        if (coordinator._episodeActive)
         {
-            _active.CompleteEpisode(level, DetermineWinner(level), false);
+            coordinator.CompleteEpisode(level, DetermineWinner(level), false);
         }
     }
 
     internal static void CompleteTimeout(Level level)
     {
-        if (!CanHandle(level))
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level);
+        if (coordinator == null)
         {
             return;
         }
-        _active.TryBeginEpisode(level);
-        if (_active._episodeActive)
+        coordinator.TryBeginEpisode(level);
+        if (coordinator._episodeActive)
         {
-            _active.CompleteEpisode(level, 0, true);
+            coordinator.CompleteEpisode(level, 0, true);
         }
-    }
-
-    private static bool CanHandle(Level level)
-    {
-        return _active != null && level != null && level.Stage != null &&
-               RlOneVsOneTrainingBootstrap.IsActiveFor(level.Stage);
     }
 
     private void TryBeginEpisode(Level level)
     {
-        if (level == null || level.State == null || ConfigData.Configuration == null)
+        if (level == null || level != _level || level.State == null || ConfigData.Configuration == null)
         {
             return;
         }
-        if (_episodeActive && _level == level)
+        if (_episodeActive)
         {
             return;
         }
@@ -654,7 +713,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        _level = level;
         _episodeNumber++;
         _beeTeamId = GetTeamIdForSide(beeSide, _episodeNumber);
         _humanTeamId = GetTeamIdForSide(humanSide, _episodeNumber);
@@ -678,7 +736,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeFirstHitSeconds = -1f;
         _humanFirstHitSeconds = -1f;
         ResetShipDiagnostics(beeShips, humanShips);
-        RlOneVsOneEpisodeDiagnostics.Begin(level);
+        if (IsPrimaryArena)
+        {
+            RlOneVsOneEpisodeDiagnostics.Begin(level);
+        }
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
@@ -720,7 +781,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.BeeSide), 0);
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.HumanSide), 1);
-        RlOneVsOneEpisodeDiagnostics.Track(level);
+        if (IsPrimaryArena)
+        {
+            RlOneVsOneEpisodeDiagnostics.Track(level);
+        }
     }
 
     private void TrackSideShips(List<Ship> ships, int sideIndex)
@@ -925,7 +989,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             _humanTsvRewardThisEpisode += emittedReward;
         }
-        TsvRewardOccurred?.Invoke(side, emittedReward);
+        TsvRewardOccurred?.Invoke(_level, side, emittedReward);
     }
 
     private void CompleteEpisode(Level level, int winningSide, bool timedOut)
@@ -947,45 +1011,49 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float beeTimeReward = winningSide == beeSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
         float humanTimeReward = winningSide == humanSide ? RlOneVsOneReward.CalculateTimePenalty(durationSeconds) : 0f;
 
-        LastEpisodeResult = new EpisodeResult(
+        EpisodeResult result = new EpisodeResult(
             _episodeNumber, _beeTeamId, _humanTeamId, winningSide, timedOut, durationSeconds,
             _beeStartingTsv, beeFinalTsv, _humanStartingTsv, humanFinalTsv,
             _beeShotsThisEpisode, _beeHitsThisEpisode, _beeDamageThisEpisode,
             _humanShotsThisEpisode, _humanHitsThisEpisode, _humanDamageThisEpisode,
             beeTerminal, _beeTsvRewardThisEpisode, beeTimeReward,
             humanTerminal, _humanTsvRewardThisEpisode, humanTimeReward);
+        LastEpisodeResult = result;
 
-        UpdateRunningDiagnostics(LastEpisodeResult, beeSide, humanSide);
+        UpdateRunningDiagnostics(result, beeSide, humanSide);
 
-        string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
-        int beeSpawned = CountSpawnedShips(0);
-        int humanSpawned = CountSpawnedShips(1);
-        string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut);
-        Debug.Log(
-            $"RL 1v1 episode={LastEpisodeResult.EpisodeNumber} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
-            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
-            $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
-            $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
-            $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
-            $"bee_weapons={FormatWeaponActivity(0)} " +
-            $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{LastEpisodeResult.BeeTotalReward:F4} " +
-            $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
-            $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
-            $"human_weapons={FormatWeaponActivity(1)} " +
-            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{LastEpisodeResult.HumanTotalReward:F4} " +
-            behaviorDiagnostics);
-        RlOneVsOneEpisodeDiagnostics.End(level);
-
-        if (_completedEpisodes % SummaryIntervalEpisodes == 0)
+        if (IsPrimaryArena)
         {
-            LogRunningSummary();
+            string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
+            int beeSpawned = CountSpawnedShips(0);
+            int humanSpawned = CountSpawnedShips(1);
+            string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut);
+            Debug.Log(
+                $"RL 1v1 episode={result.EpisodeNumber} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
+                $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+                $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
+                $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+                $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
+                $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
+                $"bee_weapons={FormatWeaponActivity(0)} " +
+                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
+                $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
+                $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
+                $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
+                $"human_weapons={FormatWeaponActivity(1)} " +
+                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
+                behaviorDiagnostics);
+            RlOneVsOneEpisodeDiagnostics.End(level);
+
+            if (_completedEpisodes % SummaryIntervalEpisodes == 0)
+            {
+                LogRunningSummary();
+            }
         }
 
         _episodeActive = false;
         _discoveryRewardsReady = false;
-        EpisodeEnded?.Invoke(LastEpisodeResult);
+        EpisodeEnded?.Invoke(level, result);
     }
 
     private void UpdateRunningDiagnostics(EpisodeResult result, int beeSide, int humanSide)
@@ -1104,5 +1172,24 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return 0;
         }
         return beesKilled ? humanSide : beeSide;
+    }
+
+    internal static int GetCoordinatorCountForTests()
+    {
+        int count = 0;
+        foreach (RlOneVsOneEpisodeCoordinator coordinator in Coordinators.Values)
+        {
+            if (coordinator != null)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    internal static void ResetForTests()
+    {
+        Coordinators.Clear();
+        LastEpisodeResult = default;
     }
 }
