@@ -100,13 +100,14 @@ namespace Assets.Scripts.Scenes
             Application.Quit();
         }
         /// <summary>
-        /// Finishes setting up the scene when all the user data has been loaded from the server
+        /// Finishes setting up the scene once its required startup data has loaded. Normal scenes
+        /// require user data; dedicated ML-Agents training can finalize from server settings alone.
         /// </summary>
         protected virtual void FinalizeSceneWithUserData()
         {
             //Debug.Log($"Finalizing {Name} Scene");
 
-            if (IsMainScene && ConfigData.CurrentShips == null)
+            if (IsMainScene && ConfigData.CurrentShips == null && !CanRunWithoutServer())
             {
                 ConfigData.FreePlayShips = new Ships(ConfigData.GetFleetData(), ConfigData.GetSavedSquadsData());
                 ConfigData.CampaignShips = new Ships(ConfigData.GetCampaignFleetData(), ConfigData.GetCampaignSavedSquadsData());
@@ -232,22 +233,18 @@ namespace Assets.Scripts.Scenes
         }
 
         /// <summary>
-        /// The dedicated ML-Agents scene only needs the server while startup data is being
-        /// materialized. Once that Stage is finalized, episodes and resets are entirely local.
-        /// Keep the bounded socket pump alive so close/error/late-response callbacks can retire
-        /// transport state, but stop reconnects, resends, and disconnect UI/pause behavior.
+        /// The dedicated ML-Agents scene needs the server only until its configuration/settings are
+        /// loaded. Deliberately key this off the scene identity rather than IsActiveFor(stage): the
+        /// final settings response is pumped inside Scene.Update, one frame before the startup gate
+        /// can apply the Stage training flags. This prevents that frame from starting user-data
+        /// requests or reconnect/disconnect handling that training does not need.
         /// </summary>
         private bool CanRunWithoutServer()
         {
-            if (!(this is Stage stage))
-            {
-                return false;
-            }
-
-            return global::RlOneVsOneTrainingBootstrap.IsActiveFor(stage) &&
-                   IsFinalized &&
+            return this is Stage &&
+                   global::RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime &&
                    ConfigData.AreAllSettingsLoaded &&
-                   ConfigData.IsAllUserDataLoaded;
+                   !ConfigData.Configuration.IsDeadVersion;
         }
 
         // Update is called once per frame
@@ -316,8 +313,27 @@ namespace Assets.Scripts.Scenes
                     _pausedForNetworkDisconnect = false;
                 }
             }
+            else if (IsSocketManager && NetworkDisconnection != null && NetworkDisconnection.IsOpen)
+            {
+                // A close callback can be processed in the same socket-pump frame as the final
+                // settings response. Once settings are complete, dismiss any stale disconnect UI;
+                // dedicated training will not reconnect or pause because of the transport again.
+                NetworkDisconnection.Hide();
+                _pausedForNetworkDisconnect = false;
+            }
 
-            if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
+            if (canRunWithoutServer)
+            {
+                // The startup gate runs before Scene.Update, but settings responses are pumped above.
+                // On the response frame, wait without loading user data. On the next frame the gate
+                // applies the RL flags first, after which the Stage can finalize entirely from settings.
+                if (!IsFinalized && this is Stage trainingStage &&
+                    global::RlOneVsOneTrainingBootstrap.IsActiveFor(trainingStage))
+                {
+                    FinalizeSceneWithUserData();
+                }
+            }
+            else if (!ConfigData.SocketManager.NetworkDisconnection.IsOpen)
             {
                 // [alert] [debug]
               

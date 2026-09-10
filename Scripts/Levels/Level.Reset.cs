@@ -83,7 +83,14 @@ namespace Assets.Scripts.Levels
         public void SetupLevel()
         {
             StartTime = Time.realtimeSinceStartup;
-            if (ConfigData.ChooseRandomLevel)
+            bool isDedicatedRlTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
+            if (isDedicatedRlTraining)
+            {
+                // Dedicated ML-Agents training owns an ephemeral local level. Do not touch the
+                // player's persisted LevelData/LevelOptions after the server settings are loaded.
+                CurrentLevelOptions = new LevelOptions(-1, ConfigData.Configuration.AISide, "RL Training Level");
+            }
+            else if (ConfigData.ChooseRandomLevel)
             {
                 _setup_possibleLevels.Clear();
                 List<LevelOptions> levels = ConfigData.GetLevelData().GetLevels();
@@ -118,7 +125,7 @@ namespace Assets.Scripts.Levels
             }
 
             ResetGameData();
-            if (ConfigData.LevelOptions != null)
+            if (ConfigData.LevelOptions != null && !isDedicatedRlTraining)
             {
                 ConfigData.LevelOptions.ChosenSquads.ForEach((savedSquad) =>
                 {

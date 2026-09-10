@@ -132,9 +132,9 @@ namespace Assets.Scripts.Levels
             LevelConstructor = new LevelConstructor(this);
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
-                // Dedicated ML-Agents training is fully local once startup settings/user data have
-                // loaded. Keep the level logically available to gameplay components without creating
-                // a server game or allowing a later socket close to mark the training level offline.
+                // Dedicated ML-Agents training is fully local once startup settings have loaded.
+                // Keep the level logically available to gameplay components without creating a
+                // server game or allowing a later socket close to mark the training level offline.
                 IsLevelSetupOnServer = true;
                 IsLevelConnectedToServer = true;
             }
