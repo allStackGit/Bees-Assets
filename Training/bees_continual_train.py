@@ -198,7 +198,32 @@ class CandidateMonitor:
         self._thread: Optional[threading.Thread] = None
         self.errors: List[str] = []
 
+    def prime_existing(self) -> None:
+        """Treat pre-existing exports as baseline, not newly produced candidates."""
+        if not self.results_run_dir.exists():
+            return
+        for path in sorted(self.results_run_dir.rglob("*.onnx")):
+            try:
+                stat = path.stat()
+            except OSError as exc:
+                message = f"{path}: {type(exc).__name__}: {exc}"
+                if message not in self.errors:
+                    self.errors.append(message)
+                    print(
+                        f"[Bees continual] candidate baseline scan failed: {message}",
+                        file=sys.stderr,
+                    )
+                continue
+            if stat.st_size <= 0:
+                continue
+            self._registered[str(path.resolve())] = (stat.st_size, stat.st_mtime_ns)
+
     def start(self) -> None:
+        # On --resume the results tree can contain thousands of old checkpoints.
+        # Their original build/config/lineage metadata is not recoverable from the
+        # current command, so only exports created or changed after this point are
+        # eligible for automatic registration.
+        self.prime_existing()
         self._thread = threading.Thread(
             target=self._run,
             name="BeesContinualCandidateMonitor",
