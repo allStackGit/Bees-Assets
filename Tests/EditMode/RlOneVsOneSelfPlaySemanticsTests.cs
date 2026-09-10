@@ -124,7 +124,7 @@ namespace Bees.Tests.EditMode
                 Assert.That(generationAfterRepeatedReads, Is.EqualTo(1),
                     "Reading the frame repeatedly during an episode must not resample it.");
 
-                RuntimeAssembly.InvokeStatic(frameType, "EndEpisode");
+                RuntimeAssembly.InvokeStatic(frameType, "EndEpisode", level);
                 RuntimeAssembly.InvokeStatic(frameType, "GetQuarterTurns", level, 0);
                 int generationAfterEpisodeEnd = (int)RuntimeAssembly.InvokeStatic(
                     frameType,
