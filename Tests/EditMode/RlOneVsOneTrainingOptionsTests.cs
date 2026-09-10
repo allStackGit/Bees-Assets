@@ -108,7 +108,6 @@ namespace Bees.Tests.EditMode
             Assert.That(bootstrap, Does.Contain("!ConfigData.AreAllSettingsLoaded"));
             Assert.That(bootstrap, Does.Contain("RlOneVsOneTrainingBootstrap.TryApplyAfterSettingsLoaded(_stage);"));
             Assert.That(bootstrap, Does.Contain("stage.TimeoutTime = options.EpisodeTimeoutSeconds;"));
-            Assert.That(bootstrap, Does.Contain("float mapSize = CurrentMapSize;"));
             Assert.That(bootstrap, Does.Contain("CurrentShipsPerSide => RuntimeOptions.ShipsPerSide"));
             Assert.That(bootstrap, Does.Contain("stage.OverrideBeeShipTypes = new List<ConfigData.ShipTypes>(options.BeeShipTypes);"));
             Assert.That(bootstrap, Does.Contain("stage.OverrideHumanShipTypes = new List<ConfigData.ShipTypes>(options.HumanShipTypes);"));
@@ -124,6 +123,10 @@ namespace Bees.Tests.EditMode
 
             string levelSetup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
             Assert.That(levelSetup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map)"));
+
+            string mapState = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
+            Assert.That(mapState, Does.Contain("EpisodeMapSizes.TryGetValue(level"));
+            Assert.That(mapState, Does.Contain("EpisodeMapSizes.Remove(level)"));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             Assert.That(agent, Does.Contain("int initialSlots = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;"));
