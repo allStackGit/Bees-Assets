@@ -1,0 +1,26 @@
+{
+  "behavior_name": "BeesRL1v1",
+  "policy_abi_version": 6,
+  "observation_schema_version": 6,
+  "action_schema_version": 6,
+  "reward_schema_version": 1,
+  "scenario_schema_version": 1,
+  "promotion": {
+    "min_matches_vs_champion": 500,
+    "min_win_rate_vs_champion": 0.52,
+    "max_critical_regressions": 0,
+    "max_historical_regression": 0.15,
+    "min_historical_matches_per_opponent": 50,
+    "min_competency_cases": 1
+  },
+  "historical_league": {
+    "base_weight": 1.0,
+    "weakness_trigger_regression": 0.05,
+    "weakness_bonus_scale": 10.0,
+    "max_weight_multiplier": 4.0
+  },
+  "ingestion": {
+    "max_payload_bytes": 16777216,
+    "max_steps_per_match": 100000
+  }
+}
