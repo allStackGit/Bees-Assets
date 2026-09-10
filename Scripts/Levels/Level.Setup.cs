@@ -95,7 +95,7 @@ namespace Assets.Scripts.Levels
         {
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
-                global::RlOneVsOneTrainingBootstrap.ConfigureTrainingMap(Map);
+                global::RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map);
 
                 // The first learning proof deliberately excludes every environmental dimension
                 // except two ships and the map boundary. Prevent the generic training option path
