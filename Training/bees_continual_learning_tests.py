@@ -250,6 +250,35 @@ class HistoricalLeagueTests(StoreTestCase):
         self.assertLessEqual(weights[self.first["model_id"]]["weight"], 4.0)
         self.assertEqual(weights[self.first["model_id"]]["tags"], ["old-counter"])
 
+    def test_regression_weight_returns_to_baseline_after_recovery(self):
+        self.store.record_historical_matchup(
+            current_model_id=self.current["model_id"],
+            opponent_model_id=self.first["model_id"],
+            current_win_rate=0.20,
+            previous_win_rate=0.80,
+            match_count=20,
+        )
+        regressed = {
+            item["model_id"]: item
+            for item in self.store.historical_sampling_weights(self.current["model_id"])
+        }
+        self.assertGreater(regressed[self.first["model_id"]]["weight"], 1.0)
+
+        self.store.record_historical_matchup(
+            current_model_id=self.current["model_id"],
+            opponent_model_id=self.first["model_id"],
+            current_win_rate=0.78,
+            previous_win_rate=0.80,
+            match_count=20,
+        )
+        recovered = {
+            item["model_id"]: item
+            for item in self.store.historical_sampling_weights(self.current["model_id"])
+        }
+
+        self.assertEqual(recovered[self.first["model_id"]]["regression"], 0.0)
+        self.assertEqual(recovered[self.first["model_id"]]["weight"], 1.0)
+
     def test_weighted_sampler_can_select_from_history(self):
         selection = self.store.sample_historical_opponent(
             self.current["model_id"], rng=random.Random(1)
