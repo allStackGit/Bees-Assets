@@ -65,13 +65,6 @@ internal sealed class RlOneVsOneTrainingOptions
         ConfigData.ShipTypes.WarpGate,
     };
 
-    private static readonly Random MapSizeRandom = new Random(Guid.NewGuid().GetHashCode());
-    private static bool _mapSizeEpisodeSubscriptionInstalled;
-    private static bool _sampledMapSizeValid;
-    private static float _sampledMapSize;
-    private static float _sampledMapSizeMinimum;
-    private static float _sampledMapSizeMaximum;
-
     private readonly List<ConfigData.ShipTypes> _beeShipTypes;
     private readonly List<ConfigData.ShipTypes> _humanShipTypes;
     private bool _beeShipTypesSpecified;
@@ -84,7 +77,11 @@ internal sealed class RlOneVsOneTrainingOptions
     private float _mapSizeMaximum;
 
     internal float HealthRatio { get; private set; }
-    internal float MapSize => GetCurrentMapSize();
+
+    // A range has no single process-wide current value once multiple arenas reset independently.
+    // Return the conservative minimum for legacy/global callers; actual episode sizes are owned by
+    // RlOneVsOneArenaMapSizeState per Level.
+    internal float MapSize => HasMapSizeRange ? _mapSizeMinimum : _mapSize;
     internal float MapSizeMinimum => HasMapSizeRange ? _mapSizeMinimum : _mapSize;
     internal float MapSizeMaximum => HasMapSizeRange ? _mapSizeMaximum : _mapSize;
     internal bool HasMapSizeRange => _mapSizeMinimumSpecified && _mapSizeMaximumSpecified;
@@ -195,48 +192,12 @@ internal sealed class RlOneVsOneTrainingOptions
     internal string Describe()
     {
         string mapDescription = HasMapSizeRange
-            ? $"map_size_range={FormatFloat(_mapSizeMinimum)}..{FormatFloat(_mapSizeMaximum)} sampled_map_size={FormatFloat(MapSize)}"
+            ? $"map_size_range={FormatFloat(_mapSizeMinimum)}..{FormatFloat(_mapSizeMaximum)}"
             : $"map_size={FormatFloat(_mapSize)}";
         return $"health_ratio={FormatFloat(HealthRatio)} {mapDescription} " +
                $"episode_timeout={EpisodeTimeoutSeconds}s ships_per_side={ShipsPerSide} " +
                $"decision_period={DecisionPeriod} matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
                $"bee_ship_types={JoinShipTypes(_beeShipTypes)} human_ship_types={JoinShipTypes(_humanShipTypes)}";
-    }
-
-    private float GetCurrentMapSize()
-    {
-        if (!HasMapSizeRange)
-        {
-            return _mapSize;
-        }
-
-        EnsureMapSizeEpisodeSubscription();
-        if (!_sampledMapSizeValid ||
-            _sampledMapSizeMinimum != _mapSizeMinimum ||
-            _sampledMapSizeMaximum != _mapSizeMaximum)
-        {
-            double unit = MapSizeRandom.NextDouble();
-            _sampledMapSize = _mapSizeMinimum + (float)(unit * (_mapSizeMaximum - _mapSizeMinimum));
-            _sampledMapSizeMinimum = _mapSizeMinimum;
-            _sampledMapSizeMaximum = _mapSizeMaximum;
-            _sampledMapSizeValid = true;
-        }
-        return _sampledMapSize;
-    }
-
-    private static void EnsureMapSizeEpisodeSubscription()
-    {
-        if (_mapSizeEpisodeSubscriptionInstalled)
-        {
-            return;
-        }
-        RlOneVsOneEpisodeCoordinator.EpisodeEnded += HandleEpisodeEnded;
-        _mapSizeEpisodeSubscriptionInstalled = true;
-    }
-
-    private static void HandleEpisodeEnded(Assets.Scripts.Levels.Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
-    {
-        _sampledMapSizeValid = false;
     }
 
     private void ApplySampledRosterDefaults()
