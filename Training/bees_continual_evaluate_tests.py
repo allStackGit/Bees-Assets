@@ -1,8 +1,11 @@
 import json
 import struct
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -11,9 +14,11 @@ from bees_continual_evaluate import (
     EpisodeResult,
     EvaluationError,
     MatchSummary,
+    OnnxPolicy,
     behavior_team_id,
     build_allow_action_mask,
     competency_score,
+    evaluate_and_record,
     evaluate_candidate,
     load_competency_suite,
     parse_episode_message,
@@ -99,6 +104,8 @@ class FakeStore:
             }
         }
         self.models = {}
+        self.evaluations = []
+        self.league_updates = []
         for model_id, status in (
             ("candidate", "candidate"),
             ("champion", "champion"),
@@ -127,6 +134,14 @@ class FakeStore:
     def current_champion_id(self):
         return "champion"
 
+    def record_evaluation(self, report):
+        self.evaluations.append(report)
+        return {"report_id": "eval-1", "passed": True}
+
+    def record_historical_matchup(self, **kwargs):
+        self.league_updates.append(kwargs)
+        return dict(kwargs)
+
 
 class ContinualEvaluateTests(unittest.TestCase):
     def test_result_channel_protocol_is_decoded_exactly(self):
@@ -151,6 +166,7 @@ class ContinualEvaluateTests(unittest.TestCase):
             (1, 1, 1, 1),
         )
         self.assertAlmostEqual(summary.score_rate, 0.5)
+        self.assertAlmostEqual(summary.win_rate, 1 / 3)
 
     def test_duplicate_episode_is_rejected(self):
         with self.assertRaises(EvaluationError):
@@ -179,6 +195,36 @@ class ContinualEvaluateTests(unittest.TestCase):
                 dtype=np.float32,
             ),
         )
+
+    def test_memoryless_onnx_may_omit_recurrent_input(self):
+        class Info:
+            def __init__(self, name, shape):
+                self.name = name
+                self.shape = shape
+
+        class Session:
+            def get_inputs(self):
+                return [
+                    Info("obs_0", [None, 4]),
+                    Info("action_masks", [None, 3]),
+                ]
+
+            def get_outputs(self):
+                return [
+                    Info("deterministic_continuous_actions", [None, 2]),
+                    Info("deterministic_discrete_actions", [None, 1]),
+                ]
+
+        module = types.SimpleNamespace(
+            InferenceSession=lambda *args, **kwargs: Session()
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            model = Path(temp) / "model.onnx"
+            model.write_bytes(b"stub")
+            with patch.dict(sys.modules, {"onnxruntime": module}):
+                policy = OnnxPolicy(model)
+        self.assertFalse(policy.has_recurrent_input)
+        self.assertEqual(policy.memory_size, 0)
 
     def test_competency_suite_validates_metric_and_defaults(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -239,7 +285,7 @@ class ContinualEvaluateTests(unittest.TestCase):
                 candidate_name = Path(kwargs["candidate_model_path"]).stem
                 opponent_name = Path(kwargs["opponent_model_path"]).stem
                 if candidate_name == "champion" and opponent_name == "history":
-                    return MatchSummary(kwargs["matches"], 2, 1, 0, 0, 30.0)
+                    return MatchSummary(kwargs["matches"], 1, 0, 2, 0, 30.0)
                 return MatchSummary(
                     kwargs["matches"], kwargs["matches"], 0, 0, 0, 20.0
                 )
@@ -253,7 +299,7 @@ class ContinualEvaluateTests(unittest.TestCase):
             )
             self.assertEqual(report["candidate_vs_champion"]["matches"], 5)
             self.assertEqual(len(report["historical"]), 1)
-            self.assertAlmostEqual(report["historical"][0]["baseline_win_rate"], 2 / 3)
+            self.assertAlmostEqual(report["historical"][0]["baseline_win_rate"], 1 / 3)
             self.assertTrue(report["historical"][0]["critical"])
             self.assertEqual(
                 report["competencies"][0]["name"], "permanent-history-check"
@@ -261,6 +307,38 @@ class ContinualEvaluateTests(unittest.TestCase):
             self.assertEqual(report["competencies"][0]["score"], 1.0)
             self.assertEqual(len(calls), 4)
             self.assertEqual(calls[-1]["env_args"][-1], "--rl-health-ratio=1")
+
+    def test_evaluate_and_record_updates_historical_league_pressure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = FakeStore(temp)
+
+            def fake_runner(**kwargs):
+                candidate_name = Path(kwargs["candidate_model_path"]).stem
+                opponent_name = Path(kwargs["opponent_model_path"]).stem
+                if candidate_name == "champion" and opponent_name == "history":
+                    return MatchSummary(kwargs["matches"], 3, 0, 0, 0, 10.0)
+                if opponent_name == "history":
+                    return MatchSummary(kwargs["matches"], 1, 2, 0, 0, 10.0)
+                return MatchSummary(
+                    kwargs["matches"], kwargs["matches"], 0, 0, 0, 10.0
+                )
+
+            value = evaluate_and_record(
+                store,
+                candidate_model_id="candidate",
+                environment_path="fake.exe",
+                match_runner=fake_runner,
+            )
+            self.assertEqual(value["recorded"]["report_id"], "eval-1")
+            self.assertEqual(len(value["league_updates"]), 1)
+            update = store.league_updates[0]
+            self.assertEqual(update["current_model_id"], "candidate")
+            self.assertEqual(update["historical_model_id"], "history")
+            self.assertAlmostEqual(update["current_win_rate"], 1 / 3)
+            self.assertEqual(update["previous_win_rate"], 1.0)
+            self.assertEqual(
+                update["metadata"]["evaluation_report_id"], "eval-1"
+            )
 
 
 if __name__ == "__main__":
