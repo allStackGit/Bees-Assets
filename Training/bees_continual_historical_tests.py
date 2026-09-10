@@ -243,6 +243,25 @@ class HistoricalSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(first["model_id"], second["model_id"])
 
+    def test_regression_weight_biases_fresh_training_toward_weakness(self):
+        weighted = [
+            {"model_id": "baseline", "weight": 1.0, "regression": 0.0},
+            {"model_id": "weakness", "weight": 4.0, "regression": 0.3},
+        ]
+        rng = historical.random.Random(314159)
+        counts = {"baseline": 0, "weakness": 0}
+
+        for _ in range(5000):
+            selected = historical.HistoricalOpponentScheduler._choose_weighted(
+                weighted,
+                rng,
+            )
+            counts[selected["model_id"]] += 1
+
+        # A 4:1 configured weight should produce a clear deterministic sampling bias.
+        # Keep the assertion broad enough to test the contract rather than one RNG trace.
+        self.assertGreater(counts["weakness"], counts["baseline"] * 3)
+
     def test_invalid_ratio_and_cache_size_are_rejected(self):
         store = _FakeStore(self.artifact)
         for value in (-0.01, 1.01, float("nan"), True, "not-a-number"):
