@@ -425,11 +425,13 @@ class ContinualLearningStore:
         created_at = utc_now()
         destination_dir = self.models_dir / self._directory_for_status(status)
         destination = destination_dir / f"{model_id}{source.suffix.lower() or '.model'}"
+        destination_preexisted = destination.exists()
         metadata_dict = dict(metadata or {})
         metadata_dict.setdefault("registered_from", str(source))
         metadata_dict.setdefault("artifact_size", source.stat().st_size)
 
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
                 "SELECT * FROM models WHERE artifact_sha256 = ?", (artifact_hash,)
             ).fetchone()
@@ -446,7 +448,7 @@ class ContinualLearningStore:
                 parent = self._model_row(db, parent_model_id)
                 self._assert_model_compatible(parent)
 
-            self._copy_immutable(source, destination)
+            self._copy_immutable(source, destination, artifact_hash)
             try:
                 db.execute(
                     """
@@ -484,10 +486,11 @@ class ContinualLearningStore:
                     ),
                 )
             except Exception:
-                try:
-                    destination.unlink()
-                except FileNotFoundError:
-                    pass
+                if not destination_preexisted:
+                    try:
+                        destination.unlink()
+                    except FileNotFoundError:
+                        pass
                 raise
             return self._row_dict(self._model_row(db, model_id))
 
@@ -524,12 +527,12 @@ class ContinualLearningStore:
             )
 
     @staticmethod
-    def _copy_immutable(source: Path, destination: Path) -> None:
+    def _copy_immutable(source: Path, destination: Path, expected_sha256: str) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
-            if sha256_file(destination) != sha256_file(source):
+            if sha256_file(destination) != expected_sha256:
                 raise ContinualLearningError(
-                    f"Refusing to overwrite immutable model artifact: {destination}"
+                    f"Refusing to overwrite conflicting immutable model artifact: {destination}"
                 )
             return
         fd, temp_name = tempfile.mkstemp(
@@ -541,6 +544,10 @@ class ContinualLearningStore:
         temp = Path(temp_name)
         try:
             shutil.copy2(source, temp)
+            if sha256_file(temp) != expected_sha256:
+                raise ContinualLearningError(
+                    f"Model artifact changed while being registered: {source}"
+                )
             os.replace(temp, destination)
         finally:
             if temp.exists():
@@ -554,6 +561,15 @@ class ContinualLearningStore:
             return "champions"
         return status
 
+    @staticmethod
+    def _assert_artifact_hash(path: Path, expected_sha256: str) -> None:
+        if not path.is_file():
+            raise ContinualLearningError(f"Registered model artifact is missing: {path}")
+        if sha256_file(path) != expected_sha256:
+            raise ContinualLearningError(
+                f"Registered model artifact failed SHA-256 integrity verification: {path}"
+            )
+
     def _move_artifact_for_status(
         self,
         db: sqlite3.Connection,
@@ -561,24 +577,21 @@ class ContinualLearningStore:
         status: str,
     ) -> str:
         current = Path(row["artifact_path"])
+        expected_sha256 = row["artifact_sha256"]
         target_dir = self.models_dir / self._directory_for_status(status)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / current.name
         if current.resolve() == target.resolve():
+            self._assert_artifact_hash(current, expected_sha256)
             return str(current)
         if target.exists():
-            if sha256_file(target) != row["artifact_sha256"]:
-                raise ContinualLearningError(
-                    f"Refusing to overwrite conflicting immutable artifact {target}."
-                )
+            self._assert_artifact_hash(target, expected_sha256)
             if current.exists():
+                self._assert_artifact_hash(current, expected_sha256)
                 current.unlink()
-        elif current.exists():
-            os.replace(current, target)
-        else:
-            raise ContinualLearningError(
-                f"Registered model artifact is missing: {current}"
-            )
+            return str(target)
+        self._assert_artifact_hash(current, expected_sha256)
+        os.replace(current, target)
         return str(target)
 
     def assess_evaluation(self, report: Mapping[str, Any]) -> PromotionDecision:
@@ -738,6 +751,7 @@ class ContinualLearningStore:
         self._write_json_immutable(report_path, body)
 
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
                 "SELECT * FROM evaluations WHERE report_id = ?", (report_id,)
             ).fetchone()
@@ -997,6 +1011,8 @@ class ContinualLearningStore:
                   AND m.policy_abi_version = ?
                   AND m.observation_schema_version = ?
                   AND m.action_schema_version = ?
+                  AND m.reward_schema_version = ?
+                  AND m.scenario_schema_version = ?
                 ORDER BY m.created_at ASC, m.model_id ASC
                 """,
                 (
@@ -1006,6 +1022,8 @@ class ContinualLearningStore:
                     self.compatibility.policy_abi_version,
                     self.compatibility.observation_schema_version,
                     self.compatibility.action_schema_version,
+                    self.compatibility.reward_schema_version,
+                    self.compatibility.scenario_schema_version,
                 ),
             ).fetchall()
 
@@ -1105,7 +1123,7 @@ class ContinualLearningStore:
         if not isinstance(steps, list):
             raise ValidationError("steps must be a list when provided.")
         if len(steps) > int(ingestion["max_steps_per_match"]):
-            raise ValidationError("Telemetry step count exceeds configured maximum.")
+            raise ValidationError("Telemetry step count exceeds configured maximum size.")
 
         payload_hash = sha256_bytes(encoded)
         batch_id = f"telemetry-{payload_hash[:24]}"
