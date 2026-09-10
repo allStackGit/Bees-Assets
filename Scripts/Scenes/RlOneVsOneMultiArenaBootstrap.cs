@@ -108,8 +108,8 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return;
         }
 
-        // Do not disable this component after setup. FixedUpdate below owns confinement for every
-        // non-primary arena for the lifetime of the training process.
+        // Do not disable this component after setup. FixedUpdate below owns confinement and training
+        // durability for every non-primary arena for the lifetime of the training process.
         _applied = true;
 
         try
@@ -172,8 +172,8 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return;
         }
 
-        // The legacy runtime guard already constrains PrimaryLevel. Handle only the additional Levels
-        // here so the single-arena path remains byte-for-byte equivalent in its per-step work.
+        // The legacy runtime and durability guards already handle PrimaryLevel. Handle only the
+        // additional Levels here so every arena receives the same curriculum and confinement rules.
         IReadOnlyList<Level> levels = _stage.Levels;
         for (int levelIndex = 1; levelIndex < levels.Count; levelIndex++)
         {
@@ -186,7 +186,9 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             List<Ship> ships = level.State.GetShips();
             for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
             {
-                ConstrainShipToArena(level, ships[shipIndex]);
+                Ship ship = ships[shipIndex];
+                RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(ship);
+                ConstrainShipToArena(level, ship);
             }
         }
     }
