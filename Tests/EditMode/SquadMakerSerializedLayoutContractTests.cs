@@ -371,14 +371,13 @@ namespace Bees.Tests.EditMode
             canvas.sizeDelta = canvasSize;
             RuntimeAssembly.Invoke(guard, "ApplyViewportFill");
 
-            float horizontalScale = canvasSize.x / ReferenceResolution.x;
             float expectedBodyHeight = canvasSize.y - 51f;
             float expectedCompositionHeight = expectedBodyHeight - 298f;
-            float expectedShipSelectorWidth = 262f * horizontalScale;
-            float expectedCenterWidth = 620f * horizontalScale;
-            float expectedSquadsWidth = 484f * horizontalScale;
-            float expectedSavedSquadsWidth = 262f * horizontalScale;
-            float expectedChosenSquadsWidth = 222f * horizontalScale;
+            float expectedShipSelectorWidth = 262f;
+            float expectedSquadsWidth = 484f;
+            float expectedCenterWidth = Mathf.Max(0f, canvasSize.x - expectedShipSelectorWidth - expectedSquadsWidth);
+            float expectedSavedSquadsWidth = 262f;
+            float expectedChosenSquadsWidth = 222f;
 
             AssertSize(mainPanel, canvasSize.x, canvasSize.y);
             AssertSize(mainContainer, canvasSize.x, expectedBodyHeight);
