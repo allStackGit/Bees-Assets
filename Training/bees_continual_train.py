@@ -31,6 +31,7 @@ GAME_BUILD_FLAG = "--continual-game-build"
 PARENT_MODEL_FLAG = "--continual-parent-model-id"
 SCAN_SECONDS_FLAG = "--continual-scan-seconds"
 DEFAULT_SCAN_SECONDS = 2.0
+DEFAULT_HISTORICAL_POLICY_CACHE_SIZE = 4
 
 
 @dataclass(frozen=True)
@@ -163,7 +164,7 @@ def infer_run_context(argv: Sequence[str]) -> Tuple[Path, str, Path]:
 def historical_training_settings(
     config: Mapping[str, object],
     trainer_args: Sequence[str],
-) -> Tuple[float, Optional[str], int]:
+) -> Tuple[float, Optional[str], int, int]:
     settings = config.get("historical_league", {})
     if not isinstance(settings, dict):
         raise SystemExit("historical_league configuration must be an object.")
@@ -188,12 +189,33 @@ def historical_training_settings(
     else:
         provider = raw_provider.strip()
 
+    raw_cache_size = settings.get(
+        "training_policy_cache_size",
+        DEFAULT_HISTORICAL_POLICY_CACHE_SIZE,
+    )
+    if isinstance(raw_cache_size, bool):
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        )
+    try:
+        cache_size = int(raw_cache_size)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        ) from exc
+    if cache_size <= 0 or (
+        isinstance(raw_cache_size, float) and not raw_cache_size.is_integer()
+    ):
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        )
+
     seed_text = _trainer_arg(trainer_args, "--seed")
     try:
         seed = 0 if seed_text is None else int(seed_text)
     except ValueError as exc:
         raise SystemExit("ML-Agents --seed must be an integer for continual league sampling.") from exc
-    return ratio, provider, seed
+    return ratio, provider, seed, cache_size
 
 
 _STEP_PATTERNS = (
@@ -362,7 +384,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if parent_model_id:
         store.get_model(parent_model_id)  # Fail before training if lineage metadata is invalid.
 
-    historical_ratio, historical_provider, historical_seed = historical_training_settings(
+    (
+        historical_ratio,
+        historical_provider,
+        historical_seed,
+        historical_cache_size,
+    ) = historical_training_settings(
         continual_config,
         trainer_args,
     )
@@ -373,10 +400,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             ratio=historical_ratio,
             seed=historical_seed,
             provider=historical_provider,
+            cache_size=historical_cache_size,
         )
         print(
             f"[Bees continual] persistent historical opponent share={historical_ratio:.1%} "
-            f"provider={historical_provider or 'CPUExecutionProvider'}"
+            f"provider={historical_provider or 'CPUExecutionProvider'} "
+            f"policy_cache={historical_cache_size}"
         )
 
     monitor = CandidateMonitor(
