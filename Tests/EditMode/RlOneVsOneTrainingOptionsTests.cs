@@ -118,9 +118,12 @@ namespace Bees.Tests.EditMode
 
             string squadSetup = ReadSource("Scripts", "Levels", "Level.RandomSquadSetup.cs");
             Assert.That(squadSetup, Does.Contain("shipIndex < shipCount"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOneEpisodeMatchups.PrepareEpisode()"));
-            Assert.That(squadSetup, Does.Contain("RlOneVsOneEpisodeMatchups.GetShipType(side, shipIndex)"));
-            Assert.That(squadSetup, Does.Contain("GetShipFormationOffset(shipIndex)"));
+            Assert.That(squadSetup, Does.Contain("RlOneVsOnePerArenaMatchups.PrepareEpisode(this)"));
+            Assert.That(squadSetup, Does.Contain("RlOneVsOnePerArenaMatchups.GetShipType(this, side, shipIndex)"));
+            Assert.That(squadSetup, Does.Contain("RlOneVsOneArenaMapSizeState.GetShipFormationOffset(this, shipIndex)"));
+
+            string levelSetup = ReadSource("Scripts", "Levels", "Level.Setup.cs");
+            Assert.That(levelSetup, Does.Contain("RlOneVsOneArenaMapSizeState.ConfigureTrainingMap(this, Map)"));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             Assert.That(agent, Does.Contain("int initialSlots = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;"));
