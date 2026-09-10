@@ -106,7 +106,11 @@ namespace Assets.Scripts.Levels
         private void AddRlOneVsOneSquadForSetup(int side)
         {
             int shipCount = global::RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
-            long squadId = Utilities.GetNegativeSavedSquadId();
+
+            // Dedicated RL finalizes after server settings and deliberately never loads the player's
+            // fleet/profile facade. Hash() is already process-unique, so transient negative IDs do not
+            // need the CurrentShips collection-count salt used by ordinary player-facing generation.
+            long squadId = -Utilities.Hash();
             SavedSquad savedSquad = new SavedSquad(
                 squadId,
                 side,
@@ -127,7 +131,7 @@ namespace Assets.Scripts.Levels
                         $"RL training requires a ship belonging to side {side}; configured type at slot {shipIndex} was {type}.");
                 }
 
-                long fleetShipId = Utilities.GetNegativeFleetshipId();
+                long fleetShipId = -Utilities.Hash();
                 FleetShip fleetShip = new FleetShip(
                     fleetShipId,
                     type,
