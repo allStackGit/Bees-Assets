@@ -102,24 +102,31 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TrainingCameraZoomIsDefaultedOnceAndNotForcedEveryLateUpdate()
+        public void TrainingCameraInitializesOnceAndDoesNotOverwriteOperatorChanges()
         {
             string source = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
             int guardStart = source.IndexOf("internal sealed class RlOneVsOneTrainingRuntimeGuard", StringComparison.Ordinal);
             Assert.That(guardStart, Is.GreaterThanOrEqualTo(0));
 
             string guard = source.Substring(guardStart);
-            const string assignment = "_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;";
-            int initializationCheck = guard.IndexOf("if (!_cameraInitialized)", StringComparison.Ordinal);
-            int zoomAssignment = guard.IndexOf(assignment, StringComparison.Ordinal);
+            const string zoomAssignment = "_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;";
+            const string positionAssignment = "_stage.Camera.transform.position = new Vector3(0f, 0f, -10f);";
+            int initializationGuard = guard.IndexOf("if (_cameraInitialized)", StringComparison.Ordinal);
+            int earlyReturn = guard.IndexOf("return;", initializationGuard, StringComparison.Ordinal);
+            int zoom = guard.IndexOf(zoomAssignment, StringComparison.Ordinal);
+            int position = guard.IndexOf(positionAssignment, StringComparison.Ordinal);
             int initialized = guard.IndexOf("_cameraInitialized = true;", StringComparison.Ordinal);
 
             Assert.That(guard, Does.Contain("private bool _cameraInitialized;"));
-            Assert.That(initializationCheck, Is.GreaterThanOrEqualTo(0));
-            Assert.That(zoomAssignment, Is.GreaterThan(initializationCheck));
-            Assert.That(initialized, Is.GreaterThan(zoomAssignment));
-            Assert.That(guard.LastIndexOf(assignment, StringComparison.Ordinal), Is.EqualTo(zoomAssignment),
+            Assert.That(initializationGuard, Is.GreaterThanOrEqualTo(0));
+            Assert.That(earlyReturn, Is.GreaterThan(initializationGuard));
+            Assert.That(zoom, Is.GreaterThan(earlyReturn));
+            Assert.That(position, Is.GreaterThan(zoom));
+            Assert.That(initialized, Is.GreaterThan(position));
+            Assert.That(guard.LastIndexOf(zoomAssignment, StringComparison.Ordinal), Is.EqualTo(zoom),
                 "The runtime guard should establish the training zoom once, not overwrite manual camera zoom changes every frame.");
+            Assert.That(guard, Does.Not.Contain("Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();"),
+                "The runtime guard must not snap the camera back to the primary arena after initialization.");
         }
 
         private static string ReadSource(params string[] pathParts)
