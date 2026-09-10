@@ -151,7 +151,7 @@ namespace Bees.Tests.EditMode
             Assert.That(immediateReward, Is.GreaterThan(tsvCalculated));
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(coordinator, Does.Contain("TsvRewardOccurred?.Invoke(side, reward);"));
+            Assert.That(coordinator, Does.Contain("TsvRewardOccurred?.Invoke(_level, side, emittedReward);"));
             Assert.That(coordinator, Does.Contain("_beeTsvRewardThisEpisode"));
             Assert.That(coordinator, Does.Not.Contain("float beeTsv = RlOneVsOneReward.CalculateTsvDeltaReward"));
 
@@ -181,11 +181,11 @@ namespace Bees.Tests.EditMode
 
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "BehaviorName"), Is.EqualTo("BeesRL1v1"));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(34));
-            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 0"));
-            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.BeeSide, 1"));
-            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 0"));
-            Assert.That(agent, Does.Contain("CreateAgent(stage, ConfigData.Configuration.HumanSide, 1"));
-            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor)"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 1"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 0"));
+            Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 1"));
+            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
             Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
         }
 
@@ -195,7 +195,7 @@ namespace Bees.Tests.EditMode
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             Assert.That(coordinator, Does.Contain("int beeTeamId = (episodeNumber & 1) == 1 ? 0 : 1;"));
             Assert.That(coordinator, Does.Contain("return 1 - beeTeamId;"));
-            Assert.That(coordinator, Does.Contain("IsControllerForSide(int side, int teamId)"));
+            Assert.That(coordinator, Does.Contain("IsControllerForSide(Level level, int side, int teamId)"));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             Assert.That(agent, Does.Contain("!IsCurrentController()"));
@@ -211,11 +211,11 @@ namespace Bees.Tests.EditMode
             string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4685));
-            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor)"));
-            Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin)"));
-            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin)"));
-            Assert.That(perception, Does.Contain("AddEnemyWeaponMountSlots(sensor, origin)"));
-            Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor)"));
+            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddEnemyWeaponMountSlots(sensor, origin, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor, frameQuarterTurns)"));
             Assert.That(perception, Does.Not.Contain("MaxObservedProjectiles"));
             Assert.That(perception, Does.Not.Contain("AddProjectileSlots"),
                 "Projectile-evasion slots are intentionally outside the canonical policy; weapon ProjectileValue remains a weapon characteristic.");
@@ -242,7 +242,7 @@ namespace Bees.Tests.EditMode
             string targeting = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Targeting.cs");
             Assert.That(targeting, Does.Contain("if (IsRlControlled)"));
             Assert.That(targeting, Does.Contain("TargetingPasses >= PassesPerFire"));
-            Assert.That(targeting, Does.Contain("RlFireRequested && IsAimedAtTarget"));
+            Assert.That(targeting, Does.Contain("RlFireRequested && CanAcceptRlFireRequest()"));
             Assert.That(targeting, Does.Contain("FireAtPoint();"));
         }
 
@@ -272,7 +272,7 @@ namespace Bees.Tests.EditMode
             Assert.That(coordinatorType.GetEvent("EpisodeEnded", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null);
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(coordinator, Does.Contain("EpisodeEnded?.Invoke(LastEpisodeResult);"));
+            Assert.That(coordinator, Does.Contain("EpisodeEnded?.Invoke(level, result);"));
             Assert.That(coordinator, Does.Contain("int winningSide = DetermineWinner(level);"));
 
             string runtime = ReadSource("Scripts", "Levels", "Level.Runtime.cs");
@@ -286,7 +286,7 @@ namespace Bees.Tests.EditMode
         public void TimeoutIsReportedAsNoWinnerBeforeLevelTeardown()
         {
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
-            Assert.That(coordinator, Does.Contain("_active.CompleteEpisode(level, 0, true);"));
+            Assert.That(coordinator, Does.Contain("coordinator.CompleteEpisode(level, 0, true);"));
 
             string ending = ReadSource("Scripts", "Levels", "Level.Ending.cs");
             int report = ending.IndexOf("RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);", StringComparison.Ordinal);
@@ -308,7 +308,31 @@ namespace Bees.Tests.EditMode
                 "Apply",
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(apply, Is.Not.Null);
-            apply.Invoke(null, new object[] { _stage });
+
+            Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            object previousConfiguration = RuntimeAssembly.GetStaticField(configDataType, "Configuration");
+            object previousStartingSettings = RuntimeAssembly.GetStaticField(configDataType, "StartingSettings");
+            object previousShipInfo = RuntimeAssembly.GetStaticField(configDataType, "ShipInfo");
+            try
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", CreateLoadedSetting("Assets.Scripts.Settings.Configuration"));
+                RuntimeAssembly.SetStaticField(configDataType, "StartingSettings", CreateLoadedSetting("Assets.Scripts.Settings.StartingSettings"));
+                RuntimeAssembly.SetStaticField(configDataType, "ShipInfo", CreateLoadedSetting("Assets.Scripts.Settings.ShipStats"));
+                apply.Invoke(null, new object[] { _stage });
+            }
+            finally
+            {
+                RuntimeAssembly.SetStaticField(configDataType, "Configuration", previousConfiguration);
+                RuntimeAssembly.SetStaticField(configDataType, "StartingSettings", previousStartingSettings);
+                RuntimeAssembly.SetStaticField(configDataType, "ShipInfo", previousShipInfo);
+            }
+        }
+
+        private static object CreateLoadedSetting(string typeName)
+        {
+            object setting = RuntimeAssembly.CreateUninitialized(typeName);
+            RuntimeAssembly.SetField(setting, "IsLoaded", true);
+            return setting;
         }
 
         private object GetBootstrapConstant(string name)
