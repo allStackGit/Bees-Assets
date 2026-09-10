@@ -140,9 +140,26 @@ class FakeStore:
         self.evaluations.append(report)
         return {"report_id": "eval-1", "passed": True}
 
-    def record_historical_matchup(self, **kwargs):
-        self.league_updates.append(kwargs)
-        return dict(kwargs)
+    def record_historical_matchup(
+        self,
+        *,
+        current_model_id,
+        opponent_model_id,
+        current_win_rate,
+        match_count,
+        previous_win_rate=None,
+        tags=None,
+    ):
+        update = {
+            "current_model_id": current_model_id,
+            "opponent_model_id": opponent_model_id,
+            "current_win_rate": current_win_rate,
+            "previous_win_rate": previous_win_rate,
+            "match_count": match_count,
+            "tags": list(tags or []),
+        }
+        self.league_updates.append(update)
+        return dict(update)
 
 
 class ContinualEvaluateTests(unittest.TestCase):
@@ -354,11 +371,13 @@ class ContinualEvaluateTests(unittest.TestCase):
             self.assertEqual(len(value["league_updates"]), 1)
             update = store.league_updates[0]
             self.assertEqual(update["current_model_id"], "candidate")
-            self.assertEqual(update["historical_model_id"], "history")
+            self.assertEqual(update["opponent_model_id"], "history")
             self.assertAlmostEqual(update["current_win_rate"], 1 / 3)
             self.assertEqual(update["previous_win_rate"], 1.0)
+            self.assertEqual(update["match_count"], 3)
             self.assertEqual(
-                update["metadata"]["evaluation_report_id"], "eval-1"
+                update["tags"],
+                ["authoritative_candidate_evaluation", "evaluation:eval-1"],
             )
 
 
