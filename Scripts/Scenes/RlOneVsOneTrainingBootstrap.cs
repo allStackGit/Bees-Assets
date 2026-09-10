@@ -296,7 +296,6 @@ internal static class RlOneVsOneTrainingBootstrap
         // not reach music or effect paths that expect the controller to have a bound Level.
         stage.ActivateAudio = false;
         stage.PlayMusic = false;
-
         stage.LevelCount = TrainingLevelCount;
 
         // The dedicated RL path always creates one explicit squad per side; CurrentShipsPerSide
@@ -393,10 +392,12 @@ internal sealed class RlOneVsOneTrainingStartupGate : MonoBehaviour
 internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
 {
     private Stage _stage;
+    private bool _cameraInitialized;
 
     internal void Configure(Stage stage)
     {
         _stage = stage;
+        _cameraInitialized = false;
     }
 
     private void FixedUpdate()
@@ -426,7 +427,14 @@ internal sealed class RlOneVsOneTrainingRuntimeGuard : MonoBehaviour
             return;
         }
 
-        _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
+        // Establish the training view once, then leave orthographicSize alone so an operator can
+        // adjust the Camera manually while observing a visible Editor/standalone training run.
+        if (!_cameraInitialized)
+        {
+            _stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;
+            _cameraInitialized = true;
+        }
+
         Vector2 levelPosition = _stage.PrimaryLevel.GetPosition();
         _stage.Camera.transform.position = new Vector3(levelPosition.x, levelPosition.y, -10f);
     }
