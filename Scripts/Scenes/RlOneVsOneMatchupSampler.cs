@@ -750,7 +750,7 @@ internal static class RlOneVsOneEpisodeMatchups
         return Selector.GetShipType(side, shipIndex);
     }
 
-    private static void HandleEpisodeEnded(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
+    private static void HandleEpisodeEnded(Assets.Scripts.Levels.Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
         _selector?.RecordEpisodeOutcome(result.WinningSide, result.TimedOut);
     }

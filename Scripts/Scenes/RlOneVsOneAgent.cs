@@ -326,7 +326,7 @@ internal sealed class RlOneVsOneAgent : Agent
         int existing = GetAgentCount(level, side, teamId);
         for (int slot = existing; slot < required; slot++)
         {
-            CreateAgent(stage, level, side, teamId, $"Dynamic Arena {level.GetInstanceID()} Side {side} Team {teamId} Slot {slot}");
+            CreateAgent(stage, level, side, teamId, $"Dynamic Arena {level.GetEntityId()} Side {side} Team {teamId} Slot {slot}");
         }
     }
 
