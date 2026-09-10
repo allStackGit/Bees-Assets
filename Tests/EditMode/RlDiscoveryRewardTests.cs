@@ -163,7 +163,7 @@ namespace Bees.Tests.EditMode
                 "RlOneVsOneEpisodeCoordinator.cs"));
 
             StringAssert.Contains("private bool _discoveryRewardsReady;", source);
-            StringAssert.Contains("TryEnableDiscoveryRewards(currentLevel);", source);
+            StringAssert.Contains("TryEnableDiscoveryRewards(_level);", source);
             StringAssert.Contains("ArePolicyControlledShipsReady(level, beeSide)", source);
             StringAssert.Contains("ArePolicyControlledShipsReady(level, humanSide)", source);
             StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain", source);
