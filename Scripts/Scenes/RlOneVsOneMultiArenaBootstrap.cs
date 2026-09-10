@@ -108,8 +108,9 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             return;
         }
 
+        // Do not disable this component after setup. FixedUpdate below owns confinement for every
+        // non-primary arena for the lifetime of the training process.
         _applied = true;
-        enabled = false;
 
         try
         {
