@@ -7,7 +7,8 @@ while applying Bees-specific performance and device fixes:
 * --bees-torch-threads controls PyTorch intra-op CPU threads.
 * --bees-batch-inference batches idle workers by exact behavior id, keeps full
   policy outputs in the trainer process, sends Unity only the environment action,
-  and samples worker timer-tree IPC.
+  and samples worker timer-tree IPC. Explicitly marked stateless/feed-forward
+  external policies can use the same cross-worker batching path.
 * --bees-cpu-inference keeps PPO/optimizer state on --torch-device while using a
   synchronized CPU actor replica for environment inference.
 
@@ -390,7 +391,10 @@ def _install_batched_inference(cpu_inference: bool = False):
 
         for behavior_name, entries in behavior_entries.items():
             policy = self.policies[behavior_name]
-            if not isinstance(policy, TorchPolicy):
+            external_batch_safe = bool(
+                getattr(policy, "bees_batch_inference_safe", False)
+            )
+            if not isinstance(policy, TorchPolicy) and not external_batch_safe:
                 for worker, decision_steps in entries:
                     worker_actions[worker.worker_id][behavior_name] = policy.get_action(
                         decision_steps, worker.worker_id
@@ -412,6 +416,43 @@ def _install_batched_inference(cpu_inference: bool = False):
                         for agent_id in decision_steps.agent_id
                     )
                     start = end
+
+            if external_batch_safe and not isinstance(policy, TorchPolicy):
+                with hierarchical_timer("BeesBatch.external_policy"):
+                    batched_info = policy.get_action(batched_steps, 0)
+                if len(batched_info.agent_ids) != len(batched_steps):
+                    raise RuntimeError(
+                        f"Batch-safe external policy {type(policy).__name__} returned "
+                        f"{len(batched_info.agent_ids)} agent ids for "
+                        f"{len(batched_steps)} decision steps."
+                    )
+                with hierarchical_timer("BeesBatch.split"):
+                    for worker, decision_steps, start, end in ranges:
+                        local_action = slice_action_tuple(
+                            batched_info.action,
+                            start,
+                            end,
+                        )
+                        local_env_action = slice_action_tuple(
+                            batched_info.env_action,
+                            start,
+                            end,
+                        )
+                        local_outputs = split_outputs(
+                            batched_info.outputs,
+                            start,
+                            end,
+                        )
+                        # AgentProcessor requires the exact action under outputs even
+                        # when the external policy did not redundantly include it.
+                        local_outputs["action"] = local_action
+                        worker_actions[worker.worker_id][behavior_name] = ActionInfo(
+                            action=local_action,
+                            env_action=local_env_action,
+                            outputs=local_outputs,
+                            agent_ids=list(decision_steps.agent_id),
+                        )
+                continue
 
             if cpu_actor_cache is None:
                 run_out = policy.evaluate(batched_steps, global_agent_ids)
