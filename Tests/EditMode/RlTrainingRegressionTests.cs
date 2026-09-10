@@ -48,8 +48,8 @@ namespace Bees.Tests.EditMode
             Assert.That(fireBarge, Does.Contain("LogDamage(Health, \"FireBarge\", true);"),
                 "Fire Barge self-destruction must flow through unattributed TSV loss accounting while preserving self-damage diagnostics.");
 
-            Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, this, ContactedShip);"));
-            Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, ContactedShip, this);"));
+            Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, this, ContactedShip, this);"));
+            Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, ContactedShip, this, this);"));
             Assert.That(yellowJacket, Does.Not.Contain("LogDamage("),
                 "Yellow Jacket uses explicit directed hit accounting and must not also enter the unattributed path.");
 
