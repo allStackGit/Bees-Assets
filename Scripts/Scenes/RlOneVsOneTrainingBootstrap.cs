@@ -355,9 +355,10 @@ internal static class RlOneVsOneTrainingBootstrap
 }
 
 /// <summary>
-/// Waits for the normal server-settings lifecycle before applying dedicated RL overrides. Its update
-/// order is earlier than Scene.Update so, on the frame settings finish loading, the Stage sees the RL
-/// flags before it can enter FinalizeSceneWithUserData and spawn/setup levels.
+/// Waits for the normal server-settings lifecycle before applying dedicated RL overrides. It runs
+/// before Scene.Update. If the final settings response is pumped during Scene.Update, that frame's
+/// settings-only training gate suppresses user-data/network handling; on the next frame this gate
+/// applies the RL flags before Scene finalizes and spawns the entirely local training level.
 /// </summary>
 [DefaultExecutionOrder(-10000)]
 internal sealed class RlOneVsOneTrainingStartupGate : MonoBehaviour
