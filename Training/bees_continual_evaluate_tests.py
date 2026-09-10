@@ -333,6 +333,8 @@ class ContinualEvaluateTests(unittest.TestCase):
                 candidate_model_id="candidate",
                 environment_path="fake.exe",
                 competency_suite=suite,
+                seed=37,
+                worker_id=50,
                 match_runner=fake_runner,
             )
             self.assertEqual(report["candidate_vs_champion"]["matches"], 5)
@@ -344,6 +346,9 @@ class ContinualEvaluateTests(unittest.TestCase):
             )
             self.assertEqual(report["competencies"][0]["score"], 1.0)
             self.assertEqual(len(calls), 4)
+            self.assertEqual(calls[1]["seed"], calls[2]["seed"])
+            self.assertEqual(calls[1]["worker_id"] + 1, calls[2]["worker_id"])
+            self.assertNotEqual(calls[1]["worker_id"], calls[2]["worker_id"])
             self.assertEqual(calls[-1]["env_args"][-1], "--rl-health-ratio=1")
 
     def test_evaluate_and_record_updates_historical_league_pressure(self):

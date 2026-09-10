@@ -758,6 +758,7 @@ def evaluate_candidate(
     historical_results: List[Dict[str, Any]] = []
     for historical in historical_models:
         opponent_id = historical["model_id"]
+        paired_seed = seed + run_number
         candidate_summary = run(opponent_id, historical_match_count)
         baseline_rate: Optional[float] = None
         baseline_summary: Optional[MatchSummary] = None
@@ -765,7 +766,6 @@ def evaluate_candidate(
             champion_path = _model_path(store, champion_id)
             opponent_path = _model_path(store, opponent_id)
             current_worker = worker_id + run_number
-            current_seed = seed + run_number
             run_number += 1
             baseline_summary = match_runner(
                 environment_path=environment_path,
@@ -774,7 +774,7 @@ def evaluate_candidate(
                 matches=historical_match_count,
                 behavior_name=behavior_name,
                 env_args=base_env_args,
-                seed=current_seed,
+                seed=paired_seed,
                 worker_id=current_worker,
                 timeout_wait=timeout_wait,
                 onnx_provider=onnx_provider,
