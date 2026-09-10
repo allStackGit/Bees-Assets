@@ -711,9 +711,22 @@ class ContinualLearningStore:
         if not candidate_id:
             raise ValidationError("Evaluation candidate_model_id is required.")
 
+        report_champion_value = report.get("champion_model_id")
+        if report_champion_value in (None, ""):
+            report_champion_id = None
+        elif not isinstance(report_champion_value, str) or not report_champion_value.strip():
+            raise ValidationError(
+                "Evaluation champion_model_id must be a non-empty string when provided."
+            )
+        else:
+            report_champion_id = report_champion_value.strip()
+
         with self._connect() as db:
             candidate = self._model_row(db, candidate_id)
             self._assert_model_compatible(candidate)
+            if report_champion_id is not None:
+                report_champion = self._model_row(db, report_champion_id)
+                self._assert_model_compatible(report_champion)
 
         decision = self.assess_evaluation(report)
         body = dict(report)
@@ -729,7 +742,6 @@ class ContinualLearningStore:
                 "SELECT * FROM evaluations WHERE report_id = ?", (report_id,)
             ).fetchone()
             if existing is None:
-                champion_id = self._state(db, STATE_CHAMPION)
                 db.execute(
                     """
                     INSERT INTO evaluations(
@@ -740,7 +752,7 @@ class ContinualLearningStore:
                     (
                         report_id,
                         candidate_id,
-                        champion_id,
+                        report_champion_id,
                         created_at,
                         int(decision.passed),
                         canonical_json(list(decision.reasons)),
@@ -801,8 +813,27 @@ class ContinualLearningStore:
                     "Candidate failed its evaluation: "
                     + "; ".join(json.loads(evaluation["reasons_json"]))
                 )
+
+            try:
+                report_body = json.loads(evaluation["report_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise PromotionError("Evaluation report payload is corrupted.") from exc
+            if not isinstance(report_body, dict):
+                raise PromotionError("Evaluation report payload must be an object.")
+            if report_body.get("candidate_model_id") != candidate_model_id:
+                raise PromotionError(
+                    "Evaluation record candidate does not match the candidate in its report."
+                )
+            report_champion_id = report_body.get("champion_model_id")
+            if report_champion_id == "":
+                report_champion_id = None
+            if report_champion_id != evaluation["champion_model_id"]:
+                raise PromotionError(
+                    "Evaluation record champion does not match the champion in its report."
+                )
+
             current = self._state(db, STATE_CHAMPION)
-            if evaluation["champion_model_id"] != current:
+            if report_champion_id != current:
                 raise PromotionError(
                     "Champion changed after this evaluation; re-evaluate candidate against current champion."
                 )
