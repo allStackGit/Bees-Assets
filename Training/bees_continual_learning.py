@@ -1161,6 +1161,7 @@ class ContinualLearningStore:
         archive = self.experience_dir / "raw-live" / f"{batch_id}.json"
 
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             duplicate = db.execute(
                 """
                 SELECT * FROM telemetry_batches
@@ -1238,6 +1239,7 @@ class ContinualLearningStore:
         archive = self.experience_dir / "human-demos" / f"{batch_id}.json"
 
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             duplicate = db.execute(
                 """
                 SELECT * FROM demonstration_batches
