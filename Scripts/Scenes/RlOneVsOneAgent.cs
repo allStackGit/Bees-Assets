@@ -78,11 +78,13 @@ internal sealed class RlOneVsOneAgent : Agent
     private const int HealingPerSuccessfulAction = 50;
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
-    private static readonly Dictionary<int, int> AgentCounts = new Dictionary<int, int>();
+    private static readonly Dictionary<Level, Dictionary<int, int>> AgentCounts =
+        new Dictionary<Level, Dictionary<int, int>>();
     private static bool _invalidEnvironmentReported;
     private static int _lastProvisionFrame = -1;
 
     private Stage _stage;
+    private Level _level;
     private Ship _ship;
     private int _side;
     private int _teamId;
@@ -137,12 +139,22 @@ internal sealed class RlOneVsOneAgent : Agent
         _invalidEnvironmentReported = false;
 
         int initialSlots = RlOneVsOneTrainingBootstrap.CurrentShipsPerSide;
-        for (int slot = 0; slot < initialSlots; slot++)
+        IReadOnlyList<Level> levels = stage.Levels;
+        for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)
         {
-            CreateAgent(stage, ConfigData.Configuration.BeeSide, 0, $"Bee Team 0 Slot {slot}");
-            CreateAgent(stage, ConfigData.Configuration.BeeSide, 1, $"Bee Team 1 Slot {slot}");
-            CreateAgent(stage, ConfigData.Configuration.HumanSide, 0, $"Human Team 0 Slot {slot}");
-            CreateAgent(stage, ConfigData.Configuration.HumanSide, 1, $"Human Team 1 Slot {slot}");
+            Level level = levels[levelIndex];
+            if (level == null)
+            {
+                continue;
+            }
+
+            for (int slot = 0; slot < initialSlots; slot++)
+            {
+                CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 0, $"Arena {levelIndex} Bee Team 0 Slot {slot}");
+                CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 1, $"Arena {levelIndex} Bee Team 1 Slot {slot}");
+                CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 0, $"Arena {levelIndex} Human Team 0 Slot {slot}");
+                CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 1, $"Arena {levelIndex} Human Team 1 Slot {slot}");
+            }
         }
 
         Debug.Log($"RL policy ABI v{RlPolicySchema.Version} {RlPolicySchema.Signature} " +
@@ -154,7 +166,8 @@ internal sealed class RlOneVsOneAgent : Agent
                   $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
                   $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
                   $"weapon_slots={MaxWeaponSlots} enemy_weapon_mounts={MaxObservedEnemyWeaponMounts} " +
-                  $"objective_channels={ObjectiveObservationSize} spawned_ship_control=dynamic");
+                  $"objective_channels={ObjectiveObservationSize} spawned_ship_control=dynamic " +
+                  $"arenas={levels.Count}");
     }
 
     private static int AgentCountKey(int side, int teamId)
@@ -162,33 +175,62 @@ internal sealed class RlOneVsOneAgent : Agent
         return side * 4 + teamId;
     }
 
-    private static void IncrementAgentCount(int side, int teamId)
+    private static Dictionary<int, int> GetAgentCounts(Level level, bool create)
     {
-        int key = AgentCountKey(side, teamId);
-        AgentCounts.TryGetValue(key, out int count);
-        AgentCounts[key] = count + 1;
+        if (level == null)
+        {
+            return null;
+        }
+        if (!AgentCounts.TryGetValue(level, out Dictionary<int, int> counts) && create)
+        {
+            counts = new Dictionary<int, int>();
+            AgentCounts[level] = counts;
+        }
+        return counts;
     }
 
-    private static void DecrementAgentCount(int side, int teamId)
+    private static void IncrementAgentCount(Level level, int side, int teamId)
     {
+        Dictionary<int, int> counts = GetAgentCounts(level, true);
         int key = AgentCountKey(side, teamId);
-        if (!AgentCounts.TryGetValue(key, out int count))
+        counts.TryGetValue(key, out int count);
+        counts[key] = count + 1;
+    }
+
+    private static void DecrementAgentCount(Level level, int side, int teamId)
+    {
+        Dictionary<int, int> counts = GetAgentCounts(level, false);
+        if (counts == null)
+        {
+            return;
+        }
+        int key = AgentCountKey(side, teamId);
+        if (!counts.TryGetValue(key, out int count))
         {
             return;
         }
         if (count <= 1)
         {
-            AgentCounts.Remove(key);
+            counts.Remove(key);
+            if (counts.Count == 0)
+            {
+                AgentCounts.Remove(level);
+            }
         }
         else
         {
-            AgentCounts[key] = count - 1;
+            counts[key] = count - 1;
         }
     }
 
-    private static int GetAgentCount(int side, int teamId)
+    private static int GetAgentCount(Level level, int side, int teamId)
     {
-        AgentCounts.TryGetValue(AgentCountKey(side, teamId), out int count);
+        Dictionary<int, int> counts = GetAgentCounts(level, false);
+        if (counts == null)
+        {
+            return 0;
+        }
+        counts.TryGetValue(AgentCountKey(side, teamId), out int count);
         return count;
     }
 
@@ -206,10 +248,10 @@ internal sealed class RlOneVsOneAgent : Agent
         return branchSizes;
     }
 
-    private static void CreateAgent(Stage stage, int side, int teamId, string label)
+    private static void CreateAgent(Stage stage, Level level, int side, int teamId, string label)
     {
         GameObject obj = new GameObject($"RL Combat Agent - {label}");
-        obj.transform.SetParent(stage.transform, false);
+        obj.transform.SetParent(level != null ? level.transform : stage.transform, false);
 
         BehaviorParameters behavior = obj.AddComponent<BehaviorParameters>();
         behavior.BehaviorName = BehaviorName;
@@ -222,9 +264,10 @@ internal sealed class RlOneVsOneAgent : Agent
 
         RlOneVsOneAgent agent = obj.AddComponent<RlOneVsOneAgent>();
         agent._stage = stage;
+        agent._level = level;
         agent._side = side;
         agent._teamId = teamId;
-        IncrementAgentCount(side, teamId);
+        IncrementAgentCount(level, side, teamId);
     }
 
     private static void ProvisionAgentsForSpawnedShips(Stage stage)
@@ -237,20 +280,24 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         _lastProvisionFrame = Time.frameCount;
-        Level level = stage.PrimaryLevel;
-        if (level == null || level.State == null)
+        IReadOnlyList<Level> levels = stage.Levels;
+        for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)
         {
-            return;
-        }
+            Level level = levels[levelIndex];
+            if (level == null || level.State == null)
+            {
+                continue;
+            }
 
-        int beeSide = ConfigData.Configuration.BeeSide;
-        int humanSide = ConfigData.Configuration.HumanSide;
-        int beeRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, beeSide));
-        int humanRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, humanSide));
-        EnsureAgentCount(stage, beeSide, 0, beeRequired);
-        EnsureAgentCount(stage, beeSide, 1, beeRequired);
-        EnsureAgentCount(stage, humanSide, 0, humanRequired);
-        EnsureAgentCount(stage, humanSide, 1, humanRequired);
+            int beeSide = ConfigData.Configuration.BeeSide;
+            int humanSide = ConfigData.Configuration.HumanSide;
+            int beeRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, beeSide));
+            int humanRequired = Mathf.Max(RlOneVsOneTrainingBootstrap.CurrentShipsPerSide, CountPolicyControlledShips(level, humanSide));
+            EnsureAgentCount(stage, level, beeSide, 0, beeRequired);
+            EnsureAgentCount(stage, level, beeSide, 1, beeRequired);
+            EnsureAgentCount(stage, level, humanSide, 0, humanRequired);
+            EnsureAgentCount(stage, level, humanSide, 1, humanRequired);
+        }
     }
 
     private static int CountPolicyControlledShips(Level level, int side)
@@ -274,12 +321,12 @@ internal sealed class RlOneVsOneAgent : Agent
                 CanUseMiningAction(ship) || CanUseHealingAction(ship) || CanUseWarpAction(ship));
     }
 
-    private static void EnsureAgentCount(Stage stage, int side, int teamId, int required)
+    private static void EnsureAgentCount(Stage stage, Level level, int side, int teamId, int required)
     {
-        int existing = GetAgentCount(side, teamId);
+        int existing = GetAgentCount(level, side, teamId);
         for (int slot = existing; slot < required; slot++)
         {
-            CreateAgent(stage, side, teamId, $"Dynamic Side {side} Team {teamId} Slot {slot}");
+            CreateAgent(stage, level, side, teamId, $"Dynamic Arena {level.GetInstanceID()} Side {side} Team {teamId} Slot {slot}");
         }
     }
 
@@ -299,7 +346,7 @@ internal sealed class RlOneVsOneAgent : Agent
         ReleaseShip();
         if (_side != 0)
         {
-            DecrementAgentCount(_side, _teamId);
+            DecrementAgentCount(_level, _side, _teamId);
         }
         base.OnDisable();
     }
@@ -318,8 +365,9 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private void ResetWeaponAimDirections()
     {
-        int frameQuarterTurns = _ship != null
-            ? RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId)
+        Level level = _ship != null ? _ship.Level : _level;
+        int frameQuarterTurns = level != null
+            ? RlPolicyCoordinateFrame.GetQuarterTurns(level, _teamId)
             : 0;
         Vector2 defaultAim = RlPolicyCoordinateFrame.PolicyToWorld(Vector2.up, frameQuarterTurns);
         for (int slot = 0; slot < _weaponAimDirections.Length; slot++)
@@ -705,20 +753,24 @@ internal sealed class RlOneVsOneAgent : Agent
         RlOneVsOneEpisodeCoordinator.RecordSuccessfulCapabilityOutcome(_ship, tsvValue);
     }
 
-    private void HandleTsvRewardOccurred(int side, float reward)
+    private void HandleTsvRewardOccurred(Level level, int side, float reward)
     {
-        if (side == _side && IsCurrentController() && _hasParticipatedThisEpisode)
+        if (level == _level && side == _side && IsCurrentController() && _hasParticipatedThisEpisode)
         {
             AddReward(reward);
         }
     }
 
-    private void HandleEpisodeEnded(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
+    private void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
-        // The coordinator raises this once per environment episode. Every agent receives the event,
-        // but repeated invalidation is harmless and guarantees a fresh randomized frame even if the
-        // training lifecycle reuses the same Level instance for the following episode.
-        RlPolicyCoordinateFrame.EndEpisode();
+        if (level != _level)
+        {
+            return;
+        }
+
+        // Invalidate only this arena's randomized frame. Other arenas may be part-way through an
+        // unrelated episode and must retain their coordinate assignment.
+        RlPolicyCoordinateFrame.EndEpisode(level);
 
         if (result.EpisodeNumber <= _lastRewardedEpisode)
         {
@@ -743,12 +795,12 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private bool IsCurrentController()
     {
-        return RlOneVsOneEpisodeCoordinator.IsControllerForSide(_side, _teamId);
+        return RlOneVsOneEpisodeCoordinator.IsControllerForSide(_level, _side, _teamId);
     }
 
     private bool TryBindShip()
     {
-        Level level = _stage != null ? _stage.PrimaryLevel : null;
+        Level level = _level != null ? _level : (_stage != null ? _stage.PrimaryLevel : null);
         if (level == null || level.State == null)
         {
             ReleaseShip();
@@ -838,7 +890,7 @@ internal sealed class RlOneVsOneAgent : Agent
         for (int i = 0; i < Instances.Count; i++)
         {
             RlOneVsOneAgent other = Instances[i];
-            if (other != null && other != this && other._side == _side && other._teamId == _teamId &&
+            if (other != null && other != this && other._level == _level && other._side == _side && other._teamId == _teamId &&
                 other._hasBoundShip && other._ship == candidate)
             {
                 return true;
@@ -965,9 +1017,14 @@ internal static class RlPolicyCoordinateFrame
     private const int DistinctOrderedPairCount = QuarterTurnCount * (QuarterTurnCount - 1);
     private static readonly System.Random FrameRandom = new System.Random(System.Guid.NewGuid().GetHashCode());
 
-    private static Level _episodeLevel;
-    private static int _team0QuarterTurns;
-    private static int _team1QuarterTurns;
+    private sealed class EpisodeFrame
+    {
+        internal int Team0QuarterTurns;
+        internal int Team1QuarterTurns;
+    }
+
+    private static readonly Dictionary<Level, EpisodeFrame> EpisodeFrames =
+        new Dictionary<Level, EpisodeFrame>();
     private static int _assignmentGeneration;
 
     internal static int GetQuarterTurns(Level level, int teamId)
@@ -977,24 +1034,29 @@ internal static class RlPolicyCoordinateFrame
             return 0;
         }
 
-        if (_episodeLevel != level)
+        if (!EpisodeFrames.TryGetValue(level, out EpisodeFrame frame))
         {
-            AssignNewEpisode(level, FrameRandom.Next(DistinctOrderedPairCount));
+            DecodeDistinctPair(FrameRandom.Next(DistinctOrderedPairCount),
+                out int team0QuarterTurns,
+                out int team1QuarterTurns);
+            frame = new EpisodeFrame
+            {
+                Team0QuarterTurns = team0QuarterTurns,
+                Team1QuarterTurns = team1QuarterTurns
+            };
+            EpisodeFrames[level] = frame;
+            _assignmentGeneration++;
         }
 
-        return teamId == 0 ? _team0QuarterTurns : _team1QuarterTurns;
+        return teamId == 0 ? frame.Team0QuarterTurns : frame.Team1QuarterTurns;
     }
 
-    internal static void EndEpisode()
+    internal static void EndEpisode(Level level)
     {
-        _episodeLevel = null;
-    }
-
-    private static void AssignNewEpisode(Level level, int pairIndex)
-    {
-        DecodeDistinctPair(pairIndex, out _team0QuarterTurns, out _team1QuarterTurns);
-        _episodeLevel = level;
-        _assignmentGeneration++;
+        if (level != null)
+        {
+            EpisodeFrames.Remove(level);
+        }
     }
 
     internal static void DecodeDistinctPair(int pairIndex, out int team0QuarterTurns, out int team1QuarterTurns)
@@ -1085,11 +1147,14 @@ internal static class RlPolicyCoordinateFrame
         return _assignmentGeneration;
     }
 
+    internal static int GetActiveFrameCountForTests()
+    {
+        return EpisodeFrames.Count;
+    }
+
     internal static void ResetForTests()
     {
-        _episodeLevel = null;
-        _team0QuarterTurns = 0;
-        _team1QuarterTurns = 0;
+        EpisodeFrames.Clear();
         _assignmentGeneration = 0;
     }
 }
