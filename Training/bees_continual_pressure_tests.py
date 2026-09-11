@@ -145,6 +145,14 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
                 label="regressed",
             )
 
+            candidate_weights = {
+                item["model_id"]: item
+                for item in store.historical_sampling_weights(regressed["model_id"])
+            }
+            direct = candidate_weights[first["model_id"]]
+            self.assertEqual(direct["weight"], 4.0)
+            self.assertTrue(direct["pressure_provenance_valid"])
+
             training_weights = {
                 item["model_id"]: item
                 for item in _historical_training_weights(store, champion["model_id"])
@@ -195,7 +203,7 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
                 normalized["pressure_evaluation_report_id"], recovered_report_id
             )
 
-    def test_pre_draw_aware_pressure_cannot_bias_training_sampling(self):
+    def test_pre_draw_aware_pressure_cannot_bias_sampling(self):
         with tempfile.TemporaryDirectory() as temp:
             store = self.make_store(temp)
             first, champion = self.establish_history(store, temp)
@@ -217,9 +225,9 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
                 label="legacy",
             )
 
-            # Simulate a persisted evaluation created before policy schema 3, when
-            # historical regression rows stored raw win rates instead of draw-aware
-            # score rates. The row remains in the audit database but must be inert.
+            # Simulate a genuine pre-schema-3 report by changing the recorded policy
+            # schema and recomputing its policy fingerprint. The historical row stays
+            # in the audit database but must become inert everywhere it can be sampled.
             with store._connect() as db:
                 row = db.execute(
                     "SELECT report_json FROM evaluations WHERE report_id = ?",
@@ -227,22 +235,28 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
                 ).fetchone()
                 report = json.loads(row["report_json"])
                 report["promotion_policy"]["schema_version"] = 2
+                report["promotion_policy_fingerprint"] = store._promotion_policy_fingerprint(
+                    report["promotion_policy"]
+                )
                 db.execute(
                     "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
                     (json.dumps(report, sort_keys=True, separators=(",", ":")), report_id),
                 )
 
-            raw_weights = {
+            registry_weights = {
                 item["model_id"]: item
                 for item in store.historical_sampling_weights(stale["model_id"])
             }
-            self.assertEqual(raw_weights[first["model_id"]]["weight"], 4.0)
+            registry_entry = registry_weights[first["model_id"]]
+            self.assertEqual(registry_entry["weight"], 1.0)
+            self.assertEqual(registry_entry["regression"], 0.0)
+            self.assertFalse(registry_entry["pressure_provenance_valid"])
 
-            safe_weights = {
+            training_weights = {
                 item["model_id"]: item
                 for item in _historical_training_weights(store, champion["model_id"])
             }
-            sanitized = safe_weights[first["model_id"]]
+            sanitized = training_weights[first["model_id"]]
             self.assertEqual(sanitized["weight"], 1.0)
             self.assertEqual(sanitized["regression"], 0.0)
             self.assertNotIn("pressure_model_id", sanitized)
