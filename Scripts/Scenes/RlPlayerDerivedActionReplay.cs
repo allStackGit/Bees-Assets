@@ -219,6 +219,13 @@ internal static class RlPlayerDerivedActionReplay
         {
             throw new ArgumentException($"{CatalogFlag} contains too many replay entries.");
         }
+        string expectedCatalogSha256 = ComputeCatalogIdentitySha256(catalog);
+        if (!catalog.catalogSha256.Equals(expectedCatalogSha256, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"{CatalogFlag} catalog identity hash mismatch: expected {catalog.catalogSha256}, " +
+                $"computed {expectedCatalogSha256}.");
+        }
 
         Dictionary<string, ReplayData> result =
             new Dictionary<string, ReplayData>(StringComparer.Ordinal);
@@ -270,6 +277,85 @@ internal static class RlPlayerDerivedActionReplay
         {
             throw new ArgumentException($"{CatalogFlag} scenario {entry.scenarioId} has invalid replay bounds.");
         }
+    }
+
+    private static string ComputeCatalogIdentitySha256(ReplayCatalog catalog)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.Append("{\"entries\":[");
+        for (int i = 0; i < catalog.entries.Length; i++)
+        {
+            ReplayCatalogEntry entry = catalog.entries[i];
+            ValidateCatalogEntry(entry);
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+            builder.Append("{\"fixedStepInterval\":");
+            builder.Append(entry.fixedStepInterval.ToString(CultureInfo.InvariantCulture));
+            builder.Append(",\"frameCount\":");
+            builder.Append(entry.frameCount.ToString(CultureInfo.InvariantCulture));
+            builder.Append(",\"replayId\":");
+            AppendCanonicalJsonString(builder, entry.replayId);
+            builder.Append(",\"replayPath\":");
+            AppendCanonicalJsonString(builder, entry.replayPath);
+            builder.Append(",\"replaySha256\":");
+            AppendCanonicalJsonString(builder, entry.replaySha256);
+            builder.Append(",\"scenarioId\":");
+            AppendCanonicalJsonString(builder, entry.scenarioId);
+            builder.Append(",\"side\":");
+            AppendCanonicalJsonString(builder, entry.side);
+            builder.Append('}');
+        }
+        builder.Append("],\"schemaVersion\":");
+        builder.Append(catalog.schemaVersion.ToString(CultureInfo.InvariantCulture));
+        builder.Append('}');
+        return ComputeSha256(Encoding.UTF8.GetBytes(builder.ToString()));
+    }
+
+    private static void AppendCanonicalJsonString(StringBuilder builder, string value)
+    {
+        builder.Append('"');
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            switch (character)
+            {
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '\b':
+                    builder.Append("\\b");
+                    break;
+                case '\f':
+                    builder.Append("\\f");
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                case '\r':
+                    builder.Append("\\r");
+                    break;
+                case '\t':
+                    builder.Append("\\t");
+                    break;
+                default:
+                    if (character < 0x20)
+                    {
+                        builder.Append("\\u");
+                        builder.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+                    break;
+            }
+        }
+        builder.Append('"');
     }
 
     private static ReplayData ReadReplay(ReplayCatalogEntry entry, string path)
