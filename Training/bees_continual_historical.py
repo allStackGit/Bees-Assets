@@ -164,9 +164,10 @@ def _latest_authoritative_pressure(
     report named in its tags. Only promotion-policy schema 3+ reports with a valid
     policy fingerprint can influence current sampling.
 
-    Rows are processed newest-first and evaluation reports are fetched lazily through
-    the shared registry validator. Once every requested active opponent has validated
-    evidence, older rows are not read.
+    Rows are processed newest-policy-first, not newest-evaluation-first, so a slow
+    evaluation of an older candidate cannot overwrite a newer policy's recovery signal.
+    Evaluation reports are fetched lazily through the shared registry validator. Once
+    every requested active opponent has validated evidence, older rows are not read.
     """
     db_path = getattr(store, "db_path", None)
     if db_path is None or not Path(db_path).is_file():
@@ -202,7 +203,10 @@ def _latest_authoritative_pressure(
               AND current_model.reward_schema_version = ?
               AND current_model.scenario_schema_version = ?
               AND h.tags_json LIKE ?
-            ORDER BY h.updated_at DESC, h.rowid DESC
+            ORDER BY current_model.created_at DESC,
+                     current_model.training_step DESC,
+                     h.updated_at DESC,
+                     h.rowid DESC
             """,
             (
                 compatibility["behavior_name"],
