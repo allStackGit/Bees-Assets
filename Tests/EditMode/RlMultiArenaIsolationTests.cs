@@ -26,6 +26,8 @@ namespace Bees.Tests.EditMode
         private Type _matchupSelectorType;
         private Type _arenaMapSizeStateType;
         private Type _episodeResultType;
+        private Type _configDataType;
+        private object _previousConfiguration;
         private MethodInfo _prepareMatchupEpisode;
         private MethodInfo _handleMatchupEpisodeEnded;
         private MethodInfo _getSelectorCountForTests;
@@ -76,6 +78,21 @@ namespace Bees.Tests.EditMode
                 "EpisodeResult",
                 BindingFlags.Public | BindingFlags.NonPublic);
 
+            _configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
+            _previousConfiguration = RuntimeAssembly.GetStaticField(_configDataType, "Configuration");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            IDictionary sideMap = (IDictionary)RuntimeAssembly.GetStaticField(
+                RuntimeAssembly.GetType("Assets.Scripts.Utilities"),
+                "ConvertShipTypeToSide");
+            Assert.That(sideMap, Is.Not.Null);
+            int beeSide = (int)sideMap[Enum.Parse(shipType, "Wasp")];
+            int humanSide = (int)sideMap[Enum.Parse(shipType, "Gunship")];
+            object configuration = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Settings.Configuration");
+            RuntimeAssembly.SetField(configuration, "IsLoaded", true);
+            RuntimeAssembly.SetField(configuration, "BeeSide", beeSide);
+            RuntimeAssembly.SetField(configuration, "HumanSide", humanSide);
+            RuntimeAssembly.SetStaticField(_configDataType, "Configuration", configuration);
+
             Assert.That(_getQuarterTurns, Is.Not.Null);
             Assert.That(_endEpisode, Is.Not.Null);
             Assert.That(_getAssignmentGeneration, Is.Not.Null);
@@ -110,6 +127,10 @@ namespace Bees.Tests.EditMode
             _resetForTests?.Invoke(null, null);
             _resetMatchupsForTests?.Invoke(null, null);
             _resetMapSizesForTests?.Invoke(null, null);
+            if (_configDataType != null)
+            {
+                RuntimeAssembly.SetStaticField(_configDataType, "Configuration", _previousConfiguration);
+            }
             if (_arenaAObject != null)
             {
                 UnityEngine.Object.DestroyImmediate(_arenaAObject);
@@ -233,13 +254,14 @@ namespace Bees.Tests.EditMode
                 Application.dataPath,
                 "Scripts",
                 "Scenes",
-                "RlOneVsOneMultiArenaBootstrap.cs"));
+                "RlOneVsOneTrainingDurabilityGuard.cs"));
 
-            Assert.That(source, Does.Contain("for (int levelIndex = 1; levelIndex < _stage.Levels.Count; levelIndex++)"),
-                "The multi-arena bootstrap must explicitly process every non-primary Level.");
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability("));
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingDurabilityGuard.TrainingHealthFraction"),
-                "Secondary arenas must receive the same configured health fraction as PrimaryLevel.");
+            Assert.That(source, Does.Contain("IReadOnlyList<Level> levels = _stage.Levels;"));
+            Assert.That(source, Does.Contain("for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)"),
+                "The centralized durability guard must explicitly process every training Level.");
+            Assert.That(source, Does.Contain("ApplyTrainingDurability(ships[shipIndex]);"));
+            Assert.That(source, Does.Contain("RlOneVsOneTrainingBootstrap.CurrentHealthRatio"),
+                "All arenas must use the same configured health ratio.");
         }
 
         [Test]
@@ -266,13 +288,10 @@ namespace Bees.Tests.EditMode
             const int arenaCount = 8;
             const float maximumMapSize = 128f;
             Vector2[] positions = BuildLayout(arenaCount, maximumMapSize);
-
             Assert.That(positions.Length, Is.EqualTo(arenaCount));
             HashSet<Vector2> uniquePositions = new HashSet<Vector2>(positions);
             Assert.That(uniquePositions.Count, Is.EqualTo(arenaCount));
 
-            // BuildLayout uses max(256, mapSize + 128) as center-to-center spacing. At a 128-unit
-            // maximum map size this is 256, leaving a full 128-unit guard band between arena edges.
             for (int left = 0; left < positions.Length; left++)
             {
                 for (int right = left + 1; right < positions.Length; right++)
