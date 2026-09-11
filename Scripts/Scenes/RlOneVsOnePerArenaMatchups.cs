@@ -44,8 +44,11 @@ internal static class RlOneVsOnePerArenaMatchups
 
         if (!Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
         {
-            RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
-            selector = new RlOneVsOneEpisodeMatchupSelector(options);
+            string[] args = Environment.GetCommandLineArgs();
+            RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(args);
+            selector = new RlOneVsOneEpisodeMatchupSelector(
+                options,
+                RlOneVsOneScenarioSeed.Create(args));
             Selectors.Add(level, selector);
         }
         return selector;
