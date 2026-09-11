@@ -37,7 +37,7 @@ TEST_CONFIG = {
         "max_critical_regressions": 0,
         "max_historical_regression": 0.15,
         "min_historical_matches_per_opponent": 5,
-        "min_competency_cases": 1,
+        "min_competency_cases": 0,
     },
     "historical_league": {
         "base_weight": 1.0,

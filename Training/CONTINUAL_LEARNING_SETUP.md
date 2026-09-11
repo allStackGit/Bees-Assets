@@ -21,6 +21,45 @@ The committed `Training/continual_learning_config.json` uses `CPUExecutionProvid
 
 The authoritative offline evaluator also requires ONNX Runtime because candidate, champion, and historical policies are executed from immutable ONNX artifacts. `bees_continual_evaluate.py` uses `CPUExecutionProvider` by default and accepts `--onnx-provider` when another installed provider is intentionally selected.
 
+## Permanent competency suite
+
+When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent competency suite in the continual-learning store before recording promotion-eligible evaluations:
+
+```powershell
+python Training\bees_continual_learning.py --root <store> pin-competency-suite <suite.json>
+```
+
+The pinned contract includes each case's name, opponent model ID, match count, minimum score, metric, critical flag, and environment arguments. Candidate evaluations must contain exactly the same normalized contract; an arbitrary easier suite cannot satisfy the promotion gate.
+
+Use `--replace` only for an intentional permanent-suite revision:
+
+```powershell
+python Training\bees_continual_learning.py --root <store> pin-competency-suite <suite.json> --replace
+```
+
+Replacing the suite changes the promotion-policy fingerprint, so evaluations recorded under the previous suite must be rerun before promotion. `status` reports the current suite fingerprint and case count.
+
+A suite uses schema version 1:
+
+```json
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "large-map-aiming",
+      "opponent_model_id": "bees-rl-v6-...",
+      "matches": 200,
+      "minimum": 0.55,
+      "metric": "score_rate",
+      "critical": true,
+      "env_args": ["--rl-map-size", "128"]
+    }
+  ]
+}
+```
+
+The evaluator's `--competency-suite` file must describe the same permanent contract that was pinned in the store.
+
 ## GPU ONNX Runtime (optional)
 
 Do not install CPU `onnxruntime` and `onnxruntime-gpu` side by side. If frozen-policy inference itself needs GPU acceleration, replace the CPU package with an `onnxruntime-gpu` build compatible with the machine's CUDA/cuDNN stack, then verify that `CUDAExecutionProvider` appears in `ort.get_available_providers()` before selecting it.

@@ -42,6 +42,10 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("continual_learning_config.json")
 DATABASE_NAME = "registry.sqlite3"
 STATE_CHAMPION = "current_champion"
 STATE_PREVIOUS_CHAMPION = "previous_champion"
+STATE_COMPETENCY_SUITE = "permanent_competency_suite"
+PROMOTION_POLICY_SCHEMA_VERSION = 2
+COMPETENCY_SUITE_SCHEMA_VERSION = 1
+COMPETENCY_METRICS = {"score_rate", "win_rate", "non_timeout_rate"}
 
 
 class ContinualLearningError(RuntimeError):
@@ -173,6 +177,89 @@ def _walk_finite_numbers(value: Any, *, path: str = "$") -> None:
             _walk_finite_numbers(child, path=f"{path}.{key}")
         return
     raise ValidationError(f"Unsupported value type at {path}: {type(value).__name__}.")
+
+
+def _normalize_competency_cases(cases: Any, *, source: str) -> Dict[str, Any]:
+    if not isinstance(cases, list):
+        raise ValidationError(f"{source} cases must be a list.")
+    normalized: List[Dict[str, Any]] = []
+    seen_names = set()
+    for index, item in enumerate(cases):
+        if not isinstance(item, Mapping):
+            raise ValidationError(f"{source} case {index} must be an object.")
+        name = str(item.get("name", "")).strip()
+        opponent_model_id = str(item.get("opponent_model_id", "")).strip()
+        if not name:
+            raise ValidationError(f"{source} case {index} requires name.")
+        if name in seen_names:
+            raise ValidationError(f"{source} contains duplicate competency name {name!r}.")
+        seen_names.add(name)
+        if not opponent_model_id:
+            raise ValidationError(
+                f"{source} competency {name!r} requires opponent_model_id."
+            )
+        matches = item.get("matches")
+        if not isinstance(matches, int) or isinstance(matches, bool) or matches <= 0:
+            raise ValidationError(
+                f"{source} competency {name!r} matches must be a positive integer."
+            )
+        minimum = item.get("minimum")
+        if not _finite_number(minimum) or not 0 <= float(minimum) <= 1:
+            raise ValidationError(
+                f"{source} competency {name!r} minimum must be in [0,1]."
+            )
+        metric = str(item.get("metric", "score_rate")).strip()
+        if metric not in COMPETENCY_METRICS:
+            raise ValidationError(
+                f"{source} competency {name!r} metric {metric!r} is unsupported."
+            )
+        critical = item.get("critical", True)
+        if not isinstance(critical, bool):
+            raise ValidationError(
+                f"{source} competency {name!r} critical must be boolean."
+            )
+        env_args = item.get("env_args", [])
+        if not isinstance(env_args, list) or any(
+            not isinstance(value, str) or not value.strip() for value in env_args
+        ):
+            raise ValidationError(
+                f"{source} competency {name!r} env_args must be a list of non-empty strings."
+            )
+        normalized.append(
+            {
+                "name": name,
+                "opponent_model_id": opponent_model_id,
+                "matches": matches,
+                "minimum": float(minimum),
+                "metric": metric,
+                "critical": critical,
+                "env_args": list(env_args),
+            }
+        )
+    normalized.sort(key=lambda item: item["name"])
+    return {"schema_version": COMPETENCY_SUITE_SCHEMA_VERSION, "cases": normalized}
+
+
+def _normalize_competency_suite(suite: Any) -> Dict[str, Any]:
+    if not isinstance(suite, Mapping):
+        raise ValidationError("Permanent competency suite must be a JSON object.")
+    if suite.get("schema_version") != COMPETENCY_SUITE_SCHEMA_VERSION:
+        raise ValidationError(
+            f"Permanent competency suite schema_version must be {COMPETENCY_SUITE_SCHEMA_VERSION}."
+        )
+    return _normalize_competency_cases(
+        suite.get("cases"), source="Permanent competency suite"
+    )
+
+
+def _competency_contract_from_report(report: Mapping[str, Any]) -> Dict[str, Any]:
+    return _normalize_competency_cases(
+        report.get("competencies"), source="Evaluation report"
+    )
+
+
+def _competency_fingerprint(contract: Mapping[str, Any]) -> str:
+    return sha256_bytes(canonical_json(contract).encode("utf-8"))
 
 
 class ContinualLearningStore:
@@ -343,6 +430,63 @@ class ContinualLearningStore:
             """,
             (key, value),
         )
+
+    def _pinned_competency_contract(
+        self, db: sqlite3.Connection
+    ) -> Optional[Dict[str, Any]]:
+        raw = self._state(db, STATE_COMPETENCY_SUITE)
+        if raw is None:
+            return None
+        try:
+            stored = json.loads(raw)
+            return _normalize_competency_suite(stored)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise ContinualLearningError(
+                "Pinned permanent competency-suite state is corrupted."
+            ) from exc
+
+    def permanent_competency_suite(self) -> Optional[Dict[str, Any]]:
+        self._require_initialized()
+        with self._connect() as db:
+            return self._pinned_competency_contract(db)
+
+    def permanent_competency_suite_fingerprint(self) -> Optional[str]:
+        contract = self.permanent_competency_suite()
+        return None if contract is None else _competency_fingerprint(contract)
+
+    def pin_competency_suite(
+        self,
+        suite: Mapping[str, Any],
+        *,
+        replace: bool = False,
+    ) -> Dict[str, Any]:
+        self._require_initialized()
+        contract = _normalize_competency_suite(suite)
+        minimum_cases = int(self.config["promotion"].get("min_competency_cases", 1))
+        if len(contract["cases"]) < minimum_cases:
+            raise ValidationError(
+                f"Permanent competency suite has only {len(contract['cases'])} cases; "
+                f"promotion requires at least {minimum_cases}."
+            )
+        fingerprint = _competency_fingerprint(contract)
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = self._pinned_competency_contract(db)
+            existing_fingerprint = (
+                None if existing is None else _competency_fingerprint(existing)
+            )
+            if existing_fingerprint is not None and existing_fingerprint != fingerprint:
+                if not replace:
+                    raise ValidationError(
+                        "A different permanent competency suite is already pinned; use replace=True "
+                        "only for an intentional suite revision."
+                    )
+            self._set_state(db, STATE_COMPETENCY_SUITE, canonical_json(contract))
+        return {
+            "fingerprint": fingerprint,
+            "case_count": len(contract["cases"]),
+            "replaced": existing_fingerprint is not None and existing_fingerprint != fingerprint,
+        }
 
     def _model_row(self, db: sqlite3.Connection, model_id: str) -> sqlite3.Row:
         row = db.execute("SELECT * FROM models WHERE model_id = ?", (model_id,)).fetchone()
@@ -609,11 +753,20 @@ class ContinualLearningStore:
                 file=sys.stderr,
             )
 
-    def _promotion_policy_snapshot(self) -> Dict[str, Any]:
+    def _promotion_policy_snapshot(
+        self, db: Optional[sqlite3.Connection] = None
+    ) -> Dict[str, Any]:
+        if db is None:
+            contract = self.permanent_competency_suite()
+        else:
+            contract = self._pinned_competency_contract(db)
         return {
-            "schema_version": 1,
+            "schema_version": PROMOTION_POLICY_SCHEMA_VERSION,
             "compatibility": self.compatibility.to_dict(),
             "promotion": self.config["promotion"],
+            "permanent_competency_suite_fingerprint": (
+                None if contract is None else _competency_fingerprint(contract)
+            ),
         }
 
     @staticmethod
@@ -738,6 +891,23 @@ class ContinualLearningStore:
             reasons.append(
                 f"only {len(competencies)} competency cases; minimum is {minimum_competencies}"
             )
+        pinned_competencies = self.permanent_competency_suite()
+        if pinned_competencies is None and minimum_competencies > 0:
+            reasons.append(
+                "no permanent competency suite is pinned; pin the trusted suite before evaluation"
+            )
+        elif pinned_competencies is not None:
+            try:
+                report_contract = _competency_contract_from_report(report)
+            except ValidationError as exc:
+                reasons.append(str(exc))
+            else:
+                if _competency_fingerprint(report_contract) != _competency_fingerprint(
+                    pinned_competencies
+                ):
+                    reasons.append(
+                        "evaluation competency cases do not match the pinned permanent competency suite"
+                    )
         for index, item in enumerate(competencies):
             if not isinstance(item, dict):
                 reasons.append(f"competencies[{index}] must be an object")
@@ -922,12 +1092,36 @@ class ContinualLearningStore:
                 )
             if self._promotion_policy_fingerprint(report_policy) != report_policy_fingerprint:
                 raise PromotionError("Evaluation report promotion-policy fingerprint is corrupted.")
-            current_policy = self._promotion_policy_snapshot()
+            current_policy = self._promotion_policy_snapshot(db=db)
             if self._promotion_policy_fingerprint(current_policy) != report_policy_fingerprint:
                 raise PromotionError(
                     "Promotion policy changed after this evaluation; re-evaluate candidate under "
                     "the current promotion policy."
                 )
+
+            pinned_competencies = self._pinned_competency_contract(db)
+            minimum_competencies = int(
+                self.config["promotion"].get("min_competency_cases", 1)
+            )
+            if pinned_competencies is None and minimum_competencies > 0:
+                raise PromotionError(
+                    "No permanent competency suite is pinned; pin the trusted suite and "
+                    "re-evaluate candidate before promotion."
+                )
+            if pinned_competencies is not None:
+                try:
+                    report_competencies = _competency_contract_from_report(report_body)
+                except ValidationError as exc:
+                    raise PromotionError(
+                        f"Evaluation competency contract is invalid: {exc}"
+                    ) from exc
+                if _competency_fingerprint(report_competencies) != _competency_fingerprint(
+                    pinned_competencies
+                ):
+                    raise PromotionError(
+                        "Evaluation competency cases do not match the pinned permanent competency "
+                        "suite; re-evaluate candidate against the trusted suite."
+                    )
 
             current = self._state(db, STATE_CHAMPION)
             if current is None:
@@ -1451,6 +1645,7 @@ class ContinualLearningStore:
         with self._connect() as db:
             champion = self._state(db, STATE_CHAMPION)
             previous = self._state(db, STATE_PREVIOUS_CHAMPION)
+            pinned_competencies = self._pinned_competency_contract(db)
             counts = {
                 row["status"]: row["count"]
                 for row in db.execute(
@@ -1474,6 +1669,14 @@ class ContinualLearningStore:
             "compatibility": self.compatibility.to_dict(),
             "current_champion": champion,
             "previous_champion": previous,
+            "permanent_competency_suite": (
+                None
+                if pinned_competencies is None
+                else {
+                    "fingerprint": _competency_fingerprint(pinned_competencies),
+                    "case_count": len(pinned_competencies["cases"]),
+                }
+            ),
             "model_counts": counts,
             "telemetry_batches": telemetry_count,
             "demonstration_batches": demo_count,
@@ -1523,6 +1726,17 @@ def _build_parser() -> argparse.ArgumentParser:
     register.add_argument("--training-config")
     register.add_argument("--source-checkpoint")
     register.add_argument("--status", choices=("candidate", "training"), default="candidate")
+
+    competency = sub.add_parser(
+        "pin-competency-suite",
+        help="Pin the trusted permanent competency contract used by the promotion gate.",
+    )
+    competency.add_argument("suite")
+    competency.add_argument(
+        "--replace",
+        action="store_true",
+        help="Intentionally replace an existing permanent suite and invalidate old evaluations.",
+    )
 
     evaluate = sub.add_parser("record-evaluation", help="Validate/store an evaluation report.")
     evaluate.add_argument("report")
@@ -1601,6 +1815,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     status=args.status,
                 )
             )
+        elif args.command == "pin-competency-suite":
+            suite = _read_json(args.suite)
+            if not isinstance(suite, dict):
+                raise ValidationError("Permanent competency suite must be a JSON object.")
+            _print_json(store.pin_competency_suite(suite, replace=args.replace))
         elif args.command == "record-evaluation":
             _print_json(store.record_evaluation(_read_json(args.report)))
         elif args.command == "promote":
