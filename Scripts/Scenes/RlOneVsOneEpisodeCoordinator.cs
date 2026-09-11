@@ -703,7 +703,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         if (beeStartingTsv <= 0 || humanStartingTsv <= 0 ||
             CountActiveShips(beeShips) < expectedShips || CountActiveShips(humanShips) < expectedShips ||
-            level.State.GameOver)
+            level.State.GameOver || level.IsRestarting)
         {
             return;
         }

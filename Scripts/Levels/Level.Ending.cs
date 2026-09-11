@@ -19,11 +19,11 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.IsTraining) Debug.Log("Level timed out!");
             Stage.DebugLogger.__LevelTimeouts++;
+            IsRestarting = true;
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
                 global::RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);
             }
-            IsRestarting = true;
             if (ActivateCollisionAsteroids) CancelTimer(_asteroidSpawnTimer);
             SaveAndEnd();
         }
