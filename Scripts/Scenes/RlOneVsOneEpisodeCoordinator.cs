@@ -369,10 +369,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         counts[weapon.Type] = current + 1;
     }
 
+    private static bool HasPersistentFleetValue(Ship ship)
+    {
+        return ship != null &&
+               !ship.IsMinionShip &&
+               !ship.IsCarrierShip &&
+               (ship.Squad == null || !ship.Squad.IsMinionSquad);
+    }
+
     /// <summary>
     /// Records attributed ship damage after normal damage/TSV calculation has succeeded. Enemy
     /// damage credits the attacker and penalizes the target. Friendly fire penalizes the damaged
     /// side only, so same-side credit can never cancel the casualty-preservation signal.
+    /// Free temporary/minion ships remain tactical assets but do not contribute persistent-fleet
+    /// TSV shaping when they take damage.
     /// </summary>
     internal static void RecordHit(Ship attacker, Ship target, int damage, int tsvLoss)
     {
@@ -404,7 +414,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         bool isEnemyDamage = attacker.Side != target.Side;
         int appliedDamage = Mathf.Max(0, damage);
-        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
+        int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;
 
         if (isEnemyDamage && appliedDamage > 0)
         {
@@ -467,7 +477,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             return;
         }
 
-        int appliedTsvLoss = Mathf.Max(0, tsvLoss);
+        int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;
         if (appliedTsvLoss <= 0)
         {
             return;
@@ -591,6 +601,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         else if (sideIndex == 1 && _humanFirstContactSeconds < 0f)
         {
             _humanFirstContactSeconds = ElapsedEpisodeSeconds;
+        }
+
+        // First-contact diagnostics still include free tactical children, but discovering one must
+        // not create persistent fleet-value shaping or consume that category's reward budget.
+        if (!HasPersistentFleetValue(spotted))
+        {
+            return;
         }
 
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
@@ -934,7 +951,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
-            if (ship != null && !ship.IsDead)
+            if (ship != null && !ship.IsDead && HasPersistentFleetValue(ship))
             {
                 total += Mathf.Max(1, ship.Tsv);
             }
