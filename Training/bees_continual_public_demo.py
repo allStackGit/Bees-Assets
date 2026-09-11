@@ -6,7 +6,8 @@ file hashes, exact capture manifest, and native ML-Agents structure before deleg
 continual native-demo importer. It does not approve the resulting batch for behavioral cloning.
 
 The raw authenticated Steam user ID remains server-side for abuse handling and is intentionally
-not copied into the continual-learning store.
+not copied into the continual-learning store. A store-local HMAC contributor bucket is retained
+separately so later curation can prevent one contributor from dominating a training set.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from bees_continual_demo_contributors import write_public_contributor_record
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -136,6 +138,7 @@ def validate_quarantine_bundle(
         "manifest_path": manifest_path,
         "batch_id": batch_id,
         "demonstration_id": demonstration_id,
+        "uploader_user_id": uploader_user_id,
         "game_build_version": game_build_version,
         "demo_sha256": demo_sha256,
         "manifest_sha256": manifest_sha256,
@@ -238,8 +241,15 @@ def ingest_public_quarantine(
         central_batch_id=str(result["batch_id"]),
         quarantine=quarantine,
     )
+    contributor = write_public_contributor_record(
+        store,
+        central_batch_id=str(result["batch_id"]),
+        server_batch_id=str(quarantine["batch_id"]),
+        uploader_user_id=str(quarantine["uploader_user_id"]),
+    )
     result["public_quarantine_batch_id"] = quarantine["batch_id"]
     result["public_provenance_path"] = str(provenance_path)
+    result["public_contributor_record_path"] = str(contributor["path"])
     result["approved_for_training"] = False
     return result
 
