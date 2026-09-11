@@ -67,6 +67,29 @@ namespace Bees.Tests.EditMode
             Assert.That(map, Does.Not.Contain("Destroy(FogOfWar)"));
         }
 
+        [Test]
+        public void TimeoutRestartBlocksNextEpisodeUntilTeardownCompletes()
+        {
+            string ending = ReadSource("Scripts", "Levels", "Level.Ending.cs").Replace("\r\n", "\n");
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs").Replace("\r\n", "\n");
+
+            int timeoutMethod = ending.IndexOf("private void LevelTimeOut()", StringComparison.Ordinal);
+            int restartFlag = ending.IndexOf("IsRestarting = true;", timeoutMethod, StringComparison.Ordinal);
+            int completeTimeout = ending.IndexOf(
+                "global::RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);",
+                timeoutMethod,
+                StringComparison.Ordinal);
+            int saveAndEnd = ending.IndexOf("SaveAndEnd();", timeoutMethod, StringComparison.Ordinal);
+
+            Assert.That(timeoutMethod, Is.GreaterThanOrEqualTo(0));
+            Assert.That(restartFlag, Is.GreaterThan(timeoutMethod));
+            Assert.That(completeTimeout, Is.GreaterThan(restartFlag),
+                "Timeout teardown must be marked as restarting before EpisodeEnded callbacks can re-enter the coordinator.");
+            Assert.That(saveAndEnd, Is.GreaterThan(completeTimeout));
+            Assert.That(coordinator, Does.Contain("level.State.GameOver || level.IsRestarting"),
+                "TryBeginEpisode must not start a replacement episode while the previous timeout is tearing down.");
+        }
+
         private static string ReadSource(params string[] pathParts)
         {
             string path = Application.dataPath;
