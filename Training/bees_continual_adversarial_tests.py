@@ -164,6 +164,28 @@ class AdversarialScenarioTests(unittest.TestCase):
         with self.assertRaises(continual.ValidationError):
             self.register([approved["batch_id"]])
 
+    def test_later_source_revocation_disables_existing_scenario_at_launch(self):
+        ingested = self.ingest_public()
+        self.approve(ingested["batch_id"])
+        scenario = self.register([ingested["batch_id"]])
+        self.assertIn(
+            scenario["scenario_id"],
+            adversarial.encode_scenarios_for_unity(self.store, [scenario["scenario_id"]]),
+        )
+
+        curation.revoke_public_batch(
+            self.store,
+            ingested["batch_id"],
+            reviewer="test-reviewer",
+            reason="Post-registration review invalidated the source tactic.",
+        )
+
+        with self.assertRaises(continual.ValidationError):
+            adversarial.encode_scenarios_for_unity(
+                self.store,
+                [scenario["scenario_id"]],
+            )
+
     def test_encoding_is_deterministic_and_carries_named_pressure(self):
         first = self.ingest_public()
         second = self.ingest_public()
