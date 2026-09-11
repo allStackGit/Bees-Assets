@@ -29,9 +29,23 @@ Player-facing builds can opt into passive human/Hive Mind demonstration capture 
 --rl-record-demonstrations
 ```
 
-Recordings use the shared `BeesRL1v1` observation/action ABI and are stored below `Application.persistentDataPath/RlDemonstrations`. Human and Hive Mind recordings are physically separated into `Human` and `HiveMind` subdirectories so Hive Mind behavior cannot be mixed into human imitation merely because both were recorded in the same session.
+Recordings use the shared `BeesRL1v1` observation/action ABI and are stored below `Application.persistentDataPath/RlDemonstrations`. Each frozen policy ABI receives its own directory (for example, `PolicyV7`), with Human and Hive Mind recordings physically separated below that. The policy directory also contains `capture-manifest.json`, which records the exact behavior name, policy ABI/signature, observation size, and action shape. Capture fails closed rather than writing into a versioned directory whose existing manifest is incompatible or missing while demonstrations already exist.
 
-To include a trusted set of native ML-Agents human `.demo` files in a continual training run, pass the `Human` directory to the continual wrapper:
+For policy ABI v7, the normal layout is:
+
+```text
+RlDemonstrations/
+  PolicyV7/
+    capture-manifest.json
+    Human/
+      human-s0.demo
+      ...
+    HiveMind/
+      hivemind-s0.demo
+      ...
+```
+
+To include a trusted set of native ML-Agents human `.demo` files in a continual training run, pass the current policy ABI's `Human` directory to the continual wrapper:
 
 ```powershell
 python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
@@ -39,7 +53,7 @@ python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
   --run-id=bees-full-001 --resume `
   --continual-root="F:\RLDemo\BeesContinual" `
   --continual-game-build="2026.09.11" `
-  --continual-human-demo-dir="C:\path\to\RlDemonstrations\Human"
+  --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV7\Human"
 ```
 
 Before ML-Agents starts, the wrapper validates that the directory contains non-empty `.demo` files, rejects files explicitly named as Hive Mind recordings, hashes the selected files, and copies them into an immutable content-addressed snapshot under the continual-learning root. The source recordings must therefore be closed/stable before training starts. If a recording changes during snapshotting, startup fails instead of silently training against a moving dataset.
