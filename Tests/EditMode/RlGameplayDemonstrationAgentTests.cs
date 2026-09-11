@@ -47,6 +47,16 @@ namespace Bees.Tests.EditMode
             Assert.That(method.Invoke(null, new object[] { true, true, true }), Is.EqualTo(0));
         }
 
+        [Test]
+        public void DemonstrationSourcesUseSeparateDirectories()
+        {
+            MethodInfo method = GetStaticMethod("GetSourceDirectoryNameForTests");
+
+            Assert.That(method.Invoke(null, new object[] { 1 }), Is.EqualTo("Human"));
+            Assert.That(method.Invoke(null, new object[] { 2 }), Is.EqualTo("HiveMind"));
+            Assert.Throws<TargetInvocationException>(() => method.Invoke(null, new object[] { 0 }));
+        }
+
         private static MethodInfo GetStaticMethod(string name)
         {
             Type type = RuntimeAssembly.GetType("RlGameplayDemonstrationAgent");
