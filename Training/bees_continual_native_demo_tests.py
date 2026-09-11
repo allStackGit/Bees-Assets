@@ -119,7 +119,9 @@ class NativeDemoIngestionTests(unittest.TestCase):
             metadata["capture_manifest"]["sha256"], sha256_file(self.manifest_path)
         )
         self.assertEqual(metadata["capture_manifest"]["metadata"], self.capture_manifest)
-        self.assertEqual(metadata["payload_sha256"], result["batch_id"].removeprefix("demo-") + metadata["payload_sha256"][24:])
+        self.assertTrue(
+            metadata["payload_sha256"].startswith(result["batch_id"].removeprefix("demo-"))
+        )
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
     def test_exact_native_demo_ingestion_is_idempotent(self):
