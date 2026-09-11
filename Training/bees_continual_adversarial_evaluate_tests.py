@@ -224,6 +224,22 @@ class AdversarialEvaluationTests(unittest.TestCase):
             )
         self.assertEqual(calls, [])
 
+    def test_diagnostic_rejects_training_pressure_flag_in_base_environment(self):
+        calls = []
+        with self.assertRaises(continual.ValidationError):
+            adversarial_evaluate.evaluate_adversarial_scenarios(
+                self.store,
+                candidate_model_id=self.models["candidate"]["model_id"],
+                baseline_model_id=self.models["baseline"]["model_id"],
+                opponent_model_id=self.models["opponent"]["model_id"],
+                environment_path=self.root / "fake-env",
+                scenario_ids=[self.scenario["scenario_id"]],
+                matches_per_scenario=10,
+                base_env_args=["--bees-adversarial-matchups=manual"],
+                match_runner=self.fake_runner(calls),
+            )
+        self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
