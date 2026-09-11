@@ -95,6 +95,14 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
 
     internal static int GetWinningTeamId(RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
+        return GetWinningTeamId(result, result.BeeTeamId, result.HumanTeamId);
+    }
+
+    private static int GetWinningTeamId(
+        RlOneVsOneEpisodeCoordinator.EpisodeResult result,
+        int beeTeamId,
+        int humanTeamId)
+    {
         if (result.TimedOut || result.WinningSide == 0 || ConfigData.Configuration == null)
         {
             return -1;
@@ -102,13 +110,44 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
 
         if (result.WinningSide == ConfigData.Configuration.BeeSide)
         {
-            return result.BeeTeamId;
+            return beeTeamId;
         }
         if (result.WinningSide == ConfigData.Configuration.HumanSide)
         {
-            return result.HumanTeamId;
+            return humanTeamId;
         }
         return -1;
+    }
+
+    private static void GetReportedTeamIds(
+        Level level,
+        RlOneVsOneEpisodeCoordinator.EpisodeResult result,
+        out int beeTeamId,
+        out int humanTeamId)
+    {
+        beeTeamId = result.BeeTeamId;
+        humanTeamId = result.HumanTeamId;
+        if (ConfigData.Configuration == null ||
+            !RlPlayerDerivedActionReplay.TryGetCurrent(level, out RlPlayerDerivedActionReplay.ReplayData replay))
+        {
+            return;
+        }
+
+        // A scripted replay has no model-owned team. For diagnostic evaluation only, normalize the
+        // report so logical team 0 is always the policy-controlled side and logical team 1 is the
+        // script. Python loads the same candidate/baseline into both physical ML-Agents team slots,
+        // so whichever physical team owns the live policy that episode still measures one model vs
+        // the same deterministic script. Training never uses this reporting remap.
+        if (replay.Side == "Bee")
+        {
+            beeTeamId = 1;
+            humanTeamId = 0;
+        }
+        else
+        {
+            beeTeamId = 0;
+            humanTeamId = 1;
+        }
     }
 
     private static void OnEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
@@ -118,14 +157,15 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
             return;
         }
 
+        GetReportedTeamIds(level, result, out int beeTeamId, out int humanTeamId);
         using (OutgoingMessage message = new OutgoingMessage())
         {
             message.WriteInt32(ProtocolVersion);
             message.WriteInt32(result.EpisodeNumber);
-            message.WriteInt32(result.BeeTeamId);
-            message.WriteInt32(result.HumanTeamId);
+            message.WriteInt32(beeTeamId);
+            message.WriteInt32(humanTeamId);
             message.WriteInt32(result.WinningSide);
-            message.WriteInt32(GetWinningTeamId(result));
+            message.WriteInt32(GetWinningTeamId(result, beeTeamId, humanTeamId));
             message.WriteBoolean(result.TimedOut);
             message.WriteFloat32(result.DurationSeconds);
             message.WriteInt32(result.BeeStartingTsv);
