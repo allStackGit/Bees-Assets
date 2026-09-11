@@ -59,7 +59,7 @@ internal static class RlOneVsOneArenaMapSizeState
         {
             RlOneVsOneTrainingOptions options = Options;
             mapSize = options.HasMapSizeRange
-                ? SampleMapSize(level, options.MapSizeMinimum, options.MapSizeMaximum)
+                ? SampleMapSizeForLevel(level, options.MapSizeMinimum, options.MapSizeMaximum)
                 : options.MapSize;
             EpisodeMapSizes[level] = mapSize;
         }
@@ -110,7 +110,7 @@ internal static class RlOneVsOneArenaMapSizeState
         return new Vector2(x, y);
     }
 
-    internal static float SampleMapSize(Level level, float minimum, float maximum)
+    internal static float SampleMapSizeForLevel(Level level, float minimum, float maximum)
     {
         if (maximum <= minimum)
         {
@@ -121,7 +121,7 @@ internal static class RlOneVsOneArenaMapSizeState
     }
 
     // Retain the focused sampler contract used by existing EditMode coverage. Runtime map sampling
-    // uses the Level overload above so every arena keeps an independent random stream.
+    // uses SampleMapSizeForLevel so every arena keeps an independent random stream.
     internal static float SampleMapSize(float minimum, float maximum)
     {
         if (maximum <= minimum)
