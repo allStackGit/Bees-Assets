@@ -27,7 +27,7 @@ using WebSocketSharp;
 internal sealed class RlDemonstrationUploader : MonoBehaviour
 {
     internal const string UploadCommandLineFlag = "--rl-upload-demonstrations";
-    internal const int MaxDemoBytes = 16 * 1024 * 1024;
+    internal const int MaxUploadBundleBytes = 16 * 1024 * 1024;
     internal const int DefaultChunkBytes = 512 * 1024;
 
     private const float AuthenticationWaitSeconds = 60f;
@@ -219,6 +219,12 @@ internal sealed class RlDemonstrationUploader : MonoBehaviour
         return $"v{RlPolicySchema.Version}-{demoSha256.Substring(0, 24).ToLowerInvariant()}";
     }
 
+    internal static bool IsUploadBundleWithinLimit(long demoBytes, string manifestJson)
+    {
+        return demoBytes > 0 && !string.IsNullOrEmpty(manifestJson) &&
+               demoBytes + Encoding.UTF8.GetByteCount(manifestJson) <= MaxUploadBundleBytes;
+    }
+
     internal static bool CaptureManifestMatchesCurrentPolicy(string manifestJson)
     {
         if (string.IsNullOrEmpty(manifestJson))
@@ -298,7 +304,7 @@ internal sealed class RlDemonstrationUploader : MonoBehaviour
                      .OrderBy(value => value, StringComparer.Ordinal))
         {
             FileInfo info = new FileInfo(file);
-            if (info.Length > 0 && info.Length <= MaxDemoBytes)
+            if (IsUploadBundleWithinLimit(info.Length, manifestJson))
             {
                 destination.Add(file);
             }
@@ -400,9 +406,9 @@ internal sealed class RlDemonstrationUploader : MonoBehaviour
         }
 
         FileInfo fileInfo = new FileInfo(filePath);
-        if (fileInfo.Length <= 0 || fileInfo.Length > MaxDemoBytes)
+        if (!IsUploadBundleWithinLimit(fileInfo.Length, _manifestJson))
         {
-            Debug.LogWarning($"Skipping RL demonstration outside the upload size limit: {filePath}");
+            Debug.LogWarning($"Skipping RL demonstration outside the combined demo/manifest upload size limit: {filePath}");
             yield break;
         }
 
