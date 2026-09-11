@@ -8,11 +8,13 @@ using UnityEngine;
 /// Owns sampled matchup state per training Level. A selector contains both the prepared matchup and
 /// its recent-result history, so keeping one selector per Level prevents asynchronously completing
 /// arenas from overwriting each other's prepared matchup or attributing outcomes to the wrong pair.
+/// Player-derived adversarial pressure wraps that selector per arena and reserves only its explicitly
+/// configured bounded fraction of episodes.
 /// </summary>
 internal static class RlOneVsOnePerArenaMatchups
 {
-    private static readonly Dictionary<Level, RlOneVsOneEpisodeMatchupSelector> Selectors =
-        new Dictionary<Level, RlOneVsOneEpisodeMatchupSelector>();
+    private static readonly Dictionary<Level, RlOneVsOneAdversarialMatchupSelector> Selectors =
+        new Dictionary<Level, RlOneVsOneAdversarialMatchupSelector>();
 
     static RlOneVsOnePerArenaMatchups()
     {
@@ -27,7 +29,9 @@ internal static class RlOneVsOnePerArenaMatchups
 
     internal static void PrepareEpisode(Level level)
     {
-        GetSelector(level).PrepareEpisode();
+        RlOneVsOneAdversarialMatchupSelector selector = GetSelector(level);
+        selector.PrepareEpisode();
+        RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
     }
 
     internal static ConfigData.ShipTypes GetShipType(Level level, int side, int shipIndex)
@@ -35,20 +39,23 @@ internal static class RlOneVsOnePerArenaMatchups
         return GetSelector(level).GetShipType(side, shipIndex);
     }
 
-    private static RlOneVsOneEpisodeMatchupSelector GetSelector(Level level)
+    private static RlOneVsOneAdversarialMatchupSelector GetSelector(Level level)
     {
         if (level == null)
         {
             throw new ArgumentNullException(nameof(level));
         }
 
-        if (!Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
+        if (!Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
             string[] args = Environment.GetCommandLineArgs();
             RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(args);
-            selector = new RlOneVsOneEpisodeMatchupSelector(
+            IReadOnlyList<RlPlayerDerivedAdversarialScenario> playerDerivedScenarios =
+                RlPlayerDerivedAdversarialPressure.Parse(args, options);
+            selector = new RlOneVsOneAdversarialMatchupSelector(
                 options,
-                RlOneVsOneScenarioSeed.Create(args));
+                RlOneVsOneScenarioSeed.Create(args),
+                playerDerivedScenarios);
             Selectors.Add(level, selector);
         }
         return selector;
@@ -56,7 +63,7 @@ internal static class RlOneVsOnePerArenaMatchups
 
     private static void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
-        if (level != null && Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
+        if (level != null && Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
             selector.RecordEpisodeOutcome(result.WinningSide, result.TimedOut);
         }
@@ -70,5 +77,6 @@ internal static class RlOneVsOnePerArenaMatchups
     internal static void ResetForTests()
     {
         Selectors.Clear();
+        RlPlayerDerivedPressureTelemetry.ResetForTests();
     }
 }
