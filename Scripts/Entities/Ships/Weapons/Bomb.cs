@@ -49,13 +49,16 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         }
 
         /// <summary>
-        /// A launched projectile now owns removal of the reservation. Clear Bomb ownership
-        /// without changing the shared damage total.
+        /// Transfers ownership of the selected target's reserved damage to an independent delivery
+        /// object/fuse. Rendered projectiles already capture the same reservation from GameState;
+        /// headless training keeps the returned handle until its delayed bomb resolves.
         /// </summary>
-        public void TransferTargetReservation()
+        public ShipDamageStatus TransferTargetReservation()
         {
+            ShipDamageStatus transferredReservation = _reservedDamageStatus;
             _reservedDamageStatus = null;
             TargetShip = null;
+            return transferredReservation;
         }
 
         /// <summary>
