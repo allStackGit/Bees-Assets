@@ -47,16 +47,22 @@ internal sealed class RlOneVsOneTrainingDurabilityGuard : MonoBehaviour
             return;
         }
 
-        Level level = _stage.PrimaryLevel;
-        if (level == null || level.State == null)
+        // Own durability for every arena in one place. Additional arenas reset independently, so
+        // each Level must be re-clamped after pooled Ship.Setup restores authored health.
+        IReadOnlyList<Level> levels = _stage.Levels;
+        for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)
         {
-            return;
-        }
+            Level level = levels[levelIndex];
+            if (level == null || level.State == null)
+            {
+                continue;
+            }
 
-        List<Ship> ships = level.State.GetShips();
-        for (int i = 0; i < ships.Count; i++)
-        {
-            ApplyTrainingDurability(ships[i]);
+            List<Ship> ships = level.State.GetShips();
+            for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+            {
+                ApplyTrainingDurability(ships[shipIndex]);
+            }
         }
     }
 
