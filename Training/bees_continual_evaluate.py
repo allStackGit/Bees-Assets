@@ -13,8 +13,9 @@ import math
 import os
 import re
 import sys
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -78,6 +79,12 @@ class MatchSummary:
     opponent_shots: int = 0
     opponent_hits: int = 0
     opponent_damage: int = 0
+    candidate_inference_calls: int = 0
+    candidate_inference_total_seconds: float = 0.0
+    candidate_inference_max_seconds: float = 0.0
+    opponent_inference_calls: int = 0
+    opponent_inference_total_seconds: float = 0.0
+    opponent_inference_max_seconds: float = 0.0
     telemetry_validated: bool = False
 
     @property
@@ -97,6 +104,26 @@ class MatchSummary:
     @property
     def average_duration_seconds(self) -> float:
         return self.total_duration_seconds / self.matches if self.matches > 0 else 0.0
+
+    @property
+    def candidate_inference_average_milliseconds(self) -> float:
+        if self.candidate_inference_calls <= 0:
+            return 0.0
+        return 1000.0 * self.candidate_inference_total_seconds / self.candidate_inference_calls
+
+    @property
+    def candidate_inference_max_milliseconds(self) -> float:
+        return 1000.0 * self.candidate_inference_max_seconds
+
+    @property
+    def opponent_inference_average_milliseconds(self) -> float:
+        if self.opponent_inference_calls <= 0:
+            return 0.0
+        return 1000.0 * self.opponent_inference_total_seconds / self.opponent_inference_calls
+
+    @property
+    def opponent_inference_max_milliseconds(self) -> float:
+        return 1000.0 * self.opponent_inference_max_seconds
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -119,6 +146,12 @@ class MatchSummary:
             "opponent_shots": self.opponent_shots,
             "opponent_hits": self.opponent_hits,
             "opponent_damage": self.opponent_damage,
+            "candidate_inference_calls": self.candidate_inference_calls,
+            "candidate_inference_average_milliseconds": self.candidate_inference_average_milliseconds,
+            "candidate_inference_max_milliseconds": self.candidate_inference_max_milliseconds,
+            "opponent_inference_calls": self.opponent_inference_calls,
+            "opponent_inference_average_milliseconds": self.opponent_inference_average_milliseconds,
+            "opponent_inference_max_milliseconds": self.opponent_inference_max_milliseconds,
             "telemetry_validated": self.telemetry_validated,
         }
 
@@ -312,6 +345,8 @@ def _validate_match_summary(
         ("losses", summary.losses),
         ("draws", summary.draws),
         ("timeouts", summary.timeouts),
+        ("candidate_inference_calls", summary.candidate_inference_calls),
+        ("opponent_inference_calls", summary.opponent_inference_calls),
     ):
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise EvaluationError(f"Match summary {label} must be a non-negative integer.")
@@ -319,13 +354,20 @@ def _validate_match_summary(
         raise EvaluationError("Match summary outcome counts do not equal matches.")
     if summary.timeouts > summary.draws:
         raise EvaluationError("Match summary timeouts cannot exceed draws.")
-    if (
-        not isinstance(summary.total_duration_seconds, (int, float))
-        or isinstance(summary.total_duration_seconds, bool)
-        or not math.isfinite(float(summary.total_duration_seconds))
-        or summary.total_duration_seconds < 0
+    for label, value in (
+        ("total_duration_seconds", summary.total_duration_seconds),
+        ("candidate_inference_total_seconds", summary.candidate_inference_total_seconds),
+        ("candidate_inference_max_seconds", summary.candidate_inference_max_seconds),
+        ("opponent_inference_total_seconds", summary.opponent_inference_total_seconds),
+        ("opponent_inference_max_seconds", summary.opponent_inference_max_seconds),
     ):
-        raise EvaluationError("Match summary duration must be finite and non-negative.")
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or value < 0
+        ):
+            raise EvaluationError(f"Match summary {label} must be finite and non-negative.")
     for label, value in (
         ("candidate_starting_tsv", summary.candidate_starting_tsv),
         ("candidate_final_tsv", summary.candidate_final_tsv),
@@ -342,6 +384,18 @@ def _validate_match_summary(
             raise EvaluationError(
                 f"Match summary {label} must be a non-negative integer."
             )
+    if summary.candidate_inference_max_seconds > summary.candidate_inference_total_seconds:
+        raise EvaluationError("Candidate inference max latency exceeds total inference time.")
+    if summary.opponent_inference_max_seconds > summary.opponent_inference_total_seconds:
+        raise EvaluationError("Opponent inference max latency exceeds total inference time.")
+    if summary.candidate_inference_calls == 0 and (
+        summary.candidate_inference_total_seconds > 0 or summary.candidate_inference_max_seconds > 0
+    ):
+        raise EvaluationError("Candidate inference timing exists without inference calls.")
+    if summary.opponent_inference_calls == 0 and (
+        summary.opponent_inference_total_seconds > 0 or summary.opponent_inference_max_seconds > 0
+    ):
+        raise EvaluationError("Opponent inference timing exists without inference calls.")
     if summary.telemetry_validated:
         if summary.matches > 0 and (
             summary.candidate_starting_tsv <= 0 or summary.opponent_starting_tsv <= 0
@@ -358,6 +412,38 @@ def _validate_match_summary(
                     f"Validated match summary {side} hit/damage counters are inconsistent."
                 )
     return summary
+
+
+def _runtime_latency_evidence(
+    summaries: Sequence[MatchSummary],
+    max_inference_batch_milliseconds: Optional[float],
+) -> Dict[str, Any]:
+    if max_inference_batch_milliseconds is None:
+        return {
+            "configured": False,
+            "passed": False,
+            "max_inference_batch_milliseconds": None,
+            "observed_candidate_max_milliseconds": None,
+            "candidate_inference_calls": 0,
+        }
+    threshold = float(max_inference_batch_milliseconds)
+    if not math.isfinite(threshold) or threshold <= 0:
+        raise ValidationError(
+            "promotion.max_inference_batch_milliseconds must be a positive finite number."
+        )
+    calls = sum(summary.candidate_inference_calls for summary in summaries)
+    observed = max(
+        (summary.candidate_inference_max_milliseconds for summary in summaries),
+        default=0.0,
+    )
+    evidence_available = bool(summaries) and calls > 0
+    return {
+        "configured": True,
+        "passed": evidence_available and observed <= threshold,
+        "max_inference_batch_milliseconds": threshold,
+        "observed_candidate_max_milliseconds": observed if evidence_available else None,
+        "candidate_inference_calls": calls,
+    }
 
 
 def behavior_base_name(behavior_name: str) -> str:
@@ -503,6 +589,9 @@ class OnnxPolicy:
             )
         self.memories: Dict[int, np.ndarray] = {}
         self._validated_signature: Optional[Tuple[Any, ...]] = None
+        self.inference_calls = 0
+        self.inference_total_seconds = 0.0
+        self.inference_max_seconds = 0.0
 
     def _signature(self, behavior_spec: Any) -> Tuple[Any, ...]:
         observation_shapes = tuple(tuple(spec.shape) for spec in behavior_spec.observation_specs)
@@ -591,10 +680,15 @@ class OnnxPolicy:
         ]
         if self.memory_size > 0:
             requested.append("recurrent_out")
+        started = time.perf_counter()
         try:
             outputs = self.session.run(requested, inputs)
         except Exception as exc:
             raise EvaluationError(f"ONNX inference failed for {self.path}: {exc}") from exc
+        elapsed = time.perf_counter() - started
+        self.inference_calls += 1
+        self.inference_total_seconds += elapsed
+        self.inference_max_seconds = max(self.inference_max_seconds, elapsed)
 
         continuous = np.asarray(outputs[0], dtype=np.float32)
         discrete = np.asarray(outputs[1], dtype=np.int32)
@@ -720,10 +814,16 @@ def run_match_group(
     finally:
         environment.close()
 
-    return _validate_match_summary(
+    summary = replace(
         summarize_results(completed, candidate_team_id=0),
-        expected_matches=matches,
+        candidate_inference_calls=candidate.inference_calls,
+        candidate_inference_total_seconds=candidate.inference_total_seconds,
+        candidate_inference_max_seconds=candidate.inference_max_seconds,
+        opponent_inference_calls=opponent.inference_calls,
+        opponent_inference_total_seconds=opponent.inference_total_seconds,
+        opponent_inference_max_seconds=opponent.inference_max_seconds,
     )
+    return _validate_match_summary(summary, expected_matches=matches)
 
 
 def _validate_env_args(values: Sequence[str]) -> Tuple[str, ...]:
@@ -890,6 +990,21 @@ def evaluate_candidate(
     candidate_path = _model_path(store, candidate_model_id)
 
     promotion = store.config["promotion"]
+    latency_threshold_raw = promotion.get("max_inference_batch_milliseconds")
+    if latency_threshold_raw is None:
+        latency_threshold = None
+    elif (
+        not isinstance(latency_threshold_raw, (int, float))
+        or isinstance(latency_threshold_raw, bool)
+        or not math.isfinite(float(latency_threshold_raw))
+        or float(latency_threshold_raw) <= 0
+    ):
+        raise ValidationError(
+            "promotion.max_inference_batch_milliseconds must be a positive finite number."
+        )
+    else:
+        latency_threshold = float(latency_threshold_raw)
+
     champion_match_count = (
         int(champion_matches)
         if champion_matches is not None
@@ -919,13 +1034,21 @@ def evaluate_candidate(
     run_number = 0
     completed_match_groups = 0
     validated_summaries: List[MatchSummary] = []
+    candidate_runtime_summaries: List[MatchSummary] = []
     authoritative_runner = match_runner is run_match_group
 
-    def accept_summary(summary: MatchSummary, matches: int) -> MatchSummary:
+    def accept_summary(
+        summary: MatchSummary,
+        matches: int,
+        *,
+        candidate_is_evaluated_model: bool,
+    ) -> MatchSummary:
         nonlocal completed_match_groups
         validated = _validate_match_summary(summary, expected_matches=matches)
         completed_match_groups += 1
         validated_summaries.append(validated)
+        if candidate_is_evaluated_model:
+            candidate_runtime_summaries.append(validated)
         return validated
 
     def run(opponent_id: str, matches: int, extra_args: Sequence[str] = ()) -> MatchSummary:
@@ -951,7 +1074,11 @@ def evaluate_candidate(
             no_graphics=no_graphics,
             max_environment_steps_per_match=max_environment_steps_per_match,
         )
-        return accept_summary(summary, matches)
+        return accept_summary(
+            summary,
+            matches,
+            candidate_is_evaluated_model=True,
+        )
 
     champion_comparison: Optional[Dict[str, Any]] = None
     if champion_id is not None:
@@ -1003,6 +1130,7 @@ def evaluate_candidate(
                     max_environment_steps_per_match=max_environment_steps_per_match,
                 ),
                 historical_match_count,
+                candidate_is_evaluated_model=False,
             )
             baseline_rate = baseline_summary.win_rate
         entry: Dict[str, Any] = {
@@ -1045,8 +1173,16 @@ def evaluate_candidate(
         and bool(validated_summaries)
         and all(summary.telemetry_validated for summary in validated_summaries)
     )
+    latency_evidence = _runtime_latency_evidence(
+        candidate_runtime_summaries,
+        latency_threshold,
+    )
     runtime_compatible = authoritative_runner and all_match_groups_completed
-    runtime_checks_passed = authoritative_runner and all_match_groups_completed
+    runtime_checks_passed = (
+        authoritative_runner
+        and all_match_groups_completed
+        and bool(latency_evidence["passed"])
+    )
     behavior_sanity_passed = authoritative_runner and all_authoritative_telemetry_validated
 
     report: Dict[str, Any] = {
@@ -1071,6 +1207,7 @@ def evaluate_candidate(
             "authoritative_telemetry_validated": all_authoritative_telemetry_validated,
             "artifact_integrity_verified": True,
             "compatibility_metadata_verified": True,
+            "runtime_latency": latency_evidence,
         },
     }
     return report
