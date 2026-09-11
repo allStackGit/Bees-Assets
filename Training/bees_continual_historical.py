@@ -235,6 +235,7 @@ def _matches_draw_aware_evaluation(
 
 def _latest_authoritative_pressure(
     store: ContinualLearningStore,
+    opponent_model_ids: Optional[Sequence[str]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Return newest compatible draw-aware authoritative evidence per opponent.
 
@@ -242,12 +243,25 @@ def _latest_authoritative_pressure(
     delete that audit history, validate each row against the immutable evaluation
     report named in its tags. Only promotion-policy schema 3+ reports can influence
     current sampling because schema 3 introduced draw-aware historical score rates.
+
+    Rows are processed newest-first and evaluation reports are fetched lazily. Once
+    every requested active opponent has validated evidence, older rows are not read.
     """
     db_path = getattr(store, "db_path", None)
     if db_path is None or not Path(db_path).is_file():
         return {}
 
+    requested = (
+        None
+        if opponent_model_ids is None
+        else {str(value) for value in opponent_model_ids}
+    )
+    if requested == set():
+        return {}
+
     compatibility = store.compatibility.to_dict()
+    result: Dict[str, Dict[str, Any]] = {}
+    report_cache: Dict[str, Optional[Any]] = {}
     try:
         db = sqlite3.connect(str(db_path), timeout=30.0)
         db.row_factory = sqlite3.Row
@@ -278,10 +292,56 @@ def _latest_authoritative_pressure(
                 compatibility["scenario_schema_version"],
                 f'%"{AUTHORITATIVE_EVALUATION_TAG}"%',
             ),
-        ).fetchall()
-        evaluation_rows = db.execute(
-            "SELECT report_id, report_json FROM evaluations"
-        ).fetchall()
+        )
+        for row in rows:
+            opponent_id = str(row["opponent_model_id"])
+            if requested is not None and opponent_id not in requested:
+                continue
+            if opponent_id in result:
+                continue
+            try:
+                tags = json.loads(row["tags_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise HistoricalOpponentError(
+                    f"Historical matchup tags are corrupted for opponent {opponent_id}."
+                ) from exc
+            if not isinstance(tags, list) or AUTHORITATIVE_EVALUATION_TAG not in tags:
+                continue
+            report_id = _evaluation_report_id(tags)
+            if report_id is None:
+                continue
+            if report_id not in report_cache:
+                evaluation = db.execute(
+                    "SELECT report_json FROM evaluations WHERE report_id = ?",
+                    (report_id,),
+                ).fetchone()
+                if evaluation is None:
+                    report_cache[report_id] = None
+                else:
+                    try:
+                        report_cache[report_id] = json.loads(evaluation["report_json"])
+                    except (TypeError, json.JSONDecodeError):
+                        report_cache[report_id] = None
+            report = report_cache[report_id]
+            if not _matches_draw_aware_evaluation(
+                report,
+                current_model_id=str(row["current_model_id"]),
+                opponent_model_id=opponent_id,
+                current_score_rate=row["current_win_rate"],
+                previous_score_rate=row["previous_win_rate"],
+                match_count=int(row["match_count"]),
+            ):
+                continue
+            result[opponent_id] = {
+                "current_model_id": str(row["current_model_id"]),
+                "current_win_rate": row["current_win_rate"],
+                "previous_win_rate": row["previous_win_rate"],
+                "match_count": int(row["match_count"]),
+                "tags": tags,
+                "evaluation_report_id": report_id,
+            }
+            if requested is not None and requested.issubset(result):
+                break
     except sqlite3.Error as exc:
         raise HistoricalOpponentError(
             f"Could not read authoritative historical regression pressure: {exc}"
@@ -289,50 +349,6 @@ def _latest_authoritative_pressure(
     finally:
         if "db" in locals():
             db.close()
-
-    evaluation_reports = {
-        str(row["report_id"]): row["report_json"] for row in evaluation_rows
-    }
-    result: Dict[str, Dict[str, Any]] = {}
-    for row in rows:
-        opponent_id = str(row["opponent_model_id"])
-        if opponent_id in result:
-            continue
-        try:
-            tags = json.loads(row["tags_json"])
-        except (TypeError, json.JSONDecodeError) as exc:
-            raise HistoricalOpponentError(
-                f"Historical matchup tags are corrupted for opponent {opponent_id}."
-            ) from exc
-        if not isinstance(tags, list) or AUTHORITATIVE_EVALUATION_TAG not in tags:
-            continue
-        report_id = _evaluation_report_id(tags)
-        if report_id is None:
-            continue
-        report_json = evaluation_reports.get(report_id)
-        if report_json is None:
-            continue
-        try:
-            report = json.loads(report_json)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if not _matches_draw_aware_evaluation(
-            report,
-            current_model_id=str(row["current_model_id"]),
-            opponent_model_id=opponent_id,
-            current_score_rate=row["current_win_rate"],
-            previous_score_rate=row["previous_win_rate"],
-            match_count=int(row["match_count"]),
-        ):
-            continue
-        result[opponent_id] = {
-            "current_model_id": str(row["current_model_id"]),
-            "current_win_rate": row["current_win_rate"],
-            "previous_win_rate": row["previous_win_rate"],
-            "match_count": int(row["match_count"]),
-            "tags": tags,
-            "evaluation_report_id": report_id,
-        }
     return result
 
 
@@ -371,7 +387,10 @@ def _historical_training_weights(
         item.pop("pressure_model_id", None)
         item.pop("pressure_evaluation_report_id", None)
 
-    pressure = _latest_authoritative_pressure(store)
+    pressure = _latest_authoritative_pressure(
+        store,
+        [str(item["model_id"]) for item in weighted],
+    )
     if not pressure:
         return weighted
 
