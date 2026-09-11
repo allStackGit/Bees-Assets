@@ -113,6 +113,17 @@ class AdversarialReplayTests(unittest.TestCase):
         return lambda _path: (AdversarialReplayTests.behavior_spec(), pairs, len(pairs))
 
     @staticmethod
+    def loader_with_terminal(count, terminal_index):
+        pairs = [
+            SimpleNamespace(
+                index=index,
+                agent_info=SimpleNamespace(done=index == terminal_index),
+            )
+            for index in range(count)
+        ]
+        return lambda _path: (AdversarialReplayTests.behavior_spec(), pairs, len(pairs))
+
+    @staticmethod
     def action_reader(pair_info):
         continuous = [0.0] * CONTINUOUS_ACTIONS
         continuous[0] = 1.0
@@ -146,14 +157,14 @@ class AdversarialReplayTests(unittest.TestCase):
                 **kwargs,
             )
 
-    def compile(self, *, action_reader=None, observation_reader=None):
+    def compile(self, *, loader=None, action_reader=None, observation_reader=None):
         with patch.object(replay, "_read_scenario", side_effect=self.scenario_lookup), patch.object(
             replay, "_validate_registered_sources"
         ), patch.object(replay, "_approved_archive", return_value=self.archive):
             return replay.compile_action_replay(
                 self.store,
                 SCENARIO_ID,
-                loader=self.loader_with_count(13),
+                loader=loader or self.loader_with_count(13),
                 observation_reader=observation_reader or self.observation_reader,
                 action_reader=action_reader or self.action_reader,
             )
@@ -215,11 +226,20 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertAlmostEqual(first_frame[3], 1.0)
         self.assertEqual(first_frame[-1], 1)
         self.assertTrue(result["truncated"])
+        self.assertFalse(result["source_first_episode_terminal_found"])
         self.assertEqual(result["terminal_behavior"], "neutral")
 
         metadata = json.loads(Path(result["metadata_path"]).read_text(encoding="utf-8"))
         self.assertEqual(metadata["artifact_sha256"], result["artifact_sha256"])
         self.assertEqual(metadata["frame_count"], 10)
+
+    def test_compile_stops_before_first_native_terminal_record(self):
+        self.register(record_count=12)
+        result = self.compile(loader=self.loader_with_terminal(16, terminal_index=9))
+        self.assertEqual(result["frame_count"], 9)
+        self.assertEqual(result["available_trainable_record_count"], 9)
+        self.assertTrue(result["source_first_episode_terminal_found"])
+        self.assertFalse(result["truncated"])
 
     def test_compile_rejects_capability_or_target_actions(self):
         self.register(record_count=10)
@@ -240,10 +260,26 @@ class AdversarialReplayTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.compile(action_reader=target_reader)
 
-    def test_compile_rejects_source_ship_identity_mismatch(self):
+    def test_compile_rejects_source_ship_identity_mismatch_anywhere_in_prefix(self):
         self.register(record_count=10)
+
+        def changed_ship_reader(pair_info, _behavior):
+            return observation(
+                self_ship=21 if pair_info.index == 5 else 13,
+                enemy_ship=21,
+            )
+
         with self.assertRaises(ValidationError):
-            self.compile(observation_reader=lambda pair, behavior: observation(self_ship=21, enemy_ship=13))
+            self.compile(observation_reader=changed_ship_reader)
+
+        def changed_enemy_reader(pair_info, _behavior):
+            return observation(
+                self_ship=13,
+                enemy_ship=13 if pair_info.index == 5 else 21,
+            )
+
+        with self.assertRaises(ValidationError):
+            self.compile(observation_reader=changed_enemy_reader)
 
     def test_catalog_uses_relative_artifact_paths_and_ignores_scenarios_without_replay(self):
         self.register(record_count=10)
