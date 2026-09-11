@@ -190,7 +190,24 @@ Keep `--env-args` as a separate token and place Unity environment arguments afte
 
 `RlOneVsOnePerArenaMatchups` samples player-derived pressure independently in each arena. Reserved episodes are labeled internally by scenario ID, while all non-reserved episodes continue through the existing baseline/adaptive matchup sampler. Player-derived outcomes are intentionally not added to adaptive-matchup history, keeping external player pressure independently measurable. When adversarial pressure is configured, Unity emits one compact `player_derived_pressure` summary every 1000 prepared episodes per arena with the observed rate and per-scenario counts.
 
-This is the first Phase 7 implementation boundary. It converts reviewed repeated tactics into measurable fresh matchup pressure, but it does not yet reconstruct player movement/spatial state, replay a scripted action sequence, automatically mine tactics from uploads, or add scenario-specific counterplay results to the authoritative promotion evaluator. Those are separate later Phase 7 steps.
+Measure whether a candidate actually improved on the registered matchups with the separate paired diagnostic evaluator:
+
+```powershell
+python Training\bees_continual_adversarial_evaluate.py `
+  --root="F:\RLDemo\BeesContinual" `
+  --candidate="bees-rl-v7-<candidate-id>" `
+  --baseline="bees-rl-v7-<baseline-id>" `
+  --opponent="bees-rl-v7-<opponent-id>" `
+  --env="F:\RLDemo\Bees RL Training" `
+  --scenario=adv-<scenario-a> `
+  --scenario=adv-<scenario-b> `
+  --matches=200 `
+  --seed=36
+```
+
+For each selected scenario, the evaluator revalidates the source approvals, forces the exact registered Bee/Human composition, and runs candidate and baseline against the same opponent with the same seed. The immutable report under `evaluation/adversarial` records candidate and baseline score rates, per-scenario deltas, and a pressure-weighted aggregate delta. These reports are deliberately `promotion_eligible: false`; they are diagnostic evidence and do not silently replace or expand the pinned permanent competency suite.
+
+The current scenario descriptor captures fleet-composition pressure, not the original player's action stream, movement path, spawn geometry, or intermediate world state. A positive diagnostic delta therefore means counterplay improved on the registered matchup distribution; it does not prove that the exact recorded human action sequence was defeated. Automatic tactic mining plus richer spatial/scripted replay remains a later Phase 7 step.
 
 ## Permanent competency suite
 
