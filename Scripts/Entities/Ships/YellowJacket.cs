@@ -99,9 +99,9 @@ namespace Assets.Scripts.Entities.Ships
 
             LogDetonationDamage(Bomb.Power, this, ContactedShip, this);
             // Existing gameplay accounting intentionally treats the contacted ship as the attacker
-            // for the reciprocal damage. Diagnostics identify the physical cause as the Yellow
-            // Jacket's own bomb so this damage appears under self_damage instead of enemy gun damage.
-            LogDetonationDamage(Bomb.Power, ContactedShip, this, this);
+            // for reciprocal damage. RL reward attribution is separate so this physical self-damage
+            // penalizes the Yellow Jacket side without rewarding the contacted opponent.
+            LogDetonationDamage(Bomb.Power, ContactedShip, this, this, rlSelfInflicted: true);
 
             Ship detonationTarget = ContactedShip;
             FleetShip targetFleetShip = detonationTarget.FleetShip;
@@ -121,7 +121,7 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         private int _targetOldTSV, _targetTSVLoss;
-        private void LogDetonationDamage(int power, Ship attacker, Ship target, Ship diagnosticOwner) // [damage-method] [note]
+        private void LogDetonationDamage(int power, Ship attacker, Ship target, Ship diagnosticOwner, bool rlSelfInflicted = false) // [damage-method] [note]
         {
             int appliedDamage = math.min(target.Health, power);
             _targetOldTSV = target.Tsv;
@@ -134,7 +134,14 @@ namespace Assets.Scripts.Entities.Ships
             // emit the same immediate RL outcome signal used by ordinary weapon impacts. Outside the
             // dedicated RL runtime the coordinator is inactive and this is a no-op.
             global::RlOneVsOneEpisodeDiagnostics.RecordAttributedDamage(diagnosticOwner, target, appliedDamage, "bomb");
-            global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
+            if (rlSelfInflicted)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(target, -_targetTSVLoss);
+            }
+            else
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVLoss);
+            }
 
             // LogHitStats owns attacker/target command TSV accounting as well as persistent
             // combat stats. Do not apply the same command reward/penalty again here.
