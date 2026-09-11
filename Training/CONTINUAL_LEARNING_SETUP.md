@@ -21,6 +21,33 @@ The committed `Training/continual_learning_config.json` uses `CPUExecutionProvid
 
 The authoritative offline evaluator also requires ONNX Runtime because candidate, champion, and historical policies are executed from immutable ONNX artifacts. `bees_continual_evaluate.py` uses `CPUExecutionProvider` by default and accepts `--onnx-provider` when another installed provider is intentionally selected.
 
+## Human demonstration capture and imitation
+
+Player-facing builds can opt into passive human/Hive Mind demonstration capture with:
+
+```text
+--rl-record-demonstrations
+```
+
+Recordings use the shared `BeesRL1v1` observation/action ABI and are stored below `Application.persistentDataPath/RlDemonstrations`. Human and Hive Mind recordings are physically separated into `Human` and `HiveMind` subdirectories so Hive Mind behavior cannot be mixed into human imitation merely because both were recorded in the same session.
+
+To include a trusted set of native ML-Agents human `.demo` files in a continual training run, pass the `Human` directory to the continual wrapper:
+
+```powershell
+python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
+  --env="F:\RLDemo\Bees RL Training" `
+  --run-id=bees-full-001 --resume `
+  --continual-root="F:\RLDemo\BeesContinual" `
+  --continual-game-build="2026.09.11" `
+  --continual-human-demo-dir="C:\path\to\RlDemonstrations\Human"
+```
+
+Before ML-Agents starts, the wrapper validates that the directory contains non-empty `.demo` files, rejects files explicitly named as Hive Mind recordings, hashes the selected files, and copies them into an immutable content-addressed snapshot under the continual-learning root. The source recordings must therefore be closed/stable before training starts. If a recording changes during snapshotting, startup fails instead of silently training against a moving dataset.
+
+The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI.
+
+This path is for explicitly selected/trusted local demonstrations. Authenticated public-client upload, abuse controls, and central native `.demo` ingestion are still separate work. One-shot ship specials, mining, healing, and warp are also not yet labeled by the passive recorder; those require authoritative pre-event capture so destructive actions are not paired with post-destruction observations.
+
 ## Permanent competency suite
 
 When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent competency suite in the continual-learning store before recording promotion-eligible evaluations:
@@ -47,7 +74,7 @@ A suite uses schema version 1:
   "cases": [
     {
       "name": "large-map-aiming",
-      "opponent_model_id": "bees-rl-v6-...",
+      "opponent_model_id": "bees-rl-v7-...",
       "matches": 200,
       "minimum": 0.55,
       "metric": "score_rate",
