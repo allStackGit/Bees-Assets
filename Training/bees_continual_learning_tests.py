@@ -212,6 +212,27 @@ class PromotionTests(StoreTestCase):
         with self.assertRaises(continual.PromotionError):
             self.store.promote(third["model_id"], third_eval["report_id"])
 
+    def test_promotion_requires_complete_historical_coverage(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        second_eval = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+        self.store.promote(second["model_id"], second_eval["report_id"])
+
+        third = self.register("third.onnx", b"third", 300, parent=second["model_id"])
+        incomplete = self.store.record_evaluation(
+            self.passing_report(third["model_id"], second["model_id"])
+        )
+
+        self.assertFalse(incomplete["passed"])
+        self.assertTrue(
+            any("missing historical opponents" in reason for reason in incomplete["reasons"])
+        )
+        with self.assertRaises(continual.PromotionError):
+            self.store.promote(third["model_id"], incomplete["report_id"])
+
     def test_rollback_restores_previous_champion_without_retraining(self):
         first = self.register("first.onnx", b"first", 100)
         self.promote_first(first)

@@ -644,6 +644,13 @@ class ContinualLearningStore:
         if not isinstance(historical, list):
             reasons.append("historical must be a list")
             historical = []
+        expected_compatibility = self.compatibility.to_dict()
+        expected_historical_ids = {
+            str(model["model_id"])
+            for model in self.list_models(status="historical")
+            if all(model.get(key) == value for key, value in expected_compatibility.items())
+        }
+        reported_historical_ids = set()
         critical_regressions = 0
         max_regression = float(promotion["max_historical_regression"])
         min_historical_matches = int(promotion["min_historical_matches_per_opponent"])
@@ -651,6 +658,16 @@ class ContinualLearningStore:
             if not isinstance(item, dict):
                 reasons.append(f"historical[{index}] must be an object")
                 continue
+            opponent_model_id = item.get("opponent_model_id")
+            if not isinstance(opponent_model_id, str) or not opponent_model_id.strip():
+                reasons.append(f"historical[{index}].opponent_model_id is required")
+            else:
+                opponent_model_id = opponent_model_id.strip()
+                if opponent_model_id in reported_historical_ids:
+                    reasons.append(
+                        f"historical opponent {opponent_model_id} is duplicated"
+                    )
+                reported_historical_ids.add(opponent_model_id)
             matches = item.get("matches", 0)
             if not isinstance(matches, int) or isinstance(matches, bool) or matches < 0:
                 reasons.append(f"historical[{index}].matches must be a non-negative integer")
@@ -677,6 +694,17 @@ class ContinualLearningStore:
                         f"historical[{index}] regressed {regression:.4f}; "
                         f"maximum is {max_regression:.4f}"
                     )
+
+        missing_historical_ids = sorted(expected_historical_ids - reported_historical_ids)
+        unexpected_historical_ids = sorted(reported_historical_ids - expected_historical_ids)
+        if missing_historical_ids:
+            reasons.append(
+                "missing historical opponents: " + ", ".join(missing_historical_ids)
+            )
+        if unexpected_historical_ids:
+            reasons.append(
+                "unexpected historical opponents: " + ", ".join(unexpected_historical_ids)
+            )
 
         competencies = report.get("competencies", [])
         if not isinstance(competencies, list):
