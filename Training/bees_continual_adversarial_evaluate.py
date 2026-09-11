@@ -14,7 +14,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from bees_continual_adversarial import (
     _parse_composition,
@@ -43,6 +43,7 @@ from bees_continual_native_demo import _write_bytes_immutable
 
 
 ADVERSARIAL_EVALUATION_SCHEMA_VERSION = 1
+UNITY_PRESSURE_FLAG = "--bees-adversarial-matchups"
 MatchRunner = Callable[..., MatchSummary]
 
 
@@ -50,6 +51,21 @@ def _positive_integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValidationError(f"{label} must be a positive integer.")
     return value
+
+
+def _validate_base_env_args(values: Sequence[str]) -> Sequence[str]:
+    result = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ValidationError("Adversarial evaluation base env args must be non-empty strings.")
+        stripped = value.strip()
+        if stripped == UNITY_PRESSURE_FLAG or stripped.startswith(UNITY_PRESSURE_FLAG + "="):
+            raise ValidationError(
+                f"Do not pass {UNITY_PRESSURE_FLAG} to diagnostic evaluation; exact fixed "
+                "scenario compositions are derived from the immutable registry."
+            )
+        result.append(stripped)
+    return tuple(result)
 
 
 def _scenario_env_args(identity: Mapping[str, object]) -> Sequence[str]:
@@ -104,6 +120,7 @@ def evaluate_adversarial_scenarios(
     """Evaluate candidate-vs-baseline deltas on the selected immutable adversarial scenarios."""
     store.initialize()
     matches = _positive_integer(matches_per_scenario, "matches_per_scenario")
+    base_args = _validate_base_env_args(base_env_args)
     if not scenario_ids:
         raise ValidationError("At least one adversarial scenario ID is required for evaluation.")
     normalized_ids = sorted(set(scenario_ids))
@@ -132,7 +149,7 @@ def evaluate_adversarial_scenarios(
         identity = scenario["identity"]
         _validate_registered_sources(store, scenario_id, identity)
         scenario_args = _scenario_env_args(identity)
-        merged_args = _merge_env_args(base_env_args, scenario_args)
+        merged_args = _merge_env_args(base_args, scenario_args)
         paired_seed = seed + index
 
         candidate_summary = _validated_summary(
@@ -206,7 +223,7 @@ def evaluate_adversarial_scenarios(
         "behavior_name": behavior_name,
         "policy_abi_version": store.compatibility.policy_abi_version,
         "matches_per_scenario": matches,
-        "base_env_args": list(base_env_args),
+        "base_env_args": list(base_args),
         "seed": seed,
         "scenarios": results,
         "aggregate": {
@@ -218,7 +235,8 @@ def evaluate_adversarial_scenarios(
         },
         "promotion_eligible": False,
         "note": (
-            "Diagnostic player-derived matchup evaluation only; this report does not replace "
+            "Diagnostic player-derived matchup evaluation only. It measures the registered fleet "
+            "scenario, not reproduction of the original human action sequence, and does not replace "
             "the pinned permanent competency suite or production promotion gate."
         ),
     }
