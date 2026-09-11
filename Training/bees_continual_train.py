@@ -39,7 +39,9 @@ SCAN_SECONDS_FLAG = "--continual-scan-seconds"
 HUMAN_DEMO_DIR_FLAG = "--continual-human-demo-dir"
 DEFAULT_SCAN_SECONDS = 2.0
 DEFAULT_HISTORICAL_POLICY_CACHE_SIZE = 4
-HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION = 1
+HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION = 2
+CAPTURE_MANIFEST_FILE_NAME = "capture-manifest.json"
+CAPTURE_MANIFEST_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -284,11 +286,118 @@ def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def validate_human_demonstration_directory(path: str | Path) -> Tuple[Path, List[Path]]:
+def _load_capture_manifest(
+    source: Path,
+    continual_config: Mapping[str, object],
+) -> Tuple[Path, Dict[str, object], str]:
+    if source.name.lower() != "human":
+        raise SystemExit(
+            f"Human demonstration directory must be the capture Human directory, not: {source}"
+        )
+
+    expected_behavior = str(continual_config.get("behavior_name", "")).strip()
+    expected_signature = str(continual_config.get("policy_signature", "")).strip()
+    try:
+        expected_abi = int(continual_config["policy_abi_version"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SystemExit(
+            "continual config must define integer policy_abi_version for human demonstrations."
+        ) from exc
+    if not expected_behavior:
+        raise SystemExit(
+            "continual config must define behavior_name for human demonstrations."
+        )
+    if not expected_signature:
+        raise SystemExit(
+            "continual config must define policy_signature for human demonstrations."
+        )
+
+    policy_directory = source.parent
+    expected_policy_directory = f"PolicyV{expected_abi}"
+    if policy_directory.name != expected_policy_directory:
+        raise SystemExit(
+            f"Human demonstration directory must be below {expected_policy_directory}, "
+            f"but was below {policy_directory.name!r}."
+        )
+
+    manifest_path = policy_directory / CAPTURE_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"Human demonstration capture manifest is missing: {manifest_path}"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"Human demonstration capture manifest is invalid JSON: {manifest_path}: {exc}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise SystemExit(
+            f"Human demonstration capture manifest must contain an object: {manifest_path}"
+        )
+
+    if manifest.get("schemaVersion") != CAPTURE_MANIFEST_SCHEMA_VERSION:
+        raise SystemExit(
+            f"Human demonstration capture manifest schema mismatch at {manifest_path}: "
+            f"expected {CAPTURE_MANIFEST_SCHEMA_VERSION}, got {manifest.get('schemaVersion')!r}."
+        )
+    if manifest.get("behaviorName") != expected_behavior:
+        raise SystemExit(
+            f"Human demonstration behavior mismatch at {manifest_path}: "
+            f"expected {expected_behavior!r}, got {manifest.get('behaviorName')!r}."
+        )
+    if manifest.get("policyAbiVersion") != expected_abi:
+        raise SystemExit(
+            f"Human demonstration policy ABI mismatch at {manifest_path}: "
+            f"expected {expected_abi}, got {manifest.get('policyAbiVersion')!r}."
+        )
+    if manifest.get("policySignature") != expected_signature:
+        raise SystemExit(
+            f"Human demonstration policy signature mismatch at {manifest_path}."
+        )
+
+    observation_size = manifest.get("observationSize")
+    continuous_actions = manifest.get("continuousActionCount")
+    discrete_branches = manifest.get("discreteBranchSizes")
+    if not isinstance(observation_size, int) or isinstance(observation_size, bool) or observation_size <= 0:
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid observationSize: {manifest_path}"
+        )
+    if (
+        not isinstance(continuous_actions, int)
+        or isinstance(continuous_actions, bool)
+        or continuous_actions < 0
+    ):
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid continuousActionCount: {manifest_path}"
+        )
+    if (
+        not isinstance(discrete_branches, list)
+        or not discrete_branches
+        or any(
+            not isinstance(size, int) or isinstance(size, bool) or size <= 0
+            for size in discrete_branches
+        )
+    ):
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid discreteBranchSizes: {manifest_path}"
+        )
+
+    return manifest_path, manifest, _sha256_file(manifest_path)
+
+
+def validate_human_demonstration_directory(
+    path: str | Path,
+    continual_config: Mapping[str, object],
+) -> Tuple[Path, List[Path], Path, Dict[str, object], str]:
     source = Path(path).expanduser().resolve()
     if not source.is_dir():
         raise SystemExit(f"Human demonstration directory does not exist: {source}")
 
+    manifest_path, capture_manifest, capture_manifest_hash = _load_capture_manifest(
+        source,
+        continual_config,
+    )
     demo_files = sorted(
         candidate for candidate in source.glob("*.demo") if candidate.is_file()
     )
@@ -302,14 +411,21 @@ def validate_human_demonstration_directory(path: str | Path) -> Tuple[Path, List
             raise SystemExit(
                 f"Refusing to use Hive Mind demonstration as human imitation data: {demo}"
             )
-    return source, demo_files
+    return source, demo_files, manifest_path, capture_manifest, capture_manifest_hash
 
 
 def snapshot_human_demonstrations(
     source_dir: str | Path,
     continual_root: str | Path,
+    continual_config: Mapping[str, object],
 ) -> Tuple[Path, str, int]:
-    source, demo_files = validate_human_demonstration_directory(source_dir)
+    (
+        source,
+        demo_files,
+        capture_manifest_path,
+        capture_manifest,
+        capture_manifest_hash,
+    ) = validate_human_demonstration_directory(source_dir, continual_config)
     entries = []
     for demo in demo_files:
         entries.append(
@@ -322,6 +438,10 @@ def snapshot_human_demonstrations(
 
     manifest = {
         "schema_version": HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION,
+        "capture_manifest": {
+            "sha256": capture_manifest_hash,
+            "metadata": capture_manifest,
+        },
         "files": entries,
     }
     manifest_bytes = json.dumps(
@@ -360,6 +480,28 @@ def snapshot_human_demonstrations(
             if temp.exists():
                 temp.unlink()
 
+    capture_target = destination / CAPTURE_MANIFEST_FILE_NAME
+    if capture_target.exists():
+        if _sha256_file(capture_target) != capture_manifest_hash:
+            raise SystemExit(
+                f"Immutable human demonstration snapshot conflicts with capture manifest: {capture_target}"
+            )
+    else:
+        capture_temp = capture_target.with_name(
+            capture_target.name + f".{os.getpid()}.tmp"
+        )
+        try:
+            shutil.copy2(capture_manifest_path, capture_temp)
+            if _sha256_file(capture_temp) != capture_manifest_hash:
+                raise SystemExit(
+                    f"Human demonstration capture manifest changed while being snapshotted: "
+                    f"{capture_manifest_path}. Stop recording before starting training."
+                )
+            os.replace(capture_temp, capture_target)
+        finally:
+            if capture_temp.exists():
+                capture_temp.unlink()
+
     manifest_path = destination / "manifest.json"
     manifest_text = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if manifest_path.exists():
@@ -378,6 +520,11 @@ def snapshot_human_demonstrations(
                 f"Human demonstration changed while being snapshotted: {demo}. "
                 "Stop recording before starting training."
             )
+    if _sha256_file(capture_manifest_path) != capture_manifest_hash:
+        raise SystemExit(
+            f"Human demonstration capture manifest changed while being snapshotted: "
+            f"{capture_manifest_path}. Stop recording before starting training."
+        )
 
     return destination, snapshot_hash, len(entries)
 
@@ -618,6 +765,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         demo_snapshot, demo_snapshot_hash, demo_file_count = snapshot_human_demonstrations(
             options.human_demo_dir,
             store.root,
+            continual_config,
         )
         training_config = prepare_human_imitation_config(
             training_config,
