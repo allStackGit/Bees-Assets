@@ -183,6 +183,7 @@ namespace Assets.Scripts.Entities.Ships
             {
                 HasDroppedBomb = true;
                 SetBombsReadyStatus(false);
+                global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
                 global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "striker_bomb_drop");
 
                 if (!Level.Stage.IsTraining)
