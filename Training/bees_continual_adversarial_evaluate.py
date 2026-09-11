@@ -1,9 +1,10 @@
 """Paired diagnostic evaluation for player-derived adversarial scenarios.
 
 This evaluator is intentionally separate from the permanent promotion competency suite. It runs a
-candidate and a baseline policy through the same immutable player-derived fleet scenarios and any
-registered tactical geometry against the same opponent with paired seeds, then records score deltas.
-This makes adversarial adaptation measurable without silently changing production promotion criteria.
+candidate and a baseline through the same immutable player-derived fleet/geometry scenario and, when
+registered, the same deterministic Human action replay. Replay cases load the candidate (or baseline)
+into both physical self-play team slots while Unity reports the non-scripted policy side as logical
+team 0, so team-ID alternation cannot attribute scripted outcomes to the evaluated policy.
 """
 
 from __future__ import annotations
@@ -21,6 +22,10 @@ from bees_continual_adversarial import (
     _parse_tactical_geometry,
     _read_scenario,
     _validate_registered_sources,
+)
+from bees_continual_adversarial_replay import (
+    build_replay_catalog,
+    read_registered_replay_if_present,
 )
 from bees_continual_evaluate import (
     DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
@@ -47,6 +52,7 @@ ADVERSARIAL_EVALUATION_SCHEMA_VERSION = 1
 UNITY_PRESSURE_FLAG = "--bees-adversarial-matchups"
 UNITY_GEOMETRY_CATALOG_FLAG = "--bees-adversarial-geometry-catalog"
 UNITY_FIXED_GEOMETRY_FLAG = "--bees-rl-fixed-geometry"
+UNITY_REPLAY_CATALOG_FLAG = "--bees-adversarial-replay-catalog"
 MatchRunner = Callable[..., MatchSummary]
 
 
@@ -77,6 +83,11 @@ def _validate_base_env_args(values: Sequence[str]) -> Sequence[str]:
             raise ValidationError(
                 "Do not pass player-derived tactical geometry manually to diagnostic evaluation; "
                 "geometry is derived from the immutable scenario registry."
+            )
+        if _is_flag(stripped, UNITY_REPLAY_CATALOG_FLAG):
+            raise ValidationError(
+                "Do not pass player-derived action replay manually to diagnostic evaluation; "
+                "replay artifacts are derived from immutable registered attachments."
             )
         result.append(stripped)
     return tuple(result)
@@ -121,6 +132,33 @@ def _write_report(store: ContinualLearningStore, report: Mapping[str, object]) -
     payload = (json.dumps(body, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     _write_bytes_immutable(path, payload)
     return {**body, "report_path": str(path)}
+
+
+def _replay_evaluation_setup(
+    store: ContinualLearningStore,
+    scenario_id: str,
+) -> tuple[Optional[Mapping[str, object]], Sequence[str]]:
+    registration = read_registered_replay_if_present(store, scenario_id)
+    if registration is None:
+        return None, ()
+
+    catalog = build_replay_catalog(store, [scenario_id])
+    if int(catalog["entry_count"]) != 1:
+        raise ValidationError(
+            f"Adversarial replay registration for {scenario_id} did not compile to exactly one catalog entry."
+        )
+    entry = catalog["catalog"]["entries"][0]
+    metadata = {
+        "replay_id": entry["replayId"],
+        "side": entry["side"],
+        "replay_sha256": entry["replaySha256"],
+        "frame_count": entry["frameCount"],
+        "fixed_step_interval": entry["fixedStepInterval"],
+        "catalog_sha256": catalog["catalog_sha256"],
+    }
+    return metadata, (
+        UNITY_REPLAY_CATALOG_FLAG + "=" + str(Path(catalog["catalog_path"]).resolve()),
+    )
 
 
 def evaluate_adversarial_scenarios(
@@ -172,15 +210,23 @@ def evaluate_adversarial_scenarios(
         scenario = _read_scenario(store, scenario_id)
         identity = scenario["identity"]
         _validate_registered_sources(store, scenario_id, identity)
-        scenario_args = _scenario_env_args(identity)
+        replay_metadata, replay_args = _replay_evaluation_setup(store, scenario_id)
+        scenario_args = tuple(_scenario_env_args(identity)) + tuple(replay_args)
         merged_args = _merge_env_args(base_args, scenario_args)
         paired_seed = seed + index
+
+        # With a scripted side, physical ML-Agents team IDs still alternate normally. Load the same
+        # evaluated model into both team slots; the replay side never requests model actions, and the
+        # evaluator side channel reports the live policy side as logical team 0. Non-replay cases keep
+        # the historical candidate-vs-opponent contract unchanged.
+        candidate_opponent_path = candidate_path if replay_metadata is not None else opponent_path
+        baseline_opponent_path = baseline_path if replay_metadata is not None else opponent_path
 
         candidate_summary = _validated_summary(
             match_runner(
                 environment_path=environment_path,
                 candidate_model_path=candidate_path,
-                opponent_model_path=opponent_path,
+                opponent_model_path=candidate_opponent_path,
                 matches=matches,
                 behavior_name=behavior_name,
                 env_args=merged_args,
@@ -197,7 +243,7 @@ def evaluate_adversarial_scenarios(
             match_runner(
                 environment_path=environment_path,
                 candidate_model_path=baseline_path,
-                opponent_model_path=opponent_path,
+                opponent_model_path=baseline_opponent_path,
                 matches=matches,
                 behavior_name=behavior_name,
                 env_args=merged_args,
@@ -225,6 +271,8 @@ def evaluate_adversarial_scenarios(
                 "scenario_id": scenario_id,
                 "target_fraction": target_fraction,
                 "geometry": identity.get("geometry"),
+                "replay": replay_metadata,
+                "model_opponent_used": replay_metadata is None,
                 "env_args": list(merged_args),
                 "candidate_score_rate": candidate_score,
                 "baseline_score_rate": baseline_score,
@@ -260,10 +308,11 @@ def evaluate_adversarial_scenarios(
         },
         "promotion_eligible": False,
         "note": (
-            "Diagnostic player-derived scenario evaluation only. It reproduces the registered fleet "
-            "composition and tactical map/separation geometry when present, not the original human "
-            "action sequence, and does not replace the pinned permanent competency suite or "
-            "production promotion gate."
+            "Diagnostic player-derived scenario evaluation only. It reproduces registered fleet "
+            "composition, tactical map/separation geometry, and the reviewed movement/aim/fire replay "
+            "prefix when attached. Replay cases compare candidate and baseline independently against "
+            "the same deterministic script. This evidence does not replace the pinned permanent "
+            "competency suite or production promotion gate."
         ),
     }
     return _write_report(store, report)
