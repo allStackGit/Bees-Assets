@@ -236,7 +236,8 @@ namespace Assets.Scripts.Entities.Ships
                     ship.Squad.SavedSquad,
                     this,
                     rlDamageSource: "charge",
-                    rlDamageOwner: this);
+                    rlDamageOwner: this,
+                    rlSelfInflicted: true);
 
                 if (!Stage.IsTraining) Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
