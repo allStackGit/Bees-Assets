@@ -8,45 +8,61 @@ using UnityEngine;
 /// <summary>
 /// Episode-scoped combat telemetry for dedicated RL training. Metrics are updated only by actual
 /// shot and damage events, so diagnostics do not add a per-frame fleet/turret scan or a second log line.
+/// Mutable telemetry is partitioned by Level so simultaneous arenas cannot reset or consume each other's state.
 /// </summary>
 internal static class RlOneVsOneCombatTelemetry
 {
     private const float AccurateAimThresholdDegrees = 5f;
 
-    private static Level _level;
-    private static int _beeSide;
-    private static int _humanSide;
-    private static bool _active;
-    private static float _episodeMapSize = -1f;
+    private sealed class ArenaState
+    {
+        internal readonly Level Level;
+        internal readonly int BeeSide;
+        internal readonly int HumanSide;
+        internal readonly float EpisodeMapSize;
+        internal readonly double[] AimErrorDegrees = new double[2];
+        internal readonly long[] AimSamples = new long[2];
+        internal readonly long[] AccurateAimSamples = new long[2];
+        internal readonly long[] AlignedTurretSamples = new long[2];
+        internal readonly float[] FirstFireDistance = { -1f, -1f };
+        internal readonly float[] FirstHitDistance = { -1f, -1f };
 
-    private static readonly double[] AimErrorDegrees = new double[2];
-    private static readonly long[] AimSamples = new long[2];
-    private static readonly long[] AccurateAimSamples = new long[2];
-    private static readonly long[] AlignedTurretSamples = new long[2];
-    private static readonly float[] FirstFireDistance = { -1f, -1f };
-    private static readonly float[] FirstHitDistance = { -1f, -1f };
+        internal ArenaState(Level level, int beeSide, int humanSide, float episodeMapSize)
+        {
+            Level = level;
+            BeeSide = beeSide;
+            HumanSide = humanSide;
+            EpisodeMapSize = episodeMapSize;
+        }
+    }
+
+    private static readonly Dictionary<Level, ArenaState> States = new Dictionary<Level, ArenaState>();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void ResetStateRegistry()
+    {
+        States.Clear();
+    }
 
     internal static void Begin(Level level)
     {
-        Reset();
         if (level == null || level.State == null || ConfigData.Configuration == null)
         {
             return;
         }
 
-        _level = level;
-        _beeSide = ConfigData.Configuration.BeeSide;
-        _humanSide = ConfigData.Configuration.HumanSide;
-        _episodeMapSize = RlOneVsOneArenaMapSizeState.GetMapSize(level);
-        _active = true;
+        States[level] = new ArenaState(
+            level,
+            ConfigData.Configuration.BeeSide,
+            ConfigData.Configuration.HumanSide,
+            RlOneVsOneArenaMapSizeState.GetMapSize(level));
     }
 
     internal static void End(Level level)
     {
-        if (_active && level == _level)
+        if (level != null)
         {
-            _active = false;
-            _level = null;
+            States.Remove(level);
         }
     }
 
@@ -57,35 +73,36 @@ internal static class RlOneVsOneCombatTelemetry
     /// </summary>
     internal static void RecordShotFired(Ship ship, Weapon weapon)
     {
-        if (!TryGetSideIndex(ship, out int sideIndex) || !(weapon is Turret turret) || !turret.IsRlControlled)
+        if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex) ||
+            !(weapon is Turret turret) || !turret.IsRlControlled)
         {
             return;
         }
 
         Vector2 origin = turret.GetPosition();
-        if (TryFindBestAimedEnemy(_level, ship.Side, origin, turret.RlTargetPoint, out float distance, out float errorDegrees))
+        if (TryFindBestAimedEnemy(state, ship.Side, origin, turret.RlTargetPoint, out float distance, out float errorDegrees))
         {
-            if (FirstFireDistance[sideIndex] < 0f)
+            if (state.FirstFireDistance[sideIndex] < 0f)
             {
-                FirstFireDistance[sideIndex] = distance;
+                state.FirstFireDistance[sideIndex] = distance;
             }
 
-            AimSamples[sideIndex]++;
-            AimErrorDegrees[sideIndex] += errorDegrees;
+            state.AimSamples[sideIndex]++;
+            state.AimErrorDegrees[sideIndex] += errorDegrees;
             if (errorDegrees <= AccurateAimThresholdDegrees)
             {
-                AccurateAimSamples[sideIndex]++;
+                state.AccurateAimSamples[sideIndex]++;
             }
             if (turret.IsAimedAtTarget)
             {
-                AlignedTurretSamples[sideIndex]++;
+                state.AlignedTurretSamples[sideIndex]++;
             }
             return;
         }
 
-        if (FirstFireDistance[sideIndex] < 0f)
+        if (state.FirstFireDistance[sideIndex] < 0f)
         {
-            FirstFireDistance[sideIndex] = FindNearestEnemyDistance(_level, ship);
+            state.FirstFireDistance[sideIndex] = FindNearestEnemyDistance(state, ship);
         }
     }
 
@@ -95,27 +112,36 @@ internal static class RlOneVsOneCombatTelemetry
     /// </summary>
     internal static void RecordHit(Ship sourceShip, Ship target, int damage)
     {
-        if (damage <= 0 || !TryGetSideIndex(sourceShip, out int sourceIndex) ||
-            !TryGetSideIndex(target, out int targetIndex) || sourceIndex == targetIndex ||
-            FirstHitDistance[sourceIndex] >= 0f)
+        if (damage <= 0 ||
+            !TryGetSideIndex(sourceShip, out ArenaState sourceState, out int sourceIndex) ||
+            !TryGetSideIndex(target, out ArenaState targetState, out int targetIndex) ||
+            sourceState != targetState || sourceIndex == targetIndex ||
+            sourceState.FirstHitDistance[sourceIndex] >= 0f)
         {
             return;
         }
 
-        FirstHitDistance[sourceIndex] = Vector2.Distance(sourceShip.GetPosition(), target.GetPosition());
+        sourceState.FirstHitDistance[sourceIndex] = Vector2.Distance(sourceShip.GetPosition(), target.GetPosition());
     }
 
-    internal static string BuildEpisodeFields()
+    internal static string BuildEpisodeFields(Level level)
     {
-        return $"map_size={FormatDistance(_episodeMapSize)} " +
-               $"bee_aim_samples={AimSamples[0]} bee_aim_error={FormatAimError(0)} bee_aim_within_5deg={FormatPercent(AccurateAimSamples[0], AimSamples[0])} " +
-               $"bee_turret_aligned={FormatPercent(AlignedTurretSamples[0], AimSamples[0])} bee_first_fire_distance={FormatDistance(FirstFireDistance[0])} bee_first_hit_distance={FormatDistance(FirstHitDistance[0])} " +
-               $"human_aim_samples={AimSamples[1]} human_aim_error={FormatAimError(1)} human_aim_within_5deg={FormatPercent(AccurateAimSamples[1], AimSamples[1])} " +
-               $"human_turret_aligned={FormatPercent(AlignedTurretSamples[1], AimSamples[1])} human_first_fire_distance={FormatDistance(FirstFireDistance[1])} human_first_hit_distance={FormatDistance(FirstHitDistance[1])}";
+        if (!TryGetState(level, out ArenaState state))
+        {
+            return "map_size=none " +
+                   "bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none " +
+                   "human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none";
+        }
+
+        return $"map_size={FormatDistance(state.EpisodeMapSize)} " +
+               $"bee_aim_samples={state.AimSamples[0]} bee_aim_error={FormatAimError(state, 0)} bee_aim_within_5deg={FormatPercent(state.AccurateAimSamples[0], state.AimSamples[0])} " +
+               $"bee_turret_aligned={FormatPercent(state.AlignedTurretSamples[0], state.AimSamples[0])} bee_first_fire_distance={FormatDistance(state.FirstFireDistance[0])} bee_first_hit_distance={FormatDistance(state.FirstHitDistance[0])} " +
+               $"human_aim_samples={state.AimSamples[1]} human_aim_error={FormatAimError(state, 1)} human_aim_within_5deg={FormatPercent(state.AccurateAimSamples[1], state.AimSamples[1])} " +
+               $"human_turret_aligned={FormatPercent(state.AlignedTurretSamples[1], state.AimSamples[1])} human_first_fire_distance={FormatDistance(state.FirstFireDistance[1])} human_first_hit_distance={FormatDistance(state.FirstHitDistance[1])}";
     }
 
     private static bool TryFindBestAimedEnemy(
-        Level level,
+        ArenaState state,
         int firingSide,
         Vector2 origin,
         Vector2 aimPoint,
@@ -124,7 +150,8 @@ internal static class RlOneVsOneCombatTelemetry
     {
         distance = -1f;
         errorDegrees = 180f;
-        if (!_active || level == null || level.State == null)
+        Level level = state?.Level;
+        if (level == null || level.State == null)
         {
             return false;
         }
@@ -135,7 +162,7 @@ internal static class RlOneVsOneCombatTelemetry
             return false;
         }
 
-        int enemySide = firingSide == _beeSide ? _humanSide : _beeSide;
+        int enemySide = firingSide == state.BeeSide ? state.HumanSide : state.BeeSide;
         List<Ship> enemies = level.State.GetShips(enemySide);
         bool found = false;
         for (int i = 0; i < enemies.Count; i++)
@@ -163,14 +190,15 @@ internal static class RlOneVsOneCombatTelemetry
         return found;
     }
 
-    private static float FindNearestEnemyDistance(Level level, Ship ship)
+    private static float FindNearestEnemyDistance(ArenaState state, Ship ship)
     {
-        if (!_active || level == null || level.State == null || ship == null)
+        Level level = state?.Level;
+        if (level == null || level.State == null || ship == null)
         {
             return -1f;
         }
 
-        int enemySide = ship.Side == _beeSide ? _humanSide : _beeSide;
+        int enemySide = ship.Side == state.BeeSide ? state.HumanSide : state.BeeSide;
         List<Ship> enemies = level.State.GetShips(enemySide);
         float nearest = float.MaxValue;
         for (int i = 0; i < enemies.Count; i++)
@@ -185,19 +213,20 @@ internal static class RlOneVsOneCombatTelemetry
         return nearest == float.MaxValue ? -1f : nearest;
     }
 
-    private static bool TryGetSideIndex(Ship ship, out int sideIndex)
+    private static bool TryGetSideIndex(Ship ship, out ArenaState state, out int sideIndex)
     {
+        state = null;
         sideIndex = -1;
-        if (!_active || ship == null || ship.Level != _level)
+        if (ship == null || !TryGetState(ship.Level, out state))
         {
             return false;
         }
-        if (ship.Side == _beeSide)
+        if (ship.Side == state.BeeSide)
         {
             sideIndex = 0;
             return true;
         }
-        if (ship.Side == _humanSide)
+        if (ship.Side == state.HumanSide)
         {
             sideIndex = 1;
             return true;
@@ -205,11 +234,17 @@ internal static class RlOneVsOneCombatTelemetry
         return false;
     }
 
-    private static string FormatAimError(int sideIndex)
+    private static bool TryGetState(Level level, out ArenaState state)
     {
-        return AimSamples[sideIndex] == 0
+        state = null;
+        return level != null && States.TryGetValue(level, out state) && state != null;
+    }
+
+    private static string FormatAimError(ArenaState state, int sideIndex)
+    {
+        return state.AimSamples[sideIndex] == 0
             ? "none"
-            : $"{(AimErrorDegrees[sideIndex] / AimSamples[sideIndex]):F2}deg";
+            : $"{(state.AimErrorDegrees[sideIndex] / state.AimSamples[sideIndex]):F2}deg";
     }
 
     private static string FormatPercent(long numerator, long denominator)
@@ -222,21 +257,21 @@ internal static class RlOneVsOneCombatTelemetry
         return value < 0f ? "none" : $"{value:F2}";
     }
 
-    private static void Reset()
+    internal static void SetStateForTests(Level level, int beeSide, int humanSide, float episodeMapSize)
     {
-        _level = null;
-        _beeSide = 0;
-        _humanSide = 0;
-        _active = false;
-        _episodeMapSize = -1f;
-        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+        if (level != null)
         {
-            AimErrorDegrees[sideIndex] = 0d;
-            AimSamples[sideIndex] = 0;
-            AccurateAimSamples[sideIndex] = 0;
-            AlignedTurretSamples[sideIndex] = 0;
-            FirstFireDistance[sideIndex] = -1f;
-            FirstHitDistance[sideIndex] = -1f;
+            States[level] = new ArenaState(level, beeSide, humanSide, episodeMapSize);
         }
+    }
+
+    internal static int GetTrackedLevelCountForTests()
+    {
+        return States.Count;
+    }
+
+    internal static void ResetForTests()
+    {
+        States.Clear();
     }
 }

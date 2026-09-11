@@ -9,6 +9,7 @@ using UnityEngine;
 /// <summary>
 /// Collects compact, episode-scoped combat diagnostics for RL training. Events update in-memory
 /// counters only; the coordinator appends one formatted snapshot to the existing episode log line.
+/// Mutable diagnostics are partitioned by Level so simultaneous arenas remain independent.
 /// </summary>
 internal static class RlOneVsOneEpisodeDiagnostics
 {
@@ -25,84 +26,94 @@ internal static class RlOneVsOneEpisodeDiagnostics
         internal int Damage;
     }
 
-    private static readonly Dictionary<long, RootShipRecord>[] RootShips =
+    private sealed class ArenaState
     {
-        new Dictionary<long, RootShipRecord>(),
-        new Dictionary<long, RootShipRecord>()
-    };
+        internal readonly Level Level;
+        internal readonly int BeeSide;
+        internal readonly int HumanSide;
+        internal readonly Dictionary<long, RootShipRecord>[] RootShips =
+        {
+            new Dictionary<long, RootShipRecord>(),
+            new Dictionary<long, RootShipRecord>()
+        };
+        internal readonly Dictionary<long, string>[] ChildShipTypes =
+        {
+            new Dictionary<long, string>(),
+            new Dictionary<long, string>()
+        };
+        internal readonly Dictionary<string, int>[] DamageSources =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<string, int>[] DamageByShipType =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<string, int>[] ChildDamageByShipType =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<string, int>[] SpecialActions =
+        {
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            new Dictionary<string, int>(StringComparer.Ordinal)
+        };
+        internal readonly Dictionary<long, string>[] DeathCauses =
+        {
+            new Dictionary<long, string>(),
+            new Dictionary<long, string>()
+        };
+        internal readonly int[] StrikerReloads = new int[2];
+        internal readonly int[] SelfDamage = new int[2];
+        internal readonly int[] FriendlyDamage = new int[2];
+        internal readonly int[] UnattributedDamage = new int[2];
 
-    private static readonly Dictionary<long, string>[] ChildShipTypes =
+        internal ArenaState(Level level, int beeSide, int humanSide)
+        {
+            Level = level;
+            BeeSide = beeSide;
+            HumanSide = humanSide;
+        }
+    }
+
+    private static readonly Dictionary<Level, ArenaState> States = new Dictionary<Level, ArenaState>();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void ResetStateRegistry()
     {
-        new Dictionary<long, string>(),
-        new Dictionary<long, string>()
-    };
-
-    private static readonly Dictionary<string, int>[] DamageSources =
-    {
-        new Dictionary<string, int>(StringComparer.Ordinal),
-        new Dictionary<string, int>(StringComparer.Ordinal)
-    };
-
-    private static readonly Dictionary<string, int>[] DamageByShipType =
-    {
-        new Dictionary<string, int>(StringComparer.Ordinal),
-        new Dictionary<string, int>(StringComparer.Ordinal)
-    };
-
-    private static readonly Dictionary<string, int>[] ChildDamageByShipType =
-    {
-        new Dictionary<string, int>(StringComparer.Ordinal),
-        new Dictionary<string, int>(StringComparer.Ordinal)
-    };
-
-    private static readonly Dictionary<string, int>[] SpecialActions =
-    {
-        new Dictionary<string, int>(StringComparer.Ordinal),
-        new Dictionary<string, int>(StringComparer.Ordinal)
-    };
-
-    private static readonly Dictionary<long, string>[] DeathCauses =
-    {
-        new Dictionary<long, string>(),
-        new Dictionary<long, string>()
-    };
-
-    private static readonly int[] StrikerReloads = new int[2];
-    private static readonly int[] SelfDamage = new int[2];
-    private static readonly int[] FriendlyDamage = new int[2];
-    private static readonly int[] UnattributedDamage = new int[2];
-
-    private static Level _level;
-    private static int _beeSide;
-    private static int _humanSide;
-    private static bool _active;
+        States.Clear();
+    }
 
     internal static void Begin(Level level)
     {
-        Reset();
         if (level == null || level.State == null || ConfigData.Configuration == null)
         {
             return;
         }
 
-        _level = level;
-        _beeSide = ConfigData.Configuration.BeeSide;
-        _humanSide = ConfigData.Configuration.HumanSide;
-        _active = true;
+        ArenaState state = new ArenaState(
+            level,
+            ConfigData.Configuration.BeeSide,
+            ConfigData.Configuration.HumanSide);
+        States[level] = state;
         RlOneVsOneCombatTelemetry.Begin(level);
 
-        CaptureInitialSide(level.State.GetShips(_beeSide), 0);
-        CaptureInitialSide(level.State.GetShips(_humanSide), 1);
+        CaptureInitialSide(state, level.State.GetShips(state.BeeSide), 0);
+        CaptureInitialSide(state, level.State.GetShips(state.HumanSide), 1);
     }
 
     internal static void End(Level level)
     {
-        if (_active && level == _level)
+        if (level == null)
         {
-            RlOneVsOneCombatTelemetry.End(level);
-            _active = false;
-            _level = null;
+            return;
         }
+
+        RlOneVsOneCombatTelemetry.End(level);
+        States.Remove(level);
     }
 
     /// <summary>
@@ -111,7 +122,7 @@ internal static class RlOneVsOneEpisodeDiagnostics
     /// </summary>
     internal static void Track(Level level)
     {
-        if (!_active || level == null || level != _level)
+        if (level == null || !States.ContainsKey(level))
         {
             return;
         }
@@ -122,11 +133,11 @@ internal static class RlOneVsOneEpisodeDiagnostics
     /// </summary>
     internal static void TrackShip(Ship ship)
     {
-        if (!TryGetSideIndex(ship, out int sideIndex))
+        if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex))
         {
             return;
         }
-        TrackShip(ship, sideIndex);
+        TrackShip(state, ship, sideIndex);
     }
 
     /// <summary>
@@ -135,13 +146,15 @@ internal static class RlOneVsOneEpisodeDiagnostics
     /// </summary>
     internal static void RecordAttributedDamage(Ship sourceShip, Ship target, int damage, string source = "gun")
     {
-        if (!TryGetSideIndex(sourceShip, out int sourceIndex) || !TryGetSideIndex(target, out int targetIndex))
+        if (!TryGetSideIndex(sourceShip, out ArenaState sourceState, out int sourceIndex) ||
+            !TryGetSideIndex(target, out ArenaState targetState, out int targetIndex) ||
+            sourceState != targetState)
         {
             return;
         }
 
-        TrackShip(sourceShip, sourceIndex);
-        TrackShip(target, targetIndex);
+        TrackShip(sourceState, sourceShip, sourceIndex);
+        TrackShip(sourceState, target, targetIndex);
         int appliedDamage = Mathf.Max(0, damage);
         if (appliedDamage <= 0)
         {
@@ -153,22 +166,22 @@ internal static class RlOneVsOneEpisodeDiagnostics
             RlOneVsOneCombatTelemetry.RecordHit(sourceShip, target, appliedDamage);
             string sourceName = string.IsNullOrEmpty(source) ? "other" : source;
             string shipType = sourceShip.ShipType.ToString();
-            Increment(DamageSources[sourceIndex], sourceName, appliedDamage);
-            Increment(DamageByShipType[sourceIndex], shipType, appliedDamage);
-            if (ChildShipTypes[sourceIndex].ContainsKey(sourceShip.Id))
+            Increment(sourceState.DamageSources[sourceIndex], sourceName, appliedDamage);
+            Increment(sourceState.DamageByShipType[sourceIndex], shipType, appliedDamage);
+            if (sourceState.ChildShipTypes[sourceIndex].ContainsKey(sourceShip.Id))
             {
-                Increment(ChildDamageByShipType[sourceIndex], shipType, appliedDamage);
+                Increment(sourceState.ChildDamageByShipType[sourceIndex], shipType, appliedDamage);
             }
             return;
         }
 
         if (sourceShip.Id == target.Id)
         {
-            SelfDamage[sourceIndex] += appliedDamage;
+            sourceState.SelfDamage[sourceIndex] += appliedDamage;
         }
         else
         {
-            FriendlyDamage[sourceIndex] += appliedDamage;
+            sourceState.FriendlyDamage[sourceIndex] += appliedDamage;
         }
     }
 
@@ -179,12 +192,12 @@ internal static class RlOneVsOneEpisodeDiagnostics
     /// </summary>
     internal static void RecordUnattributedDamage(Ship target, int damage, string source = "other", bool selfInflicted = false)
     {
-        if (!TryGetSideIndex(target, out int sideIndex))
+        if (!TryGetSideIndex(target, out ArenaState state, out int sideIndex))
         {
             return;
         }
 
-        TrackShip(target, sideIndex);
+        TrackShip(state, target, sideIndex);
         int appliedDamage = Mathf.Max(0, damage);
         if (appliedDamage <= 0)
         {
@@ -193,46 +206,46 @@ internal static class RlOneVsOneEpisodeDiagnostics
 
         if (selfInflicted)
         {
-            SelfDamage[sideIndex] += appliedDamage;
+            state.SelfDamage[sideIndex] += appliedDamage;
         }
         else
         {
-            UnattributedDamage[sideIndex] += appliedDamage;
+            state.UnattributedDamage[sideIndex] += appliedDamage;
         }
     }
 
     internal static void RecordSpecialAction(Ship ship, string action)
     {
-        if (!TryGetSideIndex(ship, out int sideIndex) || string.IsNullOrEmpty(action))
+        if (!TryGetSideIndex(ship, out ArenaState state, out int sideIndex) || string.IsNullOrEmpty(action))
         {
             return;
         }
 
-        TrackShip(ship, sideIndex);
-        Increment(SpecialActions[sideIndex], action, 1);
+        TrackShip(state, ship, sideIndex);
+        Increment(state.SpecialActions[sideIndex], action, 1);
     }
 
     internal static void RecordStrikerReplenished(Striker striker)
     {
-        if (!TryGetSideIndex(striker, out int sideIndex))
+        if (!TryGetSideIndex(striker, out ArenaState state, out int sideIndex))
         {
             return;
         }
 
-        TrackShip(striker, sideIndex);
-        StrikerReloads[sideIndex]++;
+        TrackShip(state, striker, sideIndex);
+        state.StrikerReloads[sideIndex]++;
     }
 
     internal static void RecordShipDeath(Ship victim, Ship killer, bool endKill, string causeOverride = null)
     {
-        if (!TryGetSideIndex(victim, out int sideIndex))
+        if (!TryGetSideIndex(victim, out ArenaState state, out int sideIndex))
         {
             return;
         }
 
-        TrackShip(victim, sideIndex);
-        if ((!RootShips[sideIndex].ContainsKey(victim.Id) && !ChildShipTypes[sideIndex].ContainsKey(victim.Id)) ||
-            DeathCauses[sideIndex].ContainsKey(victim.Id))
+        TrackShip(state, victim, sideIndex);
+        if ((!state.RootShips[sideIndex].ContainsKey(victim.Id) && !state.ChildShipTypes[sideIndex].ContainsKey(victim.Id)) ||
+            state.DeathCauses[sideIndex].ContainsKey(victim.Id))
         {
             return;
         }
@@ -261,13 +274,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
                 cause = $"enemy-{killer.ShipType}";
             }
         }
-        DeathCauses[sideIndex][victim.Id] = cause;
+        state.DeathCauses[sideIndex][victim.Id] = cause;
     }
 
-    internal static string BuildEpisodeFields(bool timedOut)
+    internal static string BuildEpisodeFields(Level level, bool timedOut)
     {
-        string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields();
-        if (!_active)
+        string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
+        if (!TryGetState(level, out ArenaState state))
         {
             return "bee_ships=none human_ships=none bee_children=none human_children=none " +
                    "bee_striker_reloads=0 human_striker_reloads=0 " +
@@ -278,66 +291,73 @@ internal static class RlOneVsOneEpisodeDiagnostics
                    combatTelemetry;
         }
 
-        return $"bee_ships={FormatRootShips(0)} human_ships={FormatRootShips(1)} " +
-               $"bee_children={FormatChildren(0)} human_children={FormatChildren(1)} " +
-               $"bee_striker_reloads={StrikerReloads[0]} human_striker_reloads={StrikerReloads[1]} " +
-               $"bee_damage_sources={FormatCounts(DamageSources[0])} human_damage_sources={FormatCounts(DamageSources[1])} " +
-               $"bee_damage_by_ship={FormatCounts(DamageByShipType[0])} human_damage_by_ship={FormatCounts(DamageByShipType[1])} " +
-               $"bee_self_damage={SelfDamage[0]} human_self_damage={SelfDamage[1]} " +
-               $"bee_friendly_damage={FriendlyDamage[0]} human_friendly_damage={FriendlyDamage[1]} " +
-               $"bee_unattributed_damage={UnattributedDamage[0]} human_unattributed_damage={UnattributedDamage[1]} " +
-               $"bee_specials={FormatCounts(SpecialActions[0])} human_specials={FormatCounts(SpecialActions[1])} " +
-               $"bee_root_outcomes={FormatRootOutcomes(0, timedOut)} human_root_outcomes={FormatRootOutcomes(1, timedOut)} " +
+        return $"bee_ships={FormatRootShips(state, 0)} human_ships={FormatRootShips(state, 1)} " +
+               $"bee_children={FormatChildren(state, 0)} human_children={FormatChildren(state, 1)} " +
+               $"bee_striker_reloads={state.StrikerReloads[0]} human_striker_reloads={state.StrikerReloads[1]} " +
+               $"bee_damage_sources={FormatCounts(state.DamageSources[0])} human_damage_sources={FormatCounts(state.DamageSources[1])} " +
+               $"bee_damage_by_ship={FormatCounts(state.DamageByShipType[0])} human_damage_by_ship={FormatCounts(state.DamageByShipType[1])} " +
+               $"bee_self_damage={state.SelfDamage[0]} human_self_damage={state.SelfDamage[1]} " +
+               $"bee_friendly_damage={state.FriendlyDamage[0]} human_friendly_damage={state.FriendlyDamage[1]} " +
+               $"bee_unattributed_damage={state.UnattributedDamage[0]} human_unattributed_damage={state.UnattributedDamage[1]} " +
+               $"bee_specials={FormatCounts(state.SpecialActions[0])} human_specials={FormatCounts(state.SpecialActions[1])} " +
+               $"bee_root_outcomes={FormatRootOutcomes(state, 0, timedOut)} human_root_outcomes={FormatRootOutcomes(state, 1, timedOut)} " +
                combatTelemetry;
     }
 
-    private static void CaptureInitialSide(List<Ship> ships, int sideIndex)
+    private static void CaptureInitialSide(ArenaState state, List<Ship> ships, int sideIndex)
     {
         for (int i = 0; i < ships.Count; i++)
         {
             Ship ship = ships[i];
             if (ship != null && !ship.IsDead)
             {
-                TrackShip(ship, sideIndex);
+                TrackShip(state, ship, sideIndex);
             }
         }
     }
 
-    private static void TrackShip(Ship ship, int sideIndex)
+    private static void TrackShip(ArenaState state, Ship ship, int sideIndex)
     {
-        if (ship == null || ship.Level != _level || RootShips[sideIndex].ContainsKey(ship.Id) ||
-            ChildShipTypes[sideIndex].ContainsKey(ship.Id))
+        if (state == null || ship == null || ship.Level != state.Level ||
+            state.RootShips[sideIndex].ContainsKey(ship.Id) || state.ChildShipTypes[sideIndex].ContainsKey(ship.Id))
         {
             return;
         }
 
         if (!ship.IsCarrierShip && !ship.IsMinionShip)
         {
-            RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
+            state.RootShips[sideIndex][ship.Id] = new RootShipRecord { Id = ship.Id, Type = ship.ShipType.ToString() };
             return;
         }
 
-        ChildShipTypes[sideIndex][ship.Id] = ship.ShipType.ToString();
+        state.ChildShipTypes[sideIndex][ship.Id] = ship.ShipType.ToString();
     }
 
-    private static bool TryGetSideIndex(Ship ship, out int sideIndex)
+    private static bool TryGetSideIndex(Ship ship, out ArenaState state, out int sideIndex)
     {
+        state = null;
         sideIndex = -1;
-        if (!_active || ship == null || ship.Level != _level)
+        if (ship == null || !TryGetState(ship.Level, out state))
         {
             return false;
         }
-        if (ship.Side == _beeSide)
+        if (ship.Side == state.BeeSide)
         {
             sideIndex = 0;
             return true;
         }
-        if (ship.Side == _humanSide)
+        if (ship.Side == state.HumanSide)
         {
             sideIndex = 1;
             return true;
         }
         return false;
+    }
+
+    private static bool TryGetState(Level level, out ArenaState state)
+    {
+        state = null;
+        return level != null && States.TryGetValue(level, out state) && state != null;
     }
 
     private static void Increment(Dictionary<string, int> values, string key, int amount)
@@ -346,25 +366,25 @@ internal static class RlOneVsOneEpisodeDiagnostics
         values[key] = current + amount;
     }
 
-    private static string FormatRootShips(int sideIndex)
+    private static string FormatRootShips(ArenaState state, int sideIndex)
     {
         Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (RootShipRecord record in RootShips[sideIndex].Values)
+        foreach (RootShipRecord record in state.RootShips[sideIndex].Values)
         {
             Increment(counts, record.Type, 1);
         }
         return FormatCounts(counts);
     }
 
-    private static string FormatChildren(int sideIndex)
+    private static string FormatChildren(ArenaState state, int sideIndex)
     {
-        if (ChildShipTypes[sideIndex].Count == 0)
+        if (state.ChildShipTypes[sideIndex].Count == 0)
         {
             return "none";
         }
 
         Dictionary<string, ChildSummary> summaries = new Dictionary<string, ChildSummary>(StringComparer.Ordinal);
-        foreach (KeyValuePair<long, string> child in ChildShipTypes[sideIndex])
+        foreach (KeyValuePair<long, string> child in state.ChildShipTypes[sideIndex])
         {
             if (!summaries.TryGetValue(child.Value, out ChildSummary summary))
             {
@@ -372,13 +392,13 @@ internal static class RlOneVsOneEpisodeDiagnostics
                 summaries[child.Value] = summary;
             }
             summary.Spawned++;
-            if (!DeathCauses[sideIndex].ContainsKey(child.Key))
+            if (!state.DeathCauses[sideIndex].ContainsKey(child.Key))
             {
                 summary.Alive++;
             }
         }
 
-        foreach (KeyValuePair<string, int> damage in ChildDamageByShipType[sideIndex])
+        foreach (KeyValuePair<string, int> damage in state.ChildDamageByShipType[sideIndex])
         {
             if (!summaries.TryGetValue(damage.Key, out ChildSummary summary))
             {
@@ -417,17 +437,17 @@ internal static class RlOneVsOneEpisodeDiagnostics
         return string.Join("|", values);
     }
 
-    private static string FormatRootOutcomes(int sideIndex, bool timedOut)
+    private static string FormatRootOutcomes(ArenaState state, int sideIndex, bool timedOut)
     {
-        if (RootShips[sideIndex].Count == 0)
+        if (state.RootShips[sideIndex].Count == 0)
         {
             return "none";
         }
 
         Dictionary<string, int> counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (RootShipRecord root in RootShips[sideIndex].Values)
+        foreach (RootShipRecord root in state.RootShips[sideIndex].Values)
         {
-            string outcome = DeathCauses[sideIndex].TryGetValue(root.Id, out string cause)
+            string outcome = state.DeathCauses[sideIndex].TryGetValue(root.Id, out string cause)
                 ? cause
                 : timedOut ? "timeout-alive" : "alive";
             Increment(counts, $"{root.Type}/{outcome}", 1);
@@ -435,25 +455,21 @@ internal static class RlOneVsOneEpisodeDiagnostics
         return FormatCounts(counts);
     }
 
-    private static void Reset()
+    internal static void SetStateForTests(Level level, int beeSide, int humanSide)
     {
-        for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+        if (level != null)
         {
-            RootShips[sideIndex].Clear();
-            ChildShipTypes[sideIndex].Clear();
-            DamageSources[sideIndex].Clear();
-            DamageByShipType[sideIndex].Clear();
-            ChildDamageByShipType[sideIndex].Clear();
-            SpecialActions[sideIndex].Clear();
-            DeathCauses[sideIndex].Clear();
-            StrikerReloads[sideIndex] = 0;
-            SelfDamage[sideIndex] = 0;
-            FriendlyDamage[sideIndex] = 0;
-            UnattributedDamage[sideIndex] = 0;
+            States[level] = new ArenaState(level, beeSide, humanSide);
         }
-        _active = false;
-        _level = null;
-        _beeSide = 0;
-        _humanSide = 0;
+    }
+
+    internal static int GetTrackedLevelCountForTests()
+    {
+        return States.Count;
+    }
+
+    internal static void ResetForTests()
+    {
+        States.Clear();
     }
 }

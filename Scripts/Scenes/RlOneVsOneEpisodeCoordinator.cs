@@ -212,14 +212,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return ship != null ? GetCoordinator(ship.Level) : null;
     }
 
-    private bool IsPrimaryArena => _stage != null && _level != null && _stage.PrimaryLevel == _level;
-
     private void OnDestroy()
     {
-        if (IsPrimaryArena)
-        {
-            RlOneVsOneEpisodeDiagnostics.End(_level);
-        }
+        RlOneVsOneEpisodeDiagnostics.End(_level);
         if (_level != null && Coordinators.TryGetValue(_level, out RlOneVsOneEpisodeCoordinator coordinator) && coordinator == this)
         {
             Coordinators.Remove(_level);
@@ -736,10 +731,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _beeFirstHitSeconds = -1f;
         _humanFirstHitSeconds = -1f;
         ResetShipDiagnostics(beeShips, humanShips);
-        if (IsPrimaryArena)
-        {
-            RlOneVsOneEpisodeDiagnostics.Begin(level);
-        }
+        RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
         _discoveryRewardsReady = false;
         _episodeActive = true;
@@ -781,10 +773,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.BeeSide), 0);
         TrackSideShips(level.State.GetShips(ConfigData.Configuration.HumanSide), 1);
-        if (IsPrimaryArena)
-        {
-            RlOneVsOneEpisodeDiagnostics.Track(level);
-        }
+        RlOneVsOneEpisodeDiagnostics.Track(level);
     }
 
     private void TrackSideShips(List<Ship> ships, int sideIndex)
@@ -1022,33 +1011,30 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         UpdateRunningDiagnostics(result, beeSide, humanSide);
 
-        if (IsPrimaryArena)
-        {
-            string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
-            int beeSpawned = CountSpawnedShips(0);
-            int humanSpawned = CountSpawnedShips(1);
-            string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut);
-            Debug.Log(
-                $"RL 1v1 episode={result.EpisodeNumber} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
-                $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
-                $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
-                $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-                $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
-                $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
-                $"bee_weapons={FormatWeaponActivity(0)} " +
-                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
-                $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-                $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
-                $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
-                $"human_weapons={FormatWeaponActivity(1)} " +
-                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
-                behaviorDiagnostics);
-            RlOneVsOneEpisodeDiagnostics.End(level);
+        string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
+        int beeSpawned = CountSpawnedShips(0);
+        int humanSpawned = CountSpawnedShips(1);
+        string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
+        Debug.Log(
+            $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
+            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+            $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
+            $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
+            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
+            $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
+            $"bee_weapons={FormatWeaponActivity(0)} " +
+            $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
+            $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
+            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
+            $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
+            $"human_weapons={FormatWeaponActivity(1)} " +
+            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
+            behaviorDiagnostics);
+        RlOneVsOneEpisodeDiagnostics.End(level);
 
-            if (_completedEpisodes % SummaryIntervalEpisodes == 0)
-            {
-                LogRunningSummary();
-            }
+        if (_completedEpisodes % SummaryIntervalEpisodes == 0)
+        {
+            LogRunningSummary();
         }
 
         _episodeActive = false;
@@ -1095,10 +1081,27 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
         float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
         Debug.Log(
-            $"RL 1v1 summary episodes={_completedEpisodes} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
+            $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
             $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
+    }
+
+    private int GetArenaIndex()
+    {
+        if (_stage == null || _level == null || _stage.Levels == null)
+        {
+            return -1;
+        }
+
+        for (int arenaIndex = 0; arenaIndex < _stage.Levels.Count; arenaIndex++)
+        {
+            if (_stage.Levels[arenaIndex] == _level)
+            {
+                return arenaIndex;
+            }
+        }
+        return -1;
     }
 
     private float ElapsedEpisodeSeconds => Mathf.Max(0f, Time.time - _episodeStartedAt);
