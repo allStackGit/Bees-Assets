@@ -266,6 +266,60 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             self.assertNotIn("pressure_model_id", sanitized)
             self.assertNotIn("pressure_evaluation_report_id", sanitized)
 
+    def test_newer_candidate_evidence_wins_even_if_older_evaluation_finishes_later(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = self.make_store(temp)
+            first, champion = self.establish_history(store, temp)
+
+            older = self.register(
+                store,
+                temp,
+                "older-candidate",
+                b"older-candidate-policy",
+                300,
+                parent=champion["model_id"],
+            )
+            newer = self.register(
+                store,
+                temp,
+                "newer-candidate",
+                b"newer-candidate-policy",
+                400,
+                parent=older["model_id"],
+            )
+
+            newer_report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=newer["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.78,
+                baseline_score_rate=0.80,
+                label="newer-recovered-first",
+            )
+            # Simulate a slow evaluation of the older policy completing afterward.
+            self.record_authoritative_pressure(
+                store,
+                candidate_id=older["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.20,
+                baseline_score_rate=0.80,
+                label="older-regressed-late",
+            )
+
+            weights = {
+                item["model_id"]: item
+                for item in _historical_training_weights(store, champion["model_id"])
+            }
+            recovered = weights[first["model_id"]]
+            self.assertEqual(recovered["weight"], 1.0)
+            self.assertEqual(recovered["regression"], 0.0)
+            self.assertEqual(recovered["pressure_model_id"], newer["model_id"])
+            self.assertEqual(
+                recovered["pressure_evaluation_report_id"], newer_report_id
+            )
+
     def test_newer_invalid_pressure_does_not_hide_older_valid_weakness(self):
         with tempfile.TemporaryDirectory() as temp:
             store = self.make_store(temp)
