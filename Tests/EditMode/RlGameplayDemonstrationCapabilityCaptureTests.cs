@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using Unity.MLAgents.Actuators;
+using UnityEngine;
 
 namespace Bees.Tests.EditMode
 {
@@ -10,6 +12,18 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class RlGameplayDemonstrationCapabilityCaptureTests
     {
+        [Serializable]
+        private sealed class ManifestFixture
+        {
+            public int schemaVersion;
+            public string behaviorName;
+            public int policyAbiVersion;
+            public string policySignature;
+            public int observationSize;
+            public int continuousActionCount;
+            public int[] discreteBranchSizes;
+        }
+
         [Test]
         public void PinnedMlAgentsReflectionContractsAreAvailable()
         {
@@ -53,7 +67,7 @@ namespace Bees.Tests.EditMode
                 null,
                 null
             };
-            bool created = (bool)GetCreateSampleMethod().Invoke(null, arguments);
+            bool created = (bool)GetPrivateStaticMethod("TryCreateSample").Invoke(null, arguments);
 
             Assert.That(created, Is.True);
             float[] observationSnapshot = (float[])arguments[3];
@@ -92,18 +106,57 @@ namespace Bees.Tests.EditMode
                 null
             };
 
-            Assert.That(GetCreateSampleMethod().Invoke(null, arguments), Is.False);
+            Assert.That(GetPrivateStaticMethod("TryCreateSample").Invoke(null, arguments), Is.False);
             Assert.That(arguments[3], Is.Null);
             Assert.That(arguments[4], Is.Null);
             Assert.That(arguments[5], Is.Null);
         }
 
-        private static MethodInfo GetCreateSampleMethod()
+        [Test]
+        public void CapabilityCaptureFailsClosedOnManifestMismatch()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
+            Type passiveType = RuntimeAssembly.GetType("RlGameplayDemonstrationAgent");
+            MethodInfo branchMethod = agentType.GetMethod(
+                "CreateDiscreteBranchSizes",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            Assert.That(branchMethod, Is.Not.Null);
+
+            ManifestFixture manifest = new ManifestFixture
+            {
+                schemaVersion = 1,
+                behaviorName = (string)RuntimeAssembly.GetStaticField(agentType, "BehaviorName"),
+                policyAbiVersion = (int)RuntimeAssembly.GetStaticField(schemaType, "Version"),
+                policySignature = (string)RuntimeAssembly.GetStaticField(schemaType, "Signature"),
+                observationSize = (int)RuntimeAssembly.GetStaticField(agentType, "ObservationSize"),
+                continuousActionCount = (int)RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"),
+                discreteBranchSizes = (int[])branchMethod.Invoke(null, null)
+            };
+            string manifestName = (string)RuntimeAssembly.GetStaticField(passiveType, "CaptureManifestFileName");
+            string root = Path.Combine(Path.GetTempPath(), "bees-capability-manifest-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string path = Path.Combine(root, manifestName);
+                File.WriteAllText(path, JsonUtility.ToJson(manifest));
+                MethodInfo check = GetPrivateStaticMethod("HasCompatibleCaptureManifest");
+                Assert.That(check.Invoke(null, new object[] { root }), Is.True);
+
+                manifest.policyAbiVersion++;
+                File.WriteAllText(path, JsonUtility.ToJson(manifest));
+                Assert.That(check.Invoke(null, new object[] { root }), Is.False);
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static MethodInfo GetPrivateStaticMethod(string name)
         {
             Type type = RuntimeAssembly.GetType("RlGameplayDemonstrationCapabilityCapture");
-            MethodInfo method = type.GetMethod(
-                "TryCreateSample",
-                BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo method = type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(method, Is.Not.Null);
             return method;
         }
