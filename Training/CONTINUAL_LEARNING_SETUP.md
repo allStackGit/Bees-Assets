@@ -81,7 +81,7 @@ python Training\bees_continual_native_demo.py `
 
 `model-id` identifies the compatible deployed-policy context for the captured match; it does not claim that the human actions came from that model. `bees_continual_native_demo.py` uses the existing `demonstration_batches` registry and `experience/human-demos` archive. It validates the Human/PolicyV capture manifest and frozen signature, parses the native ML-Agents behavior shape, enforces the configured payload and record limits, rejects Hive Mind filenames, and requires a known compatible model context. Successful ingestion stores the original `.demo`, a byte-for-byte capture-manifest copy, and an immutable metadata sidecar containing their SHA-256 hashes and the trainable example count. Repeating identical ingestion is idempotent; reusing a demonstration ID for different content is rejected.
 
-This central archive is deliberately separate from PPO trajectories and from automatic training selection. Local `--continual-human-demo-dir` remains the explicit trusted/curated behavioral-cloning input. Selecting archived central batches for a future imitation run should remain an explicit curation step rather than silently training on every uploaded demonstration.
+This central archive is deliberately separate from PPO trajectories and from automatic training selection. Local `--continual-human-demo-dir` remains the explicit trusted/curated behavioral-cloning input. Archived public batches must pass the separate curation boundary below before they can be materialized into a trainer-compatible Human directory.
 
 ### Authenticated public-client upload quarantine
 
@@ -104,7 +104,53 @@ python Training\bees_continual_public_demo.py `
   "D:\BeesRlDemonstrations\incoming\rl-demo-<batch-id>.json"
 ```
 
-`bees_continual_public_demo.py` independently verifies the quarantine schema/trust state, metadata filename and batch identity, demo and manifest byte counts/hashes, exact embedded/file capture-manifest agreement, the continual store's configured combined payload limit, and the native ML-Agents observation/action structure before delegating to the normal native-demo archive. The raw Steam user ID remains in the server-side quarantine for abuse handling and is intentionally not copied into the continual-learning store. The central provenance record still sets `approved_for_training: false`; public uploads require a later explicit curation/approval step before they can become behavioral-cloning input.
+`bees_continual_public_demo.py` independently verifies the quarantine schema/trust state, metadata filename and batch identity, demo and manifest byte counts/hashes, exact embedded/file capture-manifest agreement, the continual store's configured combined payload limit, and the native ML-Agents observation/action structure before delegating to the normal native-demo archive. The raw Steam user ID remains in the server-side quarantine for abuse handling and is intentionally not copied into the continual-learning store. Instead, a store-local secret HMAC maps it to a stable 64-hex contributor bucket stored separately from the native archive. This supports contributor balancing without placing the raw Steam identity in training provenance. The central public provenance record still sets `approved_for_training: false`.
+
+### Public demonstration curation and BC selection
+
+Public demonstrations require an explicit operator decision after structural validation. Approve a central native batch with a review reason and a normalized quality score:
+
+```powershell
+python Training\bees_continual_demo_curation.py `
+  --root="F:\RLDemo\BeesContinual" `
+  approve demo-<central-batch-id> `
+  --reviewer="manual-review-2026-09" `
+  --reason="Clean long-range kiting example" `
+  --quality-score=0.9
+```
+
+Approval does not automatically add the batch to training. Decisions are immutable; a later safety or quality problem can permanently exclude an approved batch from future sets:
+
+```powershell
+python Training\bees_continual_demo_curation.py `
+  --root="F:\RLDemo\BeesContinual" `
+  revoke demo-<central-batch-id> `
+  --reviewer="manual-review-2026-09" `
+  --reason="Retrospective review found unusable play"
+```
+
+Create a training set only from an explicit list of approved central batch IDs:
+
+```powershell
+python Training\bees_continual_demo_curation.py `
+  --root="F:\RLDemo\BeesContinual" `
+  materialize demo-<batch-a> demo-<batch-b> demo-<batch-c>
+```
+
+Materialization rechecks the immutable native archive and approval hashes, rejects revoked or unapproved batches, requires a common capture-manifest contract, and applies the committed `human_imitation.public_min_quality_score` and `human_imitation.public_max_batches_per_contributor` limits. The current defaults are `0.5` and `8`. Contributor grouping uses the store-local HMAC key at `metadata/public-demo-contributor.key`; if contributor records already exist and this key disappears, ingestion fails closed rather than silently generating a new identity namespace that could bypass the per-contributor cap.
+
+The result includes `human_demo_dir`, pointing to an immutable `public-approved-set-.../PolicyV<ABI>/Human` directory. Feed that directory to the existing continual trainer exactly like any other curated Human source:
+
+```powershell
+python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
+  --env="F:\RLDemo\Bees RL Training" `
+  --run-id=bees-full-001 --resume `
+  --continual-root="F:\RLDemo\BeesContinual" `
+  --continual-game-build="2026.09.11" `
+  --continual-human-demo-dir="<human_demo_dir returned by materialize>"
+```
+
+This preserves the existing trainer fail-closed path: the wrapper validates and snapshots the materialized Human directory again before enabling behavioral cloning. Public ingestion therefore remains distinct from approval, and approval remains distinct from selection for a particular training run.
 
 ## Permanent competency suite
 
