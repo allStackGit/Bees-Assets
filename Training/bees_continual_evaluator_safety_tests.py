@@ -15,6 +15,7 @@ from bees_continual_evaluate import (
     EpisodeResult,
     EvaluationError,
     MatchSummary,
+    _runtime_latency_evidence,
     _validate_match_summary,
     evaluate_candidate,
     summarize_results,
@@ -84,6 +85,7 @@ class FakeStore:
             "promotion": {
                 "min_matches_vs_champion": 2,
                 "min_historical_matches_per_opponent": 2,
+                "max_inference_batch_milliseconds": 100.0,
             }
         }
         self.models = {}
@@ -175,13 +177,48 @@ class EvaluatorSafetyEvidenceTests(unittest.TestCase):
         validated = _validate_match_summary(summary, expected_matches=5)
         self.assertFalse(validated.telemetry_validated)
 
+    def test_runtime_latency_gate_uses_worst_candidate_batch(self):
+        summary = MatchSummary(
+            5,
+            5,
+            0,
+            0,
+            0,
+            10.0,
+            candidate_inference_calls=25,
+            candidate_inference_total_seconds=0.20,
+            candidate_inference_max_seconds=0.040,
+        )
+        passing = _runtime_latency_evidence([summary], 50.0)
+        failing = _runtime_latency_evidence([summary], 30.0)
+
+        self.assertTrue(passing["passed"])
+        self.assertFalse(failing["passed"])
+        self.assertEqual(passing["candidate_inference_calls"], 25)
+        self.assertAlmostEqual(passing["observed_candidate_max_milliseconds"], 40.0)
+
+    def test_runtime_latency_gate_fails_closed_without_policy_threshold(self):
+        evidence = _runtime_latency_evidence([], None)
+        self.assertFalse(evidence["configured"])
+        self.assertFalse(evidence["passed"])
+
     def test_injected_match_runner_cannot_claim_authoritative_runtime_checks(self):
         with tempfile.TemporaryDirectory() as temp:
             store = FakeStore(Path(temp))
 
             def fake_runner(**kwargs):
                 matches = kwargs["matches"]
-                return MatchSummary(matches, matches, 0, 0, 0, 1.0)
+                return MatchSummary(
+                    matches,
+                    matches,
+                    0,
+                    0,
+                    0,
+                    1.0,
+                    candidate_inference_calls=10,
+                    candidate_inference_total_seconds=0.01,
+                    candidate_inference_max_seconds=0.002,
+                )
 
             report = evaluate_candidate(
                 store,
@@ -195,6 +232,7 @@ class EvaluatorSafetyEvidenceTests(unittest.TestCase):
         self.assertFalse(report["runtime_checks_passed"])
         self.assertFalse(report["evaluator"]["authoritative_match_runner"])
         self.assertFalse(report["evaluator"]["authoritative_telemetry_validated"])
+        self.assertTrue(report["evaluator"]["runtime_latency"]["passed"])
 
 
 if __name__ == "__main__":
