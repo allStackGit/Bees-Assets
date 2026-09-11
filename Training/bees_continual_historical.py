@@ -34,6 +34,11 @@ HISTORICAL_ACTIVE_ATTRIBUTE = "_bees_external_historical_active"
 PATCHED_ATTRIBUTE = "_bees_historical_opponent_patch"
 DEFAULT_POLICY_CACHE_SIZE = 4
 AUTHORITATIVE_EVALUATION_TAG = "authoritative_candidate_evaluation"
+EVALUATION_TAG_PREFIX = "evaluation:"
+# Promotion-policy schema 3 changed historical regression from raw win rate to
+# draw-aware score rate. Earlier authoritative rows are valid audit history but must
+# never affect current adaptive opponent sampling.
+DRAW_AWARE_PROMOTION_POLICY_SCHEMA_VERSION = 3
 
 
 class HistoricalOpponentError(ContinualLearningError):
@@ -150,10 +155,94 @@ def _validated_model_path(store: ContinualLearningStore, model_id: str) -> Path:
     )
 
 
+def _evaluation_report_id(tags: Sequence[Any]) -> Optional[str]:
+    report_ids = [
+        value[len(EVALUATION_TAG_PREFIX):].strip()
+        for value in tags
+        if isinstance(value, str) and value.startswith(EVALUATION_TAG_PREFIX)
+    ]
+    report_ids = [value for value in report_ids if value]
+    if len(report_ids) != 1:
+        return None
+    return report_ids[0]
+
+
+def _matches_draw_aware_evaluation(
+    report: Any,
+    *,
+    current_model_id: str,
+    opponent_model_id: str,
+    current_score_rate: Any,
+    previous_score_rate: Any,
+    match_count: int,
+) -> bool:
+    """Prove a persisted pressure row came from the draw-aware evaluator contract."""
+    if not isinstance(report, Mapping):
+        return False
+    policy = report.get("promotion_policy")
+    if not isinstance(policy, Mapping):
+        return False
+    schema_version = policy.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version < DRAW_AWARE_PROMOTION_POLICY_SCHEMA_VERSION
+    ):
+        return False
+    if report.get("candidate_model_id") != current_model_id:
+        return False
+
+    historical = report.get("historical")
+    if not isinstance(historical, list):
+        return False
+    matching = [
+        item
+        for item in historical
+        if isinstance(item, Mapping)
+        and item.get("opponent_model_id") == opponent_model_id
+    ]
+    if len(matching) != 1:
+        return False
+    item = matching[0]
+    candidate_score_rate = item.get("candidate_score_rate")
+    baseline_score_rate = item.get("baseline_score_rate")
+    matches = item.get("matches")
+    if (
+        not isinstance(matches, int)
+        or isinstance(matches, bool)
+        or matches != match_count
+    ):
+        return False
+    for value in (candidate_score_rate, baseline_score_rate, current_score_rate, previous_score_rate):
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+        ):
+            return False
+    return math.isclose(
+        float(candidate_score_rate),
+        float(current_score_rate),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ) and math.isclose(
+        float(baseline_score_rate),
+        float(previous_score_rate),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
+
+
 def _latest_authoritative_pressure(
     store: ContinualLearningStore,
 ) -> Dict[str, Dict[str, Any]]:
-    """Return the newest compatible authoritative regression evidence per opponent."""
+    """Return newest compatible draw-aware authoritative evidence per opponent.
+
+    Historical matchup rows predate explicit score semantics. Rather than mutate or
+    delete that audit history, validate each row against the immutable evaluation
+    report named in its tags. Only promotion-policy schema 3+ reports can influence
+    current sampling because schema 3 introduced draw-aware historical score rates.
+    """
     db_path = getattr(store, "db_path", None)
     if db_path is None or not Path(db_path).is_file():
         return {}
@@ -190,6 +279,9 @@ def _latest_authoritative_pressure(
                 f'%"{AUTHORITATIVE_EVALUATION_TAG}"%',
             ),
         ).fetchall()
+        evaluation_rows = db.execute(
+            "SELECT report_id, report_json FROM evaluations"
+        ).fetchall()
     except sqlite3.Error as exc:
         raise HistoricalOpponentError(
             f"Could not read authoritative historical regression pressure: {exc}"
@@ -198,6 +290,9 @@ def _latest_authoritative_pressure(
         if "db" in locals():
             db.close()
 
+    evaluation_reports = {
+        str(row["report_id"]): row["report_json"] for row in evaluation_rows
+    }
     result: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         opponent_id = str(row["opponent_model_id"])
@@ -211,12 +306,32 @@ def _latest_authoritative_pressure(
             ) from exc
         if not isinstance(tags, list) or AUTHORITATIVE_EVALUATION_TAG not in tags:
             continue
+        report_id = _evaluation_report_id(tags)
+        if report_id is None:
+            continue
+        report_json = evaluation_reports.get(report_id)
+        if report_json is None:
+            continue
+        try:
+            report = json.loads(report_json)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not _matches_draw_aware_evaluation(
+            report,
+            current_model_id=str(row["current_model_id"]),
+            opponent_model_id=opponent_id,
+            current_score_rate=row["current_win_rate"],
+            previous_score_rate=row["previous_win_rate"],
+            match_count=int(row["match_count"]),
+        ):
+            continue
         result[opponent_id] = {
             "current_model_id": str(row["current_model_id"]),
             "current_win_rate": row["current_win_rate"],
             "previous_win_rate": row["previous_win_rate"],
             "match_count": int(row["match_count"]),
             "tags": tags,
+            "evaluation_report_id": report_id,
         }
     return result
 
@@ -225,15 +340,13 @@ def _historical_training_weights(
     store: ContinualLearningStore,
     champion_model_id: str,
 ) -> List[Dict[str, Any]]:
-    """Overlay post-champion candidate regressions onto persistent league weights.
+    """Overlay validated post-champion regressions onto base league weights.
 
-    The registry's normal weight calculation is keyed by model ID. During ongoing
-    training, however, authoritative evaluations are recorded against candidate IDs
-    while the historical scheduler previously queried only the production champion.
-    Preserve the champion's weights for opponents a candidate did not retest, and
-    replace an opponent's pressure only when newer authoritative candidate evidence
-    exists for that opponent. A later recovery evaluation therefore returns the
-    opponent toward the configured base weight.
+    The registry table predates draw-aware scoring, so its persisted regression value
+    cannot be trusted by itself. Use the registry only to enumerate compatible league
+    opponents, reset each to the configured base weight, then overlay pressure that can
+    be proven against a schema-3+ immutable evaluation report. This makes an upgraded
+    store safe without deleting historical audit rows.
     """
     weighted = [
         dict(item)
@@ -242,15 +355,25 @@ def _historical_training_weights(
     if not weighted:
         return weighted
 
-    pressure = _latest_authoritative_pressure(store)
-    if not pressure:
-        return weighted
-
     settings = store.config["historical_league"]
     base = float(settings["base_weight"])
     trigger = float(settings["weakness_trigger_regression"])
     scale = float(settings["weakness_bonus_scale"])
     cap = float(settings["max_weight_multiplier"])
+
+    # Discard any pressure calculated directly from legacy historical_matchups rows.
+    # A validated authoritative report below is the only source allowed to raise it.
+    for item in weighted:
+        item["weight"] = base
+        item["regression"] = 0.0
+        item["match_count"] = 0
+        item["tags"] = []
+        item.pop("pressure_model_id", None)
+        item.pop("pressure_evaluation_report_id", None)
+
+    pressure = _latest_authoritative_pressure(store)
+    if not pressure:
+        return weighted
 
     for item in weighted:
         opponent_id = str(item["model_id"])
@@ -271,6 +394,7 @@ def _historical_training_weights(
         item["match_count"] = evidence["match_count"]
         item["tags"] = list(evidence["tags"])
         item["pressure_model_id"] = evidence["current_model_id"]
+        item["pressure_evaluation_report_id"] = evidence["evaluation_report_id"]
     return weighted
 
 
