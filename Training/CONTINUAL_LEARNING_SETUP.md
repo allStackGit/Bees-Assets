@@ -152,6 +152,46 @@ python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
 
 This preserves the existing trainer fail-closed path: the wrapper validates and snapshots the materialized Human directory again before enabling behavioral cloning. Public ingestion therefore remains distinct from approval, and approval remains distinct from selection for a particular training run.
 
+### Player-derived adversarial matchup pressure
+
+Approved demonstrations can also identify a tactic that should create fresh headless RL pressure instead of imitation data. Register an immutable scenario from one or more currently approved public batches:
+
+```powershell
+python Training\bees_continual_adversarial.py `
+  --root="F:\RLDemo\BeesContinual" `
+  register demo-<batch-a> demo-<batch-b> `
+  --bee-composition="Wasp" `
+  --human-composition="Gunship" `
+  --target-fraction=0.10 `
+  --rationale="Repeated long-range kiting tactic"
+```
+
+The returned `adv-...` ID is content-addressed from the source approvals, policy ABI, exact Bee/Human compositions, target fraction, and rationale. Registration does not copy an old trajectory into PPO. At training time the current policy receives a fresh episode with that fleet matchup. A scenario may request at most 50% of episodes, and the combined selected scenarios may request at most 50%, so normal sampled/adaptive training always remains at least half of the distribution.
+
+Scenario sources are revalidated immediately before a training launch. If an underlying public demonstration is later revoked, its approval/archive identity changes, or the policy ABI is no longer compatible, the old adversarial scenario fails closed rather than continuing to influence training.
+
+Launch continual training with an explicit immutable scenario selection using the adversarial wrapper:
+
+```powershell
+python Training\bees_continual_adversarial_train.py Training\rl_1v1_config.yaml `
+  --env="F:\RLDemo\Bees RL Training" `
+  --run-id=bees-adversarial-001 `
+  --continual-root="F:\RLDemo\BeesContinual" `
+  --continual-game-build="2026.09.11" `
+  --continual-adversarial-scenarios=adv-<scenario-a>,adv-<scenario-b> `
+  --env-args `
+  --rl-matchup-mode=sampled `
+  --rl-ships-per-side=1 `
+  --rl-bee-ship-types=Wasp,Hornet `
+  --rl-human-ship-types=Gunship,Frigate
+```
+
+Keep `--env-args` as a separate token and place Unity environment arguments after it. Each selected scenario must use the same `ships-per-side` value as the run, and every ship type used by a scenario must be included in the run's sampled Bee/Human candidate pools. Do not pass `--bees-adversarial-matchups` manually; `bees_continual_adversarial_train.py` derives it from the immutable registry and writes the exact scenario selection under `metadata/adversarial-training-runs`. Reusing a run ID with a different selection is rejected so candidate lineage cannot silently change pressure on resume.
+
+`RlOneVsOnePerArenaMatchups` samples player-derived pressure independently in each arena. Reserved episodes are labeled internally by scenario ID, while all non-reserved episodes continue through the existing baseline/adaptive matchup sampler. Player-derived outcomes are intentionally not added to adaptive-matchup history, keeping external player pressure independently measurable. When adversarial pressure is configured, Unity emits one compact `player_derived_pressure` summary every 1000 prepared episodes per arena with the observed rate and per-scenario counts.
+
+This is the first Phase 7 implementation boundary. It converts reviewed repeated tactics into measurable fresh matchup pressure, but it does not yet reconstruct player movement/spatial state, replay a scripted action sequence, automatically mine tactics from uploads, or add scenario-specific counterplay results to the authoritative promotion evaluator. Those are separate later Phase 7 steps.
+
 ## Permanent competency suite
 
 When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent competency suite in the continual-learning store before recording promotion-eligible evaluations:
