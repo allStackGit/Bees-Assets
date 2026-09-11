@@ -124,13 +124,13 @@ class AdversarialScenarioTests(unittest.TestCase):
             quality_score=score,
         )
 
-    def register(self, batches, bee="Wasp", human="Gunship", weight=2.0):
+    def register(self, batches, bee="Wasp", human="Gunship", fraction=0.1):
         return adversarial.register_player_derived_scenario(
             self.store,
             batches,
             bee_composition=bee,
             human_composition=human,
-            extra_weight=weight,
+            target_fraction=fraction,
             rationale="Repeated player tactic requiring fresh counter-training.",
         )
 
@@ -169,8 +169,8 @@ class AdversarialScenarioTests(unittest.TestCase):
         second = self.ingest_public()
         self.approve(first["batch_id"])
         self.approve(second["batch_id"])
-        scenario_a = self.register([first["batch_id"]], bee="Wasp", human="Gunship", weight=2.5)
-        scenario_b = self.register([second["batch_id"]], bee="Hornet", human="Frigate", weight=1.5)
+        scenario_a = self.register([first["batch_id"]], bee="Wasp", human="Gunship", fraction=0.1)
+        scenario_b = self.register([second["batch_id"]], bee="Hornet", human="Frigate", fraction=0.2)
 
         encoded = adversarial.encode_scenarios_for_unity(
             self.store,
@@ -179,8 +179,8 @@ class AdversarialScenarioTests(unittest.TestCase):
 
         expected_ids = sorted([scenario_a["scenario_id"], scenario_b["scenario_id"]])
         self.assertTrue(encoded.startswith(expected_ids[0] + ":"))
-        self.assertIn("Wasp>Gunship@2.5", encoded)
-        self.assertIn("Hornet>Frigate@1.5", encoded)
+        self.assertIn("Wasp>Gunship@0.1", encoded)
+        self.assertIn("Hornet>Frigate@0.2", encoded)
 
     def test_selected_scenarios_must_share_team_size(self):
         first = self.ingest_public()
@@ -200,11 +200,27 @@ class AdversarialScenarioTests(unittest.TestCase):
                 [one["scenario_id"], two["scenario_id"]],
             )
 
-    def test_invalid_weight_or_asymmetric_composition_fails_closed(self):
+    def test_combined_pressure_cannot_replace_majority_baseline_training(self):
+        first = self.ingest_public()
+        second = self.ingest_public()
+        self.approve(first["batch_id"])
+        self.approve(second["batch_id"])
+        scenario_a = self.register([first["batch_id"]], fraction=0.3)
+        scenario_b = self.register([second["batch_id"]], bee="Hornet", human="Frigate", fraction=0.3)
+
+        with self.assertRaises(continual.ValidationError):
+            adversarial.encode_scenarios_for_unity(
+                self.store,
+                [scenario_a["scenario_id"], scenario_b["scenario_id"]],
+            )
+
+    def test_invalid_fraction_or_asymmetric_composition_fails_closed(self):
         ingested = self.ingest_public()
         self.approve(ingested["batch_id"])
-        with self.assertRaises(continual.ValidationError):
-            self.register([ingested["batch_id"]], weight=0)
+        for value in (0, -0.1, 0.5001, float("nan")):
+            with self.subTest(value=value):
+                with self.assertRaises(continual.ValidationError):
+                    self.register([ingested["batch_id"]], fraction=value)
         with self.assertRaises(continual.ValidationError):
             self.register(
                 [ingested["batch_id"]],
