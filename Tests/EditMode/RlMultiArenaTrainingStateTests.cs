@@ -72,9 +72,10 @@ namespace Bees.Tests.EditMode
         [Test]
         public void MultiArenaRuntimeAppliesDurabilityToAdditionalLevels()
         {
-            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneMultiArenaBootstrap.cs");
-            Assert.That(source, Does.Contain("RlOneVsOneTrainingDurabilityGuard.ApplyTrainingDurability(ship);"));
-            Assert.That(source, Does.Contain("for (int levelIndex = 1; levelIndex < levels.Count; levelIndex++)"));
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingDurabilityGuard.cs");
+            Assert.That(source, Does.Contain("IReadOnlyList<Level> levels = _stage.Levels;"));
+            Assert.That(source, Does.Contain("for (int levelIndex = 0; levelIndex < levels.Count; levelIndex++)"));
+            Assert.That(source, Does.Contain("ApplyTrainingDurability(ships[shipIndex]);"));
         }
 
         [Test]
