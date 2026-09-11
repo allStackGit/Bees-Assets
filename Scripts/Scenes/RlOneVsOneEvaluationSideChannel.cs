@@ -31,6 +31,10 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
     private static void ResetStatics()
     {
         RlOneVsOneEpisodeCoordinator.EpisodeEnded -= OnEpisodeEnded;
+        if (_instance != null)
+        {
+            SideChannelManager.UnregisterSideChannel(_instance);
+        }
         _instance = null;
     }
 
