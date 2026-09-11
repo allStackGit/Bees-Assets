@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
@@ -142,22 +141,23 @@ def record_run_selection(
     }
     payload = (json.dumps(body, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return _validate_existing_run_selection(path, identity_hash, run_id)
+
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+    except Exception:
         try:
-            os.link(temp_name, path)
-        except FileExistsError:
-            return _validate_existing_run_selection(path, identity_hash, run_id)
-        return path
-    finally:
-        try:
-            os.unlink(temp_name)
+            path.unlink()
         except FileNotFoundError:
             pass
+        raise
+    return path
 
 
 def prepare_adversarial_training_args(
