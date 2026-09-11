@@ -98,6 +98,23 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
         )
         return recorded["report_id"]
 
+    @staticmethod
+    def rewrite_policy_schema(store, report_id, schema_version):
+        with store._connect() as db:
+            row = db.execute(
+                "SELECT report_json FROM evaluations WHERE report_id = ?",
+                (report_id,),
+            ).fetchone()
+            report = json.loads(row["report_json"])
+            report["promotion_policy"]["schema_version"] = schema_version
+            report["promotion_policy_fingerprint"] = store._promotion_policy_fingerprint(
+                report["promotion_policy"]
+            )
+            db.execute(
+                "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
+                (json.dumps(report, sort_keys=True, separators=(",", ":")), report_id),
+            )
+
     def establish_history(self, store, temp):
         first = self.register(store, temp, "first", b"first-policy", 100)
         bootstrap_champion(
@@ -228,20 +245,7 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             # Simulate a genuine pre-schema-3 report by changing the recorded policy
             # schema and recomputing its policy fingerprint. The historical row stays
             # in the audit database but must become inert everywhere it can be sampled.
-            with store._connect() as db:
-                row = db.execute(
-                    "SELECT report_json FROM evaluations WHERE report_id = ?",
-                    (report_id,),
-                ).fetchone()
-                report = json.loads(row["report_json"])
-                report["promotion_policy"]["schema_version"] = 2
-                report["promotion_policy_fingerprint"] = store._promotion_policy_fingerprint(
-                    report["promotion_policy"]
-                )
-                db.execute(
-                    "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
-                    (json.dumps(report, sort_keys=True, separators=(",", ":")), report_id),
-                )
+            self.rewrite_policy_schema(store, report_id, 2)
 
             registry_weights = {
                 item["model_id"]: item
@@ -261,6 +265,69 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             self.assertEqual(sanitized["regression"], 0.0)
             self.assertNotIn("pressure_model_id", sanitized)
             self.assertNotIn("pressure_evaluation_report_id", sanitized)
+
+    def test_newer_invalid_pressure_does_not_hide_older_valid_weakness(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = self.make_store(temp)
+            first, champion = self.establish_history(store, temp)
+
+            valid = self.register(
+                store,
+                temp,
+                "valid-regression",
+                b"valid-regression-policy",
+                300,
+                parent=champion["model_id"],
+            )
+            valid_report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=valid["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.20,
+                baseline_score_rate=0.80,
+                label="valid-regression",
+            )
+
+            newer_invalid = self.register(
+                store,
+                temp,
+                "newer-invalid",
+                b"newer-invalid-policy",
+                400,
+                parent=valid["model_id"],
+            )
+            invalid_report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=newer_invalid["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.78,
+                baseline_score_rate=0.80,
+                label="newer-invalid",
+            )
+            with store._connect() as db:
+                row = db.execute(
+                    "SELECT report_json FROM evaluations WHERE report_id = ?",
+                    (invalid_report_id,),
+                ).fetchone()
+                report = json.loads(row["report_json"])
+                report["promotion_policy_fingerprint"] = "invalid-fingerprint"
+                db.execute(
+                    "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
+                    (json.dumps(report, sort_keys=True, separators=(",", ":")), invalid_report_id),
+                )
+
+            training_weights = {
+                item["model_id"]: item
+                for item in _historical_training_weights(store, champion["model_id"])
+            }
+            exposed = training_weights[first["model_id"]]
+            self.assertEqual(exposed["weight"], 4.0)
+            self.assertEqual(exposed["pressure_model_id"], valid["model_id"])
+            self.assertEqual(
+                exposed["pressure_evaluation_report_id"], valid_report_id
+            )
 
 
 if __name__ == "__main__":
