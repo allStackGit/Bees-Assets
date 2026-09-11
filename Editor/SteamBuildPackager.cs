@@ -115,15 +115,26 @@ internal static class SteamBuildPackager
             return false;
         }
 
-        string monoDirectory = Path.Combine(dataDirectory, "MonoBleedingEdge");
+        string monoRuntime = FindMonoRuntimeDll(buildRoot, dataDirectory);
         string gameAssembly = Path.Combine(buildRoot, "GameAssembly.dll");
-        bool isMonoBuild = Directory.Exists(monoDirectory) && Directory.EnumerateFiles(monoDirectory, "*", SearchOption.AllDirectories).Any();
+        bool isMonoBuild = monoRuntime != null;
         bool isIl2CppBuild = File.Exists(gameAssembly);
 
         if (!isMonoBuild && !isIl2CppBuild)
         {
-            error = "The build contains neither a usable <Game>_Data/MonoBleedingEdge runtime nor GameAssembly.dll. Rebuild the Windows player before uploading it to Steam.";
+            error = "The build contains neither a usable Mono runtime DLL nor GameAssembly.dll. For a Mono build, the complete MonoBleedingEdge/EmbedRuntime folder must be shipped beside the player (or in the Unity-version-specific Data location). Rebuild into an empty Windows build folder before uploading to Steam.";
             return false;
+        }
+
+        if (isMonoBuild)
+        {
+            string managedDirectory = Path.Combine(dataDirectory, "Managed");
+            if (!Directory.Exists(managedDirectory) ||
+                !Directory.EnumerateFiles(managedDirectory, "*.dll", SearchOption.TopDirectoryOnly).Any())
+            {
+                error = $"The Mono runtime is present at {GetRelativePath(buildRoot, monoRuntime)}, but {productBaseName}_Data/Managed is missing or empty. Rebuild the complete Windows player before uploading it to Steam.";
+                return false;
+            }
         }
 
         bool hasSteamNativeLibrary = Directory.EnumerateFiles(buildRoot, "steam_api64.dll", SearchOption.AllDirectories).Any() ||
@@ -137,12 +148,53 @@ internal static class SteamBuildPackager
         bool hasSteamAppId = File.Exists(Path.Combine(buildRoot, "steam_appid.txt"));
         string backend = isMonoBuild ? "Mono" : "IL2CPP";
         summary = $"Player: {Path.GetFileName(playerExe)}\nScripting backend detected: {backend}\nSteam native library: present";
+        if (isMonoBuild)
+        {
+            summary += $"\nMono runtime: {GetRelativePath(buildRoot, monoRuntime)}";
+        }
         if (hasSteamAppId)
         {
             summary += "\nWarning: steam_appid.txt is present. Keep it for direct local Steam testing only; normally do not ship it in a retail Steam depot.";
         }
 
         return true;
+    }
+
+    private static string FindMonoRuntimeDll(string buildRoot, string dataDirectory)
+    {
+        string[] runtimeDirectories =
+        {
+            Path.Combine(buildRoot, "MonoBleedingEdge", "EmbedRuntime"),
+            Path.Combine(dataDirectory, "MonoBleedingEdge", "EmbedRuntime")
+        };
+
+        for (int i = 0; i < runtimeDirectories.Length; i++)
+        {
+            string runtimeDirectory = runtimeDirectories[i];
+            if (!Directory.Exists(runtimeDirectory))
+            {
+                continue;
+            }
+
+            string runtime = Directory.EnumerateFiles(runtimeDirectory, "mono*.dll", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(path => new FileInfo(path).Length > 0);
+            if (runtime != null)
+            {
+                return runtime;
+            }
+        }
+
+        return null;
+    }
+
+    private static string GetRelativePath(string root, string path)
+    {
+        string normalizedRoot = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        string normalizedPath = Path.GetFullPath(path);
+        return normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            ? normalizedPath.Substring(normalizedRoot.Length)
+            : normalizedPath;
     }
 
     private static string FindPlayerExecutable(string buildRoot)
