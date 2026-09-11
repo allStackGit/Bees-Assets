@@ -28,6 +28,9 @@ native = _load("bees_continual_native_demo")
 contributors = _load("bees_continual_demo_contributors")
 curation = _load("bees_continual_demo_curation")
 adversarial = _load("bees_continual_adversarial")
+suggest = _load("bees_continual_adversarial_suggest")
+mine = _load("bees_continual_adversarial_mine")
+replay = _load("bees_continual_adversarial_replay")
 launcher = _load("bees_continual_adversarial_train")
 
 
@@ -114,6 +117,32 @@ class AdversarialTrainingLauncherTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     launcher.inject_unity_pressure_arg([manual], encoded, geometry)
 
+    def test_replay_catalog_is_registry_derived_and_injected_last(self):
+        encoded = "adv-aaaaaaaaaaaaaaaaaaaaaaaa:Wasp>Gunship@0.1"
+        geometry = "adv-aaaaaaaaaaaaaaaaaaaaaaaa:96,0.25"
+        replay_path = str(TRAINING_DIR / "catalog.json")
+        injected = launcher.inject_unity_pressure_arg(
+            ["Training/rl_1v1_config.yaml", "--run-id=run-replay"],
+            encoded,
+            geometry,
+            replay_path,
+        )
+        self.assertEqual(injected[-4], "--env-args")
+        self.assertEqual(injected[-3], "--bees-adversarial-matchups=" + encoded)
+        self.assertEqual(injected[-2], "--bees-adversarial-geometry-catalog=" + geometry)
+        self.assertEqual(
+            injected[-1],
+            "--bees-adversarial-replay-catalog=" + replay_path,
+        )
+
+        with self.assertRaises(SystemExit):
+            launcher.inject_unity_pressure_arg(
+                ["--bees-adversarial-replay-catalog=manual.json"],
+                encoded,
+                geometry,
+                replay_path,
+            )
+
     def test_run_selection_is_idempotent_but_same_run_cannot_change_pressure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = continual.load_config(TRAINING_DIR / "continual_learning_config.json")
@@ -165,6 +194,45 @@ class AdversarialTrainingLauncherTests(unittest.TestCase):
                     scenario_ids=[scenario],
                     encoded=encoded,
                     geometry_catalog=scenario + ":96,0.5",
+                )
+
+    def test_same_run_cannot_attach_or_change_replay_catalog(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = continual.load_config(TRAINING_DIR / "continual_learning_config.json")
+            store = continual.ContinualLearningStore(Path(temp_dir) / "store", config)
+            store.initialize()
+            scenario = "adv-aaaaaaaaaaaaaaaaaaaaaaaa"
+            encoded = scenario + ":Wasp>Gunship@0.1"
+
+            launcher.record_run_selection(
+                store,
+                run_id="run-replay",
+                scenario_ids=[scenario],
+                encoded=encoded,
+                replay_catalog_sha256="a" * 64,
+            )
+            with self.assertRaises(continual.ValidationError):
+                launcher.record_run_selection(
+                    store,
+                    run_id="run-replay",
+                    scenario_ids=[scenario],
+                    encoded=encoded,
+                    replay_catalog_sha256="b" * 64,
+                )
+
+            launcher.record_run_selection(
+                store,
+                run_id="run-no-replay",
+                scenario_ids=[scenario],
+                encoded=encoded,
+            )
+            with self.assertRaises(continual.ValidationError):
+                launcher.record_run_selection(
+                    store,
+                    run_id="run-no-replay",
+                    scenario_ids=[scenario],
+                    encoded=encoded,
+                    replay_catalog_sha256="a" * 64,
                 )
 
 
