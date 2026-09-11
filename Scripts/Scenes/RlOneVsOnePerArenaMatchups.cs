@@ -15,6 +15,7 @@ internal static class RlOneVsOnePerArenaMatchups
 {
     private static readonly Dictionary<Level, RlOneVsOneAdversarialMatchupSelector> Selectors =
         new Dictionary<Level, RlOneVsOneAdversarialMatchupSelector>();
+    private static readonly HashSet<Level> PlayerDerivedPressureLevels = new HashSet<Level>();
 
     static RlOneVsOnePerArenaMatchups()
     {
@@ -25,13 +26,17 @@ internal static class RlOneVsOnePerArenaMatchups
     private static void ResetForSceneLoad()
     {
         Selectors.Clear();
+        PlayerDerivedPressureLevels.Clear();
     }
 
     internal static void PrepareEpisode(Level level)
     {
         RlOneVsOneAdversarialMatchupSelector selector = GetSelector(level);
         selector.PrepareEpisode();
-        RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
+        if (PlayerDerivedPressureLevels.Contains(level))
+        {
+            RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
+        }
     }
 
     internal static ConfigData.ShipTypes GetShipType(Level level, int side, int shipIndex)
@@ -57,6 +62,10 @@ internal static class RlOneVsOnePerArenaMatchups
                 RlOneVsOneScenarioSeed.Create(args),
                 playerDerivedScenarios);
             Selectors.Add(level, selector);
+            if (playerDerivedScenarios.Count > 0)
+            {
+                PlayerDerivedPressureLevels.Add(level);
+            }
         }
         return selector;
     }
@@ -77,6 +86,7 @@ internal static class RlOneVsOnePerArenaMatchups
     internal static void ResetForTests()
     {
         Selectors.Clear();
+        PlayerDerivedPressureLevels.Clear();
         RlPlayerDerivedPressureTelemetry.ResetForTests();
     }
 }
