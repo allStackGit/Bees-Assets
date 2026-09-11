@@ -29,11 +29,12 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CasualtyShapingCoversFriendlyFireAndUnattributedLossWithoutEpisodeDoubleCount()
+        public void CasualtyShapingCoversFriendlyFireAndSelfDamageWithoutOpponentCredit()
         {
             string coordinator = Read("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             string combat = Read("Scripts", "Entities", "Ships", "Ship.Combat.cs");
             string fireBarge = Read("Scripts", "Entities", "Ships", "FireBarge.cs");
+            string barge = Read("Scripts", "Entities", "Ships", "Barge.cs");
             string yellowJacket = Read("Scripts", "Entities", "Ships", "YellowJacket.cs");
 
             Assert.That(coordinator, Does.Not.Contain("attacker.Side == target.Side)"),
@@ -42,19 +43,71 @@ namespace Bees.Tests.EditMode
             Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(attacker.Side, reward);"),
                 "Only enemy damage should grant positive attacker credit.");
             Assert.That(coordinator, Does.Contain("coordinator.ApplyImmediateTsvReward(target.Side, -reward);"),
-                "Every attributed TSV loss must penalize the damaged side.");
+                "Every reward-eligible attributed TSV loss must penalize the damaged side.");
             Assert.That(coordinator, Does.Contain("internal static void RecordUnattributedTsvLoss"));
             Assert.That(combat, Does.Contain("RecordUnattributedTsvLoss(this, -_tsvChange);"));
             Assert.That(fireBarge, Does.Contain("LogDamage(Health, \"FireBarge\", true);"),
                 "Fire Barge self-destruction must flow through unattributed TSV loss accounting while preserving self-damage diagnostics.");
 
+            Assert.That(combat, Does.Contain("bool rlSelfInflicted = false"));
+            Assert.That(combat, Does.Contain("if (rlSelfInflicted)"));
+            Assert.That(combat, Does.Contain("RecordUnattributedTsvLoss(target, -_targetTSVChange);"));
+            Assert.That(barge, Does.Contain("rlSelfInflicted: true"),
+                "Barge recoil is physical self-damage even though historical gameplay stats use the contacted ship as attacker.");
+
             Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, this, ContactedShip, this);"));
-            Assert.That(yellowJacket, Does.Contain("LogDetonationDamage(Bomb.Power, ContactedShip, this, this);"));
-            Assert.That(yellowJacket, Does.Not.Contain("LogDamage("),
-                "Yellow Jacket uses explicit directed hit accounting and must not also enter the unattributed path.");
+            Assert.That(yellowJacket, Does.Contain("rlSelfInflicted: true"));
+            Assert.That(yellowJacket, Does.Contain("RecordUnattributedTsvLoss(target, -_targetTSVLoss);"),
+                "Yellow Jacket reciprocal detonation damage must penalize its own side without rewarding the contacted opponent.");
 
             Assert.That(coordinator, Does.Not.Contain("CalculateTsvDeltaReward"),
                 "Impact TSV shaping must not be applied a second time at episode completion.");
+        }
+
+        [Test]
+        public void TemporaryShipsDoNotManufacturePersistentFleetValueReward()
+        {
+            string coordinator = Read("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+
+            int helperStart = coordinator.IndexOf("private static bool HasPersistentFleetValue(Ship ship)", StringComparison.Ordinal);
+            int helperEnd = coordinator.IndexOf("/// <summary>", helperStart, StringComparison.Ordinal);
+            Assert.That(helperStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(helperEnd, Is.GreaterThan(helperStart));
+            string helper = coordinator.Substring(helperStart, helperEnd - helperStart);
+
+            Assert.That(helper, Does.Contain("!ship.IsMinionShip"));
+            Assert.That(helper, Does.Contain("!ship.IsCarrierShip"));
+            Assert.That(helper, Does.Contain("!ship.Squad.IsMinionSquad"));
+            Assert.That(helper, Does.Not.Contain("IsSpawnedShip"),
+                "Initial dedicated-RL ships also use negative fleet IDs, so IsSpawnedShip must not define temporary value.");
+
+            Assert.That(coordinator, Does.Contain("int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;"),
+                "Damage to free tactical children must not create positive or negative persistent-TSV shaping.");
+            Assert.That(coordinator, Does.Contain("if (!HasPersistentFleetValue(spotted))"),
+                "Discovering a free tactical child must not manufacture enemy-fleet discovery reward.");
+            Assert.That(coordinator, Does.Contain("ship != null && !ship.IsDead && HasPersistentFleetValue(ship)"),
+                "Temporary children present at episode start must not dilute the persistent enemy discovery denominator.");
+        }
+
+        [Test]
+        public void DedicatedTrainingTransientIdsDoNotRequirePlayerFleetData()
+        {
+            string allocator = Read("Scripts", "TransientIdAllocator.cs");
+            string scout = Read("Scripts", "Entities", "Ships", "Scout.cs");
+            string queen = Read("Scripts", "Entities", "Ships", "Queen.cs");
+            string carrierSquad = Read("Scripts", "Levels", "CarrierSquad.cs");
+            string constructor = Read("Scripts", "Levels", "LevelConstructor.cs");
+
+            Assert.That(allocator, Does.Contain("ConfigData.CurrentShips != null"));
+            Assert.That(allocator, Does.Contain("GetStandaloneNegativeId()"));
+            Assert.That(allocator, Does.Contain("long id = Utilities.Hash();"));
+
+            Assert.That(scout, Does.Contain("TransientIdAllocator.GetSavedSquadId()"));
+            Assert.That(scout, Does.Contain("TransientIdAllocator.GetFleetShipId()"));
+            Assert.That(queen, Does.Contain("TransientIdAllocator.GetSavedSquadId()"));
+            Assert.That(queen, Does.Contain("TransientIdAllocator.GetFleetShipId()"));
+            Assert.That(carrierSquad, Does.Contain("TransientIdAllocator.GetFleetShipId()"));
+            Assert.That(constructor, Does.Contain("TransientIdAllocator.GetSavedSquadId()"));
         }
 
         [Test]
