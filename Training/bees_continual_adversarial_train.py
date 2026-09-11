@@ -83,6 +83,11 @@ def inject_unity_pressure_arg(argv: Sequence[str], encoded: str) -> List[str]:
                 f"Do not pass {UNITY_PRESSURE_FLAG} manually when using "
                 f"{ADVERSARIAL_SCENARIOS_FLAG}; the immutable scenario registry is authoritative."
             )
+        if argument.startswith("--env-args="):
+            raise SystemExit(
+                "Use ML-Agents --env-args as a separate token before Unity arguments when using "
+                "player-derived adversarial training."
+            )
 
     result = list(argv)
     if "--env-args" not in result:
@@ -92,8 +97,21 @@ def inject_unity_pressure_arg(argv: Sequence[str], encoded: str) -> List[str]:
 
 
 def _run_selection_path(store: ContinualLearningStore, run_id: str) -> Path:
-    safe = run_id.replace("/", "_").replace("\\", "_")
-    return store.root / "metadata" / "adversarial-training-runs" / f"{safe}.json"
+    run_hash = sha256_bytes(run_id.encode("utf-8"))[:24]
+    return store.root / "metadata" / "adversarial-training-runs" / f"run-{run_hash}.json"
+
+
+def _validate_existing_run_selection(path: Path, identity_hash: str, run_id: str) -> Path:
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"Adversarial run-selection record is invalid JSON: {path}: {exc}") from exc
+    if not isinstance(existing, dict) or existing.get("identity_sha256") != identity_hash:
+        raise ValidationError(
+            f"Training run {run_id!r} already has a different immutable adversarial scenario selection. "
+            "Use a new --run-id when changing player-derived training pressure."
+        )
+    return path
 
 
 def record_run_selection(
@@ -104,6 +122,8 @@ def record_run_selection(
     encoded: str,
 ) -> Path:
     store._require_initialized()
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValidationError("Adversarial training run_id must be a non-empty string.")
     identity = {
         "schema_version": RUN_SELECTION_SCHEMA_VERSION,
         "run_id": run_id,
@@ -113,16 +133,7 @@ def record_run_selection(
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     path = _run_selection_path(store, run_id)
     if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValidationError(f"Adversarial run-selection record is invalid JSON: {path}: {exc}") from exc
-        if not isinstance(existing, dict) or existing.get("identity_sha256") != identity_hash:
-            raise ValidationError(
-                f"Training run {run_id!r} already has a different immutable adversarial scenario selection. "
-                "Use a new --run-id when changing player-derived training pressure."
-            )
-        return path
+        return _validate_existing_run_selection(path, identity_hash, run_id)
 
     body = {
         **identity,
@@ -137,21 +148,16 @@ def record_run_selection(
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        if path.exists():
-            os.unlink(temp_name)
-            return record_run_selection(
-                store,
-                run_id=run_id,
-                scenario_ids=scenario_ids,
-                encoded=encoded,
-            )
-        os.replace(temp_name, path)
+        try:
+            os.link(temp_name, path)
+        except FileExistsError:
+            return _validate_existing_run_selection(path, identity_hash, run_id)
+        return path
     finally:
         try:
             os.unlink(temp_name)
         except FileNotFoundError:
             pass
-    return path
 
 
 def prepare_adversarial_training_args(
