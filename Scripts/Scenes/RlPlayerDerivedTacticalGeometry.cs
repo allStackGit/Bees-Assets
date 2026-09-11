@@ -78,7 +78,10 @@ internal sealed class RlPlayerDerivedTacticalGeometry
     internal static RlPlayerDerivedTacticalGeometry ParseFixedForTests(string[] args)
     {
         string value = ReadFlagValue(args, FixedGeometryFlag);
-        return value == null ? null : ParseGeometry(value, FixedGeometryFlag);
+        RlPlayerDerivedTacticalGeometry geometry =
+            value == null ? null : ParseGeometry(value, FixedGeometryFlag);
+        ValidateFixedGeometryMode(args, geometry);
+        return geometry;
     }
 
     internal static void ResetForTests()
@@ -103,10 +106,23 @@ internal sealed class RlPlayerDerivedTacticalGeometry
             throw new ArgumentException(
                 $"{CatalogFlag} cannot be combined with {FixedGeometryFlag}.");
         }
+        ValidateFixedGeometryMode(args, fixedGeometry);
 
         _catalog = catalog;
         _fixedGeometry = fixedGeometry;
         _parsed = true;
+    }
+
+    private static void ValidateFixedGeometryMode(
+        string[] args,
+        RlPlayerDerivedTacticalGeometry fixedGeometry)
+    {
+        if (fixedGeometry != null && !RlOneVsOneEvaluationSideChannel.IsEvaluationMode(args))
+        {
+            throw new ArgumentException(
+                $"{FixedGeometryFlag} is reserved for authoritative evaluator runs. " +
+                $"Training pressure must use the registry-derived {CatalogFlag} instead.");
+        }
     }
 
     private static Dictionary<string, RlPlayerDerivedTacticalGeometry> ParseCatalog(string encoded)
