@@ -12,11 +12,11 @@ Mandatory rules for every coding/development task in this repository.
 
 ### Protected paths
 
-- **Never read or ingest `results/` unless the user explicitly requests access to `results/` or to a specific file within it.** Keeping `results/` tracked in Git/GitHub does not grant permission to inspect it.
-- Without that explicit request, do not open, fetch, search, grep, glob through, index, summarize, parse, diff, inspect, or otherwise retrieve file contents from `results/`, including through repository-wide searches or tooling that could return excerpts from that path.
-- Avoid broad content-search operations that cannot reliably exclude `results/`. If a tool may surface `results/` content incidentally, use a narrower path/file lookup instead.
-- References to `results/` filenames or paths that appear incidentally in Git metadata are not permission to retrieve their contents. The restriction applies across branches, commits, diffs, history, and local/worktree copies.
-- Only the user's explicit request overrides this protection for the scope they requested; do not treat a previous request to inspect one result as ongoing permission for later tasks.
+- **Never read or ingest `results/` or `Demonstrations/` unless the user explicitly requests access to that protected path or to a specific file within it.** Keeping either path tracked in Git/GitHub does not grant permission to inspect it.
+- Without that explicit request, do not open, fetch, search, grep, glob through, index, summarize, parse, diff, inspect, or otherwise retrieve file contents from protected paths, including through repository-wide searches or tooling that could return excerpts from them.
+- Avoid broad content-search operations that cannot reliably exclude protected paths. If a tool may surface protected-path content incidentally, use a narrower path/file lookup instead.
+- References to protected-path filenames or paths that appear incidentally in Git metadata are not permission to retrieve their contents. The restriction applies across branches, commits, diffs, history, and local/worktree copies.
+- Only the user's explicit request overrides this protection for the scope they requested; do not treat a previous request to inspect one protected file or path as ongoing permission for later tasks.
 
 ### Direct routes
 
