@@ -16,6 +16,7 @@ internal static class RlOneVsOnePerArenaMatchups
     private static readonly Dictionary<Level, RlOneVsOneAdversarialMatchupSelector> Selectors =
         new Dictionary<Level, RlOneVsOneAdversarialMatchupSelector>();
     private static readonly HashSet<Level> PlayerDerivedPressureLevels = new HashSet<Level>();
+    private static readonly HashSet<Level> PreparedEpisodes = new HashSet<Level>();
 
     static RlOneVsOnePerArenaMatchups()
     {
@@ -27,12 +28,28 @@ internal static class RlOneVsOnePerArenaMatchups
     {
         Selectors.Clear();
         PlayerDerivedPressureLevels.Clear();
+        PreparedEpisodes.Clear();
     }
 
+    /// <summary>
+    /// Prepare exactly one matchup for the current Level episode. Map setup may call this before ship
+    /// setup so player-derived tactical geometry can affect the map; the existing ship-setup call is
+    /// deliberately retained and becomes an idempotent no-op for the same episode.
+    /// </summary>
     internal static void PrepareEpisode(Level level)
     {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+        if (PreparedEpisodes.Contains(level))
+        {
+            return;
+        }
+
         RlOneVsOneAdversarialMatchupSelector selector = GetSelector(level);
         selector.PrepareEpisode();
+        PreparedEpisodes.Add(level);
         if (PlayerDerivedPressureLevels.Contains(level))
         {
             RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
@@ -42,6 +59,16 @@ internal static class RlOneVsOnePerArenaMatchups
     internal static ConfigData.ShipTypes GetShipType(Level level, int side, int shipIndex)
     {
         return GetSelector(level).GetShipType(side, shipIndex);
+    }
+
+    internal static string GetCurrentPressureTag(Level level)
+    {
+        if (level == null || !PreparedEpisodes.Contains(level) ||
+            !Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
+        {
+            return null;
+        }
+        return selector.CurrentPressureTag;
     }
 
     private static RlOneVsOneAdversarialMatchupSelector GetSelector(Level level)
@@ -72,10 +99,16 @@ internal static class RlOneVsOnePerArenaMatchups
 
     private static void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
-        if (level != null && Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
+        if (level == null)
+        {
+            return;
+        }
+
+        if (Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
             selector.RecordEpisodeOutcome(result.WinningSide, result.TimedOut);
         }
+        PreparedEpisodes.Remove(level);
     }
 
     internal static int GetSelectorCountForTests()
@@ -83,10 +116,16 @@ internal static class RlOneVsOnePerArenaMatchups
         return Selectors.Count;
     }
 
+    internal static int GetPreparedEpisodeCountForTests()
+    {
+        return PreparedEpisodes.Count;
+    }
+
     internal static void ResetForTests()
     {
         Selectors.Clear();
         PlayerDerivedPressureLevels.Clear();
+        PreparedEpisodes.Clear();
         RlPlayerDerivedPressureTelemetry.ResetForTests();
     }
 }
