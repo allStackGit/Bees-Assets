@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -50,6 +51,26 @@ def create_capture_layout(root: Path) -> Path:
         json.dumps(CAPTURE_MANIFEST, indent=2), encoding="utf-8"
     )
     return source
+
+
+def read_csharp_policy_signature() -> str:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "Scripts"
+        / "Scenes"
+        / "RlPolicySchema.cs"
+    ).read_text(encoding="utf-8-sig")
+    match = re.search(
+        r"internal\s+const\s+string\s+Signature\s*=\s*(.*?);",
+        source,
+        re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError("Could not locate RlPolicySchema.Signature")
+    parts = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', match.group(1))
+    if not parts:
+        raise AssertionError("RlPolicySchema.Signature contains no string literals")
+    return "".join(parts)
 
 
 class HumanDemoOptionTests(unittest.TestCase):
@@ -109,6 +130,14 @@ class HumanImitationSettingsTests(unittest.TestCase):
 
 
 class HumanDemoSnapshotTests(unittest.TestCase):
+    def test_committed_policy_signature_matches_csharp_frozen_abi(self):
+        committed_config = json.loads(
+            Path(__file__).with_name("continual_learning_config.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(committed_config["policy_signature"], read_csharp_policy_signature())
+
     def test_snapshot_is_content_addressed_reusable_and_preserves_capture_provenance(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
