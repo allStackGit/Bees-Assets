@@ -10,6 +10,14 @@ Mandatory rules for every coding/development task in this repository.
 4. Read `docs/engineering/CONTEXT_INDEX.md` only when the subsystem is unclear, boundaries cross, direct lookup misses, or the task is a broad audit/architecture review.
 5. `PROJECT_PRIMER.md` is opt-in for explicit cold-start onboarding/re-orientation only.
 
+### Protected paths
+
+- **Never read or ingest `results/` unless the user explicitly requests access to `results/` or to a specific file within it.** Keeping `results/` tracked in Git/GitHub does not grant permission to inspect it.
+- Without that explicit request, do not open, fetch, search, grep, glob through, index, summarize, parse, diff, inspect, or otherwise retrieve file contents from `results/`, including through repository-wide searches or tooling that could return excerpts from that path.
+- Avoid broad content-search operations that cannot reliably exclude `results/`. If a tool may surface `results/` content incidentally, use a narrower path/file lookup instead.
+- References to `results/` filenames or paths that appear incidentally in Git metadata are not permission to retrieve their contents. The restriction applies across branches, commits, diffs, history, and local/worktree copies.
+- Only the user's explicit request overrides this protection for the scope they requested; do not treat a previous request to inspect one result as ongoing permission for later tasks.
+
 ### Direct routes
 
 - RL/training → `RlOneVsOne*`, `Training/`, focused tests; optional `docs/engineering/context/RL.md`. Unified/continual design → `Training/bees_continual_learning_rl_implementation.md`.
