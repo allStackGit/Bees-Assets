@@ -83,7 +83,28 @@ python Training\bees_continual_native_demo.py `
 
 This central archive is deliberately separate from PPO trajectories and from automatic training selection. Local `--continual-human-demo-dir` remains the explicit trusted/curated behavioral-cloning input. Selecting archived central batches for a future imitation run should remain an explicit curation step rather than silently training on every uploaded demonstration.
 
-Authenticated public-client upload and server-side abuse controls are still separate cross-repository work. The native archive is the trainer-side destination and validation boundary that such an upload path can target; it does not by itself make arbitrary client data trusted.
+### Authenticated public-client upload quarantine
+
+A Production desktop build can separately opt into uploading previously closed Human captures with:
+
+```text
+--rl-upload-demonstrations
+```
+
+`RlDemonstrationUploader` snapshots only `.demo` files that already exist in the current `PolicyV<ABI>/Human` directory before the current run starts recording. It therefore never uploads the file an active `DemonstrationRecorder` is still writing; captures produced during the current run remain local and become eligible on a later launch. WebGL is excluded because the required Steam Web API authentication is unavailable there. Upload uses a dedicated WSS connection rather than the gameplay `Socket`, authenticates each request with the Steam Web API ticket, transfers the native demo in bounded chunks, and never deletes the local source file. The client, BeesServer, and trainer all apply the same 16 MiB maximum to the combined `.demo` plus capture-manifest payload.
+
+BeesServer accepts only `Human` uploads through the three-request `rl-demo-begin` / `rl-demo-chunk` / `rl-demo-complete` protocol. Sessions are bound to the authenticated Steam user and WebSocket connection; the server enforces per-user/global active-upload limits and a per-user byte window, validates the exact frozen capture manifest, verifies the declared SHA-256, and writes content-addressed immutable `.demo`, capture-manifest, and metadata files into its configured quarantine inbox. The quarantine sidecar deliberately records `trust: authenticated-quarantine` and `readyForTraining: false`: Steam authentication establishes who uploaded the bytes, not that the play is good training data.
+
+To validate and archive one server quarantine bundle centrally, supply its metadata sidecar plus the compatible deployed model context:
+
+```powershell
+python Training\bees_continual_public_demo.py `
+  --root="F:\RLDemo\BeesContinual" `
+  --model-id="bees-rl-v7-<deployed-model-id>" `
+  "D:\BeesRlDemonstrations\incoming\rl-demo-<batch-id>.json"
+```
+
+`bees_continual_public_demo.py` independently verifies the quarantine schema/trust state, metadata filename and batch identity, demo and manifest byte counts/hashes, exact embedded/file capture-manifest agreement, the continual store's configured combined payload limit, and the native ML-Agents observation/action structure before delegating to the normal native-demo archive. The raw Steam user ID remains in the server-side quarantine for abuse handling and is intentionally not copied into the continual-learning store. The central provenance record still sets `approved_for_training: false`; public uploads require a later explicit curation/approval step before they can become behavioral-cloning input.
 
 ## Permanent competency suite
 
