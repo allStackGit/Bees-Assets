@@ -26,6 +26,7 @@ def _load(name: str):
 
 continual = _load("bees_continual_learning")
 native = _load("bees_continual_native_demo")
+contributors = _load("bees_continual_demo_contributors")
 public = _load("bees_continual_public_demo")
 
 
@@ -134,9 +135,12 @@ class PublicDemoQuarantineTests(unittest.TestCase):
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
         provenance = Path(result["public_provenance_path"]).read_text(encoding="utf-8")
+        contributor = Path(result["public_contributor_record_path"]).read_text(encoding="utf-8")
         self.assertIn('"source_trust": "authenticated-quarantine"', provenance)
         self.assertIn('"approved_for_training": false', provenance)
         self.assertNotIn(self.uploader_user_id, provenance)
+        self.assertNotIn(self.uploader_user_id, contributor)
+        self.assertRegex(json.loads(contributor)["contributor_bucket"], r"^[0-9a-f]{64}$")
 
     def test_exact_retry_is_idempotent(self):
         first = self.ingest()
@@ -145,6 +149,7 @@ class PublicDemoQuarantineTests(unittest.TestCase):
         self.assertEqual(first["batch_id"], second["batch_id"])
         self.assertTrue(second["duplicate"])
         self.assertEqual(first["public_provenance_path"], second["public_provenance_path"])
+        self.assertEqual(first["public_contributor_record_path"], second["public_contributor_record_path"])
 
     def test_demo_tampering_is_rejected_before_native_import(self):
         self.demo_path.write_bytes(b"tampered")
