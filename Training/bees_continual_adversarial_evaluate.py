@@ -1,9 +1,9 @@
-"""Paired diagnostic evaluation for player-derived adversarial matchup scenarios.
+"""Paired diagnostic evaluation for player-derived adversarial scenarios.
 
 This evaluator is intentionally separate from the permanent promotion competency suite. It runs a
-candidate and a baseline policy through the same immutable player-derived fleet scenarios against
-the same opponent with paired seeds, then records score deltas. This makes the effect of adversarial
-matchup pressure measurable without silently changing production promotion criteria.
+candidate and a baseline policy through the same immutable player-derived fleet scenarios and any
+registered tactical geometry against the same opponent with paired seeds, then records score deltas.
+This makes adversarial adaptation measurable without silently changing production promotion criteria.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import Callable, Mapping, Optional, Sequence
 
 from bees_continual_adversarial import (
     _parse_composition,
+    _parse_tactical_geometry,
     _read_scenario,
     _validate_registered_sources,
 )
@@ -44,6 +45,8 @@ from bees_continual_native_demo import _write_bytes_immutable
 
 ADVERSARIAL_EVALUATION_SCHEMA_VERSION = 1
 UNITY_PRESSURE_FLAG = "--bees-adversarial-matchups"
+UNITY_GEOMETRY_CATALOG_FLAG = "--bees-adversarial-geometry-catalog"
+UNITY_FIXED_GEOMETRY_FLAG = "--bees-rl-fixed-geometry"
 MatchRunner = Callable[..., MatchSummary]
 
 
@@ -53,16 +56,27 @@ def _positive_integer(value: object, label: str) -> int:
     return value
 
 
+def _is_flag(value: str, flag: str) -> bool:
+    return value == flag or value.startswith(flag + "=")
+
+
 def _validate_base_env_args(values: Sequence[str]) -> Sequence[str]:
     result = []
     for value in values:
         if not isinstance(value, str) or not value.strip():
             raise ValidationError("Adversarial evaluation base env args must be non-empty strings.")
         stripped = value.strip()
-        if stripped == UNITY_PRESSURE_FLAG or stripped.startswith(UNITY_PRESSURE_FLAG + "="):
+        if _is_flag(stripped, UNITY_PRESSURE_FLAG):
             raise ValidationError(
                 f"Do not pass {UNITY_PRESSURE_FLAG} to diagnostic evaluation; exact fixed "
                 "scenario compositions are derived from the immutable registry."
+            )
+        if _is_flag(stripped, UNITY_GEOMETRY_CATALOG_FLAG) or _is_flag(
+            stripped, UNITY_FIXED_GEOMETRY_FLAG
+        ):
+            raise ValidationError(
+                "Do not pass player-derived tactical geometry manually to diagnostic evaluation; "
+                "geometry is derived from the immutable scenario registry."
             )
         result.append(stripped)
     return tuple(result)
@@ -73,12 +87,22 @@ def _scenario_env_args(identity: Mapping[str, object]) -> Sequence[str]:
     humans = _parse_composition(identity.get("human_composition"), "human_composition")
     if len(bees) != len(humans):
         raise ValidationError("Adversarial evaluation scenario has asymmetric team sizes.")
-    return (
+
+    result = [
         "--rl-matchup-mode=fixed",
         f"--rl-ships-per-side={len(bees)}",
         "--rl-bee-ship-types=" + ",".join(bees),
         "--rl-human-ship-types=" + ",".join(humans),
-    )
+    ]
+    geometry = _parse_tactical_geometry(identity.get("geometry"))
+    if geometry is not None:
+        map_size = float(geometry["map_size"])
+        separation = float(geometry["spawn_separation_ratio"])
+        # The standard map-size option keeps all other training metadata/fallbacks consistent; the
+        # fixed geometry flag additionally reproduces the non-default center-to-center separation.
+        result.append(f"--rl-map-size={map_size:g}")
+        result.append(f"{UNITY_FIXED_GEOMETRY_FLAG}={map_size:g},{separation:g}")
+    return tuple(result)
 
 
 def _validated_summary(summary: MatchSummary, matches: int) -> MatchSummary:
@@ -117,7 +141,7 @@ def evaluate_adversarial_scenarios(
     max_environment_steps_per_match: int = DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
     match_runner: MatchRunner = run_match_group,
 ) -> Mapping[str, object]:
-    """Evaluate candidate-vs-baseline deltas on the selected immutable adversarial scenarios."""
+    """Evaluate candidate-vs-baseline deltas on selected immutable adversarial scenarios."""
     store.initialize()
     matches = _positive_integer(matches_per_scenario, "matches_per_scenario")
     base_args = _validate_base_env_args(base_env_args)
@@ -200,6 +224,7 @@ def evaluate_adversarial_scenarios(
             {
                 "scenario_id": scenario_id,
                 "target_fraction": target_fraction,
+                "geometry": identity.get("geometry"),
                 "env_args": list(merged_args),
                 "candidate_score_rate": candidate_score,
                 "baseline_score_rate": baseline_score,
@@ -235,9 +260,10 @@ def evaluate_adversarial_scenarios(
         },
         "promotion_eligible": False,
         "note": (
-            "Diagnostic player-derived matchup evaluation only. It measures the registered fleet "
-            "scenario, not reproduction of the original human action sequence, and does not replace "
-            "the pinned permanent competency suite or production promotion gate."
+            "Diagnostic player-derived scenario evaluation only. It reproduces the registered fleet "
+            "composition and tactical map/separation geometry when present, not the original human "
+            "action sequence, and does not replace the pinned permanent competency suite or "
+            "production promotion gate."
         ),
     }
     return _write_report(store, report)
@@ -245,7 +271,7 @@ def evaluate_adversarial_scenarios(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Compare a candidate with a baseline on immutable player-derived matchups."
+        description="Compare a candidate with a baseline on immutable player-derived scenarios."
     )
     parser.add_argument("--root", required=True, help="Continual-learning store root.")
     parser.add_argument("--candidate", required=True)
