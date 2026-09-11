@@ -114,6 +114,7 @@ class NativeDemoIngestionTests(unittest.TestCase):
         self.assertEqual(metadata["native_demo"]["record_count"], 3)
         self.assertEqual(metadata["native_demo"]["trainable_example_count"], 2)
         self.assertEqual(metadata["native_demo"]["sha256"], sha256_file(self.demo))
+        self.assertNotIn("source_name", metadata["native_demo"])
         self.assertEqual(
             metadata["capture_manifest"]["sha256"], sha256_file(self.manifest_path)
         )
@@ -129,6 +130,23 @@ class NativeDemoIngestionTests(unittest.TestCase):
         self.assertEqual(first["batch_id"], second["batch_id"])
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
+    def test_retry_filename_does_not_change_batch_identity(self):
+        first = self.ingest()
+        retry = self.human_dir / "retry-upload.demo"
+        retry.write_bytes(self.demo.read_bytes())
+
+        second = ingest_native_demonstration(
+            self.store,
+            retry,
+            demonstration_id="native-demo-1",
+            model_id=self.model["model_id"],
+            game_build_version="test-build",
+            loader=self.loader,
+        )
+
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(first["batch_id"], second["batch_id"])
+
     def test_same_demonstration_id_with_changed_bytes_is_rejected(self):
         self.ingest()
         self.demo.write_bytes(b"different-native-demo")
@@ -137,12 +155,26 @@ class NativeDemoIngestionTests(unittest.TestCase):
             self.ingest()
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
-    def test_behavior_shape_mismatch_is_rejected_before_archival(self):
+    def test_observation_shape_mismatch_is_rejected_before_archival(self):
         def wrong_loader(_path):
             return self.behavior_spec(observation_size=17), [object(), object()], 2
 
         with self.assertRaises(CompatibilityError):
             self.ingest(loader=wrong_loader)
+        self.assertEqual(self.store.status()["demonstration_batches"], 0)
+
+    def test_action_shape_mismatch_is_rejected_before_archival(self):
+        cases = (
+            self.behavior_spec(continuous_actions=2),
+            self.behavior_spec(discrete_branches=[2, 5]),
+        )
+        for behavior_spec in cases:
+            with self.subTest(action_spec=behavior_spec.action_spec):
+                def wrong_loader(_path, spec=behavior_spec):
+                    return spec, [object(), object()], 2
+
+                with self.assertRaises(CompatibilityError):
+                    self.ingest(loader=wrong_loader)
         self.assertEqual(self.store.status()["demonstration_batches"], 0)
 
     def test_capture_manifest_signature_mismatch_is_validation_error(self):
@@ -169,6 +201,12 @@ class NativeDemoIngestionTests(unittest.TestCase):
 
     def test_record_count_limit_is_enforced(self):
         self.store.config["ingestion"]["max_steps_per_match"] = 2
+
+        with self.assertRaises(ValidationError):
+            self.ingest()
+
+    def test_payload_size_limit_includes_capture_manifest(self):
+        self.store.config["ingestion"]["max_payload_bytes"] = self.demo.stat().st_size
 
         with self.assertRaises(ValidationError):
             self.ingest()
