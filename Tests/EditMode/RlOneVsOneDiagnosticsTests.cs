@@ -63,7 +63,7 @@ namespace Bees.Tests.EditMode
             string scout = ReadSource("Scripts", "Entities", "Ships", "Scout.cs");
 
             Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Begin(level)"));
-            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(timedOut)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut)"));
             Assert.That(registry, Does.Contain("RlOneVsOneEpisodeDiagnostics.TrackShip(ship)"),
                 "Newly added ships should register once instead of requiring another whole-fleet diagnostics pass.");
             Assert.That(diagnostics, Does.Not.Contain("private static void TrackSide("),
