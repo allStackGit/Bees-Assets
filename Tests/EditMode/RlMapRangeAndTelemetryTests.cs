@@ -90,11 +90,92 @@ namespace Bees.Tests.EditMode
             Assert.That(telemetry, Does.Not.Contain("AddReward("));
             Assert.That(telemetry, Does.Not.Contain("SetReward("));
 
-            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.BuildEpisodeFields()"));
+            Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.BuildEpisodeFields(level)"));
             Assert.That(diagnostics, Does.Contain("RlOneVsOneCombatTelemetry.RecordHit(sourceShip, target, appliedDamage)"));
             Assert.That(CountOccurrences(turret, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
             Assert.That(CountOccurrences(beamCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(1));
             Assert.That(CountOccurrences(dualCannon, "RlOneVsOneCombatTelemetry.RecordShotFired(Ship, this);"), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void MultiArenaTelemetryKeepsEpisodeStateIndependentPerLevel()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+            Type diagnosticsType = RuntimeAssembly.GetType("RlOneVsOneEpisodeDiagnostics");
+            Type telemetryType = RuntimeAssembly.GetType("RlOneVsOneCombatTelemetry");
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+
+            MethodInfo setDiagnostics = diagnosticsType.GetMethod("SetStateForTests", flags);
+            MethodInfo buildDiagnostics = diagnosticsType.GetMethod("BuildEpisodeFields", flags);
+            MethodInfo endDiagnostics = diagnosticsType.GetMethod("End", flags);
+            MethodInfo diagnosticsCount = diagnosticsType.GetMethod("GetTrackedLevelCountForTests", flags);
+            MethodInfo resetDiagnostics = diagnosticsType.GetMethod("ResetForTests", flags);
+            MethodInfo setTelemetry = telemetryType.GetMethod("SetStateForTests", flags);
+            MethodInfo telemetryCount = telemetryType.GetMethod("GetTrackedLevelCountForTests", flags);
+            MethodInfo resetTelemetry = telemetryType.GetMethod("ResetForTests", flags);
+
+            Assert.That(setDiagnostics, Is.Not.Null);
+            Assert.That(buildDiagnostics, Is.Not.Null);
+            Assert.That(endDiagnostics, Is.Not.Null);
+            Assert.That(diagnosticsCount, Is.Not.Null);
+            Assert.That(resetDiagnostics, Is.Not.Null);
+            Assert.That(setTelemetry, Is.Not.Null);
+            Assert.That(telemetryCount, Is.Not.Null);
+            Assert.That(resetTelemetry, Is.Not.Null);
+
+            GameObject arenaAObject = new GameObject("RL telemetry arena A");
+            GameObject arenaBObject = new GameObject("RL telemetry arena B");
+            Component arenaA = arenaAObject.AddComponent(levelType);
+            Component arenaB = arenaBObject.AddComponent(levelType);
+
+            try
+            {
+                resetDiagnostics.Invoke(null, null);
+                resetTelemetry.Invoke(null, null);
+
+                setDiagnostics.Invoke(null, new object[] { arenaA, 1, 2 });
+                setDiagnostics.Invoke(null, new object[] { arenaB, 1, 2 });
+                setTelemetry.Invoke(null, new object[] { arenaA, 1, 2, 64f });
+                setTelemetry.Invoke(null, new object[] { arenaB, 1, 2, 128f });
+
+                Assert.That((int)diagnosticsCount.Invoke(null, null), Is.EqualTo(2));
+                Assert.That((int)telemetryCount.Invoke(null, null), Is.EqualTo(2));
+
+                string arenaAFields = (string)buildDiagnostics.Invoke(null, new object[] { arenaA, false });
+                string arenaBFields = (string)buildDiagnostics.Invoke(null, new object[] { arenaB, false });
+                Assert.That(arenaAFields, Does.Contain("map_size=64.00"));
+                Assert.That(arenaBFields, Does.Contain("map_size=128.00"));
+
+                endDiagnostics.Invoke(null, new object[] { arenaA });
+
+                Assert.That((int)diagnosticsCount.Invoke(null, null), Is.EqualTo(1),
+                    "Ending one arena must remove only that arena's behavior diagnostics.");
+                Assert.That((int)telemetryCount.Invoke(null, null), Is.EqualTo(1),
+                    "Ending one arena must remove only that arena's combat telemetry.");
+                string arenaBAfter = (string)buildDiagnostics.Invoke(null, new object[] { arenaB, false });
+                Assert.That(arenaBAfter, Does.Contain("map_size=128.00"),
+                    "Another active arena must retain its own telemetry after a peer arena ends.");
+            }
+            finally
+            {
+                resetDiagnostics.Invoke(null, null);
+                resetTelemetry.Invoke(null, null);
+                UnityEngine.Object.DestroyImmediate(arenaAObject);
+                UnityEngine.Object.DestroyImmediate(arenaBObject);
+            }
+        }
+
+        [Test]
+        public void EpisodeCoordinatorLogsDiagnosticsForEveryArena()
+        {
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+
+            Assert.That(coordinator, Does.Not.Contain("private bool IsPrimaryArena"));
+            Assert.That(coordinator, Does.Not.Contain("if (IsPrimaryArena)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Begin(level);"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.Track(level);"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);"));
+            Assert.That(coordinator, Does.Contain("arena={GetArenaIndex()}"));
         }
 
         [Test]
