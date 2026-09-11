@@ -1,7 +1,7 @@
 using Assets.Scripts;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -14,8 +14,8 @@ using UnityEngine;
 
 /// <summary>
 /// Writes successful one-shot gameplay capabilities as isolated ML-Agents demonstration episodes.
-/// The sample uses the passive controller's most recent policy observation and action, so an event
-/// is paired with the decision state that preceded it rather than with state changed by the event.
+/// Callers invoke this immediately before the gameplay mutation. The recorder builds the shared
+/// policy observation and control action synchronously, then changes only the special-action branch.
 /// </summary>
 internal static class RlGameplayDemonstrationCapabilityCapture
 {
@@ -26,10 +26,8 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         HiveMind = 2
     }
 
-    private static readonly FieldInfo PassiveInstancesField = typeof(RlGameplayDemonstrationAgent).GetField(
-        "Instances", BindingFlags.Static | BindingFlags.NonPublic);
-    private static readonly FieldInfo PassiveShipField = typeof(RlGameplayDemonstrationAgent).GetField(
-        "_ship", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo VectorObservationsField = typeof(VectorSensor).GetField(
+        "m_Observations", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly MethodInfo RecorderLazyInitializeMethod = typeof(DemonstrationRecorder).GetMethod(
         "LazyInitialize", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly MethodInfo WriterRecordMethod = typeof(DemonstrationWriter).GetMethod(
@@ -38,8 +36,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         Environment.GetCommandLineArgs());
 
     internal static bool RuntimeContractsAvailableForTests =>
-        PassiveInstancesField != null && PassiveShipField != null &&
-        RecorderLazyInitializeMethod != null && WriterRecordMethod != null;
+        VectorObservationsField != null && RecorderLazyInitializeMethod != null && WriterRecordMethod != null;
 
     internal static void Record(Ship ship, int specialAction)
     {
@@ -52,14 +49,9 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         }
 
         CaptureSource source = DetermineSource(ship);
-        if (source == CaptureSource.None || !TryFindPassiveAgent(ship, out RlGameplayDemonstrationAgent passiveAgent))
-        {
-            return;
-        }
-
-        if (!TryCreateSample(
-                passiveAgent.GetObservations(),
-                passiveAgent.GetStoredActionBuffers(),
+        if (source == CaptureSource.None ||
+            !TryCaptureCurrentState(
+                ship,
                 specialAction,
                 out float[] observation,
                 out float[] continuousActions,
@@ -74,36 +66,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             return;
         }
 
-        WriteEventEpisode(
-            ship,
-            source,
-            observation,
-            continuousActions,
-            discreteActions);
-    }
-
-    private static bool TryFindPassiveAgent(Ship ship, out RlGameplayDemonstrationAgent match)
-    {
-        match = null;
-        if (!(PassiveInstancesField.GetValue(null) is IEnumerable instances))
-        {
-            return false;
-        }
-
-        foreach (object item in instances)
-        {
-            if (!(item is RlGameplayDemonstrationAgent candidate))
-            {
-                continue;
-            }
-
-            if (ReferenceEquals(PassiveShipField.GetValue(candidate), ship))
-            {
-                match = candidate;
-                return true;
-            }
-        }
-        return false;
+        WriteEventEpisode(ship, source, observation, continuousActions, discreteActions);
     }
 
     private static CaptureSource DetermineSource(Ship ship)
@@ -133,6 +96,71 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             return CaptureSource.HiveMind;
         }
         return CaptureSource.None;
+    }
+
+    private static bool TryCaptureCurrentState(
+        Ship ship,
+        int specialAction,
+        out float[] observationSnapshot,
+        out float[] continuousSnapshot,
+        out int[] discreteSnapshot)
+    {
+        observationSnapshot = null;
+        continuousSnapshot = null;
+        discreteSnapshot = null;
+
+        VectorSensor sensor = new VectorSensor(RlOneVsOneAgent.ObservationSize);
+        RlCombatPerception perception = new RlCombatPerception();
+        perception.Collect(ship, ship.Side, sensor, 0);
+        if (!(VectorObservationsField.GetValue(sensor) is List<float> observations))
+        {
+            return false;
+        }
+
+        ActionBuffers actions = EncodeCurrentAction(ship, specialAction);
+        return TryCreateSample(
+            observations,
+            actions,
+            specialAction,
+            out observationSnapshot,
+            out continuousSnapshot,
+            out discreteSnapshot);
+    }
+
+    private static ActionBuffers EncodeCurrentAction(Ship ship, int specialAction)
+    {
+        float[] continuous = new float[RlOneVsOneAgent.ContinuousActionCount];
+        int[] discrete = new int[RlOneVsOneAgent.DiscreteBranchCount];
+
+        Vector2 movement = RlGameplayDemonstrationAgent.EncodeMovementDirection(ship.Direction);
+        continuous[0] = movement.x;
+        continuous[1] = movement.y;
+
+        for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
+        {
+            if (ship.Weapons == null || slot >= ship.Weapons.Count || !(ship.Weapons[slot] is Turret turret))
+            {
+                continue;
+            }
+
+            int aimStart = RlOneVsOneAgent.WeaponAimContinuousActionStart +
+                           slot * RlOneVsOneAgent.WeaponAimContinuousActionsPerSlot;
+            Vector2 aim = turret.TargetPoint - turret.GetPosition();
+            if (aim.sqrMagnitude > 0.0001f)
+            {
+                aim.Normalize();
+                continuous[aimStart] = aim.x;
+                continuous[aimStart + 1] = aim.y;
+            }
+
+            bool fireRequested = turret.IsFiringManually || turret.ShouldFire || turret.ShouldFireAtAsteroid;
+            discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] = fireRequested
+                ? RlOneVsOneAgent.FireWeaponAction
+                : RlOneVsOneAgent.CeaseWeaponAction;
+        }
+
+        discrete[RlOneVsOneAgent.SpecialActionBranch] = specialAction;
+        return new ActionBuffers(continuous, discrete);
     }
 
     private static bool TryCreateSample(
