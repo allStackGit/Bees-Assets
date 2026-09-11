@@ -1,9 +1,10 @@
 """Launch continual Bees training with explicit player-derived adversarial scenarios.
 
-The selected immutable scenarios are resolved from the continual store and encoded as a bounded
-Unity env-arg. The normal continual wrapper still owns PPO, historical opponents, candidate
-registration and optional behavioral cloning. This layer only records and injects the selected
-player-derived matchup pressure; it never reuses old player trajectories as PPO data.
+The selected immutable scenarios are resolved from the continual store and encoded as bounded Unity
+environment arguments. The normal continual wrapper still owns PPO, historical opponents, candidate
+registration and optional behavioral cloning. This layer only records and injects selected
+player-derived matchup pressure and optional tactical geometry; it never reuses old player
+trajectories as PPO data.
 """
 
 from __future__ import annotations
@@ -15,7 +16,10 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import bees_continual_train as continual_train
-from bees_continual_adversarial import encode_scenarios_for_unity
+from bees_continual_adversarial import (
+    encode_geometry_catalog_for_unity,
+    encode_scenarios_for_unity,
+)
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -29,6 +33,8 @@ from bees_continual_learning import (
 
 ADVERSARIAL_SCENARIOS_FLAG = "--continual-adversarial-scenarios"
 UNITY_PRESSURE_FLAG = "--bees-adversarial-matchups"
+UNITY_GEOMETRY_CATALOG_FLAG = "--bees-adversarial-geometry-catalog"
+UNITY_FIXED_GEOMETRY_FLAG = "--bees-rl-fixed-geometry"
 RUN_SELECTION_SCHEMA_VERSION = 1
 
 
@@ -72,14 +78,34 @@ def extract_adversarial_scenarios(
     return cleaned, scenario_ids
 
 
-def inject_unity_pressure_arg(argv: Sequence[str], encoded: str) -> List[str]:
+def _is_flag(argument: str, flag: str) -> bool:
+    return argument == flag or argument.startswith(flag + "=")
+
+
+def inject_unity_pressure_arg(
+    argv: Sequence[str],
+    encoded: str,
+    geometry_catalog: str = "",
+) -> List[str]:
     if not encoded:
         raise SystemExit("Encoded player-derived adversarial pressure must not be empty.")
     pressure_argument = UNITY_PRESSURE_FLAG + "=" + encoded
+    geometry_argument = (
+        UNITY_GEOMETRY_CATALOG_FLAG + "=" + geometry_catalog
+        if geometry_catalog
+        else None
+    )
     for argument in argv:
-        if argument == UNITY_PRESSURE_FLAG or argument.startswith(UNITY_PRESSURE_FLAG + "="):
+        if _is_flag(argument, UNITY_PRESSURE_FLAG):
             raise SystemExit(
                 f"Do not pass {UNITY_PRESSURE_FLAG} manually when using "
+                f"{ADVERSARIAL_SCENARIOS_FLAG}; the immutable scenario registry is authoritative."
+            )
+        if _is_flag(argument, UNITY_GEOMETRY_CATALOG_FLAG) or _is_flag(
+            argument, UNITY_FIXED_GEOMETRY_FLAG
+        ):
+            raise SystemExit(
+                "Do not pass player-derived tactical geometry manually when using "
                 f"{ADVERSARIAL_SCENARIOS_FLAG}; the immutable scenario registry is authoritative."
             )
         if argument.startswith("--env-args="):
@@ -92,6 +118,8 @@ def inject_unity_pressure_arg(argv: Sequence[str], encoded: str) -> List[str]:
     if "--env-args" not in result:
         result.append("--env-args")
     result.append(pressure_argument)
+    if geometry_argument is not None:
+        result.append(geometry_argument)
     return result
 
 
@@ -119,6 +147,7 @@ def record_run_selection(
     run_id: str,
     scenario_ids: Sequence[str],
     encoded: str,
+    geometry_catalog: str = "",
 ) -> Path:
     store._require_initialized()
     if not isinstance(run_id, str) or not run_id.strip():
@@ -129,6 +158,12 @@ def record_run_selection(
         "scenario_ids": sorted(scenario_ids),
         "unity_pressure_argument": UNITY_PRESSURE_FLAG + "=" + encoded,
     }
+    # Keep no-geometry runs byte-for-byte compatible with the original selection identity so an
+    # existing run can resume after this feature is introduced without spuriously changing lineage.
+    if geometry_catalog:
+        identity["unity_geometry_argument"] = (
+            UNITY_GEOMETRY_CATALOG_FLAG + "=" + geometry_catalog
+        )
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     path = _run_selection_path(store, run_id)
     if path.exists():
@@ -174,14 +209,20 @@ def prepare_adversarial_training_args(
     store = ContinualLearningStore(options.root, config)
     store.initialize()
     encoded = encode_scenarios_for_unity(store, scenario_ids)
+    geometry_catalog = encode_geometry_catalog_for_unity(store, scenario_ids)
     _, run_id, _ = continual_train.infer_run_context(trainer_args)
     record = record_run_selection(
         store,
         run_id=run_id,
         scenario_ids=scenario_ids,
         encoded=encoded,
+        geometry_catalog=geometry_catalog,
     )
-    return inject_unity_pressure_arg(cleaned, encoded), record, scenario_ids
+    return (
+        inject_unity_pressure_arg(cleaned, encoded, geometry_catalog),
+        record,
+        scenario_ids,
+    )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
