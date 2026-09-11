@@ -23,23 +23,23 @@ namespace Bees.Tests.EditMode
             Assert.That(release, Is.GreaterThan(setTarget));
             Assert.That(reserve, Is.GreaterThan(release));
 
-            Assert.That(bomb, Does.Contain("public void TransferTargetReservation()"));
+            Assert.That(bomb, Does.Contain("public ShipDamageStatus TransferTargetReservation()"));
+            Assert.That(bomb, Does.Contain("ShipDamageStatus transferredReservation = _reservedDamageStatus;"));
             Assert.That(bomb, Does.Contain("public void ReleaseTargetReservation()"));
         }
 
         [Test]
-        public void StrikerTransfersRenderedReservationAndReleasesTrainingReservation()
+        public void StrikerTransfersRenderedAndTrainingReservationOwnership()
         {
             string striker = Read("Scripts", "Entities", "Ships", "Striker.cs");
             Assert.That(striker, Does.Contain("_bomb.Setup(Level, Bomb"));
-            Assert.That(striker, Does.Contain("Bomb.TransferTargetReservation();"));
+            Assert.That(striker, Does.Contain("Bomb.TransferTargetReservation();"),
+                "Rendered StrikerBomb delivery must clear Bomb ownership after the projectile captures the reservation.");
 
-            int logBombDamage = striker.IndexOf("public void LogBombDamage()", StringComparison.Ordinal);
-            int release = striker.IndexOf("Bomb.ReleaseTargetReservation();", logBombDamage, StringComparison.Ordinal);
-            int applyDamage = striker.IndexOf("LogAttackingDamage", logBombDamage, StringComparison.Ordinal);
-            Assert.That(release, Is.GreaterThan(logBombDamage));
-            Assert.That(applyDamage, Is.GreaterThan(release));
-
+            Assert.That(striker, Does.Contain("ShipDamageStatus damageReservation = Bomb.TransferTargetReservation();"),
+                "Headless training must transfer reservation ownership to the independent fuse.");
+            Assert.That(striker, Does.Contain("ReleaseTrainingBombReservation(damageReservation, power);"));
+            Assert.That(striker, Does.Contain("Level.AddTimer(damageTimer);"));
             Assert.That(striker, Does.Contain("public override void Kill"));
         }
 
