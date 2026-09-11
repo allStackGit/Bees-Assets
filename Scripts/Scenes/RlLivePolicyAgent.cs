@@ -508,7 +508,7 @@ internal sealed class RlLivePolicyAgent : Agent
         for (int i = 0; i < allies.Count; i++)
         {
             if (!(allies[i] is WarpGate warpGate) || warpGate.IsDead || warpGate.WarpCollider == null ||
-                !_ship.Collider.IsTouching(_ship.Collider))
+                !warpGate.WarpCollider.IsTouching(_ship.Collider))
             {
                 continue;
             }
@@ -522,7 +522,8 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private bool TryBindShip()
     {
-        if (_level == null || _level.State == null || !ShouldControlSide(_level.HasPlayer, _side, ConfigData.Configuration.AISide))
+        if (_level == null || _level.State == null || ConfigData.Configuration == null ||
+            !ShouldControlSide(_level.HasPlayer, _side, ConfigData.Configuration.AISide))
         {
             ReleaseShip();
             return false;
