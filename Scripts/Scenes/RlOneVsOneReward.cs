@@ -7,24 +7,24 @@ using UnityEngine;
 /// </summary>
 internal static class RlOneVsOneReward
 {
-    internal const float WinReward = 10f;
-    internal const float LossReward = -10f;
-    internal const float TsvRewardScale = 1f;
-    internal const float MaximumEpisodeTimePenalty = 0.1f;
+    internal const float WinReward = 1f;
+    internal const float LossReward = -1f;
+    internal const float TsvRewardScale = 0.1f;
+    internal const float MaximumEpisodeTimePenalty = 0.01f;
 
     // Positive shaping is transformed through an asymptotic bound rather than hard-clamped. Every
     // finite useful outcome therefore keeps a positive learning signal while the entire episode's
     // positive non-terminal shaping remains strictly below the value of winning the battle.
-    internal const float MaximumPositiveShapingReward = 2f;
+    internal const float MaximumPositiveShapingReward = 0.2f;
 
     // Discovery is intentionally a small fraction of combat outcome shaping. Static categories are
     // normalized against the value present when the episode begins. Collision asteroids can spawn
     // indefinitely, so they use a convergent sequence instead of an episode-start denominator.
-    internal const float EnemyShipDiscoveryBudget = 0.06f;
-    internal const float MiningAsteroidDiscoveryBudget = 0.015f;
-    internal const float StaticObstacleDiscoveryBudget = 0.015f;
-    internal const float MapObjectDiscoveryBudget = 0.01f;
-    internal const float CollisionAsteroidDiscoveryBudget = 0.025f;
+    internal const float EnemyShipDiscoveryBudget = 0.006f;
+    internal const float MiningAsteroidDiscoveryBudget = 0.0015f;
+    internal const float StaticObstacleDiscoveryBudget = 0.0015f;
+    internal const float MapObjectDiscoveryBudget = 0.001f;
+    internal const float CollisionAsteroidDiscoveryBudget = 0.0025f;
 
     /// <summary>
     /// Converts a real positive TSV-valued outcome into immediate shaping. This is shared by enemy
@@ -134,7 +134,7 @@ internal static class RlOneVsOneReward
 
     /// <summary>
     /// Applies a very small continuous cost for elapsed battle time. A complete configured episode
-    /// costs only 0.1 reward, so speed can break otherwise similar victories without encouraging
+    /// costs only 0.01 reward, so speed can break otherwise similar victories without encouraging
     /// sacrificing a ship merely to finish a little sooner.
     /// </summary>
     internal static float CalculateTimePenalty(float elapsedSeconds)
