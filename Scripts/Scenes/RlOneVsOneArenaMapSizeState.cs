@@ -17,7 +17,7 @@ internal static class RlOneVsOneArenaMapSizeState
     private const float BorderOverhang = BorderThickness * 2f;
 
     private static readonly Dictionary<Level, float> EpisodeMapSizes = new Dictionary<Level, float>();
-    private static readonly System.Random MapSizeRandom = new System.Random(Guid.NewGuid().GetHashCode());
+    private static System.Random _mapSizeRandom;
     private static RlOneVsOneTrainingOptions _options;
 
     static RlOneVsOneArenaMapSizeState()
@@ -29,6 +29,7 @@ internal static class RlOneVsOneArenaMapSizeState
     private static void ResetForSceneLoad()
     {
         EpisodeMapSizes.Clear();
+        _mapSizeRandom = null;
         _options = null;
     }
 
@@ -41,6 +42,19 @@ internal static class RlOneVsOneArenaMapSizeState
                 _options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
             }
             return _options;
+        }
+    }
+
+    private static System.Random MapSizeRandom
+    {
+        get
+        {
+            if (_mapSizeRandom == null)
+            {
+                _mapSizeRandom = new System.Random(
+                    RlOneVsOneScenarioSeed.Create(Environment.GetCommandLineArgs()));
+            }
+            return _mapSizeRandom;
         }
     }
 
@@ -199,6 +213,7 @@ internal static class RlOneVsOneArenaMapSizeState
     internal static void ResetForTests()
     {
         EpisodeMapSizes.Clear();
+        _mapSizeRandom = null;
         _options = null;
     }
 }
