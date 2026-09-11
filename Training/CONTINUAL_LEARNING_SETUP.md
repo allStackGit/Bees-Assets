@@ -51,7 +51,7 @@ The passive recorder continuously captures movement, weapon aiming, and weapon f
 
 The capability-event writer uses a narrow reflection bridge to pinned ML-Agents 1.1.0 internals for reading a `VectorSensor`'s completed vector and invoking the native `DemonstrationRecorder`/`DemonstrationWriter` serialization path. `BeesFoundation` tests guard those reflection contracts so a package change fails visibly instead of silently corrupting demonstrations.
 
-To include a trusted set of native ML-Agents human `.demo` files in a continual training run, pass the current policy ABI's `Human` directory to the continual wrapper:
+To include a trusted set of native ML-Agents human `.demo` files directly in a continual training run, pass the current policy ABI's `Human` directory to the continual wrapper:
 
 ```powershell
 python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
@@ -66,7 +66,24 @@ Before ML-Agents starts, the wrapper requires the selected directory to be the `
 
 The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI. The config's `policy_signature` mirrors `RlPolicySchema.Signature` and must change with the frozen policy ABI rather than being carried forward by version number alone.
 
-This path is for explicitly selected/trusted local demonstrations. Authenticated public-client upload, abuse controls, and central native `.demo` ingestion are still separate work.
+### Central native `.demo` archive
+
+Trusted native demonstrations can also be imported into the persistent continual-learning store instead of being consumed immediately. Run this from the same ML-Agents virtual environment so the native demonstration parser is available:
+
+```powershell
+python Training\bees_continual_native_demo.py `
+  --root="F:\RLDemo\BeesContinual" `
+  --demonstration-id="player-match-20260911-001-human-s0" `
+  --model-id="bees-rl-v7-<deployed-model-id>" `
+  --game-build="2026.09.11" `
+  "C:\path\to\RlDemonstrations\PolicyV7\Human\human-s0.demo"
+```
+
+`model-id` identifies the compatible deployed-policy context for the captured match; it does not claim that the human actions came from that model. `bees_continual_native_demo.py` uses the existing `demonstration_batches` registry and `experience/human-demos` archive. It validates the Human/PolicyV capture manifest and frozen signature, parses the native ML-Agents behavior shape, enforces the configured payload and record limits, rejects Hive Mind filenames, and requires a known compatible model context. Successful ingestion stores the original `.demo`, a byte-for-byte capture-manifest copy, and an immutable metadata sidecar containing their SHA-256 hashes and the trainable example count. Repeating identical ingestion is idempotent; reusing a demonstration ID for different content is rejected.
+
+This central archive is deliberately separate from PPO trajectories and from automatic training selection. Local `--continual-human-demo-dir` remains the explicit trusted/curated behavioral-cloning input. Selecting archived central batches for a future imitation run should remain an explicit curation step rather than silently training on every uploaded demonstration.
+
+Authenticated public-client upload and server-side abuse controls are still separate cross-repository work. The native archive is the trainer-side destination and validation boundary that such an upload path can target; it does not by itself make arbitrary client data trusted.
 
 ## Permanent competency suite
 
