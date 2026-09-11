@@ -71,13 +71,18 @@ namespace Bees.Tests.EditMode
 
             string guard = source.Substring(guardStart);
             const string assignment = "_stage.Camera.orthographicSize = RlOneVsOneTrainingBootstrap.CurrentCameraSize;";
-            int initializationCheck = guard.IndexOf("if (!_cameraInitialized)", StringComparison.Ordinal);
+            int initializationCheck = guard.IndexOf("if (_cameraInitialized)", StringComparison.Ordinal);
+            int returnAfterCheck = initializationCheck >= 0
+                ? guard.IndexOf("return;", initializationCheck, StringComparison.Ordinal)
+                : -1;
             int zoomAssignment = guard.IndexOf(assignment, StringComparison.Ordinal);
             int initialized = guard.IndexOf("_cameraInitialized = true;", StringComparison.Ordinal);
 
             Assert.That(guard, Does.Contain("private bool _cameraInitialized;"));
             Assert.That(initializationCheck, Is.GreaterThanOrEqualTo(0));
-            Assert.That(zoomAssignment, Is.GreaterThan(initializationCheck));
+            Assert.That(returnAfterCheck, Is.GreaterThan(initializationCheck),
+                "An already initialized camera should leave LateUpdate before resetting zoom.");
+            Assert.That(zoomAssignment, Is.GreaterThan(returnAfterCheck));
             Assert.That(initialized, Is.GreaterThan(zoomAssignment));
             Assert.That(guard.LastIndexOf(assignment, StringComparison.Ordinal), Is.EqualTo(zoomAssignment),
                 "The runtime guard should establish the training zoom once, not overwrite manual camera zoom changes every frame.");
