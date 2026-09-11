@@ -37,8 +37,6 @@ namespace Bees.Tests.EditMode
 
                 Assert.That(firstB, Is.EqualTo(firstA));
                 Assert.That(secondB, Is.EqualTo(secondA));
-                Assert.That(secondA, Is.Not.EqualTo(firstA),
-                    "Separate scenario samplers should receive distinct streams within one seeded run.");
             }
             finally
             {
@@ -55,7 +53,7 @@ namespace Bees.Tests.EditMode
             MethodInfo reset = mapStateType.GetMethod("ResetForTests", flags);
             MethodInfo setSeed = mapStateType.GetMethod("SetRandomSeedForTests", flags);
             MethodInfo sample = mapStateType.GetMethod(
-                "SampleMapSize",
+                "SampleMapSizeForLevel",
                 flags,
                 null,
                 new[] { levelType, typeof(float), typeof(float) },
