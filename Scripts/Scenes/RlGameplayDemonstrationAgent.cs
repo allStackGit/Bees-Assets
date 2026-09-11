@@ -20,20 +20,34 @@ using UnityEngine;
 /// never owns gameplay and can therefore be removed or fail without changing ship behavior.
 ///
 /// Capture is explicit opt-in via --rl-record-demonstrations. The resulting ML-Agents .demo files
-/// are written below Application.persistentDataPath/RlDemonstrations, separated into Human and
-/// HiveMind directories, and remain separate from PPO rollouts so a central trainer/uploader can
-/// consume them through an imitation-learning path.
+/// are written below Application.persistentDataPath/RlDemonstrations, partitioned by frozen policy
+/// ABI and then by Human/HiveMind source. They remain separate from PPO rollouts so a central
+/// trainer/uploader can consume them through an imitation-learning path.
 /// </summary>
 internal sealed class RlGameplayDemonstrationAgent : Agent
 {
     internal const string CaptureCommandLineFlag = "--rl-record-demonstrations";
     internal const string DemonstrationDirectoryName = "RlDemonstrations";
+    internal const string CaptureManifestFileName = "capture-manifest.json";
+    private const int CaptureManifestSchemaVersion = 1;
 
     private enum DemonstrationSource
     {
         None = 0,
         Human = 1,
         HiveMind = 2
+    }
+
+    [Serializable]
+    private sealed class DemonstrationCaptureManifest
+    {
+        public int schemaVersion;
+        public string behaviorName;
+        public int policyAbiVersion;
+        public string policySignature;
+        public int observationSize;
+        public int continuousActionCount;
+        public int[] discreteBranchSizes;
     }
 
     private static readonly List<RlGameplayDemonstrationAgent> Instances =
@@ -83,6 +97,12 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         }
 
         RlPolicySchema.ValidateOrThrow();
+        if (!TryEnsureCaptureManifest(out string manifestError))
+        {
+            Debug.LogError($"Passive RL demonstration capture disabled: {manifestError}");
+            yield break;
+        }
+
         _lastProvisionFrame = -1;
         ProvisionAgentsForSpawnedShips(stage, true);
 
@@ -130,6 +150,11 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         return GetSourceDirectoryName((DemonstrationSource)source);
     }
 
+    internal static string GetPolicyDirectoryNameForTests()
+    {
+        return GetPolicyDirectoryName();
+    }
+
     private static DemonstrationSource DetermineSource(
         bool isUserControlled,
         bool isHiveMindControlled,
@@ -159,14 +184,108 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         }
     }
 
+    private static string GetPolicyDirectoryName()
+    {
+        return $"PolicyV{RlPolicySchema.Version}";
+    }
+
     private static string GetDemonstrationRootDirectory()
     {
-        return Path.Combine(Application.persistentDataPath, DemonstrationDirectoryName);
+        return Path.Combine(
+            Application.persistentDataPath,
+            DemonstrationDirectoryName,
+            GetPolicyDirectoryName());
     }
 
     private static string GetDemonstrationDirectory(DemonstrationSource source)
     {
         return Path.Combine(GetDemonstrationRootDirectory(), GetSourceDirectoryName(source));
+    }
+
+    private static DemonstrationCaptureManifest CreateCaptureManifest()
+    {
+        return new DemonstrationCaptureManifest
+        {
+            schemaVersion = CaptureManifestSchemaVersion,
+            behaviorName = RlOneVsOneAgent.BehaviorName,
+            policyAbiVersion = RlPolicySchema.Version,
+            policySignature = RlPolicySchema.Signature,
+            observationSize = RlOneVsOneAgent.ObservationSize,
+            continuousActionCount = RlOneVsOneAgent.ContinuousActionCount,
+            discreteBranchSizes = RlOneVsOneAgent.CreateDiscreteBranchSizes()
+        };
+    }
+
+    private static bool TryEnsureCaptureManifest(out string error)
+    {
+        string root = GetDemonstrationRootDirectory();
+        string path = Path.Combine(root, CaptureManifestFileName);
+        DemonstrationCaptureManifest expected = CreateCaptureManifest();
+        try
+        {
+            Directory.CreateDirectory(root);
+            if (File.Exists(path))
+            {
+                DemonstrationCaptureManifest existing =
+                    JsonUtility.FromJson<DemonstrationCaptureManifest>(File.ReadAllText(path));
+                if (!CaptureManifestsMatch(existing, expected))
+                {
+                    error = $"capture manifest at {path} does not match policy ABI v{RlPolicySchema.Version}; " +
+                            "move or remove the incompatible capture directory before recording.";
+                    return false;
+                }
+                error = null;
+                return true;
+            }
+
+            string[] existingDemos = Directory.GetFiles(root, "*.demo", SearchOption.AllDirectories);
+            if (existingDemos.Length > 0)
+            {
+                error = $"capture directory {root} already contains demonstrations but no ABI manifest; " +
+                        "move the legacy files before recording so they are not silently relabeled.";
+                return false;
+            }
+
+            File.WriteAllText(path, JsonUtility.ToJson(expected, true));
+            error = null;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            error = $"could not validate demonstration capture metadata at {path}: " +
+                    $"{exception.GetType().Name}: {exception.Message}";
+            return false;
+        }
+    }
+
+    private static bool CaptureManifestsMatch(
+        DemonstrationCaptureManifest left,
+        DemonstrationCaptureManifest right)
+    {
+        if (left == null || right == null ||
+            left.schemaVersion != right.schemaVersion ||
+            !string.Equals(left.behaviorName, right.behaviorName, StringComparison.Ordinal) ||
+            left.policyAbiVersion != right.policyAbiVersion ||
+            !string.Equals(left.policySignature, right.policySignature, StringComparison.Ordinal) ||
+            left.observationSize != right.observationSize ||
+            left.continuousActionCount != right.continuousActionCount)
+        {
+            return false;
+        }
+
+        if (left.discreteBranchSizes == null || right.discreteBranchSizes == null ||
+            left.discreteBranchSizes.Length != right.discreteBranchSizes.Length)
+        {
+            return false;
+        }
+        for (int i = 0; i < left.discreteBranchSizes.Length; i++)
+        {
+            if (left.discreteBranchSizes[i] != right.discreteBranchSizes[i])
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void ProvisionAgentsForSpawnedShips(Stage stage, bool force = false)
