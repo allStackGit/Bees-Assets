@@ -86,6 +86,7 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
         self.assertAlmostEqual(result["spawn_separation_ratio_estimate"], 0.5, places=5)
         self.assertAlmostEqual(result["first_visible_enemy_distance"], 20.0, places=5)
         self.assertEqual(result["first_visible_enemy_record"], 1)
+        self.assertTrue(result["square_training_map_compatible"])
         self.assertEqual(
             result["registration_candidate"],
             {
@@ -104,6 +105,19 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
             suggest.infer_geometry_from_observations(
                 [observation(map_size=96), observation(map_size=80)]
             )
+
+    def test_rectangular_player_map_never_becomes_fake_square_registration_candidate(self):
+        values = observation(map_size=96)
+        # Preserve the 96-unit width but make the reconstructed height 64 units.
+        values[suggest.LEVEL_SIZE_Y_INDEX] = normalize_positive(54.0, 100.0)
+        result = suggest.infer_geometry_from_observations([values])
+
+        self.assertAlmostEqual(result["map_width_estimate"], 96.0, places=5)
+        self.assertAlmostEqual(result["map_height_estimate"], 64.0, places=5)
+        self.assertFalse(result["square_training_map_compatible"])
+        self.assertIsNone(result["map_size_estimate"])
+        self.assertIsNone(result["spawn_separation_ratio_estimate"])
+        self.assertIsNone(result["registration_candidate"])
 
     def test_suggestion_revalidates_approved_archive_and_remains_non_authoritative(self):
         with tempfile.TemporaryDirectory() as temp_dir:
