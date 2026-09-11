@@ -12,9 +12,9 @@ import argparse
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 from bees_continual_learning import (
@@ -65,7 +65,15 @@ def _validate_native_behavior(
 ) -> None:
     observation_specs = getattr(behavior_spec, "observation_specs", None)
     action_spec = getattr(behavior_spec, "action_spec", None)
-    if not isinstance(observation_specs, Sequence) or len(observation_specs) != 1:
+    if observation_specs is None:
+        raise CompatibilityError("Native demonstration is missing observation specifications.")
+    try:
+        observation_count = len(observation_specs)
+    except TypeError as exc:
+        raise CompatibilityError(
+            "Native demonstration observation specifications are malformed."
+        ) from exc
+    if observation_count != 1:
         raise CompatibilityError(
             "Native demonstration must contain exactly one vector observation matching BeesRL1v1."
         )
@@ -184,10 +192,15 @@ def ingest_native_demonstration(
             f"Refusing to ingest Hive Mind demonstration as human data: {source}"
         )
 
-    capture_manifest_path, capture_manifest, capture_manifest_hash = _load_capture_manifest(
-        source.parent,
-        store.config,
-    )
+    try:
+        capture_manifest_path, capture_manifest, capture_manifest_hash = _load_capture_manifest(
+            source.parent,
+            store.config,
+        )
+    except SystemExit as exc:
+        message = str(exc) or "Native demonstration capture manifest is invalid."
+        raise ValidationError(message) from exc
+
     total_source_bytes = source.stat().st_size + capture_manifest_path.stat().st_size
     if total_source_bytes > int(store.config["ingestion"]["max_payload_bytes"]):
         raise ValidationError(
@@ -212,6 +225,10 @@ def ingest_native_demonstration(
     if parsed_count < 2:
         raise ValidationError(
             "Native demonstration contains fewer than two records and therefore no trainable transition."
+        )
+    if parsed_count > int(store.config["ingestion"]["max_steps_per_match"]):
+        raise ValidationError(
+            "Native demonstration record count exceeds configured maximum."
         )
     _validate_native_behavior(behavior_spec, capture_manifest)
     trainable_example_count = parsed_count - 1
@@ -367,7 +384,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
         return 0
     except ContinualLearningError as exc:
-        print(f"error: {exc}", file=os.sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
 
