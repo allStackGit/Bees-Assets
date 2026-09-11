@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -15,6 +16,40 @@ wrapper = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = wrapper
 assert SPEC.loader is not None
 SPEC.loader.exec_module(wrapper)
+
+
+POLICY_SIGNATURE = (
+    "bees-rl-v7|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4701|cont=34|disc=2x16,5,65,65,65|"
+    "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|"
+    "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|"
+    "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|"
+    "self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|"
+    "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id"
+)
+CONTINUAL_CONFIG = {
+    "behavior_name": "BeesRL1v1",
+    "policy_abi_version": 7,
+    "policy_signature": POLICY_SIGNATURE,
+}
+CAPTURE_MANIFEST = {
+    "schemaVersion": 1,
+    "behaviorName": "BeesRL1v1",
+    "policyAbiVersion": 7,
+    "policySignature": POLICY_SIGNATURE,
+    "observationSize": 4701,
+    "continuousActionCount": 34,
+    "discreteBranchSizes": [2] * 16 + [5, 65, 65, 65],
+}
+
+
+def create_capture_layout(root: Path) -> Path:
+    policy_dir = root / "PolicyV7"
+    source = policy_dir / "Human"
+    source.mkdir(parents=True)
+    (policy_dir / "capture-manifest.json").write_text(
+        json.dumps(CAPTURE_MANIFEST, indent=2), encoding="utf-8"
+    )
+    return source
 
 
 class HumanDemoOptionTests(unittest.TestCase):
@@ -74,19 +109,18 @@ class HumanImitationSettingsTests(unittest.TestCase):
 
 
 class HumanDemoSnapshotTests(unittest.TestCase):
-    def test_snapshot_is_content_addressed_and_reusable(self):
+    def test_snapshot_is_content_addressed_reusable_and_preserves_capture_provenance(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            source = root / "Human"
-            source.mkdir()
+            source = create_capture_layout(root)
             (source / "human-s0.demo").write_bytes(b"human-demo-one")
             (source / "human-s1.demo").write_bytes(b"human-demo-two")
 
             first_path, first_hash, first_count = wrapper.snapshot_human_demonstrations(
-                source, root / "store"
+                source, root / "store", CONTINUAL_CONFIG
             )
             second_path, second_hash, second_count = wrapper.snapshot_human_demonstrations(
-                source, root / "store"
+                source, root / "store", CONTINUAL_CONFIG
             )
 
             self.assertEqual(first_path, second_path)
@@ -96,21 +130,97 @@ class HumanDemoSnapshotTests(unittest.TestCase):
             self.assertEqual(
                 (first_path / "human-s0.demo").read_bytes(), b"human-demo-one"
             )
-            self.assertTrue((first_path / "manifest.json").is_file())
+            self.assertTrue((first_path / "capture-manifest.json").is_file())
+            snapshot_manifest = json.loads(
+                (first_path / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(snapshot_manifest["schema_version"], 2)
+            self.assertEqual(
+                snapshot_manifest["capture_manifest"]["metadata"], CAPTURE_MANIFEST
+            )
+            self.assertEqual(
+                snapshot_manifest["capture_manifest"]["sha256"],
+                wrapper._sha256_file(root / "PolicyV7" / "capture-manifest.json"),
+            )
 
     def test_hivemind_files_are_rejected_from_human_dataset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            source = Path(temp_dir)
+            root = Path(temp_dir)
+            source = create_capture_layout(root)
             (source / "hivemind-s0.demo").write_bytes(b"not-human")
 
             with self.assertRaises(SystemExit):
-                wrapper.snapshot_human_demonstrations(source, source / "store")
+                wrapper.snapshot_human_demonstrations(
+                    source, root / "store", CONTINUAL_CONFIG
+                )
 
     def test_empty_directory_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = create_capture_layout(root)
             with self.assertRaises(SystemExit):
                 wrapper.snapshot_human_demonstrations(
-                    Path(temp_dir), Path(temp_dir) / "store"
+                    source, root / "store", CONTINUAL_CONFIG
+                )
+
+    def test_capture_manifest_is_required(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "PolicyV7" / "Human"
+            source.mkdir(parents=True)
+            (source / "human.demo").write_bytes(b"demo")
+
+            with self.assertRaises(SystemExit):
+                wrapper.snapshot_human_demonstrations(
+                    source, root / "store", CONTINUAL_CONFIG
+                )
+
+    def test_capture_manifest_must_match_behavior_abi_and_signature(self):
+        mismatches = (
+            ("behaviorName", "OtherBehavior"),
+            ("policyAbiVersion", 8),
+            ("policySignature", "not-the-frozen-signature"),
+        )
+        for field, value in mismatches:
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    source = create_capture_layout(root)
+                    manifest_path = root / "PolicyV7" / "capture-manifest.json"
+                    manifest = dict(CAPTURE_MANIFEST)
+                    manifest[field] = value
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    (source / "human.demo").write_bytes(b"demo")
+
+                    with self.assertRaises(SystemExit):
+                        wrapper.snapshot_human_demonstrations(
+                            source, root / "store", CONTINUAL_CONFIG
+                        )
+
+    def test_capture_directory_must_match_policy_version_and_human_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            wrong_policy = root / "PolicyV6"
+            source = wrong_policy / "Human"
+            source.mkdir(parents=True)
+            (wrong_policy / "capture-manifest.json").write_text(
+                json.dumps(CAPTURE_MANIFEST), encoding="utf-8"
+            )
+            (source / "human.demo").write_bytes(b"demo")
+            with self.assertRaises(SystemExit):
+                wrapper.snapshot_human_demonstrations(
+                    source, root / "store", CONTINUAL_CONFIG
+                )
+
+            hive_source = root / "PolicyV7" / "HiveMind"
+            hive_source.mkdir(parents=True)
+            (root / "PolicyV7" / "capture-manifest.json").write_text(
+                json.dumps(CAPTURE_MANIFEST), encoding="utf-8"
+            )
+            (hive_source / "hivemind.demo").write_bytes(b"demo")
+            with self.assertRaises(SystemExit):
+                wrapper.snapshot_human_demonstrations(
+                    hive_source, root / "store", CONTINUAL_CONFIG
                 )
 
 
@@ -160,6 +270,11 @@ class HumanImitationConfigTests(unittest.TestCase):
             self.assertEqual(replaced[0], str(generated))
 
     def test_existing_behavioral_cloning_is_not_silently_overridden(self):
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("PyYAML is not installed in this test environment")
+
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_config = root / "base.yaml"
