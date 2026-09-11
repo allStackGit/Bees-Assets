@@ -20,6 +20,10 @@ namespace Assets.Scripts.Entities.Ships
         private const float ChargeCycleSeconds = ChargeBuildDelaySeconds + ChargeDurationSeconds + ChargeCooldownSeconds;
 
         public bool HasCompletedRun;
+        /// <summary>
+        /// Existing gameplay/campaign flag. This retains its historical meaning: the wind-up has
+        /// completed and the active charge is beginning. RL wind-up reservation is tracked separately.
+        /// </summary>
         public bool HasStartedCharging, WaitingForNewCharge;
         public bool IsCharging;
         public int OriginalPower;
@@ -37,9 +41,19 @@ namespace Assets.Scripts.Entities.Ships
         private readonly WaitForSeconds _chargeDuration = new WaitForSeconds(ChargeDurationSeconds);
         private readonly WaitForSeconds _chargeCooldown = new WaitForSeconds(ChargeCooldownSeconds);
 
+        /// <summary>
+        /// Stable RL phase channel: 0 ready, 1/3 wind-up, 2/3 active charge, 1 cooldown.
+        /// </summary>
         internal float RlChargePhase => _chargePhase / 3f;
+
+        /// <summary>
+        /// True only when no wind-up, active charge, or cooldown is already reserved.
+        /// </summary>
         internal bool IsRlChargeReady => _chargePhase == 0;
 
+        /// <summary>
+        /// Normalized scaled-game time until another charge can begin. Zero means ready.
+        /// </summary>
         internal float RlChargeTimeUntilReadyFraction
         {
             get
@@ -283,6 +297,9 @@ namespace Assets.Scripts.Entities.Ships
             CannotChangeMovementOrders = false;
             SetCurrentSpeed(80, 80);
 
+            // Scripted commands may supply a target and retain their historical auto-aim. The
+            // ML-Agents directional movement path ignores HasTargetDirection, so its charge must
+            // explicitly lock the Direction field to the heading established before wind-up.
             if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)
             {
                 Direction = NormalizeDirection(Rotation);
@@ -304,6 +321,10 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
+        /// <summary>
+        /// Immediately stops the current charge and initiates the cooldown.
+        /// A negative lifecycle id means "the current charge" for external callers such as MapBorder.
+        /// </summary>
         public IEnumerator StopCharge(int lifecycleId = -1)
         {
             if (lifecycleId < 0)
