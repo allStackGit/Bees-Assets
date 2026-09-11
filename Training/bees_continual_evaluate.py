@@ -68,6 +68,17 @@ class MatchSummary:
     draws: int
     timeouts: int
     total_duration_seconds: float
+    candidate_starting_tsv: int = 0
+    candidate_final_tsv: int = 0
+    candidate_shots: int = 0
+    candidate_hits: int = 0
+    candidate_damage: int = 0
+    opponent_starting_tsv: int = 0
+    opponent_final_tsv: int = 0
+    opponent_shots: int = 0
+    opponent_hits: int = 0
+    opponent_damage: int = 0
+    telemetry_validated: bool = False
 
     @property
     def score_rate(self) -> float:
@@ -98,6 +109,17 @@ class MatchSummary:
             "win_rate": self.win_rate,
             "timeout_rate": self.timeout_rate,
             "average_duration_seconds": self.average_duration_seconds,
+            "candidate_starting_tsv": self.candidate_starting_tsv,
+            "candidate_final_tsv": self.candidate_final_tsv,
+            "candidate_shots": self.candidate_shots,
+            "candidate_hits": self.candidate_hits,
+            "candidate_damage": self.candidate_damage,
+            "opponent_starting_tsv": self.opponent_starting_tsv,
+            "opponent_final_tsv": self.opponent_final_tsv,
+            "opponent_shots": self.opponent_shots,
+            "opponent_hits": self.opponent_hits,
+            "opponent_damage": self.opponent_damage,
+            "telemetry_validated": self.telemetry_validated,
         }
 
 
@@ -110,6 +132,59 @@ class CompetencyCase:
     metric: str
     critical: bool
     env_args: Tuple[str, ...]
+
+
+def _validate_episode_result(result: EpisodeResult) -> None:
+    if result.episode_number <= 0:
+        raise EvaluationError("Evaluation result contained a non-positive episode number.")
+    if not math.isfinite(result.duration_seconds) or result.duration_seconds < 0:
+        raise EvaluationError("Evaluation result contained an invalid episode duration.")
+    if {result.bee_team_id, result.human_team_id} != {0, 1}:
+        raise EvaluationError(
+            "Evaluation result must assign Bees and Humans to teams 0 and 1 exactly."
+        )
+    if result.winning_team_id not in (-1, result.bee_team_id, result.human_team_id):
+        raise EvaluationError(
+            f"Evaluation result claimed unknown winning team {result.winning_team_id}."
+        )
+    if result.timed_out:
+        if result.winning_team_id != -1:
+            raise EvaluationError("Timed-out evaluation result must not claim a winning team.")
+        if result.winning_side != 0:
+            raise EvaluationError("Timed-out evaluation result must have winning side 0.")
+    elif result.winning_team_id == -1 and result.winning_side != 0:
+        raise EvaluationError("Drawn evaluation result must have winning side 0.")
+    elif result.winning_team_id != -1 and result.winning_side == 0:
+        raise EvaluationError("Winning evaluation result must identify a nonzero winning side.")
+
+    for label, value in (
+        ("bee_starting_tsv", result.bee_starting_tsv),
+        ("human_starting_tsv", result.human_starting_tsv),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise EvaluationError(f"Evaluation result {label} must be a positive integer.")
+    for label, value in (
+        ("bee_final_tsv", result.bee_final_tsv),
+        ("human_final_tsv", result.human_final_tsv),
+        ("bee_shots", result.bee_shots),
+        ("bee_hits", result.bee_hits),
+        ("bee_damage", result.bee_damage),
+        ("human_shots", result.human_shots),
+        ("human_hits", result.human_hits),
+        ("human_damage", result.human_damage),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise EvaluationError(
+                f"Evaluation result {label} must be a non-negative integer."
+            )
+    for side, hits, damage in (
+        ("bee", result.bee_hits, result.bee_damage),
+        ("human", result.human_hits, result.human_damage),
+    ):
+        if (hits == 0) != (damage == 0):
+            raise EvaluationError(
+                f"Evaluation result {side} hit/damage counters are inconsistent."
+            )
 
 
 def parse_episode_message(message: Any) -> EpisodeResult:
@@ -139,26 +214,22 @@ def parse_episode_message(message: Any) -> EpisodeResult:
         human_hits=message.read_int32(),
         human_damage=message.read_int32(),
     )
-    if result.episode_number <= 0:
-        raise EvaluationError("Evaluation result contained a non-positive episode number.")
-    if not math.isfinite(result.duration_seconds) or result.duration_seconds < 0:
-        raise EvaluationError("Evaluation result contained an invalid episode duration.")
-    if result.bee_team_id == result.human_team_id:
-        raise EvaluationError("Evaluation result assigned both sides to the same team.")
-    if result.timed_out and result.winning_team_id != -1:
-        raise EvaluationError("Timed-out evaluation result must not claim a winning team.")
-    if result.winning_team_id not in (-1, result.bee_team_id, result.human_team_id):
-        raise EvaluationError(
-            f"Evaluation result claimed unknown winning team {result.winning_team_id}."
-        )
+    _validate_episode_result(result)
     return result
 
 
 def summarize_results(results: Sequence[EpisodeResult], candidate_team_id: int) -> MatchSummary:
+    if candidate_team_id not in (0, 1):
+        raise EvaluationError("Candidate team id must be 0 or 1.")
     wins = losses = draws = timeouts = 0
     duration = 0.0
+    candidate_starting_tsv = candidate_final_tsv = 0
+    candidate_shots = candidate_hits = candidate_damage = 0
+    opponent_starting_tsv = opponent_final_tsv = 0
+    opponent_shots = opponent_hits = opponent_damage = 0
     seen_episodes = set()
     for result in results:
+        _validate_episode_result(result)
         if result.episode_number in seen_episodes:
             raise EvaluationError(f"Duplicate evaluation episode {result.episode_number}.")
         seen_episodes.add(result.episode_number)
@@ -176,6 +247,31 @@ def summarize_results(results: Sequence[EpisodeResult], candidate_team_id: int) 
             draws += 1
         else:
             losses += 1
+
+        candidate_is_bee = result.bee_team_id == candidate_team_id
+        if candidate_is_bee:
+            candidate_starting_tsv += result.bee_starting_tsv
+            candidate_final_tsv += result.bee_final_tsv
+            candidate_shots += result.bee_shots
+            candidate_hits += result.bee_hits
+            candidate_damage += result.bee_damage
+            opponent_starting_tsv += result.human_starting_tsv
+            opponent_final_tsv += result.human_final_tsv
+            opponent_shots += result.human_shots
+            opponent_hits += result.human_hits
+            opponent_damage += result.human_damage
+        else:
+            candidate_starting_tsv += result.human_starting_tsv
+            candidate_final_tsv += result.human_final_tsv
+            candidate_shots += result.human_shots
+            candidate_hits += result.human_hits
+            candidate_damage += result.human_damage
+            opponent_starting_tsv += result.bee_starting_tsv
+            opponent_final_tsv += result.bee_final_tsv
+            opponent_shots += result.bee_shots
+            opponent_hits += result.bee_hits
+            opponent_damage += result.bee_damage
+
     return MatchSummary(
         matches=len(results),
         wins=wins,
@@ -183,7 +279,85 @@ def summarize_results(results: Sequence[EpisodeResult], candidate_team_id: int) 
         draws=draws,
         timeouts=timeouts,
         total_duration_seconds=duration,
+        candidate_starting_tsv=candidate_starting_tsv,
+        candidate_final_tsv=candidate_final_tsv,
+        candidate_shots=candidate_shots,
+        candidate_hits=candidate_hits,
+        candidate_damage=candidate_damage,
+        opponent_starting_tsv=opponent_starting_tsv,
+        opponent_final_tsv=opponent_final_tsv,
+        opponent_shots=opponent_shots,
+        opponent_hits=opponent_hits,
+        opponent_damage=opponent_damage,
+        telemetry_validated=True,
     )
+
+
+def _validate_match_summary(
+    summary: MatchSummary,
+    *,
+    expected_matches: int,
+) -> MatchSummary:
+    if not isinstance(summary, MatchSummary):
+        raise EvaluationError(
+            f"Match runner returned {type(summary).__name__}; expected MatchSummary."
+        )
+    if summary.matches != expected_matches:
+        raise EvaluationError(
+            f"Match runner completed {summary.matches} matches; requested {expected_matches}."
+        )
+    for label, value in (
+        ("matches", summary.matches),
+        ("wins", summary.wins),
+        ("losses", summary.losses),
+        ("draws", summary.draws),
+        ("timeouts", summary.timeouts),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise EvaluationError(f"Match summary {label} must be a non-negative integer.")
+    if summary.wins + summary.losses + summary.draws != summary.matches:
+        raise EvaluationError("Match summary outcome counts do not equal matches.")
+    if summary.timeouts > summary.draws:
+        raise EvaluationError("Match summary timeouts cannot exceed draws.")
+    if (
+        not isinstance(summary.total_duration_seconds, (int, float))
+        or isinstance(summary.total_duration_seconds, bool)
+        or not math.isfinite(float(summary.total_duration_seconds))
+        or summary.total_duration_seconds < 0
+    ):
+        raise EvaluationError("Match summary duration must be finite and non-negative.")
+    for label, value in (
+        ("candidate_starting_tsv", summary.candidate_starting_tsv),
+        ("candidate_final_tsv", summary.candidate_final_tsv),
+        ("candidate_shots", summary.candidate_shots),
+        ("candidate_hits", summary.candidate_hits),
+        ("candidate_damage", summary.candidate_damage),
+        ("opponent_starting_tsv", summary.opponent_starting_tsv),
+        ("opponent_final_tsv", summary.opponent_final_tsv),
+        ("opponent_shots", summary.opponent_shots),
+        ("opponent_hits", summary.opponent_hits),
+        ("opponent_damage", summary.opponent_damage),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise EvaluationError(
+                f"Match summary {label} must be a non-negative integer."
+            )
+    if summary.telemetry_validated:
+        if summary.matches > 0 and (
+            summary.candidate_starting_tsv <= 0 or summary.opponent_starting_tsv <= 0
+        ):
+            raise EvaluationError(
+                "Validated match summary must retain positive starting TSV evidence."
+            )
+        for side, hits, damage in (
+            ("candidate", summary.candidate_hits, summary.candidate_damage),
+            ("opponent", summary.opponent_hits, summary.opponent_damage),
+        ):
+            if (hits == 0) != (damage == 0):
+                raise EvaluationError(
+                    f"Validated match summary {side} hit/damage counters are inconsistent."
+                )
+    return summary
 
 
 def behavior_base_name(behavior_name: str) -> str:
@@ -546,7 +720,10 @@ def run_match_group(
     finally:
         environment.close()
 
-    return summarize_results(completed, candidate_team_id=0)
+    return _validate_match_summary(
+        summarize_results(completed, candidate_team_id=0),
+        expected_matches=matches,
+    )
 
 
 def _validate_env_args(values: Sequence[str]) -> Tuple[str, ...]:
@@ -583,26 +760,41 @@ def load_competency_suite(
     for index, item in enumerate(cases):
         if not isinstance(item, dict):
             raise ValidationError(f"Competency case {index} must be an object.")
-        name = str(item.get("name", "")).strip()
-        opponent = str(item.get("opponent_model_id", "")).strip()
-        if not name or not opponent:
+        name_value = item.get("name")
+        opponent_value = item.get("opponent_model_id")
+        if not isinstance(name_value, str) or not name_value.strip():
+            raise ValidationError(f"Competency case {index} requires a non-empty string name.")
+        if not isinstance(opponent_value, str) or not opponent_value.strip():
             raise ValidationError(
-                f"Competency case {index} requires name and opponent_model_id."
+                f"Competency case {index} requires a non-empty string opponent_model_id."
             )
+        name = name_value.strip()
+        opponent = opponent_value.strip()
         if name in seen:
             raise ValidationError(f"Duplicate competency case name {name!r}.")
         seen.add(name)
         matches = item.get("matches", default_matches)
         minimum = item.get("minimum")
-        metric = str(item.get("metric", "score_rate"))
+        metric = item.get("metric", "score_rate")
+        critical = item.get("critical", True)
+        env_args = item.get("env_args", [])
         if not isinstance(matches, int) or isinstance(matches, bool) or matches <= 0:
             raise ValidationError(f"Competency {name!r} matches must be a positive integer.")
-        if not isinstance(minimum, (int, float)) or isinstance(minimum, bool) or not math.isfinite(float(minimum)):
-            raise ValidationError(f"Competency {name!r} minimum must be finite.")
-        if metric not in {"score_rate", "win_rate", "non_timeout_rate"}:
+        if (
+            not isinstance(minimum, (int, float))
+            or isinstance(minimum, bool)
+            or not math.isfinite(float(minimum))
+            or not 0 <= float(minimum) <= 1
+        ):
+            raise ValidationError(f"Competency {name!r} minimum must be in [0,1].")
+        if not isinstance(metric, str) or metric not in {"score_rate", "win_rate", "non_timeout_rate"}:
             raise ValidationError(
                 f"Competency {name!r} metric {metric!r} is unsupported."
             )
+        if not isinstance(critical, bool):
+            raise ValidationError(f"Competency {name!r} critical must be boolean.")
+        if not isinstance(env_args, list):
+            raise ValidationError(f"Competency {name!r} env_args must be a list.")
         result.append(
             CompetencyCase(
                 name=name,
@@ -610,8 +802,8 @@ def load_competency_suite(
                 matches=matches,
                 minimum=float(minimum),
                 metric=metric,
-                critical=bool(item.get("critical", True)),
-                env_args=_validate_env_args(item.get("env_args", [])),
+                critical=critical,
+                env_args=_validate_env_args(env_args),
             )
         )
     return result
@@ -725,6 +917,16 @@ def evaluate_candidate(
     behavior_name = store.compatibility.behavior_name
     champion_id = store.current_champion_id()
     run_number = 0
+    completed_match_groups = 0
+    validated_summaries: List[MatchSummary] = []
+    authoritative_runner = match_runner is run_match_group
+
+    def accept_summary(summary: MatchSummary, matches: int) -> MatchSummary:
+        nonlocal completed_match_groups
+        validated = _validate_match_summary(summary, expected_matches=matches)
+        completed_match_groups += 1
+        validated_summaries.append(validated)
+        return validated
 
     def run(opponent_id: str, matches: int, extra_args: Sequence[str] = ()) -> MatchSummary:
         nonlocal run_number
@@ -735,7 +937,7 @@ def evaluate_candidate(
         current_worker = worker_id + run_number
         current_seed = seed + run_number
         run_number += 1
-        return match_runner(
+        summary = match_runner(
             environment_path=environment_path,
             candidate_model_path=candidate_path,
             opponent_model_path=opponent_path,
@@ -749,6 +951,7 @@ def evaluate_candidate(
             no_graphics=no_graphics,
             max_environment_steps_per_match=max_environment_steps_per_match,
         )
+        return accept_summary(summary, matches)
 
     champion_comparison: Optional[Dict[str, Any]] = None
     if champion_id is not None:
@@ -784,19 +987,22 @@ def evaluate_candidate(
             opponent_path = _model_path(store, opponent_id)
             current_worker = worker_id + run_number
             run_number += 1
-            baseline_summary = match_runner(
-                environment_path=environment_path,
-                candidate_model_path=champion_path,
-                opponent_model_path=opponent_path,
-                matches=historical_match_count,
-                behavior_name=behavior_name,
-                env_args=base_env_args,
-                seed=paired_seed,
-                worker_id=current_worker,
-                timeout_wait=timeout_wait,
-                onnx_provider=onnx_provider,
-                no_graphics=no_graphics,
-                max_environment_steps_per_match=max_environment_steps_per_match,
+            baseline_summary = accept_summary(
+                match_runner(
+                    environment_path=environment_path,
+                    candidate_model_path=champion_path,
+                    opponent_model_path=opponent_path,
+                    matches=historical_match_count,
+                    behavior_name=behavior_name,
+                    env_args=base_env_args,
+                    seed=paired_seed,
+                    worker_id=current_worker,
+                    timeout_wait=timeout_wait,
+                    onnx_provider=onnx_provider,
+                    no_graphics=no_graphics,
+                    max_environment_steps_per_match=max_environment_steps_per_match,
+                ),
+                historical_match_count,
             )
             baseline_rate = baseline_summary.win_rate
         entry: Dict[str, Any] = {
@@ -827,11 +1033,21 @@ def evaluate_candidate(
                 "score": score,
                 "minimum": case.minimum,
                 "critical": case.critical,
-                "matches": case.matches,
+                "matches": summary.matches,
                 "env_args": list(case.env_args),
                 "summary": summary.to_dict(),
             }
         )
+
+    all_match_groups_completed = run_number > 0 and completed_match_groups == run_number
+    all_authoritative_telemetry_validated = (
+        all_match_groups_completed
+        and bool(validated_summaries)
+        and all(summary.telemetry_validated for summary in validated_summaries)
+    )
+    runtime_compatible = authoritative_runner and all_match_groups_completed
+    runtime_checks_passed = authoritative_runner and all_match_groups_completed
+    behavior_sanity_passed = authoritative_runner and all_authoritative_telemetry_validated
 
     report: Dict[str, Any] = {
         "candidate_model_id": candidate_model_id,
@@ -839,9 +1055,9 @@ def evaluate_candidate(
         "candidate_vs_champion": champion_comparison,
         "historical": historical_results,
         "competencies": competency_results,
-        "behavior_sanity_passed": True,
-        "runtime_compatible": True,
-        "runtime_checks_passed": True,
+        "behavior_sanity_passed": behavior_sanity_passed,
+        "runtime_compatible": runtime_compatible,
+        "runtime_checks_passed": runtime_checks_passed,
         "evaluator": {
             "protocol_version": EVALUATION_PROTOCOL_VERSION,
             "behavior_name": behavior_name,
@@ -850,6 +1066,11 @@ def evaluate_candidate(
             "base_env_args": list(base_env_args),
             "seed": seed,
             "match_groups": run_number,
+            "completed_match_groups": completed_match_groups,
+            "authoritative_match_runner": authoritative_runner,
+            "authoritative_telemetry_validated": all_authoritative_telemetry_validated,
+            "artifact_integrity_verified": True,
+            "compatibility_metadata_verified": True,
         },
     }
     return report
