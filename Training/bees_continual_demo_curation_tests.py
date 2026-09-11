@@ -27,6 +27,7 @@ def _load(name: str):
 continual = _load("bees_continual_learning")
 train = _load("bees_continual_train")
 native = _load("bees_continual_native_demo")
+contributors = _load("bees_continual_demo_contributors")
 public = _load("bees_continual_public_demo")
 curation = _load("bees_continual_demo_curation")
 
@@ -83,7 +84,7 @@ class PublicDemoCurationTests(unittest.TestCase):
             "discreteBranchSizes": DISCRETE_BRANCHES,
         }
 
-    def ingest_public(self, payload: bytes):
+    def ingest_public(self, payload: bytes, *, uploader_user_id=None):
         self.counter += 1
         server_batch = f"rl-demo-{self.counter:032x}"
         demo_path = self.incoming / f"{server_batch}.demo"
@@ -92,11 +93,12 @@ class PublicDemoCurationTests(unittest.TestCase):
         demo_path.write_bytes(payload)
         manifest = self.manifest()
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        user_id = uploader_user_id or str(76561198012345000 + self.counter)
         metadata = {
             "schemaVersion": 1,
             "batchId": server_batch,
             "demonstrationId": f"v7-{self.counter:024x}",
-            "uploaderUserId": str(76561198012345000 + self.counter),
+            "uploaderUserId": user_id,
             "gameBuildVersion": "2026.09.11+build",
             "source": "Human",
             "trust": "authenticated-quarantine",
@@ -108,20 +110,23 @@ class PublicDemoCurationTests(unittest.TestCase):
             "manifest": manifest,
         }
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-        return public.ingest_public_quarantine(
+        result = public.ingest_public_quarantine(
             self.store,
             metadata_path,
             model_id=self.model["model_id"],
             loader=self.loader,
         )
+        result = dict(result)
+        result["test_uploader_user_id"] = user_id
+        return result
 
-    def approve(self, batch_id: str, *, reason="useful ranged play"):
+    def approve(self, batch_id: str, *, reason="useful ranged play", quality_score=0.9):
         return curation.approve_public_batch(
             self.store,
             batch_id,
             reviewer="operator-test",
             reason=reason,
-            quality_score=0.9,
+            quality_score=quality_score,
         )
 
     def test_public_batch_requires_explicit_approval_before_materialization(self):
@@ -132,6 +137,19 @@ class PublicDemoCurationTests(unittest.TestCase):
                 self.store,
                 [ingested["batch_id"]],
             )
+
+    def test_ingestion_keeps_only_store_local_contributor_bucket(self):
+        ingested = self.ingest_public(b"public-demo-contributor")
+        record_path = Path(ingested["public_contributor_record_path"])
+        text = record_path.read_text(encoding="utf-8")
+        record = json.loads(text)
+
+        self.assertNotIn(ingested["test_uploader_user_id"], text)
+        self.assertRegex(record["contributor_bucket"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            contributors.load_public_contributor_buckets(self.store, ingested["batch_id"]),
+            (record["contributor_bucket"],),
+        )
 
     def test_approval_is_immutable_and_same_decision_is_idempotent(self):
         ingested = self.ingest_public(b"public-demo-two")
@@ -186,6 +204,30 @@ class PublicDemoCurationTests(unittest.TestCase):
         with self.assertRaises(continual.ValidationError):
             self.approve(ingested["batch_id"])
 
+    def test_quality_floor_blocks_low_quality_approval_from_training_set(self):
+        ingested = self.ingest_public(b"public-demo-low-quality")
+        self.approve(ingested["batch_id"], quality_score=0.49)
+
+        with self.assertRaises(continual.ValidationError):
+            curation.materialize_approved_training_set(
+                self.store,
+                [ingested["batch_id"]],
+            )
+
+    def test_per_contributor_cap_prevents_one_player_dominating_set(self):
+        self.store.config["human_imitation"]["public_max_batches_per_contributor"] = 1
+        user_id = "76561198099999999"
+        first = self.ingest_public(b"same-player-one", uploader_user_id=user_id)
+        second = self.ingest_public(b"same-player-two", uploader_user_id=user_id)
+        self.approve(first["batch_id"])
+        self.approve(second["batch_id"])
+
+        with self.assertRaises(continual.ValidationError):
+            curation.materialize_approved_training_set(
+                self.store,
+                [first["batch_id"], second["batch_id"]],
+            )
+
     def test_materialized_set_contains_only_explicitly_selected_approved_batches(self):
         first = self.ingest_public(b"public-demo-four")
         second = self.ingest_public(b"public-demo-five")
@@ -202,6 +244,7 @@ class PublicDemoCurationTests(unittest.TestCase):
         self.assertEqual(files, [f"{first['batch_id']}.demo"])
         self.assertEqual(result["batch_count"], 1)
         self.assertEqual(result["example_count"], first["example_count"])
+        self.assertEqual(result["contributor_bucket_count"], 1)
         self.assertNotIn(second["batch_id"], Path(result["manifest_path"]).read_text(encoding="utf-8"))
 
         source, demos, _, capture, _ = train.validate_human_demonstration_directory(
