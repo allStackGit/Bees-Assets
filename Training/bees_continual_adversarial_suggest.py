@@ -43,7 +43,7 @@ FIRST_ENEMY_Y_INDEX = FIRST_ENEMY_SLOT_INDEX + 2
 LEVEL_SIZE_NORMALIZATION_SCALE = 100.0
 LOCAL_DISTANCE_SQUASH_SCALE = 40.0
 # ABI v7 observations use Level.Min/Max, which subtract ConfigData.MapEdgePadding=(5,5)
-# from each edge of the square training map. Keep this guarded by a focused source-level test.
+# from each edge. Keep this guarded by a focused source-level test.
 MAP_EDGE_PADDING_PER_SIDE = 5.0
 
 
@@ -140,8 +140,17 @@ def infer_geometry_from_observations(
             "refusing to infer one tactical map size."
         )
 
-    usable_mean = (first_usable_x + first_usable_y) * 0.5
-    map_size_estimate = usable_mean + MAP_EDGE_PADDING_PER_SIDE * 2.0
+    map_width_estimate = first_usable_x + MAP_EDGE_PADDING_PER_SIDE * 2.0
+    map_height_estimate = first_usable_y + MAP_EDGE_PADDING_PER_SIDE * 2.0
+    square_tolerance = max(0.05, max(map_width_estimate, map_height_estimate) * 0.01)
+    square_training_map_compatible = (
+        abs(map_width_estimate - map_height_estimate) <= square_tolerance
+    )
+    map_size_estimate = (
+        (map_width_estimate + map_height_estimate) * 0.5
+        if square_training_map_compatible
+        else None
+    )
 
     first = decoded[0]
     normalized_x = first[SELF_POSITION_X_INDEX]
@@ -154,8 +163,8 @@ def infer_geometry_from_observations(
     spawn_separation_estimate = first_center_radius * 2.0
     spawn_ratio_estimate = (
         spawn_separation_estimate / map_size_estimate
-        if map_size_estimate > 0.0
-        else 0.0
+        if map_size_estimate is not None and map_size_estimate > 0.0
+        else None
     )
 
     first_enemy_distance = None
@@ -176,7 +185,9 @@ def infer_geometry_from_observations(
         break
 
     registration_eligible = (
-        map_size_estimate >= 10.0
+        map_size_estimate is not None
+        and map_size_estimate >= 10.0
+        and spawn_ratio_estimate is not None
         and spawn_ratio_estimate > 0.0
         and spawn_ratio_estimate <= MAX_SPAWN_SEPARATION_RATIO
     )
@@ -185,6 +196,9 @@ def infer_geometry_from_observations(
             "x": first_usable_x,
             "y": first_usable_y,
         },
+        "map_width_estimate": map_width_estimate,
+        "map_height_estimate": map_height_estimate,
+        "square_training_map_compatible": square_training_map_compatible,
         "map_size_estimate": map_size_estimate,
         "first_record_center_distance": first_center_radius,
         "spawn_separation_estimate": spawn_separation_estimate,
@@ -246,7 +260,8 @@ def suggest_tactical_geometry(
         "inferred": inferred,
         "authoritative": False,
         "caveats": [
-            "Map size is reconstructed from ABI v7 usable Level bounds plus the current 5-unit edge padding per side.",
+            "Map dimensions are reconstructed from ABI v7 usable Level bounds plus the current 5-unit edge padding per side.",
+            "Only square captures can become a direct registration_candidate because the current dedicated tactical replay arena is square.",
             "Spawn separation is estimated from the first recorded ship position and is strongest for 1v1 captures before meaningful movement.",
             "Multi-ship formation offsets or delayed recording can make the spawn-separation estimate approximate.",
             "First visible enemy distance is first recorded contact distance, not necessarily initial spawn separation.",
