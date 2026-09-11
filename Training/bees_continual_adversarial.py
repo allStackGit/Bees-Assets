@@ -111,7 +111,50 @@ def _read_scenario(store: ContinualLearningStore, scenario_id: str) -> Mapping[s
     expected_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     if identity_sha256 != expected_hash or scenario_id != f"adv-{expected_hash[:24]}":
         raise ValidationError(f"Adversarial scenario identity hash mismatch: {scenario_id}")
+    if identity.get("policy_abi_version") != store.compatibility.policy_abi_version:
+        raise ValidationError(
+            f"Adversarial scenario {scenario_id} targets policy ABI "
+            f"{identity.get('policy_abi_version')!r}, not current ABI {store.compatibility.policy_abi_version}."
+        )
     return value
+
+
+def _validate_registered_sources(
+    store: ContinualLearningStore,
+    scenario_id: str,
+    identity: Mapping[str, object],
+) -> None:
+    sources = identity.get("sources")
+    if not isinstance(sources, list) or not sources or len(sources) > MAX_SCENARIO_SOURCE_BATCHES:
+        raise ValidationError(f"Adversarial scenario {scenario_id} has invalid source provenance.")
+
+    seen = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            raise ValidationError(f"Adversarial scenario {scenario_id} has invalid source provenance.")
+        batch_id = source.get("batch_id")
+        if not isinstance(batch_id, str) or not _BATCH_ID.fullmatch(batch_id) or batch_id in seen:
+            raise ValidationError(f"Adversarial scenario {scenario_id} has invalid source batch identity.")
+        seen.add(batch_id)
+
+        # _approved_archive rechecks current approval/revocation state plus immutable archive hashes.
+        # A later revocation therefore disables every scenario derived from that batch at launch time.
+        archive = _approved_archive(store, batch_id)
+        approval_hash = sha256_bytes(archive["approval_path"].read_bytes())
+        envelope = archive["envelope"]
+        expected = {
+            "payload_sha256": archive["row"]["payload_sha256"],
+            "demo_sha256": archive["demo_sha256"],
+            "approval_sha256": approval_hash,
+            "model_id": envelope.get("model_id"),
+            "game_build_version": envelope.get("game_build_version"),
+        }
+        for key, expected_value in expected.items():
+            if source.get(key) != expected_value:
+                raise ValidationError(
+                    f"Adversarial scenario {scenario_id} source {batch_id} no longer matches "
+                    f"its approved immutable archive ({key})."
+                )
 
 
 def register_player_derived_scenario(
@@ -215,6 +258,7 @@ def encode_scenarios_for_unity(
     for scenario_id in normalized:
         scenario = _read_scenario(store, scenario_id)
         identity = scenario["identity"]
+        _validate_registered_sources(store, scenario_id, identity)
         bees = _parse_composition(identity.get("bee_composition"), "bee_composition")
         humans = _parse_composition(identity.get("human_composition"), "human_composition")
         if len(bees) != len(humans):
