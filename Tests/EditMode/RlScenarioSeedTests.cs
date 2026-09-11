@@ -11,37 +11,30 @@ namespace Bees.Tests.EditMode
     public class RlScenarioSeedTests
     {
         [Test]
-        public void ScenarioSeedIsRepeatableFromUnityRandomState()
+        public void ScenarioSeedDerivationIsStableAndSeparatesArenaAndStream()
         {
             const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
             Type seedType = RuntimeAssembly.GetType("RlOneVsOneScenarioSeed");
-            MethodInfo ensureInitialized = seedType.GetMethod("EnsureMlAgentsSeedIsInitialized", flags);
-            MethodInfo create = seedType.GetMethod("Create", flags);
+            MethodInfo derive = seedType.GetMethod("Derive", flags);
+            FieldInfo matchupSaltField = seedType.GetField("MatchupStreamSalt", flags);
+            FieldInfo mapSaltField = seedType.GetField("MapSizeStreamSalt", flags);
 
-            Assert.That(ensureInitialized, Is.Not.Null);
-            Assert.That(create, Is.Not.Null);
+            Assert.That(derive, Is.Not.Null);
+            Assert.That(matchupSaltField, Is.Not.Null);
+            Assert.That(mapSaltField, Is.Not.Null);
 
-            // Initialize Academy before taking control of UnityEngine.Random so this test exercises
-            // only the scenario-seed derivation rather than one-time ML-Agents startup side effects.
-            ensureInitialized.Invoke(null, null);
-            UnityEngine.Random.State previousState = UnityEngine.Random.state;
-            try
-            {
-                UnityEngine.Random.InitState(731947);
-                int firstA = (int)create.Invoke(null, null);
-                int secondA = (int)create.Invoke(null, null);
+            int matchupSalt = (int)matchupSaltField.GetRawConstantValue();
+            int mapSalt = (int)mapSaltField.GetRawConstantValue();
+            object[] arenaZeroMatchup = { 731947, 0, matchupSalt };
 
-                UnityEngine.Random.InitState(731947);
-                int firstB = (int)create.Invoke(null, null);
-                int secondB = (int)create.Invoke(null, null);
+            int first = (int)derive.Invoke(null, arenaZeroMatchup);
+            int repeated = (int)derive.Invoke(null, arenaZeroMatchup);
+            int otherArena = (int)derive.Invoke(null, new object[] { 731947, 1, matchupSalt });
+            int otherStream = (int)derive.Invoke(null, new object[] { 731947, 0, mapSalt });
 
-                Assert.That(firstB, Is.EqualTo(firstA));
-                Assert.That(secondB, Is.EqualTo(secondA));
-            }
-            finally
-            {
-                UnityEngine.Random.state = previousState;
-            }
+            Assert.That(repeated, Is.EqualTo(first));
+            Assert.That(otherArena, Is.Not.EqualTo(first));
+            Assert.That(otherStream, Is.Not.EqualTo(first));
         }
 
         [Test]
@@ -94,14 +87,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void RuntimeScenarioSamplersNoLongerUseGuidSeeds()
+        public void RuntimeScenarioSamplersUseMlAgentsRootAndStableArenaStreams()
         {
             string matchups = ReadSource("Scripts", "Scenes", "RlOneVsOnePerArenaMatchups.cs");
             string mapSizes = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
 
+            Assert.That(matchups, Does.Contain("_ = Academy.Instance;"));
+            Assert.That(matchups, Does.Contain("UnityEngine.Random.Range(0, int.MaxValue)"));
+            Assert.That(matchups, Does.Contain("GetArenaIndex(level)"));
             Assert.That(matchups, Does.Contain(
-                "new RlOneVsOneEpisodeMatchupSelector(options, RlOneVsOneScenarioSeed.Create())"));
-            Assert.That(mapSizes, Does.Contain("new System.Random(RlOneVsOneScenarioSeed.Create())"));
+                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt)"));
+            Assert.That(mapSizes, Does.Contain(
+                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt)"));
             Assert.That(matchups, Does.Not.Contain("Guid.NewGuid"));
             Assert.That(mapSizes, Does.Not.Contain("Guid.NewGuid"));
         }
