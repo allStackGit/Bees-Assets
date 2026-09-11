@@ -39,11 +39,17 @@ RlDemonstrations/
     capture-manifest.json
     Human/
       human-s0.demo
+      human-cap-s0.demo
       ...
     HiveMind/
       hivemind-s0.demo
+      hive-cap-s0.demo
       ...
 ```
+
+The passive recorder continuously captures movement, weapon aiming, and weapon firing. Successful one-shot capability events are additionally written as isolated native ML-Agents demonstration episodes by `RlGameplayDemonstrationCapabilityCapture`. This covers ship specials, mining, healing, and warp. Each event sample copies the matching passive agent's most recent policy observation and stored control action, changes only the special-action branch, and writes a terminal record immediately after it. That keeps state-changing events paired with the decision state that preceded them and ensures the ML-Agents demonstration loader retains the event sample even if the ship leaves the level immediately afterward. If there is not yet a complete matching passive observation/action, the event is skipped rather than fabricating a label.
+
+The capability-event writer uses a narrow reflection bridge to the pinned ML-Agents 1.1.0 `DemonstrationRecorder`/`DemonstrationWriter` internals and to the passive recorder's current ship binding. `BeesFoundation` tests guard those reflection contracts so a package or implementation change fails visibly instead of silently corrupting demonstrations.
 
 To include a trusted set of native ML-Agents human `.demo` files in a continual training run, pass the current policy ABI's `Human` directory to the continual wrapper:
 
@@ -60,7 +66,7 @@ Before ML-Agents starts, the wrapper validates that the directory contains non-e
 
 The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI.
 
-This path is for explicitly selected/trusted local demonstrations. Authenticated public-client upload, abuse controls, and central native `.demo` ingestion are still separate work. One-shot ship specials, mining, healing, and warp are also not yet labeled by the passive recorder; those require authoritative pre-event capture so destructive actions are not paired with post-destruction observations.
+This path is for explicitly selected/trusted local demonstrations. Authenticated public-client upload, abuse controls, and central native `.demo` ingestion are still separate work.
 
 ## Permanent competency suite
 
