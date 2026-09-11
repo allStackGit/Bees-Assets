@@ -12,7 +12,6 @@ not copied into the continual-learning store.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -26,7 +25,6 @@ from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
     ValidationError,
-    canonical_json,
     load_config,
     sha256_file,
 )
