@@ -75,6 +75,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CatalogRejectsIdentityHashMismatchBeforeUse()
+        {
+            string replayPath = WriteReplay(frameCount: 1);
+            string relative = Path.GetFileName(replayPath).Replace('\\', '/');
+            string hash = Sha256(File.ReadAllBytes(replayPath));
+            string path = Path.Combine(_tempDirectory, "bad-catalog-hash.json");
+            File.WriteAllText(
+                path,
+                CatalogJson(
+                    "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
+                    relative,
+                    hash,
+                    1,
+                    catalogHash: new string('0', 64)));
+            AssertLoadFails(path);
+        }
+
+        [Test]
         public void CatalogRejectsMalformedContentIdsAndRootedReplayPath()
         {
             string replayPath = WriteReplay(frameCount: 1);
@@ -157,20 +175,40 @@ namespace Bees.Tests.EditMode
             string scenarioId,
             string replayPath,
             string replayHash,
-            int frameCount)
+            int frameCount,
+            string catalogHash = null)
         {
+            string identity = CatalogIdentityJson(scenarioId, replayPath, replayHash, frameCount);
+            string hash = catalogHash ?? Sha256(Encoding.UTF8.GetBytes(identity));
             return "{" +
                    "\"schemaVersion\":1," +
-                   "\"catalogSha256\":\"" + new string('a', 64) + "\"," +
+                   "\"catalogSha256\":\"" + hash + "\"," +
                    "\"entries\":[{" +
-                   "\"scenarioId\":\"" + scenarioId + "\"," +
+                   "\"scenarioId\":\"" + EscapeJson(scenarioId) + "\"," +
                    "\"side\":\"Human\"," +
                    "\"replayId\":\"advreplay-bbbbbbbbbbbbbbbbbbbbbbbb\"," +
                    "\"replayPath\":\"" + EscapeJson(replayPath) + "\"," +
                    "\"replaySha256\":\"" + replayHash + "\"," +
                    "\"frameCount\":" + frameCount.ToString(CultureInfo.InvariantCulture) + "," +
                    "\"fixedStepInterval\":5" +
-                   "}]}";
+                   "]}";
+        }
+
+        private static string CatalogIdentityJson(
+            string scenarioId,
+            string replayPath,
+            string replayHash,
+            int frameCount)
+        {
+            return "{\"entries\":[{" +
+                   "\"fixedStepInterval\":5," +
+                   "\"frameCount\":" + frameCount.ToString(CultureInfo.InvariantCulture) + "," +
+                   "\"replayId\":\"advreplay-bbbbbbbbbbbbbbbbbbbbbbbb\"," +
+                   "\"replayPath\":\"" + EscapeJson(replayPath) + "\"," +
+                   "\"replaySha256\":\"" + replayHash + "\"," +
+                   "\"scenarioId\":\"" + EscapeJson(scenarioId) + "\"," +
+                   "\"side\":\"Human\"}]," +
+                   "\"schemaVersion\":1}";
         }
 
         private void AssertLoadFails(string catalogPath)
