@@ -66,11 +66,16 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void FixedGeometryUsesSameBoundsForPairedDiagnosticEvaluation()
+        public void FixedGeometryUsesSameBoundsAndRequiresEvaluatorMode()
         {
             object geometry = _parseFixed.Invoke(null, new object[]
             {
-                new[] { "game.exe", "--bees-rl-fixed-geometry=64,0.375" }
+                new[]
+                {
+                    "game.exe",
+                    "--bees-rl-evaluator",
+                    "--bees-rl-fixed-geometry=64,0.375"
+                }
             });
             Assert.That(geometry, Is.Not.Null);
             Assert.That((float)RuntimeAssembly.GetField(geometry, "MapSize"), Is.EqualTo(64f));
@@ -78,12 +83,27 @@ namespace Bees.Tests.EditMode
                 (float)RuntimeAssembly.GetField(geometry, "SpawnSeparationRatio"),
                 Is.EqualTo(0.375f));
 
-            TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
+            TargetInvocationException unsafeGeometry = Assert.Throws<TargetInvocationException>(() =>
                 _parseFixed.Invoke(null, new object[]
                 {
-                    new[] { "game.exe", "--bees-rl-fixed-geometry=64,0.9" }
+                    new[]
+                    {
+                        "game.exe",
+                        "--bees-rl-evaluator",
+                        "--bees-rl-fixed-geometry=64,0.9"
+                    }
                 }));
-            Assert.That(exception.InnerException, Is.TypeOf<ArgumentException>());
+            Assert.That(unsafeGeometry.InnerException, Is.TypeOf<ArgumentException>());
+
+            TargetInvocationException trainingOverride = Assert.Throws<TargetInvocationException>(() =>
+                _parseFixed.Invoke(null, new object[]
+                {
+                    new[] { "game.exe", "--bees-rl-fixed-geometry=64,0.375" }
+                }));
+            Assert.That(trainingOverride.InnerException, Is.TypeOf<ArgumentException>());
+            Assert.That(
+                trainingOverride.InnerException.Message,
+                Does.Contain("reserved for authoritative evaluator runs"));
         }
 
         [Test]
