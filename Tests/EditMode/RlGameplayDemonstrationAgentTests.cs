@@ -57,6 +57,15 @@ namespace Bees.Tests.EditMode
             Assert.Throws<TargetInvocationException>(() => method.Invoke(null, new object[] { 0 }));
         }
 
+        [Test]
+        public void DemonstrationsArePartitionedByFrozenPolicyAbi()
+        {
+            MethodInfo method = GetStaticMethod("GetPolicyDirectoryNameForTests");
+            string directory = (string)method.Invoke(null, Array.Empty<object>());
+
+            Assert.That(directory, Is.EqualTo($"PolicyV{RlPolicySchema.Version}"));
+        }
+
         private static MethodInfo GetStaticMethod(string name)
         {
             Type type = RuntimeAssembly.GetType("RlGameplayDemonstrationAgent");
