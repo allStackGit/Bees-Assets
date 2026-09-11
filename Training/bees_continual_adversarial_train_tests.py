@@ -85,6 +85,11 @@ class AdversarialTrainingLauncherTests(unittest.TestCase):
                 ["--bees-adversarial-matchups=manual"],
                 encoded,
             )
+        with self.assertRaises(SystemExit):
+            launcher.inject_unity_pressure_arg(
+                ["--env-args=--rl-matchup-mode=sampled"],
+                encoded,
+            )
 
     def test_run_selection_is_idempotent_but_same_run_cannot_change_pressure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
