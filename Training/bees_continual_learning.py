@@ -441,6 +441,9 @@ class ContinualLearningStore:
                     training_run_id=training_run_id,
                     training_step=int(training_step),
                     game_build_version=game_build_version,
+                    parent_model_id=parent_model_id,
+                    training_config_hash=cfg_hash,
+                    source_checkpoint=source_checkpoint,
                 )
                 return self._row_dict(existing)
 
@@ -501,6 +504,9 @@ class ContinualLearningStore:
         training_run_id: str,
         training_step: int,
         game_build_version: str,
+        parent_model_id: Optional[str],
+        training_config_hash: Optional[str],
+        source_checkpoint: Optional[str],
     ) -> None:
         self._assert_model_compatible(existing)
         mismatches = []
@@ -508,6 +514,9 @@ class ContinualLearningStore:
             ("training_run_id", training_run_id),
             ("training_step", training_step),
             ("game_build_version", game_build_version),
+            ("parent_model_id", parent_model_id),
+            ("training_config_hash", training_config_hash),
+            ("source_checkpoint", source_checkpoint),
         ):
             if existing[key] != expected:
                 mismatches.append(f"{key}={existing[key]!r} (requested {expected!r})")
