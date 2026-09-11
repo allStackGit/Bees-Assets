@@ -210,7 +210,8 @@ internal static class RlPlayerDerivedActionReplay
                 $"{exception.GetType().Name}: {exception.Message}",
                 exception);
         }
-        if (catalog == null || catalog.schemaVersion != CatalogSchemaVersion || catalog.entries == null)
+        if (catalog == null || catalog.schemaVersion != CatalogSchemaVersion || catalog.entries == null ||
+            !IsLowerHex(catalog.catalogSha256, 64))
         {
             throw new ArgumentException($"{CatalogFlag} catalog is incompatible: {fullCatalogPath}");
         }
@@ -222,6 +223,10 @@ internal static class RlPlayerDerivedActionReplay
         Dictionary<string, ReplayData> result =
             new Dictionary<string, ReplayData>(StringComparer.Ordinal);
         string catalogDirectory = Path.GetDirectoryName(fullCatalogPath);
+        if (string.IsNullOrEmpty(catalogDirectory))
+        {
+            throw new ArgumentException($"{CatalogFlag} catalog directory could not be resolved.");
+        }
         for (int i = 0; i < catalog.entries.Length; i++)
         {
             ReplayCatalogEntry entry = catalog.entries[i];
@@ -239,8 +244,7 @@ internal static class RlPlayerDerivedActionReplay
 
     private static void ValidateCatalogEntry(ReplayCatalogEntry entry)
     {
-        if (entry == null || string.IsNullOrWhiteSpace(entry.scenarioId) ||
-            !entry.scenarioId.StartsWith("adv-", StringComparison.Ordinal) || entry.scenarioId.Length != 28)
+        if (entry == null || !IsContentId(entry.scenarioId, "adv-", 24))
         {
             throw new ArgumentException($"{CatalogFlag} contains an invalid scenario ID.");
         }
@@ -248,8 +252,7 @@ internal static class RlPlayerDerivedActionReplay
         {
             throw new ArgumentException($"{CatalogFlag} scenario {entry.scenarioId} has invalid replay side.");
         }
-        if (string.IsNullOrWhiteSpace(entry.replayId) ||
-            !entry.replayId.StartsWith("advreplay-", StringComparison.Ordinal) || entry.replayId.Length != 34)
+        if (!IsContentId(entry.replayId, "advreplay-", 24))
         {
             throw new ArgumentException($"{CatalogFlag} scenario {entry.scenarioId} has invalid replay ID.");
         }
@@ -258,7 +261,7 @@ internal static class RlPlayerDerivedActionReplay
             throw new ArgumentException(
                 $"{CatalogFlag} scenario {entry.scenarioId} replay path must be catalog-relative.");
         }
-        if (string.IsNullOrWhiteSpace(entry.replaySha256) || entry.replaySha256.Length != 64)
+        if (!IsLowerHex(entry.replaySha256, 64))
         {
             throw new ArgumentException($"{CatalogFlag} scenario {entry.scenarioId} has invalid replay hash.");
         }
@@ -275,18 +278,20 @@ internal static class RlPlayerDerivedActionReplay
         {
             throw new ArgumentException($"Replay artifact does not exist for {entry.scenarioId}: {path}");
         }
+        long expectedLength = ReplayHeaderBytes + (long)entry.frameCount * ReplayFrameBytes;
+        long actualLength = new FileInfo(path).Length;
+        if (actualLength != expectedLength)
+        {
+            throw new ArgumentException(
+                $"Replay artifact size mismatch for {entry.scenarioId}: expected {expectedLength}, got {actualLength}.");
+        }
+
         byte[] bytes = File.ReadAllBytes(path);
         string actualHash = ComputeSha256(bytes);
-        if (!actualHash.Equals(entry.replaySha256, StringComparison.OrdinalIgnoreCase))
+        if (!actualHash.Equals(entry.replaySha256, StringComparison.Ordinal))
         {
             throw new ArgumentException(
                 $"Replay artifact hash mismatch for {entry.scenarioId}: expected {entry.replaySha256}, got {actualHash}.");
-        }
-        long expectedLength = ReplayHeaderBytes + (long)entry.frameCount * ReplayFrameBytes;
-        if (bytes.LongLength != expectedLength)
-        {
-            throw new ArgumentException(
-                $"Replay artifact size mismatch for {entry.scenarioId}: expected {expectedLength}, got {bytes.LongLength}.");
         }
 
         using (MemoryStream stream = new MemoryStream(bytes, false))
@@ -381,6 +386,30 @@ internal static class RlPlayerDerivedActionReplay
         return value;
     }
 
+    private static bool IsContentId(string value, string prefix, int hexLength)
+    {
+        return value != null && value.StartsWith(prefix, StringComparison.Ordinal) &&
+               value.Length == prefix.Length + hexLength &&
+               IsLowerHex(value.Substring(prefix.Length), hexLength);
+    }
+
+    private static bool IsLowerHex(string value, int expectedLength)
+    {
+        if (value == null || value.Length != expectedLength)
+        {
+            return false;
+        }
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static string ComputeSha256(byte[] bytes)
     {
         using (SHA256 sha = SHA256.Create())
@@ -417,6 +446,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     private int _fixedStepCounter;
     private int _frameIndex;
     private bool _neutralized;
+    private bool _hasBoundOnce;
     private float _rotationCos = 1f;
     private float _rotationSin;
 
@@ -428,6 +458,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         _fixedStepCounter = 0;
         _frameIndex = 0;
         _neutralized = false;
+        _hasBoundOnce = false;
         _rotationCos = 1f;
         _rotationSin = 0f;
         for (int slot = 0; slot < _aimDirections.Length; slot++)
@@ -443,6 +474,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         _replay = null;
         _fixedStepCounter = 0;
         _frameIndex = 0;
+        _hasBoundOnce = false;
     }
 
     private void FixedUpdate()
@@ -472,11 +504,20 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 
     private bool TryBindShip()
     {
-        if (_ship != null && !_ship.IsDead && _ship.Level == _level && _ship.Id == _boundShipId)
+        if (_ship != null)
         {
-            return true;
+            if (!_ship.IsDead && _ship.Level == _level && _ship.Id == _boundShipId)
+            {
+                return true;
+            }
+            ReleaseShip();
+            _neutralized = true;
+            return false;
         }
-        ReleaseShip();
+        if (_hasBoundOnce)
+        {
+            return false;
+        }
         if (_level.State == null || ConfigData.Configuration == null)
         {
             return false;
@@ -506,6 +547,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 
         _ship = selected;
         _boundShipId = selected.Id;
+        _hasBoundOnce = true;
         if (_ship.Squad != null)
         {
             _ship.Squad.IsUserControlled = false;
