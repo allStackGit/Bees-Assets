@@ -128,7 +128,7 @@ internal static class RlOneVsOneArenaMapSizeState
         {
             return minimum;
         }
-        System.Random random = new System.Random(RlOneVsOneScenarioSeed.Create());
+        System.Random random = new System.Random(0x524C4D50); // "RLMP" test-only stable stream.
         double unit = random.NextDouble();
         return minimum + (float)(unit * (maximum - minimum));
     }
@@ -142,7 +142,8 @@ internal static class RlOneVsOneArenaMapSizeState
 
         if (!MapSizeRandoms.TryGetValue(level, out System.Random random))
         {
-            random = new System.Random(RlOneVsOneScenarioSeed.Create());
+            int seed = RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt);
+            random = new System.Random(seed);
             MapSizeRandoms.Add(level, random);
         }
         return random;
