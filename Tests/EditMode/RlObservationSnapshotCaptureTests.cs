@@ -10,13 +10,14 @@ namespace Bees.Tests.EditMode
     [Category("BeesFoundation")]
     public class RlObservationSnapshotCaptureTests
     {
+        private Type _captureType;
         private MethodInfo _tryParseCommandLine;
 
         [SetUp]
         public void SetUp()
         {
-            Type captureType = RuntimeAssembly.GetType("RlObservationSnapshotCapture");
-            _tryParseCommandLine = captureType.GetMethod(
+            _captureType = RuntimeAssembly.GetType("RlObservationSnapshotCapture");
+            _tryParseCommandLine = _captureType.GetMethod(
                 "TryParseCommandLine",
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(_tryParseCommandLine, Is.Not.Null);
@@ -33,7 +34,7 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CaptureFlagEnablesOneShotWithProcessSpecificDefaultFile()
+        public void CaptureFlagEnablesContinuousCaptureWithProcessSpecificDefaultFile()
         {
             ParseResult result = Parse("player.exe", "--bees-rl-observation-snapshot");
 
@@ -41,6 +42,17 @@ namespace Bees.Tests.EditMode
             Assert.That(result.Error, Is.Null);
             Assert.That(Path.GetFileName(result.OutputPath), Does.StartWith("rl-observation-snapshot-"));
             Assert.That(Path.GetExtension(result.OutputPath), Is.EqualTo(".json"));
+        }
+
+        [Test]
+        public void CaptureIntervalIsTwentyObservations()
+        {
+            FieldInfo interval = _captureType.GetField(
+                "CaptureInterval",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+
+            Assert.That(interval, Is.Not.Null);
+            Assert.That(interval.GetRawConstantValue(), Is.EqualTo(20));
         }
 
         [Test]
@@ -73,14 +85,18 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CaptureUsesLiveAgentObservationPathAndWritesFrozenObservationCount()
+        public void CaptureSamplesLiveAgentObservationsAndAppendsEveryTwentiethToJsonArray()
         {
             string source = ReadSource("Scripts", "Scenes", "RlObservationSnapshotCapture.cs");
 
             Assert.That(source, Does.Contain("agent.CollectObservations(sensor);"));
+            Assert.That(source, Does.Contain("_validObservationCount % CaptureInterval != 0"));
             Assert.That(source, Does.Contain("RlPolicySchema.ExpectedObservationSize"));
             Assert.That(source, Does.Contain("raw_pre_normalization = true"));
-            Assert.That(source, Does.Contain("Destroy(gameObject);"));
+            Assert.That(source, Does.Contain("FileMode.Open"));
+            Assert.That(source, Does.Contain("FindClosingArrayBracket"));
+            Assert.That(source, Does.Contain("while (true)"));
+            Assert.That(source, Does.Not.Contain("Wrote one-shot observation snapshot"));
         }
 
         private ParseResult Parse(params string[] args)
