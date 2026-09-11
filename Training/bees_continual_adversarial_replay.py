@@ -6,7 +6,7 @@ scenario's already-approved public Human demonstrations and compiles only the fr
 movement, turret-aim and fire actions into a compact deterministic binary. Capability/target actions
 fail closed instead of being silently dropped.
 
-The compiled replay is an opponent script, not PPO experience. Runtime integration must keep the
+The compiled replay is an opponent script, not PPO experience. Runtime integration keeps the
 scripted side out of learner action/reward ownership while the opposing policy generates fresh
 on-policy responses.
 """
@@ -22,7 +22,6 @@ import re
 import struct
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
 from bees_continual_adversarial import (
@@ -118,23 +117,15 @@ def _replay_side(value: object) -> str:
 
 
 def _record_count(value: object) -> int:
-    if isinstance(value, bool):
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ValidationError(
             f"Replay record_count must be an integer between {MIN_REPLAY_RECORDS} and {MAX_REPLAY_RECORDS}."
         )
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError(
-            f"Replay record_count must be an integer between {MIN_REPLAY_RECORDS} and {MAX_REPLAY_RECORDS}."
-        ) from exc
-    if parsed != value and isinstance(value, float):
-        raise ValidationError("Replay record_count must be a whole number.")
-    if parsed < MIN_REPLAY_RECORDS or parsed > MAX_REPLAY_RECORDS:
+    if value < MIN_REPLAY_RECORDS or value > MAX_REPLAY_RECORDS:
         raise ValidationError(
             f"Replay record_count must be between {MIN_REPLAY_RECORDS} and {MAX_REPLAY_RECORDS}."
         )
-    return parsed
+    return value
 
 
 def _registration_path(store: ContinualLearningStore, scenario_id: str) -> Path:
@@ -398,11 +389,39 @@ def _validate_action_record(
         raise ValidationError(
             "Scripted replay does not accept capability-event actions; use a normal continuous Human demo."
         )
-    if any(int(discrete[branch]) != 0 for branch in (ALLY_TARGET_BRANCH, ENEMY_TARGET_BRANCH, MAP_OBJECT_TARGET_BRANCH)):
+    if any(
+        int(discrete[branch]) != 0
+        for branch in (ALLY_TARGET_BRANCH, ENEMY_TARGET_BRANCH, MAP_OBJECT_TARGET_BRANCH)
+    ):
         raise ValidationError(
             "Scripted replay currently requires zero ally/enemy/map target branches."
         )
     return normalized, fire_mask
+
+
+def _pair_is_terminal(pair_info: object) -> bool:
+    agent_info = getattr(pair_info, "agent_info", None)
+    return bool(getattr(agent_info, "done", False)) if agent_info is not None else False
+
+
+def _first_episode_trainable_pairs(pair_infos: Sequence[object]) -> Tuple[Sequence[object], bool]:
+    """Return trainable records from only the first native episode.
+
+    ML-Agents trains action/observation record i against record i+1, so a terminal record is needed as
+    the next-state boundary but is not itself a replay action. If the file has no explicit terminal
+    record (for example recording closed mid-episode), mirror the native demo loader by dropping the
+    final record because it has no successor.
+    """
+    records = []
+    terminal_found = False
+    for pair_info in pair_infos:
+        if _pair_is_terminal(pair_info):
+            terminal_found = True
+            break
+        records.append(pair_info)
+    if not terminal_found and records:
+        records = records[:-1]
+    return tuple(records), terminal_found
 
 
 def _binary_payload(
@@ -474,40 +493,46 @@ def compile_action_replay(
         raise ValidationError("Native demonstration count mismatch while compiling replay.")
     _validate_native_behavior(behavior_spec, archive["capture_manifest_metadata"])
 
-    trainable_pairs = pair_infos[:-1]
+    trainable_pairs, terminal_found = _first_episode_trainable_pairs(pair_infos)
     requested_count = _record_count(replay_identity.get("record_count"))
     if len(trainable_pairs) < MIN_REPLAY_RECORDS:
         raise ValidationError(
-            f"Replay source has only {len(trainable_pairs)} trainable records; at least {MIN_REPLAY_RECORDS} are required."
+            "Replay source first episode has only "
+            f"{len(trainable_pairs)} trainable records; at least {MIN_REPLAY_RECORDS} are required."
         )
     selected_pairs = trainable_pairs[:requested_count]
 
-    observations = [obs_reader(pair_info, behavior_spec) for pair_info in selected_pairs]
-    first_observation = tuple(float(value) for value in observations[0])
-    self_ship_type = _decode_enum_bits(first_observation, SELF_SHIP_BIT_START, SHIP_TYPE_BIT_COUNT)
     side = _replay_side(replay_identity.get("side"))
     expected_self_name = humans[0] if side == "Human" else bees[0]
     expected_enemy_name = bees[0] if side == "Human" else humans[0]
-    if self_ship_type != _expected_ship_type_id(expected_self_name):
-        raise ValidationError(
-            f"Replay source self ship {_ship_name(self_ship_type)} does not match scenario {side} ship {expected_self_name}."
-        )
+    expected_self_type = _expected_ship_type_id(expected_self_name)
+    expected_enemy_type = _expected_ship_type_id(expected_enemy_name)
 
-    observed_enemy_type = None
-    for observation in observations:
-        normalized_observation = tuple(float(value) for value in observation)
-        if len(normalized_observation) != EXPECTED_OBSERVATION_SIZE:
+    observations = []
+    for index, pair_info in enumerate(selected_pairs):
+        observation = tuple(float(value) for value in obs_reader(pair_info, behavior_spec))
+        if len(observation) != EXPECTED_OBSERVATION_SIZE:
             raise ValidationError(
-                f"Replay source observation has {len(normalized_observation)} values; expected {EXPECTED_OBSERVATION_SIZE}."
+                f"Replay source observation {index} has {len(observation)} values; "
+                f"expected {EXPECTED_OBSERVATION_SIZE}."
             )
-        observed_enemy_type = _enemy_ship_type(normalized_observation)
-        if observed_enemy_type is not None:
-            break
-    if observed_enemy_type is not None and observed_enemy_type != _expected_ship_type_id(expected_enemy_name):
-        raise ValidationError(
-            f"Replay source first observed enemy {_ship_name(observed_enemy_type)} does not match scenario opponent {expected_enemy_name}."
-        )
+        if any(not math.isfinite(value) for value in observation):
+            raise ValidationError(f"Replay source observation {index} contains a non-finite value.")
+        self_ship_type = _decode_enum_bits(observation, SELF_SHIP_BIT_START, SHIP_TYPE_BIT_COUNT)
+        if self_ship_type != expected_self_type:
+            raise ValidationError(
+                f"Replay source changed self ship to {_ship_name(self_ship_type)} at record {index}; "
+                f"scenario {side} ship is {expected_self_name}."
+            )
+        observed_enemy_type = _enemy_ship_type(observation)
+        if observed_enemy_type is not None and observed_enemy_type != expected_enemy_type:
+            raise ValidationError(
+                f"Replay source observed enemy {_ship_name(observed_enemy_type)} at record {index}; "
+                f"scenario opponent is {expected_enemy_name}."
+            )
+        observations.append(observation)
 
+    first_observation = observations[0]
     frames = []
     for index, pair_info in enumerate(selected_pairs):
         continuous, discrete = act_reader(pair_info)
@@ -533,6 +558,7 @@ def compile_action_replay(
         "frame_count": len(frames),
         "requested_record_count": requested_count,
         "available_trainable_record_count": len(trainable_pairs),
+        "source_first_episode_terminal_found": terminal_found,
         "truncated": len(trainable_pairs) > len(frames),
         "artifact_sha256": artifact_sha256,
         "source_start_direction": [source_direction[0], source_direction[1]],
