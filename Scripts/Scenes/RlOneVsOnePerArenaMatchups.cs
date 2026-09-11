@@ -2,7 +2,28 @@ using Assets.Scripts;
 using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
+using Unity.MLAgents;
 using UnityEngine;
+
+/// <summary>
+/// Creates private deterministic RNG seeds for RL scenario samplers. ML-Agents seeds
+/// UnityEngine.Random when its communicator initializes, so deriving private System.Random streams
+/// from that state makes a run reproducible from the trainer seed without coupling the samplers to
+/// Unity's shared RNG after initialization.
+/// </summary>
+internal static class RlOneVsOneScenarioSeed
+{
+    internal static void EnsureMlAgentsSeedIsInitialized()
+    {
+        _ = Academy.Instance;
+    }
+
+    internal static int Create()
+    {
+        EnsureMlAgentsSeedIsInitialized();
+        return UnityEngine.Random.Range(0, int.MaxValue);
+    }
+}
 
 /// <summary>
 /// Owns sampled matchup state per training Level. A selector contains both the prepared matchup and
@@ -45,7 +66,7 @@ internal static class RlOneVsOnePerArenaMatchups
         if (!Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
         {
             RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
-            selector = new RlOneVsOneEpisodeMatchupSelector(options);
+            selector = new RlOneVsOneEpisodeMatchupSelector(options, RlOneVsOneScenarioSeed.Create());
             Selectors.Add(level, selector);
         }
         return selector;
