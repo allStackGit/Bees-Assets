@@ -31,6 +31,10 @@ def _key_path(store: ContinualLearningStore) -> Path:
     return store.root / "metadata" / "public-demo-contributor.key"
 
 
+def _records_root(store: ContinualLearningStore) -> Path:
+    return store.experience_dir / "human-demos" / "public-contributors"
+
+
 def _read_key(path: Path) -> bytes:
     try:
         key = path.read_bytes()
@@ -43,11 +47,23 @@ def _read_key(path: Path) -> bytes:
     return key
 
 
+def _has_existing_records(store: ContinualLearningStore) -> bool:
+    root = _records_root(store)
+    if not root.is_dir():
+        return False
+    return any(path.is_file() for path in root.rglob("*.json"))
+
+
 def _load_or_create_key(store: ContinualLearningStore) -> bytes:
     path = _key_path(store)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return _read_key(path)
+    if _has_existing_records(store):
+        raise ContinualLearningError(
+            "Public-demo contributor key is missing while contributor records already exist; "
+            "refusing to rotate contributor identity silently."
+        )
 
     candidate = secrets.token_bytes(_CONTRIBUTOR_KEY_BYTES)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -85,9 +101,7 @@ def contributor_bucket(store: ContinualLearningStore, uploader_user_id: str) -> 
 
 def _record_path(store: ContinualLearningStore, central_batch_id: str, server_batch_id: str) -> Path:
     return (
-        store.experience_dir
-        / "human-demos"
-        / "public-contributors"
+        _records_root(store)
         / central_batch_id
         / f"{server_batch_id}.json"
     )
@@ -123,7 +137,7 @@ def load_public_contributor_buckets(
 ) -> Sequence[str]:
     if not _CENTRAL_BATCH_ID.fullmatch(str(central_batch_id)):
         raise ValidationError("Invalid central demonstration batch ID for contributor lookup.")
-    directory = store.experience_dir / "human-demos" / "public-contributors" / central_batch_id
+    directory = _records_root(store) / central_batch_id
     if not directory.is_dir():
         raise ValidationError(
             f"Public demonstration batch {central_batch_id} has no contributor-bucket provenance."
