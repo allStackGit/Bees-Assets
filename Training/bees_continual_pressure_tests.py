@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,25 +52,74 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             raise AssertionError(evaluation["reasons"])
         store.promote(candidate_id, evaluation["report_id"])
 
+    @staticmethod
+    def record_authoritative_pressure(
+        store,
+        *,
+        candidate_id,
+        champion_id,
+        opponent_id,
+        candidate_score_rate,
+        baseline_score_rate,
+        label,
+    ):
+        report = {
+            "candidate_model_id": candidate_id,
+            "champion_model_id": champion_id,
+            "candidate_vs_champion": {"wins": 1, "losses": 0, "draws": 0},
+            "historical": [
+                {
+                    "opponent_model_id": opponent_id,
+                    "matches": 50,
+                    "candidate_win_rate": candidate_score_rate,
+                    "baseline_win_rate": baseline_score_rate,
+                    "candidate_score_rate": candidate_score_rate,
+                    "baseline_score_rate": baseline_score_rate,
+                    "critical": False,
+                }
+            ],
+            "competencies": [],
+            "behavior_sanity_passed": True,
+            "runtime_compatible": True,
+            "runtime_checks_passed": True,
+        }
+        recorded = store.record_evaluation(report)
+        store.record_historical_matchup(
+            current_model_id=candidate_id,
+            opponent_model_id=opponent_id,
+            current_win_rate=candidate_score_rate,
+            previous_win_rate=baseline_score_rate,
+            match_count=50,
+            tags=[
+                AUTHORITATIVE_EVALUATION_TAG,
+                f"evaluation:{recorded['report_id']}",
+                f"test:{label}",
+            ],
+        )
+        return recorded["report_id"]
+
+    def establish_history(self, store, temp):
+        first = self.register(store, temp, "first", b"first-policy", 100)
+        bootstrap_champion(
+            store,
+            first["model_id"],
+            reason="Adaptive-pressure test baseline",
+        )
+        champion = self.register(
+            store,
+            temp,
+            "champion",
+            b"second-policy",
+            200,
+            parent=first["model_id"],
+        )
+        self.promote_challenger(store, champion["model_id"], first["model_id"])
+        return first, champion
+
     def test_failed_candidate_pressure_reaches_training_and_recovers(self):
         with tempfile.TemporaryDirectory() as temp:
             store = self.make_store(temp)
-            first = self.register(store, temp, "first", b"first-policy", 100)
-            bootstrap_champion(
-                store,
-                first["model_id"],
-                reason="Adaptive-pressure test baseline",
-            )
-
-            champion = self.register(
-                store,
-                temp,
-                "champion",
-                b"second-policy",
-                200,
-                parent=first["model_id"],
-            )
-            self.promote_challenger(store, champion["model_id"], first["model_id"])
+            first, champion = self.establish_history(store, temp)
 
             baseline = {
                 item["model_id"]: item
@@ -85,13 +135,14 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
                 300,
                 parent=champion["model_id"],
             )
-            store.record_historical_matchup(
-                current_model_id=regressed["model_id"],
-                opponent_model_id=first["model_id"],
-                current_win_rate=0.20,
-                previous_win_rate=0.80,
-                match_count=50,
-                tags=[AUTHORITATIVE_EVALUATION_TAG, "evaluation:regressed"],
+            regressed_report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=regressed["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.20,
+                baseline_score_rate=0.80,
+                label="regressed",
             )
 
             training_weights = {
@@ -102,6 +153,9 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             self.assertEqual(exposed["weight"], 4.0)
             self.assertGreater(exposed["regression"], 0.0)
             self.assertEqual(exposed["pressure_model_id"], regressed["model_id"])
+            self.assertEqual(
+                exposed["pressure_evaluation_report_id"], regressed_report_id
+            )
 
             recovered = self.register(
                 store,
@@ -120,13 +174,14 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             }
             self.assertEqual(still_exposed[first["model_id"]]["weight"], 4.0)
 
-            store.record_historical_matchup(
-                current_model_id=recovered["model_id"],
-                opponent_model_id=first["model_id"],
-                current_win_rate=0.78,
-                previous_win_rate=0.80,
-                match_count=50,
-                tags=[AUTHORITATIVE_EVALUATION_TAG, "evaluation:recovered"],
+            recovered_report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=recovered["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.78,
+                baseline_score_rate=0.80,
+                label="recovered",
             )
             recovered_weights = {
                 item["model_id"]: item
@@ -136,6 +191,62 @@ class AdaptiveHistoricalPressureTests(unittest.TestCase):
             self.assertEqual(normalized["regression"], 0.0)
             self.assertEqual(normalized["weight"], 1.0)
             self.assertEqual(normalized["pressure_model_id"], recovered["model_id"])
+            self.assertEqual(
+                normalized["pressure_evaluation_report_id"], recovered_report_id
+            )
+
+    def test_pre_draw_aware_pressure_cannot_bias_training_sampling(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = self.make_store(temp)
+            first, champion = self.establish_history(store, temp)
+            stale = self.register(
+                store,
+                temp,
+                "stale",
+                b"stale-policy",
+                300,
+                parent=champion["model_id"],
+            )
+            report_id = self.record_authoritative_pressure(
+                store,
+                candidate_id=stale["model_id"],
+                champion_id=champion["model_id"],
+                opponent_id=first["model_id"],
+                candidate_score_rate=0.20,
+                baseline_score_rate=0.80,
+                label="legacy",
+            )
+
+            # Simulate a persisted evaluation created before policy schema 3, when
+            # historical regression rows stored raw win rates instead of draw-aware
+            # score rates. The row remains in the audit database but must be inert.
+            with store._connect() as db:
+                row = db.execute(
+                    "SELECT report_json FROM evaluations WHERE report_id = ?",
+                    (report_id,),
+                ).fetchone()
+                report = json.loads(row["report_json"])
+                report["promotion_policy"]["schema_version"] = 2
+                db.execute(
+                    "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
+                    (json.dumps(report, sort_keys=True, separators=(",", ":")), report_id),
+                )
+
+            raw_weights = {
+                item["model_id"]: item
+                for item in store.historical_sampling_weights(stale["model_id"])
+            }
+            self.assertEqual(raw_weights[first["model_id"]]["weight"], 4.0)
+
+            safe_weights = {
+                item["model_id"]: item
+                for item in _historical_training_weights(store, champion["model_id"])
+            }
+            sanitized = safe_weights[first["model_id"]]
+            self.assertEqual(sanitized["weight"], 1.0)
+            self.assertEqual(sanitized["regression"], 0.0)
+            self.assertNotIn("pressure_model_id", sanitized)
+            self.assertNotIn("pressure_evaluation_report_id", sanitized)
 
 
 if __name__ == "__main__":
