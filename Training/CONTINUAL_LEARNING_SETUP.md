@@ -60,6 +60,18 @@ A suite uses schema version 1:
 
 The evaluator's `--competency-suite` file must describe the same permanent contract that was pinned in the store.
 
+## Promotion runtime gate
+
+Promotion-eligible evaluation measures the wall-clock duration of every successful candidate `onnxruntime.InferenceSession.run()` batch. The committed promotion policy requires the worst observed candidate batch to be no slower than:
+
+```json
+"max_inference_batch_milliseconds": 100.0
+```
+
+This threshold is part of the promotion configuration, so changing it changes the promotion-policy fingerprint and makes older evaluations stale. The evaluator report records the configured threshold, worst observed candidate batch, and candidate inference-call count under `evaluator.runtime_latency`.
+
+If the threshold is omitted, `runtime_checks_passed` fails closed. Injected/custom match runners also cannot claim authoritative runtime checks even if they provide synthetic timing values. The latency gate measures ONNX session execution itself; it does not include Unity simulation time or opponent inference time.
+
 ## GPU ONNX Runtime (optional)
 
 Do not install CPU `onnxruntime` and `onnxruntime-gpu` side by side. If frozen-policy inference itself needs GPU acceleration, replace the CPU package with an `onnxruntime-gpu` build compatible with the machine's CUDA/cuDNN stack, then verify that `CUDAExecutionProvider` appears in `ort.get_available_providers()` before selecting it.
