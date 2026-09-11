@@ -19,11 +19,25 @@ using UnityEngine;
 /// </summary>
 internal static class RlGameplayDemonstrationCapabilityCapture
 {
+    private const int CaptureManifestSchemaVersion = 1;
+
     private enum CaptureSource
     {
         None = 0,
         Human = 1,
         HiveMind = 2
+    }
+
+    [Serializable]
+    private sealed class CaptureManifest
+    {
+        public int schemaVersion;
+        public string behaviorName;
+        public int policyAbiVersion;
+        public string policySignature;
+        public int observationSize;
+        public int continuousActionCount;
+        public int[] discreteBranchSizes;
     }
 
     private static readonly FieldInfo VectorObservationsField = typeof(VectorSensor).GetField(
@@ -61,7 +75,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         }
 
         string root = GetPolicyDirectory();
-        if (!File.Exists(Path.Combine(root, RlGameplayDemonstrationAgent.CaptureManifestFileName)))
+        if (!HasCompatibleCaptureManifest(root))
         {
             return;
         }
@@ -96,6 +110,48 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             return CaptureSource.HiveMind;
         }
         return CaptureSource.None;
+    }
+
+    private static bool HasCompatibleCaptureManifest(string root)
+    {
+        string path = Path.Combine(root, RlGameplayDemonstrationAgent.CaptureManifestFileName);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            CaptureManifest manifest = JsonUtility.FromJson<CaptureManifest>(File.ReadAllText(path));
+            if (manifest == null ||
+                manifest.schemaVersion != CaptureManifestSchemaVersion ||
+                !string.Equals(manifest.behaviorName, RlOneVsOneAgent.BehaviorName, StringComparison.Ordinal) ||
+                manifest.policyAbiVersion != RlPolicySchema.Version ||
+                !string.Equals(manifest.policySignature, RlPolicySchema.Signature, StringComparison.Ordinal) ||
+                manifest.observationSize != RlOneVsOneAgent.ObservationSize ||
+                manifest.continuousActionCount != RlOneVsOneAgent.ContinuousActionCount)
+            {
+                return false;
+            }
+
+            int[] expectedBranches = RlOneVsOneAgent.CreateDiscreteBranchSizes();
+            if (manifest.discreteBranchSizes == null || manifest.discreteBranchSizes.Length != expectedBranches.Length)
+            {
+                return false;
+            }
+            for (int i = 0; i < expectedBranches.Length; i++)
+            {
+                if (manifest.discreteBranchSizes[i] != expectedBranches[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static bool TryCaptureCurrentState(
@@ -232,7 +288,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             DemonstrationRecorder recorder = obj.AddComponent<DemonstrationRecorder>();
             recorder.DemonstrationName = source == CaptureSource.Human
                 ? $"human-cap-s{ship.Side}"
-                : $"hive-cap-s{ship.Side}";
+                : $"hivemind-cap-s{ship.Side}";
             recorder.DemonstrationDirectory = Path.Combine(GetPolicyDirectory(), GetSourceDirectoryName(source));
             recorder.NumStepsToRecord = 0;
             recorder.Record = true;
