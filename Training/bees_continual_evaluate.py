@@ -755,14 +755,19 @@ def evaluate_candidate(
         champion_summary = run(champion_id, champion_match_count)
         champion_comparison = champion_summary.to_dict()
 
-    historical_models = store.list_models(status="historical")
+    expected_compatibility = store.compatibility.to_dict()
+    historical_models = [
+        model
+        for model in store.list_models(status="historical")
+        if all(model.get(key) == value for key, value in expected_compatibility.items())
+    ]
     if historical_model_ids is not None:
         requested = list(dict.fromkeys(str(value) for value in historical_model_ids))
         by_id = {model["model_id"]: model for model in historical_models}
         missing = [model_id for model_id in requested if model_id not in by_id]
         if missing:
             raise ValidationError(
-                "Requested historical opponents are not historical models: "
+                "Requested historical opponents are not compatible historical models: "
                 + ", ".join(missing)
             )
         historical_models = [by_id[model_id] for model_id in requested]
