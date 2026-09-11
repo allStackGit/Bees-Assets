@@ -191,7 +191,7 @@ namespace Bees.Tests.EditMode
                    "\"replaySha256\":\"" + replayHash + "\"," +
                    "\"frameCount\":" + frameCount.ToString(CultureInfo.InvariantCulture) + "," +
                    "\"fixedStepInterval\":5" +
-                   "]}";
+                   "}]}";
         }
 
         private static string CatalogIdentityJson(
