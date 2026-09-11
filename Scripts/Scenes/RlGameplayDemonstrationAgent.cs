@@ -263,8 +263,8 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
 
     private void FixedUpdate()
     {
-        if (_stage == null || RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime ||
-            !IsCaptureRequested(Environment.GetCommandLineArgs()))
+        // The command line cannot change after startup, so do not allocate/scan it on every physics tick.
+        if (_stage == null || RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
         {
             return;
         }
@@ -410,6 +410,14 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
     {
         if (ship == null || ship.IsDead || ship.Level != level || ship.Squad == null ||
             !RlOneVsOneAgent.RequiresPolicyControl(ship))
+        {
+            return false;
+        }
+
+        // The historical squad flag can remain true even when Stage has disabled the Hive Mind.
+        // Do not turn that stale ownership metadata into a training demonstration.
+        if (expectedSource == DemonstrationSource.HiveMind &&
+            (stage == null || !stage.ActivateHiveMind || stage.ActivateBrains))
         {
             return false;
         }
