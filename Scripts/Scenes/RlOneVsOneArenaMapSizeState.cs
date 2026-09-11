@@ -120,6 +120,19 @@ internal static class RlOneVsOneArenaMapSizeState
         return minimum + (float)(unit * (maximum - minimum));
     }
 
+    // Retain the focused sampler contract used by existing EditMode coverage. Runtime map sampling
+    // uses the Level overload above so every arena keeps an independent random stream.
+    internal static float SampleMapSize(float minimum, float maximum)
+    {
+        if (maximum <= minimum)
+        {
+            return minimum;
+        }
+        System.Random random = new System.Random(RlOneVsOneScenarioSeed.Create());
+        double unit = random.NextDouble();
+        return minimum + (float)(unit * (maximum - minimum));
+    }
+
     private static System.Random GetMapSizeRandom(Level level)
     {
         if (level == null)
