@@ -27,7 +27,9 @@
   "human_imitation": {
     "strength": 0.05,
     "steps": 500000,
-    "batch_size": 512
+    "batch_size": 512,
+    "public_min_quality_score": 0.5,
+    "public_max_batches_per_contributor": 8
   },
   "ingestion": {
     "max_payload_bytes": 16777216,
