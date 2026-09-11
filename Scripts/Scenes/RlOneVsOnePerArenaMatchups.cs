@@ -50,6 +50,7 @@ internal static class RlOneVsOnePerArenaMatchups
         RlOneVsOneAdversarialMatchupSelector selector = GetSelector(level);
         selector.PrepareEpisode();
         PreparedEpisodes.Add(level);
+        RlPlayerDerivedActionReplay.PrepareEpisode(level);
         if (PlayerDerivedPressureLevels.Contains(level))
         {
             RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
@@ -104,6 +105,7 @@ internal static class RlOneVsOnePerArenaMatchups
             return;
         }
 
+        RlPlayerDerivedActionReplay.EndEpisode(level);
         if (Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
             selector.RecordEpisodeOutcome(result.WinningSide, result.TimedOut);
@@ -127,5 +129,6 @@ internal static class RlOneVsOnePerArenaMatchups
         PlayerDerivedPressureLevels.Clear();
         PreparedEpisodes.Clear();
         RlPlayerDerivedPressureTelemetry.ResetForTests();
+        RlPlayerDerivedActionReplay.ResetForTests();
     }
 }
