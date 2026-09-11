@@ -22,7 +22,7 @@ namespace Assets.Scripts.Levels
         public void SetupHivemind()
         {
             CancelTimer(_hivemindTimer);
-            if (Stage.ActivateHiveMind)
+            if (Stage.ActivateHiveMind && !Stage.ActivateBrains)
             {
                 List<Squad> squads = State.GetAllSquads();
                 for (int i = 0; i < squads.Count; i++)
