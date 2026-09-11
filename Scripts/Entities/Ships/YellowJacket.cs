@@ -90,8 +90,8 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            HasCompletedRun = true;
             global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
+            HasCompletedRun = true;
             global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "yellow_jacket_detonate");
 
             // The selected bombing-run target is being resolved synchronously rather than
