@@ -119,6 +119,7 @@ class NativeDemoIngestionTests(unittest.TestCase):
             metadata["capture_manifest"]["sha256"], sha256_file(self.manifest_path)
         )
         self.assertEqual(metadata["capture_manifest"]["metadata"], self.capture_manifest)
+        self.assertEqual(metadata["payload_sha256"], result["batch_id"].removeprefix("demo-") + metadata["payload_sha256"][24:])
         self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
     def test_exact_native_demo_ingestion_is_idempotent(self):
@@ -146,6 +147,15 @@ class NativeDemoIngestionTests(unittest.TestCase):
 
         self.assertTrue(second["duplicate"])
         self.assertEqual(first["batch_id"], second["batch_id"])
+
+    def test_same_content_with_new_id_is_deduplicated_to_original_batch(self):
+        first = self.ingest("native-demo-original")
+        second = self.ingest("native-demo-retry-id")
+
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(first["batch_id"], second["batch_id"])
+        self.assertEqual(second["demonstration_id"], "native-demo-original")
+        self.assertEqual(self.store.status()["demonstration_batches"], 1)
 
     def test_same_demonstration_id_with_changed_bytes_is_rejected(self):
         self.ingest()
