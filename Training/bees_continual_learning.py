@@ -281,24 +281,35 @@ def _authoritative_historical_row_is_draw_aware(
     db: sqlite3.Connection,
     row: sqlite3.Row,
     tags: Sequence[Any],
+    report_cache: Optional[Dict[str, Optional[Any]]] = None,
 ) -> bool:
     report_id = _historical_evaluation_report_id(tags)
     if report_id is None:
         return False
-    evaluation = db.execute(
-        "SELECT report_json FROM evaluations WHERE report_id = ?",
-        (report_id,),
-    ).fetchone()
-    if evaluation is None:
-        return False
-    try:
-        report = json.loads(evaluation["report_json"])
-    except (TypeError, json.JSONDecodeError):
-        return False
+    cache = report_cache if report_cache is not None else {}
+    if report_id not in cache:
+        evaluation = db.execute(
+            "SELECT report_json FROM evaluations WHERE report_id = ?",
+            (report_id,),
+        ).fetchone()
+        if evaluation is None:
+            cache[report_id] = None
+        else:
+            try:
+                cache[report_id] = json.loads(evaluation["report_json"])
+            except (TypeError, json.JSONDecodeError):
+                cache[report_id] = None
+    report = cache[report_id]
     if not isinstance(report, Mapping):
         return False
     policy = report.get("promotion_policy")
-    if not isinstance(policy, Mapping):
+    policy_fingerprint = report.get("promotion_policy_fingerprint")
+    if (
+        not isinstance(policy, Mapping)
+        or not isinstance(policy_fingerprint, str)
+        or not policy_fingerprint
+        or sha256_bytes(canonical_json(policy).encode("utf-8")) != policy_fingerprint
+    ):
         return False
     schema_version = policy.get("schema_version")
     if (
@@ -1455,6 +1466,7 @@ class ContinualLearningStore:
             ).fetchall()
 
             result = []
+            report_cache: Dict[str, Optional[Any]] = {}
             for row in rows:
                 try:
                     tags = json.loads(row["tags_json"]) if row["tags_json"] else []
@@ -1472,6 +1484,7 @@ class ContinualLearningStore:
                         db,
                         row,
                         tags,
+                        report_cache,
                     )
 
                 regression = 0.0
