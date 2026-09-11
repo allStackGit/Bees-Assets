@@ -20,8 +20,9 @@ using UnityEngine;
 /// never owns gameplay and can therefore be removed or fail without changing ship behavior.
 ///
 /// Capture is explicit opt-in via --rl-record-demonstrations. The resulting ML-Agents .demo files
-/// are written below Application.persistentDataPath/RlDemonstrations and remain separate from PPO
-/// rollouts so a central trainer/uploader can consume them through an imitation-learning path.
+/// are written below Application.persistentDataPath/RlDemonstrations, separated into Human and
+/// HiveMind directories, and remain separate from PPO rollouts so a central trainer/uploader can
+/// consume them through an imitation-learning path.
 /// </summary>
 internal sealed class RlGameplayDemonstrationAgent : Agent
 {
@@ -86,7 +87,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         ProvisionAgentsForSpawnedShips(stage, true);
 
         Debug.Log($"Passive RL demonstration capture enabled: ABI v{RlPolicySchema.Version} " +
-                  $"{RlPolicySchema.Signature}; output={GetDemonstrationDirectory()}.");
+                  $"{RlPolicySchema.Signature}; output={GetDemonstrationRootDirectory()}.");
     }
 
     internal static bool IsCaptureRequested(IReadOnlyList<string> args)
@@ -124,6 +125,11 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         return (int)DetermineSource(isUserControlled, isHiveMindControlled, isLiveRlControlled);
     }
 
+    internal static string GetSourceDirectoryNameForTests(int source)
+    {
+        return GetSourceDirectoryName((DemonstrationSource)source);
+    }
+
     private static DemonstrationSource DetermineSource(
         bool isUserControlled,
         bool isHiveMindControlled,
@@ -140,9 +146,27 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         return isHiveMindControlled ? DemonstrationSource.HiveMind : DemonstrationSource.None;
     }
 
-    private static string GetDemonstrationDirectory()
+    private static string GetSourceDirectoryName(DemonstrationSource source)
+    {
+        switch (source)
+        {
+            case DemonstrationSource.Human:
+                return "Human";
+            case DemonstrationSource.HiveMind:
+                return "HiveMind";
+            default:
+                throw new ArgumentOutOfRangeException(nameof(source), source, "Only live human and Hive Mind demonstrations may be recorded.");
+        }
+    }
+
+    private static string GetDemonstrationRootDirectory()
     {
         return Path.Combine(Application.persistentDataPath, DemonstrationDirectoryName);
+    }
+
+    private static string GetDemonstrationDirectory(DemonstrationSource source)
+    {
+        return Path.Combine(GetDemonstrationRootDirectory(), GetSourceDirectoryName(source));
     }
 
     private static void ProvisionAgentsForSpawnedShips(Stage stage, bool force = false)
@@ -244,7 +268,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         recorder.DemonstrationName = source == DemonstrationSource.Human
             ? $"human-s{side}"
             : $"hivemind-s{side}";
-        recorder.DemonstrationDirectory = GetDemonstrationDirectory();
+        recorder.DemonstrationDirectory = GetDemonstrationDirectory(source);
         recorder.NumStepsToRecord = 0;
         recorder.Record = true;
     }
