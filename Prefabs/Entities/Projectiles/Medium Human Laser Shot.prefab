@@ -41,7 +41,6 @@ SpriteRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_Enabled: 1
   m_CastShadows: 0
@@ -65,7 +64,6 @@ SpriteRenderer:
     subMeshCount: 0
   m_StaticBatchRoot: {fileID: 0}
   m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
   m_ScaleInLightmap: 1
   m_ReceiveGI: 1
   m_PreserveUVs: 0
@@ -97,7 +95,6 @@ Animator:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
@@ -107,7 +104,6 @@ Animator:
   m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
-  m_AnimatePhysics: 0
   m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
@@ -118,8 +114,6 @@ Rigidbody2D:
   serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_BodyType: 1
   m_Simulated: 1
@@ -144,8 +138,6 @@ Rigidbody2D:
 CircleCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_Enabled: 1
   serializedVersion: 3
@@ -181,7 +173,6 @@ MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3911271517188601395}
   m_Enabled: 1
   m_EditorHideFlags: 0
@@ -201,7 +192,7 @@ MonoBehaviour:
   Rotation: 0
   Power: 0
   Range: 0
-  Speed: 80
+  Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}
   Weapon: {fileID: 0}
