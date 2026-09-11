@@ -3,8 +3,8 @@
 This module deliberately does not replay old player trajectories as PPO experience. An operator
 identifies a useful tactic in one or more explicitly approved public Human demonstration batches,
 registers the corresponding Bee/Human fleet matchup, and receives an immutable scenario ID. The
-scenario can then be encoded into the dedicated Unity training process, where it contributes extra
-sampling weight while the current policy generates fresh on-policy rollouts.
+scenario can then be encoded into the dedicated Unity training process, where it requests a bounded
+fraction of fresh on-policy episodes while normal sampled/adaptive training remains the majority.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from bees_continual_demo_curation import _approved_archive
 from bees_continual_learning import (
@@ -33,7 +33,8 @@ from bees_continual_native_demo import _write_bytes_immutable
 ADVERSARIAL_SCENARIO_SCHEMA_VERSION = 1
 MAX_SCENARIO_SOURCE_BATCHES = 64
 MAX_SCENARIO_SHIPS_PER_SIDE = 16
-MAX_EXTRA_WEIGHT = 10.0
+MAX_TARGET_FRACTION_PER_SCENARIO = 0.5
+MAX_TOTAL_TARGET_FRACTION = 0.5
 _SCENARIO_ID = re.compile(r"^adv-[0-9a-f]{24}$")
 _BATCH_ID = re.compile(r"^demo-[0-9a-f]{24}$")
 _SHIP_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
@@ -61,17 +62,25 @@ def _parse_composition(value: object, label: str) -> Sequence[str]:
     return tuple(values)
 
 
-def _extra_weight(value: object) -> float:
+def _target_fraction(value: object) -> float:
     if isinstance(value, bool):
-        raise ValidationError(f"extra_weight must be a finite number in (0,{MAX_EXTRA_WEIGHT:g}].")
+        raise ValidationError(
+            f"target_fraction must be a finite number in (0,{MAX_TARGET_FRACTION_PER_SCENARIO:g}]."
+        )
     try:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
         raise ValidationError(
-            f"extra_weight must be a finite number in (0,{MAX_EXTRA_WEIGHT:g}]."
+            f"target_fraction must be a finite number in (0,{MAX_TARGET_FRACTION_PER_SCENARIO:g}]."
         ) from exc
-    if not math.isfinite(parsed) or parsed <= 0.0 or parsed > MAX_EXTRA_WEIGHT:
-        raise ValidationError(f"extra_weight must be a finite number in (0,{MAX_EXTRA_WEIGHT:g}].")
+    if (
+        not math.isfinite(parsed)
+        or parsed <= 0.0
+        or parsed > MAX_TARGET_FRACTION_PER_SCENARIO
+    ):
+        raise ValidationError(
+            f"target_fraction must be a finite number in (0,{MAX_TARGET_FRACTION_PER_SCENARIO:g}]."
+        )
     return parsed
 
 
@@ -111,7 +120,7 @@ def register_player_derived_scenario(
     *,
     bee_composition: Sequence[str] | str,
     human_composition: Sequence[str] | str,
-    extra_weight: float,
+    target_fraction: float,
     rationale: str,
 ) -> Mapping[str, object]:
     """Register one immutable matchup-pressure scenario from explicitly approved public demos."""
@@ -131,7 +140,7 @@ def register_player_derived_scenario(
     humans = _parse_composition(human_composition, "human_composition")
     if len(bees) != len(humans):
         raise ValidationError("Bee and Human adversarial compositions must contain the same ship count.")
-    weight = _extra_weight(extra_weight)
+    fraction = _target_fraction(target_fraction)
     rationale = _required_text(rationale, "rationale", 2048)
 
     sources = []
@@ -156,7 +165,7 @@ def register_player_derived_scenario(
         "policy_abi_version": store.compatibility.policy_abi_version,
         "bee_composition": list(bees),
         "human_composition": list(humans),
-        "extra_weight": weight,
+        "target_fraction": fraction,
         "rationale": rationale,
         "sources": sources,
     }
@@ -192,7 +201,7 @@ def encode_scenarios_for_unity(
     store: ContinualLearningStore,
     scenario_ids: Sequence[str],
 ) -> str:
-    """Encode selected immutable scenarios for --rl-adversarial-matchups."""
+    """Encode selected immutable scenarios for --bees-adversarial-matchups."""
     store._require_initialized()
     if not scenario_ids:
         raise ValidationError("At least one adversarial scenario ID must be selected.")
@@ -202,6 +211,7 @@ def encode_scenarios_for_unity(
 
     encoded = []
     expected_ship_count = None
+    total_fraction = 0.0
     for scenario_id in normalized:
         scenario = _read_scenario(store, scenario_id)
         identity = scenario["identity"]
@@ -215,9 +225,15 @@ def encode_scenarios_for_unity(
             raise ValidationError(
                 "Selected adversarial scenarios must use one common ships-per-side value."
             )
-        weight = _extra_weight(identity.get("extra_weight"))
+        fraction = _target_fraction(identity.get("target_fraction"))
+        total_fraction += fraction
         encoded.append(
-            f"{scenario_id}:{','.join(bees)}>{','.join(humans)}@{weight:g}"
+            f"{scenario_id}:{','.join(bees)}>{','.join(humans)}@{fraction:g}"
+        )
+    if total_fraction > MAX_TOTAL_TARGET_FRACTION + 1e-12:
+        raise ValidationError(
+            f"Selected adversarial scenarios request {total_fraction:.3f} of episodes; "
+            f"the combined maximum is {MAX_TOTAL_TARGET_FRACTION:.3f}."
         )
     return ";".join(encoded)
 
@@ -238,7 +254,7 @@ def _build_parser() -> argparse.ArgumentParser:
     register.add_argument("batch_ids", nargs="+")
     register.add_argument("--bee-composition", required=True)
     register.add_argument("--human-composition", required=True)
-    register.add_argument("--extra-weight", required=True, type=float)
+    register.add_argument("--target-fraction", required=True, type=float)
     register.add_argument("--rationale", required=True)
 
     encode = subparsers.add_parser("encode", help="Encode selected scenarios for Unity env args.")
@@ -256,7 +272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.batch_ids,
                 bee_composition=args.bee_composition,
                 human_composition=args.human_composition,
-                extra_weight=args.extra_weight,
+                target_fraction=args.target_fraction,
                 rationale=args.rationale,
             )
             print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
