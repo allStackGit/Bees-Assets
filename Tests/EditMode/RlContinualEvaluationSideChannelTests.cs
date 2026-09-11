@@ -99,6 +99,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ResultChannelUnregistersBeforeItsStaticInstanceIsCleared()
+        {
+            string channel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
+            AssertTokensInOrder(
+                channel,
+                "RlOneVsOneEpisodeCoordinator.EpisodeEnded -= OnEpisodeEnded;",
+                "SideChannelManager.UnregisterSideChannel(_instance);",
+                "_instance = null;");
+        }
+
+        [Test]
         public void WinningSideMapsToFrozenPolicyTeamAndTimeoutsRemainDraws()
         {
             Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
@@ -167,6 +178,7 @@ namespace Bees.Tests.EditMode
             string channel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
             Assert.That(channel, Does.Contain("RlOneVsOneEpisodeCoordinator.EpisodeEnded += OnEpisodeEnded;"));
             Assert.That(channel, Does.Contain("SideChannelManager.RegisterSideChannel(_instance);"));
+            Assert.That(channel, Does.Contain("SideChannelManager.UnregisterSideChannel(_instance);"));
             Assert.That(channel, Does.Contain("IsEvaluationMode(args)"));
             Assert.That(channel, Does.Not.Contain("msg.Read"),
                 "The authoritative result channel must remain output-only; evaluation configuration belongs to command-line options.");
