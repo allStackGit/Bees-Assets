@@ -600,6 +600,17 @@ class ContinualLearningStore:
                 file=sys.stderr,
             )
 
+    def _promotion_policy_snapshot(self) -> Dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "compatibility": self.compatibility.to_dict(),
+            "promotion": self.config["promotion"],
+        }
+
+    @staticmethod
+    def _promotion_policy_fingerprint(policy: Mapping[str, Any]) -> str:
+        return sha256_bytes(canonical_json(policy).encode("utf-8"))
+
     def assess_evaluation(self, report: Mapping[str, Any]) -> PromotionDecision:
         promotion = self.config["promotion"]
         reasons: List[str] = []
@@ -780,6 +791,11 @@ class ContinualLearningStore:
 
         decision = self.assess_evaluation(report)
         body = dict(report)
+        promotion_policy = self._promotion_policy_snapshot()
+        body["promotion_policy"] = promotion_policy
+        body["promotion_policy_fingerprint"] = self._promotion_policy_fingerprint(
+            promotion_policy
+        )
         body["decision"] = decision.to_dict()
         report_hash = sha256_bytes(canonical_json(body).encode("utf-8"))
         report_id = f"eval-{report_hash[:24]}"
@@ -882,6 +898,26 @@ class ContinualLearningStore:
             if report_champion_id != evaluation["champion_model_id"]:
                 raise PromotionError(
                     "Evaluation record champion does not match the champion in its report."
+                )
+
+            report_policy = report_body.get("promotion_policy")
+            report_policy_fingerprint = report_body.get("promotion_policy_fingerprint")
+            if (
+                not isinstance(report_policy, dict)
+                or not isinstance(report_policy_fingerprint, str)
+                or not report_policy_fingerprint
+            ):
+                raise PromotionError(
+                    "Evaluation report is not bound to a promotion policy; re-evaluate candidate "
+                    "under the current promotion policy."
+                )
+            if self._promotion_policy_fingerprint(report_policy) != report_policy_fingerprint:
+                raise PromotionError("Evaluation report promotion-policy fingerprint is corrupted.")
+            current_policy = self._promotion_policy_snapshot()
+            if self._promotion_policy_fingerprint(current_policy) != report_policy_fingerprint:
+                raise PromotionError(
+                    "Promotion policy changed after this evaluation; re-evaluate candidate under "
+                    "the current promotion policy."
                 )
 
             current = self._state(db, STATE_CHAMPION)
@@ -1386,7 +1422,6 @@ class ContinualLearningStore:
         with self._connect() as db:
             model = self._model_row(db, model_id)
             self._assert_model_compatible(model)
-
         expected = {
             "behavior_name": self.compatibility.behavior_name,
             "policy_abi_version": self.compatibility.policy_abi_version,

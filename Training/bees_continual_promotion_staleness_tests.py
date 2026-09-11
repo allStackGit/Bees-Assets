@@ -125,6 +125,28 @@ class PromotionStalenessTests(unittest.TestCase):
         with self.assertRaisesRegex(continual.PromotionError, "Historical league changed"):
             self.store.promote(third["model_id"], third_eval["report_id"])
 
+    def test_old_report_is_stale_when_promotion_policy_changes(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.bootstrap(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+
+        evaluation = self.store.record_evaluation(
+            self.report(second["model_id"], first["model_id"])
+        )
+        self.assertTrue(evaluation["passed"])
+
+        stricter_config = {
+            **TEST_CONFIG,
+            "promotion": {
+                **TEST_CONFIG["promotion"],
+                "min_win_rate_vs_champion": 0.65,
+            },
+        }
+        stricter_store = continual.ContinualLearningStore(self.root, stricter_config)
+
+        with self.assertRaisesRegex(continual.PromotionError, "Promotion policy changed"):
+            stricter_store.promote(second["model_id"], evaluation["report_id"])
+
     def test_historical_result_requires_champion_baseline(self):
         first = self.register("first.onnx", b"first", 100)
         self.bootstrap(first)
