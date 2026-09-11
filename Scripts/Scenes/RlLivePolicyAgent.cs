@@ -50,7 +50,7 @@ internal sealed class RlLivePolicyAgent : Agent
         }
 
         Stage stage = Object.FindFirstObjectByType<Stage>();
-        if (stage == null || !stage.ActivateBrains)
+        if (!IsLiveRlEnabled(stage))
         {
             return;
         }
@@ -65,7 +65,7 @@ internal sealed class RlLivePolicyAgent : Agent
             yield return null;
         }
 
-        if (stage == null || !stage.ActivateBrains || RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
+        if (!IsLiveRlEnabled(stage) || RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
         {
             yield break;
         }
@@ -84,9 +84,16 @@ internal sealed class RlLivePolicyAgent : Agent
         return !levelHasPlayer || side == aiSide;
     }
 
+    private static bool IsLiveRlEnabled(Stage stage)
+    {
+        // ActivateHiveMind remains the long-standing campaign AI enable/disable gate. ActivateBrains
+        // selects which controller owns that enabled AI: false = Hive Mind, true = shared RL policy.
+        return stage != null && stage.ActivateHiveMind && stage.ActivateBrains;
+    }
+
     private static void ProvisionAgentsForSpawnedShips(Stage stage, bool force = false)
     {
-        if (stage == null || !stage.ActivateBrains || ConfigData.Configuration == null ||
+        if (!IsLiveRlEnabled(stage) || ConfigData.Configuration == null ||
             (!force && (Time.frameCount == _lastProvisionFrame ||
                         Time.frameCount % RlOneVsOneTrainingOptions.DefaultDecisionPeriod != 0)))
         {
@@ -184,9 +191,11 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void FixedUpdate()
     {
-        if (_stage == null || !_stage.ActivateBrains)
+        if (!IsLiveRlEnabled(_stage))
         {
             ReleaseShip();
+            _hasBoundShip = false;
+            _boundRuntimeShipId = 0;
             return;
         }
 
