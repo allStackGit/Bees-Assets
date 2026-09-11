@@ -43,7 +43,7 @@ RlDemonstrations/
       ...
     HiveMind/
       hivemind-s0.demo
-      hive-cap-s0.demo
+      hivemind-cap-s0.demo
       ...
 ```
 
@@ -62,9 +62,9 @@ python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
   --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV7\Human"
 ```
 
-Before ML-Agents starts, the wrapper validates that the directory contains non-empty `.demo` files, rejects files explicitly named as Hive Mind recordings, hashes the selected files, and copies them into an immutable content-addressed snapshot under the continual-learning root. The source recordings must therefore be closed/stable before training starts. If a recording changes during snapshotting, startup fails instead of silently training against a moving dataset.
+Before ML-Agents starts, the wrapper requires the selected directory to be the `Human` directory under the configured `PolicyV<ABI>` capture root and validates its `capture-manifest.json` against the continual config's behavior name, ABI version, and exact frozen policy signature. It then verifies that the directory contains non-empty `.demo` files, rejects files explicitly named as Hive Mind recordings, hashes the selected files and capture manifest, and copies all of them into an immutable content-addressed snapshot under the continual-learning root. The snapshot manifest preserves the original capture metadata and its SHA-256 so the training set retains its ABI provenance. The source recordings must therefore be closed/stable before training starts. If either a recording or the capture manifest changes during snapshotting, startup fails instead of silently training against a moving or mislabeled dataset.
 
-The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI.
+The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI. The config's `policy_signature` mirrors `RlPolicySchema.Signature` and must change with the frozen policy ABI rather than being carried forward by version number alone.
 
 This path is for explicitly selected/trusted local demonstrations. Authenticated public-client upload, abuse controls, and central native `.demo` ingestion are still separate work.
 
