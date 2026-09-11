@@ -46,6 +46,9 @@ STATE_COMPETENCY_SUITE = "permanent_competency_suite"
 PROMOTION_POLICY_SCHEMA_VERSION = 3
 COMPETENCY_SUITE_SCHEMA_VERSION = 1
 COMPETENCY_METRICS = {"score_rate", "win_rate", "non_timeout_rate"}
+AUTHORITATIVE_HISTORICAL_MATCHUP_TAG = "authoritative_candidate_evaluation"
+HISTORICAL_EVALUATION_TAG_PREFIX = "evaluation:"
+DRAW_AWARE_HISTORICAL_POLICY_SCHEMA_VERSION = 3
 
 
 class ContinualLearningError(RuntimeError):
@@ -260,6 +263,77 @@ def _competency_contract_from_report(report: Mapping[str, Any]) -> Dict[str, Any
 
 def _competency_fingerprint(contract: Mapping[str, Any]) -> str:
     return sha256_bytes(canonical_json(contract).encode("utf-8"))
+
+
+def _historical_evaluation_report_id(tags: Sequence[Any]) -> Optional[str]:
+    report_ids = [
+        value[len(HISTORICAL_EVALUATION_TAG_PREFIX):].strip()
+        for value in tags
+        if isinstance(value, str) and value.startswith(HISTORICAL_EVALUATION_TAG_PREFIX)
+    ]
+    report_ids = [value for value in report_ids if value]
+    if len(report_ids) != 1:
+        return None
+    return report_ids[0]
+
+
+def _authoritative_historical_row_is_draw_aware(
+    db: sqlite3.Connection,
+    row: sqlite3.Row,
+    tags: Sequence[Any],
+) -> bool:
+    report_id = _historical_evaluation_report_id(tags)
+    if report_id is None:
+        return False
+    evaluation = db.execute(
+        "SELECT report_json FROM evaluations WHERE report_id = ?",
+        (report_id,),
+    ).fetchone()
+    if evaluation is None:
+        return False
+    try:
+        report = json.loads(evaluation["report_json"])
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if not isinstance(report, Mapping):
+        return False
+    policy = report.get("promotion_policy")
+    if not isinstance(policy, Mapping):
+        return False
+    schema_version = policy.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version < DRAW_AWARE_HISTORICAL_POLICY_SCHEMA_VERSION
+    ):
+        return False
+    if report.get("candidate_model_id") != row["current_model_id"]:
+        return False
+    historical = report.get("historical")
+    if not isinstance(historical, list):
+        return False
+    matches = [
+        item
+        for item in historical
+        if isinstance(item, Mapping)
+        and item.get("opponent_model_id") == row["opponent_model_id"]
+    ]
+    if len(matches) != 1:
+        return False
+    item = matches[0]
+    candidate_score_rate = item.get("candidate_score_rate")
+    baseline_score_rate = item.get("baseline_score_rate")
+    if item.get("matches") != row["match_count"]:
+        return False
+    for left, right in (
+        (candidate_score_rate, row["current_win_rate"]),
+        (baseline_score_rate, row["previous_win_rate"]),
+    ):
+        if not _finite_number(left) or not _finite_number(right):
+            return False
+        if not math.isclose(float(left), float(right), rel_tol=0.0, abs_tol=1e-12):
+            return False
+    return True
 
 
 class ContinualLearningStore:
@@ -1351,6 +1425,7 @@ class ContinualLearningStore:
             rows = db.execute(
                 """
                 SELECT m.model_id, m.status,
+                       h.current_model_id, h.opponent_model_id,
                        h.current_win_rate, h.previous_win_rate,
                        h.match_count, h.tags_json
                 FROM models m
@@ -1379,26 +1454,49 @@ class ContinualLearningStore:
                 ),
             ).fetchall()
 
-        result = []
-        for row in rows:
-            regression = 0.0
-            if row["previous_win_rate"] is not None and row["current_win_rate"] is not None:
-                regression = max(
-                    0.0,
-                    float(row["previous_win_rate"]) - float(row["current_win_rate"]) - trigger,
+            result = []
+            for row in rows:
+                try:
+                    tags = json.loads(row["tags_json"]) if row["tags_json"] else []
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise ContinualLearningError(
+                        f"Historical matchup tags are corrupted for opponent {row['model_id']}."
+                    ) from exc
+                if not isinstance(tags, list):
+                    raise ContinualLearningError(
+                        f"Historical matchup tags must be a list for opponent {row['model_id']}."
+                    )
+                pressure_valid = True
+                if AUTHORITATIVE_HISTORICAL_MATCHUP_TAG in tags:
+                    pressure_valid = _authoritative_historical_row_is_draw_aware(
+                        db,
+                        row,
+                        tags,
+                    )
+
+                regression = 0.0
+                if (
+                    pressure_valid
+                    and row["previous_win_rate"] is not None
+                    and row["current_win_rate"] is not None
+                ):
+                    regression = max(
+                        0.0,
+                        float(row["previous_win_rate"]) - float(row["current_win_rate"]) - trigger,
+                    )
+                multiplier = min(cap, 1.0 + regression * scale)
+                result.append(
+                    {
+                        "model_id": row["model_id"],
+                        "status": row["status"],
+                        "weight": base * multiplier,
+                        "regression": regression,
+                        "match_count": row["match_count"] or 0,
+                        "tags": tags,
+                        "pressure_provenance_valid": pressure_valid,
+                    }
                 )
-            multiplier = min(cap, 1.0 + regression * scale)
-            result.append(
-                {
-                    "model_id": row["model_id"],
-                    "status": row["status"],
-                    "weight": base * multiplier,
-                    "regression": regression,
-                    "match_count": row["match_count"] or 0,
-                    "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
-                }
-            )
-        return result
+            return result
 
     def sample_historical_opponent(
         self,
