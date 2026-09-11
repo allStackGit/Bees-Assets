@@ -246,7 +246,6 @@ def ingest_native_demonstration(
         "reward_schema_version": store.compatibility.reward_schema_version,
         "scenario_schema_version": store.compatibility.scenario_schema_version,
         "native_demo": {
-            "source_name": source.name,
             "sha256": demo_hash,
             "record_count": parsed_count,
             "trainable_example_count": trainable_example_count,
