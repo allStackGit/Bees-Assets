@@ -27,6 +27,9 @@ native = _load("bees_continual_native_demo")
 contributors = _load("bees_continual_demo_contributors")
 curation = _load("bees_continual_demo_curation")
 adversarial = _load("bees_continual_adversarial")
+suggest = _load("bees_continual_adversarial_suggest")
+mine = _load("bees_continual_adversarial_mine")
+replay = _load("bees_continual_adversarial_replay")
 evaluate = _load("bees_continual_evaluate")
 adversarial_evaluate = _load("bees_continual_adversarial_evaluate")
 
@@ -58,10 +61,11 @@ class AdversarialGeometryEvaluationArgumentTests(unittest.TestCase):
         self.assertIn("--rl-matchup-mode=fixed", args)
         self.assertFalse(any(value.startswith("--bees-rl-fixed-geometry=") for value in args))
 
-    def test_manual_geometry_cannot_override_registry_during_diagnostic_evaluation(self):
+    def test_manual_geometry_or_replay_cannot_override_registry_during_diagnostic_evaluation(self):
         for value in (
             "--bees-rl-fixed-geometry=96,0.5",
             "--bees-adversarial-geometry-catalog=adv-aaaaaaaaaaaaaaaaaaaaaaaa:96,0.5",
+            "--bees-adversarial-replay-catalog=manual.json",
         ):
             with self.subTest(value=value):
                 with self.assertRaises(continual.ValidationError):
