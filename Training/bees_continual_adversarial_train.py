@@ -2,9 +2,10 @@
 
 The selected immutable scenarios are resolved from the continual store and encoded as bounded Unity
 environment arguments. The normal continual wrapper still owns PPO, historical opponents, candidate
-registration and optional behavioral cloning. This layer only records and injects selected
-player-derived matchup pressure and optional tactical geometry; it never reuses old player
-trajectories as PPO data.
+registration and optional behavioral cloning. This layer records/injects selected player-derived
+matchup pressure, optional tactical geometry, and any explicitly registered scripted replay catalog.
+Old player trajectories are never reused as PPO data: replay attachments control only the scripted
+opponent side while the other side generates fresh on-policy experience.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from bees_continual_adversarial import (
     encode_geometry_catalog_for_unity,
     encode_scenarios_for_unity,
 )
+from bees_continual_adversarial_replay import build_replay_catalog
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -35,6 +37,7 @@ ADVERSARIAL_SCENARIOS_FLAG = "--continual-adversarial-scenarios"
 UNITY_PRESSURE_FLAG = "--bees-adversarial-matchups"
 UNITY_GEOMETRY_CATALOG_FLAG = "--bees-adversarial-geometry-catalog"
 UNITY_FIXED_GEOMETRY_FLAG = "--bees-rl-fixed-geometry"
+UNITY_REPLAY_CATALOG_FLAG = "--bees-adversarial-replay-catalog"
 RUN_SELECTION_SCHEMA_VERSION = 1
 
 
@@ -86,6 +89,7 @@ def inject_unity_pressure_arg(
     argv: Sequence[str],
     encoded: str,
     geometry_catalog: str = "",
+    replay_catalog_path: str = "",
 ) -> List[str]:
     if not encoded:
         raise SystemExit("Encoded player-derived adversarial pressure must not be empty.")
@@ -93,6 +97,11 @@ def inject_unity_pressure_arg(
     geometry_argument = (
         UNITY_GEOMETRY_CATALOG_FLAG + "=" + geometry_catalog
         if geometry_catalog
+        else None
+    )
+    replay_argument = (
+        UNITY_REPLAY_CATALOG_FLAG + "=" + replay_catalog_path
+        if replay_catalog_path
         else None
     )
     for argument in argv:
@@ -108,6 +117,11 @@ def inject_unity_pressure_arg(
                 "Do not pass player-derived tactical geometry manually when using "
                 f"{ADVERSARIAL_SCENARIOS_FLAG}; the immutable scenario registry is authoritative."
             )
+        if _is_flag(argument, UNITY_REPLAY_CATALOG_FLAG):
+            raise SystemExit(
+                "Do not pass player-derived action replay manually when using "
+                f"{ADVERSARIAL_SCENARIOS_FLAG}; registered immutable replay attachments are authoritative."
+            )
         if argument.startswith("--env-args="):
             raise SystemExit(
                 "Use ML-Agents --env-args as a separate token before Unity arguments when using "
@@ -120,6 +134,8 @@ def inject_unity_pressure_arg(
     result.append(pressure_argument)
     if geometry_argument is not None:
         result.append(geometry_argument)
+    if replay_argument is not None:
+        result.append(replay_argument)
     return result
 
 
@@ -148,6 +164,7 @@ def record_run_selection(
     scenario_ids: Sequence[str],
     encoded: str,
     geometry_catalog: str = "",
+    replay_catalog_sha256: str = "",
 ) -> Path:
     store._require_initialized()
     if not isinstance(run_id, str) or not run_id.strip():
@@ -158,12 +175,15 @@ def record_run_selection(
         "scenario_ids": sorted(scenario_ids),
         "unity_pressure_argument": UNITY_PRESSURE_FLAG + "=" + encoded,
     }
-    # Keep no-geometry runs byte-for-byte compatible with the original selection identity so an
-    # existing run can resume after this feature is introduced without spuriously changing lineage.
+    # Keep old/no-geometry/no-replay runs byte-for-byte compatible with the original selection
+    # identity. Optional replay identity is content-addressed rather than path-addressed so moving a
+    # continual-learning store does not alter lineage.
     if geometry_catalog:
         identity["unity_geometry_argument"] = (
             UNITY_GEOMETRY_CATALOG_FLAG + "=" + geometry_catalog
         )
+    if replay_catalog_sha256:
+        identity["replay_catalog_sha256"] = replay_catalog_sha256
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     path = _run_selection_path(store, run_id)
     if path.exists():
@@ -210,6 +230,17 @@ def prepare_adversarial_training_args(
     store.initialize()
     encoded = encode_scenarios_for_unity(store, scenario_ids)
     geometry_catalog = encode_geometry_catalog_for_unity(store, scenario_ids)
+    replay_catalog = build_replay_catalog(store, scenario_ids)
+    replay_catalog_path = (
+        str(Path(replay_catalog["catalog_path"]).resolve())
+        if int(replay_catalog["entry_count"]) > 0
+        else ""
+    )
+    replay_catalog_sha256 = (
+        str(replay_catalog["catalog_sha256"])
+        if replay_catalog_path
+        else ""
+    )
     _, run_id, _ = continual_train.infer_run_context(trainer_args)
     record = record_run_selection(
         store,
@@ -217,9 +248,15 @@ def prepare_adversarial_training_args(
         scenario_ids=scenario_ids,
         encoded=encoded,
         geometry_catalog=geometry_catalog,
+        replay_catalog_sha256=replay_catalog_sha256,
     )
     return (
-        inject_unity_pressure_arg(cleaned, encoded, geometry_catalog),
+        inject_unity_pressure_arg(
+            cleaned,
+            encoded,
+            geometry_catalog,
+            replay_catalog_path,
+        ),
         record,
         scenario_ids,
     )
