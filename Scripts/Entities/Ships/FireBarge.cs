@@ -44,6 +44,7 @@ namespace Assets.Scripts.Entities.Ships
             }
 
             _rlSelfDetonationRequested = true;
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "fire_barge_detonate");
             Kill(null, null, null);
         }
