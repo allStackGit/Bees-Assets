@@ -21,6 +21,8 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_bootstrap import bootstrap_champion
+
 
 BASE_CONFIG = {
     "behavior_name": "BeesRL1v1",
@@ -104,10 +106,11 @@ class RegistrySafetyTests(unittest.TestCase):
         return report
 
     def promote_first(self, model):
-        evaluation = self.store.record_evaluation(
-            self.passing_report(model["model_id"])
+        return bootstrap_champion(
+            self.store,
+            model["model_id"],
+            reason="Registry safety test baseline",
         )
-        return self.store.promote(model["model_id"], evaluation["report_id"])
 
     def test_registration_rejects_source_that_changes_after_identity_hash(self):
         source = self.artifact("changing.onnx", b"original-model")
@@ -133,9 +136,13 @@ class RegistrySafetyTests(unittest.TestCase):
         self.assertEqual(self.store.list_models(), [])
 
     def test_tampered_candidate_cannot_be_promoted(self):
-        candidate = self.register("candidate.onnx", b"candidate", 100)
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        candidate = self.register(
+            "candidate.onnx", b"candidate", 200, parent=first["model_id"]
+        )
         evaluation = self.store.record_evaluation(
-            self.passing_report(candidate["model_id"])
+            self.passing_report(candidate["model_id"], first["model_id"])
         )
         Path(candidate["artifact_path"]).write_bytes(b"tampered")
 
@@ -145,7 +152,7 @@ class RegistrySafetyTests(unittest.TestCase):
         ):
             self.store.promote(candidate["model_id"], evaluation["report_id"])
 
-        self.assertIsNone(self.store.current_champion_id())
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
         self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "candidate")
 
     def test_failed_multi_artifact_promotion_keeps_database_paths_usable(self):

@@ -18,6 +18,8 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_bootstrap import bootstrap_champion
+
 
 TEST_CONFIG = {
     "behavior_name": "BeesRL1v1",
@@ -81,18 +83,11 @@ class ConcurrentIngestionTests(unittest.TestCase):
             training_step=1,
             game_build_version="test-build",
         )
-        report = self.store.record_evaluation(
-            {
-                "candidate_model_id": model["model_id"],
-                "champion_model_id": None,
-                "historical": [],
-                "competencies": [],
-                "behavior_sanity_passed": True,
-                "runtime_compatible": True,
-                "runtime_checks_passed": True,
-            }
+        bootstrap_champion(
+            self.store,
+            model["model_id"],
+            reason="Concurrent ingestion test baseline",
         )
-        self.store.promote(model["model_id"], report["report_id"])
         self.model_id = model["model_id"]
 
     def tearDown(self) -> None:

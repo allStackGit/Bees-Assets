@@ -21,6 +21,8 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_bootstrap import bootstrap_champion
+
 
 TEST_CONFIG = {
     "behavior_name": "BeesRL1v1",
@@ -110,10 +112,11 @@ class StoreTestCase(unittest.TestCase):
         return report
 
     def promote_first(self, model):
-        report = self.store.record_evaluation(
-            self.passing_report(model["model_id"])
+        return bootstrap_champion(
+            self.store,
+            model["model_id"],
+            reason="Test generation-zero baseline",
         )
-        return self.store.promote(model["model_id"], report["report_id"])
 
 
 class ModelRegistryTests(StoreTestCase):
@@ -150,6 +153,19 @@ class PromotionTests(StoreTestCase):
         model = self.register("candidate.onnx", b"candidate", 100)
         with self.assertRaises(continual.PromotionError):
             self.store.promote(model["model_id"], "missing-report")
+
+    def test_normal_promotion_cannot_establish_generation_zero(self):
+        model = self.register("candidate.onnx", b"candidate", 100)
+        evaluation = self.store.record_evaluation(
+            self.passing_report(model["model_id"])
+        )
+        self.assertTrue(evaluation["passed"])
+
+        with self.assertRaisesRegex(continual.PromotionError, "bootstrap"):
+            self.store.promote(model["model_id"], evaluation["report_id"])
+
+        self.assertIsNone(self.store.current_champion_id())
+        self.assertEqual(self.store.get_model(model["model_id"])["status"], "candidate")
 
     def test_first_champion_then_challenger_moves_old_champion_to_history(self):
         first = self.register("first.onnx", b"first", 100)

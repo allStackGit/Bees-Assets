@@ -854,21 +854,25 @@ class ContinualLearningStore:
                 )
 
             current = self._state(db, STATE_CHAMPION)
+            if current is None:
+                raise PromotionError(
+                    "No current champion is established; use the explicit generation-zero "
+                    "bootstrap command before normal promotion."
+                )
             if report_champion_id != current:
                 raise PromotionError(
                     "Champion changed after this evaluation; re-evaluate candidate against current champion."
                 )
 
-            if current is not None:
-                old = self._model_row(db, current)
-                old_source = Path(old["artifact_path"])
-                old_path = self._stage_artifact_for_status(old, "historical")
-                cleanup.append((old_source, Path(old_path), old["artifact_sha256"]))
-                db.execute(
-                    "UPDATE models SET status = 'historical', artifact_path = ? WHERE model_id = ?",
-                    (old_path, current),
-                )
-                self._set_state(db, STATE_PREVIOUS_CHAMPION, current)
+            old = self._model_row(db, current)
+            old_source = Path(old["artifact_path"])
+            old_path = self._stage_artifact_for_status(old, "historical")
+            cleanup.append((old_source, Path(old_path), old["artifact_sha256"]))
+            db.execute(
+                "UPDATE models SET status = 'historical', artifact_path = ? WHERE model_id = ?",
+                (old_path, current),
+            )
+            self._set_state(db, STATE_PREVIOUS_CHAMPION, current)
 
             candidate_source = Path(candidate["artifact_path"])
             new_path = self._stage_artifact_for_status(candidate, "champion")

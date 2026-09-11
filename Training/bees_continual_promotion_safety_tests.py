@@ -20,6 +20,8 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_bootstrap import bootstrap_champion
+
 
 TEST_CONFIG = {
     "behavior_name": "BeesRL1v1",
@@ -100,10 +102,11 @@ class PromotionRaceTests(unittest.TestCase):
         return report
 
     def promote_first(self, model):
-        evaluation = self.store.record_evaluation(
-            self.passing_report(model["model_id"])
+        bootstrap_champion(
+            self.store,
+            model["model_id"],
+            reason="Promotion-race test baseline",
         )
-        self.store.promote(model["model_id"], evaluation["report_id"])
 
     def test_champion_change_between_assessment_and_insert_cannot_relabel_report(self):
         first = self.register("first.onnx", b"first", 100)
