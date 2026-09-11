@@ -71,8 +71,8 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int EnemyTargetBranchSize = 1 + MaxObservedEnemies;
     internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
 
-    private const float MovementDeadZone = 0.2f;
-    private const float AimDeadZone = 0.1f;
+    internal const float MovementDeadZone = 0.2f;
+    internal const float AimDeadZone = 0.1f;
     private const float MiningActionIntervalSeconds = 5f;
     private const float HealingActionIntervalSeconds = 1f;
     private const int HealingPerSuccessfulAction = 50;
@@ -446,7 +446,7 @@ internal sealed class RlOneVsOneAgent : Agent
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         var continuous = actions.ContinuousActions;
         Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
-        ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
+        ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
 
         var discrete = actions.DiscreteActions;
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
@@ -461,7 +461,7 @@ internal sealed class RlOneVsOneAgent : Agent
             }
 
             bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
-            ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);
+            ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
         switch (discrete[SpecialActionBranch])
@@ -499,35 +499,39 @@ internal sealed class RlOneVsOneAgent : Agent
         discrete[MapObjectTargetBranch] = 0;
     }
 
-    private void ApplyMovement(Vector2 movement)
+    internal static void ApplyMovementCommand(Ship ship, Vector2 movement)
     {
-        if (!_ship.IsMobile || _ship.CannotChangeMovementOrders)
+        if (ship == null)
         {
-            _ship.HasBrain = true;
+            return;
+        }
+        if (!ship.IsMobile || ship.CannotChangeMovementOrders)
+        {
+            ship.HasBrain = true;
             return;
         }
 
         if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
         {
-            _ship.Direction = 360;
+            ship.Direction = 360;
         }
         else
         {
-            Vector2 point = _ship.GetPosition() + movement.normalized;
-            int direction = Mathf.RoundToInt(_ship.GetDegreesTowardsPoint(point));
-            _ship.Direction = ((direction % 360) + 360) % 360;
+            Vector2 point = ship.GetPosition() + movement.normalized;
+            int direction = Mathf.RoundToInt(ship.GetDegreesTowardsPoint(point));
+            ship.Direction = ((direction % 360) + 360) % 360;
         }
-        _ship.HasBrain = true;
+        ship.HasBrain = true;
     }
 
-    private void ApplyWeaponCommand(int slot, Vector2 aimDirection, bool fire)
+    internal static void ApplyWeaponCommand(Ship ship, int slot, Vector2 aimDirection, bool fire)
     {
-        if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= _ship.Weapons.Count)
+        if (ship == null || ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= ship.Weapons.Count)
         {
             return;
         }
 
-        if (!(_ship.Weapons[slot] is Turret turret))
+        if (!(ship.Weapons[slot] is Turret turret))
         {
             return;
         }
@@ -795,7 +799,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private bool IsCurrentController()
     {
-        return RlOneVsOneEpisodeCoordinator.IsControllerForSide(_level, _side, _teamId);
+        return !RlPlayerDerivedActionReplay.IsScriptedSide(_level, _side) &&
+               RlOneVsOneEpisodeCoordinator.IsControllerForSide(_level, _side, _teamId);
     }
 
     private bool TryBindShip()
