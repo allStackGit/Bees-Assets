@@ -31,7 +31,7 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsDead;
         public bool IsUserControlled;
         public bool IsMobile;
-        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
+        public bool IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
             HasTargetDirection, HasUserFogOfWarVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker,
             HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip, IsBomber;
@@ -43,7 +43,6 @@ namespace Assets.Scripts.Entities.Ships
         public List<GameObject> OriginalColoredPrefabs;
         public List<Sprite> OriginalSprites;
         public List<GameObject> WeaponPrefabs, LeftRocketFlares, CenterRocketFlares, RightRocketFlares;
-        public Brain Brain;
         public Queue<Vector2> DestinationQueue = new Queue<Vector2>();
         public List<CollisionAsteroid> NearbyAsteroids = new List<CollisionAsteroid>();
         public List<Turret> Turrets = new List<Turret>();
