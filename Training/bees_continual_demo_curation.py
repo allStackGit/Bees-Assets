@@ -6,7 +6,8 @@ into an immutable PolicyV<ABI>/Human directory that the existing continual train
 and snapshot normally.
 
 Approvals and revocations are append-only immutable records. Materialization never changes the
-source archive and never automatically selects every approved public batch.
+source archive, never automatically selects every approved public batch, and enforces configured
+quality and per-contributor limits before producing a training set.
 """
 
 from __future__ import annotations
@@ -14,12 +15,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from bees_continual_demo_contributors import load_public_contributor_buckets
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -44,16 +45,43 @@ def _required_text(value: object, label: str, maximum: int) -> str:
     return value.strip()
 
 
-def _quality_score(value: object) -> float:
+def _quality_score(value: object, label: str = "quality_score") -> float:
     if isinstance(value, bool):
-        raise ValidationError("quality_score must be a finite number in [0,1].")
+        raise ValidationError(f"{label} must be a finite number in [0,1].")
     try:
         score = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValidationError("quality_score must be a finite number in [0,1].") from exc
+        raise ValidationError(f"{label} must be a finite number in [0,1].") from exc
     if not math.isfinite(score) or score < 0.0 or score > 1.0:
-        raise ValidationError("quality_score must be a finite number in [0,1].")
+        raise ValidationError(f"{label} must be a finite number in [0,1].")
     return score
+
+
+def _positive_integer(value: object, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValidationError(f"{label} must be a positive integer.")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{label} must be a positive integer.") from exc
+    if parsed <= 0 or (isinstance(value, float) and not value.is_integer()):
+        raise ValidationError(f"{label} must be a positive integer.")
+    return parsed
+
+
+def _curation_settings(store: ContinualLearningStore) -> tuple[float, int]:
+    settings = store.config.get("human_imitation")
+    if not isinstance(settings, dict):
+        raise ValidationError("human_imitation configuration must be an object for public curation.")
+    minimum_quality = _quality_score(
+        settings.get("public_min_quality_score"),
+        "human_imitation.public_min_quality_score",
+    )
+    max_per_contributor = _positive_integer(
+        settings.get("public_max_batches_per_contributor"),
+        "human_imitation.public_max_batches_per_contributor",
+    )
+    return minimum_quality, max_per_contributor
 
 
 def _batch_id(value: object) -> str:
@@ -144,6 +172,9 @@ def _validated_archive(store: ContinualLearningStore, batch_id: str) -> Mapping[
         raise ValidationError(f"Native demonstration metadata is incomplete for {batch_id}.")
     demo_hash = str(native.get("sha256", ""))
     manifest_hash = str(capture.get("sha256", ""))
+    manifest_metadata = capture.get("metadata")
+    if not isinstance(manifest_metadata, dict):
+        raise ValidationError(f"Native capture-manifest metadata is incomplete for {batch_id}.")
     if sha256_file(demo) != demo_hash:
         raise ValidationError(f"Native demonstration archive hash mismatch for {batch_id}.")
     if sha256_file(manifest) != manifest_hash:
@@ -156,6 +187,7 @@ def _validated_archive(store: ContinualLearningStore, batch_id: str) -> Mapping[
         "manifest": manifest,
         "metadata": metadata,
         "envelope": envelope,
+        "capture_manifest_metadata": manifest_metadata,
         "demo_sha256": demo_hash,
         "manifest_sha256": manifest_hash,
     }
@@ -306,20 +338,44 @@ def materialize_approved_training_set(
     if len(normalized) != len(batch_ids):
         raise ValidationError("Public demonstration training-set selection contains duplicate batch IDs.")
 
+    minimum_quality, max_per_contributor = _curation_settings(store)
     selected = []
+    contributor_counts: Dict[str, int] = {}
+    capture_metadata: Optional[Mapping[str, object]] = None
     manifest_bytes: Optional[bytes] = None
     manifest_hash: Optional[str] = None
     for batch_id in normalized:
         archive = _approved_archive(store, batch_id)
-        current_manifest = archive["manifest"].read_bytes()
-        if manifest_bytes is None:
-            manifest_bytes = current_manifest
-            manifest_hash = str(archive["manifest_sha256"])
-        elif current_manifest != manifest_bytes:
+        approval_score = _quality_score(
+            archive["approval"].get("quality_score"),
+            f"approval quality_score for {batch_id}",
+        )
+        if approval_score < minimum_quality:
             raise ValidationError(
-                "Approved public demonstration batches do not share the exact same capture manifest."
+                f"Approved public demonstration {batch_id} quality score {approval_score:g} is below "
+                f"configured minimum {minimum_quality:g}."
             )
+
+        current_metadata = archive["capture_manifest_metadata"]
+        if capture_metadata is None:
+            capture_metadata = current_metadata
+            manifest_bytes = archive["manifest"].read_bytes()
+            manifest_hash = str(archive["manifest_sha256"])
+        elif current_metadata != capture_metadata:
+            raise ValidationError(
+                "Approved public demonstration batches do not share the same capture-manifest contract."
+            )
+
+        buckets = load_public_contributor_buckets(store, batch_id)
+        for bucket in buckets:
+            contributor_counts[bucket] = contributor_counts.get(bucket, 0) + 1
         selected.append(archive)
+
+    if any(count > max_per_contributor for count in contributor_counts.values()):
+        raise ValidationError(
+            "Approved public demonstration selection exceeds "
+            "human_imitation.public_max_batches_per_contributor."
+        )
 
     assert manifest_bytes is not None and manifest_hash is not None
     entries = []
@@ -340,6 +396,11 @@ def materialize_approved_training_set(
         "source": "explicitly-approved-public-human-demonstrations",
         "policy_abi_version": store.compatibility.policy_abi_version,
         "capture_manifest_sha256": manifest_hash,
+        "curation_policy": {
+            "minimum_quality_score": minimum_quality,
+            "max_batches_per_contributor": max_per_contributor,
+        },
+        "contributor_bucket_count": len(contributor_counts),
         "batches": entries,
     }
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
@@ -362,13 +423,14 @@ def materialize_approved_training_set(
         if _write_bytes_immutable(capture_target, manifest_bytes):
             created.append(capture_target)
 
-        set_manifest = {
-            **identity,
-            "identity_sha256": identity_hash,
-            "human_demo_dir": str(human_dir),
-        }
         set_manifest_bytes = (
-            json.dumps(set_manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+            json.dumps(
+                {**identity, "identity_sha256": identity_hash},
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            + "\n"
         ).encode("utf-8")
         set_manifest_path = set_root / "manifest.json"
         if _write_bytes_immutable(set_manifest_path, set_manifest_bytes):
@@ -386,6 +448,7 @@ def materialize_approved_training_set(
         "identity_sha256": identity_hash,
         "batch_count": len(entries),
         "example_count": sum(int(entry["example_count"]) for entry in entries),
+        "contributor_bucket_count": len(contributor_counts),
         "human_demo_dir": str(human_dir),
         "manifest_path": str(set_root / "manifest.json"),
     }
