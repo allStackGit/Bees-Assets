@@ -682,6 +682,9 @@ class ContinualLearningStore:
             if not _finite_number(current) or not 0 <= float(current) <= 1:
                 reasons.append(f"historical[{index}].candidate_win_rate must be in [0,1]")
                 continue
+            if champion_id is not None and baseline is None:
+                reasons.append(f"historical[{index}].baseline_win_rate is required")
+                continue
             if baseline is not None:
                 if not _finite_number(baseline) or not 0 <= float(baseline) <= 1:
                     reasons.append(f"historical[{index}].baseline_win_rate must be in [0,1]")
@@ -890,6 +893,53 @@ class ContinualLearningStore:
             if report_champion_id != current:
                 raise PromotionError(
                     "Champion changed after this evaluation; re-evaluate candidate against current champion."
+                )
+
+            report_historical = report_body.get("historical")
+            if not isinstance(report_historical, list):
+                raise PromotionError("Evaluation report historical results are corrupted.")
+            reported_historical_ids: List[str] = []
+            for index, item in enumerate(report_historical):
+                if not isinstance(item, dict):
+                    raise PromotionError(
+                        f"Evaluation report historical[{index}] is corrupted."
+                    )
+                opponent_id = item.get("opponent_model_id")
+                if not isinstance(opponent_id, str) or not opponent_id.strip():
+                    raise PromotionError(
+                        f"Evaluation report historical[{index}] is missing opponent_model_id."
+                    )
+                reported_historical_ids.append(opponent_id.strip())
+            if len(reported_historical_ids) != len(set(reported_historical_ids)):
+                raise PromotionError("Evaluation report contains duplicate historical opponents.")
+
+            compatibility = self.compatibility
+            historical_rows = db.execute(
+                """
+                SELECT model_id
+                FROM models
+                WHERE status = 'historical'
+                  AND behavior_name = ?
+                  AND policy_abi_version = ?
+                  AND observation_schema_version = ?
+                  AND action_schema_version = ?
+                  AND reward_schema_version = ?
+                  AND scenario_schema_version = ?
+                """,
+                (
+                    compatibility.behavior_name,
+                    compatibility.policy_abi_version,
+                    compatibility.observation_schema_version,
+                    compatibility.action_schema_version,
+                    compatibility.reward_schema_version,
+                    compatibility.scenario_schema_version,
+                ),
+            ).fetchall()
+            current_historical_ids = {str(row["model_id"]) for row in historical_rows}
+            if set(reported_historical_ids) != current_historical_ids:
+                raise PromotionError(
+                    "Historical league changed after this evaluation; re-evaluate candidate "
+                    "against the current historical league."
                 )
 
             old = self._model_row(db, current)
