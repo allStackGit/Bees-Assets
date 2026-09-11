@@ -23,8 +23,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from bees_continual_learning import (
+    AUTHORITATIVE_HISTORICAL_MATCHUP_TAG,
     ContinualLearningError,
     ContinualLearningStore,
+    _authoritative_historical_row_is_draw_aware,
+    _historical_evaluation_report_id,
     sha256_file,
 )
 
@@ -33,12 +36,7 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 HISTORICAL_ACTIVE_ATTRIBUTE = "_bees_external_historical_active"
 PATCHED_ATTRIBUTE = "_bees_historical_opponent_patch"
 DEFAULT_POLICY_CACHE_SIZE = 4
-AUTHORITATIVE_EVALUATION_TAG = "authoritative_candidate_evaluation"
-EVALUATION_TAG_PREFIX = "evaluation:"
-# Promotion-policy schema 3 changed historical regression from raw win rate to
-# draw-aware score rate. Earlier authoritative rows are valid audit history but must
-# never affect current adaptive opponent sampling.
-DRAW_AWARE_PROMOTION_POLICY_SCHEMA_VERSION = 3
+AUTHORITATIVE_EVALUATION_TAG = AUTHORITATIVE_HISTORICAL_MATCHUP_TAG
 
 
 class HistoricalOpponentError(ContinualLearningError):
@@ -155,84 +153,6 @@ def _validated_model_path(store: ContinualLearningStore, model_id: str) -> Path:
     )
 
 
-def _evaluation_report_id(tags: Sequence[Any]) -> Optional[str]:
-    report_ids = [
-        value[len(EVALUATION_TAG_PREFIX):].strip()
-        for value in tags
-        if isinstance(value, str) and value.startswith(EVALUATION_TAG_PREFIX)
-    ]
-    report_ids = [value for value in report_ids if value]
-    if len(report_ids) != 1:
-        return None
-    return report_ids[0]
-
-
-def _matches_draw_aware_evaluation(
-    report: Any,
-    *,
-    current_model_id: str,
-    opponent_model_id: str,
-    current_score_rate: Any,
-    previous_score_rate: Any,
-    match_count: int,
-) -> bool:
-    """Prove a persisted pressure row came from the draw-aware evaluator contract."""
-    if not isinstance(report, Mapping):
-        return False
-    policy = report.get("promotion_policy")
-    if not isinstance(policy, Mapping):
-        return False
-    schema_version = policy.get("schema_version")
-    if (
-        not isinstance(schema_version, int)
-        or isinstance(schema_version, bool)
-        or schema_version < DRAW_AWARE_PROMOTION_POLICY_SCHEMA_VERSION
-    ):
-        return False
-    if report.get("candidate_model_id") != current_model_id:
-        return False
-
-    historical = report.get("historical")
-    if not isinstance(historical, list):
-        return False
-    matching = [
-        item
-        for item in historical
-        if isinstance(item, Mapping)
-        and item.get("opponent_model_id") == opponent_model_id
-    ]
-    if len(matching) != 1:
-        return False
-    item = matching[0]
-    candidate_score_rate = item.get("candidate_score_rate")
-    baseline_score_rate = item.get("baseline_score_rate")
-    matches = item.get("matches")
-    if (
-        not isinstance(matches, int)
-        or isinstance(matches, bool)
-        or matches != match_count
-    ):
-        return False
-    for value in (candidate_score_rate, baseline_score_rate, current_score_rate, previous_score_rate):
-        if (
-            not isinstance(value, (int, float))
-            or isinstance(value, bool)
-            or not math.isfinite(float(value))
-        ):
-            return False
-    return math.isclose(
-        float(candidate_score_rate),
-        float(current_score_rate),
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    ) and math.isclose(
-        float(baseline_score_rate),
-        float(previous_score_rate),
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    )
-
-
 def _latest_authoritative_pressure(
     store: ContinualLearningStore,
     opponent_model_ids: Optional[Sequence[str]] = None,
@@ -241,11 +161,12 @@ def _latest_authoritative_pressure(
 
     Historical matchup rows predate explicit score semantics. Rather than mutate or
     delete that audit history, validate each row against the immutable evaluation
-    report named in its tags. Only promotion-policy schema 3+ reports can influence
-    current sampling because schema 3 introduced draw-aware historical score rates.
+    report named in its tags. Only promotion-policy schema 3+ reports with a valid
+    policy fingerprint can influence current sampling.
 
-    Rows are processed newest-first and evaluation reports are fetched lazily. Once
-    every requested active opponent has validated evidence, older rows are not read.
+    Rows are processed newest-first and evaluation reports are fetched lazily through
+    the shared registry validator. Once every requested active opponent has validated
+    evidence, older rows are not read.
     """
     db_path = getattr(store, "db_path", None)
     if db_path is None or not Path(db_path).is_file():
@@ -307,29 +228,14 @@ def _latest_authoritative_pressure(
                 ) from exc
             if not isinstance(tags, list) or AUTHORITATIVE_EVALUATION_TAG not in tags:
                 continue
-            report_id = _evaluation_report_id(tags)
+            report_id = _historical_evaluation_report_id(tags)
             if report_id is None:
                 continue
-            if report_id not in report_cache:
-                evaluation = db.execute(
-                    "SELECT report_json FROM evaluations WHERE report_id = ?",
-                    (report_id,),
-                ).fetchone()
-                if evaluation is None:
-                    report_cache[report_id] = None
-                else:
-                    try:
-                        report_cache[report_id] = json.loads(evaluation["report_json"])
-                    except (TypeError, json.JSONDecodeError):
-                        report_cache[report_id] = None
-            report = report_cache[report_id]
-            if not _matches_draw_aware_evaluation(
-                report,
-                current_model_id=str(row["current_model_id"]),
-                opponent_model_id=opponent_id,
-                current_score_rate=row["current_win_rate"],
-                previous_score_rate=row["previous_win_rate"],
-                match_count=int(row["match_count"]),
+            if not _authoritative_historical_row_is_draw_aware(
+                db,
+                row,
+                tags,
+                report_cache,
             ):
                 continue
             result[opponent_id] = {
