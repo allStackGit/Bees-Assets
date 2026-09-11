@@ -1,6 +1,7 @@
 using Assets.Scripts;
 using Assets.Scripts.Levels;
 using System;
+using Unity.MLAgents;
 using Unity.MLAgents.SideChannels;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -48,6 +49,13 @@ internal sealed class RlOneVsOneEvaluationSideChannel : SideChannel
         SideChannelManager.RegisterSideChannel(_instance);
         RlOneVsOneEpisodeCoordinator.EpisodeEnded -= OnEpisodeEnded;
         RlOneVsOneEpisodeCoordinator.EpisodeEnded += OnEpisodeEnded;
+
+        // Register our result channel before Academy initializes its communicator. The Python
+        // UnityEnvironment seed is delivered during that initialization and Academy applies it to
+        // UnityEngine.Random. Evaluator-only scenario samplers can then derive deterministic private
+        // RNG streams before the first map/matchup is prepared. Ordinary training keeps its existing
+        // initialization and sampling behavior because this path is evaluator-only.
+        _ = Academy.Instance;
     }
 
     internal static bool IsEvaluationMode(string[] args)
