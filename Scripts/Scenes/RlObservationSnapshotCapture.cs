@@ -3,23 +3,29 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Opt-in diagnostic that writes one raw RL observation vector and then disables itself.
-/// No object is created and no capture work occurs unless the command-line flag is present.
+/// Opt-in diagnostic that samples live RL observations while the command-line flag is present.
+/// Every twentieth valid sample is appended to one JSON array. No object is created and no
+/// capture work occurs unless the command-line flag is present.
 /// </summary>
 internal sealed class RlObservationSnapshotCapture : MonoBehaviour
 {
     internal const string CaptureFlag = "--bees-rl-observation-snapshot";
     internal const string OutputFlag = "--bees-rl-observation-snapshot-output";
+    internal const int CaptureInterval = 20;
 
     private static readonly MethodInfo GetObservationsMethod = typeof(VectorSensor).GetMethod(
         "GetObservations",
         BindingFlags.Instance | BindingFlags.NonPublic);
 
     private string _outputPath;
+    private long _validObservationCount;
+    private long _snapshotCount;
+    private bool _outputInitialized;
 
     [Serializable]
     private sealed class SnapshotPayload
@@ -27,6 +33,9 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
         public string utc_timestamp;
         public int process_id;
         public int unity_frame;
+        public long observation_sequence;
+        public long snapshot_sequence;
+        public int capture_interval;
         public string agent_name;
         public int agent_instance_id;
         public string behavior_name;
@@ -64,27 +73,25 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
             yield break;
         }
 
+        Debug.Log($"[RL] Observation snapshot capture enabled; writing every {CaptureInterval}th valid observation to {_outputPath}");
+
         while (true)
         {
             RlOneVsOneAgent[] agents = FindObjectsByType<RlOneVsOneAgent>(FindObjectsSortMode.None);
             for (int i = 0; i < agents.Length; i++)
             {
-                if (TryCapture(agents[i]))
-                {
-                    Destroy(gameObject);
-                    yield break;
-                }
+                TrySample(agents[i]);
             }
 
             yield return null;
         }
     }
 
-    private bool TryCapture(RlOneVsOneAgent agent)
+    private void TrySample(RlOneVsOneAgent agent)
     {
         if (agent == null || !agent.isActiveAndEnabled)
         {
-            return false;
+            return;
         }
 
         VectorSensor sensor = new VectorSensor(RlPolicySchema.ExpectedObservationSize, "RlObservationSnapshot");
@@ -94,7 +101,7 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
         IEnumerable<float> values = raw as IEnumerable<float>;
         if (values == null)
         {
-            return false;
+            return;
         }
 
         List<float> observations = new List<float>(RlPolicySchema.ExpectedObservationSize);
@@ -110,14 +117,24 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
 
         if (observations.Count != RlPolicySchema.ExpectedObservationSize || !hasNonZeroObservation)
         {
-            return false;
+            return;
         }
 
+        _validObservationCount++;
+        if (_validObservationCount % CaptureInterval != 0)
+        {
+            return;
+        }
+
+        _snapshotCount++;
         SnapshotPayload payload = new SnapshotPayload
         {
             utc_timestamp = DateTime.UtcNow.ToString("O"),
             process_id = System.Diagnostics.Process.GetCurrentProcess().Id,
             unity_frame = Time.frameCount,
+            observation_sequence = _validObservationCount,
+            snapshot_sequence = _snapshotCount,
+            capture_interval = CaptureInterval,
             agent_name = agent.name,
             agent_instance_id = agent.GetInstanceID(),
             behavior_name = RlPolicySchema.ExpectedBehaviorName,
@@ -130,23 +147,70 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
 
         try
         {
-            string fullPath = Path.GetFullPath(_outputPath);
-            string directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            File.WriteAllText(fullPath, JsonUtility.ToJson(payload, true));
-            Debug.Log($"[RL] Wrote one-shot observation snapshot ({observations.Count} values) to {fullPath}");
-            return true;
+            AppendSnapshot(payload);
+            Debug.Log($"[RL] Appended observation snapshot {_snapshotCount} from observation {_validObservationCount} ({observations.Count} values) to {Path.GetFullPath(_outputPath)}");
         }
         catch (Exception exception)
         {
             Debug.LogError($"[RL] Observation snapshot capture failed for '{_outputPath}': {exception.Message}");
             Destroy(gameObject);
-            return false;
         }
+    }
+
+    private void AppendSnapshot(SnapshotPayload payload)
+    {
+        string fullPath = Path.GetFullPath(_outputPath);
+        string directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string json = JsonUtility.ToJson(payload, true);
+        if (!_outputInitialized)
+        {
+            File.WriteAllText(fullPath, "[\n" + json + "\n]\n");
+            _outputInitialized = true;
+            return;
+        }
+
+        using (FileStream stream = new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        {
+            long closingBracketPosition = FindClosingArrayBracket(stream);
+            if (closingBracketPosition < 0)
+            {
+                throw new InvalidDataException("Observation snapshot file is not a valid JSON array.");
+            }
+
+            stream.SetLength(closingBracketPosition);
+            stream.Position = closingBracketPosition;
+            byte[] appended = Encoding.UTF8.GetBytes(",\n" + json + "\n]\n");
+            stream.Write(appended, 0, appended.Length);
+            stream.Flush();
+        }
+    }
+
+    private static long FindClosingArrayBracket(FileStream stream)
+    {
+        for (long position = stream.Length - 1; position >= 0; position--)
+        {
+            stream.Position = position;
+            int value = stream.ReadByte();
+            if (value < 0)
+            {
+                continue;
+            }
+
+            char character = (char)value;
+            if (char.IsWhiteSpace(character))
+            {
+                continue;
+            }
+
+            return character == ']' ? position : -1;
+        }
+
+        return -1;
     }
 
     private static bool TryParseCommandLine(string[] args, out string outputPath, out string error)
