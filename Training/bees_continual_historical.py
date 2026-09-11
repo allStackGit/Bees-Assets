@@ -292,7 +292,10 @@ def _build_frozen_onnx_policy(
     from bees_continual_evaluate import OnnxPolicy
 
     engine = OnnxPolicy(model_path, provider=provider)
-    if bool(getattr(template_policy, "use_recurrent", False)) or engine.has_recurrent_input:
+    # ML-Agents 1.1.0 exports recurrent_in even for feed-forward policies; the
+    # zero-width memory tensor is a placeholder, not recurrent state. Only a
+    # positive exported memory size makes the frozen ONNX policy recurrent.
+    if bool(getattr(template_policy, "use_recurrent", False)) or engine.memory_size > 0:
         raise HistoricalOpponentError(
             "Persistent historical-opponent training currently supports feed-forward "
             "Bees policies only. Add global-agent recurrent-memory ownership before "
