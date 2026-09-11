@@ -43,7 +43,7 @@ DATABASE_NAME = "registry.sqlite3"
 STATE_CHAMPION = "current_champion"
 STATE_PREVIOUS_CHAMPION = "previous_champion"
 STATE_COMPETENCY_SUITE = "permanent_competency_suite"
-PROMOTION_POLICY_SCHEMA_VERSION = 2
+PROMOTION_POLICY_SCHEMA_VERSION = 3
 COMPETENCY_SUITE_SCHEMA_VERSION = 1
 COMPETENCY_METRICS = {"score_rate", "win_rate", "non_timeout_rate"}
 
@@ -850,17 +850,17 @@ class ContinualLearningStore:
                     f"historical[{index}] has only {matches} matches; "
                     f"minimum is {min_historical_matches}"
                 )
-            current = item.get("candidate_win_rate")
-            baseline = item.get("baseline_win_rate")
+            current = item.get("candidate_score_rate")
+            baseline = item.get("baseline_score_rate")
             if not _finite_number(current) or not 0 <= float(current) <= 1:
-                reasons.append(f"historical[{index}].candidate_win_rate must be in [0,1]")
+                reasons.append(f"historical[{index}].candidate_score_rate must be in [0,1]")
                 continue
             if champion_id is not None and baseline is None:
-                reasons.append(f"historical[{index}].baseline_win_rate is required")
+                reasons.append(f"historical[{index}].baseline_score_rate is required")
                 continue
             if baseline is not None:
                 if not _finite_number(baseline) or not 0 <= float(baseline) <= 1:
-                    reasons.append(f"historical[{index}].baseline_win_rate must be in [0,1]")
+                    reasons.append(f"historical[{index}].baseline_score_rate must be in [0,1]")
                     continue
                 regression = float(baseline) - float(current)
                 if regression > max_regression:

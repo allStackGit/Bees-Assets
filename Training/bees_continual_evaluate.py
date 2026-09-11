@@ -1156,7 +1156,8 @@ def evaluate_candidate(
         opponent_id = historical["model_id"]
         paired_seed = seed + run_number
         candidate_summary = run(opponent_id, historical_match_count)
-        baseline_rate: Optional[float] = None
+        baseline_win_rate: Optional[float] = None
+        baseline_score_rate: Optional[float] = None
         baseline_summary: Optional[MatchSummary] = None
         if champion_id is not None:
             champion_path = _model_path(store, champion_id)
@@ -1181,16 +1182,19 @@ def evaluate_candidate(
                 historical_match_count,
                 candidate_is_evaluated_model=False,
             )
-            baseline_rate = baseline_summary.win_rate
+            baseline_win_rate = baseline_summary.win_rate
+            baseline_score_rate = baseline_summary.score_rate
         entry: Dict[str, Any] = {
             "opponent_model_id": opponent_id,
             "matches": candidate_summary.matches,
             "candidate_win_rate": candidate_summary.win_rate,
+            "candidate_score_rate": candidate_summary.score_rate,
             "critical": _historical_is_critical(historical),
             "candidate_summary": candidate_summary.to_dict(),
         }
-        if baseline_rate is not None:
-            entry["baseline_win_rate"] = baseline_rate
+        if baseline_score_rate is not None:
+            entry["baseline_win_rate"] = baseline_win_rate
+            entry["baseline_score_rate"] = baseline_score_rate
             entry["champion_baseline_summary"] = baseline_summary.to_dict()
         historical_results.append(entry)
 
@@ -1270,7 +1274,7 @@ def evaluate_and_record(
     recorded = store.record_evaluation(report)
     league_updates = []
     for historical in report["historical"]:
-        baseline = historical.get("baseline_win_rate")
+        baseline = historical.get("baseline_score_rate")
         if baseline is None:
             continue
         tags = [
@@ -1280,7 +1284,7 @@ def evaluate_and_record(
         update = {
             "current_model_id": report["candidate_model_id"],
             "opponent_model_id": historical["opponent_model_id"],
-            "current_win_rate": historical["candidate_win_rate"],
+            "current_win_rate": historical["candidate_score_rate"],
             "previous_win_rate": baseline,
             "match_count": historical["matches"],
             "tags": tags,

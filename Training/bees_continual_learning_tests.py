@@ -332,9 +332,11 @@ class EvaluationTests(StoreTestCase):
         report = self.passing_report(second["model_id"], first["model_id"])
         report["historical"] = [
             {
-                "model_id": first["model_id"],
+                "opponent_model_id": first["model_id"],
                 "candidate_win_rate": 0.40,
                 "baseline_win_rate": 0.70,
+                "candidate_score_rate": 0.40,
+                "baseline_score_rate": 0.70,
                 "matches": 10,
                 "critical": True,
             }
@@ -352,6 +354,34 @@ class EvaluationTests(StoreTestCase):
         self.assertFalse(evaluation["passed"])
         self.assertTrue(any("regressed" in reason for reason in evaluation["reasons"]))
         self.assertTrue(any("large-map-aiming" in reason for reason in evaluation["reasons"]))
+
+    def test_historical_draws_becoming_losses_count_as_regression(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        second_eval = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+        self.store.promote(second["model_id"], second_eval["report_id"])
+
+        third = self.register("third.onnx", b"third", 300, parent=second["model_id"])
+        report = self.passing_report(third["model_id"], second["model_id"])
+        report["historical"] = [
+            {
+                "opponent_model_id": first["model_id"],
+                "candidate_win_rate": 0.0,
+                "baseline_win_rate": 0.0,
+                "candidate_score_rate": 0.0,
+                "baseline_score_rate": 0.5,
+                "matches": 10,
+                "critical": True,
+            }
+        ]
+
+        evaluation = self.store.record_evaluation(report)
+
+        self.assertFalse(evaluation["passed"])
+        self.assertTrue(any("regressed 0.5000" in reason for reason in evaluation["reasons"]))
 
 
 class IngestionTests(StoreTestCase):
