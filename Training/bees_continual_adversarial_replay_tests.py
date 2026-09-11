@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import bees_continual_adversarial_mine as mine
 import bees_continual_adversarial_replay as replay
 from bees_continual_learning import ContinualLearningError, ValidationError
 
@@ -40,9 +41,8 @@ def observation(*, self_ship=13, enemy_ship=21, enemy_visible=True):
     values[replay.LEVEL_SIZE_X_INDEX] = normalize_positive(usable, 100.0)
     values[replay.LEVEL_SIZE_Y_INDEX] = normalize_positive(usable, 100.0)
     if enemy_visible:
-        values[replay._enemy_ship_type.__globals__["FIRST_ENEMY_SLOT_INDEX"]] = 1.0
-        enemy_start = replay._enemy_ship_type.__globals__["ENEMY_SHIP_BIT_START"]
-        set_enum_bits(values, enemy_start, replay.SHIP_TYPE_BIT_COUNT, enemy_ship)
+        values[mine.FIRST_ENEMY_SLOT_INDEX] = 1.0
+        set_enum_bits(values, mine.ENEMY_SHIP_BIT_START, replay.SHIP_TYPE_BIT_COUNT, enemy_ship)
     return values
 
 
