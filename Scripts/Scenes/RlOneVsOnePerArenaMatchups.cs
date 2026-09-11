@@ -7,21 +7,81 @@ using UnityEngine;
 
 /// <summary>
 /// Creates private deterministic RNG seeds for RL scenario samplers. ML-Agents seeds
-/// UnityEngine.Random when its communicator initializes, so deriving private System.Random streams
-/// from that state makes a run reproducible from the trainer seed without coupling the samplers to
-/// Unity's shared RNG after initialization.
+/// UnityEngine.Random when its communicator initializes. We capture one process root from that state,
+/// then derive stable per-arena/per-stream seeds so asynchronous arena timing cannot swap RNG streams.
 /// </summary>
 internal static class RlOneVsOneScenarioSeed
 {
+    internal const int MatchupStreamSalt = 0x4D415443; // "MATC"
+    internal const int MapSizeStreamSalt = 0x4D415053; // "MAPS"
+
+    private static int? _rootSeed;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        _rootSeed = null;
+    }
+
     internal static void EnsureMlAgentsSeedIsInitialized()
     {
         _ = Academy.Instance;
     }
 
-    internal static int Create()
+    internal static int Create(Level level, int streamSalt)
+    {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+
+        return Derive(GetRootSeed(), GetArenaIndex(level), streamSalt);
+    }
+
+    private static int GetRootSeed()
     {
         EnsureMlAgentsSeedIsInitialized();
-        return UnityEngine.Random.Range(0, int.MaxValue);
+        if (!_rootSeed.HasValue)
+        {
+            // Academy initialization applies the trainer-provided seed to UnityEngine.Random. Capture
+            // exactly one value immediately afterwards; scenario sampling then uses only private RNGs.
+            _rootSeed = UnityEngine.Random.Range(0, int.MaxValue);
+        }
+        return _rootSeed.Value;
+    }
+
+    private static int GetArenaIndex(Level level)
+    {
+        IReadOnlyList<Level> levels = level.Stage?.Levels;
+        if (levels != null)
+        {
+            for (int index = 0; index < levels.Count; index++)
+            {
+                if (ReferenceEquals(levels[index], level))
+                {
+                    return index;
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            "RL scenario seed requested before the Level was registered with its Stage.");
+    }
+
+    internal static int Derive(int rootSeed, int arenaIndex, int streamSalt)
+    {
+        if (arenaIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(arenaIndex));
+        }
+
+        unchecked
+        {
+            int hash = rootSeed;
+            hash = (hash * 397) ^ arenaIndex;
+            hash = (hash * 397) ^ streamSalt;
+            return hash & int.MaxValue;
+        }
     }
 }
 
@@ -66,7 +126,8 @@ internal static class RlOneVsOnePerArenaMatchups
         if (!Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
         {
             RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
-            selector = new RlOneVsOneEpisodeMatchupSelector(options, RlOneVsOneScenarioSeed.Create());
+            int seed = RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt);
+            selector = new RlOneVsOneEpisodeMatchupSelector(options, seed);
             Selectors.Add(level, selector);
         }
         return selector;
