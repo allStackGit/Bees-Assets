@@ -8,6 +8,8 @@ using UnityEngine;
 /// <summary>
 /// Owns randomized training-map size per Level. Multi-arena Levels reset independently, so a map
 /// size sampled for one episode must never replace the size observed by another still-running arena.
+/// A curated player-derived episode may instead provide an exact tactical map size and initial
+/// center-to-center engagement distance for that Level only.
 /// </summary>
 internal static class RlOneVsOneArenaMapSizeState
 {
@@ -65,12 +67,25 @@ internal static class RlOneVsOneArenaMapSizeState
             return;
         }
 
+        // Player-derived tactical geometry is part of the prepared matchup. Prepare it before map
+        // dimensions are chosen; the later ship-setup PrepareEpisode call is intentionally idempotent.
+        RlOneVsOnePerArenaMatchups.PrepareEpisode(level);
+
         if (!EpisodeMapSizes.TryGetValue(level, out float mapSize))
         {
-            RlOneVsOneTrainingOptions options = Options;
-            mapSize = options.HasMapSizeRange
-                ? SampleMapSize(options.MapSizeMinimum, options.MapSizeMaximum)
-                : options.MapSize;
+            if (RlPlayerDerivedTacticalGeometry.TryGetCurrent(
+                level,
+                out RlPlayerDerivedTacticalGeometry geometry))
+            {
+                mapSize = geometry.MapSize;
+            }
+            else
+            {
+                RlOneVsOneTrainingOptions options = Options;
+                mapSize = options.HasMapSizeRange
+                    ? SampleMapSize(options.MapSizeMinimum, options.MapSizeMaximum)
+                    : options.MapSize;
+            }
             EpisodeMapSizes[level] = mapSize;
         }
 
@@ -94,7 +109,16 @@ internal static class RlOneVsOneArenaMapSizeState
 
     internal static float GetSpawnRadius(Level level)
     {
-        return GetMapSize(level) / 4f;
+        float mapSize = GetMapSize(level);
+        if (RlPlayerDerivedTacticalGeometry.TryGetCurrent(
+            level,
+            out RlPlayerDerivedTacticalGeometry geometry))
+        {
+            // Existing spawn code places the two side centers at +/- this radius, so half the
+            // requested center-to-center separation ratio is the required radius from map center.
+            return mapSize * geometry.SpawnSeparationRatio * 0.5f;
+        }
+        return mapSize / 4f;
     }
 
     internal static Vector2 GetShipFormationOffset(Level level, int shipIndex)
