@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -57,6 +58,21 @@ namespace Bees.Tests.EditMode
             string value = (string)method.Invoke(null, new object[] { hash });
 
             Assert.That(value, Is.EqualTo($"v{version}-{new string('a', 24)}"));
+        }
+
+        [Test]
+        public void UploadBundleLimitIncludesCaptureManifestBytes()
+        {
+            Type uploaderType = RuntimeAssembly.GetType("RlDemonstrationUploader");
+            int maximum = (int)RuntimeAssembly.GetStaticField(uploaderType, "MaxUploadBundleBytes");
+            MethodInfo method = GetStaticMethod("IsUploadBundleWithinLimit");
+            string manifest = "{\"policy\":\"v7\"}";
+            int manifestBytes = Encoding.UTF8.GetByteCount(manifest);
+
+            Assert.That(method.Invoke(null, new object[] { (long)(maximum - manifestBytes), manifest }), Is.True);
+            Assert.That(method.Invoke(null, new object[] { (long)(maximum - manifestBytes + 1), manifest }), Is.False);
+            Assert.That(method.Invoke(null, new object[] { 0L, manifest }), Is.False);
+            Assert.That(method.Invoke(null, new object[] { 1L, null }), Is.False);
         }
 
         [Test]
