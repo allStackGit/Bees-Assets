@@ -55,7 +55,6 @@ namespace Assets.Scripts.Entities.Ships
             HasReturnedToCarrier = false;
             TouchingShip = null;
             LastCarrierPosition = Vector2.zero;
-            _trainingBombTargetRuntimeId = 0;
         }
 
         public override void Deactivate()
@@ -175,8 +174,6 @@ namespace Assets.Scripts.Entities.Ships
         }
 
         private StrikerBomb _bomb;
-        private ScaledTimer _damageTimer = new ScaledTimer();
-        private long _trainingBombTargetRuntimeId;
         private void DropBomb()
         {
             if (!HasDroppedBomb)
@@ -194,30 +191,91 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 else
                 {
-                    _trainingBombTargetRuntimeId = ContactedShip != null ? ContactedShip.Id : 0;
-                    _damageTimer.Reuse(2, LogBombDamage);
-                    Level.AddTimer(_damageTimer);
+                    ScheduleTrainingBombDamage(ContactedShip);
                 }
 
                 CompleteRun();
             }
         }
 
-        public void LogBombDamage()
+        private void ScheduleTrainingBombDamage(Ship target)
         {
-            if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Id != _trainingBombTargetRuntimeId)
+            if (target == null)
             {
                 Bomb.ReleaseTargetReservation();
                 return;
             }
-            Bomb.ReleaseTargetReservation();
-            LogAttackingDamage(
-                Bomb.Power,
-                this,
-                FleetShip,
-                Squad.SavedSquad,
-                ContactedShip,
-                rlDamageSource: "bomb");
+
+            Ship shooter = this;
+            FleetShip shooterFleetShip = FleetShip;
+            SavedSquad shooterSavedSquad = Squad.SavedSquad;
+            long shooterFleetShipId = shooterFleetShip != null ? shooterFleetShip.Id : 0;
+            long targetRuntimeId = target.Id;
+            int power = Bomb.Power;
+            ShipDamageStatus damageReservation = Bomb.TransferTargetReservation();
+
+            // The fuse is owned by the Level, not by the pooled Striker wrapper. A bomb that has
+            // already been dropped therefore survives shooter death exactly like the rendered
+            // StrikerBomb projectile. Captured lifecycle IDs prevent pooled wrappers from stealing
+            // the delayed damage or receiving credit for another lifecycle's bomb.
+            ScaledTimer damageTimer = new ScaledTimer(
+                2f,
+                () => ResolveTrainingBombDamage(
+                    shooter,
+                    shooterFleetShip,
+                    shooterSavedSquad,
+                    shooterFleetShipId,
+                    target,
+                    targetRuntimeId,
+                    power,
+                    damageReservation));
+            Level.AddTimer(damageTimer);
+        }
+
+        private static void ResolveTrainingBombDamage(
+            Ship shooter,
+            FleetShip shooterFleetShip,
+            SavedSquad shooterSavedSquad,
+            long shooterFleetShipId,
+            Ship target,
+            long targetRuntimeId,
+            int power,
+            ShipDamageStatus damageReservation)
+        {
+            ReleaseTrainingBombReservation(damageReservation, power);
+            if (target == null || target.IsDead || target.Id != targetRuntimeId)
+            {
+                return;
+            }
+
+            if (shooter != null && shooter.FleetShip != null && shooter.FleetShip.Id == shooterFleetShipId)
+            {
+                LogAttackingDamage(
+                    power,
+                    shooter,
+                    shooterFleetShip,
+                    shooterSavedSquad,
+                    target,
+                    rlDamageSource: "bomb");
+            }
+            else
+            {
+                // The original Striker wrapper has been recycled. Preserve the bomb's physical
+                // damage without attributing it to the new occupant of that pooled object.
+                target.LogDamage(power, "bomb");
+            }
+        }
+
+        private static void ReleaseTrainingBombReservation(ShipDamageStatus damageReservation, int power)
+        {
+            if (damageReservation == null)
+            {
+                return;
+            }
+
+            damageReservation.TotalDamageSentToShip = Mathf.Max(
+                0,
+                damageReservation.TotalDamageSentToShip - power);
         }
 
         public void CompleteRun()
@@ -259,8 +317,10 @@ namespace Assets.Scripts.Entities.Ships
 
         public override void Kill(Ship killer, FleetShip killerFleetShip, SavedSquad killerSavedSquad, bool endKill = false)
         {
+            // If delivery has not happened yet, Bomb still owns the target reservation and death
+            // releases it. A dropped training bomb transfers reservation/fuse ownership to the
+            // Level timer, so this becomes a no-op and the in-flight bomb survives shooter death.
             Bomb.ReleaseTargetReservation();
-            Level.CancelTimer(_damageTimer);
             Level.CancelTimer(_checkCarrierReloadTimer);
             base.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
         }
