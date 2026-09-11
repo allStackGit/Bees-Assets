@@ -61,9 +61,11 @@ namespace Bees.Tests.EditMode
         public void DemonstrationsArePartitionedByFrozenPolicyAbi()
         {
             MethodInfo method = GetStaticMethod("GetPolicyDirectoryNameForTests");
+            Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
+            int version = (int)RuntimeAssembly.GetStaticField(schemaType, "Version");
             string directory = (string)method.Invoke(null, Array.Empty<object>());
 
-            Assert.That(directory, Is.EqualTo($"PolicyV{RlPolicySchema.Version}"));
+            Assert.That(directory, Is.EqualTo($"PolicyV{version}"));
         }
 
         private static MethodInfo GetStaticMethod(string name)
