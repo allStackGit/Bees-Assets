@@ -234,9 +234,8 @@ def ingest_native_demonstration(
     trainable_example_count = parsed_count - 1
 
     demo_hash = sha256_file(source)
-    envelope = {
+    content_identity = {
         "schema_version": NATIVE_DEMO_ARCHIVE_SCHEMA_VERSION,
-        "demonstration_id": demonstration_id,
         "model_id": model_id,
         "game_build_version": game_build_version,
         "behavior_name": store.compatibility.behavior_name,
@@ -255,8 +254,13 @@ def ingest_native_demonstration(
             "metadata": capture_manifest,
         },
     }
-    payload_hash = sha256_bytes(canonical_json(envelope).encode("utf-8"))
+    payload_hash = sha256_bytes(canonical_json(content_identity).encode("utf-8"))
     batch_id = f"demo-{payload_hash[:24]}"
+    envelope = {
+        **content_identity,
+        "demonstration_id": demonstration_id,
+        "payload_sha256": payload_hash,
+    }
     archive_dir = store.experience_dir / "human-demos" / "native"
     demo_archive = archive_dir / f"{batch_id}.demo"
     capture_archive = archive_dir / f"{batch_id}.capture-manifest.json"
