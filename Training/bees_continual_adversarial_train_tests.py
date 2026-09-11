@@ -91,6 +91,29 @@ class AdversarialTrainingLauncherTests(unittest.TestCase):
                 encoded,
             )
 
+    def test_geometry_catalog_is_registry_derived_and_injected_after_pressure(self):
+        encoded = "adv-aaaaaaaaaaaaaaaaaaaaaaaa:Wasp>Gunship@0.1"
+        geometry = "adv-aaaaaaaaaaaaaaaaaaaaaaaa:96,0.25"
+        injected = launcher.inject_unity_pressure_arg(
+            ["Training/rl_1v1_config.yaml", "--run-id=run-geometry"],
+            encoded,
+            geometry,
+        )
+        self.assertEqual(injected[-3], "--env-args")
+        self.assertEqual(injected[-2], "--bees-adversarial-matchups=" + encoded)
+        self.assertEqual(
+            injected[-1],
+            "--bees-adversarial-geometry-catalog=" + geometry,
+        )
+
+        for manual in (
+            "--bees-adversarial-geometry-catalog=manual",
+            "--bees-rl-fixed-geometry=96,0.5",
+        ):
+            with self.subTest(manual=manual):
+                with self.assertRaises(SystemExit):
+                    launcher.inject_unity_pressure_arg([manual], encoded, geometry)
+
     def test_run_selection_is_idempotent_but_same_run_cannot_change_pressure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = continual.load_config(TRAINING_DIR / "continual_learning_config.json")
@@ -118,6 +141,30 @@ class AdversarialTrainingLauncherTests(unittest.TestCase):
                     run_id="run-1",
                     scenario_ids=["adv-bbbbbbbbbbbbbbbbbbbbbbbb"],
                     encoded="adv-bbbbbbbbbbbbbbbbbbbbbbbb:Hornet>Frigate@0.1",
+                )
+
+    def test_same_run_cannot_change_registered_tactical_geometry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = continual.load_config(TRAINING_DIR / "continual_learning_config.json")
+            store = continual.ContinualLearningStore(Path(temp_dir) / "store", config)
+            store.initialize()
+            scenario = "adv-aaaaaaaaaaaaaaaaaaaaaaaa"
+            encoded = scenario + ":Wasp>Gunship@0.1"
+
+            launcher.record_run_selection(
+                store,
+                run_id="run-geometry",
+                scenario_ids=[scenario],
+                encoded=encoded,
+                geometry_catalog=scenario + ":96,0.25",
+            )
+            with self.assertRaises(continual.ValidationError):
+                launcher.record_run_selection(
+                    store,
+                    run_id="run-geometry",
+                    scenario_ids=[scenario],
+                    encoded=encoded,
+                    geometry_catalog=scenario + ":96,0.5",
                 )
 
 
