@@ -835,6 +835,55 @@ def _validate_env_args(values: Sequence[str]) -> Tuple[str, ...]:
     return tuple(result)
 
 
+def _env_arg_name(value: str) -> Optional[str]:
+    stripped = value.strip()
+    if not stripped.startswith("--"):
+        return None
+    return stripped.split("=", 1)[0].casefold()
+
+
+def _merge_env_args(
+    base_env_args: Sequence[str],
+    override_env_args: Sequence[str],
+) -> Tuple[str, ...]:
+    """Merge case-specific Unity args without leaving conflicting base options behind."""
+    base = list(_validate_env_args(base_env_args))
+    overrides = list(_validate_env_args(override_env_args))
+    override_names = {
+        name
+        for name in (_env_arg_name(value) for value in overrides)
+        if name is not None
+    }
+    suppressed_base_names = set(override_names)
+
+    fixed_map_size = "--rl-map-size"
+    ranged_map_size = {"--rl-map-size-min", "--rl-map-size-max"}
+    if fixed_map_size in override_names:
+        suppressed_base_names.update(ranged_map_size)
+    elif override_names & ranged_map_size:
+        suppressed_base_names.add(fixed_map_size)
+
+    merged: List[str] = []
+    index = 0
+    while index < len(base):
+        value = base[index]
+        name = _env_arg_name(value)
+        if name in suppressed_base_names:
+            index += 1
+            if (
+                "=" not in value
+                and index < len(base)
+                and _env_arg_name(base[index]) is None
+            ):
+                index += 1
+            continue
+        merged.append(value)
+        index += 1
+
+    merged.extend(overrides)
+    return tuple(merged)
+
+
 def load_competency_suite(
     path: Optional[os.PathLike[str] | str],
     *,
@@ -1066,7 +1115,7 @@ def evaluate_candidate(
             opponent_model_path=opponent_path,
             matches=matches,
             behavior_name=behavior_name,
-            env_args=tuple(base_env_args) + tuple(extra_args),
+            env_args=_merge_env_args(base_env_args, extra_args),
             seed=current_seed,
             worker_id=current_worker,
             timeout_wait=timeout_wait,
