@@ -18,6 +18,7 @@ from bees_continual_evaluate import (
     MatchSummary,
     OnnxPolicy,
     _evaluation_environment_args,
+    _merge_env_args,
     behavior_team_id,
     build_allow_action_mask,
     competency_score,
@@ -208,6 +209,38 @@ class ContinualEvaluateTests(unittest.TestCase):
         existing = ["--rl-map-size=96", EVALUATION_MODE_FLAG]
         self.assertEqual(_evaluation_environment_args(existing), existing)
 
+    def test_competency_env_args_override_conflicting_base_environment_settings(self):
+        self.assertEqual(
+            _merge_env_args(
+                [
+                    "--rl-map-size=40",
+                    "--rl-health-ratio",
+                    "0.5",
+                    "--rl-ships-per-side=1",
+                ],
+                [
+                    "--rl-map-size-min",
+                    "20",
+                    "--rl-map-size-max=60",
+                    "--rl-health-ratio=1",
+                ],
+            ),
+            (
+                "--rl-ships-per-side=1",
+                "--rl-map-size-min",
+                "20",
+                "--rl-map-size-max=60",
+                "--rl-health-ratio=1",
+            ),
+        )
+        self.assertEqual(
+            _merge_env_args(
+                ["--rl-map-size-min=20", "--rl-map-size-max", "60"],
+                ["--rl-map-size", "96"],
+            ),
+            ("--rl-map-size", "96"),
+        )
+
     def test_action_mask_is_inverted_for_onnx_allow_semantics(self):
         class Decisions:
             action_mask = [
@@ -321,7 +354,12 @@ class ContinualEvaluateTests(unittest.TestCase):
                                 "matches": 4,
                                 "minimum": 0.5,
                                 "critical": True,
-                                "env_args": ["--rl-health-ratio=1"],
+                                "env_args": [
+                                    "--rl-map-size-min",
+                                    "20",
+                                    "--rl-map-size-max=60",
+                                    "--rl-health-ratio=1",
+                                ],
                             }
                         ],
                     }
@@ -344,6 +382,7 @@ class ContinualEvaluateTests(unittest.TestCase):
                 store,
                 candidate_model_id="candidate",
                 environment_path="fake.exe",
+                env_args=["--rl-map-size=40", "--rl-health-ratio=0.5"],
                 competency_suite=suite,
                 seed=37,
                 worker_id=50,
@@ -361,7 +400,15 @@ class ContinualEvaluateTests(unittest.TestCase):
             self.assertEqual(calls[1]["seed"], calls[2]["seed"])
             self.assertEqual(calls[1]["worker_id"] + 1, calls[2]["worker_id"])
             self.assertNotEqual(calls[1]["worker_id"], calls[2]["worker_id"])
-            self.assertEqual(calls[-1]["env_args"][-1], "--rl-health-ratio=1")
+            self.assertEqual(
+                calls[-1]["env_args"],
+                (
+                    "--rl-map-size-min",
+                    "20",
+                    "--rl-map-size-max=60",
+                    "--rl-health-ratio=1",
+                ),
+            )
 
     def test_evaluate_and_record_updates_historical_league_pressure(self):
         with tempfile.TemporaryDirectory() as temp:
