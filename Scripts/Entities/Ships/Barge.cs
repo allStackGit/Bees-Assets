@@ -260,12 +260,16 @@ namespace Assets.Scripts.Entities.Ships
 
         public IEnumerator ChargeForward(Ship target = null)
         {
+            if (!IsRlChargeReady || IsCharging)
+            {
+                yield break;
+            }
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             if (!TryReserveCharge())
             {
                 yield break;
             }
 
-            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "barge_charge");
             int lifecycleId = ++_chargeLifecycleId;
             StopMoving("Pausing to build up steam before charging");
