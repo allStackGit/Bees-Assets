@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 6;
+    internal const int Version = 7;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int ExpectedObservationSize = 4685;
+    internal const int ExpectedObservationSize = 4701;
     internal const int ExpectedContinuousActions = 34;
     internal const int ExpectedWeaponFireBranchCount = 16;
     internal const int ExpectedWeaponFireBranchSize = 2;
@@ -24,11 +24,11 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v6|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4685|cont=34|disc=2x16,5,65,65,65|" +
+        "bees-rl-v7|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4701|cont=34|disc=2x16,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=29|capability=12|parent-carrier=19|entity=19|weapon=19|enemy-mount=22|mining-slot=7|" +
+        "self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|" +
         "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
@@ -57,6 +57,8 @@ internal static class RlPolicySchema
         Check(errors, RlCombatPerception.MaxObservedEnemies, 64, "enemy slots");
         Check(errors, RlCombatPerception.MaxWeaponSlots, 16, "weapon slots");
         Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 16, "enemy weapon-mount slots");
+        Check(errors, RlCombatPerception.WeaponObservationSize, 20, "friendly weapon observation size");
+        Check(errors, RlCombatPerception.EnemyWeaponMountObservationSize, 22, "enemy weapon-mount observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
 
@@ -143,7 +145,7 @@ internal static class RlPolicySchema
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
         // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v6.
+        // within the reserved bit range, but existing values must never be renumbered for ABI v7.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
