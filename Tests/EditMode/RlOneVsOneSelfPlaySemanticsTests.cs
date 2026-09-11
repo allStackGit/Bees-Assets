@@ -30,10 +30,24 @@ namespace Bees.Tests.EditMode
         [Test]
         public void TimeoutRemainsAnExplicitTerminalLossRatherThanAnInterruptedTrajectory()
         {
-            string reward = ReadSource("Scripts", "Scenes", "RlOneVsOneReward.cs");
-            Assert.That(reward, Does.Contain("LossReward = -10f"));
-            Assert.That(reward, Does.Contain("if (winningSide == 0)"));
-            Assert.That(reward, Does.Contain("return LossReward;"));
+            Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
+            float timeoutReward = (float)RuntimeAssembly.InvokeStatic(
+                rewardType,
+                "CalculateTerminalReward",
+                1,
+                0,
+                true);
+            float simultaneousEliminationReward = (float)RuntimeAssembly.InvokeStatic(
+                rewardType,
+                "CalculateTerminalReward",
+                1,
+                0,
+                false);
+
+            Assert.That(timeoutReward, Is.LessThan(0f),
+                "A timeout must remain a loss even when no side won by elimination.");
+            Assert.That(simultaneousEliminationReward, Is.EqualTo(0f),
+                "A simultaneous elimination remains a neutral draw; it must not be conflated with a timeout.");
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             int timeoutComment = agent.IndexOf("Timeouts are explicit terminal losses in this environment", StringComparison.Ordinal);
