@@ -5,6 +5,8 @@ identifies a useful tactic in one or more explicitly approved public Human demon
 registers the corresponding Bee/Human fleet matchup, and receives an immutable scenario ID. The
 scenario can then be encoded into the dedicated Unity training process, where it requests a bounded
 fraction of fresh on-policy episodes while normal sampled/adaptive training remains the majority.
+Optional tactical geometry records reproducible map size and initial engagement distance without
+pretending that an old player trajectory is current PPO experience.
 """
 
 from __future__ import annotations
@@ -31,10 +33,13 @@ from bees_continual_native_demo import _write_bytes_immutable
 
 
 ADVERSARIAL_SCENARIO_SCHEMA_VERSION = 1
+TACTICAL_GEOMETRY_SCHEMA_VERSION = 1
 MAX_SCENARIO_SOURCE_BATCHES = 64
 MAX_SCENARIO_SHIPS_PER_SIDE = 16
 MAX_TARGET_FRACTION_PER_SCENARIO = 0.5
 MAX_TOTAL_TARGET_FRACTION = 0.5
+MIN_TACTICAL_MAP_SIZE = 10.0
+MAX_SPAWN_SEPARATION_RATIO = 0.75
 _SCENARIO_ID = re.compile(r"^adv-[0-9a-f]{24}$")
 _BATCH_ID = re.compile(r"^demo-[0-9a-f]{24}$")
 _SHIP_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
@@ -84,6 +89,71 @@ def _target_fraction(value: object) -> float:
     return parsed
 
 
+def _finite_float(value: object, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValidationError(f"{label} must be a finite number.")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{label} must be a finite number.") from exc
+    if not math.isfinite(parsed):
+        raise ValidationError(f"{label} must be a finite number.")
+    return parsed
+
+
+def _tactical_geometry(
+    map_size: object = None,
+    spawn_separation_ratio: object = None,
+) -> Optional[Mapping[str, object]]:
+    """Normalize an optional reproducible map-size / engagement-distance descriptor."""
+    if map_size is None and spawn_separation_ratio is None:
+        return None
+    if map_size is None or spawn_separation_ratio is None:
+        raise ValidationError(
+            "map_size and spawn_separation_ratio must be supplied together for tactical geometry."
+        )
+    normalized_map_size = _finite_float(map_size, "map_size")
+    normalized_separation = _finite_float(
+        spawn_separation_ratio,
+        "spawn_separation_ratio",
+    )
+    if normalized_map_size < MIN_TACTICAL_MAP_SIZE:
+        raise ValidationError(
+            f"map_size must be at least {MIN_TACTICAL_MAP_SIZE:g} for tactical geometry."
+        )
+    if normalized_separation <= 0.0 or normalized_separation > MAX_SPAWN_SEPARATION_RATIO:
+        raise ValidationError(
+            "spawn_separation_ratio must be greater than 0 and no greater than "
+            f"{MAX_SPAWN_SEPARATION_RATIO:g}."
+        )
+    return {
+        "schema_version": TACTICAL_GEOMETRY_SCHEMA_VERSION,
+        "map_size": normalized_map_size,
+        "spawn_separation_ratio": normalized_separation,
+    }
+
+
+def _parse_tactical_geometry(value: object) -> Optional[Mapping[str, object]]:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValidationError("Adversarial tactical geometry must be a JSON object.")
+    expected_keys = {"schema_version", "map_size", "spawn_separation_ratio"}
+    if set(value) != expected_keys:
+        raise ValidationError(
+            "Adversarial tactical geometry must contain exactly schema_version, map_size, "
+            "and spawn_separation_ratio."
+        )
+    if value.get("schema_version") != TACTICAL_GEOMETRY_SCHEMA_VERSION:
+        raise ValidationError(
+            f"Adversarial tactical geometry schema must be {TACTICAL_GEOMETRY_SCHEMA_VERSION}."
+        )
+    return _tactical_geometry(
+        value.get("map_size"),
+        value.get("spawn_separation_ratio"),
+    )
+
+
 def _scenario_path(store: ContinualLearningStore, scenario_id: str) -> Path:
     return store.experience_dir / "adversarial-scenarios" / f"{scenario_id}.json"
 
@@ -116,6 +186,7 @@ def _read_scenario(store: ContinualLearningStore, scenario_id: str) -> Mapping[s
             f"Adversarial scenario {scenario_id} targets policy ABI "
             f"{identity.get('policy_abi_version')!r}, not current ABI {store.compatibility.policy_abi_version}."
         )
+    _parse_tactical_geometry(identity.get("geometry"))
     return value
 
 
@@ -165,6 +236,8 @@ def register_player_derived_scenario(
     human_composition: Sequence[str] | str,
     target_fraction: float,
     rationale: str,
+    map_size: Optional[float] = None,
+    spawn_separation_ratio: Optional[float] = None,
 ) -> Mapping[str, object]:
     """Register one immutable matchup-pressure scenario from explicitly approved public demos."""
     store._require_initialized()
@@ -185,6 +258,7 @@ def register_player_derived_scenario(
         raise ValidationError("Bee and Human adversarial compositions must contain the same ship count.")
     fraction = _target_fraction(target_fraction)
     rationale = _required_text(rationale, "rationale", 2048)
+    geometry = _tactical_geometry(map_size, spawn_separation_ratio)
 
     sources = []
     for batch_id in normalized_batches:
@@ -212,6 +286,8 @@ def register_player_derived_scenario(
         "rationale": rationale,
         "sources": sources,
     }
+    if geometry is not None:
+        identity["geometry"] = geometry
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     scenario_id = f"adv-{identity_hash[:24]}"
     body = {
@@ -282,6 +358,32 @@ def encode_scenarios_for_unity(
     return ";".join(encoded)
 
 
+def encode_geometry_catalog_for_unity(
+    store: ContinualLearningStore,
+    scenario_ids: Sequence[str],
+) -> str:
+    """Encode optional per-scenario tactical geometry for Unity's independent geometry catalog."""
+    store._require_initialized()
+    if not scenario_ids:
+        raise ValidationError("At least one adversarial scenario ID must be selected.")
+    normalized = sorted(set(scenario_ids))
+    if len(normalized) != len(scenario_ids):
+        raise ValidationError("Adversarial scenario selection contains duplicate IDs.")
+
+    encoded = []
+    for scenario_id in normalized:
+        scenario = _read_scenario(store, scenario_id)
+        identity = scenario["identity"]
+        _validate_registered_sources(store, scenario_id, identity)
+        geometry = _parse_tactical_geometry(identity.get("geometry"))
+        if geometry is None:
+            continue
+        encoded.append(
+            f"{scenario_id}:{float(geometry['map_size']):g},{float(geometry['spawn_separation_ratio']):g}"
+        )
+    return ";".join(encoded)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Register/encode approved player-derived adversarial matchup pressure."
@@ -300,6 +402,19 @@ def _build_parser() -> argparse.ArgumentParser:
     register.add_argument("--human-composition", required=True)
     register.add_argument("--target-fraction", required=True, type=float)
     register.add_argument("--rationale", required=True)
+    register.add_argument(
+        "--map-size",
+        type=float,
+        help="Optional exact tactical map size; requires --spawn-separation-ratio.",
+    )
+    register.add_argument(
+        "--spawn-separation-ratio",
+        type=float,
+        help=(
+            "Optional initial center-to-center separation as a fraction of map size; "
+            "requires --map-size."
+        ),
+    )
 
     encode = subparsers.add_parser("encode", help="Encode selected scenarios for Unity env args.")
     encode.add_argument("scenario_ids", nargs="+")
@@ -318,6 +433,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 human_composition=args.human_composition,
                 target_fraction=args.target_fraction,
                 rationale=args.rationale,
+                map_size=args.map_size,
+                spawn_separation_ratio=args.spawn_separation_ratio,
             )
             print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
         else:
