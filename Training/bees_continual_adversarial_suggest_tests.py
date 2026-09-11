@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 
 TRAINING_DIR = Path(__file__).parent
+PROJECT_ROOT = TRAINING_DIR.parent
 
 
 def _load(name: str):
@@ -87,7 +88,10 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
         self.assertEqual(result["first_visible_enemy_record"], 1)
         self.assertEqual(
             result["registration_candidate"],
-            {"map_size": result["map_size_estimate"], "spawn_separation_ratio": result["spawn_separation_ratio_estimate"]},
+            {
+                "map_size": result["map_size_estimate"],
+                "spawn_separation_ratio": result["spawn_separation_ratio_estimate"],
+            },
         )
 
     def test_no_visible_enemy_is_reported_without_inventing_contact_distance(self):
@@ -146,6 +150,13 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
         store.compatibility.policy_abi_version = 8
         with self.assertRaises(continual.ValidationError):
             suggest.suggest_tactical_geometry(store, "demo-" + "a" * 24)
+
+    def test_map_padding_assumption_matches_unity_observation_contract(self):
+        source = (PROJECT_ROOT / "Scripts" / "ConfigData.Gameplay.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MapEdgePadding = new Vector2(5, 5)", source)
+        self.assertEqual(suggest.MAP_EDGE_PADDING_PER_SIDE, 5.0)
 
 
 if __name__ == "__main__":
