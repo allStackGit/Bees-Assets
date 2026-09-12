@@ -42,7 +42,7 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MapObjectObservationSize = RlCombatPerception.MapObjectObservationSize;
     internal const int CollisionAsteroidObservationSize = RlCombatPerception.CollisionAsteroidObservationSize;
     internal const int ObjectiveObservationSize = RlCombatPerception.ObjectiveObservationSize;
-    internal const int ObservationSize = RlCombatPerception.ObservationSize;
+    internal const int ObservationSize = RlCombatPerception.ObservationSize + 1 + RlPolicySchema.ReservedObservationCount;
 
     // Movement occupies the first two continuous actions. Every authored weapon slot then gets its
     // own aim x/y pair and its own fire branch so all turrets can be aimed/fired independently in
@@ -402,6 +402,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         _perception.Collect(_ship, _side, sensor, frameQuarterTurns);
+        sensor.AddObservation(_ship.Level.GetNormalizedRlEpisodeProgress());
+        AddZeroObservations(sensor, RlPolicySchema.ReservedObservationCount);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
