@@ -131,6 +131,10 @@ namespace Bees.Tests.EditMode
             Assert.That(replay, Does.Contain("private bool _hasBoundOnce;"));
             Assert.That(replay, Does.Contain("if (_hasBoundOnce)"));
             Assert.That(replay, Does.Contain("_neutralized = true;"));
+
+            string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
+            Assert.That(coordinator, Does.Contain("!RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side)"));
+            Assert.That(coordinator, Does.Contain("if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)"));
         }
 
         private string WriteReplay(int frameCount)
