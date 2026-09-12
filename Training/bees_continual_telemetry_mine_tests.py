@@ -215,6 +215,10 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self.assertEqual(suggestion["self_ship_name"], "Wasp")
         self.assertEqual(suggestion["first_enemy_ship_name"], "Gunship")
         self.assertTrue(suggestion["geometry_candidates"])
+        self.assertEqual(
+            set(suggestion["sources"][0]),
+            {"batch_id", "agent_stream_index"},
+        )
         _assert_no_raw_step_keys(self, report)
 
     def test_single_occurrence_is_not_suggested_at_default_repeat_threshold(self):
