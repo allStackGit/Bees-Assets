@@ -2,6 +2,8 @@
 
 The continual-learning tools extend the project's existing ML-Agents 1.1.0 environment. They do not replace or upgrade that environment.
 
+The current frozen policy contract is ABI v8: behavior `BeesRL1v1`, 4722 vector observations, 34 continuous actions, and discrete branches `2x16,5,65,65,65`. ABI v8 appends one episode-progress value plus 20 reserved tail values after the prior 4701 observation fields. Existing tactical field indices are unchanged, but v7 models and demonstrations are not ABI-compatible with v8 and must not be relabeled or silently reused as v8 data.
+
 ## CPU baseline
 
 Activate the same virtual environment used for Bees ML-Agents training, then install the frozen-policy runtime add-on:
@@ -11,31 +13,27 @@ Activate the same virtual environment used for Bees ML-Agents training, then ins
 python -m pip install -r Training\requirements-continual.txt
 ```
 
-Verify the runtime before starting a long run:
+Verify ONNX Runtime before starting a long run:
 
 ```powershell
 python -c "import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())"
 ```
 
-The committed `Training/continual_learning_config.json` uses `CPUExecutionProvider` for persistent historical opponents. With `historical_league.training_ratio` above zero, `bees_continual_train.py` performs an ONNX Runtime/provider preflight before ML-Agents starts, so a missing package or unavailable provider fails early rather than after training is underway.
-
-The authoritative offline evaluator also requires ONNX Runtime because candidate, champion, and historical policies are executed from immutable ONNX artifacts. `bees_continual_evaluate.py` uses `CPUExecutionProvider` by default and accepts `--onnx-provider` when another installed provider is intentionally selected.
+`Training/continual_learning_config.json` uses `CPUExecutionProvider` for persistent historical opponents by default. With `historical_league.training_ratio` above zero, `bees_continual_train.py` performs an ONNX Runtime/provider preflight before ML-Agents starts. Authoritative offline evaluation and champion deployment packaging also require ONNX Runtime because they independently load immutable ONNX artifacts.
 
 ## Human demonstration capture and imitation
 
-Player-facing builds can opt into passive human/Hive Mind demonstration capture with:
+Player-facing builds can opt into passive Human/Hive Mind demonstration capture with:
 
 ```text
 --rl-record-demonstrations
 ```
 
-Recordings use the shared `BeesRL1v1` observation/action ABI and are stored below `Application.persistentDataPath/RlDemonstrations`. Each frozen policy ABI receives its own directory (for example, `PolicyV7`), with Human and Hive Mind recordings physically separated below that. The policy directory also contains `capture-manifest.json`, which records the exact behavior name, policy ABI/signature, observation size, and action shape. Capture fails closed rather than writing into a versioned directory whose existing manifest is incompatible or missing while demonstrations already exist.
-
-For policy ABI v7, the normal layout is:
+Recordings use the shared `BeesRL1v1` observation/action ABI and are stored below `Application.persistentDataPath/RlDemonstrations`. Each frozen policy ABI receives its own directory, with Human and Hive Mind recordings physically separated. The current layout is:
 
 ```text
 RlDemonstrations/
-  PolicyV7/
+  PolicyV8/
     capture-manifest.json
     Human/
       human-s0.demo
@@ -47,41 +45,37 @@ RlDemonstrations/
       ...
 ```
 
-The passive recorder continuously captures movement, weapon aiming, and weapon firing. Successful one-shot capability events are additionally written as isolated native ML-Agents demonstration episodes by `RlGameplayDemonstrationCapabilityCapture`. This covers ship specials, mining, healing, and warp. At the authoritative event boundary, the capability recorder synchronously runs the same `RlCombatPerception` contract and the same movement/weapon-control encoding as the passive recorder, changes only the special-action branch, and writes a terminal record immediately after the event sample. This preserves the policy state immediately before policy-observable event changes and ensures the ML-Agents demonstration loader retains the event sample even if the ship leaves the level immediately afterward. If the capture contract is unavailable or incompatible, the event is skipped rather than fabricating a label.
+`capture-manifest.json` records the exact behavior name, policy ABI/signature, observation size, and action shape. Capture fails closed if the directory contract does not match the compiled policy. Successful one-shot capability events such as ship specials, mining, healing, and warp are additionally written as isolated native ML-Agents demonstration episodes by `RlGameplayDemonstrationCapabilityCapture`.
 
-The capability-event writer uses a narrow reflection bridge to pinned ML-Agents 1.1.0 internals for reading a `VectorSensor`'s completed vector and invoking the native `DemonstrationRecorder`/`DemonstrationWriter` serialization path. `BeesFoundation` tests guard those reflection contracts so a package change fails visibly instead of silently corrupting demonstrations.
-
-To include a trusted set of native ML-Agents human `.demo` files directly in a continual training run, pass the current policy ABI's `Human` directory to the continual wrapper:
+To include a trusted native Human directory in a continual training run:
 
 ```powershell
 python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
   --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-full-001 --resume `
-  --continual-root="F:\RLDemo\BeesContinual" `
-  --continual-game-build="2026.09.11" `
-  --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV7\Human"
+  --run-id=bees-full-v8-001 --resume `
+  --continual-root="F:\RLDemo\BeesContinualV8" `
+  --continual-game-build="2026.09.12" `
+  --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV8\Human"
 ```
 
-Before ML-Agents starts, the wrapper requires the selected directory to be the `Human` directory under the configured `PolicyV<ABI>` capture root and validates its `capture-manifest.json` against the continual config's behavior name, ABI version, and exact frozen policy signature. It then verifies that the directory contains non-empty `.demo` files, rejects files explicitly named as Hive Mind recordings, hashes the selected files and capture manifest, and copies all of them into an immutable content-addressed snapshot under the continual-learning root. The snapshot manifest preserves the original capture metadata and its SHA-256 so the training set retains its ABI provenance. The source recordings must therefore be closed/stable before training starts. If either a recording or the capture manifest changes during snapshotting, startup fails instead of silently training against a moving or mislabeled dataset.
+Before ML-Agents starts, the wrapper verifies the Human/PolicyV directory, capture manifest, frozen signature, non-empty `.demo` files, and file stability. It creates an immutable content-addressed snapshot and derives a runtime trainer YAML that adds behavioral cloning without modifying the committed base trainer YAML. `human_imitation` in `Training/continual_learning_config.json` controls the BC strength, step count, and batch size.
 
-The wrapper derives a runtime trainer YAML instead of modifying `Training/rl_1v1_config.yaml`. It adds ML-Agents behavioral cloning for `BeesRL1v1`, pointing `demo_path` at the immutable snapshot. The generated YAML is also the configuration hashed into newly registered candidate lineage. Initial behavioral-cloning tuning is controlled by `human_imitation` in `Training/continual_learning_config.json`; it is deliberately configurable rather than part of the frozen neural-policy ABI. The config's `policy_signature` mirrors `RlPolicySchema.Signature` and must change with the frozen policy ABI rather than being carried forward by version number alone.
+Do not point an ABI-v8 run at `PolicyV7`. There is no automatic v7-to-v8 demonstration conversion path.
 
 ### Central native `.demo` archive
 
-Trusted native demonstrations can also be imported into the persistent continual-learning store instead of being consumed immediately. Run this from the same ML-Agents virtual environment so the native demonstration parser is available:
+Trusted native demonstrations can be imported into the persistent continual-learning store instead of being consumed immediately:
 
 ```powershell
 python Training\bees_continual_native_demo.py `
-  --root="F:\RLDemo\BeesContinual" `
-  --demonstration-id="player-match-20260911-001-human-s0" `
-  --model-id="bees-rl-v7-<deployed-model-id>" `
-  --game-build="2026.09.11" `
-  "C:\path\to\RlDemonstrations\PolicyV7\Human\human-s0.demo"
+  --root="F:\RLDemo\BeesContinualV8" `
+  --demonstration-id="player-match-20260912-001-human-s0" `
+  --model-id="bees-rl-v8-<deployed-model-id>" `
+  --game-build="2026.09.12" `
+  "C:\path\to\RlDemonstrations\PolicyV8\Human\human-s0.demo"
 ```
 
-`model-id` identifies the compatible deployed-policy context for the captured match; it does not claim that the human actions came from that model. `bees_continual_native_demo.py` uses the existing `demonstration_batches` registry and `experience/human-demos` archive. It validates the Human/PolicyV capture manifest and frozen signature, parses the native ML-Agents behavior shape, enforces the configured payload and record limits, rejects Hive Mind filenames, and requires a known compatible model context. Successful ingestion stores the original `.demo`, a byte-for-byte capture-manifest copy, and an immutable metadata sidecar containing their SHA-256 hashes and the trainable example count. Repeating identical ingestion is idempotent; reusing a demonstration ID for different content is rejected.
-
-This central archive is deliberately separate from PPO trajectories and from automatic training selection. Local `--continual-human-demo-dir` remains the explicit trusted/curated behavioral-cloning input. Archived public batches must pass the separate curation boundary below before they can be materialized into a trainer-compatible Human directory.
+`model-id` identifies the compatible deployed-policy context for the captured match; it does not claim that the Human actions came from that model. Native ingestion validates the capture manifest/signature, ML-Agents behavior shape, configured payload/record limits, model compatibility, and immutable SHA-256 identities.
 
 ### Authenticated public-client upload quarantine
 
@@ -91,93 +85,130 @@ A Production desktop build can separately opt into uploading previously closed H
 --rl-upload-demonstrations
 ```
 
-`RlDemonstrationUploader` snapshots only `.demo` files that already exist in the current `PolicyV<ABI>/Human` directory before the current run starts recording. It therefore never uploads the file an active `DemonstrationRecorder` is still writing; captures produced during the current run remain local and become eligible on a later launch. WebGL is excluded because the required Steam Web API authentication is unavailable there. Upload uses a dedicated WSS connection rather than the gameplay `Socket`, authenticates each request with the Steam Web API ticket, transfers the native demo in bounded chunks, and never deletes the local source file. The client, BeesServer, and trainer all apply the same 16 MiB maximum to the combined `.demo` plus capture-manifest payload.
+`RlDemonstrationUploader` snapshots only files already closed before the current run begins recording. Upload uses a dedicated Steam-authenticated WSS connection and bounded chunks. The client, BeesServer, and trainer enforce the same 16 MiB combined demonstration-plus-manifest cap.
 
-BeesServer accepts only `Human` uploads through the three-request `rl-demo-begin` / `rl-demo-chunk` / `rl-demo-complete` protocol. Sessions are bound to the authenticated Steam user and WebSocket connection; the server enforces per-user/global active-upload limits and a per-user byte window, validates the exact frozen capture manifest, verifies the declared SHA-256, and writes content-addressed immutable `.demo`, capture-manifest, and metadata files into its configured quarantine inbox. The quarantine sidecar deliberately records `trust: authenticated-quarantine` and `readyForTraining: false`: Steam authentication establishes who uploaded the bytes, not that the play is good training data.
+BeesServer accepts only `Human` uploads through `rl-demo-begin`, `rl-demo-chunk`, and `rl-demo-complete`. Sessions are bound to the authenticated Steam user and connection, rate/size limited, hash checked, and quarantined with `readyForTraining: false`. The server's accepted capture policy is part of the cross-repository frozen ABI contract; for the current build it is ABI v8 / 4722 observations with the exact `RlPolicySchema.Signature`.
 
-To validate and archive one server quarantine bundle centrally, supply its metadata sidecar plus the compatible deployed model context:
+Archive one validated server quarantine bundle centrally with:
 
 ```powershell
 python Training\bees_continual_public_demo.py `
-  --root="F:\RLDemo\BeesContinual" `
-  --model-id="bees-rl-v7-<deployed-model-id>" `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --model-id="bees-rl-v8-<deployed-model-id>" `
   "D:\BeesRlDemonstrations\incoming\rl-demo-<batch-id>.json"
 ```
 
-`bees_continual_public_demo.py` independently verifies the quarantine schema/trust state, metadata filename and batch identity, demo and manifest byte counts/hashes, exact embedded/file capture-manifest agreement, the continual store's configured combined payload limit, and the native ML-Agents observation/action structure before delegating to the normal native-demo archive. The raw Steam user ID remains in the server-side quarantine for abuse handling and is intentionally not copied into the continual-learning store. Instead, a store-local secret HMAC maps it to a stable 64-hex contributor bucket stored separately from the native archive. This supports contributor balancing without placing the raw Steam identity in training provenance. The central public provenance record still sets `approved_for_training: false`.
+The raw Steam user ID stays in server quarantine. The continual store retains only a store-local HMAC contributor bucket for balancing and leaves the archived public batch `approved_for_training: false`.
 
 ### Public demonstration curation and BC selection
 
-Public demonstrations require an explicit operator decision after structural validation. Approve a central native batch with a review reason and a normalized quality score:
+Approve a structurally valid public batch only after review:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinual" `
+  --root="F:\RLDemo\BeesContinualV8" `
   approve demo-<central-batch-id> `
   --reviewer="manual-review-2026-09" `
   --reason="Clean long-range kiting example" `
   --quality-score=0.9
 ```
 
-Approval does not automatically add the batch to training. Decisions are immutable; a later safety or quality problem can permanently exclude an approved batch from future sets:
+Revoke an approved batch permanently if later review finds a problem:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinual" `
+  --root="F:\RLDemo\BeesContinualV8" `
   revoke demo-<central-batch-id> `
   --reviewer="manual-review-2026-09" `
   --reason="Retrospective review found unusable play"
 ```
 
-Create a training set only from an explicit list of approved central batch IDs:
+Materialize only an explicit approved selection:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinual" `
+  --root="F:\RLDemo\BeesContinualV8" `
   materialize demo-<batch-a> demo-<batch-b> demo-<batch-c>
 ```
 
-Materialization rechecks the immutable native archive and approval hashes, rejects revoked or unapproved batches, requires a common capture-manifest contract, and applies the committed `human_imitation.public_min_quality_score` and `human_imitation.public_max_batches_per_contributor` limits. The current defaults are `0.5` and `8`. Contributor grouping uses the store-local HMAC key at `metadata/public-demo-contributor.key`; if contributor records already exist and this key disappears, ingestion fails closed rather than silently generating a new identity namespace that could bypass the per-contributor cap.
+Materialization rechecks archive/approval hashes, rejects revoked or unapproved batches, requires a common capture contract, and enforces `human_imitation.public_min_quality_score` plus `human_imitation.public_max_batches_per_contributor`. The returned `human_demo_dir` is accepted by `--continual-human-demo-dir` and is validated/snapshotted again by the trainer wrapper.
 
-The result includes `human_demo_dir`, pointing to an immutable `public-approved-set-.../PolicyV<ABI>/Human` directory. Feed that directory to the existing continual trainer exactly like any other curated Human source:
+## Player-derived adversarial training
+
+Phase 7 keeps old player demonstrations out of PPO trajectories. Approved Human data is used to identify or script pressure; the learning side still generates fresh on-policy responses.
+
+### Mine and review tactics
+
+Mine repeated explainable signatures from approved current-ABI demonstrations:
 
 ```powershell
-python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
-  --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-full-001 --resume `
-  --continual-root="F:\RLDemo\BeesContinual" `
-  --continual-game-build="2026.09.11" `
-  --continual-human-demo-dir="<human_demo_dir returned by materialize>"
+python Training\bees_continual_adversarial_mine.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  demo-<batch-a> demo-<batch-b> demo-<batch-c> `
+  --minimum-count=2
 ```
 
-This preserves the existing trainer fail-closed path: the wrapper validates and snapshots the materialized Human directory again before enabling behavioral cloning. Public ingestion therefore remains distinct from approval, and approval remains distinct from selection for a particular training run.
+For one approved demonstration, inspect non-authoritative tactical geometry suggestions:
 
-### Player-derived adversarial matchup pressure
+```powershell
+python Training\bees_continual_adversarial_suggest.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  demo-<batch-a>
+```
 
-Approved demonstrations can also identify a tactic that should create fresh headless RL pressure instead of imitation data. Register an immutable scenario from one or more currently approved public batches:
+ABI v8 appends its episode-progress/reserved tail after the fields consumed by the miner/suggester, so the existing ship/range/map indices retain their meaning. The tools still require the exact current observation size and fail closed on another ABI.
+
+### Register reviewed scenario pressure
+
+After review, register an immutable scenario from one or more approved batches:
 
 ```powershell
 python Training\bees_continual_adversarial.py `
-  --root="F:\RLDemo\BeesContinual" `
+  --root="F:\RLDemo\BeesContinualV8" `
   register demo-<batch-a> demo-<batch-b> `
   --bee-composition="Wasp" `
   --human-composition="Gunship" `
   --target-fraction=0.10 `
-  --rationale="Repeated long-range kiting tactic"
+  --rationale="Repeated long-range kiting tactic" `
+  --map-size=96 `
+  --spawn-separation-ratio=0.50
 ```
 
-The returned `adv-...` ID is content-addressed from the source approvals, policy ABI, exact Bee/Human compositions, target fraction, and rationale. Registration does not copy an old trajectory into PPO. At training time the current policy receives a fresh episode with that fleet matchup. A scenario may request at most 50% of episodes, and the combined selected scenarios may request at most 50%, so normal sampled/adaptive training always remains at least half of the distribution.
+`--map-size` and `--spawn-separation-ratio` are optional but must be supplied together. The returned `adv-...` identity binds the approved source provenance, policy ABI, compositions, requested pressure, rationale, and optional geometry. A single scenario and the combined selected scenario set are both capped so at least half of training remains outside player-derived pressure.
 
-Scenario sources are revalidated immediately before a training launch. If an underlying public demonstration is later revoked, its approval/archive identity changes, or the policy ABI is no longer compatible, the old adversarial scenario fails closed rather than continuing to influence training.
+### Attach an approved action replay
 
-Launch continual training with an explicit immutable scenario selection using the adversarial wrapper:
+For a reviewed 1v1 scenario, one approved source batch can be attached as a bounded scripted movement/aim/fire replay:
+
+```powershell
+python Training\bees_continual_adversarial_replay.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  register adv-<scenario-id> `
+  --source-batch=demo-<batch-a> `
+  --side=Human `
+  --record-count=1200
+```
+
+The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. Capability/target actions fail closed; the current scripted format covers movement, turret aim, and fire only. The replay side is excluded from PPO learner ownership and becomes neutral after the recorded prefix.
+
+You can compile/check one attachment explicitly:
+
+```powershell
+python Training\bees_continual_adversarial_replay.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  compile adv-<scenario-id>
+```
+
+The training launcher automatically builds the content-addressed replay catalog for selected scenarios that have attachments, so operators do not pass the Unity replay-catalog flag manually.
+
+### Train against selected pressure
 
 ```powershell
 python Training\bees_continual_adversarial_train.py Training\rl_1v1_config.yaml `
   --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-adversarial-001 `
-  --continual-root="F:\RLDemo\BeesContinual" `
-  --continual-game-build="2026.09.11" `
+  --run-id=bees-adversarial-v8-001 `
+  --continual-root="F:\RLDemo\BeesContinualV8" `
+  --continual-game-build="2026.09.12" `
   --continual-adversarial-scenarios=adv-<scenario-a>,adv-<scenario-b> `
   --env-args `
   --rl-matchup-mode=sampled `
@@ -186,18 +217,18 @@ python Training\bees_continual_adversarial_train.py Training\rl_1v1_config.yaml 
   --rl-human-ship-types=Gunship,Frigate
 ```
 
-Keep `--env-args` as a separate token and place Unity environment arguments after it. Each selected scenario must use the same `ships-per-side` value as the run, and every ship type used by a scenario must be included in the run's sampled Bee/Human candidate pools. Do not pass `--bees-adversarial-matchups` manually; `bees_continual_adversarial_train.py` derives it from the immutable registry and writes the exact scenario selection under `metadata/adversarial-training-runs`. Reusing a run ID with a different selection is rejected so candidate lineage cannot silently change pressure on resume.
+Keep `--env-args` as a separate token. Do not manually pass `--bees-adversarial-matchups`, tactical-geometry flags, or `--bees-adversarial-replay-catalog`; the immutable scenario/replay registries are authoritative. The exact scenario and replay-catalog identity is recorded under `metadata/adversarial-training-runs`; changing it requires a new ML-Agents run ID.
 
-`RlOneVsOnePerArenaMatchups` samples player-derived pressure independently in each arena. Reserved episodes are labeled internally by scenario ID, while all non-reserved episodes continue through the existing baseline/adaptive matchup sampler. Player-derived outcomes are intentionally not added to adaptive-matchup history, keeping external player pressure independently measurable. When adversarial pressure is configured, Unity emits one compact `player_derived_pressure` summary every 1000 prepared episodes per arena with the observed rate and per-scenario counts.
+### Measure counterplay
 
-Measure whether a candidate actually improved on the registered matchups with the separate paired diagnostic evaluator:
+Use paired diagnostic evaluation to compare a candidate with a baseline under the same selected pressure:
 
 ```powershell
 python Training\bees_continual_adversarial_evaluate.py `
-  --root="F:\RLDemo\BeesContinual" `
-  --candidate="bees-rl-v7-<candidate-id>" `
-  --baseline="bees-rl-v7-<baseline-id>" `
-  --opponent="bees-rl-v7-<opponent-id>" `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --candidate="bees-rl-v8-<candidate-id>" `
+  --baseline="bees-rl-v8-<baseline-id>" `
+  --opponent="bees-rl-v8-<opponent-id>" `
   --env="F:\RLDemo\Bees RL Training" `
   --scenario=adv-<scenario-a> `
   --scenario=adv-<scenario-b> `
@@ -205,29 +236,21 @@ python Training\bees_continual_adversarial_evaluate.py `
   --seed=36
 ```
 
-For each selected scenario, the evaluator revalidates the source approvals, forces the exact registered Bee/Human composition, and runs candidate and baseline against the same opponent with the same seed. The immutable report under `evaluation/adversarial` records candidate and baseline score rates, per-scenario deltas, and a pressure-weighted aggregate delta. These reports are deliberately `promotion_eligible: false`; they are diagnostic evidence and do not silently replace or expand the pinned permanent competency suite.
+The immutable report records candidate/baseline score rates and pressure-weighted deltas. It is intentionally `promotion_eligible: false`; player-derived diagnostics do not silently change the pinned permanent competency suite. Richer replay of intermediate world state, capabilities/targets, or arbitrary multi-ship Human episodes remains future Phase 7 work.
 
-The current scenario descriptor captures fleet-composition pressure, not the original player's action stream, movement path, spawn geometry, or intermediate world state. A positive diagnostic delta therefore means counterplay improved on the registered matchup distribution; it does not prove that the exact recorded human action sequence was defeated. Automatic tactic mining plus richer spatial/scripted replay remains a later Phase 7 step.
+## Permanent competency suite and promotion
 
-## Permanent competency suite
-
-When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent competency suite in the continual-learning store before recording promotion-eligible evaluations:
+When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent suite before recording promotion-eligible evaluations:
 
 ```powershell
-python Training\bees_continual_learning.py --root <store> pin-competency-suite <suite.json>
+python Training\bees_continual_learning.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  pin-competency-suite <suite.json>
 ```
 
-The pinned contract includes each case's name, opponent model ID, match count, minimum score, metric, critical flag, and environment arguments. Candidate evaluations must contain exactly the same normalized contract; an arbitrary easier suite cannot satisfy the promotion gate.
+Use `--replace` only for an intentional suite revision. Replacing the suite changes the promotion-policy fingerprint and invalidates older promotion evidence.
 
-Use `--replace` only for an intentional permanent-suite revision:
-
-```powershell
-python Training\bees_continual_learning.py --root <store> pin-competency-suite <suite.json> --replace
-```
-
-Replacing the suite changes the promotion-policy fingerprint, so evaluations recorded under the previous suite must be rerun before promotion. `status` reports the current suite fingerprint and case count.
-
-A suite uses schema version 1:
+A current-ABI suite uses model IDs from the same v8 registry, for example:
 
 ```json
 {
@@ -235,7 +258,7 @@ A suite uses schema version 1:
   "cases": [
     {
       "name": "large-map-aiming",
-      "opponent_model_id": "bees-rl-v7-...",
+      "opponent_model_id": "bees-rl-v8-...",
       "matches": 200,
       "minimum": 0.55,
       "metric": "score_rate",
@@ -246,25 +269,71 @@ A suite uses schema version 1:
 }
 ```
 
-The evaluator's `--competency-suite` file must describe the same permanent contract that was pinned in the store.
+Normal candidates must pass the authoritative evaluator before `promote`. The one exception is the explicitly audited generation-zero bootstrap for an empty registry:
 
-## Promotion runtime gate
+```powershell
+python Training\bees_continual_bootstrap.py `
+  --store="F:\RLDemo\BeesContinualV8" `
+  --candidate="bees-rl-v8-<candidate-id>" `
+  --reason="Trusted generation-zero baseline"
+```
 
-Promotion-eligible evaluation measures the wall-clock duration of every successful candidate `onnxruntime.InferenceSession.run()` batch. The committed promotion policy requires the worst observed candidate batch to be no slower than:
+Generation-zero bootstrap is one-time only; later champion changes must use normal evaluation/promotion.
+
+### Promotion runtime gate
+
+Promotion-eligible evaluation measures every successful candidate `onnxruntime.InferenceSession.run()` batch. The committed policy currently requires the worst observed candidate batch to be no slower than:
 
 ```json
 "max_inference_batch_milliseconds": 100.0
 ```
 
-This threshold is part of the promotion configuration, so changing it changes the promotion-policy fingerprint and makes older evaluations stale. The evaluator report records the configured threshold, worst observed candidate batch, and candidate inference-call count under `evaluator.runtime_latency`.
+Changing this threshold changes the promotion-policy fingerprint and makes older evaluations stale. Injected/custom match runners cannot claim authoritative runtime checks from synthetic timing.
 
-If the threshold is omitted, `runtime_checks_passed` fails closed. Injected/custom match runners also cannot claim authoritative runtime checks even if they provide synthetic timing values. The latency gate measures ONNX session execution itself; it does not include Unity simulation time or opponent inference time.
+## Champion deployment into Unity player builds
+
+Phase 8 now has a fail-closed build-time deployment path. It does not yet implement server/client hot model distribution.
+
+Package and publish the registry's current champion:
+
+```powershell
+python Training\bees_continual_deployment.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  publish
+```
+
+Packaging accepts only the registry's current champion. It independently verifies the registered artifact SHA-256, frozen compatibility/signature, passing promotion evidence or explicit generation-zero provenance, and real ONNX loadability. It writes an immutable content-addressed package below the continual store and atomically updates `deployment/current-deployment.json`.
+
+Before making a player build, stage that exact published champion into the Unity Assets tree:
+
+```powershell
+python Training\bees_continual_unity_bundle.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --assets-root="R:\Bees\Assets"
+```
+
+The installer calls the same publish/validation path again and atomically writes build inputs under:
+
+```text
+Resources/RlPolicy/BeesRL1v1.onnx
+Resources/RlPolicy/BeesRL1v1Deployment.json
+```
+
+Those two generated files are ignored by Git. They are staging inputs, not the deployment authority. Unity imports the ONNX as an Inference Engine `ModelAsset` during normal asset import/build processing.
+
+At runtime, `RlLivePolicyModelBootstrap` validates the bundled deployment manifest against the compiled `RlPolicySchema`, binds the imported champion to dynamically created `RlLivePolicyAgent`s with `SetModel`, and forces `BehaviorType.InferenceOnly`. If the manifest/model is missing, incompatible, conflicting, or cannot be bound, it clears `ActivateBrains`, disables the live RL agents, and restarts `Level.SetupHivemind()` so player-facing AI fails back to the existing Hive Mind instead of remaining on the live agent's inert heuristic.
+
+After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build. A rollback changes the authoritative current champion and therefore restages the prior champion package.
+
+ABI compatibility is strict. A v7 champion cannot be deployed into the current v8 player build. A compatible v8 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v8 store).
+
+What remains unfinished in Phase 8 is automatic remote distribution: there is not yet a server protocol that delivers a newly promoted model to already-built clients or hot-swaps a downloaded champion at runtime. The supported release path today is promotion/rollback -> verified immutable package -> Unity Resources staging -> player build -> runtime inference-only binding/fallback.
 
 ## GPU ONNX Runtime (optional)
 
-Do not install CPU `onnxruntime` and `onnxruntime-gpu` side by side. If frozen-policy inference itself needs GPU acceleration, replace the CPU package with an `onnxruntime-gpu` build compatible with the machine's CUDA/cuDNN stack, then verify that `CUDAExecutionProvider` appears in `ort.get_available_providers()` before selecting it.
+Do not install CPU `onnxruntime` and `onnxruntime-gpu` side by side. If frozen-policy inference needs GPU acceleration, replace the CPU package with a GPU build compatible with the machine's CUDA/cuDNN stack and verify `CUDAExecutionProvider` appears in `ort.get_available_providers()`.
 
-For historical-opponent training, set:
+For historical-opponent training:
 
 ```json
 "historical_league": {
@@ -272,16 +341,16 @@ For historical-opponent training, set:
 }
 ```
 
-For offline evaluation, pass:
+For offline evaluation:
 
 ```powershell
 --onnx-provider CUDAExecutionProvider
 ```
 
-PyTorch's `--torch-device=cuda` and ONNX Runtime's execution provider are independent settings. A working CUDA PyTorch installation does not by itself prove that the ONNX Runtime CUDA provider is installed or compatible.
+PyTorch's `--torch-device=cuda` and ONNX Runtime's execution provider are independent settings.
 
 ## When ONNX Runtime is required
 
-Persistent historical-opponent training requires ONNX Runtime when `historical_league.training_ratio > 0`. Setting that ratio to `0` disables the historical ONNX opponent path, so ordinary Bees/ML-Agents training and continual candidate registration do not need this add-on. Offline authoritative evaluation still requires ONNX Runtime regardless of the historical training ratio.
+Persistent historical-opponent training requires ONNX Runtime when `historical_league.training_ratio > 0`. Setting the ratio to `0` disables the historical ONNX opponent path. Authoritative offline evaluation and champion deployment packaging still require ONNX Runtime.
 
-This add-on file intentionally does not repin the rest of the Python stack. `Training/bees_mlagents_learn.py` and the persistent historical-opponent bridge are explicitly written and guarded for ML-Agents 1.1.0; use the project's existing ML-Agents virtual environment rather than creating a second dependency stack from this file.
+This add-on intentionally does not repin the rest of the Python stack. `Training/bees_mlagents_learn.py` and the historical-opponent bridge remain guarded for the project's existing ML-Agents environment.
