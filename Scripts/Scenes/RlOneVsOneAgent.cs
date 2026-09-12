@@ -183,7 +183,6 @@ internal sealed class RlOneVsOneAgent : Agent
         }
         if (!AgentCounts.TryGetValue(level, out Dictionary<int, int> counts) && create)
         {
-            counts = new Dictionary<Level, Dictionary<int, int>>()[level] = null;
             counts = new Dictionary<int, int>();
             AgentCounts[level] = counts;
         }
