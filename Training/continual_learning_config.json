@@ -1,8 +1,8 @@
 {
   "behavior_name": "BeesRL1v1",
-  "policy_abi_version": 7,
-  "policy_signature": "bees-rl-v7|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4701|cont=34|disc=2x16,5,65,65,65|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id",
-  "observation_schema_version": 7,
+  "policy_abi_version": 8,
+  "policy_signature": "bees-rl-v8|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4722|cont=34|disc=2x16,5,65,65,65|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id",
+  "observation_schema_version": 8,
   "action_schema_version": 6,
   "reward_schema_version": 2,
   "scenario_schema_version": 1,
