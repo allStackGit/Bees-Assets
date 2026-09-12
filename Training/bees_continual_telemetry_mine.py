@@ -164,7 +164,10 @@ def mine_telemetry_selection(
     suggestions = []
     for signature in sorted(grouped):
         profiles = grouped[signature]
-        if len(profiles) < minimum_occurrences:
+        occurrence_count = len(
+            {str(profile["_source"]["batch_id"]) for profile in profiles}
+        )
+        if occurrence_count < minimum_occurrences:
             continue
         profiles = sorted(
             profiles,
@@ -178,7 +181,8 @@ def mine_telemetry_selection(
         suggestions.append(
             {
                 "signature": signature,
-                "occurrence_count": len(profiles),
+                "occurrence_count": occurrence_count,
+                "agent_stream_count": len(profiles),
                 "self_ship_type": representative.get("self_ship_type"),
                 "self_ship_name": representative.get("self_ship_name"),
                 "first_enemy_ship_type": representative.get("first_enemy_ship_type"),
@@ -208,6 +212,7 @@ def mine_telemetry_selection(
         "skipped_short_agent_streams": skipped_short_streams,
         "suggestions": suggestions,
         "caveats": [
+            "A repeated signature must occur in distinct telemetry batches; multiple agents in one match cannot self-confirm a tactic.",
             "A repeated signature is a review hint, not an automatically approved training scenario.",
             "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping.",
             "self/enemy ship identities are from the recorded agent perspective and must be oriented by an operator before pressure registration.",
@@ -228,7 +233,7 @@ def _parser() -> argparse.ArgumentParser:
         "--minimum-occurrences",
         type=int,
         default=2,
-        help="Minimum repeated agent-stream signatures required for a suggestion.",
+        help="Minimum distinct telemetry batches containing a signature before it is suggested.",
     )
     return parser
 
