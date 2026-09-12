@@ -2,9 +2,11 @@
 
 This module is deliberately separate from PPO and from scenario registration. A reviewed immutable
 adversarial scenario may have at most one replay attachment. The attachment points at one of the
-scenario's already-approved public Human demonstrations and compiles only the frozen ABI-v7
+scenario's already-approved public Human demonstrations and compiles only the frozen current-ABI
 movement, turret-aim and fire actions into a compact deterministic binary. Capability/target actions
-fail closed instead of being silently dropped.
+fail closed instead of being silently dropped. ABI v8 appends observation-only tail values after the
+existing tactical fields, so this replay action format is unchanged while exact source observations
+remain version-checked.
 
 The compiled replay is an opponent script, not PPO experience. Runtime integration keeps the
 scripted side out of learner action/reward ownership while the opposing policy generates fresh
@@ -328,7 +330,8 @@ def read_registered_replay_if_present(
 def _expected_ship_type_id(ship_name: str) -> int:
     if ship_name not in SHIP_TYPE_IDS:
         raise ValidationError(
-            f"Replay scenario ship type {ship_name!r} is not part of the frozen ABI-v7 ship mapping."
+            f"Replay scenario ship type {ship_name!r} is not part of the frozen "
+            f"ABI-v{SUPPORTED_POLICY_ABI_VERSION} ship mapping."
         )
     return SHIP_TYPE_IDS[ship_name]
 
@@ -455,7 +458,10 @@ def compile_action_replay(
     """Compile one registered replay into a deterministic compact binary artifact."""
     store._require_initialized()
     if store.compatibility.policy_abi_version != SUPPORTED_POLICY_ABI_VERSION:
-        raise ValidationError("Scripted action replay currently understands only policy ABI v7.")
+        raise ValidationError(
+            f"Scripted action replay currently understands only policy ABI "
+            f"v{SUPPORTED_POLICY_ABI_VERSION}."
+        )
 
     registration = _read_registered_replay(store, scenario_id)
     replay_id = str(registration["replay_id"])
