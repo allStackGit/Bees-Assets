@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 import numpy as np
 
+from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -1236,7 +1237,6 @@ def evaluate_candidate(
         and all_match_groups_completed
         and bool(latency_evidence["passed"])
     )
-    behavior_sanity_passed = authoritative_runner and all_authoritative_telemetry_validated
 
     report: Dict[str, Any] = {
         "candidate_model_id": candidate_model_id,
@@ -1244,7 +1244,6 @@ def evaluate_candidate(
         "candidate_vs_champion": champion_comparison,
         "historical": historical_results,
         "competencies": competency_results,
-        "behavior_sanity_passed": behavior_sanity_passed,
         "runtime_compatible": runtime_compatible,
         "runtime_checks_passed": runtime_checks_passed,
         "evaluator": {
@@ -1263,7 +1262,7 @@ def evaluate_candidate(
             "runtime_latency": latency_evidence,
         },
     }
-    return report
+    return apply_behavior_sanity(report)
 
 
 def evaluate_and_record(
