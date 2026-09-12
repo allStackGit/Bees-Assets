@@ -31,6 +31,9 @@
     "public_min_quality_score": 0.5,
     "public_max_batches_per_contributor": 8
   },
+  "public_live_telemetry": {
+    "max_batches_per_contributor": 16
+  },
   "ingestion": {
     "max_payload_bytes": 16777216,
     "max_steps_per_match": 100000,
