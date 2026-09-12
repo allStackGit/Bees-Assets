@@ -154,7 +154,14 @@ class LiveTelemetryIngestTests(unittest.TestCase):
         ingestion = load_config()["ingestion"]
         self.assertEqual(ingestion["telemetry_observation_size"], 4722)
         self.assertEqual(ingestion["telemetry_continuous_action_count"], 34)
-        self.assertEqual(ingestion["telemetry_discrete_branch_sizes"], [16, 16, 5, 65, 65, 65])
+        self.assertEqual(
+            ingestion["telemetry_discrete_branch_sizes"],
+            [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2,
+                5, 65, 65, 65,
+            ],
+        )
 
 
 if __name__ == "__main__":
