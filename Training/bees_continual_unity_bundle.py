@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
-from bees_continual_deployment import publish_current_champion
+from bees_continual_deployment import OnnxValidator, publish_current_champion
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -74,6 +74,8 @@ def _replace_file_atomically(source: Path, destination: Path, expected_sha256: s
 def install_current_deployment_assets(
     store: ContinualLearningStore,
     assets_root: str | os.PathLike[str],
+    *,
+    onnx_validator: Optional[OnnxValidator] = None,
 ) -> Mapping[str, object]:
     """Install exact current-champion package bytes into the Bees-Assets Resources tree."""
     root = Path(assets_root).expanduser().resolve()
@@ -82,7 +84,7 @@ def install_current_deployment_assets(
             f"Unity Assets root does not contain {PROJECT_SENTINEL.as_posix()}: {root}"
         )
 
-    deployment = publish_current_champion(store)
+    deployment = publish_current_champion(store, onnx_validator=onnx_validator)
     source_model = Path(str(deployment["model_path"])).resolve()
     source_manifest = Path(str(deployment["manifest_path"])).resolve()
     if not source_model.is_file() or not source_manifest.is_file():
