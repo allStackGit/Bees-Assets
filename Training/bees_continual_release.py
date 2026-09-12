@@ -225,7 +225,7 @@ def run_release_cycle(
         promoted = store.promote(candidate_id, report_id)
         try:
             deployment = dict(publisher(store))
-        except Exception as exc:
+        except (ContinualLearningError, OSError, ValueError) as exc:
             # Promotion itself is intentionally not rolled back here. At this point the candidate has
             # passed the authoritative gate and is the registry champion, but the atomic deployment
             # pointer has not been confirmed. Keeping that state is safer than using rollback(), which
