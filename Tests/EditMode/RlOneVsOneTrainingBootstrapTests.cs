@@ -210,7 +210,7 @@ namespace Bees.Tests.EditMode
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4685));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4706));
             Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
             Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns)"));
             Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin, frameQuarterTurns)"));
