@@ -27,9 +27,9 @@ from bees_continual_learning import (
 
 TEST_CONFIG = {
     "behavior_name": "BeesRL1v1",
-    "policy_abi_version": 7,
-    "policy_signature": "test-policy-v7-signature",
-    "observation_schema_version": 7,
+    "policy_abi_version": 8,
+    "policy_signature": "test-policy-v8-signature",
+    "observation_schema_version": 8,
     "action_schema_version": 6,
     "reward_schema_version": 2,
     "scenario_schema_version": 1,
@@ -66,6 +66,7 @@ class DeploymentTests(unittest.TestCase):
         self.artifact_dir.mkdir()
         self.store = ContinualLearningStore(self.root, copy.deepcopy(TEST_CONFIG))
         self.store.initialize()
+        self.validated_onnx_paths = []
 
     def tearDown(self):
         self.temp.cleanup()
@@ -80,6 +81,21 @@ class DeploymentTests(unittest.TestCase):
             game_build_version="test-build",
             parent_model_id=parent,
             status="candidate",
+        )
+
+    def validate_synthetic_onnx(self, path: Path):
+        self.validated_onnx_paths.append(Path(path))
+
+    def package(self, store=None):
+        return build_current_champion_package(
+            store or self.store,
+            onnx_validator=self.validate_synthetic_onnx,
+        )
+
+    def publish(self):
+        return publish_current_champion(
+            self.store,
+            onnx_validator=self.validate_synthetic_onnx,
         )
 
     @staticmethod
@@ -120,12 +136,12 @@ class DeploymentTests(unittest.TestCase):
     def test_package_requires_a_current_champion(self):
         self.register("candidate.onnx", b"candidate", 10)
         with self.assertRaisesRegex(ValidationError, "No current champion"):
-            build_current_champion_package(self.store)
+            self.package()
 
     def test_generation_zero_package_is_content_addressed_and_idempotent(self):
         champion = self.bootstrap()
-        first = build_current_champion_package(self.store)
-        second = build_current_champion_package(self.store)
+        first = self.package()
+        second = self.package()
 
         self.assertEqual(first["deployment_id"], second["deployment_id"])
         self.assertEqual(first["model_id"], champion["model_id"])
@@ -133,6 +149,10 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(
             sha256_file(Path(first["model_path"])),
             champion["artifact_sha256"],
+        )
+        self.assertEqual(
+            self.validated_onnx_paths,
+            [Path(champion["artifact_path"]), Path(champion["artifact_path"])],
         )
         manifest = json.loads(Path(first["manifest_path"]).read_text(encoding="utf-8"))
         self.assertEqual(manifest["deployment_id"], first["deployment_id"])
@@ -145,7 +165,7 @@ class DeploymentTests(unittest.TestCase):
     def test_normally_promoted_package_requires_and_records_passing_evaluation(self):
         first = self.bootstrap()
         champion = self.promote_second(first)
-        package = build_current_champion_package(self.store)
+        package = self.package()
 
         self.assertEqual(package["model_id"], champion["model_id"])
         self.assertEqual(package["promotion_evidence_type"], "passing-evaluation")
@@ -159,15 +179,15 @@ class DeploymentTests(unittest.TestCase):
         first = self.bootstrap()
         self.promote_second(first)
 
-        published_second = publish_current_champion(self.store)
-        repeated = publish_current_champion(self.store)
+        published_second = self.publish()
+        repeated = self.publish()
         self.assertTrue(published_second["pointer_changed"])
         self.assertFalse(repeated["pointer_changed"])
         self.assertEqual(repeated["deployment_id"], published_second["deployment_id"])
 
         rolled_back = self.store.rollback()
         self.assertEqual(rolled_back["model_id"], first["model_id"])
-        published_first = publish_current_champion(self.store)
+        published_first = self.publish()
         self.assertTrue(published_first["pointer_changed"])
         self.assertEqual(published_first["model_id"], first["model_id"])
         self.assertNotEqual(published_first["deployment_id"], published_second["deployment_id"])
@@ -180,7 +200,8 @@ class DeploymentTests(unittest.TestCase):
         champion = self.bootstrap()
         Path(champion["artifact_path"]).write_bytes(b"tampered")
         with self.assertRaisesRegex(ContinualLearningError, "integrity verification"):
-            build_current_champion_package(self.store)
+            self.package()
+        self.assertEqual(self.validated_onnx_paths, [])
 
     def test_deployment_requires_frozen_policy_signature(self):
         champion = self.bootstrap()
@@ -189,13 +210,13 @@ class DeploymentTests(unittest.TestCase):
         unsigned_store = ContinualLearningStore(self.root, unsigned_config)
         self.assertEqual(unsigned_store.current_champion_id(), champion["model_id"])
         with self.assertRaisesRegex(ValidationError, "policy_signature"):
-            build_current_champion_package(unsigned_store)
+            self.package(unsigned_store)
 
     def test_deployment_rejects_non_onnx_champion_artifact(self):
         model = self.register("candidate.bin", b"not-onnx", 20)
         bootstrap_champion(self.store, model["model_id"], reason="test non-onnx rejection")
         with self.assertRaisesRegex(ValidationError, "must be ONNX"):
-            build_current_champion_package(self.store)
+            self.package()
 
 
 if __name__ == "__main__":
