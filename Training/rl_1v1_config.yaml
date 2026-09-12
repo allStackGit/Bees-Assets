@@ -7,7 +7,10 @@ behaviors:
       batch_size: 512
       buffer_size: 16384
       learning_rate: 0.00015
-      beta: 0.008
+      # Keep a nonzero continual-learning exploration baseline. The Bees PPO
+      # compatibility guard caps continuous sigma so entropy cannot destroy
+      # directional control even as the curriculum expands.
+      beta: 0.001
       epsilon: 0.15
       lambd: 1.0
       num_epoch: 3
