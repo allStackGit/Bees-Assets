@@ -41,7 +41,7 @@ internal sealed class RlCombatPerception
     internal const int MapObjectObservationSize = 12;
     internal const int CollisionAsteroidObservationSize = 11;
     internal const int ObjectiveObservationSize = 16;
-    internal const int ObservationSize = SelfObservationSize +
+    internal const int BaseObservationSize = SelfObservationSize +
         CapabilityObservationSize +
         ParentCarrierObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
@@ -52,6 +52,12 @@ internal sealed class RlCombatPerception
         MaxObservedCollisionAsteroids * CollisionAsteroidObservationSize +
         ObjectiveObservationSize +
         NavigationGridCellCount;
+    internal const int EpisodeProgressObservationSize = 1;
+    internal const int EpisodeProgressObservationIndex = BaseObservationSize;
+    internal const int ReservedObservationCount = 20;
+    internal const int ReservedObservationStartIndex = EpisodeProgressObservationIndex + EpisodeProgressObservationSize;
+    internal const int ReservedObservationEndIndex = ReservedObservationStartIndex + ReservedObservationCount - 1;
+    internal const int ObservationSize = BaseObservationSize + EpisodeProgressObservationSize + ReservedObservationCount;
 
     private const int GenericMapObjectObservationType = 2;
     private const int FireTankObservationType = 3;
@@ -158,6 +164,8 @@ internal sealed class RlCombatPerception
         AddCollisionAsteroidSlots(sensor, origin, frameQuarterTurns);
         AddObjectiveObservations(sensor);
         AddNavigationGridObservations(sensor, frameQuarterTurns);
+        sensor.AddObservation(ship.Level != null ? ship.Level.GetNormalizedRlEpisodeProgress() : 0f);
+        AddZeroObservations(sensor, ReservedObservationCount);
     }
 
     private static void AddSelfObservations(
@@ -367,7 +375,7 @@ internal sealed class RlCombatPerception
             case ConfigData.ProjectileTypes.Rocket: prefab = weapon.Stage.Prefabs.RocketPrefab; break;
             case ConfigData.ProjectileTypes.HumanSmall: prefab = weapon.Stage.Prefabs.HumanSmallPrefab; break;
             case ConfigData.ProjectileTypes.HumanMedium: prefab = weapon.Stage.Prefabs.HumanMediumPrefab; break;
-            case ConfigData.ProjectileTypes.Beam: prefab = weapon.Stage.Prefabs.BeamPrefab; break;
+            case ConfigData.Projectiles.Beam: prefab = weapon.Stage.Prefabs.BeamPrefab; break;
             case ConfigData.ProjectileTypes.SplitShot: prefab = weapon.Stage.Prefabs.SplitShotPrefab; break;
             case ConfigData.ProjectileTypes.QueenSmall: prefab = weapon.Stage.Prefabs.QueenSmallPrefab; break;
             case ConfigData.ProjectileTypes.QueenLarge: prefab = weapon.Stage.Prefabs.QueenLargePrefab; break;
