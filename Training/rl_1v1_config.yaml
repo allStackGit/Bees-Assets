@@ -15,7 +15,7 @@ behaviors:
       # directional control.
       beta: 0.001
       epsilon: 0.15
-      lambd: 1.0
+      lambd: 0.99
       num_epoch: 3
       learning_rate_schedule: constant
       beta_schedule: constant
