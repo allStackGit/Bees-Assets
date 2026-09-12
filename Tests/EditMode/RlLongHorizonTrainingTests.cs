@@ -14,7 +14,7 @@ namespace Bees.Tests.EditMode
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
 
-            Assert.That(config, Does.Contain("lambd: 0.99"));
+            Assert.That(config, Does.Contain("lambd: 1.0"));
             Assert.That(config, Does.Contain("gamma: 1.0"));
             Assert.That(config, Does.Contain("time_horizon: 2048"));
         }
@@ -44,7 +44,7 @@ namespace Bees.Tests.EditMode
                 1,
                 0,
                 true);
-            Assert.That(timeoutReward, Is.EqualTo(-10.6f));
+            Assert.That(timeoutReward, Is.EqualTo(-11f));
 
             float ordinaryLossReward = (float)RuntimeAssembly.InvokeStatic(
                 rewardType,
