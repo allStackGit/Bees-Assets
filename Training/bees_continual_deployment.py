@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
@@ -58,6 +59,14 @@ def _read_json_object(path: Path, label: str) -> Dict[str, Any]:
     return value
 
 
+def _is_lower_hex(value: object, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _validate_current_champion(store: ContinualLearningStore) -> Dict[str, Any]:
     store._require_initialized()
     champion_id = store.current_champion_id()
@@ -83,7 +92,7 @@ def _validate_current_champion(store: ContinualLearningStore) -> Dict[str, Any]:
             f"Current champion deployment artifact must be ONNX, not {artifact.name!r}."
         )
     expected_hash = champion.get("artifact_sha256")
-    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+    if not _is_lower_hex(expected_hash, 64):
         raise ValidationError(f"Current champion {champion_id} has an invalid artifact SHA-256.")
     store._assert_artifact_hash(artifact, expected_hash)
     if artifact.stat().st_size <= 0:
@@ -135,9 +144,9 @@ def _evaluation_evidence(
             f"Champion evaluation file does not match registry payload: {report_path}"
         )
     policy_fingerprint = report.get("promotion_policy_fingerprint")
-    if not isinstance(policy_fingerprint, str) or not policy_fingerprint:
+    if not _is_lower_hex(policy_fingerprint, 64):
         raise ValidationError(
-            f"Champion evaluation {report_id} is missing promotion-policy provenance."
+            f"Champion evaluation {report_id} has invalid promotion-policy provenance."
         )
     return {
         "type": "passing-evaluation",
@@ -344,7 +353,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
         return 0
     except (ContinualLearningError, OSError, ValueError) as exc:
-        print(f"Champion deployment failed: {exc}", file=os.sys.stderr)
+        print(f"Champion deployment failed: {exc}", file=sys.stderr)
         return 2
 
 
