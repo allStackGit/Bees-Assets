@@ -158,6 +158,7 @@ def _validated_archive(store: ContinualLearningStore, batch_id: str) -> Mapping[
             f"Public live telemetry {batch_id} must not be trusted for on-policy RL."
         )
     provenance = _public_provenance(store, batch_id)
+    load_public_telemetry_contributor_buckets(store, batch_id)
     return {
         "row": row,
         "archive": archive,
