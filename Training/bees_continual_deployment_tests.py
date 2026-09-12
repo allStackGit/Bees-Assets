@@ -18,6 +18,7 @@ from bees_continual_deployment import (
     publish_current_champion,
 )
 from bees_continual_learning import (
+    ContinualLearningError,
     ContinualLearningStore,
     ValidationError,
     sha256_file,
@@ -156,7 +157,7 @@ class DeploymentTests(unittest.TestCase):
 
     def test_publish_pointer_is_idempotent_and_tracks_rollback(self):
         first = self.bootstrap()
-        second = self.promote_second(first)
+        self.promote_second(first)
 
         published_second = publish_current_champion(self.store)
         repeated = publish_current_champion(self.store)
@@ -178,7 +179,7 @@ class DeploymentTests(unittest.TestCase):
     def test_tampered_champion_artifact_is_rejected_before_packaging(self):
         champion = self.bootstrap()
         Path(champion["artifact_path"]).write_bytes(b"tampered")
-        with self.assertRaisesRegex(Exception, "integrity verification"):
+        with self.assertRaisesRegex(ContinualLearningError, "integrity verification"):
             build_current_champion_package(self.store)
 
     def test_deployment_requires_frozen_policy_signature(self):
