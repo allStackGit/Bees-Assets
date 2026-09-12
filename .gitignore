@@ -4,3 +4,7 @@ SaveData/PathCache.json
 .venv-mlagents
 /results/bees-full-001/BeesRL1v1
 /results/bees-full-002/BeesRL1v1
+/Resources/RlPolicy/BeesRL1v1.onnx
+/Resources/RlPolicy/BeesRL1v1.onnx.meta
+/Resources/RlPolicy/BeesRL1v1Deployment.json
+/Resources/RlPolicy/BeesRL1v1Deployment.json.meta
