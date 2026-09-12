@@ -35,9 +35,13 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 6;"));
-            Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = 4685;"));
-            Assert.That(schema, Does.Contain("bees-rl-v6"));
+            Assert.That(schema, Does.Contain("internal const int Version = 7;"));
+            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 4685;"));
+            Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
+            Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
+            Assert.That(schema, Does.Contain("bees-rl-v7"));
+            Assert.That(schema, Does.Contain("obs=4706"));
+            Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
             Assert.That(schema, Does.Contain("cont=34"));
             Assert.That(schema, Does.Contain("disc=2x16,5,65,65,65"));
