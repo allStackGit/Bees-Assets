@@ -9,7 +9,7 @@ behaviors:
       learning_rate: 0.00015
       beta: 0.008
       epsilon: 0.15
-      lambd: 0.99
+      lambd: 1.0
       num_epoch: 3
       learning_rate_schedule: constant
       beta_schedule: constant
