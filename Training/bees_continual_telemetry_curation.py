@@ -24,6 +24,8 @@ from bees_continual_learning import (
     sha256_file,
     utc_now,
 )
+from bees_continual_telemetry_contributors import load_public_telemetry_contributor_buckets
+
 
 PUBLIC_TELEMETRY_CURATION_SCHEMA_VERSION = 1
 PUBLIC_TELEMETRY_SELECTION_SCHEMA_VERSION = 1
@@ -34,6 +36,48 @@ def _required_text(value: object, label: str, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
         raise ValidationError(f"{label} must be a non-empty string up to {maximum} characters.")
     return value.strip()
+
+
+def _positive_integer(value: object, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValidationError(f"{label} must be a positive integer.")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{label} must be a positive integer.") from exc
+    if parsed <= 0 or (isinstance(value, float) and not value.is_integer()):
+        raise ValidationError(f"{label} must be a positive integer.")
+    return parsed
+
+
+def _max_batches_per_contributor(store: ContinualLearningStore) -> int:
+    settings = store.config.get("public_live_telemetry")
+    if not isinstance(settings, dict):
+        raise ValidationError(
+            "public_live_telemetry configuration must be an object for public telemetry curation."
+        )
+    return _positive_integer(
+        settings.get("max_batches_per_contributor"),
+        "public_live_telemetry.max_batches_per_contributor",
+    )
+
+
+def _validate_contributor_limit(
+    store: ContinualLearningStore,
+    batch_ids: Sequence[str],
+) -> Mapping[str, int]:
+    """Fail closed if one privacy-safe contributor dominates a selected telemetry set."""
+    max_per_contributor = _max_batches_per_contributor(store)
+    contributor_counts: Dict[str, int] = {}
+    for batch_id in batch_ids:
+        for bucket in load_public_telemetry_contributor_buckets(store, batch_id):
+            contributor_counts[bucket] = contributor_counts.get(bucket, 0) + 1
+    if any(count > max_per_contributor for count in contributor_counts.values()):
+        raise ValidationError(
+            "Approved public telemetry selection exceeds "
+            "public_live_telemetry.max_batches_per_contributor."
+        )
+    return contributor_counts
 
 
 def _batch_id(value: object) -> str:
@@ -278,6 +322,8 @@ def materialize_scenario_selection(
                 "tags": list(archive["approval"].get("tags", [])),
             }
         )
+
+    _validate_contributor_limit(store, normalized)
 
     identity = {
         "schema_version": PUBLIC_TELEMETRY_SELECTION_SCHEMA_VERSION,
