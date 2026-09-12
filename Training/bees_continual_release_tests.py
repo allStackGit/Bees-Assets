@@ -58,6 +58,7 @@ class ReleaseCycleTests(unittest.TestCase):
         self.store = ContinualLearningStore(self.root, copy.deepcopy(TEST_CONFIG))
         self.store.initialize()
         self.published_model_ids = []
+        self.health_checked_model_ids = []
 
     def tearDown(self):
         self.temp.cleanup()
@@ -90,6 +91,15 @@ class ReleaseCycleTests(unittest.TestCase):
             "model_id": model_id,
             "deployment_id": f"deploy-test-{len(self.published_model_ids)}",
             "pointer_changed": True,
+        }
+
+    def health_checker(self, store):
+        model_id = store.current_champion_id()
+        self.health_checked_model_ids.append(model_id)
+        return {
+            "status": "healthy",
+            "current_champion_model_id": model_id,
+            "deployment_id": f"deploy-test-{len(self.published_model_ids)}",
         }
 
     @staticmethod
@@ -126,6 +136,7 @@ class ReleaseCycleTests(unittest.TestCase):
             environment_path="unused-test-environment",
             evaluator=kwargs.pop("evaluator", self.passing_evaluator),
             publisher=kwargs.pop("publisher", self.publisher),
+            health_checker=kwargs.pop("health_checker", self.health_checker),
             **kwargs,
         )
 
@@ -137,12 +148,15 @@ class ReleaseCycleTests(unittest.TestCase):
         result = self.run_cycle()
 
         self.assertEqual(result["status"], "processed")
+        self.assertEqual(result["initial_release_health_status"], "healthy")
         self.assertEqual(len(result["processed"]), 1)
         self.assertEqual(result["processed"][0]["candidate_model_id"], newer["model_id"])
         self.assertEqual(result["processed"][0]["decision"], "promoted")
+        self.assertEqual(result["processed"][0]["release_health_status"], "healthy")
         self.assertEqual(self.store.current_champion_id(), newer["model_id"])
         self.assertEqual(self.store.get_model(older["model_id"])["status"], "candidate")
         self.assertEqual(self.published_model_ids, [first["model_id"], newer["model_id"]])
+        self.assertEqual(self.health_checked_model_ids, [first["model_id"], newer["model_id"]])
 
     def test_failed_candidate_is_rejected_without_becoming_deployment(self):
         first = self.bootstrap()
@@ -154,6 +168,44 @@ class ReleaseCycleTests(unittest.TestCase):
         self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "rejected")
         self.assertEqual(self.store.current_champion_id(), first["model_id"])
         self.assertEqual(self.published_model_ids, [first["model_id"]])
+        self.assertEqual(self.health_checked_model_ids, [first["model_id"]])
+
+    def test_unhealthy_starting_release_blocks_evaluation_and_leaves_candidate_queued(self):
+        first = self.bootstrap()
+        candidate = self.register("blocked.onnx", b"blocked", 200, parent=first["model_id"])
+        evaluator_calls = []
+
+        def evaluator(*args, **kwargs):
+            evaluator_calls.append((args, kwargs))
+            return self.passing_evaluator(*args, **kwargs)
+
+        def unhealthy(_store):
+            raise ValidationError("synthetic deployment corruption")
+
+        with self.assertRaisesRegex(ReleaseError, "Release health validation failed"):
+            self.run_cycle(evaluator=evaluator, health_checker=unhealthy)
+
+        self.assertEqual(evaluator_calls, [])
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
+        self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "candidate")
+        self.assertEqual(self.published_model_ids, [first["model_id"]])
+
+    def test_health_checker_identity_mismatch_blocks_evaluation(self):
+        first = self.bootstrap()
+        candidate = self.register("identity-blocked.onnx", b"identity-blocked", 200, parent=first["model_id"])
+
+        def wrong_identity(_store):
+            return {
+                "status": "healthy",
+                "current_champion_model_id": "bees-rl-v8-wrong",
+                "deployment_id": "deploy-test-1",
+            }
+
+        with self.assertRaisesRegex(ReleaseError, "champion does not match"):
+            self.run_cycle(health_checker=wrong_identity)
+
+        self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "candidate")
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
 
     def test_evaluation_failure_leaves_candidate_and_champion_unchanged(self):
         first = self.bootstrap()
@@ -168,6 +220,7 @@ class ReleaseCycleTests(unittest.TestCase):
         self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "candidate")
         self.assertEqual(self.store.current_champion_id(), first["model_id"])
         self.assertEqual(self.published_model_ids, [first["model_id"]])
+        self.assertEqual(self.health_checked_model_ids, [first["model_id"]])
 
     def test_publication_failure_after_promotion_is_reconciled_on_next_cycle(self):
         first = self.bootstrap()
@@ -185,17 +238,57 @@ class ReleaseCycleTests(unittest.TestCase):
                 "pointer_changed": False,
             }
 
-        with self.assertRaisesRegex(ReleaseError, "was promoted, but deployment publication failed"):
-            self.run_cycle(publisher=fail_after_initial_reconcile)
+        def initial_health(store):
+            return {
+                "status": "healthy",
+                "current_champion_model_id": store.current_champion_id(),
+                "deployment_id": "deploy-initial",
+            }
+
+        with self.assertRaisesRegex(ReleaseError, "deployment publication/health validation failed"):
+            self.run_cycle(
+                publisher=fail_after_initial_reconcile,
+                health_checker=initial_health,
+            )
 
         self.assertEqual(calls, [first["model_id"], candidate["model_id"]])
         self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
         self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "champion")
 
-        recovered = self.run_cycle(publisher=self.publisher)
+        recovered = self.run_cycle(publisher=self.publisher, health_checker=self.health_checker)
         self.assertEqual(recovered["status"], "idle")
         self.assertEqual(recovered["current_champion_model_id"], candidate["model_id"])
         self.assertEqual(self.published_model_ids, [candidate["model_id"]])
+        self.assertEqual(self.health_checked_model_ids, [candidate["model_id"]])
+
+    def test_health_failure_after_promotion_is_reconciled_on_next_cycle(self):
+        first = self.bootstrap()
+        candidate = self.register("health-retry.onnx", b"health-retry", 200, parent=first["model_id"])
+        checks = []
+
+        def fail_second_health(store):
+            model_id = store.current_champion_id()
+            checks.append(model_id)
+            if len(checks) == 2:
+                raise ValidationError("synthetic post-promotion corruption")
+            return {
+                "status": "healthy",
+                "current_champion_model_id": model_id,
+                "deployment_id": f"deploy-test-{len(self.published_model_ids)}",
+            }
+
+        with self.assertRaisesRegex(ReleaseError, "deployment publication/health validation failed"):
+            self.run_cycle(health_checker=fail_second_health)
+
+        self.assertEqual(checks, [first["model_id"], candidate["model_id"]])
+        self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
+        self.assertEqual(self.store.get_model(candidate["model_id"])["status"], "champion")
+        self.assertEqual(self.published_model_ids, [first["model_id"], candidate["model_id"]])
+
+        recovered = self.run_cycle()
+        self.assertEqual(recovered["status"], "idle")
+        self.assertEqual(recovered["initial_release_health_status"], "healthy")
+        self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
 
     def test_required_competency_suite_blocks_before_publication_when_source_is_missing(self):
         first = self.bootstrap()
