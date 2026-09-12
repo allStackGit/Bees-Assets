@@ -786,7 +786,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 continue;
             }
             _seenShipIds[sideIndex].Add(ship.Id);
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship))
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship) &&
+                !RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side))
             {
                 _policyEligibleShipIds[sideIndex].Add(ship.Id);
                 if (ship.HasBrain)
