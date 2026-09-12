@@ -37,6 +37,7 @@ def _config():
         "scenario_schema_version": 1,
         "promotion": {},
         "historical_league": {},
+        "public_live_telemetry": {"max_batches_per_contributor": 8},
         "ingestion": {"max_payload_bytes": 16 * 1024 * 1024, "max_steps_per_match": 1000},
     }
 
@@ -117,7 +118,8 @@ class TelemetryTacticReviewTests(unittest.TestCase):
             db.commit()
         finally:
             db.close()
-        provenance = self.store.experience_dir / "raw-live" / "public-quarantine-provenance" / batch_id / f"server-{self.counter}.json"
+        server_batch_id = f"rl-telemetry-{self.counter:032x}"
+        provenance = self.store.experience_dir / "raw-live" / "public-quarantine-provenance" / batch_id / f"{server_batch_id}.json"
         self.store._write_json_immutable(
             provenance,
             {
@@ -125,6 +127,16 @@ class TelemetryTacticReviewTests(unittest.TestCase):
                 "source_trust": "authenticated-quarantine",
                 "strict_live_schema_validated": True,
                 "trusted_for_on_policy_rl": False,
+            },
+        )
+        contributor = self.store.experience_dir / "raw-live" / "public-contributors" / batch_id / f"{server_batch_id}.json"
+        self.store._write_json_immutable(
+            contributor,
+            {
+                "schema_version": 1,
+                "central_batch_id": batch_id,
+                "server_batch_id": server_batch_id,
+                "contributor_bucket": f"{self.counter:064x}",
             },
         )
         approve_public_telemetry(
