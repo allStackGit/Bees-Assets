@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 7;
+    internal const int Version = 8;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int ExpectedObservationSize = 4701;
+    internal const int ExpectedObservationSize = 4722;
     internal const int ExpectedContinuousActions = 34;
     internal const int ExpectedWeaponFireBranchCount = 16;
     internal const int ExpectedWeaponFireBranchSize = 2;
@@ -24,12 +24,12 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v7|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4701|cont=34|disc=2x16,5,65,65,65|" +
+        "bees-rl-v8|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4722|cont=34|disc=2x16,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
         "self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|" +
-        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
+        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
     {
@@ -39,6 +39,11 @@ internal static class RlPolicySchema
             errors.Add($"behavior expected {ExpectedBehaviorName} but was {RlOneVsOneAgent.BehaviorName}");
         }
 
+        Check(errors, RlCombatPerception.BaseObservationSize, 4701, "pre-v8 observation prefix size");
+        Check(errors, RlCombatPerception.EpisodeProgressObservationIndex, 4701, "episode progress observation index");
+        Check(errors, RlCombatPerception.ReservedObservationStartIndex, 4702, "reserved observation start index");
+        Check(errors, RlCombatPerception.ReservedObservationCount, 20, "reserved observation count");
+        Check(errors, RlCombatPerception.ReservedObservationEndIndex, 4721, "reserved observation end index");
         Check(errors, RlCombatPerception.ObservationSize, ExpectedObservationSize, "observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
         Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
@@ -86,7 +91,7 @@ internal static class RlPolicySchema
         int shipTypeLimit = 1 << RlCombatPerception.ShipTypeBitCount;
         if (shipType < 0 || shipType >= shipTypeLimit)
         {
-            error = $"RL policy ABI cannot encode ship type {ship.ShipType} ({shipType}); " +
+            error = $"RL policy cannot encode ship type {ship.ShipType} ({shipType}); " +
                     $"the frozen {RlCombatPerception.ShipTypeBitCount}-bit field supports 0-{shipTypeLimit - 1}.";
             return false;
         }
@@ -145,7 +150,7 @@ internal static class RlPolicySchema
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
         // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v7.
+        // within the reserved bit range, but existing values must never be renumbered for ABI v8.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
