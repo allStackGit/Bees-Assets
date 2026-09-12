@@ -6,7 +6,9 @@ payload, checks the server batch identity, then delegates to the strict live-tel
 fail-closed central archive boundary.
 
 The authenticated Steam user ID remains in BeesServer quarantine for abuse handling and is
-intentionally not copied into the continual-learning experience store or provenance record.
+intentionally not copied into the continual-learning experience store or provenance record. A
+store-local HMAC contributor bucket is retained separately so later curation can prevent one
+contributor from dominating scenario-mining selections.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from bees_continual_learning import (
     sha256_file,
 )
 from bees_continual_live_telemetry_ingest import ingest_live_telemetry_payload
+from bees_continual_telemetry_contributors import write_public_telemetry_contributor_record
 
 
 PUBLIC_TELEMETRY_QUARANTINE_SCHEMA_VERSION = 1
@@ -247,8 +250,15 @@ def ingest_public_telemetry_quarantine(
         central_batch_id=central_batch_id,
         quarantine=quarantine,
     )
+    contributor = write_public_telemetry_contributor_record(
+        store,
+        central_batch_id=central_batch_id,
+        server_batch_id=str(quarantine["batch_id"]),
+        uploader_user_id=str(quarantine["uploader_user_id"]),
+    )
     result["public_quarantine_batch_id"] = quarantine["batch_id"]
     result["public_provenance_path"] = str(provenance_path)
+    result["public_contributor_record_path"] = str(contributor["path"])
     return result
 
 
