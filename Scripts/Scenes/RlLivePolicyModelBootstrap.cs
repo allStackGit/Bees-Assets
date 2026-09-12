@@ -310,9 +310,9 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
                 {
                     continue;
                 }
+                changedAgents.Add(agent);
                 agent.SetModel(RlOneVsOneAgent.BehaviorName, model);
                 behavior.BehaviorType = BehaviorType.InferenceOnly;
-                changedAgents.Add(agent);
             }
         }
         catch (Exception exception)
