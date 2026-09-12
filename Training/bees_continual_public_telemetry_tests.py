@@ -39,6 +39,9 @@ TEST_CONFIG = {
         "training_onnx_provider": "CPUExecutionProvider",
         "training_policy_cache_size": 1,
     },
+    "public_live_telemetry": {
+        "max_batches_per_contributor": 2,
+    },
     "ingestion": {
         "max_payload_bytes": 1024 * 1024,
         "max_steps_per_match": 100,
@@ -122,11 +125,19 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
             ],
         }
 
-    def write_quarantine(self, payload, *, directory=None, metadata_overrides=None):
+    def write_quarantine(
+        self,
+        payload,
+        *,
+        directory=None,
+        metadata_overrides=None,
+        user_id=None,
+    ):
         directory = Path(directory) if directory is not None else self.incoming
         directory.mkdir(parents=True, exist_ok=True)
+        uploader_user_id = self.user_id if user_id is None else str(user_id)
         match_id = payload["match_id"]
-        batch_hash = sha256_bytes(f"{self.user_id}\n{match_id}\n".encode("utf-8"))[:32]
+        batch_hash = sha256_bytes(f"{uploader_user_id}\n{match_id}\n".encode("utf-8"))[:32]
         batch_id = f"rl-telemetry-{batch_hash}"
         payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         payload_hash = sha256_bytes(payload_bytes)
@@ -136,7 +147,7 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
             "schemaVersion": 1,
             "batchId": batch_id,
             "matchId": match_id,
-            "uploaderUserId": self.user_id,
+            "uploaderUserId": uploader_user_id,
             "gameBuildVersion": payload["game_build_version"],
             "payloadSha256": payload_hash,
             "payloadBytes": len(payload_bytes),
@@ -168,6 +179,38 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
         self.assertEqual(provenance["source_trust"], "authenticated-quarantine")
         self.assertFalse(provenance["trusted_for_on_policy_rl"])
         self.assertNotIn(self.user_id, json.dumps(provenance))
+
+        contributor = json.loads(
+            Path(result["public_contributor_record_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(contributor["contributor_bucket"]), 64)
+        self.assertNotIn(self.user_id, json.dumps(contributor))
+
+    def test_contributor_bucket_is_stable_per_user_and_distinct_between_users(self):
+        first_path, _ = self.write_quarantine(
+            self.payload(match_id="match-contributor-1"),
+            directory=Path(self.temp.name) / "contributor-1",
+        )
+        second_path, _ = self.write_quarantine(
+            self.payload(match_id="match-contributor-2"),
+            directory=Path(self.temp.name) / "contributor-2",
+        )
+        third_path, _ = self.write_quarantine(
+            self.payload(match_id="match-contributor-3"),
+            directory=Path(self.temp.name) / "contributor-3",
+            user_id="76561198000000001",
+        )
+        first = ingest_public_telemetry_quarantine(self.store, first_path)
+        second = ingest_public_telemetry_quarantine(self.store, second_path)
+        third = ingest_public_telemetry_quarantine(self.store, third_path)
+
+        def bucket(result):
+            return json.loads(
+                Path(result["public_contributor_record_path"]).read_text(encoding="utf-8")
+            )["contributor_bucket"]
+
+        self.assertEqual(bucket(first), bucket(second))
+        self.assertNotEqual(bucket(first), bucket(third))
 
     def test_hash_or_sidecar_identity_mismatch_is_rejected_before_archive(self):
         metadata_path, payload_path = self.write_quarantine(self.payload())
