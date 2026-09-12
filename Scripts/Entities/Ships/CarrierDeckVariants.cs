@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships
             new Color32(147, 204, 93, 255),
             new Color32(68, 137, 108, 255),
             new Color32(79, 180, 79, 255),
-            new Color32(98, 180, 197, 6, 255),
+            new Color32(98, 180, 197, 255),
             new Color32(95, 108, 195, 255),
             new Color32(155, 124, 171, 255),
             new Color32(214, 135, 189, 255),
