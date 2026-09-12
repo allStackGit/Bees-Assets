@@ -108,17 +108,25 @@ class PublicTelemetryMiningTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def _seed_public_batch(self, *, record_count=MIN_TACTIC_RECORDS, self_ship=21, enemy_ship=13):
+    def _seed_public_batch(
+        self,
+        *,
+        record_count=MIN_TACTIC_RECORDS,
+        self_ship=21,
+        enemy_ship=13,
+        agent_count=1,
+    ):
         self.counter += 1
         match_id = f"match-{self.counter}"
         model_id = "model-1"
         steps = [
             _step(
-                "opaque-agent",
+                f"opaque-agent-{agent_index}",
                 index,
                 self_ship=self_ship,
                 enemy_ship=enemy_ship,
             )
+            for agent_index in range(agent_count)
             for index in range(record_count)
         ]
         payload = {
@@ -203,6 +211,7 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self.assertEqual(len(report["suggestions"]), 1)
         suggestion = report["suggestions"][0]
         self.assertEqual(suggestion["occurrence_count"], 2)
+        self.assertEqual(suggestion["agent_stream_count"], 2)
         self.assertEqual(suggestion["self_ship_name"], "Wasp")
         self.assertEqual(suggestion["first_enemy_ship_name"], "Gunship")
         self.assertTrue(suggestion["geometry_candidates"])
@@ -212,6 +221,16 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         batch_id = self._seed_public_batch()
         report = mine_telemetry_selection(self.store, self._selection([batch_id]))
         self.assertEqual(report["analyzed_agent_streams"], 1)
+        self.assertEqual(report["suggestions"], [])
+
+    def test_multiple_agents_in_one_match_do_not_self_confirm_repetition(self):
+        batch_id = self._seed_public_batch(agent_count=2)
+        report = mine_telemetry_selection(
+            self.store,
+            self._selection([batch_id]),
+            minimum_occurrences=2,
+        )
+        self.assertEqual(report["analyzed_agent_streams"], 2)
         self.assertEqual(report["suggestions"], [])
 
     def test_revocation_after_selection_fails_closed(self):
