@@ -15,7 +15,7 @@ import bees_continual_adversarial_replay as replay
 from bees_continual_learning import ContinualLearningError, ValidationError
 
 
-OBSERVATION_SIZE = 4701
+OBSERVATION_SIZE = replay.EXPECTED_OBSERVATION_SIZE
 CONTINUOUS_ACTIONS = 34
 DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
 SCENARIO_ID = "adv-" + "a" * 24
@@ -50,7 +50,9 @@ class FakeStore:
     def __init__(self, root: Path):
         self.root = root
         self.experience_dir = root / "experience"
-        self.compatibility = SimpleNamespace(policy_abi_version=7)
+        self.compatibility = SimpleNamespace(
+            policy_abi_version=replay.SUPPORTED_POLICY_ABI_VERSION
+        )
 
     def _require_initialized(self):
         return None
