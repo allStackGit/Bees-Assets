@@ -12,10 +12,11 @@ namespace Bees.Tests.EditMode
         {
             Type schemaType = RuntimeAssembly.GetType("RlPolicySchema");
 
-            Assert.That((int)RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(6));
+            Assert.That((int)RuntimeAssembly.GetStaticField(schemaType, "Version"), Is.EqualTo(7));
             string signature = (string)RuntimeAssembly.GetStaticField(schemaType, "Signature");
-            StringAssert.StartsWith("bees-rl-v6|", signature);
+            StringAssert.StartsWith("bees-rl-v7|", signature);
             StringAssert.Contains("network=ff-512x3", signature);
+            StringAssert.Contains("obs=4706", signature);
         }
 
         [Test]
