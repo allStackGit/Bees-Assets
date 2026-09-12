@@ -40,6 +40,7 @@ def _config():
         "scenario_schema_version": 1,
         "promotion": {},
         "historical_league": {},
+        "public_live_telemetry": {"max_batches_per_contributor": 8},
         "ingestion": {"max_payload_bytes": 16 * 1024 * 1024, "max_steps_per_match": 1000},
     }
 
@@ -88,7 +89,7 @@ def _step(agent_key, decision_index, *, self_ship=21, enemy_ship=13):
 
 
 def _assert_no_raw_step_keys(testcase, value):
-    forbidden = {"observation", "continuous_action", "discrete_action"}
+    forbidden = {"observation", "continuous_action", "discrete_action", "contributor_bucket"}
     if isinstance(value, Mapping):
         testcase.assertTrue(forbidden.isdisjoint(value.keys()))
         for nested in value.values():
@@ -115,6 +116,7 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self_ship=21,
         enemy_ship=13,
         agent_count=1,
+        contributor_bucket=None,
     ):
         self.counter += 1
         match_id = f"match-{self.counter}"
@@ -164,12 +166,13 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         finally:
             db.close()
 
+        server_batch_id = f"rl-telemetry-{self.counter:032x}"
         provenance = (
             self.store.experience_dir
             / "raw-live"
             / "public-quarantine-provenance"
             / batch_id
-            / f"server-{self.counter}.json"
+            / f"{server_batch_id}.json"
         )
         self.store._write_json_immutable(
             provenance,
@@ -178,6 +181,22 @@ class PublicTelemetryMiningTests(unittest.TestCase):
                 "source_trust": "authenticated-quarantine",
                 "strict_live_schema_validated": True,
                 "trusted_for_on_policy_rl": False,
+            },
+        )
+        contributor = (
+            self.store.experience_dir
+            / "raw-live"
+            / "public-contributors"
+            / batch_id
+            / f"{server_batch_id}.json"
+        )
+        self.store._write_json_immutable(
+            contributor,
+            {
+                "schema_version": 1,
+                "central_batch_id": batch_id,
+                "server_batch_id": server_batch_id,
+                "contributor_bucket": contributor_bucket or f"{self.counter:064x}",
             },
         )
         approve_public_telemetry(
@@ -206,11 +225,13 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self.assertFalse(report["recorded_actions_used_as_ppo_trajectories"])
         self.assertTrue(report["requires_operator_review"])
         self.assertTrue(report["requires_side_mapping"])
+        self.assertEqual(report["minimum_contributors"], 2)
         self.assertEqual(report["analyzed_batches"], 2)
         self.assertEqual(report["analyzed_agent_streams"], 2)
         self.assertEqual(len(report["suggestions"]), 1)
         suggestion = report["suggestions"][0]
         self.assertEqual(suggestion["occurrence_count"], 2)
+        self.assertEqual(suggestion["contributor_count"], 2)
         self.assertEqual(suggestion["agent_stream_count"], 2)
         self.assertEqual(suggestion["self_ship_name"], "Wasp")
         self.assertEqual(suggestion["first_enemy_ship_name"], "Gunship")
@@ -237,6 +258,18 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self.assertEqual(report["analyzed_agent_streams"], 2)
         self.assertEqual(report["suggestions"], [])
 
+    def test_same_contributor_across_matches_does_not_self_confirm_tactic(self):
+        bucket = "a" * 64
+        first = self._seed_public_batch(contributor_bucket=bucket)
+        second = self._seed_public_batch(contributor_bucket=bucket)
+        report = mine_telemetry_selection(
+            self.store,
+            self._selection([first, second]),
+            minimum_occurrences=2,
+        )
+        self.assertEqual(report["analyzed_agent_streams"], 2)
+        self.assertEqual(report["suggestions"], [])
+
     def test_revocation_after_selection_fails_closed(self):
         first = self._seed_public_batch()
         second = self._seed_public_batch()
@@ -256,6 +289,7 @@ class PublicTelemetryMiningTests(unittest.TestCase):
             self.store,
             self._selection([batch_id]),
             minimum_occurrences=1,
+            minimum_contributors=1,
         )
         self.assertEqual(report["analyzed_agent_streams"], 0)
         self.assertEqual(report["skipped_short_agent_streams"], 1)
