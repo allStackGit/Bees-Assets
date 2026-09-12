@@ -80,16 +80,25 @@ namespace Bees.Tests.EditMode
             string replayPath = WriteReplay(frameCount: 1);
             string relative = Path.GetFileName(replayPath).Replace('\\', '/');
             string hash = Sha256(File.ReadAllBytes(replayPath));
-            string path = Path.Combine(_tempDirectory, "bad-catalog-hash.json");
-            File.WriteAllText(
-                path,
-                CatalogJson(
-                    "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
-                    relative,
-                    hash,
-                    1,
-                    catalogHash: new string('0', 64)));
+            string badHash = new string('0', 64);
+            string path = WriteCatalogFile(
+                "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
+                relative,
+                hash,
+                1,
+                declaredCatalogHash: badHash,
+                fileNameHash: badHash);
             AssertLoadFails(path);
+        }
+
+        [Test]
+        public void CatalogRejectsValidBodyAtWrongContentAddressedPath()
+        {
+            string replayPath = WriteReplay(frameCount: 1);
+            string catalogPath = WriteCatalog(replayPath, frameCount: 1);
+            string wrongPath = Path.Combine(_tempDirectory, "catalog-ffffffffffffffffffffffff.json");
+            File.Copy(catalogPath, wrongPath);
+            AssertLoadFails(wrongPath);
         }
 
         [Test]
@@ -98,20 +107,18 @@ namespace Bees.Tests.EditMode
             string replayPath = WriteReplay(frameCount: 1);
             string relative = Path.GetFileName(replayPath).Replace('\\', '/');
             string hash = Sha256(File.ReadAllBytes(replayPath));
-            string malformed = Path.Combine(_tempDirectory, "bad-id.json");
-            File.WriteAllText(
-                malformed,
-                CatalogJson("adv-GGGGGGGGGGGGGGGGGGGGGGGG", relative, hash, 1));
+            string malformed = WriteCatalogFile(
+                "adv-GGGGGGGGGGGGGGGGGGGGGGGG",
+                relative,
+                hash,
+                1);
             AssertLoadFails(malformed);
 
-            string rooted = Path.Combine(_tempDirectory, "rooted.json");
-            File.WriteAllText(
-                rooted,
-                CatalogJson(
-                    "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
-                    replayPath.Replace('\\', '/'),
-                    hash,
-                    1));
+            string rooted = WriteCatalogFile(
+                "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
+                replayPath.Replace('\\', '/'),
+                hash,
+                1);
             AssertLoadFails(rooted);
         }
 
@@ -166,12 +173,38 @@ namespace Bees.Tests.EditMode
             int frameCount,
             string replayHash = null)
         {
-            string path = Path.Combine(_tempDirectory, "catalog.json");
             string relative = Path.GetFileName(replayPath).Replace('\\', '/');
             string hash = replayHash ?? Sha256(File.ReadAllBytes(replayPath));
+            return WriteCatalogFile(
+                "adv-aaaaaaaaaaaaaaaaaaaaaaaa",
+                relative,
+                hash,
+                frameCount);
+        }
+
+        private string WriteCatalogFile(
+            string scenarioId,
+            string replayPath,
+            string replayHash,
+            int frameCount,
+            string declaredCatalogHash = null,
+            string fileNameHash = null)
+        {
+            string identity = CatalogIdentityJson(scenarioId, replayPath, replayHash, frameCount);
+            string identityHash = Sha256(Encoding.UTF8.GetBytes(identity));
+            string declaredHash = declaredCatalogHash ?? identityHash;
+            string pathHash = fileNameHash ?? declaredHash;
+            string path = Path.Combine(
+                _tempDirectory,
+                "catalog-" + pathHash.Substring(0, 24) + ".json");
             File.WriteAllText(
                 path,
-                CatalogJson("adv-aaaaaaaaaaaaaaaaaaaaaaaa", relative, hash, frameCount));
+                CatalogJson(
+                    scenarioId,
+                    replayPath,
+                    replayHash,
+                    frameCount,
+                    catalogHash: declaredHash));
             return path;
         }
 
