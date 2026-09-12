@@ -33,6 +33,9 @@
   },
   "ingestion": {
     "max_payload_bytes": 16777216,
-    "max_steps_per_match": 100000
+    "max_steps_per_match": 100000,
+    "telemetry_observation_size": 4722,
+    "telemetry_continuous_action_count": 34,
+    "telemetry_discrete_branch_sizes": [16, 16, 5, 65, 65, 65]
   }
 }
