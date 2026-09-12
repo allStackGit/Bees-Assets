@@ -36,6 +36,6 @@
     "max_steps_per_match": 100000,
     "telemetry_observation_size": 4722,
     "telemetry_continuous_action_count": 34,
-    "telemetry_discrete_branch_sizes": [16, 16, 5, 65, 65, 65]
+    "telemetry_discrete_branch_sizes": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 65, 65, 65]
   }
 }
