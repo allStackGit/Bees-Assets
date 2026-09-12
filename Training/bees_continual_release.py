@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from bees_continual_deployment import publish_current_champion
 from bees_continual_evaluate import (
@@ -44,12 +43,15 @@ Evaluator = Callable[..., Mapping[str, Any]]
 Publisher = Callable[[ContinualLearningStore], Mapping[str, Any]]
 
 
-def _compatible_candidates(store: ContinualLearningStore) -> List[Dict[str, Any]]:
-    """Return the existing registry queue order, excluding candidates from an obsolete ABI."""
+def _compatible_candidates(
+    store: ContinualLearningStore,
+    candidates: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Preserve registry queue order while excluding candidates from an obsolete ABI."""
     expected = store.compatibility.to_dict()
     return [
-        model
-        for model in store.list_models(status="candidate")
+        dict(model)
+        for model in candidates
         if all(model.get(key) == value for key, value in expected.items())
     ]
 
@@ -133,7 +135,6 @@ def run_release_cycle(
     champion_matches: Optional[int] = None,
     historical_matches: Optional[int] = None,
     competency_default_matches: Optional[int] = None,
-    historical_model_ids: Optional[Sequence[str]] = None,
     seed: int = 0,
     worker_id: int = 0,
     timeout_wait: int = 300,
@@ -182,7 +183,7 @@ def run_release_cycle(
         )
 
     all_candidates = store.list_models(status="candidate")
-    eligible = _compatible_candidates(store)
+    eligible = _compatible_candidates(store, all_candidates)
     selected = eligible[:max_candidates]
     processed: List[Dict[str, Any]] = []
 
@@ -197,7 +198,7 @@ def run_release_cycle(
             champion_matches=champion_matches,
             historical_matches=historical_matches,
             competency_default_matches=competency_default_matches,
-            historical_model_ids=historical_model_ids,
+            historical_model_ids=None,
             seed=seed,
             worker_id=worker_id,
             timeout_wait=timeout_wait,
@@ -316,12 +317,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--historical-matches", type=_positive_int)
     parser.add_argument("--competency-default-matches", type=_positive_int)
     parser.add_argument(
-        "--historical-opponent",
-        action="append",
-        dest="historical_opponents",
-        help="Evaluate only this compatible historical model id; repeat to select multiple.",
-    )
-    parser.add_argument(
         "--env-arg",
         action="append",
         default=[],
@@ -371,7 +366,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             champion_matches=args.champion_matches,
             historical_matches=args.historical_matches,
             competency_default_matches=args.competency_default_matches,
-            historical_model_ids=args.historical_opponents,
             seed=args.seed,
             worker_id=args.worker_id,
             timeout_wait=args.timeout_wait,
