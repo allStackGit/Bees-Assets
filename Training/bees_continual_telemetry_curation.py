@@ -275,7 +275,6 @@ def materialize_scenario_selection(
                 "model_id": archive["row"]["model_id"],
                 "payload_sha256": archive["payload_sha256"],
                 "approval_sha256": approval_sha256,
-                "archive_path": str(archive["archive"]),
                 "tags": list(archive["approval"].get("tags", [])),
             }
         )
