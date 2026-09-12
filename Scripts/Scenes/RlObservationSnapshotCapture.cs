@@ -37,7 +37,6 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
         public long snapshot_sequence;
         public int capture_interval;
         public string agent_name;
-        public int agent_instance_id;
         public string behavior_name;
         public int policy_abi_version;
         public string policy_abi_signature;
@@ -136,7 +135,6 @@ internal sealed class RlObservationSnapshotCapture : MonoBehaviour
             snapshot_sequence = _snapshotCount,
             capture_interval = CaptureInterval,
             agent_name = agent.name,
-            agent_instance_id = agent.GetInstanceID(),
             behavior_name = RlPolicySchema.ExpectedBehaviorName,
             policy_abi_version = RlPolicySchema.Version,
             policy_abi_signature = RlPolicySchema.Signature,
