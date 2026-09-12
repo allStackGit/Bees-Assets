@@ -1,11 +1,11 @@
 """Run one fail-closed automatic candidate evaluation/promotion/deployment cycle.
 
 Training already registers stable ONNX exports as immutable candidates. This module consumes that
-registered queue without changing PPO itself: it first reconciles the current champion's deployment
-pointer, then evaluates a bounded number of compatible candidates, rejects candidates with recorded
-failing evidence, promotes only candidates with recorded passing evidence, and republishes the newly
-promoted champion. The default is deliberately one candidate per invocation so a scheduler cannot
-silently create a rapid promotion cascade.
+registered queue without changing PPO itself: it first reconciles and independently verifies the
+current champion's deployment, then evaluates a bounded number of compatible candidates, rejects
+candidates with recorded failing evidence, promotes only candidates with recorded passing evidence,
+and republishes and re-verifies the newly promoted champion. The default is deliberately one
+candidate per invocation so a scheduler cannot silently create a rapid promotion cascade.
 
 Hot AssetBundle construction/publication remains a separate platform-specific step. The hot-bundle
 publisher independently refuses bytes that do not match the registry's current published champion.
@@ -33,6 +33,7 @@ from bees_continual_learning import (
     ValidationError,
     load_config,
 )
+from bees_continual_release_health import check_release_health
 
 
 class ReleaseError(ContinualLearningError):
@@ -41,6 +42,7 @@ class ReleaseError(ContinualLearningError):
 
 Evaluator = Callable[..., Mapping[str, Any]]
 Publisher = Callable[[ContinualLearningStore], Mapping[str, Any]]
+HealthChecker = Callable[[ContinualLearningStore], Mapping[str, Any]]
 
 
 def _compatible_candidates(
@@ -126,6 +128,37 @@ def _validate_recorded_result(candidate_model_id: str, value: Mapping[str, Any])
     return recorded
 
 
+def _require_healthy_release(
+    store: ContinualLearningStore,
+    *,
+    expected_model_id: str,
+    expected_deployment_id: object,
+    health_checker: HealthChecker,
+) -> Dict[str, Any]:
+    try:
+        health = dict(health_checker(store))
+    except (ContinualLearningError, OSError, ValueError) as exc:
+        raise ReleaseError(f"Release health validation failed: {exc}") from exc
+    if health.get("status") != "healthy":
+        raise ReleaseError(
+            f"Release health checker returned non-healthy status {health.get('status')!r}."
+        )
+    if health.get("current_champion_model_id") != expected_model_id:
+        raise ReleaseError(
+            "Release health checker champion does not match the registry champion: "
+            f"expected {expected_model_id}, got {health.get('current_champion_model_id')!r}."
+        )
+    deployment_id = health.get("deployment_id")
+    if not isinstance(deployment_id, str) or not deployment_id:
+        raise ReleaseError("Release health checker did not return a deployment identity.")
+    if isinstance(expected_deployment_id, str) and expected_deployment_id and deployment_id != expected_deployment_id:
+        raise ReleaseError(
+            "Release health checker deployment does not match the publisher result: "
+            f"expected {expected_deployment_id}, got {deployment_id}."
+        )
+    return health
+
+
 def run_release_cycle(
     store: ContinualLearningStore,
     *,
@@ -144,6 +177,7 @@ def run_release_cycle(
     max_candidates: int = 1,
     evaluator: Evaluator = evaluate_and_record,
     publisher: Publisher = publish_current_champion,
+    health_checker: HealthChecker = check_release_health,
 ) -> Dict[str, Any]:
     """Evaluate/promote a bounded snapshot of the candidate queue and reconcile deployment."""
     if not isinstance(max_candidates, int) or isinstance(max_candidates, bool) or max_candidates <= 0:
@@ -175,12 +209,19 @@ def run_release_cycle(
 
     # Reconcile registry -> deployment before touching the queue. This makes a rerun recover cleanly
     # from a prior process failure after promotion but before publication, while never distributing a
-    # model that has not already become the registry's approved champion.
+    # model that has not already become the registry's approved champion. The independent health pass
+    # then verifies the complete registry -> pointer -> immutable package chain before evaluation.
     initial_deployment = dict(publisher(store))
     if initial_deployment.get("model_id") != champion_id:
         raise ReleaseError(
             "Deployment publisher did not reconcile to the registry's current champion."
         )
+    initial_health = _require_healthy_release(
+        store,
+        expected_model_id=champion_id,
+        expected_deployment_id=initial_deployment.get("deployment_id"),
+        health_checker=health_checker,
+    )
 
     all_candidates = store.list_models(status="candidate")
     eligible = _compatible_candidates(store, all_candidates)
@@ -225,16 +266,22 @@ def run_release_cycle(
         promoted = store.promote(candidate_id, report_id)
         try:
             deployment = dict(publisher(store))
+            release_health = _require_healthy_release(
+                store,
+                expected_model_id=candidate_id,
+                expected_deployment_id=deployment.get("deployment_id"),
+                health_checker=health_checker,
+            )
         except (ContinualLearningError, OSError, ValueError) as exc:
             # Promotion itself is intentionally not rolled back here. At this point the candidate has
-            # passed the authoritative gate and is the registry champion, but the atomic deployment
-            # pointer has not been confirmed. Keeping that state is safer than using rollback(), which
-            # would incorrectly turn the approved candidate into a historical opponent. The next cycle
-            # retries publication before evaluating any other candidate.
+            # passed the authoritative gate and is the registry champion, but publication/health has
+            # not been confirmed. Keeping that state is safer than using rollback(), which would
+            # incorrectly turn the approved candidate into a historical opponent. The next cycle
+            # reconciles and verifies publication before evaluating any other candidate.
             raise ReleaseError(
-                f"Candidate {candidate_id} was promoted, but deployment publication failed. "
-                "No further candidates were evaluated; rerun the release cycle to reconcile the "
-                f"current champion before continuing. Publisher error: {exc}"
+                f"Candidate {candidate_id} was promoted, but deployment publication/health "
+                "validation failed. No further candidates were evaluated; rerun the release cycle "
+                f"to reconcile the current champion before continuing. Release error: {exc}"
             ) from exc
         if deployment.get("model_id") != candidate_id:
             raise ReleaseError(
@@ -249,6 +296,7 @@ def run_release_cycle(
                 "final_status": promoted["status"],
                 "deployment_id": deployment.get("deployment_id"),
                 "deployment_pointer_changed": bool(deployment.get("pointer_changed", False)),
+                "release_health_status": release_health["status"],
             }
         )
 
@@ -258,6 +306,7 @@ def run_release_cycle(
         "current_champion_model_id": store.current_champion_id(),
         "initial_deployment_id": initial_deployment.get("deployment_id"),
         "initial_deployment_pointer_changed": bool(initial_deployment.get("pointer_changed", False)),
+        "initial_release_health_status": initial_health["status"],
         "candidate_count": len(all_candidates),
         "compatible_candidate_count": len(eligible),
         "skipped_incompatible_candidate_count": len(all_candidates) - len(eligible),
