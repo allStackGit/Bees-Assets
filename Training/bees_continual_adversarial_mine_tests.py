@@ -35,7 +35,7 @@ suggest = _load("bees_continual_adversarial_suggest")
 mine = _load("bees_continual_adversarial_mine")
 
 
-OBSERVATION_SIZE = 4701
+OBSERVATION_SIZE = suggest.EXPECTED_OBSERVATION_SIZE
 CONTINUOUS_ACTIONS = 34
 DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
 
@@ -83,7 +83,9 @@ def actions(*, moving=False, firing=False, special=0):
 
 class FakeStore:
     def __init__(self):
-        self.compatibility = SimpleNamespace(policy_abi_version=7)
+        self.compatibility = SimpleNamespace(
+            policy_abi_version=suggest.SUPPORTED_POLICY_ABI_VERSION
+        )
 
     def _require_initialized(self):
         return None
