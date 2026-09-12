@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships
             new Color32(147, 204, 93, 255),
             new Color32(68, 137, 108, 255),
             new Color32(79, 180, 79, 255),
-            new Color32(98, 180, 197, 255),
+            new Color32(98, 180, 197, 6, 255),
             new Color32(95, 108, 195, 255),
             new Color32(155, 124, 171, 255),
             new Color32(214, 135, 189, 255),
@@ -177,14 +177,43 @@ namespace Assets.Scripts.Entities.Ships
                 SpriteHeight);
         }
 
+        private static bool CachedSpritesAreUsable()
+        {
+            if (_texture == null || _sprites == null || _sprites.Length != DeckCount)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _sprites.Length; i++)
+            {
+                if (_sprites[i] == null)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private static void EnsureSpritesLoaded()
         {
-            if (_loadAttempted)
+            if (CachedSpritesAreUsable())
+            {
+                return;
+            }
+
+            // Unity's EditMode runner can destroy dynamically-created UnityEngine.Objects
+            // between tests while static managed fields survive. In that case the Sprite[]
+            // remains non-null but contains destroyed-object references. Rebuild that cache
+            // instead of returning it. A genuine prior load failure still remains sticky.
+            if (_loadAttempted && _sprites == null && _texture == null)
             {
                 return;
             }
 
             _loadAttempted = true;
+            _sprites = null;
+            _texture = null;
+
             TextAsset source = Resources.Load<TextAsset>(ResourcePath);
             if (source == null)
             {
