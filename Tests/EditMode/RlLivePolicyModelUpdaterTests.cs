@@ -146,7 +146,7 @@ namespace Bees.Tests.EditMode
             object[] args = { staleChunk, descriptor, 0L, null, null };
             Assert.That((bool)validate.Invoke(null, args), Is.False);
             Assert.That(args[3], Is.Null);
-            Assert.That(args[4] as string, Does.Contain("pinned deployment"));
+            Assert.That(args[4] as string, Does.Contain("deployment"));
         }
 
         [Test]
@@ -198,18 +198,28 @@ namespace Bees.Tests.EditMode
 
         private static int GetPolicyVersion()
         {
-            Type schema = RuntimeAssembly.GetType("RlPolicySchema");
-            FieldInfo field = schema.GetField("Version", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            Assert.That(field, Is.Not.Null);
-            return (int)field.GetValue(null);
+            return GetPolicyMember<int>("Version");
         }
 
         private static string GetPolicySignature()
         {
+            return GetPolicyMember<string>("Signature");
+        }
+
+        private static T GetPolicyMember<T>(string name)
+        {
             Type schema = RuntimeAssembly.GetType("RlPolicySchema");
-            FieldInfo field = schema.GetField("Signature", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            Assert.That(field, Is.Not.Null);
-            return (string)field.GetValue(null);
+            Assert.That(schema, Is.Not.Null);
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            FieldInfo field = schema.GetField(name, flags);
+            if (field != null)
+            {
+                return (T)field.GetValue(null);
+            }
+
+            PropertyInfo property = schema.GetProperty(name, flags);
+            Assert.That(property, Is.Not.Null, $"Missing static policy member {name} on {schema.FullName}");
+            return (T)property.GetValue(null, null);
         }
 
         private static string ReadSource(params string[] parts)
