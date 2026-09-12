@@ -15,7 +15,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 from bees_continual_learning import (
     ContinualLearningError,
@@ -35,6 +35,7 @@ DEPLOYMENT_DIRECTORY = "deployment"
 DEPLOYMENT_MODEL_FILE = "model.onnx"
 DEPLOYMENT_MANIFEST_FILE = "manifest.json"
 CURRENT_DEPLOYMENT_FILE = "current-deployment.json"
+OnnxValidator = Callable[[Path], None]
 
 
 def _required_policy_signature(store: ContinualLearningStore) -> str:
@@ -98,6 +99,20 @@ def _validate_current_champion(store: ContinualLearningStore) -> Dict[str, Any]:
     if artifact.stat().st_size <= 0:
         raise ValidationError(f"Current champion artifact is empty: {artifact}")
     return champion
+
+
+def _default_onnx_validator(path: Path) -> None:
+    """Require the release artifact to load through the same ONNX adapter used by evaluation."""
+    try:
+        from bees_continual_evaluate import EvaluationError, OnnxPolicy
+    except ImportError as exc:
+        raise ValidationError(
+            "Champion deployment requires the project's evaluation/ONNX Runtime environment."
+        ) from exc
+    try:
+        OnnxPolicy(path)
+    except EvaluationError as exc:
+        raise ValidationError(f"Champion ONNX deployment preflight failed: {exc}") from exc
 
 
 def _evaluation_evidence(
@@ -208,12 +223,17 @@ def _promotion_evidence(
     )
 
 
-def build_current_champion_package(store: ContinualLearningStore) -> Dict[str, Any]:
+def build_current_champion_package(
+    store: ContinualLearningStore,
+    *,
+    onnx_validator: Optional[OnnxValidator] = None,
+) -> Dict[str, Any]:
     """Create or verify the deterministic package for the registry's current champion."""
     champion = _validate_current_champion(store)
     policy_signature = _required_policy_signature(store)
     evidence = _promotion_evidence(store, champion)
     source = Path(str(champion["artifact_path"])).expanduser().resolve()
+    (onnx_validator or _default_onnx_validator)(source)
     artifact_size = source.stat().st_size
 
     identity = {
@@ -276,9 +296,13 @@ def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
             pass
 
 
-def publish_current_champion(store: ContinualLearningStore) -> Dict[str, Any]:
+def publish_current_champion(
+    store: ContinualLearningStore,
+    *,
+    onnx_validator: Optional[OnnxValidator] = None,
+) -> Dict[str, Any]:
     """Publish an atomic pointer to the verified immutable current-champion package."""
-    package = build_current_champion_package(store)
+    package = build_current_champion_package(store, onnx_validator=onnx_validator)
     policy_signature = _required_policy_signature(store)
     pointer_path = store.root / DEPLOYMENT_DIRECTORY / CURRENT_DEPLOYMENT_FILE
     identity = {
