@@ -19,9 +19,9 @@ from bees_continual_unity_bundle import install_current_deployment_assets
 
 TEST_CONFIG = {
     "behavior_name": "BeesRL1v1",
-    "policy_abi_version": 7,
-    "policy_signature": "test-policy-v7-signature",
-    "observation_schema_version": 7,
+    "policy_abi_version": 8,
+    "policy_signature": "test-policy-v8-signature",
+    "observation_schema_version": 8,
     "action_schema_version": 6,
     "reward_schema_version": 2,
     "scenario_schema_version": 1,
@@ -63,6 +63,7 @@ class UnityBundleTests(unittest.TestCase):
         (self.assets_root / "Scripts" / "Scenes" / "RlPolicySchema.cs").write_text(
             "// test sentinel\n", encoding="utf-8"
         )
+        self.validated_onnx_paths = []
 
     def tearDown(self):
         self.temp.cleanup()
@@ -77,6 +78,16 @@ class UnityBundleTests(unittest.TestCase):
             game_build_version="test-build",
             parent_model_id=parent,
             status="candidate",
+        )
+
+    def validate_synthetic_onnx(self, path: Path):
+        self.validated_onnx_paths.append(Path(path))
+
+    def install(self, assets_root=None):
+        return install_current_deployment_assets(
+            self.store,
+            assets_root or self.assets_root,
+            onnx_validator=self.validate_synthetic_onnx,
         )
 
     def bootstrap(self):
@@ -103,7 +114,7 @@ class UnityBundleTests(unittest.TestCase):
 
     def test_installs_exact_published_model_and_manifest(self):
         champion = self.bootstrap()
-        installed = install_current_deployment_assets(self.store, self.assets_root)
+        installed = self.install()
 
         model_path = Path(installed["model_asset_source"])
         manifest_path = Path(installed["manifest_asset_source"])
@@ -111,6 +122,7 @@ class UnityBundleTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_file())
         self.assertEqual(sha256_file(model_path), champion["artifact_sha256"])
         self.assertEqual(sha256_file(manifest_path), installed["manifest_sha256"])
+        self.assertEqual(self.validated_onnx_paths, [Path(champion["artifact_path"])])
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["deployment_id"], installed["deployment_id"])
         self.assertEqual(manifest["identity"]["model_id"], champion["model_id"])
@@ -119,11 +131,11 @@ class UnityBundleTests(unittest.TestCase):
 
     def test_new_champion_replaces_build_staging_bytes(self):
         first = self.bootstrap()
-        first_install = install_current_deployment_assets(self.store, self.assets_root)
+        first_install = self.install()
         first_model_hash = sha256_file(Path(first_install["model_asset_source"]))
 
         second = self.promote_second(first)
-        second_install = install_current_deployment_assets(self.store, self.assets_root)
+        second_install = self.install()
         self.assertNotEqual(first_install["deployment_id"], second_install["deployment_id"])
         self.assertEqual(sha256_file(Path(second_install["model_asset_source"])), second["artifact_sha256"])
         self.assertNotEqual(first_model_hash, second["artifact_sha256"])
@@ -131,10 +143,10 @@ class UnityBundleTests(unittest.TestCase):
     def test_rollback_restores_previous_champion_build_staging_bytes(self):
         first = self.bootstrap()
         self.promote_second(first)
-        install_current_deployment_assets(self.store, self.assets_root)
+        self.install()
 
         rolled_back = self.store.rollback()
-        installed = install_current_deployment_assets(self.store, self.assets_root)
+        installed = self.install()
         self.assertEqual(installed["model_id"], rolled_back["model_id"])
         self.assertEqual(
             sha256_file(Path(installed["model_asset_source"])),
@@ -146,15 +158,16 @@ class UnityBundleTests(unittest.TestCase):
         wrong_root = Path(self.temp.name) / "not-assets"
         wrong_root.mkdir()
         with self.assertRaisesRegex(ValidationError, "RlPolicySchema"):
-            install_current_deployment_assets(self.store, wrong_root)
+            self.install(wrong_root)
+        self.assertEqual(self.validated_onnx_paths, [])
 
     def test_replaces_tampered_staging_file_with_authoritative_package(self):
         champion = self.bootstrap()
-        installed = install_current_deployment_assets(self.store, self.assets_root)
+        installed = self.install()
         model_path = Path(installed["model_asset_source"])
         model_path.write_bytes(b"tampered-build-staging")
 
-        repaired = install_current_deployment_assets(self.store, self.assets_root)
+        repaired = self.install()
         self.assertEqual(repaired["deployment_id"], installed["deployment_id"])
         self.assertEqual(sha256_file(model_path), champion["artifact_sha256"])
 
