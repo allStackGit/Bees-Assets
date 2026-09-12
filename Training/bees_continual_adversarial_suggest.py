@@ -1,9 +1,11 @@
 """Suggest reproducible tactical geometry from an approved public Human demonstration.
 
 This is deliberately an operator-assist tool, not automatic tactic registration. It revalidates the
-approved immutable demonstration, decodes policy ABI v7 observations, and reports geometry that can
-help reconstruct the situation in headless training. The observation stream does not prove that an
-estimated setup parameter caused the tactic, so the result must still be reviewed before registration.
+approved immutable demonstration, decodes policy ABI v8 observations, and reports geometry that can
+help reconstruct the situation in headless training. ABI v8 appends episode-progress/reserved tail
+values after the v7 tactical fields, so the geometry indices used here retain the same meaning. The
+observation stream does not prove that an estimated setup parameter caused the tactic, so the result
+must still be reviewed before registration.
 """
 
 from __future__ import annotations
@@ -31,8 +33,8 @@ from bees_continual_native_demo import (
 
 
 SUGGESTION_SCHEMA_VERSION = 1
-SUPPORTED_POLICY_ABI_VERSION = 7
-EXPECTED_OBSERVATION_SIZE = 4701
+SUPPORTED_POLICY_ABI_VERSION = 8
+EXPECTED_OBSERVATION_SIZE = 4722
 SELF_POSITION_X_INDEX = 6
 SELF_POSITION_Y_INDEX = 7
 LEVEL_SIZE_X_INDEX = 8
@@ -42,7 +44,7 @@ FIRST_ENEMY_X_INDEX = FIRST_ENEMY_SLOT_INDEX + 1
 FIRST_ENEMY_Y_INDEX = FIRST_ENEMY_SLOT_INDEX + 2
 LEVEL_SIZE_NORMALIZATION_SCALE = 100.0
 LOCAL_DISTANCE_SQUASH_SCALE = 40.0
-# ABI v7 observations use Level.Min/Max, which subtract ConfigData.MapEdgePadding=(5,5)
+# ABI v8 preserves the earlier Level.Min/Max fields, which subtract ConfigData.MapEdgePadding=(5,5)
 # from each edge. Keep this guarded by a focused source-level test.
 MAP_EDGE_PADDING_PER_SIDE = 5.0
 
@@ -100,7 +102,7 @@ def _invert_signed_distance(value: float, label: str) -> float:
 def infer_geometry_from_observations(
     observations: Sequence[Sequence[float]],
 ) -> Mapping[str, object]:
-    """Infer map/setup hints from already-decoded ABI v7 vector observations."""
+    """Infer map/setup hints from already-decoded ABI v8 vector observations."""
     if not observations:
         raise ValidationError("Demonstration contains no observations to inspect.")
 
@@ -228,7 +230,7 @@ def suggest_tactical_geometry(
     store._require_initialized()
     if store.compatibility.policy_abi_version != SUPPORTED_POLICY_ABI_VERSION:
         raise ValidationError(
-            "Tactical geometry suggestion currently understands only policy ABI v7."
+            f"Tactical geometry suggestion currently understands only policy ABI v{SUPPORTED_POLICY_ABI_VERSION}."
         )
 
     archive = _approved_archive(store, batch_id)
@@ -247,7 +249,7 @@ def suggest_tactical_geometry(
     _validate_native_behavior(behavior_spec, capture_manifest)
     if capture_manifest.get("observationSize") != EXPECTED_OBSERVATION_SIZE:
         raise ValidationError(
-            "Tactical geometry suggestion requires the exact ABI v7 observation size."
+            f"Tactical geometry suggestion requires the exact ABI v{SUPPORTED_POLICY_ABI_VERSION} observation size."
         )
 
     reader = observation_reader or _default_observation_reader
@@ -260,7 +262,7 @@ def suggest_tactical_geometry(
         "inferred": inferred,
         "authoritative": False,
         "caveats": [
-            "Map dimensions are reconstructed from ABI v7 usable Level bounds plus the current 5-unit edge padding per side.",
+            f"Map dimensions are reconstructed from ABI v{SUPPORTED_POLICY_ABI_VERSION} usable Level bounds plus the current 5-unit edge padding per side.",
             "Only square captures can become a direct registration_candidate because the current dedicated tactical replay arena is square.",
             "Spawn separation is estimated from the first recorded ship position and is strongest for 1v1 captures before meaningful movement.",
             "Multi-ship formation offsets or delayed recording can make the spawn-separation estimate approximate.",
@@ -272,7 +274,7 @@ def suggest_tactical_geometry(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Suggest tactical replay geometry from an approved ABI v7 Human demonstration."
+        description=f"Suggest tactical replay geometry from an approved ABI v{SUPPORTED_POLICY_ABI_VERSION} Human demonstration."
     )
     parser.add_argument("--root", required=True, help="Continual-learning store root.")
     parser.add_argument("batch_id", help="Approved central demo-<id> batch.")
