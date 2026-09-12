@@ -70,6 +70,7 @@ namespace Bees.Tests.EditMode
             string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
             Assert.That(source, Does.Contain("[DefaultExecutionOrder(-10000)]"));
             Assert.That(source, Does.Contain("agent.SetModel(RlOneVsOneAgent.BehaviorName, _model)"));
+            Assert.That(source, Does.Contain("behavior.BehaviorType = BehaviorType.InferenceOnly;"));
             Assert.That(source, Does.Contain("_stage.ActivateBrains = false;"));
             Assert.That(source, Does.Contain("level.SetupHivemind();"));
             Assert.That(source, Does.Contain("agents[i].enabled = false;"));
