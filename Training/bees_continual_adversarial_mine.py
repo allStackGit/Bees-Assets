@@ -1,9 +1,10 @@
 """Mine repeated, explainable tactical signatures from approved public Human demonstrations.
 
 The miner is intentionally diagnostic. It never creates training scenarios automatically. It
-revalidates every approved native demo and summarizes a small set of policy-ABI-v7 signals that an
+revalidates every approved native demo and summarizes a small set of current-policy signals that an
 operator can understand: fleet identity, range at fire decisions, map-edge occupancy, distance
-trend, movement activity, firing cadence, and special-action use. Repeated signatures can then be
+trend, movement activity, firing cadence, and special-action use. ABI v8 preserves those tactical
+fields and appends its new episode-progress/reserved tail afterward. Repeated signatures can then be
 reviewed and converted into immutable adversarial scenarios through the normal registry.
 """
 
@@ -56,7 +57,7 @@ SPECIAL_ACTION_BRANCH = 16
 EDGE_NORMALIZED_THRESHOLD = 0.75
 DISTANCE_TREND_EPSILON = 0.25
 
-# Frozen ABI-v7 enum mapping guarded by RlPolicySchema. IDs rather than display names are the actual
+# Frozen ship enum mapping guarded by RlPolicySchema. IDs rather than display names are the actual
 # grouping contract; names are included only to make review output easier to read.
 SHIP_TYPE_NAMES = {
     0: "Barge",
@@ -358,7 +359,9 @@ def mine_approved_tactics(
     """Analyze approved batches and group repeated explainable tactical signatures."""
     store._require_initialized()
     if store.compatibility.policy_abi_version != SUPPORTED_POLICY_ABI_VERSION:
-        raise ValidationError("Tactic mining currently understands only policy ABI v7.")
+        raise ValidationError(
+            f"Tactic mining currently understands only policy ABI v{SUPPORTED_POLICY_ABI_VERSION}."
+        )
     if not batch_ids:
         raise ValidationError("At least one approved demonstration batch is required.")
     if len(set(batch_ids)) != len(batch_ids):
