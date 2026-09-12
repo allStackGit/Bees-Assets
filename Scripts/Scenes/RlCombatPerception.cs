@@ -375,7 +375,7 @@ internal sealed class RlCombatPerception
             case ConfigData.ProjectileTypes.Rocket: prefab = weapon.Stage.Prefabs.RocketPrefab; break;
             case ConfigData.ProjectileTypes.HumanSmall: prefab = weapon.Stage.Prefabs.HumanSmallPrefab; break;
             case ConfigData.ProjectileTypes.HumanMedium: prefab = weapon.Stage.Prefabs.HumanMediumPrefab; break;
-            case ConfigData.Projectiles.Beam: prefab = weapon.Stage.Prefabs.BeamPrefab; break;
+            case ConfigData.ProjectileTypes.Beam: prefab = weapon.Stage.Prefabs.BeamPrefab; break;
             case ConfigData.ProjectileTypes.SplitShot: prefab = weapon.Stage.Prefabs.SplitShotPrefab; break;
             case ConfigData.ProjectileTypes.QueenSmall: prefab = weapon.Stage.Prefabs.QueenSmallPrefab; break;
             case ConfigData.ProjectileTypes.QueenLarge: prefab = weapon.Stage.Prefabs.QueenLargePrefab; break;
