@@ -96,6 +96,14 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
         bootstrap._deploymentId = deploymentId;
         bootstrap._modelId = modelId;
         bootstrap._bindingActive = true;
+
+        RlLivePolicyModelUpdater updater = stage.GetComponent<RlLivePolicyModelUpdater>();
+        if (updater == null)
+        {
+            updater = stage.gameObject.AddComponent<RlLivePolicyModelUpdater>();
+        }
+        updater.Initialize(bootstrap, deploymentId);
+
         Debug.Log(
             $"Live RL champion bundle ready: deployment={deploymentId} model={modelId} " +
             $"ABI=v{RlPolicySchema.Version} resource={ModelResourcePath}.");
@@ -230,6 +238,117 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
     internal static bool TryValidateManifestJsonForTests(string json, out string error)
     {
         return TryValidateManifestJson(json, out _, out error);
+    }
+
+    internal bool TryApplyHotBundle(
+        ModelAsset model,
+        string manifestJson,
+        string expectedDeploymentId,
+        string expectedModelId,
+        out string error)
+    {
+        error = null;
+        if (!_bindingActive || _stage == null || _fallbackPending || _fallbackStarted)
+        {
+            error = "live RL policy bootstrap is not in an active swappable state";
+            return false;
+        }
+        if (model == null)
+        {
+            error = "downloaded champion ModelAsset is missing";
+            return false;
+        }
+        if (!TryValidateManifestJson(manifestJson, out DeploymentManifest manifest, out error))
+        {
+            return false;
+        }
+        if (!string.Equals(manifest.deployment_id, expectedDeploymentId, StringComparison.Ordinal) ||
+            !string.Equals(manifest.identity.model_id, expectedModelId, StringComparison.Ordinal))
+        {
+            error = "downloaded bundle manifest does not match the authenticated server deployment/model identity";
+            return false;
+        }
+        if (string.Equals(_deploymentId, manifest.deployment_id, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        ModelAsset previousModel = _model;
+        RlLivePolicyAgent[] agents = _stage.GetComponentsInChildren<RlLivePolicyAgent>(true);
+        List<RlLivePolicyAgent> changedAgents = new List<RlLivePolicyAgent>(agents.Length);
+        for (int i = 0; i < agents.Length; i++)
+        {
+            RlLivePolicyAgent agent = agents[i];
+            if (agent == null)
+            {
+                continue;
+            }
+            BehaviorParameters behavior = agent.GetComponent<BehaviorParameters>();
+            if (behavior == null)
+            {
+                error = "live RL agent is missing BehaviorParameters";
+                return false;
+            }
+            if (behavior.Model != null && behavior.Model != previousModel)
+            {
+                error = "live RL agent already has a different inference model";
+                return false;
+            }
+        }
+
+        try
+        {
+            for (int i = 0; i < agents.Length; i++)
+            {
+                RlLivePolicyAgent agent = agents[i];
+                if (agent == null)
+                {
+                    continue;
+                }
+                BehaviorParameters behavior = agent.GetComponent<BehaviorParameters>();
+                if (behavior.Model != previousModel)
+                {
+                    continue;
+                }
+                agent.SetModel(RlOneVsOneAgent.BehaviorName, model);
+                behavior.BehaviorType = BehaviorType.InferenceOnly;
+                changedAgents.Add(agent);
+            }
+        }
+        catch (Exception exception)
+        {
+            bool rollbackFailed = false;
+            for (int i = changedAgents.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    RlLivePolicyAgent agent = changedAgents[i];
+                    agent.SetModel(RlOneVsOneAgent.BehaviorName, previousModel);
+                    BehaviorParameters behavior = agent.GetComponent<BehaviorParameters>();
+                    if (behavior != null)
+                    {
+                        behavior.BehaviorType = BehaviorType.InferenceOnly;
+                    }
+                }
+                catch
+                {
+                    rollbackFailed = true;
+                }
+            }
+
+            error = "could not hot-swap live RL champion: " + exception.Message;
+            if (rollbackFailed)
+            {
+                FailToHiveMind(error + "; rollback to the prior champion also failed");
+            }
+            return false;
+        }
+
+        _model = model;
+        _deploymentId = manifest.deployment_id;
+        _modelId = manifest.identity.model_id;
+        _knownLevelChildCounts.Clear();
+        return true;
     }
 
     private void FixedUpdate()
