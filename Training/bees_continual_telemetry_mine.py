@@ -149,14 +149,14 @@ def mine_telemetry_selection(
             raise ValidationError(f"Telemetry archive payload is malformed: {batch_id}.")
         source_batches.add(batch_id)
 
-        for agent_key, stream in _agent_streams(payload).items():
+        for stream_index, (_agent_key, stream) in enumerate(_agent_streams(payload).items()):
             if len(stream) < MIN_TACTIC_RECORDS:
                 skipped_short_streams += 1
                 continue
             profile = dict(_analyze_stream(stream))
             profile["_source"] = {
                 "batch_id": batch_id,
-                "agent_key": agent_key,
+                "agent_stream_index": stream_index,
             }
             grouped[str(profile["signature"])].append(profile)
             analyzed_streams += 1
@@ -173,7 +173,7 @@ def mine_telemetry_selection(
             profiles,
             key=lambda profile: (
                 str(profile["_source"]["batch_id"]),
-                str(profile["_source"]["agent_key"]),
+                int(profile["_source"]["agent_stream_index"]),
             ),
         )
         representative = profiles[0]
@@ -214,7 +214,7 @@ def mine_telemetry_selection(
         "caveats": [
             "A repeated signature must occur in distinct telemetry batches; multiple agents in one match cannot self-confirm a tactic.",
             "A repeated signature is a review hint, not an automatically approved training scenario.",
-            "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping.",
+            "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping; raw agent_key values are not copied into the mining report.",
             "self/enemy ship identities are from the recorded agent perspective and must be oriented by an operator before pressure registration.",
             "Geometry candidates are reconstructed from policy observations and are approximate.",
             "Recorded observations/actions are analyzed only to discover tactics and must never be supplied to PPO as on-policy trajectories.",
