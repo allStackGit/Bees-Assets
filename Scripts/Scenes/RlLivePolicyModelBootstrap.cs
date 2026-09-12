@@ -282,11 +282,11 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
                 FailToHiveMind("live RL agent is missing BehaviorParameters");
                 return false;
             }
-            if (behavior.Model == _model)
+            if (behavior.Model == _model && behavior.BehaviorType == BehaviorType.InferenceOnly)
             {
                 continue;
             }
-            if (behavior.Model != null)
+            if (behavior.Model != null && behavior.Model != _model)
             {
                 FailToHiveMind("live RL agent already has a different inference model");
                 return false;
@@ -294,7 +294,11 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
 
             try
             {
-                agent.SetModel(RlOneVsOneAgent.BehaviorName, _model);
+                if (behavior.Model != _model)
+                {
+                    agent.SetModel(RlOneVsOneAgent.BehaviorName, _model);
+                }
+                behavior.BehaviorType = BehaviorType.InferenceOnly;
             }
             catch (Exception exception)
             {
