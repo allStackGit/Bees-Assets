@@ -226,6 +226,13 @@ internal static class RlPlayerDerivedActionReplay
                 $"{CatalogFlag} catalog identity hash mismatch: expected {catalog.catalogSha256}, " +
                 $"computed {expectedCatalogSha256}.");
         }
+        string expectedCatalogFileName = $"catalog-{expectedCatalogSha256.Substring(0, 24)}.json";
+        if (!Path.GetFileName(fullCatalogPath).Equals(expectedCatalogFileName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"{CatalogFlag} catalog filename is not content-addressed to its identity: " +
+                $"expected {expectedCatalogFileName}.");
+        }
 
         Dictionary<string, ReplayData> result =
             new Dictionary<string, ReplayData>(StringComparer.Ordinal);
