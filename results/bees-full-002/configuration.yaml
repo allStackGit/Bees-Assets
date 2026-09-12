@@ -56,7 +56,7 @@ env_settings:
   - --rl-health-ratio
   - '.1'
   - --rl-map-size
-  - '56'
+  - '64'
   - --rl-episode-timeout
   - '120'
   - --rl-ships-per-side
@@ -67,7 +67,6 @@ env_settings:
   - Gunship
   - --rl-matchup-mode
   - sampled
-  - --bees-rl-observation-snapshot
   base_port: 5005
   num_envs: 32
   num_areas: 1
