@@ -9,7 +9,7 @@ internal static class RlOneVsOneReward
 {
     internal const float WinReward = 10f;
     internal const float LossReward = -10f;
-    internal const float TimeoutReward = -11f;
+    internal const float TimeoutReward = -10.6f;
     internal const float TsvRewardScale = 1f;
     internal const float MaximumEpisodeTimePenalty = 0.1f;
 
