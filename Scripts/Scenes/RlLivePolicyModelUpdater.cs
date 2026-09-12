@@ -242,116 +242,177 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
     private IEnumerator DownloadAndApply(ModelResponse descriptor)
     {
         string cacheRoot = Path.Combine(Application.persistentDataPath, "RlPolicyHotBundles");
-        Directory.CreateDirectory(cacheRoot);
-        string finalPath = Path.Combine(cacheRoot, descriptor.DeploymentId + ".bundle");
-        string tempPath = finalPath + ".partial";
-        TryDelete(tempPath);
+        string finalPath;
+        string tempPath;
+        try
+        {
+            Directory.CreateDirectory(cacheRoot);
+            finalPath = Path.Combine(cacheRoot, descriptor.DeploymentId + ".bundle");
+            tempPath = finalPath + ".partial";
+            TryDelete(tempPath);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Could not prepare RL champion download cache: " + exception.Message);
+            yield break;
+        }
 
         int chunkBytes = Math.Min(
             DefaultChunkBytes,
             descriptor.ChunkBytes > 0 ? descriptor.ChunkBytes : DefaultChunkBytes);
         long offset = 0;
+        FileStream output;
         try
         {
-            using (FileStream output = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                while (offset < descriptor.BundleSizeBytes)
-                {
-                    ChunkModelRequest chunk = CreateRequest<ChunkModelRequest>(ChunkRequestType);
-                    chunk.DeploymentId = descriptor.DeploymentId;
-                    chunk.BundleSha256 = descriptor.BundleSha256;
-                    chunk.Offset = offset;
-                    chunk.Length = (int)Math.Min(chunkBytes, descriptor.BundleSizeBytes - offset);
-                    yield return SendRequest(chunk);
-                    if (!TryAcceptResponse(ChunkRequestType, out ModelResponse response) ||
-                        !TryValidateChunkResponse(response, descriptor, offset, out byte[] bytes, out string error))
-                    {
-                        if (!string.IsNullOrEmpty(error))
-                        {
-                            Debug.LogWarning("Rejected RL model distribution chunk: " + error);
-                        }
-                        yield break;
-                    }
+            output = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Could not create RL champion temporary bundle: " + exception.Message);
+            yield break;
+        }
 
-                    output.Write(bytes, 0, bytes.Length);
-                    offset = response.NextOffset;
+        using (output)
+        {
+            while (offset < descriptor.BundleSizeBytes)
+            {
+                ChunkModelRequest chunk = CreateRequest<ChunkModelRequest>(ChunkRequestType);
+                chunk.DeploymentId = descriptor.DeploymentId;
+                chunk.BundleSha256 = descriptor.BundleSha256;
+                chunk.Offset = offset;
+                chunk.Length = (int)Math.Min(chunkBytes, descriptor.BundleSizeBytes - offset);
+                yield return SendRequest(chunk);
+
+                if (!TryAcceptResponse(ChunkRequestType, out ModelResponse response))
+                {
+                    TryDelete(tempPath);
+                    yield break;
                 }
-                output.Flush(true);
+                if (!TryValidateChunkResponse(
+                        response,
+                        descriptor,
+                        offset,
+                        out byte[] bytes,
+                        out string chunkError))
+                {
+                    Debug.LogWarning("Rejected RL model distribution chunk: " + chunkError);
+                    TryDelete(tempPath);
+                    yield break;
+                }
+
+                try
+                {
+                    output.Write(bytes, 0, bytes.Length);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning("Could not write RL champion download chunk: " + exception.Message);
+                    TryDelete(tempPath);
+                    yield break;
+                }
+                offset = response.NextOffset;
             }
 
+            try
+            {
+                output.Flush(true);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not flush RL champion temporary bundle: " + exception.Message);
+                TryDelete(tempPath);
+                yield break;
+            }
+        }
+
+        string actualSha256;
+        try
+        {
             FileInfo completed = new FileInfo(tempPath);
             if (completed.Length != descriptor.BundleSizeBytes)
             {
                 Debug.LogWarning("Downloaded RL champion bundle size does not match the authenticated server descriptor.");
+                TryDelete(tempPath);
                 yield break;
             }
-            string actualSha256 = ComputeFileSha256(tempPath);
-            if (!string.Equals(actualSha256, descriptor.BundleSha256, StringComparison.Ordinal))
-            {
-                Debug.LogWarning("Downloaded RL champion bundle failed SHA-256 verification; keeping the current champion.");
-                yield break;
-            }
-
-            TryDelete(finalPath);
-            File.Move(tempPath, finalPath);
-
-            AssetBundleCreateRequest loadBundle = AssetBundle.LoadFromFileAsync(finalPath);
-            yield return loadBundle;
-            AssetBundle bundle = loadBundle.assetBundle;
-            if (bundle == null)
-            {
-                Debug.LogWarning("Verified RL champion bytes could not be loaded as a Unity AssetBundle; keeping the current champion.");
-                yield break;
-            }
-
-            bool applied = false;
-            try
-            {
-                AssetBundleRequest modelRequest = bundle.LoadAssetAsync<ModelAsset>(ModelAddress);
-                AssetBundleRequest manifestRequest = bundle.LoadAssetAsync<TextAsset>(ManifestAddress);
-                yield return modelRequest;
-                yield return manifestRequest;
-
-                ModelAsset model = modelRequest.asset as ModelAsset;
-                TextAsset manifest = manifestRequest.asset as TextAsset;
-                if (model == null || manifest == null)
-                {
-                    Debug.LogWarning("RL champion AssetBundle is missing the expected model or deployment manifest address.");
-                    yield break;
-                }
-
-                if (!_bootstrap.TryApplyHotBundle(
-                        model,
-                        manifest.text,
-                        descriptor.DeploymentId,
-                        descriptor.ModelId,
-                        out string error))
-                {
-                    Debug.LogWarning("RL champion hot-swap rejected; keeping the current champion: " + error);
-                    yield break;
-                }
-
-                applied = true;
-                _currentDeploymentId = descriptor.DeploymentId;
-                Debug.Log(
-                    $"Live RL champion hot-swapped: deployment={descriptor.DeploymentId} " +
-                    $"model={descriptor.ModelId} platform={descriptor.Platform}.");
-            }
-            finally
-            {
-                bundle.Unload(!applied);
-            }
+            actualSha256 = ComputeFileSha256(tempPath);
         }
         catch (Exception exception)
         {
-            Debug.LogWarning(
-                $"RL champion hot distribution failed without replacing the current champion: " +
-                $"{exception.GetType().Name}: {exception.Message}");
-        }
-        finally
-        {
+            Debug.LogWarning("Could not verify downloaded RL champion bundle: " + exception.Message);
             TryDelete(tempPath);
+            yield break;
         }
+        if (!string.Equals(actualSha256, descriptor.BundleSha256, StringComparison.Ordinal))
+        {
+            Debug.LogWarning("Downloaded RL champion bundle failed SHA-256 verification; keeping the current champion.");
+            TryDelete(tempPath);
+            yield break;
+        }
+
+        try
+        {
+            TryDelete(finalPath);
+            File.Move(tempPath, finalPath);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Could not finalize verified RL champion bundle cache: " + exception.Message);
+            TryDelete(tempPath);
+            yield break;
+        }
+
+        AssetBundleCreateRequest loadBundle = AssetBundle.LoadFromFileAsync(finalPath);
+        yield return loadBundle;
+        AssetBundle bundle = loadBundle.assetBundle;
+        if (bundle == null)
+        {
+            Debug.LogWarning("Verified RL champion bytes could not be loaded as a Unity AssetBundle; keeping the current champion.");
+            yield break;
+        }
+
+        AssetBundleRequest modelRequest = bundle.LoadAssetAsync<ModelAsset>(ModelAddress);
+        AssetBundleRequest manifestRequest = bundle.LoadAssetAsync<TextAsset>(ManifestAddress);
+        yield return modelRequest;
+        yield return manifestRequest;
+
+        ModelAsset model = modelRequest.asset as ModelAsset;
+        TextAsset manifest = manifestRequest.asset as TextAsset;
+        if (model == null || manifest == null)
+        {
+            bundle.Unload(true);
+            Debug.LogWarning("RL champion AssetBundle is missing the expected model or deployment manifest address.");
+            yield break;
+        }
+
+        bool applied;
+        string applyError;
+        try
+        {
+            applied = _bootstrap.TryApplyHotBundle(
+                model,
+                manifest.text,
+                descriptor.DeploymentId,
+                descriptor.ModelId,
+                out applyError);
+        }
+        catch (Exception exception)
+        {
+            applied = false;
+            applyError = exception.GetType().Name + ": " + exception.Message;
+        }
+
+        bundle.Unload(!applied);
+        if (!applied)
+        {
+            Debug.LogWarning("RL champion hot-swap rejected; keeping the current champion: " + applyError);
+            yield break;
+        }
+
+        _currentDeploymentId = descriptor.DeploymentId;
+        Debug.Log(
+            $"Live RL champion hot-swapped: deployment={descriptor.DeploymentId} " +
+            $"model={descriptor.ModelId} platform={descriptor.Platform}.");
     }
 
     private T CreateRequest<T>(string type) where T : ModelRequest, new()
