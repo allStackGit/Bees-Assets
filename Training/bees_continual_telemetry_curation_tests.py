@@ -29,6 +29,7 @@ def _config():
         "scenario_schema_version": 1,
         "promotion": {},
         "historical_league": {},
+        "public_live_telemetry": {"max_batches_per_contributor": 2},
         "ingestion": {"max_payload_bytes": 1024 * 1024, "max_steps_per_match": 100},
     }
 
@@ -42,7 +43,12 @@ class PublicTelemetryCurationTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def _seed_public_batch(self, match_id="match-1", model_id="model-1"):
+    def _seed_public_batch(
+        self,
+        match_id="match-1",
+        model_id="model-1",
+        contributor_bucket="a" * 64,
+    ):
         payload = {
             "match_id": match_id,
             "model_id": model_id,
@@ -70,12 +76,13 @@ class PublicTelemetryCurationTests(unittest.TestCase):
         finally:
             db.close()
 
+        server_batch_id = f"rl-telemetry-{payload_hash[:32]}"
         provenance = (
             self.store.experience_dir
             / "raw-live"
             / "public-quarantine-provenance"
             / batch_id
-            / "server-batch.json"
+            / f"{server_batch_id}.json"
         )
         self.store._write_json_immutable(
             provenance,
@@ -86,7 +93,31 @@ class PublicTelemetryCurationTests(unittest.TestCase):
                 "trusted_for_on_policy_rl": False,
             },
         )
+        contributor = (
+            self.store.experience_dir
+            / "raw-live"
+            / "public-contributors"
+            / batch_id
+            / f"{server_batch_id}.json"
+        )
+        self.store._write_json_immutable(
+            contributor,
+            {
+                "schema_version": 1,
+                "central_batch_id": batch_id,
+                "server_batch_id": server_batch_id,
+                "contributor_bucket": contributor_bucket,
+            },
+        )
         return batch_id, archive
+
+    def _approve(self, batch_id):
+        return approve_public_telemetry(
+            self.store,
+            batch_id,
+            reviewer="reviewer",
+            reason="interesting behavior",
+        )
 
     def test_approval_and_selection_remain_off_policy(self):
         batch_id, _ = self._seed_public_batch()
@@ -150,6 +181,38 @@ class PublicTelemetryCurationTests(unittest.TestCase):
         )
         with self.assertRaises(ValidationError):
             materialize_scenario_selection(self.store, [batch_id])
+
+    def test_missing_contributor_provenance_fails_closed_at_selection(self):
+        batch_id, _ = self._seed_public_batch()
+        self._approve(batch_id)
+        contributor_dir = (
+            self.store.experience_dir / "raw-live" / "public-contributors" / batch_id
+        )
+        for path in contributor_dir.glob("*.json"):
+            path.unlink()
+        with self.assertRaisesRegex(ValidationError, "contributor-bucket provenance"):
+            materialize_scenario_selection(self.store, [batch_id])
+
+    def test_selection_rejects_one_contributor_above_configured_cap(self):
+        batches = []
+        for index in range(3):
+            batch_id, _ = self._seed_public_batch(match_id=f"match-cap-{index}")
+            self._approve(batch_id)
+            batches.append(batch_id)
+        with self.assertRaisesRegex(ValidationError, "max_batches_per_contributor"):
+            materialize_scenario_selection(self.store, batches)
+
+    def test_selection_allows_same_number_of_batches_from_distinct_contributors(self):
+        batches = []
+        for index, bucket_char in enumerate(("a", "b", "c")):
+            batch_id, _ = self._seed_public_batch(
+                match_id=f"match-diverse-{index}",
+                contributor_bucket=bucket_char * 64,
+            )
+            self._approve(batch_id)
+            batches.append(batch_id)
+        selection = materialize_scenario_selection(self.store, batches)
+        self.assertEqual(len(selection["batches"]), 3)
 
 
 if __name__ == "__main__":
