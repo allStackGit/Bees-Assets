@@ -26,6 +26,7 @@ from bees_continual_learning import (
     load_config,
 )
 from bees_continual_telemetry_adversarial import _validated_selection
+from bees_continual_telemetry_contributors import load_public_telemetry_contributor_buckets
 from bees_continual_telemetry_curation import _approved_archive
 
 
@@ -122,10 +123,12 @@ def mine_telemetry_selection(
     selection_id: str,
     *,
     minimum_occurrences: int = 2,
+    minimum_contributors: int = 2,
 ) -> Mapping[str, object]:
-    """Mine repeated, review-only tactical signatures from one curated telemetry selection."""
+    """Mine repeated, cross-contributor, review-only tactical signatures."""
     store._require_initialized()
     minimum_occurrences = _positive_int(minimum_occurrences, "minimum_occurrences")
+    minimum_contributors = _positive_int(minimum_contributors, "minimum_contributors")
     selection = _validated_selection(store, selection_id)
     manifest = selection["manifest"]
     batches = manifest.get("batches")
@@ -147,6 +150,7 @@ def mine_telemetry_selection(
         payload = archive["payload"]
         if not isinstance(payload, Mapping):
             raise ValidationError(f"Telemetry archive payload is malformed: {batch_id}.")
+        contributor_buckets = tuple(load_public_telemetry_contributor_buckets(store, batch_id))
         source_batches.add(batch_id)
 
         for stream_index, (_agent_key, stream) in enumerate(_agent_streams(payload).items()):
@@ -158,6 +162,7 @@ def mine_telemetry_selection(
                 "batch_id": batch_id,
                 "agent_stream_index": stream_index,
             }
+            profile["_contributor_buckets"] = contributor_buckets
             grouped[str(profile["signature"])].append(profile)
             analyzed_streams += 1
 
@@ -167,7 +172,14 @@ def mine_telemetry_selection(
         occurrence_count = len(
             {str(profile["_source"]["batch_id"]) for profile in profiles}
         )
-        if occurrence_count < minimum_occurrences:
+        contributor_count = len(
+            {
+                bucket
+                for profile in profiles
+                for bucket in profile["_contributor_buckets"]
+            }
+        )
+        if occurrence_count < minimum_occurrences or contributor_count < minimum_contributors:
             continue
         profiles = sorted(
             profiles,
@@ -182,6 +194,7 @@ def mine_telemetry_selection(
             {
                 "signature": signature,
                 "occurrence_count": occurrence_count,
+                "contributor_count": contributor_count,
                 "agent_stream_count": len(profiles),
                 "self_ship_type": representative.get("self_ship_type"),
                 "self_ship_name": representative.get("self_ship_name"),
@@ -207,12 +220,14 @@ def mine_telemetry_selection(
         "requires_operator_review": True,
         "requires_side_mapping": True,
         "minimum_occurrences": minimum_occurrences,
+        "minimum_contributors": minimum_contributors,
         "analyzed_batches": len(source_batches),
         "analyzed_agent_streams": analyzed_streams,
         "skipped_short_agent_streams": skipped_short_streams,
         "suggestions": suggestions,
         "caveats": [
             "A repeated signature must occur in distinct telemetry batches; multiple agents in one match cannot self-confirm a tactic.",
+            "Automatic tactic suggestions require evidence from distinct privacy-safe contributor buckets; bucket identities are never exposed in the report.",
             "A repeated signature is a review hint, not an automatically approved training scenario.",
             "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping; raw agent_key values are not copied into the mining report.",
             "self/enemy ship identities are from the recorded agent perspective and must be oriented by an operator before pressure registration.",
@@ -235,6 +250,12 @@ def _parser() -> argparse.ArgumentParser:
         default=2,
         help="Minimum distinct telemetry batches containing a signature before it is suggested.",
     )
+    parser.add_argument(
+        "--minimum-contributors",
+        type=int,
+        default=2,
+        help="Minimum distinct privacy-safe contributors containing a signature before it is suggested.",
+    )
     return parser
 
 
@@ -246,6 +267,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             store,
             args.selection_id,
             minimum_occurrences=args.minimum_occurrences,
+            minimum_contributors=args.minimum_contributors,
         )
         print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
         return 0
