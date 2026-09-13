@@ -1,7 +1,8 @@
 """Launch one authoritative Bees ML-Agents trainer with local and remote rollout workers.
 
 Remote workers use the normal ML-Agents Unity protocol through loopback SSH forwards. The central
-trainer remains the only optimizer/checkpoint owner.
+trainer remains the only optimizer/checkpoint owner. When external workers are enabled the launcher
+publishes a content-hashed session spec that pins the remote worker IDs and exact Unity env args.
 """
 
 from __future__ import annotations
@@ -22,6 +23,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     original_factory = None
     if options.enabled:
+        spec_path = distributed.write_remote_worker_spec(
+            options.remote_spec,
+            trainer_args,
+            base_port=base_port,
+            worker_ids=external_worker_ids,
+        )
         original_factory = distributed.install_external_worker_factory(
             total_envs=total_envs,
             external_worker_ids=external_worker_ids,
@@ -30,9 +37,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "[Bees distributed] "
             + distributed.describe_topology(base_port, total_envs, external_worker_ids)
         )
+        print(f"[Bees distributed] remote_session_spec={spec_path}")
         print(
             "[Bees distributed] External ML-Agents ports bind to 127.0.0.1 only; "
-            "connect remote machines through SSH/VPN forwarding rather than exposing gRPC."
+            "connect remote machines through SSH forwarding and the generated session spec."
         )
 
     original_argv = sys.argv
