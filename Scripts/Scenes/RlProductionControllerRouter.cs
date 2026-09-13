@@ -21,7 +21,7 @@ internal static class RlProductionControllerRouter
     internal const string BeeControllerFlag = "--rl-bee-controller";
     internal const string HumanControllerFlag = "--rl-human-controller";
 
-    private static string[] _cachedArgs;
+    private static bool _overridesInitialized;
     private static ControllerKind? _beeOverride;
     private static ControllerKind? _humanOverride;
     private static readonly HashSet<Stage> NeuralNetworkUnavailableStages = new HashSet<Stage>();
@@ -33,7 +33,7 @@ internal static class RlProductionControllerRouter
             return ControllerKind.None;
         }
 
-        EnsureOverrides(Environment.GetCommandLineArgs());
+        EnsureOverrides();
         ControllerKind resolved;
         ControllerKind? explicitController = side == ConfigData.Configuration.BeeSide
             ? _beeOverride
@@ -70,6 +70,21 @@ internal static class RlProductionControllerRouter
             return ControllerKind.HiveMind;
         }
         return resolved;
+    }
+
+    /// <summary>
+    /// Early scene-load query that does not depend on ConfigData.Configuration being ready yet.
+    /// Runtime installers use this to avoid missing explicit/default NN ownership before user data
+    /// finishes loading. Full per-side resolution still happens through Resolve once configuration exists.
+    /// </summary>
+    internal static bool AnyNeuralNetworkRequested(Stage stage)
+    {
+        return AnyRequested(stage, ControllerKind.NeuralNetwork);
+    }
+
+    internal static bool AnyHiveMindRequested(Stage stage)
+    {
+        return AnyRequested(stage, ControllerKind.HiveMind);
     }
 
     internal static void SetNeuralNetworkAvailable(Stage stage, bool available)
@@ -143,12 +158,54 @@ internal static class RlProductionControllerRouter
         return ControllerKind.None;
     }
 
-    private static bool Any(Stage stage, ControllerKind expected)
+    private static bool AnyRequested(Stage stage, ControllerKind expected)
     {
-        if (stage == null || ConfigData.Configuration == null)
+        if (stage == null)
         {
             return false;
         }
+        EnsureOverrides();
+
+        if (_beeOverride == expected || _humanOverride == expected)
+        {
+            return expected != ControllerKind.NeuralNetwork || !NeuralNetworkUnavailableStages.Contains(stage);
+        }
+
+        // Explicitly overriding both sides removes the serialized default from consideration.
+        if (_beeOverride.HasValue && _humanOverride.HasValue)
+        {
+            return false;
+        }
+
+        if (expected == ControllerKind.NeuralNetwork)
+        {
+            return stage.ActivateHiveMind && stage.ActivateBrains &&
+                   !NeuralNetworkUnavailableStages.Contains(stage);
+        }
+        if (expected == ControllerKind.HiveMind)
+        {
+            if (NeuralNetworkUnavailableStages.Contains(stage) &&
+                ((_beeOverride ?? ControllerKind.NeuralNetwork) == ControllerKind.NeuralNetwork ||
+                 (_humanOverride ?? ControllerKind.NeuralNetwork) == ControllerKind.NeuralNetwork))
+            {
+                return true;
+            }
+            return stage.ActivateHiveMind && !stage.ActivateBrains;
+        }
+        return false;
+    }
+
+    private static bool Any(Stage stage, ControllerKind expected)
+    {
+        if (stage == null)
+        {
+            return false;
+        }
+        if (ConfigData.Configuration == null)
+        {
+            return AnyRequested(stage, expected);
+        }
+
         IReadOnlyList<Level> levels = stage.Levels;
         if (levels != null && levels.Count > 0)
         {
@@ -168,17 +225,16 @@ internal static class RlProductionControllerRouter
                Resolve(stage, null, ConfigData.Configuration.HumanSide) == expected;
     }
 
-    private static void EnsureOverrides(IReadOnlyList<string> args)
+    private static void EnsureOverrides()
     {
-        string[] snapshot = args as string[];
-        if (ReferenceEquals(snapshot, _cachedArgs))
+        if (_overridesInitialized)
         {
             return;
         }
-
-        _cachedArgs = snapshot;
+        IReadOnlyList<string> args = Environment.GetCommandLineArgs();
         _beeOverride = ReadOverride(args, BeeControllerFlag);
         _humanOverride = ReadOverride(args, HumanControllerFlag);
+        _overridesInitialized = true;
     }
 
     private static ControllerKind? ReadOverride(IReadOnlyList<string> args, string flag)
