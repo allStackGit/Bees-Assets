@@ -9,7 +9,7 @@ using System.Collections.Generic;
 /// may evolve without changing this schema; observation/action meaning, ordering, normalization,
 /// capacities, behavior identity and network architecture may not.
 /// </summary>
-internal static class RlPolicySchema
+internal static partial class RlPolicySchema
 {
     internal const int Version = 8;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
