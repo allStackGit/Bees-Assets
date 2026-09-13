@@ -54,6 +54,11 @@ internal static class RlGameplayDemonstrationCapabilityCapture
 
     internal static void Record(Ship ship, int specialAction)
     {
+        // Live telemetry is automatic and independent of optional ML-Agents .demo recording. The
+        // caller invokes this method at the authoritative event boundary immediately before the
+        // gameplay mutation, so forward the event before the demonstration opt-in gate.
+        RlLiveTelemetryRecorder.RecordCapability(ship, specialAction);
+
         if (!CaptureRequested || RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime ||
             ship == null || ship.IsDead || !RuntimeContractsAvailableForTests ||
             specialAction <= RlOneVsOneAgent.NoSpecialAction ||
