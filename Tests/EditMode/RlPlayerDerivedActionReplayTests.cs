@@ -42,9 +42,9 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void CatalogLoadsBoundedReplayAndPreservesFrameData()
+        public void CatalogLoadsCapabilityAwareReplayAndPreservesFrameData()
         {
-            string replayPath = WriteReplay(frameCount: 2);
+            string replayPath = WriteReplay(frameCount: 2, capabilityAware: true);
             string catalogPath = WriteCatalog(replayPath, frameCount: 2);
 
             IDictionary catalog = _loadCatalog.Invoke(null, new object[] { catalogPath }) as IDictionary;
@@ -57,16 +57,30 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Is.EqualTo(Vector2.up));
             float[] continuous = (float[])RuntimeAssembly.GetField(replay, "ContinuousActions");
             ushort[] fireMasks = (ushort[])RuntimeAssembly.GetField(replay, "FireMasks");
+            byte[] specialActions = (byte[])RuntimeAssembly.GetField(replay, "SpecialActions");
             Assert.That(continuous.Length, Is.EqualTo(68));
             Assert.That(continuous[0], Is.EqualTo(1f));
             Assert.That(continuous[3], Is.EqualTo(1f));
             Assert.That(fireMasks, Is.EqualTo(new ushort[] { 1, 2 }));
+            Assert.That(specialActions, Is.EqualTo(new byte[] { 0, 1 }));
+        }
+
+        [Test]
+        public void CatalogStillLoadsLegacyReplayWithNeutralCapabilityActions()
+        {
+            string replayPath = WriteReplay(frameCount: 2, capabilityAware: false);
+            string catalogPath = WriteCatalog(replayPath, frameCount: 2);
+
+            IDictionary catalog = _loadCatalog.Invoke(null, new object[] { catalogPath }) as IDictionary;
+            object replay = catalog["adv-aaaaaaaaaaaaaaaaaaaaaaaa"];
+            byte[] specialActions = (byte[])RuntimeAssembly.GetField(replay, "SpecialActions");
+            Assert.That(specialActions, Is.EqualTo(new byte[] { 0, 0 }));
         }
 
         [Test]
         public void CatalogRejectsReplayHashOrSizeMismatchBeforeUse()
         {
-            string replayPath = WriteReplay(frameCount: 1);
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true);
             string catalogPath = WriteCatalog(replayPath, frameCount: 1, replayHash: new string('0', 64));
             AssertLoadFails(catalogPath);
 
@@ -75,9 +89,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void CatalogRejectsInvalidCapabilityActionBeforeUse()
+        {
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true, firstSpecialAction: 5);
+            string catalogPath = WriteCatalog(replayPath, frameCount: 1);
+            AssertLoadFails(catalogPath);
+        }
+
+        [Test]
         public void CatalogRejectsIdentityHashMismatchBeforeUse()
         {
-            string replayPath = WriteReplay(frameCount: 1);
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true);
             string relative = Path.GetFileName(replayPath).Replace('\\', '/');
             string hash = Sha256(File.ReadAllBytes(replayPath));
             string badHash = new string('0', 64);
@@ -94,7 +116,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void CatalogRejectsValidBodyAtWrongContentAddressedPath()
         {
-            string replayPath = WriteReplay(frameCount: 1);
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true);
             string catalogPath = WriteCatalog(replayPath, frameCount: 1);
             string wrongPath = Path.Combine(_tempDirectory, "catalog-ffffffffffffffffffffffff.json");
             File.Copy(catalogPath, wrongPath);
@@ -104,7 +126,7 @@ namespace Bees.Tests.EditMode
         [Test]
         public void CatalogRejectsMalformedContentIdsAndRootedReplayPath()
         {
-            string replayPath = WriteReplay(frameCount: 1);
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true);
             string relative = Path.GetFileName(replayPath).Replace('\\', '/');
             string hash = Sha256(File.ReadAllBytes(replayPath));
             string malformed = WriteCatalogFile(
@@ -138,19 +160,26 @@ namespace Bees.Tests.EditMode
             Assert.That(replay, Does.Contain("private bool _hasBoundOnce;"));
             Assert.That(replay, Does.Contain("if (_hasBoundOnce)"));
             Assert.That(replay, Does.Contain("_neutralized = true;"));
+            Assert.That(replay, Does.Contain("ApplyCapabilityAction(_replay.SpecialActions[frameIndex]);"));
+            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.MiningAction:"));
+            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.HealingAction:"));
+            Assert.That(replay, Does.Contain("case RlOneVsOneAgent.WarpAction:"));
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             Assert.That(coordinator, Does.Contain("!RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side)"));
             Assert.That(coordinator, Does.Contain("if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)"));
         }
 
-        private string WriteReplay(int frameCount)
+        private string WriteReplay(
+            int frameCount,
+            bool capabilityAware,
+            byte firstSpecialAction = 0)
         {
             string path = Path.Combine(_tempDirectory, "replay.brpl");
             using (FileStream stream = File.Create(path))
             using (BinaryWriter writer = new BinaryWriter(stream, Encoding.ASCII, false))
             {
-                writer.Write(Encoding.ASCII.GetBytes("BEESRPL1"));
+                writer.Write(Encoding.ASCII.GetBytes(capabilityAware ? "BEESRPL2" : "BEESRPL1"));
                 writer.Write(frameCount);
                 writer.Write(5);
                 writer.Write(0f);
@@ -163,6 +192,10 @@ namespace Bees.Tests.EditMode
                         writer.Write(value);
                     }
                     writer.Write((ushort)(1 << frame));
+                    if (capabilityAware)
+                    {
+                        writer.Write(frame == 0 ? firstSpecialAction : (byte)1);
+                    }
                 }
             }
             return path;
