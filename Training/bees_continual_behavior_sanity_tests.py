@@ -1,6 +1,10 @@
 import unittest
 
-from bees_continual_behavior_sanity import assess_behavior_sanity, apply_behavior_sanity
+from bees_continual_behavior_sanity import (
+    apply_behavior_sanity,
+    assess_behavior_sanity,
+    validate_attached_behavior_sanity,
+)
 from bees_continual_learning import ValidationError
 
 
@@ -97,6 +101,33 @@ class ContinualBehaviorSanityTests(unittest.TestCase):
         self.assertFalse(updated["evaluator"]["behavior_sanity"]["passed"])
         self.assertTrue(value["behavior_sanity_passed"])
         self.assertNotIn("behavior_sanity", value["evaluator"])
+
+    def test_attached_behavior_sanity_round_trips_when_derived(self):
+        value = apply_behavior_sanity(report(summary()))
+        evidence = validate_attached_behavior_sanity(value)
+        self.assertTrue(evidence["passed"])
+        self.assertEqual(evidence, value["evaluator"]["behavior_sanity"])
+
+    def test_spoofed_pass_flag_is_rejected(self):
+        value = apply_behavior_sanity(
+            report(summary(wins=0, losses=4, draws=0, shots=0, hits=0, damage=0))
+        )
+        self.assertFalse(value["behavior_sanity_passed"])
+        value["behavior_sanity_passed"] = True
+        with self.assertRaisesRegex(ValidationError, "behavior_sanity_passed"):
+            validate_attached_behavior_sanity(value)
+
+    def test_spoofed_attached_evidence_is_rejected(self):
+        value = apply_behavior_sanity(report(summary()))
+        value["evaluator"]["behavior_sanity"] = dict(value["evaluator"]["behavior_sanity"])
+        value["evaluator"]["behavior_sanity"]["passed"] = False
+        with self.assertRaisesRegex(ValidationError, "does not match"):
+            validate_attached_behavior_sanity(value)
+
+    def test_missing_attached_evidence_is_rejected(self):
+        value = report(summary())
+        with self.assertRaisesRegex(ValidationError, "does not match"):
+            validate_attached_behavior_sanity(value)
 
     def test_invalid_hit_damage_telemetry_is_rejected(self):
         value = report(summary(hits=1, damage=0))
