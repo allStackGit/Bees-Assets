@@ -12,10 +12,11 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Automatically records externally controlled combat decisions in Production gameplay. Human and
-/// Hive Mind ships are sampled through the exact NN-visible observation/action ABI; NN-controlled
-/// ships are deliberately excluded because their experience belongs to the PPO rollout path.
-/// Completed segments remain off-policy/quarantined until server and central validation.
+/// Automatically records eligible combat decisions in ordinary desktop gameplay. Human, Hive Mind,
+/// and deployed-neural ships are sampled through the exact NN-visible observation/action ABI. The
+/// dedicated ML-Agents training runtime is deliberately excluded because it contributes directly
+/// through fresh PPO rollouts. Completed gameplay segments remain off-policy/quarantined until
+/// server and central validation.
 /// </summary>
 internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 {
@@ -23,7 +24,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     internal const string TelemetryDirectoryName = "RlLiveTelemetry";
     internal const int MaxStepsPerSegment = 64;
 
-    private const string ModeName = "external-controller-live";
+    private const string ModeName = "gameplay-controller-live";
     private static readonly FieldInfo VectorObservationsField = typeof(VectorSensor).GetField(
         "m_Observations", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo BootstrapDeploymentField = typeof(RlLivePolicyModelBootstrap).GetField(
@@ -113,7 +114,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     private string _cachedDeploymentId;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void InstallForProductionStage()
+    private static void InstallForGameplayStage()
     {
         if (RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime ||
             IsDisabled(Environment.GetCommandLineArgs()))
@@ -146,7 +147,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 #if UNITY_WEBGL
         yield break;
 #else
-        if (_stage == null || !ConfigData.Production)
+        if (_stage == null)
         {
             enabled = false;
             yield break;
@@ -159,12 +160,12 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             Directory.CreateDirectory(GetDraftDirectory());
             RecoverAbandonedDrafts();
             Debug.Log(
-                "Automatic Production external-controller telemetry enabled for human and Hive Mind " +
+                "Automatic gameplay telemetry enabled for human, Hive Mind, and deployed-neural " +
                 "ships; completed segments remain quarantined until server and central validation.");
         }
         catch (Exception exception)
         {
-            Debug.LogError("Automatic Production external-controller telemetry disabled: " + exception.Message);
+            Debug.LogError("Automatic gameplay telemetry disabled: " + exception.Message);
             enabled = false;
         }
 #endif
@@ -189,7 +190,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
             catch (Exception exception)
             {
-                Debug.LogWarning("Could not finalize Production external telemetry during teardown: " + exception.Message);
+                Debug.LogWarning("Could not finalize gameplay telemetry during teardown: " + exception.Message);
             }
         }
 #endif
@@ -204,7 +205,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 #if UNITY_WEBGL
         return;
 #else
-        if (!enabled || _stage == null || !ConfigData.Production)
+        if (!enabled || _stage == null)
         {
             return;
         }
@@ -235,7 +236,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 continue;
             }
             session.DecisionCounter = 0;
-            RecordExternalShips(session, RlOneVsOneAgent.NoSpecialAction, null);
+            RecordGameplayShips(session, RlOneVsOneAgent.NoSpecialAction, null);
         }
 #endif
     }
@@ -255,7 +256,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 
     private void RecordCapabilityInternal(Ship ship, int specialAction)
     {
-        if (!enabled || _stage == null || !ConfigData.Production || ship.Squad == null || ship.IsDead ||
+        if (!enabled || _stage == null || ship.Squad == null || ship.IsDead ||
             ship.Level.State == null || ship.Level.State.LevelEnded)
         {
             return;
@@ -270,7 +271,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         LevelSession session = GetSession(ship.Level);
         if (!session.Completed)
         {
-            RecordExternalShips(session, specialAction, ship);
+            RecordGameplayShips(session, specialAction, ship);
         }
     }
 
@@ -321,12 +322,12 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         return capturedStartTime != currentStartTime;
     }
 
-    private void RecordExternalShips(LevelSession session, int specialAction, Ship capabilityShip)
+    private void RecordGameplayShips(LevelSession session, int specialAction, Ship capabilityShip)
     {
         if (!TryResolveCurrentDeployment(out DeploymentManifest manifest, out string identityError))
         {
             Debug.LogWarning(
-                "Skipping Production external telemetry because compatible policy identity is unavailable: " +
+                "Skipping gameplay telemetry because compatible policy identity is unavailable: " +
                 identityError);
             return;
         }
@@ -364,7 +365,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
             if (!RlPolicySchema.TryValidateShip(ship, out string schemaError))
             {
-                Debug.LogWarning("Skipping incompatible external telemetry ship: " + schemaError);
+                Debug.LogWarning("Skipping incompatible gameplay telemetry ship: " + schemaError);
                 continue;
             }
 
@@ -517,7 +518,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogWarning("Could not persist Production external telemetry draft: " + exception.Message);
+            Debug.LogWarning("Could not persist gameplay telemetry draft: " + exception.Message);
         }
     }
 
@@ -552,7 +553,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
             catch (Exception exception)
             {
-                Debug.LogWarning("Could not finalize Production external telemetry segment: " + exception.Message);
+                Debug.LogWarning("Could not finalize gameplay telemetry segment: " + exception.Message);
             }
         }
         session.Completed = true;
@@ -613,7 +614,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 manifest = _cachedManifest;
                 return true;
             }
-            error = "no compatible bundled policy manifest is available to define the external-data ABI";
+            error = "no compatible bundled policy manifest is available to define the gameplay-data ABI";
             return false;
         }
 
@@ -759,7 +760,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
             catch (Exception exception)
             {
-                Debug.LogWarning("Could not recover abandoned Production external telemetry draft: " + exception.Message);
+                Debug.LogWarning("Could not recover abandoned gameplay telemetry draft: " + exception.Message);
             }
         }
     }
