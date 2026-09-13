@@ -6,6 +6,10 @@ normal continual trainer. A background watcher keeps ingesting/reviewing newly a
 it is ready without manual curation for the next immutable training run. Pressure does not mutate an
 already-running Unity population: changing a run's scenario selection in place would make training
 lineage non-reproducible and can violate the existing run-selection contract.
+
+When external workers are enabled, their content-hashed session spec is generated only after player-
+derived pressure is injected so remote Unity processes receive exactly the same final ``--env-args``
+as local workers.
 """
 
 from __future__ import annotations
@@ -212,6 +216,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         original_factory = None
         if distributed_options.enabled:
+            spec_path = distributed.write_remote_worker_spec(
+                distributed_options.remote_spec,
+                prepared_args,
+                base_port=base_port,
+                worker_ids=external_worker_ids,
+            )
             original_factory = distributed.install_external_worker_factory(
                 total_envs=total_envs,
                 external_worker_ids=external_worker_ids,
@@ -220,6 +230,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "[Bees distributed] "
                 + distributed.describe_topology(base_port, total_envs, external_worker_ids)
             )
+            print(f"[Bees distributed] remote_session_spec={spec_path}")
 
         print(
             "[Bees continual] automatic public learning "
