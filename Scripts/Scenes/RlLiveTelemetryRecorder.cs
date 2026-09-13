@@ -12,11 +12,11 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Automatically records player decisions made while a Production player-facing Stage is using the
+/// Automatically records player decisions while a Production player-facing Stage is using the
 /// approved RL champion. Telemetry is passive: it never owns gameplay, rewards, or policy updates.
-/// Completed bounded segments are persisted below Application.persistentDataPath and are uploaded by
-/// RlLiveTelemetryUploader. One-shot capability events may call RecordCapability synchronously so
-/// they are represented as the action that actually occurred rather than inferred from aftermath.
+/// Completed bounded segments are persisted below Application.persistentDataPath and uploaded by
+/// RlLiveTelemetryUploader. One-shot capability events are recorded synchronously at their existing
+/// authoritative gameplay event hooks so they are never inferred from aftermath.
 /// </summary>
 internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 {
@@ -72,7 +72,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 
     internal sealed class TelemetryPayload
     {
-        public int schema_version = 1;
+        public int schema_version = RlLiveTelemetryContract.SchemaVersion;
         public string match_id;
         public string source_match_id;
         public int segment_index;
@@ -95,12 +95,14 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     private sealed class LevelSession
     {
         public Level Level;
+        public float LevelStartTime;
         public string SourceMatchId;
         public int SegmentIndex;
         public int DecisionCounter;
         public bool Completed;
         public TelemetryPayload Current;
         public readonly Dictionary<long, int> DecisionByShip = new Dictionary<long, int>();
+        public readonly Dictionary<long, string> AgentKeyByShip = new Dictionary<long, string>();
         public readonly List<string> DraftPaths = new List<string>();
     }
 
@@ -124,6 +126,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return;
         }
+
         RlLiveTelemetryRecorder recorder = stage.GetComponent<RlLiveTelemetryRecorder>();
         if (recorder == null)
         {
@@ -145,15 +148,19 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 #else
         if (_stage == null || !ConfigData.Production || !IsLiveRlEnabled(_stage))
         {
+            enabled = false;
             yield break;
         }
+
         try
         {
-            RlPolicySchema.ValidateOrThrow();
+            RlLiveTelemetryContract.ValidateOrThrow();
             Directory.CreateDirectory(GetPendingDirectory());
             Directory.CreateDirectory(GetDraftDirectory());
             RecoverAbandonedDrafts();
-            Debug.Log("Automatic live RL player telemetry enabled; completed segments remain quarantined until central validation.");
+            Debug.Log(
+                "Automatic live RL player telemetry enabled; completed segments remain " +
+                "quarantined until server and central validation.");
         }
         catch (Exception exception)
         {
@@ -165,6 +172,30 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
 
     private void OnDestroy()
     {
+#if !UNITY_WEBGL
+        // A scene/application exit can occur before the normal LevelEnded observation. Preserve any
+        // already-recorded decisions without inventing a winner; an unfinished generation is a
+        // timeout for telemetry purposes and still remains off-policy/quarantined downstream.
+        foreach (LevelSession session in _sessions.Values)
+        {
+            if (session == null || session.Completed)
+            {
+                continue;
+            }
+            try
+            {
+                string result = session.Level != null && session.Level.State != null &&
+                                session.Level.State.LevelEnded
+                    ? ResolveCompletedResult(session.Level)
+                    : "timeout";
+                CompleteSession(session, result);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not finalize live RL telemetry during teardown: " + exception.Message);
+            }
+        }
+#endif
         if (_instance == this)
         {
             _instance = null;
@@ -180,6 +211,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return;
         }
+
         IReadOnlyList<Level> levels = _stage.Levels;
         for (int i = 0; i < levels.Count; i++)
         {
@@ -188,6 +220,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             {
                 continue;
             }
+
             LevelSession session = GetSession(level);
             if (session.Completed)
             {
@@ -195,9 +228,10 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
             if (level.State.LevelEnded)
             {
-                CompleteSession(session);
+                CompleteSession(session, ResolveCompletedResult(level));
                 continue;
             }
+
             session.DecisionCounter++;
             if (session.DecisionCounter < RlOneVsOneTrainingOptions.DefaultDecisionPeriod)
             {
@@ -230,6 +264,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return;
         }
+
         LevelSession session = GetSession(ship.Level);
         if (!session.Completed)
         {
@@ -262,22 +297,43 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     {
         if (_sessions.TryGetValue(level, out LevelSession existing))
         {
-            return existing;
+            if (!HasLevelGenerationChanged(existing.LevelStartTime, level.StartTime))
+            {
+                return existing;
+            }
+
+            // LevelTimeOut() can synchronously SaveAndEnd/SetupLevel without ever setting
+            // GameState.LevelEnded. A changed StartTime is the durable generation boundary for the
+            // reused Level instance, so close the old generation before recording the new one.
+            if (!existing.Completed)
+            {
+                CompleteSession(existing, "timeout");
+            }
+            _sessions.Remove(level);
         }
+
         LevelSession created = new LevelSession
         {
             Level = level,
+            LevelStartTime = level.StartTime,
             SourceMatchId = "live-" + Guid.NewGuid().ToString("N")
         };
         _sessions.Add(level, created);
         return created;
     }
 
+    internal static bool HasLevelGenerationChanged(float capturedStartTime, float currentStartTime)
+    {
+        return capturedStartTime != currentStartTime;
+    }
+
     private void RecordPlayerShips(LevelSession session, int specialAction, Ship capabilityShip)
     {
         if (!TryResolveCurrentDeployment(out DeploymentManifest manifest, out string identityError))
         {
-            Debug.LogWarning("Skipping live RL telemetry sample because deployment identity is unavailable: " + identityError);
+            Debug.LogWarning(
+                "Skipping live RL telemetry sample because deployment identity is unavailable: " +
+                identityError);
             return;
         }
 
@@ -311,11 +367,13 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 Debug.LogWarning("Skipping incompatible player telemetry ship: " + schemaError);
                 continue;
             }
+
             if (session.Current != null &&
                 !string.Equals(session.Current.deployment_id, manifest.deployment_id, StringComparison.Ordinal))
             {
                 FlushDraft(session);
             }
+
             TelemetryPayload payload = EnsurePayload(session, manifest);
             if (!TryCreateStep(session, ship, specialAction, out TelemetryStep step))
             {
@@ -335,6 +393,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return session.Current;
         }
+
         DeploymentIdentity identity = manifest.identity;
         session.Current = new TelemetryPayload
         {
@@ -364,6 +423,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return false;
         }
+
         VectorSensor sensor = new VectorSensor(RlPolicySchema.ObservationSize);
         _perception.Collect(ship, ship.Side, sensor, 0);
         if (!(VectorObservationsField.GetValue(sensor) is List<float> observations) ||
@@ -377,12 +437,14 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         Vector2 movement = RlGameplayDemonstrationAgent.EncodeMovementDirection(ship.Direction);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
+
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
         {
             if (ship.Weapons == null || slot >= ship.Weapons.Count || !(ship.Weapons[slot] is Turret turret))
             {
                 continue;
             }
+
             int aimStart = RlOneVsOneAgent.WeaponAimContinuousActionStart +
                            slot * RlOneVsOneAgent.WeaponAimContinuousActionsPerSlot;
             Vector2 aim = turret.TargetPoint - turret.GetPosition();
@@ -392,6 +454,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 continuous[aimStart] = aim.x;
                 continuous[aimStart + 1] = aim.y;
             }
+
             bool fireRequested = turret.IsFiringManually || turret.ShouldFire || turret.ShouldFireAtAsteroid;
             discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] = fireRequested
                 ? RlOneVsOneAgent.FireWeaponAction
@@ -399,15 +462,27 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         }
         discrete[RlOneVsOneAgent.SpecialActionBranch] = specialAction;
 
-        int decisionIndex = 0;
-        if (session.DecisionByShip.TryGetValue(ship.Id, out int previous))
+        if (!session.DecisionByShip.TryGetValue(ship.Id, out int decisionIndex))
         {
-            decisionIndex = previous + 1;
+            decisionIndex = 0;
+        }
+        else
+        {
+            decisionIndex++;
         }
         session.DecisionByShip[ship.Id] = decisionIndex;
+
+        if (!session.AgentKeyByShip.TryGetValue(ship.Id, out string agentKey))
+        {
+            // Public agent identity is deliberately opaque. Do not transmit player side, fleet IDs,
+            // runtime object IDs, account identity, or another stable cross-match identifier.
+            agentKey = $"agent-{session.AgentKeyByShip.Count:D3}";
+            session.AgentKeyByShip.Add(ship.Id, agentKey);
+        }
+
         step = new TelemetryStep
         {
-            agent_key = $"player-s{ship.Side}-ship{ship.Id}",
+            agent_key = agentKey,
             decision_index = decisionIndex,
             observation = observations.ToArray(),
             continuous_action = continuous,
@@ -424,12 +499,16 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return;
         }
+
         try
         {
             Directory.CreateDirectory(GetDraftDirectory());
             string path = Path.Combine(GetDraftDirectory(), payload.match_id + ".draft.json");
             WriteAtomic(path, JsonConvert.SerializeObject(payload, Formatting.None));
-            session.DraftPaths.Add(path);
+            if (!session.DraftPaths.Contains(path))
+            {
+                session.DraftPaths.Add(path);
+            }
             session.SegmentIndex++;
         }
         catch (Exception exception)
@@ -438,15 +517,23 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         }
     }
 
-    private void CompleteSession(LevelSession session)
+    private void CompleteSession(LevelSession session, string result)
     {
+        if (session.Completed)
+        {
+            return;
+        }
+
         FlushDraft(session);
-        string result = ResolveResult(session.Level);
         for (int i = 0; i < session.DraftPaths.Count; i++)
         {
             string draft = session.DraftPaths[i];
             try
             {
+                if (!File.Exists(draft))
+                {
+                    continue;
+                }
                 TelemetryPayload payload = JsonConvert.DeserializeObject<TelemetryPayload>(File.ReadAllText(draft));
                 if (payload == null || payload.steps == null || payload.steps.Count == 0)
                 {
@@ -467,22 +554,21 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         session.Completed = true;
     }
 
-    private static string ResolveResult(Level level)
+    private static string ResolveCompletedResult(Level level)
     {
-        if (level == null || level.State == null || ConfigData.Configuration == null)
+        if (level == null || ConfigData.Configuration == null)
         {
             return "draw";
         }
-        int winner = level.State.WinningSide;
-        if (winner == ConfigData.Configuration.BeeSide)
+        if (level.WinningSide == ConfigData.Configuration.BeeSide)
         {
             return "bee_win";
         }
-        if (winner == ConfigData.Configuration.HumanSide)
+        if (level.WinningSide == ConfigData.Configuration.HumanSide)
         {
             return "human_win";
         }
-        return "timeout";
+        return "draw";
     }
 
     private bool TryResolveCurrentDeployment(out DeploymentManifest manifest, out string error)
@@ -497,6 +583,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             error = "live policy bootstrap identity is unavailable";
             return false;
         }
+
         string deploymentId = BootstrapDeploymentField.GetValue(bootstrap) as string;
         if (string.IsNullOrEmpty(deploymentId))
         {
@@ -525,6 +612,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             error = "hot deployment manifest bundle is unavailable";
             return false;
         }
+
         AssetBundle bundle = AssetBundle.LoadFromFile(hotPath);
         if (bundle == null)
         {
@@ -559,14 +647,17 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return false;
         }
+
         if (manifest == null || manifest.schema_version != RlLivePolicyModelBootstrap.DeploymentManifestSchemaVersion ||
+            !IsContentId(manifest.deployment_id, "deploy-", 24) ||
             !string.Equals(manifest.deployment_id, expectedDeploymentId, StringComparison.Ordinal) ||
             manifest.identity == null || manifest.identity.compatibility == null ||
-            string.IsNullOrEmpty(manifest.identity.model_id) ||
-            string.IsNullOrEmpty(manifest.identity.model_sha256) ||
-            string.IsNullOrEmpty(manifest.identity.game_build_version) ||
+            !IsContentId(manifest.identity.model_id, $"bees-rl-v{RlPolicySchema.Version}-", 24) ||
+            !IsLowerHex(manifest.identity.model_sha256, 64) ||
+            string.IsNullOrWhiteSpace(manifest.identity.game_build_version) ||
             !string.Equals(manifest.identity.behavior_name, RlPolicySchema.ExpectedBehaviorName, StringComparison.Ordinal) ||
             !string.Equals(manifest.identity.policy_signature, RlPolicySchema.Signature, StringComparison.Ordinal) ||
+            !string.Equals(manifest.identity.compatibility.behavior_name, RlPolicySchema.ExpectedBehaviorName, StringComparison.Ordinal) ||
             manifest.identity.compatibility.policy_abi_version != RlPolicySchema.Version ||
             manifest.identity.compatibility.observation_schema_version != RlPolicySchema.ObservationSchemaVersion ||
             manifest.identity.compatibility.action_schema_version != RlPolicySchema.ActionSchemaVersion ||
@@ -583,6 +674,30 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     {
         _cachedManifest = manifest;
         _cachedDeploymentId = manifest.deployment_id;
+    }
+
+    private static bool IsContentId(string value, string prefix, int hexLength)
+    {
+        return value != null && value.StartsWith(prefix, StringComparison.Ordinal) &&
+               value.Length == prefix.Length + hexLength &&
+               IsLowerHex(value.Substring(prefix.Length), hexLength);
+    }
+
+    private static bool IsLowerHex(string value, int expectedLength)
+    {
+        if (value == null || value.Length != expectedLength)
+        {
+            return false;
+        }
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static string GetRootDirectory()
@@ -610,10 +725,9 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         {
             return;
         }
+
         foreach (string path in Directory.GetFiles(draftDirectory, "*.draft.json"))
         {
-            // A process exit before LevelEnded means the actual match result is unknown. Preserve the
-            // samples but never invent a winner; timeout is the conservative terminal classification.
             try
             {
                 TelemetryPayload payload = JsonConvert.DeserializeObject<TelemetryPayload>(File.ReadAllText(path));
