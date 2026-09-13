@@ -4,9 +4,9 @@ using System;
 using System.Collections.Generic;
 
 /// <summary>
-/// Resolves who owns each combat side in ordinary production gameplay. The legacy Stage booleans
-/// remain the serialized default, while per-side command-line overrides make mixed Hive Mind / NN
-/// and diagnostic pairings possible without changing scene assets.
+/// Resolves who owns each combat side in ordinary gameplay. The legacy Stage booleans remain the
+/// serialized default, while per-side command-line overrides make mixed Hive Mind / NN and
+/// diagnostic pairings possible without changing scene assets.
 /// </summary>
 internal static class RlProductionControllerRouter
 {
@@ -113,9 +113,17 @@ internal static class RlProductionControllerRouter
         return Any(stage, ControllerKind.HiveMind);
     }
 
+    /// <summary>
+    /// Returns whether a controller can contribute observation/action evidence to the continual
+    /// learning telemetry stream. Dedicated ML-Agents training is excluded before this router is
+    /// reached; a deployed neural controller is therefore safe to archive as off-policy discovery
+    /// evidence while still never being replayed as a PPO trajectory.
+    /// </summary>
     internal static bool IsExternalExpert(ControllerKind controller)
     {
-        return controller == ControllerKind.Player || controller == ControllerKind.HiveMind;
+        return controller == ControllerKind.Player ||
+               controller == ControllerKind.HiveMind ||
+               controller == ControllerKind.NeuralNetwork;
     }
 
     internal static string ExternalSourceName(ControllerKind controller)
@@ -126,9 +134,11 @@ internal static class RlProductionControllerRouter
                 return "human";
             case ControllerKind.HiveMind:
                 return "hivemind";
+            case ControllerKind.NeuralNetwork:
+                return "neural";
             default:
                 throw new ArgumentOutOfRangeException(nameof(controller), controller,
-                    "Only human and Hive Mind controllers are external experts.");
+                    "Only active gameplay controllers have telemetry provenance.");
         }
     }
 
