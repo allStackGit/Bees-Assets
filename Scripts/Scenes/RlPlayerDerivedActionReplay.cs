@@ -1,4 +1,5 @@
 using Assets.Scripts;
+using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
@@ -12,9 +13,10 @@ using UnityEngine;
 
 /// <summary>
 /// Loads immutable, operator-reviewed action replay artifacts for player-derived adversarial 1v1
-/// scenarios. The replay side is scripted movement/turret aim/fire only; the opposing policy still
-/// produces fresh PPO actions. Recorded world-space actions are rotated from the source spawn axis
-/// to the current randomized training spawn axis so arena rotation remains useful augmentation.
+/// scenarios. The replay side is scripted movement/turret aim/fire/capability only; the opposing
+/// policy still produces fresh PPO actions. Recorded world-space actions are rotated from the source
+/// spawn axis to the current randomized training spawn axis so arena rotation remains useful
+/// augmentation. Legacy movement/aim/fire-only replay artifacts remain loadable.
 /// </summary>
 internal static class RlPlayerDerivedActionReplay
 {
@@ -25,10 +27,12 @@ internal static class RlPlayerDerivedActionReplay
     internal const int MaximumReplayFrames = 2400;
     internal const int ExpectedFixedStepInterval = 5;
 
-    private const string ReplayMagic = "BEESRPL1";
+    private const string LegacyReplayMagic = "BEESRPL1";
+    private const string ReplayMagic = "BEESRPL2";
     private const string PlayerDerivedTagPrefix = "player-derived:";
     private const int ReplayHeaderBytes = 24;
-    private const int ReplayFrameBytes = ContinuousActionCount * sizeof(float) + sizeof(ushort);
+    private const int LegacyReplayFrameBytes = ContinuousActionCount * sizeof(float) + sizeof(ushort);
+    private const int ReplayFrameBytes = LegacyReplayFrameBytes + sizeof(byte);
 
     [Serializable]
     private sealed class ReplayCatalog
@@ -60,6 +64,7 @@ internal static class RlPlayerDerivedActionReplay
         internal readonly Vector2 SourceStartDirection;
         internal readonly float[] ContinuousActions;
         internal readonly ushort[] FireMasks;
+        internal readonly byte[] SpecialActions;
 
         internal ReplayData(
             string scenarioId,
@@ -69,7 +74,8 @@ internal static class RlPlayerDerivedActionReplay
             int fixedStepInterval,
             Vector2 sourceStartDirection,
             float[] continuousActions,
-            ushort[] fireMasks)
+            ushort[] fireMasks,
+            byte[] specialActions)
         {
             ScenarioId = scenarioId;
             Side = side;
@@ -79,6 +85,7 @@ internal static class RlPlayerDerivedActionReplay
             SourceStartDirection = sourceStartDirection;
             ContinuousActions = continuousActions;
             FireMasks = fireMasks;
+            SpecialActions = specialActions;
         }
     }
 
@@ -371,13 +378,6 @@ internal static class RlPlayerDerivedActionReplay
         {
             throw new ArgumentException($"Replay artifact does not exist for {entry.scenarioId}: {path}");
         }
-        long expectedLength = ReplayHeaderBytes + (long)entry.frameCount * ReplayFrameBytes;
-        long actualLength = new FileInfo(path).Length;
-        if (actualLength != expectedLength)
-        {
-            throw new ArgumentException(
-                $"Replay artifact size mismatch for {entry.scenarioId}: expected {expectedLength}, got {actualLength}.");
-        }
 
         byte[] bytes = File.ReadAllBytes(path);
         string actualHash = ComputeSha256(bytes);
@@ -386,16 +386,40 @@ internal static class RlPlayerDerivedActionReplay
             throw new ArgumentException(
                 $"Replay artifact hash mismatch for {entry.scenarioId}: expected {entry.replaySha256}, got {actualHash}.");
         }
+        if (bytes.Length < ReplayHeaderBytes)
+        {
+            throw new ArgumentException($"Replay artifact is truncated for {entry.scenarioId}.");
+        }
 
         using (MemoryStream stream = new MemoryStream(bytes, false))
         using (BinaryReader reader = new BinaryReader(stream, Encoding.ASCII, false))
         {
             string magic = Encoding.ASCII.GetString(reader.ReadBytes(8));
+            bool capabilityAware;
+            if (magic == ReplayMagic)
+            {
+                capabilityAware = true;
+            }
+            else if (magic == LegacyReplayMagic)
+            {
+                capabilityAware = false;
+            }
+            else
+            {
+                throw new ArgumentException($"Replay artifact header is incompatible for {entry.scenarioId}.");
+            }
+
             int frameCount = reader.ReadInt32();
             int fixedStepInterval = reader.ReadInt32();
             Vector2 sourceDirection = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-            if (magic != ReplayMagic || frameCount != entry.frameCount ||
-                fixedStepInterval != entry.fixedStepInterval ||
+            int frameBytes = capabilityAware ? ReplayFrameBytes : LegacyReplayFrameBytes;
+            long expectedLength = ReplayHeaderBytes + (long)entry.frameCount * frameBytes;
+            if (bytes.LongLength != expectedLength)
+            {
+                throw new ArgumentException(
+                    $"Replay artifact size mismatch for {entry.scenarioId}: expected {expectedLength}, got {bytes.LongLength}.");
+            }
+            if (frameCount != entry.frameCount || fixedStepInterval != entry.fixedStepInterval ||
                 !IsFinite(sourceDirection.x) || !IsFinite(sourceDirection.y) ||
                 Mathf.Abs(sourceDirection.magnitude - 1f) > 0.01f)
             {
@@ -404,6 +428,7 @@ internal static class RlPlayerDerivedActionReplay
 
             float[] continuous = new float[frameCount * ContinuousActionCount];
             ushort[] fireMasks = new ushort[frameCount];
+            byte[] specialActions = new byte[frameCount];
             for (int frame = 0; frame < frameCount; frame++)
             {
                 int offset = frame * ContinuousActionCount;
@@ -418,6 +443,13 @@ internal static class RlPlayerDerivedActionReplay
                     continuous[offset + action] = value;
                 }
                 fireMasks[frame] = reader.ReadUInt16();
+                byte specialAction = capabilityAware ? reader.ReadByte() : (byte)RlOneVsOneAgent.NoSpecialAction;
+                if (specialAction >= RlOneVsOneAgent.SpecialActionBranchSize)
+                {
+                    throw new ArgumentException(
+                        $"Replay artifact contains an invalid capability action for {entry.scenarioId}.");
+                }
+                specialActions[frame] = specialAction;
             }
             if (stream.Position != stream.Length)
             {
@@ -431,7 +463,8 @@ internal static class RlPlayerDerivedActionReplay
                 fixedStepInterval,
                 sourceDirection,
                 continuous,
-                fireMasks);
+                fireMasks,
+                specialActions);
         }
     }
 
@@ -525,11 +558,15 @@ internal static class RlPlayerDerivedActionReplay
 
 /// <summary>
 /// Per-Level owner for one scripted replay episode. It never creates policy observations or rewards.
-/// It only applies already-validated movement/aim/fire commands to the selected replay-side ship.
+/// It only applies already-validated movement/aim/fire/capability commands to the replay-side ship.
 /// </summary>
 [DefaultExecutionOrder(20000)]
 internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
 {
+    private const float MiningActionIntervalSeconds = 5f;
+    private const float HealingActionIntervalSeconds = 1f;
+    private const int HealingPerSuccessfulAction = 50;
+
     private readonly Vector2[] _aimDirections = new Vector2[RlPlayerDerivedActionReplay.WeaponFireBranchCount];
 
     private Level _level;
@@ -542,6 +579,8 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     private bool _hasBoundOnce;
     private float _rotationCos = 1f;
     private float _rotationSin;
+    private float _nextMiningActionTime;
+    private float _nextHealingActionTime;
 
     internal void Prepare(Level level, RlPlayerDerivedActionReplay.ReplayData replay)
     {
@@ -554,6 +593,8 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         _hasBoundOnce = false;
         _rotationCos = 1f;
         _rotationSin = 0f;
+        _nextMiningActionTime = 0f;
+        _nextHealingActionTime = 0f;
         for (int slot = 0; slot < _aimDirections.Length; slot++)
         {
             _aimDirections[slot] = Vector2.up;
@@ -568,6 +609,8 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
         _fixedStepCounter = 0;
         _frameIndex = 0;
         _hasBoundOnce = false;
+        _nextMiningActionTime = 0f;
+        _nextHealingActionTime = 0f;
     }
 
     private void FixedUpdate()
@@ -701,6 +744,221 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
             bool fire = (fireMask & (1 << slot)) != 0;
             RlOneVsOneAgent.ApplyWeaponCommand(_ship, slot, _aimDirections[slot], fire);
         }
+
+        ApplyCapabilityAction(_replay.SpecialActions[frameIndex]);
+    }
+
+    private void ApplyCapabilityAction(int action)
+    {
+        switch (action)
+        {
+            case RlOneVsOneAgent.NoSpecialAction:
+                return;
+            case RlOneVsOneAgent.ShipSpecialAction:
+                ApplyShipSpecialAction();
+                return;
+            case RlOneVsOneAgent.MiningAction:
+                TryApplyMiningAction();
+                return;
+            case RlOneVsOneAgent.HealingAction:
+                TryApplyHealingAction();
+                return;
+            case RlOneVsOneAgent.WarpAction:
+                TryApplyWarpAction();
+                return;
+            default:
+                throw new InvalidOperationException(
+                    $"Replay {_replay.ReplayId} contains unsupported capability action {action}.");
+        }
+    }
+
+    private void ApplyShipSpecialAction()
+    {
+        if (_ship is YellowJacket yellowJacket)
+        {
+            yellowJacket.TryToDetonate();
+        }
+        else if (_ship is Striker striker)
+        {
+            striker.TryToDropBombs();
+        }
+        else if (_ship is FireBarge fireBarge)
+        {
+            fireBarge.Detonate();
+        }
+        else if (_ship is Barge barge && !barge.HasStartedCharging && !barge.IsCharging)
+        {
+            barge.StartCoroutine(barge.ChargeForward(FindNearestVisibleEnemy()));
+        }
+        else if (_ship is Scout scout)
+        {
+            scout.DropBeacon();
+        }
+    }
+
+    private void TryApplyMiningAction()
+    {
+        if (!RlOneVsOneAgent.CanUseMiningAction(_ship) || Time.time < _nextMiningActionTime ||
+            _ship.Level == null || _ship.Level.State == null || _ship.Collider == null || _ship.FleetShip == null)
+        {
+            return;
+        }
+
+        MiningAsteroid asteroid = FindTouchingMiningAsteroid();
+        if (asteroid == null)
+        {
+            return;
+        }
+
+        int amountMined = Mathf.Min(ConfigData.MiningRate, asteroid.Health);
+        if (amountMined <= 0)
+        {
+            return;
+        }
+
+        _nextMiningActionTime = Time.time + MiningActionIntervalSeconds;
+        asteroid.Health -= amountMined;
+        _ship.FleetShip.MineralsMinedThisLevel += amountMined;
+        _ship.Tsv = Utilities.CalculateTsv(_ship);
+        if (asteroid.Health <= 0 && !asteroid.IsDead)
+        {
+            asteroid.Kill(false);
+        }
+    }
+
+    private MiningAsteroid FindTouchingMiningAsteroid()
+    {
+        MiningAsteroid selected = null;
+        foreach (MiningAsteroid asteroid in _ship.Level.State.MiningAsteroids)
+        {
+            if (asteroid == null || asteroid.IsDead || asteroid.Collider == null ||
+                !_ship.Collider.IsTouching(asteroid.Collider))
+            {
+                continue;
+            }
+            if (selected == null || asteroid.Id < selected.Id)
+            {
+                selected = asteroid;
+            }
+        }
+        return selected;
+    }
+
+    private void TryApplyHealingAction()
+    {
+        if (!RlOneVsOneAgent.CanUseHealingAction(_ship) || Time.time < _nextHealingActionTime ||
+            _ship.Health >= _ship.MaxHealth || _ship.Level == null || _ship.Level.State == null ||
+            _ship.Collider == null || _ship.FleetShip == null)
+        {
+            return;
+        }
+
+        Beehive beehive = FindTouchingBeehive();
+        if (beehive == null)
+        {
+            return;
+        }
+
+        int amountHealed = Mathf.Min(HealingPerSuccessfulAction, _ship.MaxHealth - _ship.Health);
+        if (amountHealed <= 0)
+        {
+            return;
+        }
+
+        _nextHealingActionTime = Time.time + HealingActionIntervalSeconds;
+        _ship.Health += amountHealed;
+        _ship.Tsv = Utilities.CalculateTsv(_ship);
+        _ship.UpdateHealthBar();
+        if (_ship.Level.HasPlayer)
+        {
+            beehive.SpawnHealingCross();
+        }
+    }
+
+    private Beehive FindTouchingBeehive()
+    {
+        Beehive selected = null;
+        List<Ship> allies = _ship.Level.State.GetShips(_ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
+                !beehive.HealCollider.IsTouching(_ship.Collider))
+            {
+                continue;
+            }
+            if (selected == null || beehive.Id < selected.Id)
+            {
+                selected = beehive;
+            }
+        }
+        return selected;
+    }
+
+    private void TryApplyWarpAction()
+    {
+        if (!RlOneVsOneAgent.CanUseWarpAction(_ship) || _ship.Level == null || _ship.Level.State == null ||
+            _ship.Collider == null)
+        {
+            return;
+        }
+
+        WarpGate warpGate = FindTouchingWarpGate();
+        if (warpGate == null)
+        {
+            return;
+        }
+        if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
+        {
+            warpGate.EnteringWarpGateSound.Play();
+        }
+        _ship.EndKill();
+    }
+
+    private WarpGate FindTouchingWarpGate()
+    {
+        WarpGate selected = null;
+        List<Ship> allies = _ship.Level.State.GetShips(_ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is WarpGate warpGate) || warpGate.IsDead || warpGate.WarpCollider == null ||
+                !warpGate.WarpCollider.IsTouching(_ship.Collider))
+            {
+                continue;
+            }
+            if (selected == null || warpGate.Id < selected.Id)
+            {
+                selected = warpGate;
+            }
+        }
+        return selected;
+    }
+
+    private Ship FindNearestVisibleEnemy()
+    {
+        if (_ship == null || _ship.Level == null || _ship.Level.State == null)
+        {
+            return null;
+        }
+
+        Ship selected = null;
+        float selectedDistance = float.MaxValue;
+        Vector2 origin = _ship.GetPosition();
+        foreach (Ship candidate in _ship.Level.State.GetShipsVisibleToHiveMind(_ship.Side))
+        {
+            if (candidate == null || candidate.IsDead || candidate.Side == _ship.Side)
+            {
+                continue;
+            }
+
+            float distance = (candidate.GetPosition() - origin).sqrMagnitude;
+            if (selected == null || distance < selectedDistance ||
+                (Mathf.Approximately(distance, selectedDistance) && candidate.Id < selected.Id))
+            {
+                selected = candidate;
+                selectedDistance = distance;
+            }
+        }
+        return selected;
     }
 
     private void Neutralize()
