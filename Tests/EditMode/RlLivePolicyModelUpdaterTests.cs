@@ -11,9 +11,12 @@ namespace Bees.Tests.EditMode
     public class RlLivePolicyModelUpdaterTests
     {
         [TestCase(RuntimePlatform.WindowsPlayer, "WindowsPlayer")]
+        [TestCase(RuntimePlatform.WindowsEditor, "WindowsPlayer")]
         [TestCase(RuntimePlatform.OSXPlayer, "OSXPlayer")]
+        [TestCase(RuntimePlatform.OSXEditor, "OSXPlayer")]
         [TestCase(RuntimePlatform.LinuxPlayer, "LinuxPlayer")]
-        public void DesktopPlatformNamesMatchServerDistributionPointers(RuntimePlatform platform, string expected)
+        [TestCase(RuntimePlatform.LinuxEditor, "LinuxPlayer")]
+        public void DesktopAndEditorPlatformNamesMatchServerDistributionPointers(RuntimePlatform platform, string expected)
         {
             Type updater = RuntimeAssembly.GetType("RlLivePolicyModelUpdater");
             Assert.That(updater, Is.Not.Null);
@@ -22,16 +25,6 @@ namespace Bees.Tests.EditMode
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.That(platformName, Is.Not.Null);
             Assert.That(platformName.Invoke(null, new object[] { platform }), Is.EqualTo(expected));
-        }
-
-        [Test]
-        public void EditorIsNotEligibleForProductionHotDistribution()
-        {
-            Type updater = RuntimeAssembly.GetType("RlLivePolicyModelUpdater");
-            MethodInfo platformName = updater.GetMethod(
-                "PlatformName",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(platformName.Invoke(null, new object[] { RuntimePlatform.WindowsEditor }), Is.Null);
         }
 
         [Test]
@@ -150,12 +143,14 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void UpdaterPinsAuthenticatedDeploymentAndVerifiesBytesBeforeApplying()
+        public void UpdaterPinsValidatedDeploymentAndUsesBuildAwareTransport()
         {
             string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelUpdater.cs");
             Assert.That(source, Does.Contain("CurrentRequestType = \"rl-model-current\""));
             Assert.That(source, Does.Contain("ChunkRequestType = \"rl-model-chunk\""));
-            Assert.That(source, Does.Contain("SteamWebApiAuth.TicketHex"));
+            Assert.That(source, Does.Contain("ConfigData.Test ? string.Empty : SteamWebApiAuth.TicketHex"));
+            Assert.That(source, Does.Contain("ConfigData.Hostname"));
+            Assert.That(source, Does.Contain("ConfigData.Port"));
             Assert.That(source, Does.Contain("PolicyAbiVersion = RlPolicySchema.Version"));
             Assert.That(source, Does.Contain("PolicySignature = RlPolicySchema.Signature"));
             Assert.That(source, Does.Contain("chunk.BundleSha256 = descriptor.BundleSha256"));
