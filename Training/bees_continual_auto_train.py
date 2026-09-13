@@ -1,11 +1,11 @@
-"""Continual Bees trainer with automatic public-player pressure and optional remote rollout workers.
+"""Continual Bees trainer with automatic gameplay pressure and optional remote rollout workers.
 
 At launch this wrapper independently processes the current BeesServer telemetry quarantine, freezes
-that reviewed pressure into the training run, and then delegates PPO/checkpoint ownership to the
-normal continual trainer. A background watcher keeps ingesting/reviewing newly arriving telemetry so
-it is ready without manual curation for the next immutable training run. Pressure does not mutate an
-already-running Unity population: changing a run's scenario selection in place would make training
-lineage non-reproducible and can violate the existing run-selection contract.
+that reviewed pressure into the training generation, and then delegates PPO/checkpoint ownership to
+the normal continual trainer. A background watcher keeps ingesting/reviewing newly arriving telemetry
+so it is ready without manual curation for the next immutable generation. Pressure does not mutate an
+already-running Unity population: a continuous supervisor advances generations and resumes the same
+optimizer/checkpoint lineage with a newly frozen selection.
 
 When external workers are enabled, their content-hashed session spec is generated only after player-
 derived pressure is injected and wrapper-only continual options are removed, so remote Unity
@@ -45,6 +45,7 @@ MAX_SUGGESTIONS_FLAG = "--continual-public-max-tactic-suggestions"
 MIN_OCCURRENCES_FLAG = "--continual-public-minimum-occurrences"
 MIN_CONTRIBUTORS_FLAG = "--continual-public-minimum-contributors"
 TARGET_FRACTION_FLAG = "--continual-public-target-fraction"
+GENERATION_ID_FLAG = "--continual-public-generation-id"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class AutomaticPublicOptions:
     minimum_occurrences: int = DEFAULT_MINIMUM_OCCURRENCES
     minimum_contributors: int = DEFAULT_MINIMUM_CONTRIBUTORS
     total_target_fraction: float = DEFAULT_TOTAL_TARGET_FRACTION
+    generation_id: Optional[str] = None
 
 
 def _read_option(argv: Sequence[str], index: int, flag: str) -> Tuple[Optional[str], int]:
@@ -85,6 +87,7 @@ def extract_automatic_public_options(
         "minimum_occurrences": DEFAULT_MINIMUM_OCCURRENCES,
         "minimum_contributors": DEFAULT_MINIMUM_CONTRIBUTORS,
         "total_target_fraction": DEFAULT_TOTAL_TARGET_FRACTION,
+        "generation_id": None,
     }
     seen = set()
     specs = (
@@ -95,6 +98,7 @@ def extract_automatic_public_options(
         (MIN_OCCURRENCES_FLAG, "minimum_occurrences", int),
         (MIN_CONTRIBUTORS_FLAG, "minimum_contributors", int),
         (TARGET_FRACTION_FLAG, "total_target_fraction", float),
+        (GENERATION_ID_FLAG, "generation_id", str),
     )
     index = 0
     while index < len(argv):
@@ -125,6 +129,11 @@ def extract_automatic_public_options(
         )
     if float(values["watch_seconds"]) <= 0:
         raise SystemExit(f"{WATCH_SECONDS_FLAG} must be greater than zero.")
+    generation_id = values["generation_id"]
+    if generation_id is not None and (
+        not str(generation_id).strip() or len(str(generation_id)) > 128
+    ):
+        raise SystemExit(f"{GENERATION_ID_FLAG} must be a non-empty value up to 128 characters.")
     return cleaned, AutomaticPublicOptions(**values)
 
 
@@ -154,16 +163,16 @@ def _watch_public_learning(
         try:
             result = _process(store, options)
             print(
-                "[Bees continual] automatic public telemetry refresh "
+                "[Bees continual] automatic gameplay telemetry refresh "
                 f"selected={len(result.get('selected_batches', []))} "
                 f"scenarios={len(result.get('scenario_ids', []))} "
                 f"rejected={len(result.get('rejected', []))}"
             )
         except Exception as exc:
-            # Public data automation must never corrupt/kill the authoritative PPO process. Rejected
-            # or temporarily unreadable input stays quarantined and a later scan retries it.
+            # Gameplay-data automation must never corrupt/kill the authoritative PPO process.
+            # Rejected or temporarily unreadable input stays quarantined and a later scan retries it.
             print(
-                f"[Bees continual] automatic public telemetry refresh failed: "
+                f"[Bees continual] automatic gameplay telemetry refresh failed: "
                 f"{type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
@@ -177,7 +186,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         base_trainer_args, continual_options = continual_train.extract_continual_options(trainer_args)
         if not continual_options.enabled:
             raise SystemExit(
-                f"{continual_train.CONTINUAL_ROOT_FLAG} is required for automatic public learning."
+                f"{continual_train.CONTINUAL_ROOT_FLAG} is required for automatic gameplay learning."
             )
 
         config = (
@@ -205,6 +214,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             selection_record = record_run_selection(
                 store,
                 run_id=run_id,
+                generation_id=auto_options.generation_id,
                 scenario_ids=scenario_ids,
                 encoded=encoded,
                 geometry_catalog=geometry_catalog,
@@ -234,7 +244,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[Bees distributed] remote_session_spec={spec_path}")
 
         print(
-            "[Bees continual] automatic public learning "
+            "[Bees continual] automatic gameplay learning "
+            f"generation={auto_options.generation_id or 'legacy'} "
             f"selected={len(initial.get('selected_batches', []))} "
             f"scenarios={len(scenario_ids)} "
             f"selection_record={selection_record or 'none'}"
@@ -249,7 +260,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "config_path": continual_options.config,
                 "options": auto_options,
             },
-            name="bees-public-learning-watch",
+            name="bees-gameplay-learning-watch",
             daemon=True,
         )
         watcher.start()
