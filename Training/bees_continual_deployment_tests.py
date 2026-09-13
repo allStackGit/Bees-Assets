@@ -12,6 +12,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_bootstrap import bootstrap_champion
 from bees_continual_deployment import (
     build_current_champion_package,
@@ -99,17 +100,37 @@ class DeploymentTests(unittest.TestCase):
         )
 
     @staticmethod
-    def passing_report(candidate_id: str, champion_id: str):
+    def candidate_summary(*, wins=2, losses=0, draws=0, timeouts=0, shots=2, hits=1, damage=10):
+        matches = wins + losses + draws
         return {
+            "matches": matches,
+            "wins": wins,
+            "losses": losses,
+            "draws": draws,
+            "timeouts": timeouts,
+            "candidate_starting_tsv": matches * 10,
+            "candidate_final_tsv": matches * 4,
+            "candidate_shots": shots,
+            "candidate_hits": hits,
+            "candidate_damage": damage,
+        }
+
+    @classmethod
+    def passing_report(cls, candidate_id: str, champion_id: str):
+        report = {
             "candidate_model_id": candidate_id,
             "champion_model_id": champion_id,
-            "candidate_vs_champion": {"wins": 2, "losses": 0, "draws": 0},
+            "candidate_vs_champion": cls.candidate_summary(),
             "historical": [],
             "competencies": [],
-            "behavior_sanity_passed": True,
             "runtime_compatible": True,
             "runtime_checks_passed": True,
+            "evaluator": {
+                "authoritative_match_runner": True,
+                "authoritative_telemetry_validated": True,
+            },
         }
+        return apply_behavior_sanity(report)
 
     def bootstrap(self, content=b"generation-zero"):
         model = self.register("generation-zero.onnx", content, 100)
@@ -174,6 +195,53 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(evidence["report_id"], champion["evaluation_report_id"])
         self.assertEqual(len(evidence["report_sha256"]), 64)
         self.assertTrue(evidence["promotion_policy_fingerprint"])
+
+    def test_deployment_rejects_spoofed_behavior_pass_from_registry(self):
+        first = self.bootstrap()
+        second = self.register(
+            "timeout-champion.onnx",
+            b"timeout-champion",
+            200,
+            parent=first["model_id"],
+        )
+        spoofed = {
+            "candidate_model_id": second["model_id"],
+            "champion_model_id": first["model_id"],
+            "candidate_vs_champion": self.candidate_summary(
+                wins=0,
+                losses=0,
+                draws=2,
+                timeouts=2,
+                shots=0,
+                hits=0,
+                damage=0,
+            ),
+            "historical": [],
+            "competencies": [],
+            "behavior_sanity_passed": True,
+            "runtime_compatible": True,
+            "runtime_checks_passed": True,
+            "evaluator": {
+                "authoritative_match_runner": True,
+                "authoritative_telemetry_validated": True,
+                "behavior_sanity": {
+                    "schema_version": 1,
+                    "passed": True,
+                    "checks": {},
+                    "reasons": [],
+                    "match_groups": 1,
+                    "totals": {},
+                },
+            },
+        }
+        evaluation = self.store.record_evaluation(spoofed)
+        self.assertTrue(evaluation["passed"])
+        promoted = self.store.promote(second["model_id"], evaluation["report_id"])
+        self.assertEqual(promoted["status"], "champion")
+
+        with self.assertRaisesRegex(ValidationError, "behavior_sanity"):
+            self.package()
+        self.assertEqual(self.validated_onnx_paths, [])
 
     def test_publish_pointer_is_idempotent_and_tracks_rollback(self):
         first = self.bootstrap()
