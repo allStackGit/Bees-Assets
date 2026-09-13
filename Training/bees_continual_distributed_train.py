@@ -2,7 +2,8 @@
 
 All candidate registration, historical-league behavior and behavioral cloning remain owned by
 bees_continual_train. This wrapper only changes where selected Unity environment workers run and
-publishes the content-hashed remote session spec that pins their exact environment arguments.
+publishes the content-hashed remote session spec that pins their exact environment arguments after
+wrapper-only continual options are removed.
 """
 
 from __future__ import annotations
@@ -17,15 +18,16 @@ import bees_distributed_training as distributed
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
     trainer_args, options = distributed.extract_distributed_options(raw_args)
+    mlagents_args, _ = continual.extract_continual_options(trainer_args)
     total_envs, base_port, external_worker_ids = distributed.training_topology(
-        trainer_args, options
+        mlagents_args, options
     )
 
     original_factory = None
     if options.enabled:
         spec_path = distributed.write_remote_worker_spec(
             options.remote_spec,
-            trainer_args,
+            mlagents_args,
             base_port=base_port,
             worker_ids=external_worker_ids,
         )
