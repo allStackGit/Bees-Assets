@@ -251,6 +251,120 @@ class PromotionTests(StoreTestCase):
         with self.assertRaises(continual.PromotionError):
             self.store.promote(third["model_id"], incomplete["report_id"])
 
+    def test_promotion_rejects_tampered_report_payload_identity(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        evaluation = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+
+        with self.store._connect() as db:
+            row = db.execute(
+                "SELECT report_json FROM evaluations WHERE report_id = ?",
+                (evaluation["report_id"],),
+            ).fetchone()
+            body = continual.json.loads(row["report_json"])
+            body["runtime_checks_passed"] = False
+            db.execute(
+                "UPDATE evaluations SET report_json = ? WHERE report_id = ?",
+                (continual.canonical_json(body), evaluation["report_id"]),
+            )
+
+        with self.assertRaisesRegex(continual.PromotionError, "identity"):
+            self.store.promote(second["model_id"], evaluation["report_id"])
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
+        self.assertEqual(self.store.get_model(second["model_id"])["status"], "candidate")
+
+    def test_promotion_rejects_tampered_decision_metadata(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        evaluation = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+
+        with self.store._connect() as db:
+            db.execute(
+                "UPDATE evaluations SET reasons_json = ? WHERE report_id = ?",
+                (continual.canonical_json(["tampered"]), evaluation["report_id"]),
+            )
+
+        with self.assertRaisesRegex(continual.PromotionError, "decision metadata"):
+            self.store.promote(second["model_id"], evaluation["report_id"])
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
+
+    def test_promotion_rejects_report_file_mismatch(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        evaluation = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+        report_path = Path(evaluation["report_path"])
+        file_body = continual.json.loads(report_path.read_text(encoding="utf-8"))
+        file_body["runtime_checks_passed"] = False
+        report_path.write_text(
+            continual.json.dumps(file_body, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(continual.PromotionError, "file does not match"):
+            self.store.promote(second["model_id"], evaluation["report_id"])
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
+
+    def test_promotion_revalidates_behavior_evidence_after_storage(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        evaluation = self.store.record_evaluation(
+            self.passing_report(second["model_id"], first["model_id"])
+        )
+
+        with self.store._connect() as db:
+            row = db.execute(
+                "SELECT * FROM evaluations WHERE report_id = ?",
+                (evaluation["report_id"],),
+            ).fetchone()
+            forged = continual.json.loads(row["report_json"])
+        forged["candidate_vs_champion"] = self.behavior_summary(
+            wins=0,
+            losses=0,
+            draws=10,
+            timeouts=10,
+            shots=10,
+            hits=1,
+            damage=1,
+        )
+        forged_report_id = "eval-" + continual.sha256_bytes(
+            continual.canonical_json(forged).encode("utf-8")
+        )[:24]
+        forged_path = self.store.evaluation_dir / "reports" / f"{forged_report_id}.json"
+        self.store._write_json_immutable(forged_path, forged)
+        with self.store._connect() as db:
+            db.execute(
+                """
+                INSERT INTO evaluations(
+                    report_id, candidate_model_id, champion_model_id, created_at,
+                    passed, reasons_json, report_json
+                ) VALUES(?,?,?,?,?,?,?)
+                """,
+                (
+                    forged_report_id,
+                    second["model_id"],
+                    first["model_id"],
+                    continual.utc_now(),
+                    1,
+                    continual.canonical_json([]),
+                    continual.canonical_json(forged),
+                ),
+            )
+
+        with self.assertRaisesRegex(continual.PromotionError, "behavior sanity evidence"):
+            self.store.promote(second["model_id"], forged_report_id)
+        self.assertEqual(self.store.current_champion_id(), first["model_id"])
+        self.assertEqual(self.store.get_model(second["model_id"])["status"], "candidate")
+
     def test_rollback_restores_previous_champion_without_retraining(self):
         first = self.register("first.onnx", b"first", 100)
         self.promote_first(first)
