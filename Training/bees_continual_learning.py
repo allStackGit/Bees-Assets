@@ -1167,6 +1167,56 @@ class ContinualLearningStore:
                 raise PromotionError("Evaluation report payload is corrupted.") from exc
             if not isinstance(report_body, dict):
                 raise PromotionError("Evaluation report payload must be an object.")
+
+            expected_report_id = "eval-" + sha256_bytes(
+                canonical_json(report_body).encode("utf-8")
+            )[:24]
+            if evaluation["report_id"] != expected_report_id or evaluation_report_id != expected_report_id:
+                raise PromotionError(
+                    "Evaluation report identity does not match its stored payload; promotion is blocked."
+                )
+            report_path = self.evaluation_dir / "reports" / f"{evaluation_report_id}.json"
+            try:
+                file_report = json.loads(report_path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise PromotionError(
+                    f"Evaluation report file is missing: {report_path}"
+                ) from exc
+            except json.JSONDecodeError as exc:
+                raise PromotionError(
+                    f"Evaluation report file is corrupted: {report_path}"
+                ) from exc
+            if file_report != report_body:
+                raise PromotionError(
+                    "Evaluation report file does not match the registry payload; promotion is blocked."
+                )
+
+            decision = report_body.get("decision")
+            try:
+                stored_reasons = json.loads(evaluation["reasons_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise PromotionError("Evaluation decision metadata is corrupted.") from exc
+            if (
+                not isinstance(decision, Mapping)
+                or not isinstance(decision.get("passed"), bool)
+                or not isinstance(decision.get("reasons"), list)
+                or bool(evaluation["passed"]) != decision["passed"]
+                or stored_reasons != decision["reasons"]
+            ):
+                raise PromotionError(
+                    "Evaluation decision metadata does not match its immutable report payload."
+                )
+            if decision["passed"] is not True:
+                raise PromotionError(
+                    "Evaluation report decision is not passing; promotion is blocked."
+                )
+            try:
+                self._validate_behavior_sanity_evidence(report_body)
+            except ValidationError as exc:
+                raise PromotionError(
+                    f"Evaluation behavior sanity evidence is invalid: {exc}"
+                ) from exc
+
             if report_body.get("candidate_model_id") != candidate_model_id:
                 raise PromotionError(
                     "Evaluation record candidate does not match the candidate in its report."
