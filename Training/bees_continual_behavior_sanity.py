@@ -155,6 +155,29 @@ def assess_behavior_sanity(report: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def validate_attached_behavior_sanity(report: Mapping[str, Any]) -> Dict[str, Any]:
+    """Recompute behavior sanity and require attached evidence to match exactly.
+
+    Promotion/deployment callers must not trust a caller-supplied ``behavior_sanity_passed`` flag.
+    This helper derives the result again from authoritative match summaries and verifies both the
+    top-level gate boolean and the auditable evaluator evidence produced by ``apply_behavior_sanity``.
+    """
+    derived = assess_behavior_sanity(report)
+    evaluator = report.get("evaluator")
+    if not isinstance(evaluator, Mapping):
+        raise ValidationError("Evaluation report evaluator evidence is required.")
+    attached = evaluator.get("behavior_sanity")
+    if attached != derived:
+        raise ValidationError(
+            "Attached behavior_sanity evidence does not match the authoritative evaluation summaries."
+        )
+    if report.get("behavior_sanity_passed") is not derived["passed"]:
+        raise ValidationError(
+            "behavior_sanity_passed does not match the behavior result derived from authoritative evidence."
+        )
+    return derived
+
+
 def apply_behavior_sanity(report: Mapping[str, Any]) -> Dict[str, Any]:
     """Copy an evaluation report and attach behavior evidence plus the derived gate boolean."""
     evidence = assess_behavior_sanity(report)
