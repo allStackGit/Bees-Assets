@@ -14,10 +14,10 @@ using UnityEngine;
 using WebSocketSharp;
 
 /// <summary>
-/// Automatically uploads completed live-RL player telemetry segments to BeesServer's authenticated
-/// quarantine endpoint. Files are deleted locally only after the server confirms immutable archival
-/// (or an identical duplicate). Network/auth/rate-limit failures leave the durable Pending backlog
-/// intact for a later retry.
+/// Automatically uploads completed gameplay telemetry segments to BeesServer's quarantine endpoint.
+/// Production/development use the authenticated Steam boundary; the deliberately unauthenticated
+/// local test server uses the configured test user identity only. Files are deleted locally only
+/// after the server confirms immutable archival (or an identical duplicate).
 /// </summary>
 internal sealed class RlLiveTelemetryUploader : MonoBehaviour
 {
@@ -108,11 +108,6 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
 #if UNITY_WEBGL
         Destroy(gameObject);
 #else
-        if (!ConfigData.Production)
-        {
-            Destroy(gameObject);
-            return;
-        }
         try
         {
             RlPolicySchema.ValidateOrThrow();
@@ -333,6 +328,16 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
     private IEnumerator EnsureAuthenticated()
     {
         _userId = null;
+        if (ConfigData.Test)
+        {
+            ulong testUserId = ConfigData.GetUserId();
+            if (testUserId != 0)
+            {
+                _userId = testUserId.ToString(CultureInfo.InvariantCulture);
+            }
+            yield break;
+        }
+
         SteamWebApiAuth.EnsureRequested();
         float deadline = Time.realtimeSinceStartup + AuthenticationWaitSeconds;
         while (!SteamWebApiAuth.IsReady && !SteamWebApiAuth.IsUnavailable &&
@@ -356,11 +361,15 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
         CloseSocket();
         while (_responses.TryDequeue(out _)) { }
         while (_transportErrors.TryDequeue(out _)) { }
-        string url = $"wss://{ConfigData.ProductionServerHostname}:{ConfigData.ProductionPort}";
+        string scheme = ConfigData.Test ? "ws" : "wss";
+        string url = $"{scheme}://{ConfigData.Hostname}:{ConfigData.Port}";
         _socketOpen = false;
         _socketClosed = false;
         _socket = new WebSocket(url, "game");
-        _socket.SslConfiguration.EnabledSslProtocols = SslProtocols.Tls12;
+        if (!ConfigData.Test)
+        {
+            _socket.SslConfiguration.EnabledSslProtocols = SslProtocols.Tls12;
+        }
         _socket.OnOpen += (_, __) => _socketOpen = true;
         _socket.OnClose += (_, __) =>
         {
@@ -397,7 +406,7 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
         {
             Type = type,
             UserId = _userId,
-            AuthTicket = SteamWebApiAuth.TicketHex
+            AuthTicket = ConfigData.Test ? string.Empty : SteamWebApiAuth.TicketHex
         };
     }
 
@@ -412,7 +421,7 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
             }
             request.Hash = Utilities.Hash();
             request.UserId = _userId;
-            request.AuthTicket = SteamWebApiAuth.TicketHex;
+            request.AuthTicket = ConfigData.Test ? string.Empty : SteamWebApiAuth.TicketHex;
             long expectedHash = request.Hash;
             string rejectedTicket = request.AuthTicket;
             string json = JsonConvert.SerializeObject(request);
@@ -450,7 +459,7 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
                 DrainTransportErrors();
                 if (TryDequeueMatchingResponse(request.Type, expectedHash, out UploadResponse response))
                 {
-                    if (response.Status == 401)
+                    if (response.Status == 401 && !ConfigData.Test)
                     {
                         SteamWebApiAuth.Refresh();
                         yield return WaitForReplacementTicket(rejectedTicket);
