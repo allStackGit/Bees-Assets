@@ -1,9 +1,10 @@
 """Launch remote Bees Unity rollout workers through one SSH tunnel.
 
-Run this helper on a rollout machine. It forwards each worker's local ML-Agents port to the same
-loopback port on the central trainer, then launches one Unity process per worker ID. Unity continues
-to connect to localhost as required by ML-Agents; the raw unauthenticated gRPC protocol is never
-intentionally exposed to the network.
+Run this helper on a rollout machine with the content-hashed session spec emitted by the central
+trainer. It forwards each selected worker's local ML-Agents port to the same loopback port on the
+central trainer, then launches one Unity process per worker ID with the exact Unity environment args
+pinned in that spec. Unity continues to connect to localhost as required by ML-Agents; the raw
+unauthenticated gRPC protocol is never intentionally exposed to the network.
 """
 
 from __future__ import annotations
@@ -15,10 +16,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Mapping, Sequence, Tuple
+
+import bees_distributed_training as distributed
 
 
-DEFAULT_BASE_PORT = 5005
+DEFAULT_BASE_PORT = distributed.DEFAULT_BASE_PORT
 
 
 def parse_worker_ids(value: str) -> Tuple[int, ...]:
@@ -52,13 +55,22 @@ def parse_worker_ids(value: str) -> Tuple[int, ...]:
     return tuple(result)
 
 
+def select_worker_ids(spec: Mapping[str, object], requested: str | None) -> Tuple[int, ...]:
+    assigned = tuple(int(value) for value in spec["worker_ids"])
+    if requested is None:
+        return assigned
+    selected = parse_worker_ids(requested)
+    unknown = sorted(set(selected) - set(assigned))
+    if unknown:
+        raise ValueError(
+            "requested worker IDs are not assigned by the central session spec: "
+            + ", ".join(str(value) for value in unknown)
+        )
+    return selected
+
+
 def worker_ports(base_port: int, worker_ids: Sequence[int]) -> Tuple[int, ...]:
-    if base_port <= 0:
-        raise ValueError("base port must be positive")
-    ports = tuple(base_port + worker_id for worker_id in worker_ids)
-    if any(port > 65535 for port in ports):
-        raise ValueError("worker port exceeds 65535")
-    return ports
+    return distributed.external_worker_ports(base_port, worker_ids)
 
 
 def ssh_command(
@@ -118,13 +130,20 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Run remote Bees ML-Agents environments through SSH port forwards."
     )
     parser.add_argument("--ssh", required=True, help="SSH target for the central trainer, e.g. user@trainer.")
-    parser.add_argument("--env", required=True, help="Path to the Bees training executable on this machine.")
+    parser.add_argument("--env", required=True, help="Path to the same Bees training build on this machine.")
+    parser.add_argument(
+        "--spec",
+        required=True,
+        help="Remote-worker session spec copied from the central --bees-remote-spec output.",
+    )
     parser.add_argument(
         "--worker-ids",
-        required=True,
-        help="External worker IDs assigned by the central trainer, e.g. 8-15 or 8,10,12.",
+        default=None,
+        help=(
+            "Optional assigned subset from the session spec, e.g. 8-11. Omit to launch every "
+            "external worker in the spec on this machine."
+        ),
     )
-    parser.add_argument("--base-port", type=int, default=DEFAULT_BASE_PORT)
     parser.add_argument("--ssh-executable", default="ssh")
     parser.add_argument(
         "--ssh-option",
@@ -138,12 +157,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not add -nographics/-batchmode to the Unity workers.",
     )
     parser.add_argument(
-        "--unity-arg",
-        action="append",
-        default=[],
-        help="Additional argument passed to every Unity worker; may be repeated.",
-    )
-    parser.add_argument(
         "--tunnel-startup-seconds",
         type=float,
         default=1.0,
@@ -155,8 +168,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        worker_ids = parse_worker_ids(args.worker_ids)
-        ports = worker_ports(args.base_port, worker_ids)
+        spec = distributed.load_remote_worker_spec(args.spec)
+        worker_ids = select_worker_ids(spec, args.worker_ids)
+        base_port = int(spec["base_port"])
+        ports = worker_ports(base_port, worker_ids)
+        unity_args = tuple(str(value) for value in spec["unity_args"])
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -169,6 +185,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("error: --tunnel-startup-seconds must be non-negative", file=sys.stderr)
         return 2
 
+    print(
+        f"[Bees remote] session={spec['identity_sha256']} run_id={spec.get('run_id') or 'none'} "
+        f"workers={','.join(str(value) for value in worker_ids)}"
+    )
     tunnel = subprocess.Popen(
         ssh_command(args.ssh_executable, args.ssh, ports, args.ssh_option),
         stdin=subprocess.DEVNULL,
@@ -198,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 env_path,
                 port,
                 no_graphics=not args.graphics,
-                unity_args=args.unity_arg,
+                unity_args=unity_args,
             )
             print(f"[Bees remote] worker={worker_id} local_port={port}")
             workers.append(subprocess.Popen(command))
