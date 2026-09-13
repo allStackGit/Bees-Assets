@@ -21,6 +21,7 @@ sys.modules[SPEC.name] = continual
 assert SPEC.loader is not None
 SPEC.loader.exec_module(continual)
 
+from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_bootstrap import bootstrap_champion
 
 
@@ -86,6 +87,22 @@ class StoreTestCase(unittest.TestCase):
             **compatibility,
         }
 
+    @staticmethod
+    def behavior_summary(*, wins=6, losses=4, draws=0, timeouts=0, shots=8, hits=3, damage=20):
+        matches = wins + losses + draws
+        return {
+            "matches": matches,
+            "wins": wins,
+            "losses": losses,
+            "draws": draws,
+            "timeouts": timeouts,
+            "candidate_starting_tsv": max(1, matches) * 10,
+            "candidate_final_tsv": max(1, matches) * 5,
+            "candidate_shots": shots,
+            "candidate_hits": hits,
+            "candidate_damage": damage,
+        }
+
     def passing_report(self, candidate_id, champion_id=None):
         report = {
             "candidate_model_id": candidate_id,
@@ -97,19 +114,19 @@ class StoreTestCase(unittest.TestCase):
                     "score": 1.0,
                     "minimum": 0.5,
                     "critical": True,
+                    "summary": self.behavior_summary(wins=1, losses=0, draws=0, shots=1, hits=1, damage=1),
                 }
             ],
-            "behavior_sanity_passed": True,
             "runtime_compatible": True,
             "runtime_checks_passed": True,
+            "evaluator": {
+                "authoritative_match_runner": True,
+                "authoritative_telemetry_validated": True,
+            },
         }
         if champion_id is not None:
-            report["candidate_vs_champion"] = {
-                "wins": 6,
-                "losses": 4,
-                "draws": 0,
-            }
-        return report
+            report["candidate_vs_champion"] = self.behavior_summary()
+        return apply_behavior_sanity(report)
 
     def promote_first(self, model):
         return bootstrap_champion(
@@ -187,7 +204,8 @@ class PromotionTests(StoreTestCase):
         second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
 
         report = self.passing_report(second["model_id"], first["model_id"])
-        report["candidate_vs_champion"] = {"wins": 5, "losses": 5, "draws": 0}
+        report["candidate_vs_champion"] = self.behavior_summary(wins=5, losses=5, draws=0)
+        report = apply_behavior_sanity(report)
         evaluation = self.store.record_evaluation(report)
 
         self.assertFalse(evaluation["passed"])
@@ -339,6 +357,7 @@ class EvaluationTests(StoreTestCase):
                 "baseline_score_rate": 0.70,
                 "matches": 10,
                 "critical": True,
+                "candidate_summary": self.behavior_summary(wins=4, losses=6, draws=0),
             }
         ]
         report["competencies"] = [
@@ -347,8 +366,10 @@ class EvaluationTests(StoreTestCase):
                 "score": 0.4,
                 "minimum": 0.6,
                 "critical": True,
+                "summary": self.behavior_summary(wins=1, losses=0, draws=0, shots=1, hits=1, damage=1),
             }
         ]
+        report = apply_behavior_sanity(report)
         evaluation = self.store.record_evaluation(report)
 
         self.assertFalse(evaluation["passed"])
@@ -375,13 +396,54 @@ class EvaluationTests(StoreTestCase):
                 "baseline_score_rate": 0.5,
                 "matches": 10,
                 "critical": True,
+                "candidate_summary": self.behavior_summary(wins=0, losses=10, draws=0, shots=2, hits=1, damage=1),
             }
         ]
+        report = apply_behavior_sanity(report)
 
         evaluation = self.store.record_evaluation(report)
 
         self.assertFalse(evaluation["passed"])
         self.assertTrue(any("regressed 0.5000" in reason for reason in evaluation["reasons"]))
+
+    def test_record_evaluation_rejects_spoofed_behavior_pass_evidence(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        report = self.passing_report(second["model_id"], first["model_id"])
+        report["candidate_vs_champion"] = self.behavior_summary(
+            wins=0,
+            losses=0,
+            draws=10,
+            timeouts=10,
+            shots=10,
+            hits=1,
+            damage=1,
+        )
+
+        with self.assertRaisesRegex(continual.ValidationError, "behavior_sanity"):
+            self.store.record_evaluation(report)
+
+    def test_record_evaluation_allows_consistent_behavior_failure_as_failed_evidence(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+        report = self.passing_report(second["model_id"], first["model_id"])
+        report["candidate_vs_champion"] = self.behavior_summary(
+            wins=0,
+            losses=0,
+            draws=10,
+            timeouts=10,
+            shots=10,
+            hits=1,
+            damage=1,
+        )
+        report = apply_behavior_sanity(report)
+
+        evaluation = self.store.record_evaluation(report)
+
+        self.assertFalse(evaluation["passed"])
+        self.assertTrue(any("behavior_sanity_passed" in reason for reason in evaluation["reasons"]))
 
 
 class IngestionTests(StoreTestCase):
