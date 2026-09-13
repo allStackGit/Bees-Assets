@@ -128,7 +128,7 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         agent_count=1,
         contributor_bucket=None,
         controller_kind="human",
-        mode="external-controller-live",
+        mode="gameplay-controller-live",
     ):
         self.counter += 1
         match_id = f"match-{self.counter}"
@@ -241,7 +241,10 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         self.assertEqual(report["minimum_contributors"], 2)
         self.assertEqual(report["analyzed_batches"], 2)
         self.assertEqual(report["analyzed_agent_streams"], 2)
-        self.assertEqual(report["analyzed_controller_streams"], {"human": 2, "hivemind": 0})
+        self.assertEqual(
+            report["analyzed_controller_streams"],
+            {"human": 2, "hivemind": 0, "neural": 0},
+        )
         self.assertEqual(len(report["suggestions"]), 1)
         suggestion = report["suggestions"][0]
         self.assertEqual(suggestion["controller_kind"], "human")
@@ -257,16 +260,20 @@ class PublicTelemetryMiningTests(unittest.TestCase):
         )
         _assert_no_raw_step_keys(self, report)
 
-    def test_human_and_hivemind_evidence_cannot_cross_confirm_same_tactic(self):
+    def test_controller_classes_cannot_cross_confirm_same_tactic(self):
         human = self._seed_public_batch(controller_kind="human")
         hivemind = self._seed_public_batch(controller_kind="hivemind")
+        neural = self._seed_public_batch(controller_kind="neural")
         report = mine_telemetry_selection(
             self.store,
-            self._selection([human, hivemind]),
+            self._selection([human, hivemind, neural]),
             minimum_occurrences=2,
             minimum_contributors=1,
         )
-        self.assertEqual(report["analyzed_controller_streams"], {"human": 1, "hivemind": 1})
+        self.assertEqual(
+            report["analyzed_controller_streams"],
+            {"human": 1, "hivemind": 1, "neural": 1},
+        )
         self.assertEqual(report["suggestions"], [])
 
     def test_repeated_hivemind_tactic_is_labeled_hivemind(self):
@@ -277,11 +284,42 @@ class PublicTelemetryMiningTests(unittest.TestCase):
             self._selection([first, second]),
             minimum_occurrences=2,
         )
-        self.assertEqual(report["analyzed_controller_streams"], {"human": 0, "hivemind": 2})
+        self.assertEqual(
+            report["analyzed_controller_streams"],
+            {"human": 0, "hivemind": 2, "neural": 0},
+        )
         self.assertEqual(len(report["suggestions"]), 1)
         self.assertEqual(report["suggestions"][0]["controller_kind"], "hivemind")
 
-    def test_missing_external_controller_provenance_fails_closed(self):
+    def test_repeated_neural_tactic_is_labeled_neural(self):
+        first = self._seed_public_batch(controller_kind="neural")
+        second = self._seed_public_batch(controller_kind="neural")
+        report = mine_telemetry_selection(
+            self.store,
+            self._selection([first, second]),
+            minimum_occurrences=2,
+        )
+        self.assertEqual(
+            report["analyzed_controller_streams"],
+            {"human": 0, "hivemind": 0, "neural": 2},
+        )
+        self.assertEqual(len(report["suggestions"]), 1)
+        self.assertEqual(report["suggestions"][0]["controller_kind"], "neural")
+
+    def test_older_external_mode_rejects_neural_provenance(self):
+        batch_id = self._seed_public_batch(
+            controller_kind="neural",
+            mode="external-controller-live",
+        )
+        with self.assertRaisesRegex(ValidationError, "requires gameplay-controller-live"):
+            mine_telemetry_selection(
+                self.store,
+                self._selection([batch_id]),
+                minimum_occurrences=1,
+                minimum_contributors=1,
+            )
+
+    def test_missing_gameplay_controller_provenance_fails_closed(self):
         batch_id = self._seed_public_batch(controller_kind=None)
         with self.assertRaisesRegex(ValidationError, "controller_kind"):
             mine_telemetry_selection(
@@ -302,7 +340,10 @@ class PublicTelemetryMiningTests(unittest.TestCase):
             minimum_occurrences=1,
             minimum_contributors=1,
         )
-        self.assertEqual(report["analyzed_controller_streams"], {"human": 1, "hivemind": 0})
+        self.assertEqual(
+            report["analyzed_controller_streams"],
+            {"human": 1, "hivemind": 0, "neural": 0},
+        )
         self.assertEqual(report["suggestions"][0]["controller_kind"], "human")
 
     def test_single_occurrence_is_not_suggested_at_default_repeat_threshold(self):
