@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
+from bees_continual_behavior_sanity import validate_attached_behavior_sanity
 from bees_continual_learning import (
     ContinualLearningError,
     ContinualLearningStore,
@@ -146,6 +147,11 @@ def _evaluation_evidence(
     decision = report.get("decision")
     if not isinstance(decision, Mapping) or decision.get("passed") is not True:
         raise ValidationError(f"Champion evaluation decision is not passing: {report_id}")
+    behavior_evidence = validate_attached_behavior_sanity(report)
+    if behavior_evidence["passed"] is not True:
+        raise ValidationError(
+            f"Champion evaluation behavior-sanity gate is not passing: {report_id}"
+        )
     expected_report_id = "eval-" + sha256_bytes(canonical_json(report).encode("utf-8"))[:24]
     if report_id != expected_report_id:
         raise ValidationError(
