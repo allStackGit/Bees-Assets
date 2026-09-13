@@ -94,7 +94,7 @@ class LiveTelemetryValidationTests(unittest.TestCase):
             "schema_version": 1,
             "match_id": "match-telemetry-1",
             "game_build_version": "public-client-build",
-            "mode": "campaign",
+            "mode": "external-controller-live",
             "result": "bee_win",
             "model_id": self.model["model_id"],
             "model_sha256": self.model["artifact_sha256"],
@@ -109,6 +109,7 @@ class LiveTelemetryValidationTests(unittest.TestCase):
             "steps": [
                 {
                     "agent_key": "side-0:ship-17",
+                    "controller_kind": "hivemind",
                     "decision_index": 0,
                     "observation": [0.0, 0.25, -0.5, 1.0],
                     "continuous_action": [0.0, -1.0, 1.0],
@@ -116,6 +117,7 @@ class LiveTelemetryValidationTests(unittest.TestCase):
                 },
                 {
                     "agent_key": "side-1:ship-44",
+                    "controller_kind": "human",
                     "decision_index": 0,
                     "observation": [1.0, 0.0, 0.5, -0.25],
                     "continuous_action": [0.1, 0.2, -0.3],
@@ -123,6 +125,7 @@ class LiveTelemetryValidationTests(unittest.TestCase):
                 },
                 {
                     "agent_key": "side-0:ship-17",
+                    "controller_kind": "hivemind",
                     "decision_index": 1,
                     "observation": [0.2, 0.3, 0.4, 0.5],
                     "continuous_action": [-0.1, 0.0, 0.1],
@@ -138,7 +141,33 @@ class LiveTelemetryValidationTests(unittest.TestCase):
         self.assertEqual(result["deployment_id"], self.deployment_id)
         self.assertEqual(result["step_count"], 3)
         self.assertEqual(result["agent_count"], 2)
+        self.assertEqual(result["controller_step_counts"], {"human": 1, "hivemind": 2})
         self.assertEqual(result["discrete_branch_sizes"], [2, 3])
+
+    def test_external_controller_mode_requires_explicit_valid_provenance(self):
+        payload = self.payload()
+        payload["steps"][0].pop("controller_kind")
+        with self.assertRaisesRegex(ValidationError, "controller_kind"):
+            validate_live_telemetry_payload(self.store, payload)
+
+        payload = self.payload()
+        payload["steps"][0]["controller_kind"] = "neural"
+        with self.assertRaisesRegex(ValidationError, "controller_kind"):
+            validate_live_telemetry_payload(self.store, payload)
+
+    def test_legacy_player_live_mode_defaults_missing_provenance_to_human(self):
+        payload = self.payload()
+        payload["mode"] = "player-live-rl"
+        for step in payload["steps"]:
+            step.pop("controller_kind")
+        result = validate_live_telemetry_payload(self.store, payload)
+        self.assertEqual(result["controller_step_counts"], {"human": 3, "hivemind": 0})
+
+    def test_unrecognized_mode_is_rejected(self):
+        payload = self.payload()
+        payload["mode"] = "campaign"
+        with self.assertRaisesRegex(ValidationError, "mode must be"):
+            validate_live_telemetry_payload(self.store, payload)
 
     def test_unknown_or_wrong_deployment_model_is_rejected(self):
         payload = self.payload()
