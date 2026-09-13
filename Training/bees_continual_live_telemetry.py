@@ -6,9 +6,9 @@ identity, known deployment/model bytes, fixed observation/action shapes, action 
 per-agent decision identities, and configured payload/episode limits are all verified before the
 payload can be handed to the central archive.
 
-Production external-controller telemetry distinguishes human and Hive Mind decisions. Both are
-strictly off-policy inputs: provenance may affect imitation selection and diagnostics, but neither
-source is ever admitted to PPO as if the neural policy generated those actions.
+Gameplay telemetry distinguishes human, Hive Mind, and deployed-neural decisions. Every source is
+strictly off-policy at this boundary: provenance is retained for mining and diagnostics, while no
+recorded live action is admitted to PPO as if it were a fresh current-policy rollout.
 """
 
 from __future__ import annotations
@@ -29,7 +29,8 @@ from bees_continual_learning import (
 
 LIVE_TELEMETRY_SCHEMA_VERSION = 1
 _VALID_RESULTS = frozenset(("bee_win", "human_win", "draw", "timeout"))
-_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind"))
+_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind", "neural"))
+_GAMEPLAY_MODE = "gameplay-controller-live"
 _EXTERNAL_MODE = "external-controller-live"
 _LEGACY_PLAYER_MODE = "player-live-rl"
 _DEPLOYMENT_ID = re.compile(r"^deploy-[0-9a-f]{24}$")
@@ -177,13 +178,19 @@ def _validate_discrete_actions(value: Any, branch_sizes: Sequence[int], label: s
 def _controller_kind(step: Mapping[str, Any], *, mode: str, index: int) -> str:
     value = step.get("controller_kind")
     if value is None and mode == _LEGACY_PLAYER_MODE:
-        # Preserve already archived v1 player telemetry. New Production telemetry must declare
-        # provenance explicitly so Hive Mind behavior can never be silently relabeled as human.
+        # Preserve already archived v1 player telemetry. New gameplay telemetry must declare
+        # provenance explicitly so controller classes can never be silently relabeled.
         return "human"
     if not isinstance(value, str) or value not in _VALID_CONTROLLER_KINDS:
         raise ValidationError(
             f"steps[{index}].controller_kind must be one of: " +
             ", ".join(sorted(_VALID_CONTROLLER_KINDS)) + "."
+        )
+    if mode == _EXTERNAL_MODE and value == "neural":
+        # Preserve the meaning of the older external-controller mode. Neural provenance is valid
+        # only in the new all-gameplay mode so old producers cannot silently change semantics.
+        raise ValidationError(
+            f"steps[{index}].controller_kind='neural' requires mode={_GAMEPLAY_MODE!r}."
         )
     return value
 
@@ -212,9 +219,9 @@ def validate_live_telemetry_payload(
     match_id = _required_string(payload, "match_id")
     _required_string(payload, "game_build_version")
     mode = _required_string(payload, "mode")
-    if mode not in (_EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
+    if mode not in (_GAMEPLAY_MODE, _EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
         raise ValidationError(
-            f"mode must be {_EXTERNAL_MODE!r} or the legacy {_LEGACY_PLAYER_MODE!r}."
+            f"mode must be {_GAMEPLAY_MODE!r}, {_EXTERNAL_MODE!r}, or the legacy {_LEGACY_PLAYER_MODE!r}."
         )
     result = _required_string(payload, "result")
     if result not in _VALID_RESULTS:
@@ -242,7 +249,7 @@ def validate_live_telemetry_payload(
         raise ValidationError("Live telemetry step count exceeds configured maximum.")
 
     last_decision_by_agent: Dict[str, int] = {}
-    controller_counts: Dict[str, int] = {"human": 0, "hivemind": 0}
+    controller_counts: Dict[str, int] = {"human": 0, "hivemind": 0, "neural": 0}
     for index, step in enumerate(steps):
         if not isinstance(step, Mapping):
             raise ValidationError(f"steps[{index}] must be an object.")
