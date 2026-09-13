@@ -6,6 +6,10 @@ registration and optional behavioral cloning. This layer records/injects selecte
 matchup pressure, optional tactical geometry, and any explicitly registered scripted replay catalog.
 Old player trajectories are never reused as PPO data: replay attachments control only the scripted
 opponent side while the other side generates fresh on-policy experience.
+
+A long-lived optimizer lineage may be resumed across bounded training generations. Each generation
+can therefore freeze a different immutable pressure selection without rewriting an earlier
+selection. Omitting generation_id preserves the original one-selection-per-run contract.
 """
 
 from __future__ import annotations
@@ -139,20 +143,36 @@ def inject_unity_pressure_arg(
     return result
 
 
-def _run_selection_path(store: ContinualLearningStore, run_id: str) -> Path:
-    run_hash = sha256_bytes(run_id.encode("utf-8"))[:24]
+def _run_selection_path(
+    store: ContinualLearningStore,
+    run_id: str,
+    generation_id: Optional[str] = None,
+) -> Path:
+    identity = run_id if generation_id is None else run_id + "\n" + generation_id
+    run_hash = sha256_bytes(identity.encode("utf-8"))[:24]
     return store.root / "metadata" / "adversarial-training-runs" / f"run-{run_hash}.json"
 
 
-def _validate_existing_run_selection(path: Path, identity_hash: str, run_id: str) -> Path:
+def _validate_existing_run_selection(
+    path: Path,
+    identity_hash: str,
+    run_id: str,
+    generation_id: Optional[str] = None,
+) -> Path:
     try:
         existing = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValidationError(f"Adversarial run-selection record is invalid JSON: {path}: {exc}") from exc
     if not isinstance(existing, dict) or existing.get("identity_sha256") != identity_hash:
+        scope = (
+            f"training run {run_id!r} generation {generation_id!r}"
+            if generation_id is not None
+            else f"training run {run_id!r}"
+        )
         raise ValidationError(
-            f"Training run {run_id!r} already has a different immutable adversarial scenario selection. "
-            "Use a new --run-id when changing player-derived training pressure."
+            f"{scope} already has a different immutable adversarial scenario selection. "
+            "Use a new generation ID (or a new --run-id for legacy one-shot launches) when changing "
+            "player-derived training pressure."
         )
     return path
 
@@ -165,19 +185,26 @@ def record_run_selection(
     encoded: str,
     geometry_catalog: str = "",
     replay_catalog_sha256: str = "",
+    generation_id: Optional[str] = None,
 ) -> Path:
     store._require_initialized()
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValidationError("Adversarial training run_id must be a non-empty string.")
+    if generation_id is not None and (
+        not isinstance(generation_id, str) or not generation_id.strip() or len(generation_id) > 128
+    ):
+        raise ValidationError("Adversarial training generation_id must be a non-empty string up to 128 characters.")
+
     identity = {
         "schema_version": RUN_SELECTION_SCHEMA_VERSION,
         "run_id": run_id,
         "scenario_ids": sorted(scenario_ids),
         "unity_pressure_argument": UNITY_PRESSURE_FLAG + "=" + encoded,
     }
-    # Keep old/no-geometry/no-replay runs byte-for-byte compatible with the original selection
-    # identity. Optional replay identity is content-addressed rather than path-addressed so moving a
-    # continual-learning store does not alter lineage.
+    # Keep old/no-generation/no-geometry/no-replay runs byte-for-byte compatible with the original
+    # selection identity. A generation identifier is added only for the continuous-training path.
+    if generation_id is not None:
+        identity["generation_id"] = generation_id
     if geometry_catalog:
         identity["unity_geometry_argument"] = (
             UNITY_GEOMETRY_CATALOG_FLAG + "=" + geometry_catalog
@@ -185,9 +212,9 @@ def record_run_selection(
     if replay_catalog_sha256:
         identity["replay_catalog_sha256"] = replay_catalog_sha256
     identity_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
-    path = _run_selection_path(store, run_id)
+    path = _run_selection_path(store, run_id, generation_id)
     if path.exists():
-        return _validate_existing_run_selection(path, identity_hash, run_id)
+        return _validate_existing_run_selection(path, identity_hash, run_id, generation_id)
 
     body = {
         **identity,
@@ -199,7 +226,7 @@ def record_run_selection(
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        return _validate_existing_run_selection(path, identity_hash, run_id)
+        return _validate_existing_run_selection(path, identity_hash, run_id, generation_id)
 
     try:
         with os.fdopen(fd, "wb") as handle:
