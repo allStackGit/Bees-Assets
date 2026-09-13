@@ -858,9 +858,21 @@ class ContinualLearningStore:
     def _promotion_policy_fingerprint(policy: Mapping[str, Any]) -> str:
         return sha256_bytes(canonical_json(policy).encode("utf-8"))
 
+    @staticmethod
+    def _validate_behavior_sanity_evidence(report: Mapping[str, Any]) -> Dict[str, Any]:
+        # Local import avoids a module-level cycle: behavior_sanity imports this module's errors.
+        from bees_continual_behavior_sanity import validate_attached_behavior_sanity
+
+        return validate_attached_behavior_sanity(report)
+
     def assess_evaluation(self, report: Mapping[str, Any]) -> PromotionDecision:
         promotion = self.config["promotion"]
         reasons: List[str] = []
+
+        try:
+            self._validate_behavior_sanity_evidence(report)
+        except ValidationError as exc:
+            reasons.append(f"behavior sanity evidence invalid: {exc}")
 
         candidate_id = str(report.get("candidate_model_id", ""))
         if not candidate_id:
@@ -1032,6 +1044,9 @@ class ContinualLearningStore:
     def record_evaluation(self, report: Mapping[str, Any]) -> Dict[str, Any]:
         self._require_initialized()
         _walk_finite_numbers(report)
+        # Malformed or spoofed behavior evidence is an ingestion error, not merely a failed gate.
+        # Valid, consistently-derived negative evidence is still recorded as a failed evaluation.
+        self._validate_behavior_sanity_evidence(report)
         candidate_id = str(report.get("candidate_model_id", ""))
         if not candidate_id:
             raise ValidationError("Evaluation candidate_model_id is required.")
