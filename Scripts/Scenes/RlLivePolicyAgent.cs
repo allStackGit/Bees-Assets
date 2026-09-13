@@ -12,10 +12,9 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 
 /// <summary>
-/// Runs the shared Bees RL policy in ordinary Stage scenes when the existing serialized
-/// ActivateBrains switch is enabled. Unlike the dedicated self-play adapter, this controller does
-/// not own episode resets or promotion state. It only replaces the Hive Mind's low-level control
-/// surface; player-owned ships remain under player control.
+/// Runs the shared Bees RL policy in ordinary Stage scenes for sides owned by the production
+/// controller router. This controller never owns player or Hive Mind sides and does not change the
+/// ordinary Stage UI/objective lifecycle.
 /// </summary>
 internal sealed class RlLivePolicyAgent : Agent
 {
@@ -76,19 +75,19 @@ internal sealed class RlLivePolicyAgent : Agent
 
         Debug.Log($"Live RL policy controller enabled: ABI v{RlPolicySchema.Version} " +
                   $"{RlPolicySchema.Signature}; behavior={RlOneVsOneAgent.BehaviorName}. " +
-                  "Player-owned ships remain player controlled.");
+                  "Only sides routed to NeuralNetwork are controlled by this policy.");
     }
 
     internal static bool ShouldControlSide(bool levelHasPlayer, int side, int aiSide)
     {
+        // Retained as a compatibility/test helper for the legacy default. Runtime ownership is now
+        // resolved by RlProductionControllerRouter so mixed per-side configurations are possible.
         return !levelHasPlayer || side == aiSide;
     }
 
     private static bool IsLiveRlEnabled(Stage stage)
     {
-        // ActivateHiveMind remains the long-standing campaign AI enable/disable gate. ActivateBrains
-        // selects which controller owns that enabled AI: false = Hive Mind, true = shared RL policy.
-        return stage != null && stage.ActivateHiveMind && stage.ActivateBrains;
+        return stage != null && RlProductionControllerRouter.AnyNeuralNetwork(stage);
     }
 
     private static void ProvisionAgentsForSpawnedShips(Stage stage, bool force = false)
@@ -117,7 +116,8 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private static void EnsureAgentCount(Stage stage, Level level, int side, int levelIndex)
     {
-        if (!ShouldControlSide(level.HasPlayer, side, ConfigData.Configuration.AISide))
+        if (RlProductionControllerRouter.Resolve(stage, level, side) !=
+            RlProductionControllerRouter.ControllerKind.NeuralNetwork)
         {
             return;
         }
@@ -191,7 +191,9 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void FixedUpdate()
     {
-        if (!IsLiveRlEnabled(_stage))
+        if (!IsLiveRlEnabled(_stage) || _level == null ||
+            RlProductionControllerRouter.Resolve(_stage, _level, _side) !=
+            RlProductionControllerRouter.ControllerKind.NeuralNetwork)
         {
             ReleaseShip();
             _hasBoundShip = false;
@@ -532,7 +534,8 @@ internal sealed class RlLivePolicyAgent : Agent
     private bool TryBindShip()
     {
         if (_level == null || _level.State == null || ConfigData.Configuration == null ||
-            !ShouldControlSide(_level.HasPlayer, _side, ConfigData.Configuration.AISide))
+            RlProductionControllerRouter.Resolve(_stage, _level, _side) !=
+            RlProductionControllerRouter.ControllerKind.NeuralNetwork)
         {
             ReleaseShip();
             return false;
@@ -583,7 +586,7 @@ internal sealed class RlLivePolicyAgent : Agent
         if (_ship.Squad != null)
         {
             _ship.Squad.IsUserControlled = false;
-            _ship.Squad.IsHiveMindControlled = true;
+            _ship.Squad.IsHiveMindControlled = false;
             _ship.Squad.CanAcceptUserInput = false;
         }
         _ship.HasBrain = true;
