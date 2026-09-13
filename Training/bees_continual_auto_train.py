@@ -8,8 +8,8 @@ already-running Unity population: changing a run's scenario selection in place w
 lineage non-reproducible and can violate the existing run-selection contract.
 
 When external workers are enabled, their content-hashed session spec is generated only after player-
-derived pressure is injected so remote Unity processes receive exactly the same final ``--env-args``
-as local workers.
+derived pressure is injected and wrapper-only continual options are removed, so remote Unity
+processes receive exactly the same final ``--env-args`` as local workers.
 """
 
 from __future__ import annotations
@@ -210,15 +210,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 geometry_catalog=geometry_catalog,
             )
 
+        final_trainer_args, _ = continual_train.extract_continual_options(prepared_args)
         total_envs, base_port, external_worker_ids = distributed.training_topology(
-            base_trainer_args,
+            final_trainer_args,
             distributed_options,
         )
         original_factory = None
         if distributed_options.enabled:
             spec_path = distributed.write_remote_worker_spec(
                 distributed_options.remote_spec,
-                prepared_args,
+                final_trainer_args,
                 base_port=base_port,
                 worker_ids=external_worker_ids,
             )
