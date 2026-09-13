@@ -178,7 +178,7 @@ python Training\bees_continual_adversarial.py `
 
 ### Attach an approved action replay
 
-For a reviewed 1v1 scenario, one approved source batch can be attached as a bounded scripted movement/aim/fire replay:
+For a reviewed 1v1 scenario, one approved source batch can be attached as a bounded scripted replay. Replay format v2 carries movement, turret aim, fire, and primitive ship-special/mining/healing/warp actions while retaining compatibility with existing v1 movement/aim/fire artifacts:
 
 ```powershell
 python Training\bees_continual_adversarial_replay.py `
@@ -189,7 +189,7 @@ python Training\bees_continual_adversarial_replay.py `
   --record-count=1200
 ```
 
-The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. Capability/target actions fail closed; the current scripted format covers movement, turret aim, and fire only. The replay side is excluded from PPO learner ownership and becomes neutral after the recorded prefix.
+The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. Target-selection branches remain fail-closed because the live policy still masks them and there is no authoritative target-command replay contract. Separately captured one-event capability demonstrations are not automatically stitched into a tactical replay prefix. The scripted side is excluded from PPO learner action/reward ownership and becomes neutral after the recorded prefix.
 
 You can compile/check one attachment explicitly:
 
@@ -236,7 +236,7 @@ python Training\bees_continual_adversarial_evaluate.py `
   --seed=36
 ```
 
-The immutable report records candidate/baseline score rates and pressure-weighted deltas. It is intentionally `promotion_eligible: false`; player-derived diagnostics do not silently change the pinned permanent competency suite. Richer replay of intermediate world state, capabilities/targets, or arbitrary multi-ship Human episodes remains future Phase 7 work.
+The immutable report records candidate/baseline score rates and pressure-weighted deltas. It is intentionally `promotion_eligible: false`; player-derived diagnostics do not silently change the pinned permanent competency suite. Intermediate-world-state/event stitching, target replay, and arbitrary multi-ship Human episodes remain future Phase 7 work.
 
 ## Permanent competency suite and promotion
 
@@ -290,9 +290,23 @@ Promotion-eligible evaluation measures every successful candidate `onnxruntime.I
 
 Changing this threshold changes the promotion-policy fingerprint and makes older evaluations stale. Injected/custom match runners cannot claim authoritative runtime checks from synthetic timing.
 
+### Automatic candidate release
+
+Stable ONNX exports registered by `bees_continual_train.py` can be consumed by the fail-closed release worker. Each invocation first reconciles and health-checks the current champion deployment, then evaluates a bounded compatible candidate set against the current champion, complete historical league, and pinned competency suite. The default is one candidate per invocation so a scheduler cannot accidentally create a rapid promotion cascade:
+
+```powershell
+python Training\bees_continual_release.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --env="F:\RLDemo\Bees RL Training" `
+  --competency-suite="F:\RLDemo\bees-rl-v8-competency.json" `
+  --seed=36
+```
+
+Failing candidates are recorded as rejected. Passing candidates become the registry champion, are republished as the current immutable deployment package, and must pass the independent release-health check before the cycle can continue. A publication/health failure after promotion leaves the approved champion authoritative; rerun the release cycle to reconcile it before evaluating another candidate.
+
 ## Champion deployment into Unity player builds
 
-Phase 8 now has a fail-closed build-time deployment path. It does not yet implement server/client hot model distribution.
+Phase 8 provides both fail-closed build-time champion staging and authenticated hot distribution for already-built Production desktop clients.
 
 Package and publish the registry's current champion:
 
@@ -323,11 +337,37 @@ Those two generated files are ignored by Git. They are staging inputs, not the d
 
 At runtime, `RlLivePolicyModelBootstrap` validates the bundled deployment manifest against the compiled `RlPolicySchema`, binds the imported champion to dynamically created `RlLivePolicyAgent`s with `SetModel`, and forces `BehaviorType.InferenceOnly`. If the manifest/model is missing, incompatible, conflicting, or cannot be bound, it clears `ActivateBrains`, disables the live RL agents, and restarts `Level.SetupHivemind()` so player-facing AI fails back to the existing Hive Mind instead of remaining on the live agent's inert heuristic.
 
-After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build. A rollback changes the authoritative current champion and therefore restages the prior champion package.
+After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build so the build-staged fallback matches the registry champion. A rollback changes the authoritative current champion and therefore restages the prior champion package.
 
 ABI compatibility is strict. A v7 champion cannot be deployed into the current v8 player build. A compatible v8 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v8 store).
 
-What remains unfinished in Phase 8 is automatic remote distribution: there is not yet a server protocol that delivers a newly promoted model to already-built clients or hot-swaps a downloaded champion at runtime. The supported release path today is promotion/rollback -> verified immutable package -> Unity Resources staging -> player build -> runtime inference-only binding/fallback.
+### Authenticated desktop hot distribution
+
+To publish a platform-specific hot bundle for the current champion, run the hot-release worker on a machine with the Bees Unity project and Unity Editor available:
+
+```powershell
+python Training\bees_continual_hot_release.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --unity="C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe" `
+  --assets-root="R:\Bees\Assets" `
+  --distribution-root="D:\BeesRlModels" `
+  --platform=WindowsPlayer
+```
+
+Repeat `--platform` for additional supported desktop targets (`WindowsPlayer`, `OSXPlayer`, or `LinuxPlayer`). The worker restages the approved current deployment, invokes Unity to build the platform AssetBundle, independently verifies the generated sidecar against the current deployment/model hashes and frozen ABI/signature, stores the bundle content-addressably, and atomically advances `current-<platform>.json` under the distribution root. Unity build output is never promotion authority.
+
+A Production desktop build that starts with live RL enabled automatically installs `RlLivePolicyModelUpdater`. It polls BeesServer every five minutes over a dedicated Steam-authenticated WSS connection using `rl-model-current` and `rl-model-chunk`, downloads only a compatible promoted bundle, verifies size/SHA-256/deployment/model/manifest/ABI identity, and applies it transactionally in memory. Download or validation failures keep the currently running champion; if replacement itself fails, the runtime attempts to restore the prior model and ultimately falls back to Hive Mind rather than leaving an inert RL controller.
+
+For an intentional rollback, the guarded release rollback can restore the previous champion (or an explicit historical target), republish its deployment package, reactivate retained platform bundles, and verify the final release chain:
+
+```powershell
+python Training\bees_continual_release_rollback.py `
+  --root="F:\RLDemo\BeesContinualV8" `
+  --distribution-root="D:\BeesRlModels" `
+  --platform=WindowsPlayer
+```
+
+Omitting `--target` restores the registry's recorded previous champion. Supply `--target=bees-rl-v8-...` to restore a particular historical champion or to retry release reconciliation after a partial rollback failure. Hot-bundle reactivation only uses retained immutable bundles that still exactly match the newly current deployment.
 
 ## GPU ONNX Runtime (optional)
 
