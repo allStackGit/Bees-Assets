@@ -171,12 +171,46 @@ class AdversarialReplayTests(unittest.TestCase):
                 action_reader=action_reader or self.action_reader,
             )
 
+    def write_legacy_registration(self, record_count=10):
+        identity = {
+            "schema_version": replay.LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION,
+            "scenario_id": SCENARIO_ID,
+            "scenario_identity_sha256": self.scenario["identity_sha256"],
+            "source_batch_id": BATCH_ID,
+            "source_demo_sha256": self.archive["demo_sha256"],
+            "source_payload_sha256": self.archive["row"]["payload_sha256"],
+            "policy_abi_version": replay.SUPPORTED_POLICY_ABI_VERSION,
+            "side": "Human",
+            "mode": replay.LEGACY_REPLAY_MODE,
+            "start_record": 0,
+            "record_count": record_count,
+            "fixed_step_interval": replay.REPLAY_FIXED_STEP_INTERVAL,
+            "terminal_behavior": replay.REPLAY_TERMINAL_BEHAVIOR,
+        }
+        identity_hash = replay.sha256_bytes(replay.canonical_json(identity).encode("utf-8"))
+        body = {
+            "schema_version": replay.LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION,
+            "replay_id": f"advreplay-{identity_hash[:24]}",
+            "identity_sha256": identity_hash,
+            "identity": identity,
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        path = replay._registration_path(self.store, SCENARIO_ID)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return body
+
     def test_registration_is_idempotent_but_one_scenario_cannot_change_replay(self):
         first = self.register(record_count=10)
         second = self.register(record_count=10)
         self.assertFalse(first["duplicate"])
         self.assertTrue(second["duplicate"])
         self.assertEqual(first["replay_id"], second["replay_id"])
+        self.assertEqual(
+            first["registration"]["schema_version"],
+            replay.REPLAY_REGISTRATION_SCHEMA_VERSION,
+        )
+        self.assertEqual(first["registration"]["identity"]["mode"], replay.REPLAY_MODE)
 
         with self.assertRaises(ContinualLearningError):
             self.register(record_count=11)
@@ -210,7 +244,7 @@ class AdversarialReplayTests(unittest.TestCase):
                     record_count=10,
                 )
 
-    def test_compile_writes_deterministic_header_frames_and_neutral_tail_contract(self):
+    def test_compile_writes_v2_header_frames_and_neutral_tail_contract(self):
         self.register(record_count=10)
         result = self.compile()
 
@@ -223,17 +257,40 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertEqual(interval, replay.REPLAY_FIXED_STEP_INTERVAL)
         self.assertAlmostEqual(start_x, 0.0, places=5)
         self.assertAlmostEqual(start_y, 1.0, places=5)
-        first_frame = struct.unpack("<34fH", payload[24 : 24 + 138])
+        first_frame = struct.unpack("<34fHB", payload[24 : 24 + 139])
         self.assertAlmostEqual(first_frame[0], 1.0)
         self.assertAlmostEqual(first_frame[3], 1.0)
-        self.assertEqual(first_frame[-1], 1)
+        self.assertEqual(first_frame[-2], 1)
+        self.assertEqual(first_frame[-1], 0)
         self.assertTrue(result["truncated"])
         self.assertFalse(result["source_first_episode_terminal_found"])
         self.assertEqual(result["terminal_behavior"], "neutral")
+        self.assertEqual(result["schema_version"], replay.REPLAY_ARTIFACT_SCHEMA_VERSION)
+        self.assertEqual(result["special_action_count"], 0)
+        self.assertFalse(result["target_branches_supported"])
 
         metadata = json.loads(Path(result["metadata_path"]).read_text(encoding="utf-8"))
         self.assertEqual(metadata["artifact_sha256"], result["artifact_sha256"])
         self.assertEqual(metadata["frame_count"], 10)
+
+    def test_compile_preserves_capability_action_in_v2_frame(self):
+        self.register(record_count=10)
+
+        def special_reader(pair_info):
+            continuous, discrete = self.action_reader(pair_info)
+            if pair_info.index == 4:
+                discrete[replay.SPECIAL_ACTION_BRANCH] = 1
+            return continuous, discrete
+
+        result = self.compile(action_reader=special_reader)
+        self.assertEqual(result["special_action_count"], 1)
+        payload = Path(result["artifact_path"]).read_bytes()
+        frame_size = 139
+        fifth = struct.unpack(
+            "<34fHB",
+            payload[24 + 4 * frame_size : 24 + 5 * frame_size],
+        )
+        self.assertEqual(fifth[-1], 1)
 
     def test_compile_stops_before_first_native_terminal_record(self):
         self.register(record_count=12)
@@ -243,16 +300,16 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertTrue(result["source_first_episode_terminal_found"])
         self.assertFalse(result["truncated"])
 
-    def test_compile_rejects_capability_or_target_actions(self):
+    def test_compile_rejects_invalid_capability_or_reserved_target_actions(self):
         self.register(record_count=10)
 
-        def special_reader(pair_info):
+        def invalid_special_reader(pair_info):
             continuous, discrete = self.action_reader(pair_info)
-            discrete[replay.SPECIAL_ACTION_BRANCH] = 1
+            discrete[replay.SPECIAL_ACTION_BRANCH] = replay.SPECIAL_ACTION_BRANCH_SIZE
             return continuous, discrete
 
         with self.assertRaises(ValidationError):
-            self.compile(action_reader=special_reader)
+            self.compile(action_reader=invalid_special_reader)
 
         def target_reader(pair_info):
             continuous, discrete = self.action_reader(pair_info)
@@ -261,6 +318,30 @@ class AdversarialReplayTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             self.compile(action_reader=target_reader)
+
+    def test_legacy_registration_still_compiles_byte_identical_v1_shape(self):
+        self.write_legacy_registration(record_count=10)
+        result = self.compile()
+        payload = Path(result["artifact_path"]).read_bytes()
+        magic, frame_count, interval, _, _ = struct.unpack("<8sii2f", payload[:24])
+        self.assertEqual(magic, replay.LEGACY_REPLAY_MAGIC)
+        self.assertEqual(frame_count, 10)
+        self.assertEqual(interval, replay.REPLAY_FIXED_STEP_INTERVAL)
+        self.assertEqual(len(payload), 24 + 10 * 138)
+        self.assertEqual(
+            result["schema_version"], replay.LEGACY_REPLAY_ARTIFACT_SCHEMA_VERSION
+        )
+
+    def test_legacy_registration_rejects_capability_action(self):
+        self.write_legacy_registration(record_count=10)
+
+        def special_reader(pair_info):
+            continuous, discrete = self.action_reader(pair_info)
+            discrete[replay.SPECIAL_ACTION_BRANCH] = 1
+            return continuous, discrete
+
+        with self.assertRaises(ValidationError):
+            self.compile(action_reader=special_reader)
 
     def test_compile_rejects_source_ship_identity_mismatch_anywhere_in_prefix(self):
         self.register(record_count=10)
