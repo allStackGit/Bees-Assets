@@ -1,7 +1,9 @@
-"""Behavior-checked entry point for authoritative continual-learning candidate evaluation.
+"""Compatibility entry point for authoritative continual-learning candidate evaluation.
 
-This wraps the existing evaluator, derives conservative catastrophic-behavior evidence from the
-same authoritative match summaries, and only then records promotion evidence.
+Behavior sanity is now part of the canonical ``bees_continual_evaluate`` path. This module is
+kept only so existing operator commands that invoke the former checked evaluator continue to
+use exactly the same evaluation, recording, league-update, and promotion behavior without a
+second implementation drifting from the canonical path.
 """
 
 from __future__ import annotations
@@ -10,11 +12,10 @@ import json
 import sys
 from typing import Any, Dict, Optional, Sequence
 
-from bees_continual_behavior_sanity import apply_behavior_sanity
 from bees_continual_evaluate import (
     _load_env_args_file,
     build_parser,
-    evaluate_candidate,
+    evaluate_and_record,
 )
 from bees_continual_learning import (
     ContinualLearningError,
@@ -27,36 +28,15 @@ def evaluate_and_record_checked(
     store: ContinualLearningStore,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Evaluate, attach behavior evidence, record it, then update league-pressure evidence."""
-    report = apply_behavior_sanity(evaluate_candidate(store, **kwargs))
-    recorded = store.record_evaluation(report)
-    league_updates = []
-    for historical in report["historical"]:
-        baseline = historical.get("baseline_score_rate")
-        if baseline is None:
-            continue
-        tags = [
-            "authoritative_candidate_evaluation",
-            f"evaluation:{recorded['report_id']}",
-        ]
-        update = {
-            "current_model_id": report["candidate_model_id"],
-            "opponent_model_id": historical["opponent_model_id"],
-            "current_win_rate": historical["candidate_score_rate"],
-            "previous_win_rate": baseline,
-            "match_count": historical["matches"],
-            "tags": tags,
-        }
-        store.record_historical_matchup(**update)
-        league_updates.append(update)
-    return {"report": report, "recorded": recorded, "league_updates": league_updates}
+    """Delegate to the canonical evaluator, which already applies behavior sanity."""
+    return evaluate_and_record(store, **kwargs)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     parser.description = (
-        "Evaluate an immutable Bees RL candidate with authoritative runtime and behavioral "
-        "sanity checks before recording promotion evidence."
+        "Evaluate an immutable Bees RL candidate with the canonical authoritative runtime and "
+        "behavioral sanity checks before recording promotion evidence."
     )
     args = parser.parse_args(argv)
     try:
