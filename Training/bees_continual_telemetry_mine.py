@@ -5,8 +5,9 @@ headless pressure registration. It never registers scenarios automatically and n
 recorded observations/actions as PPO trajectories. Recorded step data is analyzed in memory only;
 the returned report contains compact tactical summaries and provenance identifiers.
 
-Human and Hive Mind actions remain separate evidence classes during mining. A matching tactic from
-one human stream and one Hive Mind stream cannot cross-confirm a repeated source-specific tactic.
+Human, Hive Mind, and deployed-neural actions remain separate evidence classes during mining. A
+matching tactic from different controller classes cannot cross-confirm a repeated source-specific
+tactic.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ from bees_continual_telemetry_curation import _approved_archive
 
 
 TELEMETRY_TACTIC_MINING_SCHEMA_VERSION = 1
-_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind"))
+_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind", "neural"))
+_GAMEPLAY_MODE = "gameplay-controller-live"
 _EXTERNAL_MODE = "external-controller-live"
 _LEGACY_PLAYER_MODE = "player-live-rl"
 
@@ -47,9 +49,10 @@ def _positive_int(value: object, label: str) -> int:
 
 def _telemetry_mode(payload: Mapping[str, object]) -> str:
     mode = payload.get("mode")
-    if mode not in (_EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
+    if mode not in (_GAMEPLAY_MODE, _EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
         raise ValidationError(
-            "Curated live telemetry mode must be external-controller-live or legacy player-live-rl."
+            "Curated live telemetry mode must be gameplay-controller-live, "
+            "external-controller-live, or legacy player-live-rl."
         )
     return str(mode)
 
@@ -60,7 +63,11 @@ def _controller_kind(step: Mapping[str, object], *, mode: str, index: int) -> st
         return "human"
     if not isinstance(value, str) or value not in _VALID_CONTROLLER_KINDS:
         raise ValidationError(
-            f"Curated telemetry steps[{index}].controller_kind must be human or hivemind."
+            f"Curated telemetry steps[{index}].controller_kind must be human, hivemind, or neural."
+        )
+    if mode == _EXTERNAL_MODE and value == "neural":
+        raise ValidationError(
+            f"Curated telemetry steps[{index}] neural provenance requires gameplay-controller-live mode."
         )
     return value
 
@@ -68,7 +75,7 @@ def _controller_kind(step: Mapping[str, object], *, mode: str, index: int) -> st
 def _agent_streams(
     payload: Mapping[str, object],
 ) -> Mapping[tuple[str, str], Sequence[Mapping[str, object]]]:
-    """Group deterministic streams by opaque agent identity and external controller provenance."""
+    """Group deterministic streams by opaque agent identity and controller provenance."""
     mode = _telemetry_mode(payload)
     steps = payload.get("steps")
     if not isinstance(steps, list) or not steps:
@@ -170,7 +177,7 @@ def mine_telemetry_selection(
 
     grouped: Dict[tuple[str, str], list[Mapping[str, object]]] = defaultdict(list)
     analyzed_streams = 0
-    analyzed_controller_streams = {"human": 0, "hivemind": 0}
+    analyzed_controller_streams = {"human": 0, "hivemind": 0, "neural": 0}
     skipped_short_streams = 0
     source_batches = set()
 
@@ -273,7 +280,7 @@ def mine_telemetry_selection(
         "suggestions": suggestions,
         "caveats": [
             "A repeated signature must occur in distinct telemetry batches; multiple agents in one match cannot self-confirm a tactic.",
-            "Human and Hive Mind streams are mined as separate provenance classes and cannot cross-confirm each other's repeated tactics.",
+            "Human, Hive Mind, and deployed-neural streams are mined as separate provenance classes and cannot cross-confirm each other's repeated tactics.",
             "Automatic tactic suggestions require evidence from distinct privacy-safe contributor buckets; bucket identities are never exposed in the report.",
             "A repeated signature is a review hint, not an automatically approved training scenario.",
             "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping; raw agent_key values are not copied into the mining report.",
