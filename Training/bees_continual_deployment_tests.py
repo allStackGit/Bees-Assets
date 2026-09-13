@@ -196,7 +196,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(len(evidence["report_sha256"]), 64)
         self.assertTrue(evidence["promotion_policy_fingerprint"])
 
-    def test_deployment_rejects_spoofed_behavior_pass_from_registry(self):
+    def test_registry_rejects_spoofed_behavior_pass_before_deployment(self):
         first = self.bootstrap()
         second = self.register(
             "timeout-champion.onnx",
@@ -234,13 +234,10 @@ class DeploymentTests(unittest.TestCase):
                 },
             },
         }
-        evaluation = self.store.record_evaluation(spoofed)
-        self.assertTrue(evaluation["passed"])
-        promoted = self.store.promote(second["model_id"], evaluation["report_id"])
-        self.assertEqual(promoted["status"], "champion")
 
         with self.assertRaisesRegex(ValidationError, "behavior_sanity"):
-            self.package()
+            self.store.record_evaluation(spoofed)
+        self.assertEqual(self.store.get_model(second["model_id"])["status"], "candidate")
         self.assertEqual(self.validated_onnx_paths, [])
 
     def test_publish_pointer_is_idempotent_and_tracks_rollback(self):
