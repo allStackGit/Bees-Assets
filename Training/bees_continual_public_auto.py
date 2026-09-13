@@ -47,6 +47,7 @@ AUTOMATION_SCHEMA_VERSION = 1
 AUTOMATIC_REVIEWER = "automatic-policy-v1"
 AUTOMATIC_TAG = "automatic-policy-v1"
 DEFAULT_MAX_SELECTION_BATCHES = 128
+DEFAULT_MAX_TACTIC_SUGGESTIONS = 32
 DEFAULT_MINIMUM_OCCURRENCES = 2
 DEFAULT_MINIMUM_CONTRIBUTORS = 2
 DEFAULT_TOTAL_TARGET_FRACTION = 0.10
@@ -147,8 +148,12 @@ def _state_root(store: ContinualLearningStore) -> Path:
     return store.root / "metadata" / "automatic-public-learning"
 
 
+def _json_bytes(value: Mapping[str, object]) -> bytes:
+    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+
+
 def _write_atomic_json(path: Path, value: Mapping[str, object]) -> None:
-    payload = (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+    payload = _json_bytes(value)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
@@ -157,6 +162,31 @@ def _write_atomic_json(path: Path, value: Mapping[str, object]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
+def _write_immutable_json(path: Path, value: Mapping[str, object]) -> None:
+    payload = _json_bytes(value)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if path.read_bytes() != payload:
+            raise ContinualLearningError(f"Immutable automatic-learning record conflict: {path}")
+        return
+    fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temp_name, path)
+        except FileExistsError:
+            if path.read_bytes() != payload:
+                raise ContinualLearningError(f"Immutable automatic-learning record conflict: {path}")
     finally:
         try:
             os.unlink(temp_name)
@@ -198,7 +228,9 @@ def _publish_state(
                 f"Automatic public-learning generation identity conflict: {generation_path}"
             )
     else:
-        ContinualLearningStore._write_json_immutable(generation_path, body)
+        # Generation identity excludes wall-clock time. Freeze the creation timestamp on first write
+        # so later scans may republish current.json without mutating the historical generation.
+        _write_immutable_json(generation_path, body)
     _write_atomic_json(root / "current.json", body)
     return body
 
@@ -228,12 +260,19 @@ def process_public_learning_once(
     quarantine_root: str | os.PathLike[str],
     *,
     maximum_selection_batches: int = DEFAULT_MAX_SELECTION_BATCHES,
+    maximum_tactic_suggestions: int = DEFAULT_MAX_TACTIC_SUGGESTIONS,
     minimum_occurrences: int = DEFAULT_MINIMUM_OCCURRENCES,
     minimum_contributors: int = DEFAULT_MINIMUM_CONTRIBUTORS,
     total_target_fraction: float = DEFAULT_TOTAL_TARGET_FRACTION,
 ) -> Mapping[str, object]:
     """Process all currently visible quarantine telemetry and publish current training pressure."""
     store._require_initialized()
+    maximum_tactic_suggestions = _positive_int(maximum_tactic_suggestions, "maximum_tactic_suggestions")
+    if maximum_tactic_suggestions > 32:
+        raise ValidationError(
+            "maximum_tactic_suggestions may not exceed 32 because both side orientations are "
+            "registered and Unity supports at most 64 adversarial scenarios."
+        )
     minimum_occurrences = _positive_int(minimum_occurrences, "minimum_occurrences")
     minimum_contributors = _positive_int(minimum_contributors, "minimum_contributors")
     total_target_fraction = _target_fraction(total_target_fraction)
@@ -287,7 +326,9 @@ def process_public_learning_once(
     if not isinstance(suggestions, list):
         raise ContinualLearningError("Automatic telemetry mining returned a malformed suggestion list.")
 
-    valid_suggestions = [item for item in suggestions if isinstance(item, Mapping)]
+    valid_suggestions = [
+        item for item in suggestions if isinstance(item, Mapping)
+    ][:maximum_tactic_suggestions]
     per_orientation_fraction = (
         total_target_fraction / (2.0 * len(valid_suggestions))
         if valid_suggestions
@@ -357,6 +398,7 @@ def _parser() -> argparse.ArgumentParser:
         help="BeesServer BEES_RL_TELEMETRY_UPLOAD_DIR root containing incoming/.",
     )
     parser.add_argument("--max-selection-batches", type=int, default=DEFAULT_MAX_SELECTION_BATCHES)
+    parser.add_argument("--max-tactic-suggestions", type=int, default=DEFAULT_MAX_TACTIC_SUGGESTIONS)
     parser.add_argument("--minimum-occurrences", type=int, default=DEFAULT_MINIMUM_OCCURRENCES)
     parser.add_argument("--minimum-contributors", type=int, default=DEFAULT_MINIMUM_CONTRIBUTORS)
     parser.add_argument("--total-target-fraction", type=float, default=DEFAULT_TOTAL_TARGET_FRACTION)
@@ -382,6 +424,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 store,
                 args.telemetry_quarantine,
                 maximum_selection_batches=args.max_selection_batches,
+                maximum_tactic_suggestions=args.max_tactic_suggestions,
                 minimum_occurrences=args.minimum_occurrences,
                 minimum_contributors=args.minimum_contributors,
                 total_target_fraction=args.total_target_fraction,
