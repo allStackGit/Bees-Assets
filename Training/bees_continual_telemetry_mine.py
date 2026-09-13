@@ -4,6 +4,9 @@ This is an operator-assist layer between immutable telemetry curation and teleme
 headless pressure registration. It never registers scenarios automatically and never reuses
 recorded observations/actions as PPO trajectories. Recorded step data is analyzed in memory only;
 the returned report contains compact tactical summaries and provenance identifiers.
+
+Human and Hive Mind actions remain separate evidence classes during mining. A matching tactic from
+one human stream and one Hive Mind stream cannot cross-confirm a repeated source-specific tactic.
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ from bees_continual_telemetry_curation import _approved_archive
 
 
 TELEMETRY_TACTIC_MINING_SCHEMA_VERSION = 1
+_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind"))
+_EXTERNAL_MODE = "external-controller-live"
+_LEGACY_PLAYER_MODE = "player-live-rl"
 
 
 def _positive_int(value: object, label: str) -> int:
@@ -39,12 +45,37 @@ def _positive_int(value: object, label: str) -> int:
     return value
 
 
-def _agent_streams(payload: Mapping[str, object]) -> Mapping[str, Sequence[Mapping[str, object]]]:
+def _telemetry_mode(payload: Mapping[str, object]) -> str:
+    mode = payload.get("mode")
+    if mode not in (_EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
+        raise ValidationError(
+            "Curated live telemetry mode must be external-controller-live or legacy player-live-rl."
+        )
+    return str(mode)
+
+
+def _controller_kind(step: Mapping[str, object], *, mode: str, index: int) -> str:
+    value = step.get("controller_kind")
+    if value is None and mode == _LEGACY_PLAYER_MODE:
+        return "human"
+    if not isinstance(value, str) or value not in _VALID_CONTROLLER_KINDS:
+        raise ValidationError(
+            f"Curated telemetry steps[{index}].controller_kind must be human or hivemind."
+        )
+    return value
+
+
+def _agent_streams(
+    payload: Mapping[str, object],
+) -> Mapping[tuple[str, str], Sequence[Mapping[str, object]]]:
+    """Group deterministic streams by opaque agent identity and external controller provenance."""
+    mode = _telemetry_mode(payload)
     steps = payload.get("steps")
     if not isinstance(steps, list) or not steps:
         raise ValidationError("Curated live telemetry contains no step records to mine.")
 
-    grouped: Dict[str, list[Mapping[str, object]]] = defaultdict(list)
+    grouped: Dict[tuple[str, str], list[Mapping[str, object]]] = defaultdict(list)
+    decision_indexes_by_agent: Dict[str, set[int]] = defaultdict(set)
     for index, step in enumerate(steps):
         if not isinstance(step, Mapping):
             raise ValidationError(f"Curated telemetry steps[{index}] must be an object.")
@@ -60,17 +91,19 @@ def _agent_streams(payload: Mapping[str, object]) -> Mapping[str, Sequence[Mappi
             raise ValidationError(
                 f"Curated telemetry steps[{index}] has an invalid decision_index."
             )
-        grouped[agent_key].append(step)
-
-    ordered: Dict[str, Sequence[Mapping[str, object]]] = {}
-    for agent_key in sorted(grouped):
-        stream = sorted(grouped[agent_key], key=lambda step: int(step["decision_index"]))
-        decision_indices = [int(step["decision_index"]) for step in stream]
-        if len(set(decision_indices)) != len(decision_indices):
+        if decision_index in decision_indexes_by_agent[agent_key]:
             raise ValidationError(
                 f"Curated telemetry agent {agent_key!r} contains duplicate decision indices."
             )
-        ordered[agent_key] = tuple(stream)
+        decision_indexes_by_agent[agent_key].add(decision_index)
+        controller = _controller_kind(step, mode=mode, index=index)
+        grouped[(agent_key, controller)].append(step)
+
+    ordered: Dict[tuple[str, str], Sequence[Mapping[str, object]]] = {}
+    for stream_key in sorted(grouped):
+        ordered[stream_key] = tuple(
+            sorted(grouped[stream_key], key=lambda step: int(step["decision_index"]))
+        )
     return ordered
 
 
@@ -135,8 +168,9 @@ def mine_telemetry_selection(
     if not isinstance(batches, list) or not batches:
         raise ValidationError(f"Telemetry selection contains no batches: {selection_id}.")
 
-    grouped: Dict[str, list[Mapping[str, object]]] = defaultdict(list)
+    grouped: Dict[tuple[str, str], list[Mapping[str, object]]] = defaultdict(list)
     analyzed_streams = 0
+    analyzed_controller_streams = {"human": 0, "hivemind": 0}
     skipped_short_streams = 0
     source_batches = set()
 
@@ -153,7 +187,9 @@ def mine_telemetry_selection(
         contributor_buckets = tuple(load_public_telemetry_contributor_buckets(store, batch_id))
         source_batches.add(batch_id)
 
-        for stream_index, (_agent_key, stream) in enumerate(_agent_streams(payload).items()):
+        for stream_index, ((_agent_key, controller_kind), stream) in enumerate(
+            _agent_streams(payload).items()
+        ):
             if len(stream) < MIN_TACTIC_RECORDS:
                 skipped_short_streams += 1
                 continue
@@ -162,13 +198,15 @@ def mine_telemetry_selection(
                 "batch_id": batch_id,
                 "agent_stream_index": stream_index,
             }
+            profile["_controller_kind"] = controller_kind
             profile["_contributor_buckets"] = contributor_buckets
-            grouped[str(profile["signature"])].append(profile)
+            grouped[(controller_kind, str(profile["signature"]))].append(profile)
             analyzed_streams += 1
+            analyzed_controller_streams[controller_kind] += 1
 
     suggestions = []
-    for signature in sorted(grouped):
-        profiles = grouped[signature]
+    for controller_kind, signature in sorted(grouped):
+        profiles = grouped[(controller_kind, signature)]
         occurrence_count = len(
             {str(profile["_source"]["batch_id"]) for profile in profiles}
         )
@@ -193,6 +231,7 @@ def mine_telemetry_selection(
         suggestions.append(
             {
                 "signature": signature,
+                "controller_kind": controller_kind,
                 "occurrence_count": occurrence_count,
                 "contributor_count": contributor_count,
                 "agent_stream_count": len(profiles),
@@ -209,7 +248,13 @@ def mine_telemetry_selection(
             }
         )
 
-    suggestions.sort(key=lambda item: (-int(item["occurrence_count"]), str(item["signature"])))
+    suggestions.sort(
+        key=lambda item: (
+            -int(item["occurrence_count"]),
+            str(item["signature"]),
+            str(item["controller_kind"]),
+        )
+    )
     return {
         "schema_version": TELEMETRY_TACTIC_MINING_SCHEMA_VERSION,
         "selection_id": selection_id,
@@ -223,10 +268,12 @@ def mine_telemetry_selection(
         "minimum_contributors": minimum_contributors,
         "analyzed_batches": len(source_batches),
         "analyzed_agent_streams": analyzed_streams,
+        "analyzed_controller_streams": analyzed_controller_streams,
         "skipped_short_agent_streams": skipped_short_streams,
         "suggestions": suggestions,
         "caveats": [
             "A repeated signature must occur in distinct telemetry batches; multiple agents in one match cannot self-confirm a tactic.",
+            "Human and Hive Mind streams are mined as separate provenance classes and cannot cross-confirm each other's repeated tactics.",
             "Automatic tactic suggestions require evidence from distinct privacy-safe contributor buckets; bucket identities are never exposed in the report.",
             "A repeated signature is a review hint, not an automatically approved training scenario.",
             "agent_key is intentionally treated as opaque because the validated telemetry contract does not establish a Bee/Human side mapping; raw agent_key values are not copied into the mining report.",
