@@ -95,7 +95,7 @@ class LiveTelemetryIngestTests(unittest.TestCase):
             "schema_version": 1,
             "match_id": "match-ingest-1",
             "game_build_version": "public-client-build",
-            "mode": "campaign",
+            "mode": "external-controller-live",
             "result": "bee_win",
             "model_id": self.model["model_id"],
             "model_sha256": self.model["artifact_sha256"],
@@ -110,6 +110,7 @@ class LiveTelemetryIngestTests(unittest.TestCase):
             "steps": [
                 {
                     "agent_key": "side-0:ship-1",
+                    "controller_kind": "human",
                     "decision_index": 0,
                     "observation": [0.0, 0.25, -0.5, 1.0],
                     "continuous_action": [0.0, -1.0, 1.0],
@@ -125,14 +126,41 @@ class LiveTelemetryIngestTests(unittest.TestCase):
         self.assertFalse(archive["duplicate"])
         self.assertFalse(archive["trusted_for_on_policy_rl"])
         self.assertEqual(first["validation"]["step_count"], 1)
+        self.assertEqual(
+            first["validation"]["controller_step_counts"],
+            {"human": 1, "hivemind": 0},
+        )
 
         archive_path = Path(archive["archive_path"])
         self.assertTrue(archive_path.is_file())
-        self.assertEqual(json.loads(archive_path.read_text(encoding="utf-8")), payload)
+        archived_payload = json.loads(archive_path.read_text(encoding="utf-8"))
+        self.assertEqual(archived_payload, payload)
+        self.assertEqual(archived_payload["steps"][0]["controller_kind"], "human")
 
         retry = ingest_live_telemetry_payload(self.store, payload)
         self.assertTrue(retry["archive"]["duplicate"])
         self.assertEqual(retry["archive"]["batch_id"], archive["batch_id"])
+
+    def test_hivemind_provenance_is_archived_without_becoming_on_policy(self):
+        payload = self.payload()
+        payload["steps"][0]["controller_kind"] = "hivemind"
+        result = ingest_live_telemetry_payload(self.store, payload)
+        self.assertEqual(
+            result["validation"]["controller_step_counts"],
+            {"human": 0, "hivemind": 1},
+        )
+        self.assertFalse(result["archive"]["trusted_for_on_policy_rl"])
+        archived_payload = json.loads(
+            Path(result["archive"]["archive_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(archived_payload["steps"][0]["controller_kind"], "hivemind")
+
+    def test_missing_external_controller_provenance_does_not_reach_archive(self):
+        payload = self.payload()
+        payload["steps"][0].pop("controller_kind")
+        with self.assertRaisesRegex(ValidationError, "controller_kind"):
+            ingest_live_telemetry_payload(self.store, payload)
+        self.assertEqual(list((self.root / "experience" / "raw-live").glob("*.json")), [])
 
     def test_reused_match_id_with_different_valid_payload_is_rejected(self):
         payload = self.payload()
