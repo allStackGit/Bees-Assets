@@ -24,6 +24,7 @@ internal static class RlProductionControllerRouter
     private static string[] _cachedArgs;
     private static ControllerKind? _beeOverride;
     private static ControllerKind? _humanOverride;
+    private static readonly HashSet<Stage> NeuralNetworkUnavailableStages = new HashSet<Stage>();
 
     internal static ControllerKind Resolve(Stage stage, Level level, int side)
     {
@@ -33,6 +34,7 @@ internal static class RlProductionControllerRouter
         }
 
         EnsureOverrides(Environment.GetCommandLineArgs());
+        ControllerKind resolved;
         ControllerKind? explicitController = side == ConfigData.Configuration.BeeSide
             ? _beeOverride
             : side == ConfigData.Configuration.HumanSide
@@ -40,24 +42,50 @@ internal static class RlProductionControllerRouter
                 : null;
         if (explicitController.HasValue)
         {
-            return explicitController.Value;
+            resolved = explicitController.Value;
+        }
+        else
+        {
+            bool hasPlayer = level != null ? level.HasPlayer : stage.DoesUserHaveController;
+            if (hasPlayer && stage.DoesUserHaveController && side == ConfigData.Configuration.UserSide)
+            {
+                resolved = ControllerKind.Player;
+            }
+            else if (stage.ActivateHiveMind && stage.ActivateBrains)
+            {
+                resolved = ControllerKind.NeuralNetwork;
+            }
+            else if (stage.ActivateHiveMind)
+            {
+                resolved = ControllerKind.HiveMind;
+            }
+            else
+            {
+                resolved = ControllerKind.None;
+            }
         }
 
-        bool hasPlayer = level != null ? level.HasPlayer : stage.DoesUserHaveController;
-        if (hasPlayer && stage.DoesUserHaveController && side == ConfigData.Configuration.UserSide)
-        {
-            return ControllerKind.Player;
-        }
-
-        if (stage.ActivateHiveMind && stage.ActivateBrains)
-        {
-            return ControllerKind.NeuralNetwork;
-        }
-        if (stage.ActivateHiveMind)
+        if (resolved == ControllerKind.NeuralNetwork && NeuralNetworkUnavailableStages.Contains(stage))
         {
             return ControllerKind.HiveMind;
         }
-        return ControllerKind.None;
+        return resolved;
+    }
+
+    internal static void SetNeuralNetworkAvailable(Stage stage, bool available)
+    {
+        if (stage == null)
+        {
+            return;
+        }
+        if (available)
+        {
+            NeuralNetworkUnavailableStages.Remove(stage);
+        }
+        else
+        {
+            NeuralNetworkUnavailableStages.Add(stage);
+        }
     }
 
     internal static bool AnyNeuralNetwork(Stage stage)
