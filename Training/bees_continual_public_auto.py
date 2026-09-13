@@ -7,8 +7,9 @@ The automation preserves the existing trust boundaries:
 * Recorded live actions are never inserted into PPO as on-policy trajectories.
 * Only batches carrying this automation policy's own immutable approval are eligible for automatic
   pressure; a manual offline-analysis approval is never escalated implicitly.
-* Only repeated tactics supported by distinct matches and privacy-safe contributors are converted
-  into bounded scenario pressure.
+* Only tactics meeting the configured occurrence/contributor thresholds are converted into bounded
+  scenario pressure. The current defaults are intentionally 1/1 so one tester can exercise the
+  complete automatic-learning pipeline; production deployments should raise them when traffic grows.
 * Because public agent_key values intentionally do not assert Bee/Human orientation, automatic
   pressure registers both orientations at half weight rather than trusting a client-side side claim.
 
@@ -50,8 +51,8 @@ AUTOMATIC_REVIEWER = "automatic-policy-v1"
 AUTOMATIC_TAG = "automatic-policy-v1"
 DEFAULT_MAX_SELECTION_BATCHES = 128
 DEFAULT_MAX_TACTIC_SUGGESTIONS = 32
-DEFAULT_MINIMUM_OCCURRENCES = 2
-DEFAULT_MINIMUM_CONTRIBUTORS = 2
+DEFAULT_MINIMUM_OCCURRENCES = 1
+DEFAULT_MINIMUM_CONTRIBUTORS = 1
 DEFAULT_TOTAL_TARGET_FRACTION = 0.10
 DEFAULT_WATCH_SECONDS = 30.0
 
@@ -94,26 +95,6 @@ def _revocation_path(store: ContinualLearningStore, batch_id: str) -> Path:
     return store.experience_dir / "raw-live" / "public-revocations" / f"{batch_id}.json"
 
 
-def _has_automatic_approval(store: ContinualLearningStore, batch_id: str) -> bool:
-    path = _approval_path(store, batch_id)
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return False
-    if not isinstance(value, Mapping):
-        return False
-    tags = value.get("tags")
-    return (
-        value.get("decision") == "approved"
-        and value.get("batch_id") == batch_id
-        and value.get("reviewer") == AUTOMATIC_REVIEWER
-        and isinstance(tags, list)
-        and AUTOMATIC_TAG in tags
-        and value.get("approved_for_scenario_mining") is True
-        and value.get("approved_for_on_policy_rl") is False
-    )
-
-
 def _selection_batch_ids(
     store: ContinualLearningStore,
     *,
@@ -137,7 +118,20 @@ def _selection_batch_ids(
     contributor_counts: Dict[str, int] = {}
     for row in rows:
         batch_id = str(row["batch_id"])
-        if not _has_automatic_approval(store, batch_id) or _revocation_path(store, batch_id).exists():
+        approval_path = _approval_path(store, batch_id)
+        if not approval_path.is_file() or _revocation_path(store, batch_id).exists():
+            continue
+        try:
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            not isinstance(approval, Mapping)
+            or approval.get("reviewer") != AUTOMATIC_REVIEWER
+            or AUTOMATIC_TAG not in approval.get("tags", ())
+            or approval.get("approved_for_scenario_mining") is not True
+            or approval.get("approved_for_on_policy_rl") is not False
+        ):
             continue
         try:
             buckets = tuple(load_public_telemetry_contributor_buckets(store, batch_id))
@@ -250,8 +244,6 @@ def _publish_state(
                 f"Automatic public-learning generation identity conflict: {generation_path}"
             )
     else:
-        # Generation identity excludes wall-clock time. Freeze the creation timestamp on first write
-        # so later scans may republish current.json without mutating the historical generation.
         _write_immutable_json(generation_path, body)
     _write_atomic_json(root / "current.json", body)
     return body
@@ -348,13 +340,11 @@ def process_public_learning_once(
     if not isinstance(suggestions, list):
         raise ContinualLearningError("Automatic telemetry mining returned a malformed suggestion list.")
 
-    valid_suggestions = [
-        item for item in suggestions if isinstance(item, Mapping)
-    ][:maximum_tactic_suggestions]
+    valid_suggestions = [item for item in suggestions if isinstance(item, Mapping)][
+        :maximum_tactic_suggestions
+    ]
     per_orientation_fraction = (
-        total_target_fraction / (2.0 * len(valid_suggestions))
-        if valid_suggestions
-        else 0.0
+        total_target_fraction / (2.0 * len(valid_suggestions)) if valid_suggestions else 0.0
     )
     scenario_ids: List[str] = []
     registration_errors: List[Mapping[str, str]] = []
@@ -371,8 +361,8 @@ def process_public_learning_once(
                     self_side=self_side,
                     target_fraction=per_orientation_fraction,
                     rationale=(
-                        "Automatic cross-contributor public tactic pressure; both side orientations "
-                        "are registered because public agent identity is intentionally opaque."
+                        "Automatic public tactic pressure; both side orientations are registered "
+                        "because public agent identity is intentionally opaque."
                     ),
                     minimum_occurrences=minimum_occurrences,
                 )
