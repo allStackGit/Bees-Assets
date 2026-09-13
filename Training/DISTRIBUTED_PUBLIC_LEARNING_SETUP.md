@@ -57,14 +57,16 @@ Process the current quarantine once with:
 python Training\bees_continual_public_auto.py `
   --root="F:\RLDemo\BeesContinualV8" `
   --telemetry-quarantine="D:\BeesRlTelemetry" `
-  --minimum-occurrences=2 `
-  --minimum-contributors=2 `
+  --minimum-occurrences=1 `
+  --minimum-contributors=1 `
   --total-target-fraction=0.10
 ```
 
 Strict-valid batches are automatically approved **only for offline tactic mining**. That approval never sets `trusted_for_on_policy_rl` and never authorizes recorded player actions as PPO trajectories.
 
-The default automatic policy requires repeated signals from at least two privacy-safe contributor buckets. Multiple agents from one match cannot self-confirm a tactic, and multiple matches from one contributor cannot satisfy the default cross-contributor threshold. Up to 32 mined tactic signatures may be activated at once because each is registered in both Bee/Human orientations and Unity's player-derived pressure registry supports at most 64 scenarios. The default total automatic target fraction is 10%; the existing player-derived pressure layer still enforces its 50% combined hard cap.
+The current default thresholds are deliberately `1` occurrence and `1` contributor so one tester can exercise the entire capture -> upload -> quarantine -> validation -> mining -> scenario-pressure path. This is a testing-oriented default, not a claim that one player's tactic is statistically representative. Once public traffic is large enough to provide diversity, raise these thresholds (for example through the command-line options) before relying on player-derived pressure as a broad population signal. All other quarantine, schema, model/deployment, contributor-cap, scenario-cap, and fresh-PPO safeguards remain active.
+
+Up to 32 mined tactic signatures may be activated at once because each is registered in both Bee/Human orientations and Unity's player-derived pressure registry supports at most 64 scenarios. The default total automatic target fraction is 10%; the existing player-derived pressure layer still enforces its 50% combined hard cap.
 
 Because public `agent_key` identity deliberately does not assert a trusted Bee/Human side, automatic processing registers both possible orientations at equal share rather than trusting a client-side side claim.
 
