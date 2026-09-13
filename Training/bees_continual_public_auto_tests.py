@@ -9,6 +9,8 @@ from pathlib import Path
 
 from bees_continual_learning import ContinualLearningStore, ValidationError
 from bees_continual_public_auto import (
+    DEFAULT_MINIMUM_CONTRIBUTORS,
+    DEFAULT_MINIMUM_OCCURRENCES,
     _publish_state,
     load_current_state,
     process_public_learning_once,
@@ -44,6 +46,10 @@ class AutomaticPublicLearningTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_defaults_allow_single_tester_pipeline_validation(self):
+        self.assertEqual(DEFAULT_MINIMUM_OCCURRENCES, 1)
+        self.assertEqual(DEFAULT_MINIMUM_CONTRIBUTORS, 1)
 
     def test_empty_quarantine_publishes_empty_offline_pressure_state(self):
         result = process_public_learning_once(self.store, self.quarantine)
