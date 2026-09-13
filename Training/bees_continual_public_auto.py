@@ -5,6 +5,8 @@ The automation preserves the existing trust boundaries:
 * BeesServer authentication/quarantine remains the first boundary.
 * Every quarantine pair is independently revalidated by the central store.
 * Recorded live actions are never inserted into PPO as on-policy trajectories.
+* Only batches carrying this automation policy's own immutable approval are eligible for automatic
+  pressure; a manual offline-analysis approval is never escalated implicitly.
 * Only repeated tactics supported by distinct matches and privacy-safe contributors are converted
   into bounded scenario pressure.
 * Because public agent_key values intentionally do not assert Bee/Human orientation, automatic
@@ -92,6 +94,26 @@ def _revocation_path(store: ContinualLearningStore, batch_id: str) -> Path:
     return store.experience_dir / "raw-live" / "public-revocations" / f"{batch_id}.json"
 
 
+def _has_automatic_approval(store: ContinualLearningStore, batch_id: str) -> bool:
+    path = _approval_path(store, batch_id)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(value, Mapping):
+        return False
+    tags = value.get("tags")
+    return (
+        value.get("decision") == "approved"
+        and value.get("batch_id") == batch_id
+        and value.get("reviewer") == AUTOMATIC_REVIEWER
+        and isinstance(tags, list)
+        and AUTOMATIC_TAG in tags
+        and value.get("approved_for_scenario_mining") is True
+        and value.get("approved_for_on_policy_rl") is False
+    )
+
+
 def _selection_batch_ids(
     store: ContinualLearningStore,
     *,
@@ -115,7 +137,7 @@ def _selection_batch_ids(
     contributor_counts: Dict[str, int] = {}
     for row in rows:
         batch_id = str(row["batch_id"])
-        if not _approval_path(store, batch_id).is_file() or _revocation_path(store, batch_id).exists():
+        if not _has_automatic_approval(store, batch_id) or _revocation_path(store, batch_id).exists():
             continue
         try:
             buckets = tuple(load_public_telemetry_contributor_buckets(store, batch_id))
