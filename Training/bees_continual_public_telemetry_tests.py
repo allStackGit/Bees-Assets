@@ -102,7 +102,7 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
             "schema_version": 1,
             "match_id": match_id,
             "game_build_version": "public-build",
-            "mode": "campaign",
+            "mode": "external-controller-live",
             "result": result,
             "model_id": self.model["model_id"],
             "model_sha256": self.model["artifact_sha256"],
@@ -117,6 +117,7 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
             "steps": [
                 {
                     "agent_key": "side-0:ship-1",
+                    "controller_kind": "human",
                     "decision_index": 0,
                     "observation": [0.0, 0.25, -0.5, 1.0],
                     "continuous_action": [0.0, -1.0, 1.0],
@@ -171,7 +172,12 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
 
         archive = result["archive"]
         self.assertFalse(archive["trusted_for_on_policy_rl"])
+        self.assertEqual(
+            result["validation"]["controller_step_counts"],
+            {"human": 1, "hivemind": 0},
+        )
         archived_payload = json.loads(Path(archive["archive_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(archived_payload["steps"][0]["controller_kind"], "human")
         self.assertNotIn("uploaderUserId", archived_payload)
         self.assertNotIn(self.user_id, json.dumps(archived_payload))
 
@@ -185,6 +191,30 @@ class PublicTelemetryQuarantineTests(unittest.TestCase):
         )
         self.assertEqual(len(contributor["contributor_bucket"]), 64)
         self.assertNotIn(self.user_id, json.dumps(contributor))
+
+    def test_hivemind_provenance_survives_quarantine_and_central_archive(self):
+        payload = self.payload(match_id="match-public-hivemind")
+        payload["steps"][0]["controller_kind"] = "hivemind"
+        metadata_path, _ = self.write_quarantine(payload)
+        result = ingest_public_telemetry_quarantine(self.store, metadata_path)
+
+        self.assertEqual(
+            result["validation"]["controller_step_counts"],
+            {"human": 0, "hivemind": 1},
+        )
+        self.assertFalse(result["archive"]["trusted_for_on_policy_rl"])
+        archived_payload = json.loads(
+            Path(result["archive"]["archive_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(archived_payload["steps"][0]["controller_kind"], "hivemind")
+
+    def test_missing_controller_provenance_is_rejected_after_quarantine_checks(self):
+        payload = self.payload(match_id="match-public-missing-controller")
+        payload["steps"][0].pop("controller_kind")
+        metadata_path, _ = self.write_quarantine(payload)
+        with self.assertRaisesRegex(ValidationError, "controller_kind"):
+            ingest_public_telemetry_quarantine(self.store, metadata_path)
+        self.assertEqual(list((self.root / "experience" / "raw-live").glob("telemetry-*.json")), [])
 
     def test_contributor_bucket_is_stable_per_user_and_distinct_between_users(self):
         first_path, _ = self.write_quarantine(
