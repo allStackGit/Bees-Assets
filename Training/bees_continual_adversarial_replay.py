@@ -2,11 +2,11 @@
 
 This module is deliberately separate from PPO and from scenario registration. A reviewed immutable
 adversarial scenario may have at most one replay attachment. The attachment points at one of the
-scenario's already-approved public Human demonstrations and compiles only the frozen current-ABI
-movement, turret-aim and fire actions into a compact deterministic binary. Capability/target actions
-fail closed instead of being silently dropped. ABI v8 appends observation-only tail values after the
-existing tactical fields, so this replay action format is unchanged while exact source observations
-remain version-checked.
+scenario's already-approved public Human demonstrations and compiles the frozen current-ABI
+movement, turret-aim, fire, and primitive capability action into a compact deterministic binary.
+Target-selection branches remain fail-closed because the live policy still masks those branches and
+has no authoritative target-command semantics to replay. ABI v8 appends observation-only tail values
+after the existing tactical fields, so exact source observations remain version-checked.
 
 The compiled replay is an opponent script, not PPO experience. Runtime integration keeps the
 scripted side out of learner action/reward ownership while the opposing policy generates fresh
@@ -68,18 +68,23 @@ from bees_continual_native_demo import (
 )
 
 
-REPLAY_REGISTRATION_SCHEMA_VERSION = 1
-REPLAY_ARTIFACT_SCHEMA_VERSION = 1
+LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION = 1
+REPLAY_REGISTRATION_SCHEMA_VERSION = 2
+LEGACY_REPLAY_ARTIFACT_SCHEMA_VERSION = 1
+REPLAY_ARTIFACT_SCHEMA_VERSION = 2
 REPLAY_CATALOG_SCHEMA_VERSION = 1
-REPLAY_MODE = "movement-aim-fire-prefix"
+LEGACY_REPLAY_MODE = "movement-aim-fire-prefix"
+REPLAY_MODE = "movement-aim-fire-capability-prefix"
 REPLAY_TERMINAL_BEHAVIOR = "neutral"
-REPLAY_MAGIC = b"BEESRPL1"
+LEGACY_REPLAY_MAGIC = b"BEESRPL1"
+REPLAY_MAGIC = b"BEESRPL2"
 REPLAY_FIXED_STEP_INTERVAL = 5
 MIN_REPLAY_RECORDS = 8
 MAX_REPLAY_RECORDS = 2400
 DEFAULT_REPLAY_RECORDS = 1200
 WEAPON_FIRE_BRANCH_COUNT = 16
 SPECIAL_ACTION_BRANCH = 16
+SPECIAL_ACTION_BRANCH_SIZE = 5
 ALLY_TARGET_BRANCH = 17
 ENEMY_TARGET_BRANCH = 18
 MAP_OBJECT_TARGET_BRANCH = 19
@@ -273,7 +278,11 @@ def _read_registered_replay(
     scenario_id = _required_scenario_id(scenario_id)
     path = _registration_path(store, scenario_id)
     value = _read_json_object(path, "Adversarial replay registration")
-    if value.get("schema_version") != REPLAY_REGISTRATION_SCHEMA_VERSION:
+    schema_version = value.get("schema_version")
+    if schema_version not in (
+        LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION,
+        REPLAY_REGISTRATION_SCHEMA_VERSION,
+    ):
         raise ValidationError(f"Adversarial replay registration schema is incompatible: {path}")
     replay_id = value.get("replay_id")
     identity = value.get("identity")
@@ -285,6 +294,8 @@ def _read_registered_replay(
         or not isinstance(identity_hash, str)
     ):
         raise ValidationError(f"Adversarial replay registration identity is incomplete: {path}")
+    if identity.get("schema_version") != schema_version:
+        raise ValidationError(f"Adversarial replay registration identity schema mismatch: {path}")
     expected_hash = sha256_bytes(canonical_json(identity).encode("utf-8"))
     if identity_hash != expected_hash or replay_id != f"advreplay-{expected_hash[:24]}":
         raise ValidationError(f"Adversarial replay registration hash mismatch: {path}")
@@ -295,7 +306,12 @@ def _read_registered_replay(
             f"Adversarial replay {replay_id} targets policy ABI {identity.get('policy_abi_version')!r}, "
             f"not current ABI {store.compatibility.policy_abi_version}."
         )
-    if identity.get("mode") != REPLAY_MODE or identity.get(
+    expected_mode = (
+        LEGACY_REPLAY_MODE
+        if schema_version == LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION
+        else REPLAY_MODE
+    )
+    if identity.get("mode") != expected_mode or identity.get(
         "terminal_behavior"
     ) != REPLAY_TERMINAL_BEHAVIOR:
         raise ValidationError(f"Adversarial replay mode is incompatible: {path}")
@@ -365,7 +381,9 @@ def _validate_action_record(
     continuous: Sequence[float],
     discrete: Sequence[int],
     index: int,
-) -> Tuple[Tuple[float, ...], int]:
+    *,
+    allow_capability_actions: bool,
+) -> Tuple[Tuple[float, ...], int, int]:
     if len(continuous) != EXPECTED_CONTINUOUS_ACTIONS:
         raise ValidationError(
             f"Replay action {index} has {len(continuous)} continuous values; expected {EXPECTED_CONTINUOUS_ACTIONS}."
@@ -388,18 +406,26 @@ def _validate_action_record(
             )
         if value == 1:
             fire_mask |= 1 << branch
-    if int(discrete[SPECIAL_ACTION_BRANCH]) != 0:
+
+    special_action = int(discrete[SPECIAL_ACTION_BRANCH])
+    if special_action < 0 or special_action >= SPECIAL_ACTION_BRANCH_SIZE:
         raise ValidationError(
-            "Scripted replay does not accept capability-event actions; use a normal continuous Human demo."
+            f"Replay action {index} special-action value {special_action} is outside the frozen action space."
+        )
+    if special_action != 0 and not allow_capability_actions:
+        raise ValidationError(
+            "Legacy scripted replay does not accept capability-event actions. Register a new replay attachment "
+            "to use capability-aware replay format v2."
         )
     if any(
         int(discrete[branch]) != 0
         for branch in (ALLY_TARGET_BRANCH, ENEMY_TARGET_BRANCH, MAP_OBJECT_TARGET_BRANCH)
     ):
         raise ValidationError(
-            "Scripted replay currently requires zero ally/enemy/map target branches."
+            "Scripted replay currently requires zero ally/enemy/map target branches because those branches "
+            "remain reserved and masked by the live policy."
         )
-    return normalized, fire_mask
+    return normalized, fire_mask, special_action
 
 
 def _pair_is_terminal(pair_info: object) -> bool:
@@ -428,22 +454,32 @@ def _first_episode_trainable_pairs(pair_infos: Sequence[object]) -> Tuple[Sequen
 
 
 def _binary_payload(
-    frames: Sequence[Tuple[Sequence[float], int]],
+    frames: Sequence[Tuple[Sequence[float], int, int]],
     source_start_direction: Tuple[float, float],
+    *,
+    legacy: bool,
 ) -> bytes:
     output = io.BytesIO()
     output.write(
         struct.pack(
             "<8sii2f",
-            REPLAY_MAGIC,
+            LEGACY_REPLAY_MAGIC if legacy else REPLAY_MAGIC,
             len(frames),
             REPLAY_FIXED_STEP_INTERVAL,
             float(source_start_direction[0]),
             float(source_start_direction[1]),
         )
     )
-    for continuous, fire_mask in frames:
-        output.write(struct.pack("<34fH", *continuous, int(fire_mask)))
+    if legacy:
+        for continuous, fire_mask, special_action in frames:
+            if special_action != 0:
+                raise ValidationError("Legacy replay payload cannot contain capability actions.")
+            output.write(struct.pack("<34fH", *continuous, int(fire_mask)))
+    else:
+        for continuous, fire_mask, special_action in frames:
+            output.write(
+                struct.pack("<34fHB", *continuous, int(fire_mask), int(special_action))
+            )
     return output.getvalue()
 
 
@@ -466,6 +502,8 @@ def compile_action_replay(
     registration = _read_registered_replay(store, scenario_id)
     replay_id = str(registration["replay_id"])
     replay_identity = registration["identity"]
+    registration_schema = int(registration["schema_version"])
+    legacy = registration_schema == LEGACY_REPLAY_REGISTRATION_SCHEMA_VERSION
     scenario = _read_scenario(store, scenario_id)
     scenario_identity = scenario["identity"]
     bees, humans = _validate_replay_scenario(scenario_identity)
@@ -542,23 +580,33 @@ def compile_action_replay(
     frames = []
     for index, pair_info in enumerate(selected_pairs):
         continuous, discrete = act_reader(pair_info)
-        frames.append(_validate_action_record(continuous, discrete, index))
+        frames.append(
+            _validate_action_record(
+                continuous,
+                discrete,
+                index,
+                allow_capability_actions=not legacy,
+            )
+        )
 
     source_direction = _source_start_direction(first_observation)
-    payload = _binary_payload(frames, source_direction)
+    payload = _binary_payload(frames, source_direction, legacy=legacy)
     artifact_sha256 = sha256_bytes(payload)
     artifact_path = _artifact_path(store, replay_id)
     metadata_path = _artifact_metadata_path(store, replay_id)
     _write_bytes_immutable(artifact_path, payload)
 
+    special_action_count = sum(1 for _continuous, _fire_mask, special_action in frames if special_action)
     metadata = {
-        "schema_version": REPLAY_ARTIFACT_SCHEMA_VERSION,
+        "schema_version": (
+            LEGACY_REPLAY_ARTIFACT_SCHEMA_VERSION if legacy else REPLAY_ARTIFACT_SCHEMA_VERSION
+        ),
         "replay_id": replay_id,
         "scenario_id": scenario_id,
         "source_batch_id": source_batch_id,
         "policy_abi_version": store.compatibility.policy_abi_version,
         "side": side,
-        "mode": REPLAY_MODE,
+        "mode": LEGACY_REPLAY_MODE if legacy else REPLAY_MODE,
         "terminal_behavior": REPLAY_TERMINAL_BEHAVIOR,
         "fixed_step_interval": REPLAY_FIXED_STEP_INTERVAL,
         "frame_count": len(frames),
@@ -570,6 +618,8 @@ def compile_action_replay(
         "source_start_direction": [source_direction[0], source_direction[1]],
         "self_ship_type": expected_self_name,
         "opponent_ship_type": expected_enemy_name,
+        "special_action_count": special_action_count,
+        "target_branches_supported": False,
     }
     metadata_payload = (
         json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
