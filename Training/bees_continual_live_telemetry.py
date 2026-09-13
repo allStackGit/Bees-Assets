@@ -5,6 +5,10 @@ backward compatible. Public client data must pass this stricter boundary first: 
 identity, known deployment/model bytes, fixed observation/action shapes, action bounds, monotonic
 per-agent decision identities, and configured payload/episode limits are all verified before the
 payload can be handed to the central archive.
+
+Production external-controller telemetry distinguishes human and Hive Mind decisions. Both are
+strictly off-policy inputs: provenance may affect imitation selection and diagnostics, but neither
+source is ever admitted to PPO as if the neural policy generated those actions.
 """
 
 from __future__ import annotations
@@ -25,6 +29,9 @@ from bees_continual_learning import (
 
 LIVE_TELEMETRY_SCHEMA_VERSION = 1
 _VALID_RESULTS = frozenset(("bee_win", "human_win", "draw", "timeout"))
+_VALID_CONTROLLER_KINDS = frozenset(("human", "hivemind"))
+_EXTERNAL_MODE = "external-controller-live"
+_LEGACY_PLAYER_MODE = "player-live-rl"
 _DEPLOYMENT_ID = re.compile(r"^deploy-[0-9a-f]{24}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -167,6 +174,20 @@ def _validate_discrete_actions(value: Any, branch_sizes: Sequence[int], label: s
             )
 
 
+def _controller_kind(step: Mapping[str, Any], *, mode: str, index: int) -> str:
+    value = step.get("controller_kind")
+    if value is None and mode == _LEGACY_PLAYER_MODE:
+        # Preserve already archived v1 player telemetry. New Production telemetry must declare
+        # provenance explicitly so Hive Mind behavior can never be silently relabeled as human.
+        return "human"
+    if not isinstance(value, str) or value not in _VALID_CONTROLLER_KINDS:
+        raise ValidationError(
+            f"steps[{index}].controller_kind must be one of: " +
+            ", ".join(sorted(_VALID_CONTROLLER_KINDS)) + "."
+        )
+    return value
+
+
 def validate_live_telemetry_payload(
     store: ContinualLearningStore,
     payload: Mapping[str, Any],
@@ -191,6 +212,10 @@ def validate_live_telemetry_payload(
     match_id = _required_string(payload, "match_id")
     _required_string(payload, "game_build_version")
     mode = _required_string(payload, "mode")
+    if mode not in (_EXTERNAL_MODE, _LEGACY_PLAYER_MODE):
+        raise ValidationError(
+            f"mode must be {_EXTERNAL_MODE!r} or the legacy {_LEGACY_PLAYER_MODE!r}."
+        )
     result = _required_string(payload, "result")
     if result not in _VALID_RESULTS:
         raise ValidationError(
@@ -217,10 +242,13 @@ def validate_live_telemetry_payload(
         raise ValidationError("Live telemetry step count exceeds configured maximum.")
 
     last_decision_by_agent: Dict[str, int] = {}
+    controller_counts: Dict[str, int] = {"human": 0, "hivemind": 0}
     for index, step in enumerate(steps):
         if not isinstance(step, Mapping):
             raise ValidationError(f"steps[{index}] must be an object.")
         agent_key = _required_string(step, "agent_key", 128)
+        controller = _controller_kind(step, mode=mode, index=index)
+        controller_counts[controller] += 1
         decision_index = step.get("decision_index")
         if not isinstance(decision_index, int) or isinstance(decision_index, bool) or decision_index < 0:
             raise ValidationError(f"steps[{index}].decision_index must be a non-negative integer.")
@@ -257,6 +285,7 @@ def validate_live_telemetry_payload(
         "result": result,
         "step_count": len(steps),
         "agent_count": len(last_decision_by_agent),
+        "controller_step_counts": controller_counts,
         "payload_bytes": len(encoded),
         "observation_size": observation_size,
         "continuous_action_count": continuous_count,
