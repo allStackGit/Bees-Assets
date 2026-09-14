@@ -6,6 +6,7 @@ import sys
 from typing import Optional, Sequence
 
 import bees_elastic_wan_policy_transport as policy_transport
+import bees_elastic_wan_slot_safety as slot_safety
 import bees_elastic_wan_training as elastic
 import bees_mlagents_learn as launcher
 
@@ -19,6 +20,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
 
     original_policy_transport = policy_transport.install_portable_policy_transport()
+    original_broker = slot_safety.install_slot_safety()
     patch = None
     original_argv = sys.argv
     try:
@@ -29,6 +31,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     finally:
         sys.argv = original_argv
         elastic.restore_elastic_wan_env_manager(patch)
+        slot_safety.restore_slot_safety(original_broker)
         policy_transport.restore_portable_policy_transport(original_policy_transport)
 
 
