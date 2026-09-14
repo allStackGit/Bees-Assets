@@ -28,11 +28,30 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
                     )
         super().set_reference_behavior_specs(behavior_specs)
 
-    def register_actor(self, payload: Mapping[str, Any]) -> None:
-        actor_id = self._validate_actor_id(payload.get("actor_id"))
+    @staticmethod
+    def _payload_instance_id(payload: Mapping[str, Any]) -> str:
         instance_id = payload.get("actor_instance_id")
         if not isinstance(instance_id, str) or len(instance_id) < 16 or len(instance_id) > 128:
-            raise ValueError("elastic WAN actor registration requires a stable actor_instance_id")
+            raise ValueError("elastic WAN request requires a stable actor_instance_id")
+        return instance_id
+
+    def _require_live_instance(self, payload: Mapping[str, Any]) -> int:
+        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        instance_id = self._payload_instance_id(payload)
+        with self._condition:
+            self._active_snapshot_locked()
+            record = self._registrations.get(actor_id)
+            if record is None:
+                raise ValueError("actor lease expired; re-register before continuing")
+            if record.get("actor_instance_id") != instance_id:
+                raise ValueError(
+                    f"actor slot {actor_id} is owned by another live remote process"
+                )
+        return actor_id
+
+    def register_actor(self, payload: Mapping[str, Any]) -> None:
+        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        instance_id = self._payload_instance_id(payload)
 
         with self._condition:
             self._active_snapshot_locked()
@@ -47,12 +66,15 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
             super().register_actor(payload)
             self._registrations[actor_id]["actor_instance_id"] = instance_id
 
+    def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
+        self._require_live_instance(payload)
+        return super().submit_trajectory_batch(payload)
+
     def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
         """Treat the authenticated control acknowledgement as an actor heartbeat too."""
-        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        actor_id = self._require_live_instance(payload)
         super().acknowledge_reset(payload)
         with self._condition:
-            self._active_snapshot_locked()
             record = self._registrations.get(actor_id)
             if record is None:
                 raise ValueError("actor lease expired; re-register before sending heartbeat")
