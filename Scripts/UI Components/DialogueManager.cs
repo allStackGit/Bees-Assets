@@ -14,6 +14,15 @@ public class DialogueManager : MonoBehaviour
     private const float DialoguePresentationScale = 1.25f;
     private const float MinimumDialogueFontSize = 14f;
     private const float MinimumSpeakerFontSize = 16f;
+    private const float ContinuePromptFontSize = 11f;
+    private const string ProtectedSamuelOrdersLine = "What are your orders- oh";
+
+    private static readonly string[] ShipTypeNames =
+    {
+        "Barge", "Beacon", "Carrier", "Cruiser", "Dreadnought", "Drone", "Factory", "Fire Barge",
+        "Flagship", "Frigate", "Gunship", "Scout", "Striker", "Warp Gate", "Beehive", "Bumblebee",
+        "Carpenter Bee", "Honeybee", "Hornet", "Leafcutter", "Queen", "Wasp", "Yellow Jacket"
+    };
 
     public CutsceneManager CutsceneManager;
     public GameObject DialogueBox;
@@ -32,6 +41,7 @@ public class DialogueManager : MonoBehaviour
     private bool _isAdvancingDialogue;
     private bool _playIntercomWhenPresented;
     private bool _presentationConfigured;
+    private TMP_Text _continuePromptLabel;
     private static bool _disabledLegacyCampaignDialogueGuard;
 
 
@@ -61,6 +71,8 @@ public class DialogueManager : MonoBehaviour
             SpeakerName.fontSize = Mathf.Max(SpeakerName.fontSize, MinimumSpeakerFontSize);
         }
 
+        ConfigureContinuePrompt();
+
         RectTransform dialogueRect = DialogueBox != null
             ? DialogueBox.GetComponent<RectTransform>()
             : null;
@@ -88,6 +100,44 @@ public class DialogueManager : MonoBehaviour
         }
 
         dialogueRect.localScale = newScale;
+    }
+
+    private void ConfigureContinuePrompt()
+    {
+        if (ContinueButton == null || SpacebarImage == null)
+        {
+            return;
+        }
+
+        Transform existing = ContinueButton.transform.Find("Continue Prompt Label");
+        if (existing != null)
+        {
+            _continuePromptLabel = existing.GetComponent<TMP_Text>();
+            return;
+        }
+
+        GameObject labelObject = new GameObject(
+            "Continue Prompt Label",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(ContinueButton.transform, false);
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        RectTransform spaceRect = SpacebarImage.rectTransform;
+        labelRect.anchorMin = spaceRect.anchorMin;
+        labelRect.anchorMax = spaceRect.anchorMax;
+        labelRect.pivot = new Vector2(1f, 0.5f);
+        labelRect.anchoredPosition = spaceRect.anchoredPosition + new Vector2(-spaceRect.rect.width * 0.55f - 6f, 0f);
+        labelRect.sizeDelta = new Vector2(150f, Mathf.Max(18f, spaceRect.rect.height));
+
+        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.text = "Press space bar to continue";
+        label.font = DialogueText != null ? DialogueText.font : null;
+        label.fontSize = ContinuePromptFontSize;
+        label.alignment = TextAlignmentOptions.MidlineRight;
+        label.color = DialogueText != null ? DialogueText.color : Color.white;
+        label.raycastTarget = false;
+        _continuePromptLabel = label;
     }
 
     public void Update()
@@ -242,11 +292,50 @@ public class DialogueManager : MonoBehaviour
             return string.Empty;
         }
 
+        string text = line.Text;
+        bool preserveMarkOrdersFeedback =
+            string.Equals(line.SpeakerName, "Samuel", System.StringComparison.OrdinalIgnoreCase) &&
+            text.StartsWith(ProtectedSamuelOrdersLine, System.StringComparison.Ordinal);
+
+        if (!preserveMarkOrdersFeedback)
+        {
+            text = NormalizeDialoguePunctuation(text);
+            text = NormalizeShipTypeCapitalization(text);
+        }
+
+        // Keep the continue affordance out of character dialogue. It is rendered beside the
+        // space/skip control instead.
+        text = text.Replace("Press space bar to continue", string.Empty).Trim();
+        text = text.Replace("Pluto airspace", "the space around Pluto");
+
         // Action/stage-direction lines are italicized in Mission Scripting. Do not add literal
         // asterisks around them: TMP rich text should own the visual formatting.
         return line.Type == DialogueLine.DialogueType.Action
-            ? $"<i>{line.Text}</i>"
-            : line.Text;
+            ? $"<i>{text}</i>"
+            : text;
+    }
+
+    private static string NormalizeDialoguePunctuation(string text)
+    {
+        return text
+            .Replace(" - ", " — ")
+            .Replace("- ", "— ");
+    }
+
+    private static string NormalizeShipTypeCapitalization(string text)
+    {
+        for (int i = 0; i < ShipTypeNames.Length; i++)
+        {
+            string shipType = ShipTypeNames[i];
+            text = text.Replace(shipType + "s", shipType.ToLowerInvariant() + "s");
+            text = text.Replace(shipType, shipType.ToLowerInvariant());
+        }
+
+        if (text.Length > 0 && char.IsLetter(text[0]))
+        {
+            text = char.ToUpperInvariant(text[0]) + text.Substring(1);
+        }
+        return text;
     }
 
     internal static string FormatInstructionText(string instructionText)
@@ -300,8 +389,11 @@ public class DialogueManager : MonoBehaviour
 
             DialogueText.maxVisibleCharacters = characterIndex + 1;
             if (characterIndex == visibleCharacterCount - 1 ||
-                line.Type != DialogueLine.DialogueType.Speaking)
+                line.Type != DialogueLine.DialogueType.Speaking ||
+                string.Equals(line.SpeakerName, "Samuel", System.StringComparison.OrdinalIgnoreCase))
             {
+                // Samuel's closed-mouth portrait is kept throughout his line rather than cycling
+                // through the open-mouth alternate.
                 SetPortrait(line.PortraitA);
             }
             else if ((characterIndex + 1) % 6 == 0)
