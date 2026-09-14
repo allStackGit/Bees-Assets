@@ -335,12 +335,31 @@ public class DialogueManager : MonoBehaviour
         {
             text = char.ToUpperInvariant(text[0]) + text.Substring(1);
         }
+
+        // Ship types stay lowercase in normal prose, but remain capitalized when they begin a
+        // later sentence in the same dialogue line.
+        for (int i = 0; i < ShipTypeNames.Length; i++)
+        {
+            string lower = ShipTypeNames[i].ToLowerInvariant();
+            string capitalized = char.ToUpperInvariant(lower[0]) + lower.Substring(1);
+            text = text.Replace(". " + lower, ". " + capitalized);
+            text = text.Replace("! " + lower, "! " + capitalized);
+            text = text.Replace("? " + lower, "? " + capitalized);
+            text = text.Replace("\n" + lower, "\n" + capitalized);
+        }
         return text;
     }
 
     internal static string FormatInstructionText(string instructionText)
     {
         if (string.IsNullOrEmpty(instructionText))
+        {
+            return string.Empty;
+        }
+
+        string normalized = instructionText.Trim().Trim('[', ']').Trim();
+        if (string.Equals(normalized, "Press Space to Continue", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "Press Space Bar to Continue", System.StringComparison.OrdinalIgnoreCase))
         {
             return string.Empty;
         }
@@ -418,7 +437,10 @@ public class DialogueManager : MonoBehaviour
         if (line.HasInstructionText)
         {
             yield return new WaitForSeconds(0.5f);
-            DialogueText.text = $"{formattedLine}<br><br>{FormatInstructionText(line.InstructionText)}";
+            string instruction = FormatInstructionText(line.InstructionText);
+            DialogueText.text = string.IsNullOrEmpty(instruction)
+                ? formattedLine
+                : $"{formattedLine}<br><br>{instruction}";
             DialogueText.maxVisibleCharacters = int.MaxValue;
         }
 
