@@ -280,10 +280,10 @@ namespace Assets.Scripts.Scenes
             NoChosenSquadsAlert = new Alert(DialoguePrefab, ConfigData.Configuration.NoChosenSquadsAlertTitle, ConfigData.Configuration.NoChosenSquadsAlert,
                 ConfigData.Configuration.OK);
 
-            ChoosingUnsavedSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.ChoosingUnsavedSquadAlertTitle, ConfigData.Configuration.ChoosingUnsavedSquadAlert,
+            ChoosingUnsavedSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.ChoosingUnsavedSquadAlert,
                 ConfigData.Configuration.OK);
 
-            ChoosingDeadSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.ChoosingDeadSquadAlertTitle, ConfigData.Configuration.ChoosingDeadSquadAlert,
+            ChoosingDeadSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.ChoosingDeadSquadAlert,
                ConfigData.Configuration.OK);
 
             SquadSavingStatus = new Dialogue(DialoguePrefab, ConfigData.Configuration.SquadSavingStatusAlertTitle, ConfigData.Configuration.SquadSavingStatusAlert,
@@ -762,6 +762,25 @@ namespace Assets.Scripts.Scenes
             SceneManager.LoadSceneAsync(_nextScene, LoadSceneMode.Single);
         }
 
+        private bool TryGetSavedSquadFromLabel(GameObject label, out SavedSquad squad)
+        {
+            squad = null;
+            if (label == null || ConfigData.CurrentShips == null)
+            {
+                return false;
+            }
+
+            int hashIndex = label.name.LastIndexOf("#");
+            if (hashIndex < 0 || hashIndex == label.name.Length - 1 ||
+                !long.TryParse(label.name.Substring(hashIndex + 1), out long id))
+            {
+                return false;
+            }
+
+            squad = ConfigData.CurrentShips.GetSavedSquad(id);
+            return squad != null;
+        }
+
 
 
         // Dialogues
@@ -797,6 +816,17 @@ namespace Assets.Scripts.Scenes
         }
         public void WaitForDoubleClick(GameObject label)
         {
+            if (!TryGetSavedSquadFromLabel(label, out SavedSquad squad))
+            {
+                _squadToLoad = null;
+                _squadToChoose = null;
+                _singleClick = false;
+                _doubleClick = false;
+                return;
+            }
+
+            _squadToLoad = squad;
+            _squadToChoose = squad;
             if (_singleClick) // already has clicked
             {
                 //Debug.Log("Already clicked once, marking double click, loading squad");
@@ -808,10 +838,6 @@ namespace Assets.Scripts.Scenes
                 //Debug.Log("First click");
                 //Debug.Log(TimeScale);
                 _singleClick = true;
-                int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
-                _squadToLoad = squad;
-                _squadToChoose = squad;
                 Invoke(nameof(ResetSingleClick), .5f);
             }
 
@@ -832,6 +858,11 @@ namespace Assets.Scripts.Scenes
         public void ConfirmLoadSquad()
         {
             UIAudioController.Instance.PlayButtonSound();
+            if (_squadToLoad == null)
+            {
+                return;
+            }
+
             if (_currentSquad == null || !_currentSquad.HasChanged)
             {
                 LoadSquad();
@@ -844,6 +875,11 @@ namespace Assets.Scripts.Scenes
         public void ConfirmChooseSquad()
         {
             UIAudioController.Instance.PlayButtonSound();
+            if (_squadToChoose == null)
+            {
+                return;
+            }
+
             //int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
             //SavedSquad squad = ConfigData.AllShips.GetSavedSquads().Where((s) => s.Id == id).First();
             //_squadToChoose = squad;
@@ -863,8 +899,11 @@ namespace Assets.Scripts.Scenes
         public void ConfirmUnchooseSquad(GameObject label)
         {
             UIAudioController.Instance.PlayButtonSound();
-            int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-            SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
+            if (!TryGetSavedSquadFromLabel(label, out SavedSquad squad))
+            {
+                _squadToUnchoose = null;
+                return;
+            }
             _squadToUnchoose = squad;
 
 
@@ -1293,15 +1332,15 @@ namespace Assets.Scripts.Scenes
                 }
 
                 //Debug.Log($"Added _currentUnsavedSquad to SavedSquad list");
-                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad.GetShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
+                //Debug.Log($"_currentUnsavedSquad: {_currentSquad.GetSquadShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
 
                 //Debug.Log($"Made _currentUnsavedSquad null");
-                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad}");
+                //Debug.Log($"_currentUnsavedSquad: {_currentSquad}");
                 //Debug.Log($"SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
-                //Debug.Log($"JSON : {_currentUnsavedSquad.ToJson()}");
-                //ConfigData.WriteJsonFile(_currentUnsavedSquad.ToJson());
+                //Debug.Log($"JSON : {_currentSquad.ToJson()}");
+                //ConfigData.WriteJsonFile(_currentSquad.ToJson());
             }
         }
         public void ClearChanges()
@@ -1323,7 +1362,7 @@ namespace Assets.Scripts.Scenes
             if (HasCurrentSquad)
             {
                 // add all the ships back into the fleet list
-                //_currentUnsavedSquad.GetShips().ForEach((ship) =>
+                //_currentSquad.GetShips().ForEach((ship) =>
                 //{
                 //    FleetShip fleetShip = ship.GetFleetShip();
                 //    _fleetList.Add(fleetShip);
@@ -1763,56 +1802,55 @@ namespace Assets.Scripts.Scenes
         }
         public void ShowSquadInfo(GameObject label)
         {
-            if (!GetDropper().IsDragging)
+            if (GetDropper().IsDragging)
             {
-
-                if (label != null)
-                {
-                    int id = int.Parse(label.name.Substring(label.name.LastIndexOf("#") + 1));
-                    //Debug.Log($"Saved squad Id: {id}");
-                    SavedSquad squad = ConfigData.CurrentShips.GetSavedSquad(id);
-                    SquadStatBlock stats = squad.Stats;
-                    //Debug.Log($"Squad ID: {id}");
-
-                    TMP_Text titleText = SquadInfoBoxTitle.GetComponent<TMP_Text>();
-                    TMP_Text detaislText = SquadInfoBoxDetails.GetComponent<TMP_Text>();
-
-                    string battles = ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ? $"Battles: {stats.BattlesFought.ToString("N0")}: {stats.BattlesWon}W - {stats.BattlesLost}L     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Record")})\n" : "";
-
-
-                    titleText.text = $"{squad.Name}";
-                    detaislText.text = $"Commander: {stats.Commander}\n\n" +
-                        $"Ships: {(squad.GetSquadShips().Count - squad.GetDeadShips().Count).ToString("N0")} / {squad.GetSquadShips().Count.ToString("N0")} " +
-                        $"{(squad.HasDeadShips ? $" <color=#{UnityEngine.ColorUtility.ToHtmlStringRGB(ConfigData.GetUIColor("bad"))}><smallcaps><b>(Unfilled)</b></smallcaps></color>" : "")}\n" +
-                        $"Capacity: {squad.GetCapacity().ToString("N0")} / {squad.GetMaxCapacity().ToString("N0")}\n" + battles +
-                        $"Damage Done: {stats.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageDone")})\n" +
-                        $"Damage Received: {stats.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageReceived")})\n" +
-                        $"Kills: {stats.Kills.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Kills")})\n" +
-                        $"Ships Lost: {stats.ShipsLost.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "ShipsLost")})\n";
-
-                    UnityEngine.UI.Image image = SquadInfoBoxIcon.GetComponent<UnityEngine.UI.Image>();
-                    GameObject squadIcon = label.transform.Find("Icon Container/Ship Icon").gameObject;
-                    image.sprite = squadIcon.GetComponent<UnityEngine.UI.Image>().sprite;
-                    image.SetNativeSize();
-                    if (squad.GetMostValuableShip().ShipType == ConfigData.ShipTypes.Queen)
-                    {
-                        image.transform.localScale = new Vector3(.01f, .01f, 0);
-                    }
-                    else
-                    {
-                        image.transform.localScale = new Vector3(.1f, .1f, 0);
-                    }
-
-
-                    SquadInfoBox.SetActive(true);
-                    _showSquadInfo = true;
-                }
-                else
-                {
-                    Debug.Log($"No selected object: {label}");
-                }
-
+                return;
             }
+
+            if (!TryGetSavedSquadFromLabel(label, out SavedSquad squad))
+            {
+                _showSquadInfo = false;
+                return;
+            }
+
+            SquadStatBlock stats = squad.Stats;
+            TMP_Text titleText = SquadInfoBoxTitle.GetComponent<TMP_Text>();
+            TMP_Text detaislText = SquadInfoBoxDetails.GetComponent<TMP_Text>();
+
+            string battles = ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ? $"Battles: {stats.BattlesFought.ToString("N0")}: {stats.BattlesWon}W - {stats.BattlesLost}L     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Record")})\n" : "";
+
+            titleText.text = $"{squad.Name}";
+            detaislText.text = $"Commander: {stats.Commander}\n\n" +
+                $"Ships: {(squad.GetSquadShips().Count - squad.GetDeadShips().Count).ToString("N0")} / {squad.GetSquadShips().Count.ToString("N0")} " +
+                $"{(squad.HasDeadShips ? $" <color=#{UnityEngine.ColorUtility.ToHtmlStringRGB(ConfigData.GetUIColor("bad"))}><smallcaps><b>(Unfilled)</b></smallcaps></color>" : "")}\n" +
+                $"Capacity: {squad.GetCapacity().ToString("N0")} / {squad.GetMaxCapacity().ToString("N0")}\n" + battles +
+                $"Damage Done: {stats.DamageDone.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageDone")})\n" +
+                $"Damage Received: {stats.DamageReceived.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "DamageReceived")})\n" +
+                $"Kills: {stats.Kills.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "Kills")})\n" +
+                $"Ships Lost: {stats.ShipsLost.ToString("N0")}     (#{ConfigData.CurrentShips.GetSquadRanking(squad, "ShipsLost")})\n";
+
+            Transform squadIconTransform = label.transform.Find("Icon Container/Ship Icon");
+            UnityEngine.UI.Image image = SquadInfoBoxIcon != null ? SquadInfoBoxIcon.GetComponent<UnityEngine.UI.Image>() : null;
+            UnityEngine.UI.Image squadIconImage = squadIconTransform != null ? squadIconTransform.GetComponent<UnityEngine.UI.Image>() : null;
+            if (image == null || squadIconImage == null)
+            {
+                _showSquadInfo = false;
+                return;
+            }
+
+            image.sprite = squadIconImage.sprite;
+            image.SetNativeSize();
+            if (squad.GetMostValuableShip().ShipType == ConfigData.ShipTypes.Queen)
+            {
+                image.transform.localScale = new Vector3(.01f, .01f, 0);
+            }
+            else
+            {
+                image.transform.localScale = new Vector3(.1f, .1f, 0);
+            }
+
+            SquadInfoBox.SetActive(true);
+            _showSquadInfo = true;
         }
         public void HideSquadInfo()
         {
@@ -1898,7 +1936,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 screenPoint = Camera.WorldToScreenPoint(TooltipOffset);
                 //Vector2 change = new Vector2(Mathf.Abs(BaseWorldPoint.x - screenPoint.x), Mathf.Abs(BaseWorldPoint.y - screenPoint.y));
 
-                Vector2 change = Utilities.WorldUnitsToScreenPixels(TooltipOffset, Camera);
+                Vector2 change = Utilities.WorldUnitsToScreenPixels(ShipStatsBoxOffset, Camera);
                 //Vector2 change = TooltipOffset;
 
 
@@ -2224,7 +2262,7 @@ namespace Assets.Scripts.Scenes
                 ToggleLevelOptions(option == 1); // either show or hide the level options
                 _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             }
-            else // a level was not chosen and was not previously shown
+            else // a level was not chosen but was previously shown
             {
                 ToggleLevelOptions(option == 1);
             }
