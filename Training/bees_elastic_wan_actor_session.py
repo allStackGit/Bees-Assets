@@ -21,6 +21,15 @@ class ElasticActorSession(worker.ActorSession):
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
 
+    def _heartbeat(self) -> None:
+        self.client.reset_ack(
+            {
+                "session_id": self.session_id,
+                "actor_id": self.actor_id,
+                "control_epoch": self.control_epoch,
+            }
+        )
+
     def _apply_live_rollout_horizons(self, state: Mapping[str, Any]) -> None:
         if self.manager is None:
             return
@@ -72,6 +81,7 @@ class ElasticActorSession(worker.ActorSession):
             0.0,
         )
         self._apply_live_rollout_horizons(state)
+        self._heartbeat()
         self._state_changed.clear()
 
     def _watch_loop(self) -> None:
@@ -83,11 +93,16 @@ class ElasticActorSession(worker.ActorSession):
                     self.control_epoch,
                     worker.DEFAULT_STATE_WAIT_SECONDS,
                 )
+                remote_control_epoch = int(state.get("control_epoch", -1))
                 changed = (
                     int(state.get("policy_epoch", -1)) != self.policy_epoch
-                    or int(state.get("control_epoch", -1)) != self.control_epoch
+                    or remote_control_epoch != self.control_epoch
                     or int(state.get("topology_epoch", -1)) != self.topology_epoch
                 )
+                # Repeated authenticated acknowledgements are also the liveness heartbeat. Do not
+                # acknowledge an epoch the main actor loop has not applied yet.
+                if remote_control_epoch == self.control_epoch:
+                    self._heartbeat()
                 if changed:
                     self._state_changed.set()
                     while (
