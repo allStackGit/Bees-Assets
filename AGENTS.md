@@ -12,7 +12,7 @@ Mandatory rules for every coding/development task in this repository.
 
 ### Protected paths
 
-- **Never read or ingest `results/` or `Demonstrations/` unless the user explicitly requests access to that protected path or to a specific file within it.** Keeping either path tracked in Git/GitHub does not grant permission to inspect it.
+- **Never read or ingest `results/`, `.results/`, or `Demonstrations/` unless the user explicitly requests access to that protected path or to a specific file within it.** Keeping any protected path tracked in Git/GitHub does not grant permission to inspect it.
 - Without that explicit request, do not open, fetch, search, grep, glob through, index, summarize, parse, diff, inspect, or otherwise retrieve file contents from protected paths, including through repository-wide searches or tooling that could return excerpts from them.
 - Avoid broad content-search operations that cannot reliably exclude protected paths. If a tool may surface protected-path content incidentally, use a narrower path/file lookup instead.
 - References to protected-path filenames or paths that appear incidentally in Git metadata are not permission to retrieve their contents. The restriction applies across branches, commits, diffs, history, and local/worktree copies.
