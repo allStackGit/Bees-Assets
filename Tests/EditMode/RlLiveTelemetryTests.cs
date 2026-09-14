@@ -50,6 +50,37 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void GameplayTelemetryPreservesHumanHiveMindAndNeuralProvenance()
+        {
+            Type router = RuntimeAssembly.GetType("RlProductionControllerRouter");
+            Type controllerKind = router.GetNestedType("ControllerKind", BindingFlags.NonPublic);
+            MethodInfo eligible = router.GetMethod("IsExternalExpert", StaticFlags);
+            MethodInfo sourceName = router.GetMethod("ExternalSourceName", StaticFlags);
+            Type recorder = RuntimeAssembly.GetType("RlLiveTelemetryRecorder");
+            Type payloadType = recorder.GetNestedType("TelemetryPayload", BindingFlags.NonPublic);
+
+            Assert.That(router, Is.Not.Null);
+            Assert.That(controllerKind, Is.Not.Null);
+            Assert.That(eligible, Is.Not.Null);
+            Assert.That(sourceName, Is.Not.Null);
+            Assert.That(payloadType, Is.Not.Null);
+
+            object player = Enum.Parse(controllerKind, "Player");
+            object hiveMind = Enum.Parse(controllerKind, "HiveMind");
+            object neural = Enum.Parse(controllerKind, "NeuralNetwork");
+            Assert.That((bool)eligible.Invoke(null, new[] { player }), Is.True);
+            Assert.That((bool)eligible.Invoke(null, new[] { hiveMind }), Is.True);
+            Assert.That((bool)eligible.Invoke(null, new[] { neural }), Is.True);
+            Assert.That((string)sourceName.Invoke(null, new[] { player }), Is.EqualTo("human"));
+            Assert.That((string)sourceName.Invoke(null, new[] { hiveMind }), Is.EqualTo("hivemind"));
+            Assert.That((string)sourceName.Invoke(null, new[] { neural }), Is.EqualTo("neural"));
+
+            object payload = Activator.CreateInstance(payloadType, true);
+            Assert.That(payloadType.GetField("mode", InstanceFlags).GetValue(payload),
+                Is.EqualTo("gameplay-controller-live"));
+        }
+
+        [Test]
         public void UploaderAcceptsCurrentMetadataAndRejectsSchemaDrift()
         {
             Type schema = RuntimeAssembly.GetType("RlPolicySchema");
@@ -66,7 +97,7 @@ namespace Bees.Tests.EditMode
             SetField(payloadType, payload, "schema_version", 1);
             SetField(payloadType, payload, "match_id", "live-test-s000000");
             SetField(payloadType, payload, "game_build_version", "test-build");
-            SetField(payloadType, payload, "mode", "player-live-rl");
+            SetField(payloadType, payload, "mode", "gameplay-controller-live");
             SetField(payloadType, payload, "result", "draw");
             SetField(payloadType, payload, "model_id",
                 $"bees-rl-v{GetStatic<int>(schema, "Version")}-aaaaaaaaaaaaaaaaaaaaaaaa");
@@ -80,8 +111,10 @@ namespace Bees.Tests.EditMode
             SetField(payloadType, payload, "reward_schema_version", GetStatic<int>(schema, "RewardSchemaVersion"));
             SetField(payloadType, payload, "scenario_schema_version", GetStatic<int>(schema, "ScenarioSchemaVersion"));
 
+            object step = Activator.CreateInstance(stepType, true);
+            SetField(stepType, step, "controller_kind", "neural");
             IList steps = (IList)payloadType.GetField("steps", InstanceFlags).GetValue(payload);
-            steps.Add(Activator.CreateInstance(stepType, true));
+            steps.Add(step);
 
             Assert.That((bool)matches.Invoke(null, new[] { payload }), Is.True);
 
