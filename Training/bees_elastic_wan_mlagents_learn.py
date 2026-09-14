@@ -1,4 +1,4 @@
-"""Launch one authoritative ML-Agents learner with local Exeter envs plus elastic WAN actors."""
+"""Launch one authoritative ML-Agents learner with optional local envs plus elastic WAN actors."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 import bees_elastic_wan_policy_transport as policy_transport
 import bees_elastic_wan_slot_safety as slot_safety
 import bees_elastic_wan_training as elastic
+import bees_elastic_wan_zero_local as zero_local
 import bees_mlagents_learn as launcher
 
 
@@ -24,13 +25,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     patch = None
     original_argv = sys.argv
     try:
-        patch = elastic.install_elastic_wan_env_manager(options)
+        patch = zero_local.install_elastic_wan_env_manager(options)
         sys.argv = [original_argv[0], *trainer_args]
         launcher.main()
         return 0
     finally:
         sys.argv = original_argv
-        elastic.restore_elastic_wan_env_manager(patch)
+        zero_local.restore_elastic_wan_env_manager(patch)
         slot_safety.restore_slot_safety(original_broker)
         policy_transport.restore_portable_policy_transport(original_policy_transport)
 
