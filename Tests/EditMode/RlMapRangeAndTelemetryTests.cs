@@ -40,7 +40,10 @@ namespace Bees.Tests.EditMode
             for (int i = 0; i < 32; i++)
             {
                 float value = (float)sample.Invoke(null, new object[] { 32f, 48f });
-                Assert.That(value, Is.AnyOf(32f, 36f, 40f, 44f, 48f));
+                Assert.That(
+                    value == 32f || value == 36f || value == 40f || value == 44f || value == 48f,
+                    Is.True,
+                    "Sampler must return only configured 4-unit map-size steps.");
                 Assert.That(value, Is.EqualTo(Mathf.Round(value)));
                 Assert.That((value - 32f) % 4f, Is.EqualTo(0f));
             }
