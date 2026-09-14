@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 
 import bees_continual_elastic_wan_service as elastic_service
+import bees_elastic_wan_actor_session as actor_session
 import bees_elastic_wan_actor_worker as actor_worker
 import bees_elastic_wan_training as elastic
+import bees_elastic_wan_zero_local as zero_local
 
 
 class FakeObservationSpec:
@@ -23,25 +23,35 @@ class FakeActionSpec:
     discrete_branches = (3, 2)
 
 
+class MismatchedActionSpec:
+    continuous_size = 3
+    discrete_branches = (3, 2)
+
+
 class FakeBehaviorSpec:
     observation_specs = (FakeObservationSpec(),)
     action_spec = FakeActionSpec()
 
 
+class MismatchedBehaviorSpec:
+    observation_specs = (FakeObservationSpec(),)
+    action_spec = MismatchedActionSpec()
+
+
 class ZeroLocalArgumentTests(unittest.TestCase):
     def test_elastic_service_normalizes_explicit_zero_only_for_base_parser(self):
-        normalized, zero_local = elastic_service._normalize_zero_local_num_envs(
+        normalized, zero_local_requested = elastic_service._normalize_zero_local_num_envs(
             ["--root=x", "--num-envs=0", "--once"]
         )
-        self.assertTrue(zero_local)
+        self.assertTrue(zero_local_requested)
         self.assertIn("--num-envs=1", normalized)
         self.assertNotIn("--num-envs=0", normalized)
 
     def test_nonzero_num_envs_is_not_rewritten(self):
-        normalized, zero_local = elastic_service._normalize_zero_local_num_envs(
+        normalized, zero_local_requested = elastic_service._normalize_zero_local_num_envs(
             ["--num-envs", "32"]
         )
-        self.assertFalse(zero_local)
+        self.assertFalse(zero_local_requested)
         self.assertEqual(normalized, ["--num-envs", "32"])
 
     def test_remote_actor_accepts_worker_base_zero(self):
@@ -60,6 +70,18 @@ class ZeroLocalArgumentTests(unittest.TestCase):
         self.assertEqual(worker_offset, 0)
         self.assertEqual(capacity, 768)
         self.assertEqual(compatible["envs_per_actor"], 17)
+
+    def test_actor_topology_accepts_zero_local_envs_when_remote_envs_exist(self):
+        session = actor_session.ElasticActorSession.__new__(actor_session.ElasticActorSession)
+        session.manager = SimpleNamespace(agent_managers={})
+        session.total_envs = 1
+        session.topology_epoch = -1
+        session._rollout_horizons = {}
+        session._apply_live_rollout_horizons(
+            {"local_envs": 0, "remote_envs": 8, "topology_epoch": 1}
+        )
+        self.assertEqual(session.total_envs, 8)
+        self.assertEqual(session.topology_epoch, 1)
 
 
 class ZeroLocalBrokerTests(unittest.TestCase):
@@ -98,6 +120,36 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         session = broker.session_payload()
         self.assertEqual(session["remote_worker_base"], 0)
         self.assertEqual(session["capacity_envs"], 12 * 64)
+
+    def test_first_remote_behavior_specs_are_pinned_after_discovery(self):
+        broker = self._broker()
+        specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
+        broker.register_actor(
+            {
+                "actor_id": 0,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+
+        manager = zero_local.ZeroLocalElasticWanEnvManagerMixin.__new__(
+            zero_local.ZeroLocalElasticWanEnvManagerMixin
+        )
+        manager._bees_wan_broker = broker
+        manager._behavior_discovery_step()
+
+        # Simulate every original remote actor disappearing after the central trainer exists.
+        broker._registrations.clear()
+        with self.assertRaisesRegex(ValueError, "differ from Exeter"):
+            broker.register_actor(
+                {
+                    "actor_id": 1,
+                    "env_count": 4,
+                    "control_epoch": 1,
+                    "behavior_specs": {"BeesRL1v1?team=0": MismatchedBehaviorSpec()},
+                }
+            )
 
     def test_zero_local_actor_worker_ids_begin_at_zero_without_overlap(self):
         options = elastic.ElasticWanOptions(max_actors=12, auth_token_file="unused")
