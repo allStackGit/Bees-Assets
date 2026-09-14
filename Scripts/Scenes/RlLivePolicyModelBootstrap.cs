@@ -7,11 +7,12 @@ using Unity.MLAgents.Policies;
 using UnityEngine;
 
 /// <summary>
-/// Binds the build-time installed continual-learning champion to player-facing live RL agents.
-/// The authoritative deployment package is verified before build staging; this runtime boundary
-/// independently checks the bundled manifest against the frozen policy ABI before assigning the
-/// imported ModelAsset. Missing/incompatible assets fail back to the existing Hive Mind controller
-/// rather than leaving AI ships on RlLivePolicyAgent's intentionally inert heuristic.
+/// Keeps the latest validated continual-learning champion available during ordinary gameplay and
+/// binds it only to sides currently owned by the neural controller. The authoritative deployment
+/// package is verified before build staging; this runtime boundary independently checks the bundled
+/// manifest against the frozen policy ABI before assigning the imported ModelAsset. Missing or
+/// incompatible assets fail back to Hive Mind only when a neural controller was actually requested;
+/// player/Hive Mind-only gameplay is otherwise left unchanged while still contributing telemetry.
 /// </summary>
 [DefaultExecutionOrder(-10000)]
 internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
@@ -66,7 +67,7 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
     private bool _fallbackStarted;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void InstallForPlayerFacingStage()
+    private static void InstallForGameplayStage()
     {
         if (RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime)
         {
@@ -74,10 +75,11 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
         }
 
         Stage stage = Object.FindFirstObjectByType<Stage>();
-        if (!IsLiveRlRequested(stage))
+        if (stage == null)
         {
             return;
         }
+        bool neuralRequested = RlProductionControllerRouter.AnyNeuralNetworkRequested(stage);
 
         RlLivePolicyModelBootstrap bootstrap = stage.GetComponent<RlLivePolicyModelBootstrap>();
         if (bootstrap == null)
@@ -88,7 +90,20 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
 
         if (!TryLoadBundle(out ModelAsset model, out string deploymentId, out string modelId, out string error))
         {
-            bootstrap.FailToHiveMind(error);
+            if (neuralRequested)
+            {
+                bootstrap.FailToHiveMind(error);
+            }
+            else
+            {
+                // Do not alter player/Hive Mind ownership merely because this build has no usable
+                // champion anchor. Telemetry can still be recorded only when a compatible manifest
+                // exists, and a later build can restore the validated champion cache.
+                bootstrap.enabled = false;
+                Debug.LogWarning(
+                    "Validated RL champion cache unavailable for this gameplay stage; " +
+                    "non-neural controller ownership is unchanged: " + error);
+            }
             return;
         }
 
@@ -97,6 +112,9 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
         bootstrap._modelId = modelId;
         bootstrap._bindingActive = true;
 
+        // Poll on every ordinary gameplay Stage, not only when the NN currently owns a side. This
+        // keeps the validated champion cache fresh so a later scene/mode can switch to NN ownership
+        // without requiring a manual model refresh.
         RlLivePolicyModelUpdater updater = stage.GetComponent<RlLivePolicyModelUpdater>();
         if (updater == null)
         {
@@ -105,13 +123,8 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
         updater.Initialize(bootstrap, deploymentId);
 
         Debug.Log(
-            $"Live RL champion bundle ready: deployment={deploymentId} model={modelId} " +
-            $"ABI=v{RlPolicySchema.Version} resource={ModelResourcePath}.");
-    }
-
-    private static bool IsLiveRlRequested(Stage stage)
-    {
-        return stage != null && stage.ActivateHiveMind && stage.ActivateBrains;
+            $"Validated RL champion cache ready: deployment={deploymentId} model={modelId} " +
+            $"ABI=v{RlPolicySchema.Version} resource={ModelResourcePath}; neuralRequested={neuralRequested}.");
     }
 
     private static bool TryLoadBundle(
@@ -358,8 +371,9 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
             TryStartHiveMindFallback();
             return;
         }
-        if (!_bindingActive || _stage == null || !IsLiveRlRequested(_stage) ||
-            !_stage.IsFinalized || ConfigData.Configuration == null)
+        if (!_bindingActive || _stage == null ||
+            !_stage.IsFinalized || ConfigData.Configuration == null ||
+            !RlProductionControllerRouter.AnyNeuralNetwork(_stage))
         {
             return;
         }
@@ -438,6 +452,7 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
         _bindingActive = false;
         _stage.ActivateBrains = false;
         _fallbackPending = true;
+        RlProductionControllerRouter.SetNeuralNetworkAvailable(_stage, false);
         Debug.LogError(
             "Live RL champion unavailable/incompatible; reverting AI ownership to Hive Mind: " + reason);
         TryStartHiveMindFallback();
