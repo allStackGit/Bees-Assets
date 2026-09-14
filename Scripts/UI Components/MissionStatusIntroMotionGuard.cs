@@ -11,7 +11,7 @@ namespace Assets.Scripts.UIComponents
     public sealed class MissionStatusIntroMotionGuard : MonoBehaviour
     {
         private const float HoldDuration = 2f;
-        private const float SlideDuration = 0.45f;
+        private const float SlideDuration = 2f;
 
         private GameMenus _menus;
         private RectTransform _statusRect;
