@@ -1,4 +1,4 @@
-"""Exclusive actor-slot ownership and liveness for elastic WAN rollout machines."""
+"""Exclusive actor-slot ownership, liveness, and local ABI authority for elastic WAN actors."""
 
 from __future__ import annotations
 
@@ -6,9 +6,28 @@ import time
 from typing import Any, Mapping, Type
 
 import bees_elastic_wan_training as elastic
+import bees_wan_actor_training as wan
 
 
 class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
+    def set_reference_behavior_specs(self, behavior_specs: Mapping[str, Any]) -> None:
+        """Pin Exeter's local behavior specs and reject an early incompatible remote registration."""
+        if not behavior_specs:
+            raise RuntimeError("Local Exeter environments expose no trainable behaviors")
+        local_signatures = {
+            str(name): wan._behavior_spec_signature(spec)
+            for name, spec in behavior_specs.items()
+        }
+        with self._condition:
+            self._active_snapshot_locked()
+            for actor_id, record in self._registrations.items():
+                if record.get("signatures") != local_signatures:
+                    raise RuntimeError(
+                        f"remote actor {actor_id} registered behavior specifications that differ "
+                        "from Exeter's local training environments"
+                    )
+        super().set_reference_behavior_specs(behavior_specs)
+
     def register_actor(self, payload: Mapping[str, Any]) -> None:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         instance_id = payload.get("actor_instance_id")
