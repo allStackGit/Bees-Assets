@@ -26,10 +26,14 @@ def _normalize_zero_local_num_envs(argv: Sequence[str]) -> Tuple[List[str], bool
     """
     normalized: List[str] = []
     zero_local = False
+    seen_num_envs = False
     index = 0
     while index < len(argv):
         argument = argv[index]
         if argument == "--num-envs":
+            if seen_num_envs:
+                raise ValueError("--num-envs may be specified only once")
+            seen_num_envs = True
             if index + 1 >= len(argv):
                 raise ValueError("--num-envs requires a value")
             value = argv[index + 1]
@@ -41,6 +45,9 @@ def _normalize_zero_local_num_envs(argv: Sequence[str]) -> Tuple[List[str], bool
             index += 2
             continue
         if argument.startswith("--num-envs="):
+            if seen_num_envs:
+                raise ValueError("--num-envs may be specified only once")
+            seen_num_envs = True
             value = argument.split("=", 1)[1]
             if value == "0":
                 normalized.append("--num-envs=1")
