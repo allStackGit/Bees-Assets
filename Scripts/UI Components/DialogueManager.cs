@@ -217,7 +217,6 @@ public class DialogueManager : MonoBehaviour
         {
             dialogueLines.Enqueue(line);
         }
-
         _playIntercomWhenPresented = dialogueLines.Count > 0;
 
         DialogueBox.SetActive(true);
@@ -407,12 +406,8 @@ public class DialogueManager : MonoBehaviour
             }
 
             DialogueText.maxVisibleCharacters = characterIndex + 1;
-            if (characterIndex == visibleCharacterCount - 1 ||
-                line.Type != DialogueLine.DialogueType.Speaking ||
-                string.Equals(line.SpeakerName, "Samuel", System.StringComparison.OrdinalIgnoreCase))
+            if (characterIndex == visibleCharacterCount - 1 || line.Type != DialogueLine.DialogueType.Speaking)
             {
-                // Samuel's closed-mouth portrait is kept throughout his line rather than cycling
-                // through the open-mouth alternate.
                 SetPortrait(line.PortraitA);
             }
             else if ((characterIndex + 1) % 6 == 0)
