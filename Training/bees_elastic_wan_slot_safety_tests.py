@@ -110,10 +110,31 @@ class SlotSafetyTests(unittest.TestCase):
         broker.acknowledge_reset(
             {
                 "actor_id": 1,
+                "actor_instance_id": "a" * 32,
                 "control_epoch": 1,
             }
         )
         self.assertGreaterEqual(broker._registrations[1]["last_seen"], before)
+
+    def test_replaced_process_cannot_heartbeat_under_another_instance(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                "actor_id": 1,
+                "actor_instance_id": "a" * 32,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "owned by another"):
+            broker.acknowledge_reset(
+                {
+                    "actor_id": 1,
+                    "actor_instance_id": "b" * 32,
+                    "control_epoch": 1,
+                }
+            )
 
     def test_exeter_local_behavior_specs_reject_incompatible_early_actor(self):
         broker = self._unreferenced_broker()
