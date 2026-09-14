@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+import bees_elastic_wan_actor_session as elastic_session
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
 import bees_wan_actor_worker as worker
@@ -166,12 +167,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return 4
             try:
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
-                session, worker_offset, capacity_envs = _elastic_session(
+                session, worker_offset, _capacity_envs = _elastic_session(
                     raw_session,
                     actor_id=args.actor_id,
                     env_count=args.envs,
                 )
-                actor_session = worker.ActorSession(
+                actor_session = elastic_session.ElasticActorSession(
                     client,
                     session,
                     actor_id=args.actor_id,
@@ -184,8 +185,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 # Fixed slot assignment prevents worker-ID collisions when actors have different env counts.
                 actor_session.worker_offset = worker_offset
-                # Conservative horizon: short enough to remain useful even if every remote slot fills to 64 envs.
-                actor_session.total_envs = capacity_envs
+                # Start with local Exeter envs plus this actor. The first post-registration state sync
+                # replaces this with the exact live topology and keeps updating it as actors join/leave.
+                actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
                 try:
                     actor_session.start()
                     actor_session.run()
