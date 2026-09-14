@@ -50,7 +50,7 @@ Every ordinary gameplay stage with a valid bundled champion also polls BeesServe
 
 ## Autonomous central service
 
-`Training/bees_continual_service.py` is the long-running central orchestration layer for local/direct workers. `Training/bees_continual_elastic_wan_service.py` preserves the same state machine while adding an elastic WAN actor pool to Exeter's normal local environments. Both advance one persistent training lineage through immutable generations:
+`Training/bees_continual_service.py` is the long-running central orchestration layer for ordinary local/direct training. `Training/bees_continual_elastic_wan_service.py` preserves the same state machine while adding an elastic WAN actor pool and allowing Exeter to run anywhere from zero local Unity training environments (learner-only mode) to any positive configured local count (hybrid mode). Both advance one persistent training lineage through immutable generations:
 
 ```text
 gameplay telemetry
@@ -100,6 +100,8 @@ BEES_RL_NUM_ENVS
 BEES_RL_CONTINUAL_RETRY_SECONDS
 ```
 
+For ordinary non-WAN continual training, `BEES_RL_NUM_ENVS` remains a positive local Unity environment count. In elastic WAN mode, omitted `BEES_RL_NUM_ENVS` defaults to `0`; an explicit `0` also selects learner-only mode, while any positive value opts Exeter into hybrid local simulation.
+
 When autostart is enabled, `start-server.js` validates the required configuration before accepting a server-only launch. Normal foreground startup supervises the continual service directly. Background startup launches a detached continual-learning watchdog so the Python service still has process-level restart protection after the launcher exits.
 
 After those machine-specific paths are configured and a compatible initial champion/training build exists, the intended local operating procedure is simply:
@@ -139,12 +141,13 @@ The remote machine runs `Training/bees_remote_worker.py` with that spec. The hel
 
 ### Elastic WAN actors with local inference
 
-`Training/bees_elastic_wan_training.py` and `Training/bees_elastic_wan_actor_worker.py` are the high-latency path. Exeter continues running its normal `BEES_RL_NUM_ENVS` local environments. Remote machines are purely additive: **zero through twelve** may be online at any moment, and every remote machine independently chooses **one through sixty-four** Unity environments.
+`Training/bees_elastic_wan_training.py`, `Training/bees_elastic_wan_zero_local.py`, and `Training/bees_elastic_wan_actor_worker.py` implement the high-latency path. Remote machines run Unity simulation and policy inference locally. Exeter may run **zero or more** local simulation environments, and **zero through twelve** remote machines may be online at any moment; every remote machine independently chooses **one through sixty-four** Unity environments.
 
-The central configuration describes capacity, not a required topology. For Exeter running 32 local environments and accepting up to twelve remote machines:
+The recommended remote-only Exeter configuration is:
 
 ```text
-BEES_RL_NUM_ENVS=32
+# BEES_RL_NUM_ENVS may be omitted; elastic WAN defaults it to 0.
+BEES_RL_NUM_ENVS=0
 BEES_RL_WAN_ACTORS=12
 BEES_RL_WAN_MIN_ACTORS=0
 BEES_RL_WAN_BROKER_PORT=55051
@@ -154,7 +157,9 @@ BEES_RL_WAN_MAX_QUEUED_BATCHES=32
 BEES_RL_WAN_ACTOR_LEASE_SECONDS=120
 ```
 
-`BEES_RL_WAN_ACTORS=12` reserves twelve stable remote actor slots. It does **not** mean twelve machines must be online. `BEES_RL_WAN_MIN_ACTORS=0` means Exeter trains normally with only its local environments and automatically begins consuming remote trajectories whenever a machine joins. The obsolete fixed `BEES_RL_WAN_ENVS_PER_ACTOR` setting is intentionally rejected.
+`BEES_RL_WAN_ACTORS=12` reserves twelve stable remote actor slots. It does **not** mean twelve machines must be online. `BEES_RL_WAN_MIN_ACTORS=0` allows the server and central training service to start with no remote machine connected. In learner-only mode, the training phase then waits for the first authenticated remote actor because ML-Agents needs one compatible `BehaviorSpec` to instantiate the central trainer. Once that first actor has established the session ABI, all actors may disconnect; Exeter simply pauses PPO progress until policy-current trajectory data returns. It does not launch a hidden simulator, fabricate environment steps, or advance the optimizer without rollout data.
+
+To use Exeter for simulation as well, set a positive count, for example `BEES_RL_NUM_ENVS=32`. Those local rollouts then join the same PPO learner alongside whatever remote actors are connected. The obsolete fixed `BEES_RL_WAN_ENVS_PER_ACTOR` setting is intentionally rejected.
 
 Each remote machine chooses its own size. For example, actor 0 could run 8 environments while actor 1 runs 64:
 
@@ -168,9 +173,9 @@ python Training\bees_elastic_wan_actor_worker.py `
   --torch-device=cpu
 ```
 
-A second machine can use `--actor-id=1 --envs=64`, and so on through actor ID 11. Actor IDs are fixed 64-worker slots after Exeter's local worker IDs, so changing or stopping one actor does not renumber another actor's trajectories. A stopped machine ages out of the active topology after the lease interval; restarting it with the same actor ID reclaims the same worker-ID slot.
+A second machine can use `--actor-id=1 --envs=64`, and so on through actor ID 11. Actor IDs are fixed 64-worker slots after Exeter's local worker IDs; when Exeter runs zero local environments, actor 0 begins at worker ID 0. Changing or stopping one actor does not renumber another actor's trajectories. A stopped machine ages out of the active topology after the lease interval; restarting it with the same actor ID reclaims the same worker-ID slot.
 
-Remote actors run Unity and inference locally. They upload complete native ML-Agents `Trajectory` batches rather than making a WAN round trip for every decision. Every batch is tied to the exact central policy versions and environment-control epoch that generated it. A central policy/control change discards queued older batches; remote actors drain already-issued actions, discard unfinished fragments, synchronize the new policy, and continue. Exeter alone owns PPO updates, optimizer state, checkpoints, candidates, promotion, and release.
+Remote actors upload complete native ML-Agents `Trajectory` batches rather than making a WAN round trip for every decision. Every batch is tied to the exact central policy versions and environment-control epoch that generated it. A central policy/control change discards queued older batches; remote actors drain already-issued actions, discard unfinished fragments, synchronize the new policy, and continue. Exeter alone owns PPO updates, optimizer state, checkpoints, candidates, promotion, and release.
 
 The broker binds only to `127.0.0.1`, is reached through SSH forwarding, and additionally requires the trainer bearer token. The token is trusted trainer infrastructure and must never be shipped in a normal gameplay build.
 
@@ -203,7 +208,7 @@ If another machine produces less than roughly a 3% trainer-step improvement whil
 [Bees WAN capacity] CAPACITY LIMIT LIKELY: ... Additional workers are unlikely to improve training speed.
 ```
 
-A low gain **without** central queue pressure is reported separately as `no-measurable-gain`, because that can mean the added remote machine is itself slow rather than Exeter being saturated. The intended scaling procedure is therefore: start Exeter alone, add one remote machine, allow the marginal diagnostic to settle, then add another until the system reports likely central saturation or the desired throughput is reached.
+A low gain **without** central queue pressure is reported separately as `no-measurable-gain`, because that can mean the added remote machine is itself slow rather than Exeter being saturated. With zero local environments, the first remote actor necessarily establishes the initial throughput baseline, so the first marginal result may be `warming-up`; add subsequent machines one at a time and compare trainer steps/sec until the system reports likely central saturation or the desired throughput is reached.
 
 The remote helper persists across central continual generations. During evaluation/release the training broker is absent, so the helper waits; when the next generation begins it automatically joins the new broker session with the same actor slot and environment count.
 
