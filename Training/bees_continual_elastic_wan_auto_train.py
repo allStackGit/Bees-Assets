@@ -1,8 +1,9 @@
 """Elastic-WAN variant of the automatic continual Bees trainer.
 
-Exeter keeps the ordinary ``--num-envs`` local rollout processes. Zero to the configured maximum
+Exeter may run zero or more local ``--num-envs`` rollout processes. Zero to the configured maximum
 remote actors may join or leave the same generation without restarting the learner; each remote
-machine declares its own 1-64 environment count.
+machine declares its own 1-64 environment count. With zero local environments Exeter is a pure PPO
+learner/checkpoint authority and pauses safely whenever no remote rollout actor is connected.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import bees_continual_auto_train as continual_auto
 import bees_elastic_wan_policy_transport as policy_transport
 import bees_elastic_wan_slot_safety as slot_safety
 import bees_elastic_wan_training as elastic
+import bees_elastic_wan_zero_local as zero_local
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -28,10 +30,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     original_broker = slot_safety.install_slot_safety()
     patch = None
     try:
-        patch = elastic.install_elastic_wan_env_manager(options)
+        patch = zero_local.install_elastic_wan_env_manager(options)
         return continual_auto.main(trainer_args)
     finally:
-        elastic.restore_elastic_wan_env_manager(patch)
+        zero_local.restore_elastic_wan_env_manager(patch)
         slot_safety.restore_slot_safety(original_broker)
         policy_transport.restore_portable_policy_transport(original_policy_transport)
 
