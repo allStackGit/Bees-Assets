@@ -31,11 +31,21 @@ class ElasticBrokerClient(worker.BrokerClient):
         self.env_count = env_count
         self.actor_instance_id = secrets.token_hex(16)
 
-    def register(self, payload: Mapping[str, Any]) -> None:
+    def _owned_payload(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         enriched = dict(payload)
-        enriched["env_count"] = self.env_count
         enriched["actor_instance_id"] = self.actor_instance_id
+        return enriched
+
+    def register(self, payload: Mapping[str, Any]) -> None:
+        enriched = self._owned_payload(payload)
+        enriched["env_count"] = self.env_count
         super().register(enriched)
+
+    def trajectories(self, payload: Mapping[str, Any]) -> None:
+        super().trajectories(self._owned_payload(payload))
+
+    def reset_ack(self, payload: Mapping[str, Any]) -> None:
+        super().reset_ack(self._owned_payload(payload))
 
 
 def _parser() -> argparse.ArgumentParser:
