@@ -9,6 +9,7 @@ Unity simulation and policy inference locally and never owns PPO optimizer/check
 from __future__ import annotations
 
 import argparse
+import secrets
 import signal
 import subprocess
 import sys
@@ -27,10 +28,12 @@ class ElasticBrokerClient(worker.BrokerClient):
         super().__init__(*args, **kwargs)
         self.actor_id = actor_id
         self.env_count = env_count
+        self.actor_instance_id = secrets.token_hex(16)
 
     def register(self, payload: Mapping[str, Any]) -> None:
         enriched = dict(payload)
         enriched["env_count"] = self.env_count
+        enriched["actor_instance_id"] = self.actor_instance_id
         super().register(enriched)
 
 
