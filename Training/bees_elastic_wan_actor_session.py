@@ -39,7 +39,7 @@ class ElasticActorSession(worker.ActorSession):
         if (
             not isinstance(local_envs, int)
             or isinstance(local_envs, bool)
-            or local_envs <= 0
+            or local_envs < 0
             or not isinstance(remote_envs, int)
             or isinstance(remote_envs, bool)
             or remote_envs < 0
@@ -50,6 +50,8 @@ class ElasticActorSession(worker.ActorSession):
             raise RuntimeError("Elastic WAN central state has malformed topology metadata")
 
         total_envs = local_envs + remote_envs
+        if total_envs <= 0:
+            raise RuntimeError("Elastic WAN actor received a topology with no rollout environments")
         from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
 
         horizons = {}
