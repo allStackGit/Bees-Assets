@@ -85,9 +85,13 @@ internal static class RlOneVsOnePerArenaMatchups
             RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(args);
             IReadOnlyList<RlPlayerDerivedAdversarialScenario> playerDerivedScenarios =
                 RlPlayerDerivedAdversarialPressure.Parse(args, options);
+            int seed = RlOneVsOneScenarioSeed.Create(
+                level,
+                RlOneVsOneScenarioSeed.MatchupStreamSalt,
+                args);
             selector = new RlOneVsOneAdversarialMatchupSelector(
                 options,
-                RlOneVsOneScenarioSeed.Create(args),
+                seed,
                 playerDerivedScenarios);
             Selectors.Add(level, selector);
             if (playerDerivedScenarios.Count > 0)
@@ -130,5 +134,6 @@ internal static class RlOneVsOnePerArenaMatchups
         PreparedEpisodes.Clear();
         RlPlayerDerivedPressureTelemetry.ResetForTests();
         RlPlayerDerivedActionReplay.ResetForTests();
+        RlOneVsOneScenarioSeed.ResetForTests();
     }
 }
