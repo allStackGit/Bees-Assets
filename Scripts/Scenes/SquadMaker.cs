@@ -280,10 +280,10 @@ namespace Assets.Scripts.Scenes
             NoChosenSquadsAlert = new Alert(DialoguePrefab, ConfigData.Configuration.NoChosenSquadsAlertTitle, ConfigData.Configuration.NoChosenSquadsAlert,
                 ConfigData.Configuration.OK);
 
-            ChoosingUnsavedSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.ChoosingUnsavedSquadAlert,
+            ChoosingUnsavedSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.ChoosingUnsavedSquadAlertTitle, ConfigData.Configuration.ChoosingUnsavedSquadAlert,
                 ConfigData.Configuration.OK);
 
-            ChoosingDeadSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.AreYouSure, ConfigData.Configuration.ChoosingDeadSquadAlert,
+            ChoosingDeadSquadAlert = new Alert(DialoguePrefab, ConfigData.Configuration.ChoosingDeadSquadAlertTitle, ConfigData.Configuration.ChoosingDeadSquadAlert,
                ConfigData.Configuration.OK);
 
             SquadSavingStatus = new Dialogue(DialoguePrefab, ConfigData.Configuration.SquadSavingStatusAlertTitle, ConfigData.Configuration.SquadSavingStatusAlert,
@@ -1332,15 +1332,15 @@ namespace Assets.Scripts.Scenes
                 }
 
                 //Debug.Log($"Added _currentUnsavedSquad to SavedSquad list");
-                //Debug.Log($"_currentUnsavedSquad: {_currentSquad.GetSquadShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
+                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad.GetShips().Count}, SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
 
                 //Debug.Log($"Made _currentUnsavedSquad null");
-                //Debug.Log($"_currentUnsavedSquad: {_currentSquad}");
+                //Debug.Log($"_currentUnsavedSquad: {_currentUnsavedSquad}");
                 //Debug.Log($"SavedSquad entry: {_savedSquadsData.GetSquads().Last().GetShips().Count}");
 
-                //Debug.Log($"JSON : {_currentSquad.ToJson()}");
-                //ConfigData.WriteJsonFile(_currentSquad.ToJson());
+                //Debug.Log($"JSON : {_currentUnsavedSquad.ToJson()}");
+                //ConfigData.WriteJsonFile(_currentUnsavedSquad.ToJson());
             }
         }
         public void ClearChanges()
@@ -1362,7 +1362,7 @@ namespace Assets.Scripts.Scenes
             if (HasCurrentSquad)
             {
                 // add all the ships back into the fleet list
-                //_currentSquad.GetShips().ForEach((ship) =>
+                //_currentUnsavedSquad.GetShips().ForEach((ship) =>
                 //{
                 //    FleetShip fleetShip = ship.GetFleetShip();
                 //    _fleetList.Add(fleetShip);
@@ -1936,7 +1936,7 @@ namespace Assets.Scripts.Scenes
                 //Vector2 screenPoint = Camera.WorldToScreenPoint(TooltipOffset);
                 //Vector2 change = new Vector2(Mathf.Abs(BaseWorldPoint.x - screenPoint.x), Mathf.Abs(BaseWorldPoint.y - screenPoint.y));
 
-                Vector2 change = Utilities.WorldUnitsToScreenPixels(ShipStatsBoxOffset, Camera);
+                Vector2 change = Utilities.WorldUnitsToScreenPixels(TooltipOffset, Camera);
                 //Vector2 change = TooltipOffset;
 
 
@@ -2262,7 +2262,7 @@ namespace Assets.Scripts.Scenes
                 ToggleLevelOptions(option == 1); // either show or hide the level options
                 _capacity = ConfigData.StartingSettings.SupplyCapacity[Side - 1];
             }
-            else // a level was not chosen but was previously shown
+            else // a level was not chosen and was not previously shown
             {
                 ToggleLevelOptions(option == 1);
             }
