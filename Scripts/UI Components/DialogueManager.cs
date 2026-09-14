@@ -11,6 +11,7 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
+    private const int FirstCampaignLevelId = 0;
     private const float DialoguePresentationScale = 1.25f;
     private const float MinimumDialogueFontSize = 14f;
     private const float MinimumSpeakerFontSize = 16f;
@@ -42,6 +43,8 @@ public class DialogueManager : MonoBehaviour
     private bool _playIntercomWhenPresented;
     private bool _presentationConfigured;
     private TMP_Text _continuePromptLabel;
+    private bool _continueInstructionClaimed;
+    private bool _showContinueInstructionForCurrentLine;
     private static bool _disabledLegacyCampaignDialogueGuard;
 
 
@@ -113,6 +116,10 @@ public class DialogueManager : MonoBehaviour
         if (existing != null)
         {
             _continuePromptLabel = existing.GetComponent<TMP_Text>();
+            if (_continuePromptLabel != null)
+            {
+                _continuePromptLabel.gameObject.SetActive(false);
+            }
             return;
         }
 
@@ -137,6 +144,7 @@ public class DialogueManager : MonoBehaviour
         label.alignment = TextAlignmentOptions.MidlineRight;
         label.color = DialogueText != null ? DialogueText.color : Color.white;
         label.raycastTarget = false;
+        label.gameObject.SetActive(false);
         _continuePromptLabel = label;
     }
 
@@ -245,6 +253,15 @@ public class DialogueManager : MonoBehaviour
             _currentLine.IsOver = false;
         }
         _currentLine = dialogueLines.Dequeue();
+        _showContinueInstructionForCurrentLine = ShouldShowContinueInstruction(_currentLine);
+        if (_showContinueInstructionForCurrentLine)
+        {
+            // Claim the one-time hint when the line begins, not when typing finishes. If the
+            // player is already holding Space, the hint must not migrate to the next message.
+            _continueInstructionClaimed = true;
+        }
+        SetContinueInstructionVisible(false);
+
         if (_currentLine != null)
         {
             StopAllCoroutines();
@@ -253,6 +270,28 @@ public class DialogueManager : MonoBehaviour
             StartCoroutine(TypeLine(_currentLine));
         }
 
+    }
+
+    private bool ShouldShowContinueInstruction(DialogueLine line)
+    {
+        return !_continueInstructionClaimed &&
+               line != null &&
+               line.Type == DialogueLine.DialogueType.Speaking &&
+               ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign &&
+               ConfigData.UserProgressData != null &&
+               ConfigData.Configuration != null &&
+               ConfigData.UserProgressData.GetCurrentLevel(
+                   ConfigData.Configuration.UserSide,
+                   ConfigData.GameModes.Campaign) == FirstCampaignLevelId;
+    }
+
+    private void SetContinueInstructionVisible(bool continueControlVisible)
+    {
+        if (_continuePromptLabel != null)
+        {
+            _continuePromptLabel.gameObject.SetActive(
+                continueControlVisible && _showContinueInstructionForCurrentLine);
+        }
     }
 
     public void DisplayNextLineWithDelay(float delaySeconds = 2f)
@@ -463,15 +502,18 @@ public class DialogueManager : MonoBehaviour
     {
         if (showOrHide && Input.GetKey(KeyCode.Space))
         {
+            SetContinueInstructionVisible(false);
             DisplayNextLine();
         }
         else if (showOrHide && _currentLine.Type == DialogueLine.DialogueType.Disappearing)
         {
+            SetContinueInstructionVisible(false);
             DisplayNextLineWithDelay(2f);
         }
         else
         {
             ContinueButton.SetActive(showOrHide);
+            SetContinueInstructionVisible(showOrHide);
         }
     }
 
