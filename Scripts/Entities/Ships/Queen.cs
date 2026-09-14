@@ -140,7 +140,7 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.IsMatchingSpeed,
                 Squad.ShouldChase(),
                 false,
-                Utilities.GetNegativeSavedSquadId(),
+                TransientIdAllocator.GetSavedSquadId(),
                 Squad.Side,
                 Level.State.OriginalSquadCounts[Side - 1] + 1,
                 $"{Squad.Name} - {MinionType} Spawn #{MinionSquadsCount}",
@@ -163,7 +163,7 @@ namespace Assets.Scripts.Entities.Ships
                 squad = CreateMinionSquad();
                 squad.SetSquadTab();
             }
-            long id = Utilities.GetNegativeFleetshipId();
+            long id = TransientIdAllocator.GetFleetShipId();
             Vector2 offset = ConfigData.QueenYellowJacketSpawnFormation[shipIndex];
 
             Ship ship = Level.LevelConstructor.InstantiateShip(MinionType);
