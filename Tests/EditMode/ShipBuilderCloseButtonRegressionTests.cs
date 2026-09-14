@@ -23,5 +23,19 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("button.GetComponentInChildren<Text>(true)", source);
             StringAssert.Contains("rect.sizeDelta = new Vector2(16f, 16f);", source);
         }
+
+        [Test]
+        public void ColorButtonSizingDoesNotTrimANullTmpLabel()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "UI Components",
+                "UiSizingCompatibilityGuard.cs"));
+
+            StringAssert.Contains(
+                "tmpLabel != null &&\n                    !string.IsNullOrWhiteSpace(tmpLabel.text) &&\n                    tmpLabel.text.Trim().ToUpperInvariant() == \"COLOR\"",
+                source.Replace("\r\n", "\n"));
+        }
     }
 }
