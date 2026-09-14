@@ -22,7 +22,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import http.server
-import io
 import json
 import pickle
 import queue
@@ -275,6 +274,35 @@ def _policy_wire_payload(policy: Any) -> Mapping[str, Any]:
     )
 
 
+def _policy_identity_digest(wire: Mapping[str, Any]) -> str:
+    """Hash inference semantics, not Python pickle bookkeeping, for policy versioning."""
+    kind = wire.get("kind")
+    digest = hashlib.sha256(str(kind).encode("utf-8"))
+    if kind == "frozen_onnx":
+        model_hash = wire.get("model_sha256")
+        if not isinstance(model_hash, str):
+            raise RuntimeError("Frozen ONNX policy is missing its model SHA-256")
+        digest.update(model_hash.encode("ascii"))
+        digest.update(str(wire.get("provider") or "").encode("utf-8"))
+        return digest.hexdigest()
+    if kind != "torch":
+        raise RuntimeError(f"Unsupported policy wire kind {kind!r}")
+    weights = wire.get("weights")
+    if not isinstance(weights, Mapping):
+        raise RuntimeError("Torch policy snapshot is missing its state dictionary")
+    for name in sorted(weights):
+        value = weights[name]
+        digest.update(str(name).encode("utf-8"))
+        if hasattr(value, "detach"):
+            array = value.detach().cpu().contiguous().numpy()
+            digest.update(str(array.dtype).encode("ascii"))
+            digest.update(repr(tuple(array.shape)).encode("ascii"))
+            digest.update(array.tobytes(order="C"))
+        else:
+            digest.update(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL))
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True)
 class _PolicySnapshot:
     version: int
@@ -294,6 +322,7 @@ class WanActorBroker:
         self._closed = False
         self._registrations: Dict[int, Mapping[str, Any]] = {}
         self._policy_snapshots: Dict[str, _PolicySnapshot] = {}
+        self._policy_identities: Dict[str, str] = {}
         self._policy_epoch = 0
         self._control_epoch = 0
         self._control_record: Mapping[str, Any] = {
@@ -302,6 +331,7 @@ class WanActorBroker:
             "config": None,
         }
         self._trajectory_batches: queue.Queue = queue.Queue(maxsize=options.max_queued_batches)
+        self._cohort_blocked_actors = set()
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
 
@@ -317,10 +347,26 @@ class WanActorBroker:
             "run_options": self.run_options,
         }
 
+    def _expected_behaviors_locked(self) -> set[str]:
+        if not self._registrations:
+            return set()
+        first = next(iter(self._registrations.values()))
+        return set(first["behavior_specs"])
+
+    def _policy_versions_locked(self) -> Dict[str, int]:
+        versions = {name: snapshot.version for name, snapshot in self._policy_snapshots.items()}
+        expected = self._expected_behaviors_locked()
+        # During initial trainer creation policies are published one behavior at a time. Never tell
+        # actors that a partial policy set is usable; otherwise an unpublished team could run random
+        # initialization for a few decisions.
+        if expected and set(versions) != expected:
+            return {}
+        return versions
+
     @property
     def policy_versions(self) -> Dict[str, int]:
         with self._condition:
-            return {name: snapshot.version for name, snapshot in self._policy_snapshots.items()}
+            return self._policy_versions_locked()
 
     @property
     def control_epoch(self) -> int:
@@ -351,11 +397,17 @@ class WanActorBroker:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def _binary(self, body: bytes, *, status: int = 200, headers: Mapping[str, str] = {}) -> None:
+            def _binary(
+                self,
+                body: bytes,
+                *,
+                status: int = 200,
+                headers: Optional[Mapping[str, str]] = None,
+            ) -> None:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
-                for key, value in headers.items():
+                for key, value in (headers or {}).items():
                     self.send_header(key, value)
                 self.end_headers()
                 if body:
@@ -368,9 +420,6 @@ class WanActorBroker:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-
-            def _query(self) -> Mapping[str, List[str]]:
-                return urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
 
             def _session_guard(self, query: Mapping[str, List[str]]) -> bool:
                 session = query.get("session", [""])[0]
@@ -389,6 +438,8 @@ class WanActorBroker:
                 data = self.rfile.read(length)
                 if len(data) != length:
                     raise ValueError("request body ended before Content-Length")
+                # Pickle is intentionally behind both loopback/SSH and a bearer credential. Possession
+                # of this trainer-only token is trusted-code access, not a public-client capability.
                 return decode_payload(data)
 
             def do_GET(self) -> None:
@@ -556,14 +607,20 @@ class WanActorBroker:
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         wire = dict(_policy_wire_payload(policy))
+        identity = _policy_identity_digest(wire)
         encoded = encode_payload(wire)
-        digest = hashlib.sha256(encoded).hexdigest()
+        transport_digest = hashlib.sha256(encoded).hexdigest()
         with self._condition:
             previous = self._policy_snapshots.get(behavior_name)
-            if previous is not None and previous.digest == digest:
+            if previous is not None and self._policy_identities.get(behavior_name) == identity:
                 return previous.version
             version = 1 if previous is None else previous.version + 1
-            self._policy_snapshots[behavior_name] = _PolicySnapshot(version, digest, encoded)
+            self._policy_snapshots[behavior_name] = _PolicySnapshot(
+                version,
+                transport_digest,
+                encoded,
+            )
+            self._policy_identities[behavior_name] = identity
             self._policy_epoch += 1
             self._discard_queued_batches_locked()
             self._condition.notify_all()
@@ -574,6 +631,7 @@ class WanActorBroker:
             return self._policy_snapshots.get(behavior_name)
 
     def _discard_queued_batches_locked(self) -> None:
+        self._cohort_blocked_actors.clear()
         while True:
             try:
                 self._trajectory_batches.get_nowait()
@@ -634,9 +692,7 @@ class WanActorBroker:
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
                 "control_epoch": self._control_epoch,
-                "policy_versions": {
-                    name: snapshot.version for name, snapshot in self._policy_snapshots.items()
-                },
+                "policy_versions": self._policy_versions_locked(),
                 "registered_actors": sorted(self._registrations),
             }
 
@@ -698,16 +754,74 @@ class WanActorBroker:
             "control_epoch": int(payload["control_epoch"]),
             "trajectories": trajectories,
         }
+        with self._condition:
+            if actor_id in self._cohort_blocked_actors:
+                raise queue.Full
         self._trajectory_batches.put(item, timeout=10.0)
         return len(trajectories)
 
+    def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
+        return (
+            batch.get("control_epoch") == self.control_epoch
+            and batch.get("policy_versions") == self.policy_versions
+        )
+
     def next_trajectory_batch(self, timeout_seconds: float) -> Mapping[str, Any]:
         try:
-            return self._trajectory_batches.get(timeout=timeout_seconds)
+            while True:
+                batch = self._trajectory_batches.get(timeout=timeout_seconds)
+                if self._batch_is_current(batch):
+                    return batch
         except queue.Empty as exc:
             raise TimeoutError(
                 f"No WAN actor trajectories arrived within {timeout_seconds:g} seconds."
             ) from exc
+
+    def next_trajectory_cohort(self, timeout_seconds: float) -> Tuple[Mapping[str, Any], ...]:
+        """Return current-policy batches from at least min_actors distinct actor machines.
+
+        Actors already selected for a cohort receive HTTP backpressure until the learner consumes the
+        cohort. This prevents one low-latency machine from filling the entire central queue while the
+        configured minimum set of remote machines is still producing its first batch.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        with self._condition:
+            self._cohort_blocked_actors.clear()
+            required = min(self.options.min_actors, len(self._registrations))
+        if required <= 0:
+            raise RuntimeError("WAN actor cohort requested before any actor registered")
+
+        selected: List[Mapping[str, Any]] = []
+        actors = set()
+        while len(actors) < required:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                with self._condition:
+                    self._cohort_blocked_actors.clear()
+                raise TimeoutError(
+                    f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
+                )
+            try:
+                batch = self._trajectory_batches.get(timeout=remaining)
+            except queue.Empty as exc:
+                with self._condition:
+                    self._cohort_blocked_actors.clear()
+                raise TimeoutError(
+                    f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
+                ) from exc
+            if not self._batch_is_current(batch):
+                continue
+            actor_id = int(batch["actor_id"])
+            if actor_id in actors:
+                # This should be uncommon because selected actors are backpressured. If a second
+                # request raced the block, include it only after the distinct-actor requirement has
+                # been satisfied by a later batch rather than silently replacing another machine.
+                continue
+            selected.append(batch)
+            actors.add(actor_id)
+            with self._condition:
+                self._cohort_blocked_actors.add(actor_id)
+        return tuple(selected)
 
 
 class StaleActorStateError(RuntimeError):
@@ -764,22 +878,23 @@ class WanActorEnvManagerMixin:
     def _step(self) -> List[Any]:
         from mlagents.trainers.env_manager import EnvironmentStep
 
-        batch = self._bees_wan_broker.next_trajectory_batch(self._bees_wan_timeout)
-        for trajectory in batch["trajectories"]:
-            behavior_id = trajectory.behavior_id
-            manager = self.agent_managers.get(behavior_id)
-            if manager is None:
-                raise RuntimeError(
-                    f"WAN actor uploaded trajectory for behavior {behavior_id!r} before trainer registration."
-                )
-            if len(trajectory.steps) > manager._max_trajectory_length:
-                raise RuntimeError(
-                    f"WAN actor trajectory length {len(trajectory.steps)} exceeds "
-                    f"time_horizon {manager._max_trajectory_length} for {behavior_id}."
-                )
-            manager.trajectory_queue.put(trajectory)
+        cohort = self._bees_wan_broker.next_trajectory_cohort(self._bees_wan_timeout)
+        for batch in cohort:
+            for trajectory in batch["trajectories"]:
+                behavior_id = trajectory.behavior_id
+                manager = self.agent_managers.get(behavior_id)
+                if manager is None:
+                    raise RuntimeError(
+                        f"WAN actor uploaded trajectory for behavior {behavior_id!r} before trainer registration."
+                    )
+                if len(trajectory.steps) > manager._max_trajectory_length:
+                    raise RuntimeError(
+                        f"WAN actor trajectory length {len(trajectory.steps)} exceeds "
+                        f"time_horizon {manager._max_trajectory_length} for {behavior_id}."
+                    )
+                manager.trajectory_queue.put(trajectory)
         # One synthetic environment tick is sufficient to make TrainerController advance the
-        # trainer and check curriculum/self-play resets after this uploaded batch.
+        # trainer and check curriculum/self-play resets after this uploaded cohort.
         return [EnvironmentStep.empty(0)]
 
     def set_policy(self, brain_name: str, policy: Any) -> None:
