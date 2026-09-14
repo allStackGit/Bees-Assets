@@ -1,22 +1,28 @@
-# Distributed public-learning setup
+# Distributed continual-learning setup
 
-This guide covers the automatic public-player telemetry path and optional multi-machine ML-Agents rollout path. It extends the existing continual-learning system; it does not replace PPO, candidate registration, historical opponents, authoritative evaluation, promotion, deployment, or rollback.
+This system is designed so that, after one-time machine configuration, ordinary server startup plus gameplay can continuously feed one validated central neural-policy lineage.
 
-## Safety and ownership invariants
+## Learning model
 
-- There is exactly one authoritative ML-Agents/PPO trainer process. Remote machines run Unity environments only; they never own optimizer state, checkpoints, candidate registration, evaluation, or promotion.
-- Remote Unity environments use the native ML-Agents 1.1.0 communicator. No custom trajectory format is introduced.
-- External communicator ports bind to `127.0.0.1` on the trainer. Remote machines reach them through SSH local forwarding; do not expose ML-Agents gRPC ports directly to a network.
-- Public player telemetry is never treated as on-policy PPO experience. It passes authenticated BeesServer quarantine and independent central validation, then may create bounded scenario pressure. PPO learns from fresh rollouts against that pressure.
-- An active training run has an immutable player-derived pressure selection. Public data arriving during the run is prepared for the next run rather than silently changing the current run's distribution.
+There is exactly one authoritative ML-Agents/PPO optimizer. Dedicated training environments contribute **directly** through fresh on-policy PPO rollouts. Ordinary desktop gameplay contributes **indirectly** through bounded off-policy telemetry that is validated, mined into scenario/tactic pressure, and then reproduced through fresh PPO rollouts.
 
-## Automatic Production player telemetry
+Recorded gameplay actions are never inserted into PPO as if they were current-policy trajectories. Human, Hive Mind, and deployed-neural actions retain separate provenance and cannot cross-confirm one another as repeated source-specific tactics.
 
-For Production desktop builds using the live RL controller (`Stage.ActivateHiveMind && Stage.ActivateBrains`), `RlLiveTelemetryRecorder` and `RlLiveTelemetryUploader` install automatically. No capture/upload command-line opt-in is required.
+Candidate creation, historical-opponent evaluation, permanent competency checks, behavior sanity, promotion, deployment, hot distribution, and rollback remain mandatory. A client receives only a validated champion.
 
-The recorder samples eligible user-controlled policy ships at the normal RL decision cadence. It records the shared policy observation plus movement, turret aim, fire, and the special-action branch. Successful ship-special/mining/healing/warp events call the recorder at the existing authoritative capability-event boundary so those actions are not inferred from aftermath.
+## What contributes automatically
 
-Telemetry is split into bounded segments of at most 64 decision records. Drafts are durable below:
+Outside the dedicated ML-Agents training runtime, `RlLiveTelemetryRecorder` installs on ordinary desktop gameplay `Stage` scenes unless `--rl-disable-automatic-telemetry` is supplied.
+
+Eligible policy-controlled ships are sampled through the frozen policy observation/action ABI regardless of whether the active controller is:
+
+- a human/player;
+- the Hive Mind; or
+- the deployed neural network.
+
+This means Human-vs-NN, Human-vs-Hive-Mind, Hive-Mind-vs-NN, Hive-Mind-vs-Hive-Mind, and deployed-NN-vs-deployed-NN gameplay can all contribute evidence. Production, Development, and explicit Test desktop builds use the same telemetry format. The dedicated training runtime is excluded from this recorder because it already contributes directly through PPO.
+
+Successful ship-special, mining, healing, and warp actions are captured at their authoritative capability-event boundary. Telemetry is split into segments of at most 64 decisions and stored under:
 
 ```text
 Application.persistentDataPath/RlLiveTelemetry/PolicyV8/
@@ -25,119 +31,116 @@ Application.persistentDataPath/RlLiveTelemetry/PolicyV8/
   Invalid/
 ```
 
-Completed segments move to `Pending`. The uploader removes a pending file only after BeesServer confirms immutable archival (including an identical duplicate). Network, authentication, and rate-limit failures leave the local backlog for a later retry. Locally malformed/incompatible payloads move to `Invalid` instead of consuming server quota repeatedly.
+Pending data is deleted only after BeesServer confirms immutable archival. Network/authentication/rate-limit failures retain the backlog for retry. Invalid local payloads are isolated rather than retried indefinitely.
 
-Public `agent_key` values are opaque per match (`agent-000`, `agent-001`, ...). Side, runtime ship ID, Steam user ID, and another stable cross-match player identifier are not encoded into that key. The server keeps authenticated user identity only at the quarantine boundary; the central store retains a store-local contributor bucket for diversity/rate controls.
+The recorder requires a compatible validated deployment manifest so telemetry is tied to an exact model/ABI lineage. A build therefore needs an initial staged champion before it can participate in this loop.
 
-Automatic telemetry can be disabled for a build/run with:
+## Server quarantine and client updates
 
-```text
---rl-disable-automatic-telemetry
-```
-
-This is an operational opt-out only; it does not change the policy ABI.
-
-## BeesServer quarantine
-
-BeesServer must run the RL telemetry upload service and have:
+BeesServer provides the authenticated telemetry quarantine and validated champion-distribution endpoints. Configure durable roots:
 
 ```text
-BEES_RL_TELEMETRY_UPLOAD_DIR=<durable-server-directory>
+BEES_RL_TELEMETRY_UPLOAD_DIR=<durable telemetry quarantine>
+BEES_RL_MODEL_DISTRIBUTION_DIR=<published hot-bundle root>
 ```
 
-The client uses the authenticated `rl-telemetry-begin`, `rl-telemetry-chunk`, and `rl-telemetry-complete` WSS requests. The server enforces the frozen ABI/signature, size/rate limits, connection/user ownership, SHA-256, and immutable quarantine metadata. Accepted batches remain `readyForIngestion=false`; server acceptance is not training approval.
+Production/Development clients use the authenticated Steam boundary. Explicit Test clients use the configured test identity and test WebSocket server.
 
-The central trainer must be able to read that quarantine root (directly or through an operator-controlled synchronized/mounted copy). It revalidates payload bytes, model/deployment identity, frozen policy compatibility, observation/action shapes, action bounds, and contributor provenance independently.
+Every ordinary gameplay stage with a valid bundled champion also polls BeesServer for a newer compatible validated champion, even when the current mode is using only Player or Hive Mind control. The downloaded model is hash/manifest/ABI validated before becoming the cached champion. It is bound to ships only when a side actually requests neural control; failures do not change Player/Hive-Mind-only ownership. If neural control was requested and no compatible champion is usable, that side fails safely to Hive Mind.
 
-## Automatic public tactic processing
+## Autonomous central service
 
-Process the current quarantine once with:
-
-```powershell
-python Training\bees_continual_public_auto.py `
-  --root="F:\RLDemo\BeesContinualV8" `
-  --telemetry-quarantine="D:\BeesRlTelemetry" `
-  --minimum-occurrences=1 `
-  --minimum-contributors=1 `
-  --total-target-fraction=0.10
-```
-
-Strict-valid batches are automatically approved **only for offline tactic mining**. That approval never sets `trusted_for_on_policy_rl` and never authorizes recorded player actions as PPO trajectories.
-
-The current default thresholds are deliberately `1` occurrence and `1` contributor so one tester can exercise the entire capture -> upload -> quarantine -> validation -> mining -> scenario-pressure path. This is a testing-oriented default, not a claim that one player's tactic is statistically representative. Once public traffic is large enough to provide diversity, raise these thresholds (for example through the command-line options) before relying on player-derived pressure as a broad population signal. All other quarantine, schema, model/deployment, contributor-cap, scenario-cap, and fresh-PPO safeguards remain active.
-
-Up to 32 mined tactic signatures may be activated at once because each is registered in both Bee/Human orientations and Unity's player-derived pressure registry supports at most 64 scenarios. The default total automatic target fraction is 10%; the existing player-derived pressure layer still enforces its 50% combined hard cap.
-
-Because public `agent_key` identity deliberately does not assert a trusted Bee/Human side, automatic processing registers both possible orientations at equal share rather than trusting a client-side side claim.
-
-Automatic state is published under:
+`Training/bees_continual_service.py` is the long-running central orchestration layer. It advances one persistent training lineage through immutable generations:
 
 ```text
-<continual-root>/metadata/automatic-public-learning/
-  current.json
-  generations/auto-public-<content-id>.json
+gameplay telemetry
+  -> BeesServer quarantine
+  -> central validation / provenance separation
+  -> tactic + scenario pressure for next generation
+  -> fresh PPO rollouts
+  -> candidate
+  -> authoritative evaluation
+  -> validated champion
+  -> published hot bundle
+  -> gameplay clients
+  -> more telemetry
 ```
 
-Generation records are immutable/content-addressed. `current.json` is only the pointer to the latest validated generation.
+Each generation freezes its player-derived pressure selection. Data arriving during an active generation becomes eligible for the next generation rather than mutating an in-progress training distribution.
 
-## One-machine automatic continual training
+The service persists its phase/generation state. Training, evaluation, Unity build, or publication failures do not replace the current champion; the failed phase is retried safely.
 
-Use `bees_continual_auto_train.py` to process public telemetry, freeze current pressure into the run, start the normal continual trainer, and keep scanning quarantine for the next run:
+## One-time BeesServer autostart configuration
 
-```powershell
-python Training\bees_continual_auto_train.py Training\rl_1v1_config.yaml `
-  --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-public-v8-001 `
-  --num-envs=4 `
-  --continual-root="F:\RLDemo\BeesContinualV8" `
-  --continual-game-build="2026.09.13" `
-  --continual-public-telemetry-quarantine="D:\BeesRlTelemetry" `
-  --continual-public-watch-seconds=30 `
-  --env-args `
-  --rl-matchup-mode=sampled `
-  --rl-ships-per-side=1 `
-  --rl-bee-ship-types=Wasp,Hornet `
-  --rl-human-ship-types=Gunship,Frigate
+On the machine that hosts the central training system, BeesServer branch `rl/unified-training-demo-upload` can supervise the autonomous service. Configure these environment variables once:
+
+```text
+BEES_RL_CONTINUAL_AUTOSTART=1
+BEES_RL_CONTINUAL_ROOT=<continual store root>
+BEES_RL_ASSETS_ROOT=<Bees-Assets root>
+BEES_RL_TRAINING_ENV=<Bees RL Training executable>
+BEES_RL_TELEMETRY_UPLOAD_DIR=<same durable quarantine used by BeesServer>
+BEES_RL_MODEL_DISTRIBUTION_DIR=<same distribution root used by BeesServer>
+BEES_RL_GAME_BUILD_VERSION=<current compatible game build identity>
+BEES_RL_UNITY_EDITOR=<Unity editor executable>
+BEES_RL_UNITY_PROJECT_ROOT=<Unity project root>
 ```
 
-Keep `--env-args` as a separate token and place it after all Python/trainer/wrapper options. ML-Agents treats its remaining tokens as Unity arguments.
+Optional tuning/configuration variables include:
 
-The initial automatic scenario selection is recorded through the same immutable adversarial-run selection boundary as manually reviewed pressure. Newly arriving data found by the background watcher does not change that active selection; start/resume under a new run ID to consume the newer automatic generation.
-
-## Multi-machine rollout training
-
-External workers are a suffix of ML-Agents worker IDs. For eight total environments with four remote environments, workers `0-3` are local and `4-7` are external.
-
-The central machine must specify both the external count and a session-spec output path:
-
-```powershell
-python Training\bees_continual_auto_train.py Training\rl_1v1_config.yaml `
-  --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-public-dist-v8-001 `
-  --num-envs=8 `
-  --base-port=5005 `
-  --bees-external-envs=4 `
-  --bees-remote-spec="F:\RLDemo\remote-specs\bees-public-dist-v8-001.json" `
-  --continual-root="F:\RLDemo\BeesContinualV8" `
-  --continual-game-build="2026.09.13" `
-  --continual-public-telemetry-quarantine="D:\BeesRlTelemetry" `
-  --env-args `
-  --rl-matchup-mode=sampled `
-  --rl-ships-per-side=1 `
-  --rl-bee-ship-types=Wasp,Hornet `
-  --rl-human-ship-types=Gunship,Frigate
+```text
+BEES_RL_PYTHON
+BEES_RL_TRAINER_CONFIG
+BEES_RL_CONTINUAL_CONFIG
+BEES_RL_COMPETENCY_SUITE
+BEES_RL_CONTINUAL_RUN_ID
+BEES_RL_PLATFORM
+BEES_RL_GENERATION_STEPS
+BEES_RL_NUM_ENVS
+BEES_RL_CONTINUAL_RETRY_SECONDS
 ```
 
-Before ML-Agents starts, the wrapper writes the remote spec atomically. The spec content-hashes:
+When autostart is enabled, `start-server.js` validates the required configuration before accepting a server-only launch. Normal foreground startup supervises the continual service directly. Background startup launches a detached continual-learning watchdog so the Python service still has process-level restart protection after the launcher exits.
 
-- the assigned external worker IDs;
+After those machine-specific paths are configured and a compatible initial champion/training build exists, the intended local operating procedure is simply:
+
+```text
+start BeesServer
+play Bees
+```
+
+No operator should need to manually ingest telemetry, curate normal public tactics, start another training generation, run candidate release, or republish an approved champion during healthy operation.
+
+## Automatic public processing safeguards
+
+Strict-valid gameplay batches can be automatically approved **only for offline tactic mining**. They never become trusted on-policy experience.
+
+Automatic processing:
+
+- independently revalidates server quarantine metadata, payload hashes, deployment/model identity, frozen policy compatibility, observations/actions, and contributor provenance;
+- keeps Human, Hive Mind, and deployed-neural evidence separate;
+- enforces contributor and batch caps;
+- mines repeated tactical signatures and approximate geometry;
+- registers both Bee/Human orientations where public `agent_key` does not prove side identity;
+- activates at most 32 tactic signatures so both orientations fit Unity's 64-scenario registry;
+- defaults to 10% automatic player-derived pressure and remains under the existing 50% combined hard cap.
+
+The default occurrence/contributor thresholds remain permissive enough for a small testing population. Raise them when public traffic is large enough for stronger population-level evidence.
+
+## Multi-machine rollout workers
+
+Optional remote machines can increase fresh PPO rollout throughput without becoming trainers. The central ML-Agents process remains the only optimizer/checkpoint owner.
+
+External workers are a suffix of ML-Agents worker IDs. The central launcher writes a content-hashed remote spec that pins:
+
+- assigned external worker IDs;
 - base port;
 - run ID; and
-- the exact final Unity `--env-args`, including automatically injected player-derived pressure.
+- the exact final Unity `--env-args`, including frozen gameplay-derived pressure.
 
-Copy that JSON file unchanged to each rollout machine. `bees_remote_worker.py` validates its content hash before launching anything. A machine may launch all assigned external workers or an explicit subset; it cannot select an ID absent from the central spec.
+The remote machine runs `Training/bees_remote_worker.py` with that spec. The helper validates the spec, creates SSH local forwards to loopback-only ML-Agents ports on the trainer, and launches only its assigned Unity workers. If the tunnel or a worker fails, the helper stops that worker group instead of leaving a partial topology.
 
-Example remote machine running workers `4-7`:
+Example:
 
 ```powershell
 python Training\bees_remote_worker.py `
@@ -147,21 +150,10 @@ python Training\bees_remote_worker.py `
   --worker-ids=4-7
 ```
 
-The helper creates forwards equivalent to:
+Every rollout machine must still have the same compatible training build. Automatic distribution of an entire training-build directory to arbitrary remote machines is not currently part of the system; remote-worker installation/deployment is an infrastructure prerequisite rather than a learning-loop operation.
 
-```text
-remote 127.0.0.1:5009 -> trainer 127.0.0.1:5009  (worker 4)
-remote 127.0.0.1:5010 -> trainer 127.0.0.1:5010  (worker 5)
-remote 127.0.0.1:5011 -> trainer 127.0.0.1:5011  (worker 6)
-remote 127.0.0.1:5012 -> trainer 127.0.0.1:5012  (worker 7)
-```
+## Operational boundaries
 
-It then launches the local Unity executable with each forwarded `--mlagents-port` and the exact `unity_args` from the signed-by-content session spec. If the SSH tunnel or any Unity rollout process fails, the helper stops the local worker group instead of leaving a partially connected topology running.
+The automatic loop does not bypass safety gates and does not make individual clients trainers. The central trainer is authoritative; gameplay is evidence; only validated champions are distributed.
 
-Use the **same training build** on every machine. The session spec pins arguments but does not currently hash an entire Unity build directory; build distribution remains an operator/deployment responsibility.
-
-For distributed continual learning without automatic public telemetry, use `Training/bees_continual_distributed_train.py`. For non-continual ML-Agents training, use `Training/bees_distributed_mlagents_learn.py`. Both use the same `--bees-external-envs` + `--bees-remote-spec` contract.
-
-## Promotion and deployment remain unchanged
-
-Distributed rollout workers and automatic public telemetry do not bypass the existing candidate/champion gates. Stable exports are still registered by the continual trainer, and promotion still requires the authoritative current-champion comparison, complete historical regression coverage, permanent competency suite, behavior sanity evidence, and runtime compatibility checks. Champion publication, hot distribution, health monitoring, and guarded rollback remain the existing release path.
+WebGL does not participate in the desktop telemetry/hot-bundle path. Fully inert entities that have no movement, weapons, special, mining, healing, or warp action do not create policy action records themselves, although matches containing normal policy-controlled ships still contribute through those ships.
