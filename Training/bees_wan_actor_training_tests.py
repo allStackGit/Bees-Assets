@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import queue
 import tempfile
 import unittest
 from pathlib import Path
@@ -116,6 +116,19 @@ class WanOptionTests(unittest.TestCase):
             ["config.yaml", "--resume", "--num-envs=384"],
         )
 
+    def test_rollout_horizon_scales_to_ppo_buffer_and_env_count(self):
+        settings = SimpleNamespace(
+            time_horizon=2048,
+            hyperparameters=SimpleNamespace(buffer_size=16384),
+        )
+        self.assertEqual(actor.rollout_horizon(settings, 384), 43)
+        self.assertEqual(actor.rollout_horizon(settings, 32), 513)
+        tiny = SimpleNamespace(
+            time_horizon=128,
+            hyperparameters=SimpleNamespace(buffer_size=1_000_000),
+        )
+        self.assertEqual(actor.rollout_horizon(tiny, 32), 128)
+
 
 class BrokerInvariantTests(unittest.TestCase):
     def setUp(self):
@@ -140,57 +153,36 @@ class BrokerInvariantTests(unittest.TestCase):
         self.broker._policy_snapshots[self.behavior] = wan._PolicySnapshot(1, "d", b"policy")
         self.broker._policy_epoch = 1
 
-    def test_stale_policy_version_is_rejected(self):
-        payload = {
-            "actor_id": 0,
+    def _payload(self, actor_id: int, agent_id: str, version: int = 1):
+        return {
+            "actor_id": actor_id,
             "control_epoch": 1,
-            "policy_versions": {self.behavior: 0},
-            "trajectories": [FakeTrajectory(self.behavior, "agent_0-7")],
+            "policy_versions": {self.behavior: version},
+            "trajectories": [FakeTrajectory(self.behavior, agent_id)],
         }
+
+    def test_stale_policy_version_is_rejected(self):
         with self.assertRaisesRegex(wan.StaleActorStateError, "policy versions"):
-            self.broker.submit_trajectory_batch(payload)
+            self.broker.submit_trajectory_batch(self._payload(0, "agent_0-7", version=0))
 
     def test_stale_control_epoch_is_rejected(self):
-        payload = {
-            "actor_id": 0,
-            "control_epoch": 0,
-            "policy_versions": {self.behavior: 1},
-            "trajectories": [FakeTrajectory(self.behavior, "agent_0-7")],
-        }
+        payload = self._payload(0, "agent_0-7")
+        payload["control_epoch"] = 0
         with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
             self.broker.submit_trajectory_batch(payload)
 
     def test_actor_cannot_claim_another_actors_worker_ids(self):
-        payload = {
-            "actor_id": 0,
-            "control_epoch": 1,
-            "policy_versions": {self.behavior: 1},
-            # actor 0 owns workers 0-3; worker 4 belongs to actor 1.
-            "trajectories": [FakeTrajectory(self.behavior, "agent_4-99")],
-        }
         with self.assertRaisesRegex(ValueError, "outside actor 0"):
-            self.broker.submit_trajectory_batch(payload)
+            self.broker.submit_trajectory_batch(self._payload(0, "agent_4-99"))
 
     def test_current_native_trajectory_is_accepted(self):
-        payload = {
-            "actor_id": 0,
-            "control_epoch": 1,
-            "policy_versions": {self.behavior: 1},
-            "trajectories": [FakeTrajectory(self.behavior, "agent_3-99")],
-        }
-        self.assertEqual(self.broker.submit_trajectory_batch(payload), 1)
+        self.assertEqual(self.broker.submit_trajectory_batch(self._payload(0, "agent_3-99")), 1)
         batch = self.broker.next_trajectory_batch(0.01)
         self.assertEqual(batch["actor_id"], 0)
         self.assertEqual(len(batch["trajectories"]), 1)
 
     def test_policy_or_control_change_drops_queued_old_batches(self):
-        payload = {
-            "actor_id": 0,
-            "control_epoch": 1,
-            "policy_versions": {self.behavior: 1},
-            "trajectories": [FakeTrajectory(self.behavior, "agent_2-12")],
-        }
-        self.broker.submit_trajectory_batch(payload)
+        self.broker.submit_trajectory_batch(self._payload(0, "agent_2-12"))
         self.broker.request_parameters({"difficulty": 2})
         with self.assertRaises(TimeoutError):
             self.broker.next_trajectory_batch(0.001)
@@ -204,6 +196,73 @@ class BrokerInvariantTests(unittest.TestCase):
                     "actor_id": 1,
                     "control_epoch": 1,
                     "behavior_specs": {self.behavior: different},
+                }
+            )
+
+    def test_partial_initial_policy_set_is_not_exposed_to_actors(self):
+        second_behavior = "BeesRL1v1?team=1"
+        broker = wan.WanActorBroker(self.options, fake_run_options(), "x" * 32)
+        broker.initialize_control(None)
+        broker.register_actor(
+            {
+                "actor_id": 0,
+                "control_epoch": 1,
+                "behavior_specs": {
+                    self.behavior: FakeBehaviorSpec(),
+                    second_behavior: FakeBehaviorSpec(),
+                },
+            }
+        )
+        broker._policy_snapshots[self.behavior] = wan._PolicySnapshot(1, "a", b"one")
+        self.assertEqual(broker.policy_versions, {})
+        broker._policy_snapshots[second_behavior] = wan._PolicySnapshot(1, "b", b"two")
+        self.assertEqual(broker.policy_versions, {self.behavior: 1, second_behavior: 1})
+
+    def test_cohort_requires_distinct_actor_machines(self):
+        options = wan.WanActorOptions(
+            actor_count=2,
+            envs_per_actor=4,
+            min_actors=2,
+            auth_token_file="unused-direct-test",
+            max_queued_batches=4,
+        )
+        broker = wan.WanActorBroker(options, fake_run_options(), "x" * 32)
+        broker.initialize_control(None)
+        for actor_id in (0, 1):
+            broker.register_actor(
+                {
+                    "actor_id": actor_id,
+                    "control_epoch": 1,
+                    "behavior_specs": {self.behavior: FakeBehaviorSpec()},
+                }
+            )
+        broker._policy_snapshots[self.behavior] = wan._PolicySnapshot(1, "d", b"policy")
+        broker._policy_epoch = 1
+        broker.submit_trajectory_batch(
+            {
+                "actor_id": 0,
+                "control_epoch": 1,
+                "policy_versions": {self.behavior: 1},
+                "trajectories": [FakeTrajectory(self.behavior, "agent_0-1")],
+            }
+        )
+        broker.submit_trajectory_batch(
+            {
+                "actor_id": 1,
+                "control_epoch": 1,
+                "policy_versions": {self.behavior: 1},
+                "trajectories": [FakeTrajectory(self.behavior, "agent_4-1")],
+            }
+        )
+        cohort = broker.next_trajectory_cohort(0.01)
+        self.assertEqual({batch["actor_id"] for batch in cohort}, {0, 1})
+        with self.assertRaises(queue.Full):
+            broker.submit_trajectory_batch(
+                {
+                    "actor_id": 0,
+                    "control_epoch": 1,
+                    "policy_versions": {self.behavior: 1},
+                    "trajectories": [FakeTrajectory(self.behavior, "agent_0-2")],
                 }
             )
 
