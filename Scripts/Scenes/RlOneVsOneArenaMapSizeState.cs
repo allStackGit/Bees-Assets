@@ -8,8 +8,8 @@ using UnityEngine;
 /// <summary>
 /// Owns randomized training-map size per Level. Multi-arena Levels reset independently, so a map
 /// size sampled for one episode must never replace the size observed by another still-running arena.
-/// A curated player-derived episode may instead provide an exact tactical map size and initial
-/// center-to-center engagement distance for that Level only.
+/// Each Level owns its private RNG stream so asynchronous episode completion cannot perturb peer
+/// arenas. Curated player-derived episodes may override the sampled size and spawn separation.
 /// </summary>
 internal static class RlOneVsOneArenaMapSizeState
 {
@@ -17,9 +17,11 @@ internal static class RlOneVsOneArenaMapSizeState
     private const float BorderThickness = 24f;
     private const float BorderHalfThickness = BorderThickness / 2f;
     private const float BorderOverhang = BorderThickness * 2f;
+    private const int MapSizeStep = 4;
 
     private static readonly Dictionary<Level, float> EpisodeMapSizes = new Dictionary<Level, float>();
-    private static System.Random _mapSizeRandom;
+    private static readonly Dictionary<Level, System.Random> MapSizeRandoms =
+        new Dictionary<Level, System.Random>();
     private static RlOneVsOneTrainingOptions _options;
 
     static RlOneVsOneArenaMapSizeState()
@@ -31,7 +33,7 @@ internal static class RlOneVsOneArenaMapSizeState
     private static void ResetForSceneLoad()
     {
         EpisodeMapSizes.Clear();
-        _mapSizeRandom = null;
+        MapSizeRandoms.Clear();
         _options = null;
     }
 
@@ -44,19 +46,6 @@ internal static class RlOneVsOneArenaMapSizeState
                 _options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
             }
             return _options;
-        }
-    }
-
-    private static System.Random MapSizeRandom
-    {
-        get
-        {
-            if (_mapSizeRandom == null)
-            {
-                _mapSizeRandom = new System.Random(
-                    RlOneVsOneScenarioSeed.Create(Environment.GetCommandLineArgs()));
-            }
-            return _mapSizeRandom;
         }
     }
 
@@ -83,7 +72,7 @@ internal static class RlOneVsOneArenaMapSizeState
             {
                 RlOneVsOneTrainingOptions options = Options;
                 mapSize = options.HasMapSizeRange
-                    ? SampleMapSize(options.MapSizeMinimum, options.MapSizeMaximum)
+                    ? SampleMapSizeForLevel(level, options.MapSizeMinimum, options.MapSizeMaximum)
                     : options.MapSize;
             }
             EpisodeMapSizes[level] = mapSize;
@@ -144,14 +133,47 @@ internal static class RlOneVsOneArenaMapSizeState
         return new Vector2(x, y);
     }
 
+    internal static float SampleMapSizeForLevel(Level level, float minimum, float maximum)
+    {
+        return SampleSteppedMapSize(GetMapSizeRandom(level), minimum, maximum);
+    }
+
+    // Retain the focused sampler contract used by existing EditMode coverage. Runtime map sampling
+    // uses SampleMapSizeForLevel so every arena keeps an independent random stream.
     internal static float SampleMapSize(float minimum, float maximum)
     {
-        if (maximum <= minimum)
+        System.Random random = new System.Random(0x524C4D50); // "RLMP" test-only stable stream.
+        return SampleSteppedMapSize(random, minimum, maximum);
+    }
+
+    private static float SampleSteppedMapSize(System.Random random, float minimum, float maximum)
+    {
+        int integerMinimum = Mathf.RoundToInt(minimum);
+        int integerMaximum = Mathf.RoundToInt(maximum);
+        if (integerMaximum <= integerMinimum)
         {
-            return minimum;
+            return integerMinimum;
         }
-        double unit = MapSizeRandom.NextDouble();
-        return minimum + (float)(unit * (maximum - minimum));
+
+        int maximumStep = (integerMaximum - integerMinimum) / MapSizeStep;
+        int selectedStep = random.Next(maximumStep + 1);
+        return integerMinimum + selectedStep * MapSizeStep;
+    }
+
+    private static System.Random GetMapSizeRandom(Level level)
+    {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+
+        if (!MapSizeRandoms.TryGetValue(level, out System.Random random))
+        {
+            int seed = RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt);
+            random = new System.Random(seed);
+            MapSizeRandoms.Add(level, random);
+        }
+        return random;
     }
 
     private static void ApplyMapSize(Map map, float mapSize)
@@ -216,6 +238,8 @@ internal static class RlOneVsOneArenaMapSizeState
     {
         if (level != null)
         {
+            // Keep the Level's RNG stream alive across episode resets so its sequence is independent
+            // from when other arenas finish. Only the sampled value belongs to the completed episode.
             EpisodeMapSizes.Remove(level);
         }
     }
@@ -234,10 +258,19 @@ internal static class RlOneVsOneArenaMapSizeState
         EpisodeMapSizes[level] = mapSize;
     }
 
+    internal static void SetRandomSeedForTests(Level level, int seed)
+    {
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+        MapSizeRandoms[level] = new System.Random(seed);
+    }
+
     internal static void ResetForTests()
     {
         EpisodeMapSizes.Clear();
-        _mapSizeRandom = null;
+        MapSizeRandoms.Clear();
         _options = null;
     }
 }
