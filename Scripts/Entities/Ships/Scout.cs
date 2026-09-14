@@ -70,7 +70,7 @@ namespace Assets.Scripts.Entities.Ships
                 Squad.IsMatchingSpeed,
                 Squad.ShouldChase(),
                 true,
-                Utilities.GetNegativeSavedSquadId(),
+                TransientIdAllocator.GetSavedSquadId(),
                 Squad.Side,
                 Level.State.OriginalSquadCounts[Side - 1] + 1,
                 $"{Name} - {MinionType} Spawn #{BeaconsDropped}",
@@ -91,7 +91,7 @@ namespace Assets.Scripts.Entities.Ships
 
             global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             TimeSinceLastBeaconDropped = BeaconClock;
-            long id = Utilities.GetNegativeFleetshipId();
+            long id = TransientIdAllocator.GetFleetShipId();
             Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
             if (ship == null)
             {
