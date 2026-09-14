@@ -222,12 +222,20 @@ namespace Assets.Scripts.UIComponents
                     scrollRect.gameObject.AddComponent<SquadListScrollPolishedMarker>();
                 }
 
-                TMP_Text[] labels = scrollRect.GetComponentsInChildren<TMP_Text>(true);
-                for (int labelIndex = 0; labelIndex < labels.Length; labelIndex++)
+                // Pointer scrolling is dispatched to the first graphic under the mouse. Give every
+                // child graphic in the list a forwarding handler so scrolling works over the row
+                // background, icon, or text instead of only over blank viewport space.
+                Graphic[] graphics = scrollRect.GetComponentsInChildren<Graphic>(true);
+                for (int graphicIndex = 0; graphicIndex < graphics.Length; graphicIndex++)
                 {
-                    if (labels[labelIndex].GetComponent<SquadListScrollForwarder>() == null)
+                    GameObject graphicObject = graphics[graphicIndex].gameObject;
+                    if (graphicObject == scrollRect.gameObject)
                     {
-                        labels[labelIndex].gameObject.AddComponent<SquadListScrollForwarder>();
+                        continue;
+                    }
+                    if (graphicObject.GetComponent<SquadListScrollForwarder>() == null)
+                    {
+                        graphicObject.AddComponent<SquadListScrollForwarder>();
                     }
                 }
             }
