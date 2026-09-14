@@ -11,6 +11,7 @@ import sys
 from typing import Optional, Sequence
 
 import bees_continual_auto_train as continual_auto
+import bees_elastic_wan_policy_transport as policy_transport
 import bees_elastic_wan_training as elastic
 
 
@@ -22,11 +23,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_ACTORS_FLAG} is required for the elastic WAN continual trainer."
         )
 
-    patch = elastic.install_elastic_wan_env_manager(options)
+    original_policy_transport = policy_transport.install_portable_policy_transport()
+    patch = None
     try:
+        patch = elastic.install_elastic_wan_env_manager(options)
         return continual_auto.main(trainer_args)
     finally:
         elastic.restore_elastic_wan_env_manager(patch)
+        policy_transport.restore_portable_policy_transport(original_policy_transport)
 
 
 if __name__ == "__main__":
