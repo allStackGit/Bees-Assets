@@ -50,7 +50,7 @@ Every ordinary gameplay stage with a valid bundled champion also polls BeesServe
 
 ## Autonomous central service
 
-`Training/bees_continual_service.py` is the long-running central orchestration layer. It advances one persistent training lineage through immutable generations:
+`Training/bees_continual_service.py` is the long-running central orchestration layer for local/direct workers. `Training/bees_continual_wan_service.py` preserves the same state machine while replacing only the rollout transport with WAN actors. Both advance one persistent training lineage through immutable generations:
 
 ```text
 gameplay telemetry
@@ -127,18 +127,15 @@ Automatic processing:
 
 The default occurrence/contributor thresholds remain permissive enough for a small testing population. Raise them when public traffic is large enough for stronger population-level evidence.
 
-## Multi-machine rollout workers
+## Multi-machine rollout modes
 
-Optional remote machines can increase fresh PPO rollout throughput without becoming trainers. The central ML-Agents process remains the only optimizer/checkpoint owner.
+There are now two supported ways to add remote rollout machines. Both keep exactly one authoritative PPO optimizer/checkpoint owner on the central trainer.
 
-External workers are a suffix of ML-Agents worker IDs. The central launcher writes a content-hashed remote spec that pins:
+### Direct ML-Agents workers
 
-- assigned external worker IDs;
-- base port;
-- run ID; and
-- the exact final Unity `--env-args`, including frozen gameplay-derived pressure.
+The original direct mode is appropriate for LAN or otherwise low-latency connections. External workers are a suffix of ML-Agents worker IDs. The central launcher writes a content-hashed remote spec that pins assigned worker IDs, base port, run ID, and the exact final Unity `--env-args`, including frozen gameplay-derived pressure.
 
-The remote machine runs `Training/bees_remote_worker.py` with that spec. The helper validates the spec, creates SSH local forwards to loopback-only ML-Agents ports on the trainer, and launches only its assigned Unity workers. If the tunnel or a worker fails, the helper stops that worker group instead of leaving a partial topology.
+The remote machine runs `Training/bees_remote_worker.py` with that spec. The helper validates the spec, creates SSH local forwards to loopback-only ML-Agents ports on the trainer, and launches only its assigned Unity workers. Every ML-Agents decision still crosses the tunnel in this mode.
 
 Example:
 
@@ -150,10 +147,56 @@ python Training\bees_remote_worker.py `
   --worker-ids=4-7
 ```
 
+### WAN actors with local inference
+
+`Training/bees_wan_actor_training.py` and `Training/bees_wan_actor_worker.py` are the high-latency alternative. A WAN actor runs many Unity environments and policy inference locally. It uploads complete native ML-Agents `Trajectory` objects in batches rather than sending every observation to Exeter for immediate inference.
+
+The trust/ownership model is deliberately narrow:
+
+- Exeter remains the only PPO optimizer, checkpoint, candidate-registration, promotion, and release owner;
+- the broker binds only to `127.0.0.1` and remote actors reach it through SSH local forwarding;
+- the broker additionally requires a shared bearer token from a local token file;
+- each actor owns a deterministic non-overlapping worker-ID range;
+- every uploaded trajectory is tagged with the exact policy-version map and control epoch used to generate it;
+- a policy/control change invalidates queued older batches;
+- remote actors drain already-issued old-policy environment actions, discard unfinished trajectory fragments, switch the local policy, and continue from the current simulation state;
+- the broker rejects stale policy versions, stale control epochs, mismatched behavior specifications, wrong worker ownership, and oversized/bounded-queue overload;
+- bounded upload queues provide backpressure when Exeter's PPO learner cannot consume experience as fast as actors generate it.
+
+For twelve remote machines with 32 environments each, configure BeesServer/Exeter once with, for example:
+
+```text
+BEES_RL_WAN_ACTORS=12
+BEES_RL_WAN_ENVS_PER_ACTOR=32
+BEES_RL_WAN_MIN_ACTORS=1
+BEES_RL_WAN_BROKER_PORT=55051
+BEES_RL_WAN_AUTH_TOKEN_FILE=<Exeter path to a 32+ character token file>
+BEES_RL_WAN_MAX_QUEUED_BATCHES=32
+```
+
+When `BEES_RL_WAN_ACTORS` is configured, BeesServer selects `bees_continual_wan_service.py`. The WAN service derives ML-Agents `--num-envs` from `actors * envs_per_actor`, so the example above represents 384 rollout environments while retaining one optimizer lineage.
+
+On remote machine 0:
+
+```powershell
+python Training\bees_wan_actor_worker.py `
+  --actor-id=0 `
+  --ssh="trainer-user@exeter-host" `
+  --env="D:\BeesRL\Bees RL Training.exe" `
+  --auth-token-file="D:\BeesRL\wan-token.txt" `
+  --torch-device=cpu
+```
+
+Machine 1 uses `--actor-id=1`, and so on. The helper persists across central continual generations: when the generation trainer exits for evaluation/release and a later generation starts, the central broker session changes, the actor tears down the old local rollout session, waits, and automatically joins the next one.
+
+`BEES_RL_WAN_MIN_ACTORS` controls startup availability. Setting it to `1` lets training begin with any one correctly configured actor and allows the others to join; setting it to `12` makes a twelve-machine topology fail closed until all twelve actors have registered compatible behavior specifications.
+
+The WAN token grants trusted rollout-actor access and therefore must be treated as a trainer credential. It is not a public-player credential and must not be shipped in normal game builds.
+
 Every rollout machine must still have the same compatible training build. Automatic distribution of an entire training-build directory to arbitrary remote machines is not currently part of the system; remote-worker installation/deployment is an infrastructure prerequisite rather than a learning-loop operation.
 
 ## Operational boundaries
 
-The automatic loop does not bypass safety gates and does not make individual clients trainers. The central trainer is authoritative; gameplay is evidence; only validated champions are distributed.
+The automatic loop does not bypass safety gates and does not make individual gameplay clients trainers. The central trainer is authoritative; gameplay is evidence; only validated champions are distributed.
 
 WebGL does not participate in the desktop telemetry/hot-bundle path. Fully inert entities that have no movement, weapons, special, mining, healing, or warp action do not create policy action records themselves, although matches containing normal policy-controlled ships still contribute through those ships.
