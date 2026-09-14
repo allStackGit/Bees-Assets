@@ -16,9 +16,11 @@ namespace Assets.Scripts.UIComponents
         private const float HorizontalPadding = 22f;
         private const float VerticalPadding = 18f;
         private const float SequenceFooterHeight = 34f;
-        private const float MinimumTutorialHeight = 90f;
+        private const float FallbackMinimumTutorialHeight = 90f;
         private const float ScrollSensitivityMultiplier = 0.75f;
+        private const string InnerBorderName = "Tutorial Inner Border";
         private static readonly Color TutorialBorderColor = new Color(0.48f, 0.55f, 0.61f, 0.9f);
+        private static readonly Color InnerBorderColor = new Color(0.20f, 0.24f, 0.28f, 0.95f);
         private static readonly Color InfoTabFillColor = new Color(0.34f, 0.39f, 0.44f, 0.96f);
 
         private float _nextRefresh;
@@ -45,10 +47,11 @@ namespace Assets.Scripts.UIComponents
             }
             _nextRefresh = Time.unscaledTime + 0.1f;
 
+            float minimumHeight = GetMinimumTutorialHeight();
             Tooltip[] tooltips = FindObjectsOfType<Tooltip>(true);
             for (int i = 0; i < tooltips.Length; i++)
             {
-                PolishTooltip(tooltips[i]);
+                PolishTooltip(tooltips[i], minimumHeight);
             }
 
             if (SceneManager.GetActiveScene().name == "Squad Maker")
@@ -57,7 +60,7 @@ namespace Assets.Scripts.UIComponents
             }
         }
 
-        private static void PolishTooltip(Tooltip tooltip)
+        private static void PolishTooltip(Tooltip tooltip, float minimumHeight)
         {
             if (tooltip == null || tooltip.TooltipText == null || tooltip.TooltipSize == null ||
                 tooltip.TooltipObject == null || !tooltip.TooltipObject.activeInHierarchy)
@@ -82,25 +85,91 @@ namespace Assets.Scripts.UIComponents
             float footerHeight = footer != null && footer.gameObject.activeSelf ? SequenceFooterHeight : 0f;
             float requiredHeight = preferredHeight + VerticalPadding * 2f + footerHeight;
             Vector2 size = tooltip.TooltipSize.sizeDelta;
-            size.y = Mathf.Max(MinimumTutorialHeight, requiredHeight);
+            size.y = Mathf.Max(minimumHeight, requiredHeight);
             tooltip.TooltipSize.sizeDelta = size;
 
-            Graphic body = tooltip.TooltipSize.GetComponent<Graphic>();
-            if (body != null)
-            {
-                Outline[] outlines = body.GetComponents<Outline>();
-                Outline outer = outlines.Length > 0 ? outlines[0] : body.gameObject.AddComponent<Outline>();
-                Outline inner = outlines.Length > 1 ? outlines[1] : body.gameObject.AddComponent<Outline>();
-                outer.effectColor = TutorialBorderColor;
-                outer.effectDistance = new Vector2(3f, -3f);
-                outer.useGraphicAlpha = true;
-                inner.effectColor = TutorialBorderColor;
-                inner.effectDistance = new Vector2(1.5f, -1.5f);
-                inner.useGraphicAlpha = true;
-            }
-
+            ConfigureDoubleBorder(tooltip);
             StyleSequenceButton(tooltip.TooltipSize.Find("Tutorial Sequence Footer/Previous"));
             StyleSequenceButton(tooltip.TooltipSize.Find("Tutorial Sequence Footer/Next"));
+        }
+
+        private static float GetMinimumTutorialHeight()
+        {
+            DialogueManager[] managers = FindObjectsOfType<DialogueManager>(true);
+            for (int i = 0; i < managers.Length; i++)
+            {
+                DialogueManager manager = managers[i];
+                if (manager == null || manager.DialogueBox == null)
+                {
+                    continue;
+                }
+
+                RectTransform dialogueRect = manager.DialogueBox.GetComponent<RectTransform>();
+                if (dialogueRect == null)
+                {
+                    continue;
+                }
+
+                float dialogueHeight = dialogueRect.rect.height * Mathf.Abs(dialogueRect.localScale.y);
+                if (dialogueHeight > 0f)
+                {
+                    return Mathf.Max(FallbackMinimumTutorialHeight, dialogueHeight * 0.5f);
+                }
+            }
+            return FallbackMinimumTutorialHeight;
+        }
+
+        private static void ConfigureDoubleBorder(Tooltip tooltip)
+        {
+            Graphic body = tooltip.TooltipSize.GetComponent<Graphic>();
+            if (body == null)
+            {
+                return;
+            }
+
+            Outline[] outlines = body.GetComponents<Outline>();
+            Outline outer = outlines.Length > 0 ? outlines[0] : body.gameObject.AddComponent<Outline>();
+            outer.effectColor = TutorialBorderColor;
+            outer.effectDistance = new Vector2(3f, -3f);
+            outer.useGraphicAlpha = true;
+            for (int i = 1; i < outlines.Length; i++)
+            {
+                outlines[i].enabled = false;
+            }
+
+            Transform existing = tooltip.TooltipSize.Find(InnerBorderName);
+            GameObject innerObject;
+            if (existing == null)
+            {
+                innerObject = new GameObject(
+                    InnerBorderName,
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(Image),
+                    typeof(Outline));
+                innerObject.transform.SetParent(tooltip.TooltipSize, false);
+                innerObject.transform.SetAsFirstSibling();
+            }
+            else
+            {
+                innerObject = existing.gameObject;
+            }
+
+            RectTransform rect = innerObject.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.offsetMin = new Vector2(4f, 4f);
+            rect.offsetMax = new Vector2(-4f, -4f);
+
+            Image image = innerObject.GetComponent<Image>();
+            image.color = new Color(1f, 1f, 1f, 0f);
+            image.raycastTarget = false;
+
+            Outline inner = innerObject.GetComponent<Outline>();
+            inner.effectColor = InnerBorderColor;
+            inner.effectDistance = new Vector2(1.5f, -1.5f);
+            inner.useGraphicAlpha = false;
         }
 
         private static void StyleSequenceButton(Transform buttonTransform)
