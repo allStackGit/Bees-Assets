@@ -1,0 +1,75 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1788442428",
+        "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+        "command_line_arguments": "R:\\Bees\\Assets\\.venv-mlagents\\Scripts\\mlagents-learn Training\\rl_1v1_config.yaml --env=F:\\RLDemo\\Bees RL Training --run-id=bees-rl-1v1-full-002 --seed=36 --no-graphics --num-envs=4 --env-args --rl-health-ratio .25 --rl-map-size 30 --rl-episode-timeout 120 --rl-ships-per-side 1 --rl-bee-ship-types Wasp --rl-human-ship-types Gunship",
+        "mlagents_version": "1.1.0",
+        "mlagents_envs_version": "1.1.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.1.1+cu121",
+        "numpy_version": "1.23.5",
+        "end_time_seconds": "1788442438"
+    },
+    "total": 10.170083200006047,
+    "count": 1,
+    "self": 2.3074504999967758,
+    "children": {
+        "run_training.setup": {
+            "total": 0.33541490000789054,
+            "count": 1,
+            "self": 0.33541490000789054
+        },
+        "TrainerController.start_learning": {
+            "total": 7.527217800001381,
+            "count": 1,
+            "self": 0.00011580000864341855,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 7.125816699990537,
+                    "count": 1,
+                    "self": 7.125816699990537
+                },
+                "TrainerController.advance": {
+                    "total": 0.3477448000048753,
+                    "count": 1,
+                    "self": 8.200004231184721e-06,
+                    "children": {
+                        "env_step": {
+                            "total": 0.3477366000006441,
+                            "count": 1,
+                            "self": 0.00035879999632015824,
+                            "children": {
+                                "SubprocessEnvManager._take_step": {
+                                    "total": 0.34737780000432394,
+                                    "count": 1,
+                                    "self": 2.269999822601676e-05,
+                                    "children": {
+                                        "TorchPolicy.evaluate": {
+                                            "total": 0.3473551000060979,
+                                            "count": 1,
+                                            "self": 0.3473551000060979
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "TrainerController._save_models": {
+                    "total": 0.05354049999732524,
+                    "count": 1,
+                    "self": 3.950000973418355e-05,
+                    "children": {
+                        "RLTrainer._checkpoint": {
+                            "total": 0.05350099998759106,
+                            "count": 1,
+                            "self": 0.05350099998759106
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

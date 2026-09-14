@@ -1,0 +1,59 @@
+Mono path[0] = 'F:/RLDemo/Bees RL Training/Bees_Data/Managed'
+Mono config path = 'F:/RLDemo/Bees RL Training/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.4.3f1 (39d1a88d4dd1)
+[Subsystems] Discovering subsystems at path F:/RLDemo/Bees RL Training/Bees_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.004 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Microsoft Media Foundation video decoding to texture disabled: graphics device is Null, only Direct3D 11 and Direct3D 12 (only on desktop) are supported for hardware-accelerated video decoding.
+Texture with ID 114 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
+Texture with ID 210 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
+Texture with ID 221 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
+Texture with ID 238 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
+UnloadTime: 0.751000 ms
+DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to connect to ws://clashofempire.net:7146
+Connection with WebSocketSharp open!
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+User id is 2013868892
+Can not play a disabled audio source
+Registered Communicator in Agent.
+RL 1v1 episode=1 bee_team=0 human_team=1 winner=0 timeout=True duration=119.67s bee_tsv=16->16 human_tsv=18->18 bee_shots=6 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=2 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=2 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=0 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=3 bee_team=0 human_team=1 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=2 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=4 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=2 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=5 bee_team=0 human_team=1 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=2 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=6 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=2 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=7 bee_team=0 human_team=1 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=3 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=8 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=6 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=9 bee_team=0 human_team=1 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=1 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=10 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=1 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=2 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 summary episodes=10 bee_record=0-10 human_record=0-10 timeouts=10 avg_duration=119.95s bee_shots=25 bee_hits=0 bee_hit_rate=0.00 % bee_damage=0 human_shots=4 human_hits=0 human_hit_rate=0.00 % human_damage=0
+RL 1v1 episode=11 bee_team=0 human_team=1 winner=1 timeout=False duration=15.03s bee_tsv=16->16 human_tsv=18->0 bee_shots=2 bee_hits=1 bee_damage=75 bee_tsv_reward=0.5294 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=-0.5294 bee_reward=10.5169 human_reward=-10.5294
+RL 1v1 episode=12 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=2 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=2 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=13 bee_team=0 human_team=1 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=0 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=14 bee_team=1 human_team=0 winner=0 timeout=True duration=119.98s bee_tsv=16->16 human_tsv=18->18 bee_shots=0 bee_hits=0 bee_damage=0 bee_tsv_reward=0.0000 human_shots=0 human_hits=0 human_damage=0 human_tsv_reward=0.0000 bee_reward=-10.0000 human_reward=-10.0000
+RL 1v1 episode=15 bee_team=0 human_team=1 winner=1 timeout=False duration=47.53s bee_tsv=16->16 human_tsv=18->0 bee_shots=2 bee_hits=1 bee_damage=75 bee_tsv_reward=0.5294 human_shots=2 human_hits=0 human_damage=0 human_tsv_reward=-0.5294 bee_reward=10.4898 human_reward=-10.5294
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input Polling Thread exited.
+Input System module state changed to: Shutdown.
+CodeReloadManager destroyed
+GarbageCollector disposing of ComputeBuffer. Please use ComputeBuffer.Release() or .Dispose() to manually release the buffer.
