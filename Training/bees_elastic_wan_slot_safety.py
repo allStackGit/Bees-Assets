@@ -1,7 +1,8 @@
-"""Exclusive actor-slot ownership for elastic WAN rollout machines."""
+"""Exclusive actor-slot ownership and liveness for elastic WAN rollout machines."""
 
 from __future__ import annotations
 
+import time
 from typing import Any, Mapping, Type
 
 import bees_elastic_wan_training as elastic
@@ -26,6 +27,18 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
                     )
             super().register_actor(payload)
             self._registrations[actor_id]["actor_instance_id"] = instance_id
+
+    def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
+        """Treat the authenticated control acknowledgement as an actor heartbeat too."""
+        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        super().acknowledge_reset(payload)
+        with self._condition:
+            self._active_snapshot_locked()
+            record = self._registrations.get(actor_id)
+            if record is None:
+                raise ValueError("actor lease expired; re-register before sending heartbeat")
+            record["last_seen"] = time.monotonic()
+            self._condition.notify_all()
 
 
 def install_slot_safety() -> Type[elastic.ElasticWanBroker]:
