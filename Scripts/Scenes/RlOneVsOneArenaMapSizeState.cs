@@ -17,6 +17,7 @@ internal static class RlOneVsOneArenaMapSizeState
     private const float BorderThickness = 24f;
     private const float BorderHalfThickness = BorderThickness / 2f;
     private const float BorderOverhang = BorderThickness * 2f;
+    private const int MapSizeStep = 4;
 
     private static readonly Dictionary<Level, float> EpisodeMapSizes = new Dictionary<Level, float>();
     private static readonly Dictionary<Level, System.Random> MapSizeRandoms =
@@ -112,25 +113,29 @@ internal static class RlOneVsOneArenaMapSizeState
 
     internal static float SampleMapSizeForLevel(Level level, float minimum, float maximum)
     {
-        if (maximum <= minimum)
-        {
-            return minimum;
-        }
-        double unit = GetMapSizeRandom(level).NextDouble();
-        return minimum + (float)(unit * (maximum - minimum));
+        return SampleSteppedMapSize(GetMapSizeRandom(level), minimum, maximum);
     }
 
     // Retain the focused sampler contract used by existing EditMode coverage. Runtime map sampling
     // uses SampleMapSizeForLevel so every arena keeps an independent random stream.
     internal static float SampleMapSize(float minimum, float maximum)
     {
-        if (maximum <= minimum)
-        {
-            return minimum;
-        }
         System.Random random = new System.Random(0x524C4D50); // "RLMP" test-only stable stream.
-        double unit = random.NextDouble();
-        return minimum + (float)(unit * (maximum - minimum));
+        return SampleSteppedMapSize(random, minimum, maximum);
+    }
+
+    private static float SampleSteppedMapSize(System.Random random, float minimum, float maximum)
+    {
+        int integerMinimum = Mathf.RoundToInt(minimum);
+        int integerMaximum = Mathf.RoundToInt(maximum);
+        if (integerMaximum <= integerMinimum)
+        {
+            return integerMinimum;
+        }
+
+        int maximumStep = (integerMaximum - integerMinimum) / MapSizeStep;
+        int selectedStep = random.Next(maximumStep + 1);
+        return integerMinimum + selectedStep * MapSizeStep;
     }
 
     private static System.Random GetMapSizeRandom(Level level)
