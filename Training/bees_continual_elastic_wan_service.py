@@ -1,19 +1,63 @@
 """Autonomous continual-service entry point for an elastic WAN rollout pool.
 
-The normal continual train -> release -> publish state machine remains authoritative. Exeter keeps
-its configured local ``--num-envs`` environments, while zero through twelve remote actor machines
-may join or leave the training phase dynamically. Remote actors do not exist during release/publish;
-the persistent helpers simply wait for the next training broker session.
+The normal continual train -> release -> publish state machine remains authoritative. Exeter may run
+zero or more configured local ``--num-envs`` environments, while zero through twelve remote actor
+machines may join or leave the training phase dynamically. With zero local environments the training
+phase waits safely for remote actors; release/publish behavior is unchanged.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 import bees_continual_service as service
 import bees_elastic_wan_training as elastic
+
+
+def _normalize_zero_local_num_envs(argv: Sequence[str]) -> Tuple[List[str], bool]:
+    """Let the base service parser validate everything except elastic WAN's explicit zero-local mode.
+
+    ``bees_continual_service`` intentionally rejects zero environments for ordinary local training.
+    Rather than weakening that contract, temporarily parse an explicit elastic ``--num-envs=0`` as
+    one and restore zero on the immutable ServiceOptions afterward.
+    """
+    normalized: List[str] = []
+    zero_local = False
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--num-envs":
+            if index + 1 >= len(argv):
+                raise ValueError("--num-envs requires a value")
+            value = argv[index + 1]
+            if value == "0":
+                normalized.extend(["--num-envs", "1"])
+                zero_local = True
+            else:
+                normalized.extend([argument, value])
+            index += 2
+            continue
+        if argument.startswith("--num-envs="):
+            value = argument.split("=", 1)[1]
+            if value == "0":
+                normalized.append("--num-envs=1")
+                zero_local = True
+            else:
+                normalized.append(argument)
+            index += 1
+            continue
+        normalized.append(argument)
+        index += 1
+    return normalized, zero_local
+
+
+def parse_elastic_service_options(argv: Sequence[str]) -> service.ServiceOptions:
+    normalized, zero_local = _normalize_zero_local_num_envs(argv)
+    options = service.parse_options(normalized)
+    return replace(options, num_envs=0) if zero_local else options
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -30,9 +74,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from bees_wan_actor_training import load_auth_token
 
         load_auth_token(actor_options.auth_token_file or "")
-        options = service.parse_options(service_args)
-        if options.num_envs <= 0:
-            raise ValueError("Elastic WAN service requires at least one local Exeter environment.")
+        options = parse_elastic_service_options(service_args)
     except (OSError, ValueError, SystemExit) as exc:
         print(f"Continuous-learning elastic WAN service configuration error: {exc}", file=sys.stderr)
         return 2
