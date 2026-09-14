@@ -77,7 +77,8 @@ namespace Assets.Scripts.Entities.Ships
             Ship target,
             long attackerCommandOutcomeId = 0,
             string rlDamageSource = "gun",
-            Ship rlDamageOwner = null)
+            Ship rlDamageOwner = null,
+            bool rlSelfInflicted = false)
         {
             if (target.Health <= 0) return;
             if (target.Level.Stage.MakeShotsHarmless) power = 0;
@@ -98,9 +99,19 @@ namespace Assets.Scripts.Entities.Ships
                 appliedDamage,
                 rlDamageSource);
 
-            // The exact combat TSV loss only exists after health and TSV have been recalculated.
-            // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
-            global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
+            // Historical gameplay accounting may attribute reciprocal/recoil damage to the ship
+            // contacted by the self-damaging unit. RL reward must instead treat that physical
+            // self-damage as unattributed so an arbitrary opponent cannot receive positive credit.
+            if (rlSelfInflicted)
+            {
+                global::RlOneVsOneEpisodeCoordinator.RecordUnattributedTsvLoss(target, -_targetTSVChange);
+            }
+            else
+            {
+                // The exact combat TSV loss only exists after health and TSV have been recalculated.
+                // Emit RL hit shaping here so it is credited at impact rather than at episode timeout.
+                global::RlOneVsOneEpisodeCoordinator.RecordHit(attacker, target, appliedDamage, -_targetTSVChange);
+            }
             LogHitStats(attacker, attackerFleetShip, attackerSavedSquad, target, target.Squad, -_targetTSVChange, attackerCommandOutcomeId);
 
             if (target.Health == 0)
