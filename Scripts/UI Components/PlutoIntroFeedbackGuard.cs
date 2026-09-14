@@ -16,7 +16,7 @@ namespace Assets.Scripts.UIComponents
     public sealed class PlutoIntroFeedbackGuard : MonoBehaviour
     {
         private const int PlutoOneMissionId = 0;
-        private const float RevealDuration = 0.7f;
+        private const float RevealDuration = 2f;
         private const float RevealZoomFraction = 0.08f;
         private const float MaximumRevealZoom = 4f;
         private const float CommandPulseAmount = 0.07f;
