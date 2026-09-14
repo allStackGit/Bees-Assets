@@ -68,6 +68,37 @@ class BeesOptionParsingTests(unittest.TestCase):
         self.assertTrue(batch_inference)
         self.assertTrue(cpu_inference)
 
+    def test_results_dir_defaults_to_hidden_unity_ignored_folder(self):
+        trainer_args = launcher._ensure_results_dir(
+            ["Training/rl_1v1_config.yaml", "--resume"]
+        )
+
+        self.assertEqual(
+            trainer_args,
+            [
+                "Training/rl_1v1_config.yaml",
+                "--resume",
+                "--results-dir=.results",
+            ],
+        )
+
+    def test_explicit_results_dir_is_preserved(self):
+        separate_value = launcher._ensure_results_dir(
+            ["Training/rl_1v1_config.yaml", "--results-dir", "custom-results"]
+        )
+        equals_value = launcher._ensure_results_dir(
+            ["Training/rl_1v1_config.yaml", "--results-dir=custom-results"]
+        )
+
+        self.assertEqual(
+            separate_value,
+            ["Training/rl_1v1_config.yaml", "--results-dir", "custom-results"],
+        )
+        self.assertEqual(
+            equals_value,
+            ["Training/rl_1v1_config.yaml", "--results-dir=custom-results"],
+        )
+
 
 class CpuInferenceActorCacheTests(unittest.TestCase):
     @staticmethod
