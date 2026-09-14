@@ -36,6 +36,7 @@ namespace Assets.Scripts.UIComponents
         private Honeybee _revealHoneybee;
 
         private bool _commandPresentationApplied;
+        private bool _commandTutorialComplete;
         private Vector3 _attackOnSightBaseScale;
         private GameObject _attackOnSightButton;
 
@@ -217,8 +218,9 @@ namespace Assets.Scripts.UIComponents
 
         private void UpdateCommandTutorial()
         {
-            if (!ConfigData.UserProgressData.ShowToolTips || _stage.Menus == null ||
-                _stage.Menus.ActionBox == null || _stage.PrimaryLevel.CurrentLevelOptions == null ||
+            if (_commandTutorialComplete || !ConfigData.UserProgressData.ShowToolTips ||
+                _stage.Menus == null || _stage.Menus.ActionBox == null ||
+                _stage.PrimaryLevel.CurrentLevelOptions == null ||
                 !_stage.PrimaryLevel.CurrentLevelOptions.HasSquadActionBox)
             {
                 return;
@@ -236,6 +238,7 @@ namespace Assets.Scripts.UIComponents
             if (gunship != null && gunship.Squad != null && gunship.Squad.AttackOnSight)
             {
                 RestoreCommandPresentation();
+                _commandTutorialComplete = true;
                 return;
             }
 
@@ -324,6 +327,7 @@ namespace Assets.Scripts.UIComponents
             _revealComplete = false;
             _revealHoneybee = null;
             _hasLastCameraPosition = false;
+            _commandTutorialComplete = false;
         }
     }
 }
