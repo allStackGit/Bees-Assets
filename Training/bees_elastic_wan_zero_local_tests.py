@@ -54,6 +54,12 @@ class ZeroLocalArgumentTests(unittest.TestCase):
         self.assertFalse(zero_local_requested)
         self.assertEqual(normalized, ["--num-envs", "32"])
 
+    def test_duplicate_num_envs_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "only once"):
+            elastic_service._normalize_zero_local_num_envs(
+                ["--num-envs=0", "--num-envs=32"]
+            )
+
     def test_remote_actor_accepts_worker_base_zero(self):
         session = {
             "max_actors": 12,
