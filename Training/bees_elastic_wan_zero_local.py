@@ -102,6 +102,10 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
         from mlagents.trainers.env_manager import EnvironmentStep
 
         specs = self._bees_wan_broker.merged_behavior_specs()
+        # With no local Unity process, the first compatible actor defines this trainer session's ABI.
+        # Pin it permanently before trainer creation so a later actor cannot redefine the BehaviorSpec
+        # after every original actor has disconnected and its lease has expired.
+        self._bees_wan_broker.set_reference_behavior_specs(specs)
         # TrainerController discovers behavior IDs from the EnvironmentStep keys. The None values are
         # a marker only and are filtered by _process_step_infos below; real experience arrives as
         # already assembled native Trajectory objects from remote actors.
