@@ -2,9 +2,9 @@
 SaveData/PathCache.json
 /SpriteCache
 .venv-mlagents
-/results/bees-full-001/BeesRL1v1
-/results/bees-full-002/BeesRL1v1
+/.results/bees-full-001/BeesRL1v1
+/.results/bees-full-002/BeesRL1v1
 __pycache__/
 __pycache__.meta
-/results/bees-full-003/BeesRL1v1
-/results/bees-full-004/BeesRL1v1
+/.results/bees-full-003/BeesRL1v1
+/.results/bees-full-004/BeesRL1v1
