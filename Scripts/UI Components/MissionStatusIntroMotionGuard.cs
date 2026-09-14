@@ -5,7 +5,7 @@ namespace Assets.Scripts.UIComponents
 {
     /// <summary>
     /// Presents the mission objective in the middle of the screen long enough to be read, then
-    /// slides the existing banner into its authored top-of-screen HUD position.
+    /// slides the existing banner into its exact authored HUD position without rewriting layout anchors.
     /// </summary>
     [DefaultExecutionOrder(1500)]
     public sealed class MissionStatusIntroMotionGuard : MonoBehaviour
@@ -15,8 +15,8 @@ namespace Assets.Scripts.UIComponents
 
         private GameMenus _menus;
         private RectTransform _statusRect;
-        private Vector2 _startPosition;
-        private Vector2 _targetPosition;
+        private Vector3 _startWorldPosition;
+        private Vector3 _targetWorldPosition;
         private float _shownAt;
         private bool _hasStarted;
         private bool _hasFinished;
@@ -102,16 +102,16 @@ namespace Assets.Scripts.UIComponents
             float elapsed = Time.unscaledTime - _shownAt;
             if (elapsed <= HoldDuration)
             {
-                _statusRect.anchoredPosition = _startPosition;
+                _statusRect.position = _startWorldPosition;
                 return;
             }
 
             float t = Mathf.Clamp01((elapsed - HoldDuration) / SlideDuration);
             t = Mathf.SmoothStep(0f, 1f, t);
-            _statusRect.anchoredPosition = Vector2.LerpUnclamped(_startPosition, _targetPosition, t);
+            _statusRect.position = Vector3.LerpUnclamped(_startWorldPosition, _targetWorldPosition, t);
             if (t >= 1f)
             {
-                _statusRect.anchoredPosition = _targetPosition;
+                _statusRect.position = _targetWorldPosition;
                 _hasFinished = true;
             }
         }
@@ -120,27 +120,25 @@ namespace Assets.Scripts.UIComponents
         {
             Canvas canvas = _statusRect.GetComponentInParent<Canvas>();
             RectTransform canvasRect = canvas != null ? canvas.transform as RectTransform : null;
-            if (canvasRect == null || canvasRect.rect.height <= 0f)
+            if (canvasRect == null || canvasRect.rect.height <= 0f || canvasRect.rect.width <= 0f)
             {
                 return;
             }
 
-            Vector2 anchorMin = _statusRect.anchorMin;
-            Vector2 anchorMax = _statusRect.anchorMax;
-            Vector2 pivot = _statusRect.pivot;
-            anchorMin.y = 1f;
-            anchorMax.y = 1f;
-            pivot.y = 1f;
-            _statusRect.anchorMin = anchorMin;
-            _statusRect.anchorMax = anchorMax;
-            _statusRect.pivot = pivot;
+            // Capture the actual authored layout result before moving anything. Working in world
+            // space avoids changing anchors/pivot and therefore returns the banner to exactly the
+            // position its prefab/layout system selected for this resolution.
+            _targetWorldPosition = _statusRect.position;
 
-            _targetPosition = _statusRect.anchoredPosition;
-            _targetPosition.y = 0f;
-            float statusHeight = Mathf.Max(_statusRect.rect.height, _statusRect.sizeDelta.y);
-            _startPosition = _targetPosition;
-            _startPosition.y = -(canvasRect.rect.height * 0.5f - statusHeight * 0.5f);
-            _statusRect.anchoredPosition = _startPosition;
+            Vector3[] statusCorners = new Vector3[4];
+            Vector3[] canvasCorners = new Vector3[4];
+            _statusRect.GetWorldCorners(statusCorners);
+            canvasRect.GetWorldCorners(canvasCorners);
+            Vector3 statusCenter = (statusCorners[0] + statusCorners[2]) * 0.5f;
+            Vector3 canvasCenter = (canvasCorners[0] + canvasCorners[2]) * 0.5f;
+
+            _startWorldPosition = _targetWorldPosition + (canvasCenter - statusCenter);
+            _statusRect.position = _startWorldPosition;
             _shownAt = Time.unscaledTime;
             _hasStarted = true;
             _hasFinished = false;
