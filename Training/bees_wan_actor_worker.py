@@ -17,7 +17,7 @@ import copy
 import hashlib
 import http.client
 import json
-import os
+import math
 import queue
 import signal
 import subprocess
@@ -39,6 +39,7 @@ import bees_wan_actor_training as wan
 DEFAULT_RECONNECT_SECONDS = 5.0
 DEFAULT_LOCAL_UPLOAD_QUEUE = 8
 DEFAULT_STATE_WAIT_SECONDS = 20.0
+MAX_TRAJECTORIES_PER_UPLOAD = 256
 
 
 class BrokerUnavailable(RuntimeError):
@@ -286,6 +287,18 @@ def _build_template_policy(behavior_id: str, behavior_spec: Any, run_options: An
     )
 
 
+def rollout_horizon(trainer_settings: Any, total_envs: int) -> int:
+    """Choose short WAN segments so roughly one learning trajectory per env fills one PPO buffer."""
+    if not isinstance(total_envs, int) or isinstance(total_envs, bool) or total_envs <= 0:
+        raise ValueError("total_envs must be a positive integer")
+    time_horizon = int(trainer_settings.time_horizon)
+    buffer_size = int(getattr(trainer_settings.hyperparameters, "buffer_size", 0))
+    if time_horizon <= 0 or buffer_size <= 0:
+        raise ValueError("WAN actor trainer requires positive time_horizon and PPO buffer_size")
+    target = int(math.ceil((buffer_size + 1) / total_envs))
+    return max(1, min(time_horizon, target))
+
+
 def _remap_step(step: Any, worker_offset: int):
     from mlagents.trainers.env_manager import EnvironmentStep
 
@@ -376,6 +389,8 @@ class ActorSession:
         self.graphics = graphics
         self.stop = stop
         self.session_id, self.env_count, self.central_run_options = _validate_session(session, actor_id)
+        actor_count = int(session["actor_count"])
+        self.total_envs = actor_count * self.env_count
         self.worker_offset = actor_id * self.env_count
         self.control_epoch = 0
         self.policy_epoch = -1
@@ -392,6 +407,7 @@ class ActorSession:
         self._uploader: Optional[threading.Thread] = None
         self._onnx_temp = tempfile.TemporaryDirectory(prefix=f"bees-wan-actor-{actor_id}-")
         self._current_env_config = None
+        self._rollout_horizons: Dict[str, int] = {}
 
     def close(self) -> None:
         self._upload_stop.set()
@@ -478,13 +494,15 @@ class ActorSession:
                 options,
                 seed=int(options.env_settings.seed) + parsed.team_id,
             )
+            horizon = rollout_horizon(trainer_settings, self.total_envs)
             manager = AgentManager(
                 template,
                 behavior_id,
                 StatsReporter(f"WANActor{self.actor_id}/{behavior_id}"),
-                trainer_settings.time_horizon,
+                horizon,
                 threaded=False,
             )
+            self._rollout_horizons[behavior_id] = horizon
             self.templates[behavior_id] = template
             self.manager.set_agent_manager(behavior_id, manager)
             self.manager.set_policy(behavior_id, template)
@@ -513,7 +531,8 @@ class ActorSession:
         print(
             f"[Bees WAN actor] joined session={self.session_id} actor={self.actor_id} "
             f"workers={self.worker_offset}-{self.worker_offset + self.env_count - 1} "
-            f"local_envs={self.env_count} device={self.torch_device}."
+            f"local_envs={self.env_count} total_envs={self.total_envs} "
+            f"rollout_horizons={self._rollout_horizons} device={self.torch_device}."
         )
 
     def _write_onnx(self, behavior: str, payload: Mapping[str, Any]) -> Path:
@@ -574,17 +593,30 @@ class ActorSession:
         if not isinstance(remote_versions_raw, Mapping):
             raise RuntimeError("WAN central state has malformed policy_versions")
         remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
-        if require_policy and not remote_versions:
+        expected_behaviors = set(self.templates)
+        if require_policy and set(remote_versions) != expected_behaviors:
             deadline = time.monotonic() + max(30.0, float(self.central_run_options.env_settings.timeout_wait))
-            while not self.stop.is_set() and time.monotonic() < deadline and not remote_versions:
+            while (
+                not self.stop.is_set()
+                and time.monotonic() < deadline
+                and set(remote_versions) != expected_behaviors
+            ):
                 time.sleep(0.1)
                 state = self.client.state(self.session_id, -1, self.control_epoch, 0.0)
                 remote_versions_raw = state.get("policy_versions")
                 if isinstance(remote_versions_raw, Mapping):
                     remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
                     new_control = int(state.get("control_epoch", -1))
-            if not remote_versions:
-                raise TimeoutError("WAN actor timed out waiting for the central policy")
+            if set(remote_versions) != expected_behaviors:
+                raise TimeoutError(
+                    "WAN actor timed out waiting for the complete central policy set; "
+                    f"expected={sorted(expected_behaviors)} got={sorted(remote_versions)}"
+                )
+        elif remote_versions and set(remote_versions) != expected_behaviors:
+            raise RuntimeError(
+                "Central WAN policy set does not match local behavior set: "
+                f"expected={sorted(expected_behaviors)} got={sorted(remote_versions)}"
+            )
 
         control_changed = new_control != self.control_epoch
         policy_changed = remote_versions != self.policy_versions
@@ -655,6 +687,12 @@ class ActorSession:
                     or int(state.get("control_epoch", -1)) != self.control_epoch
                 ):
                     self._state_changed.set()
+                    while (
+                        self._state_changed.is_set()
+                        and not self._upload_stop.is_set()
+                        and not self.stop.is_set()
+                    ):
+                        time.sleep(0.05)
             except BrokerSessionChanged:
                 self._session_changed.set()
                 return
@@ -719,15 +757,16 @@ class ActorSession:
             self.manager.process_steps(mapped_steps)
             trajectories = self._collect_trajectories()
             if trajectories:
-                # A bounded local queue provides natural backpressure when Exeter cannot consume
-                # trajectories as quickly as this actor can generate them.
-                for start in range(0, len(trajectories), 64):
+                # One actor generally emits one compact cohort batch. The 256-trajectory ceiling can
+                # represent 32 environments with up to eight policy agents each (e.g. 4v4) while the
+                # bounded queue still provides backpressure when Exeter is saturated.
+                for start in range(0, len(trajectories), MAX_TRAJECTORIES_PER_UPLOAD):
                     payload = {
                         "session_id": self.session_id,
                         "actor_id": self.actor_id,
                         "control_epoch": self.control_epoch,
                         "policy_versions": dict(self.policy_versions),
-                        "trajectories": trajectories[start : start + 64],
+                        "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
                     while not self.stop.is_set():
                         try:
@@ -749,7 +788,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--auth-token-file", required=True)
     parser.add_argument("--broker-port", type=int, default=wan.DEFAULT_BROKER_PORT)
     parser.add_argument("--local-port", type=int, default=wan.DEFAULT_BROKER_PORT)
-    parser.add_argument("--local-base-port", type=int, default=wan.DEFAULT_BASE_PORT if hasattr(wan, "DEFAULT_BASE_PORT") else 5005)
+    parser.add_argument("--local-base-port", type=int, default=5005)
     parser.add_argument("--ssh-executable", default="ssh")
     parser.add_argument("--ssh-option", action="append", default=[])
     parser.add_argument("--torch-device", default="cpu")
@@ -818,7 +857,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return 4
             try:
                 session = _wait_for_broker(client, stop, args.reconnect_seconds)
-                actor = ActorSession(
+                actor_session = ActorSession(
                     client,
                     session,
                     actor_id=args.actor_id,
@@ -830,10 +869,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     upload_queue_size=args.upload_queue,
                 )
                 try:
-                    actor.start()
-                    actor.run()
+                    actor_session.start()
+                    actor_session.run()
                 finally:
-                    actor.close()
+                    actor_session.close()
             except BrokerSessionChanged:
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
