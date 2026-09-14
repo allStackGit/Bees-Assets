@@ -78,10 +78,28 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("agent.SetModel(RlOneVsOneAgent.BehaviorName, _model)"));
             Assert.That(source, Does.Contain("behavior.BehaviorType = BehaviorType.InferenceOnly;"));
             Assert.That(source, Does.Contain("_stage.ActivateBrains = false;"));
+            Assert.That(source, Does.Contain("RlProductionControllerRouter.SetNeuralNetworkAvailable(_stage, false);"));
             Assert.That(source, Does.Contain("level.SetupHivemind();"));
             Assert.That(source, Does.Contain("agents[i].enabled = false;"));
             Assert.That(source, Does.Contain("RlPolicy/BeesRL1v1"));
             Assert.That(source, Does.Contain("RlPolicy/BeesRL1v1Deployment"));
+        }
+
+        [Test]
+        public void EveryGameplayStagePollsValidatedChampionWithoutChangingNonNeuralOwnership()
+        {
+            string source = ReadSource("Scripts", "Scenes", "RlLivePolicyModelBootstrap.cs");
+            Assert.That(source, Does.Contain("private static void InstallForGameplayStage()"));
+            Assert.That(source, Does.Contain("if (stage == null)"));
+            Assert.That(source, Does.Contain(
+                "bool neuralRequested = RlProductionControllerRouter.AnyNeuralNetworkRequested(stage);"));
+            Assert.That(source, Does.Contain("if (neuralRequested)"));
+            Assert.That(source, Does.Contain("bootstrap.FailToHiveMind(error);"));
+            Assert.That(source, Does.Contain("non-neural controller ownership is unchanged"));
+            Assert.That(source, Does.Contain("stage.gameObject.AddComponent<RlLivePolicyModelUpdater>()"));
+            Assert.That(source, Does.Contain("updater.Initialize(bootstrap, deploymentId);"));
+            Assert.That(source, Does.Contain("RlProductionControllerRouter.AnyNeuralNetwork(_stage)"));
+            Assert.That(source, Does.Not.Contain("private static bool IsLiveRlRequested(Stage stage)"));
         }
 
         [Test]
