@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Optional, Sequence
 
+import bees_elastic_wan_policy_transport as policy_transport
 import bees_elastic_wan_training as elastic
 import bees_mlagents_learn as launcher
 
@@ -17,15 +18,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"{elastic.WAN_ACTORS_FLAG} is required for the elastic WAN learner launcher."
         )
 
-    patch = elastic.install_elastic_wan_env_manager(options)
+    original_policy_transport = policy_transport.install_portable_policy_transport()
+    patch = None
     original_argv = sys.argv
     try:
+        patch = elastic.install_elastic_wan_env_manager(options)
         sys.argv = [original_argv[0], *trainer_args]
         launcher.main()
         return 0
     finally:
         sys.argv = original_argv
         elastic.restore_elastic_wan_env_manager(patch)
+        policy_transport.restore_portable_policy_transport(original_policy_transport)
 
 
 if __name__ == "__main__":
