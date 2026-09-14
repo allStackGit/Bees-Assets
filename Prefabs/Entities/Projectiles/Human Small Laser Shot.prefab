@@ -201,7 +201,7 @@ MonoBehaviour:
   Rotation: 0
   Power: 0
   Range: 0
-  Speed: 80
+  Speed: 100
   Shooter: {fileID: 0}
   Target: {fileID: 0}
   Weapon: {fileID: 0}
