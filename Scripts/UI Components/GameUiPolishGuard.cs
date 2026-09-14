@@ -13,6 +13,10 @@ namespace Assets.Scripts.UIComponents
     /// </summary>
     public sealed class GameUiPolishGuard : MonoBehaviour
     {
+        private const float MissionStatusFontScale = 1.25f;
+        private const float MissionStatusMinHeight = 24f;
+        private const float MissionStatusVerticalPadding = 3f;
+
         private GameMenus _menus;
         private bool _missionStatusStyled;
         private bool _summaryWasVisible;
@@ -89,22 +93,91 @@ namespace Assets.Scripts.UIComponents
             TMP_Text text = _menus.MissionStatusText;
             if (text.enableAutoSizing)
             {
-                text.fontSizeMin *= 1.18f;
-                text.fontSizeMax *= 1.18f;
+                text.fontSizeMin *= MissionStatusFontScale;
+                text.fontSizeMax *= MissionStatusFontScale;
             }
             else
             {
-                text.fontSize *= 1.18f;
+                text.fontSize *= MissionStatusFontScale;
             }
 
-            RectTransform rect = text.rectTransform;
-            if (rect != null)
+            RectTransform textRect = text.rectTransform;
+            RectTransform statusRect = _menus.MissionStatus != null
+                ? _menus.MissionStatus.GetComponent<RectTransform>()
+                : null;
+
+            if (statusRect != null)
             {
-                Vector2 size = rect.sizeDelta;
-                size.y += 8f;
-                rect.sizeDelta = size;
+                float availableTextWidth = textRect != null
+                    ? Mathf.Max(1f, textRect.rect.width)
+                    : Mathf.Max(1f, statusRect.rect.width);
+                float preferredTextHeight = text.GetPreferredValues("Ag", availableTextWidth, 0f).y;
+                float statusHeight = CalculateMissionStatusHeight(preferredTextHeight);
+
+                // The mission-status owner is already positioned at the top of the gameplay HUD.
+                // Make the green banner itself begin at that top edge and grow downward, instead of
+                // leaving the original half-height inset that lets the enlarged text protrude above it.
+                Vector2 statusAnchorMin = statusRect.anchorMin;
+                Vector2 statusAnchorMax = statusRect.anchorMax;
+                Vector2 statusPivot = statusRect.pivot;
+                Vector2 statusPosition = statusRect.anchoredPosition;
+                Vector2 statusSize = statusRect.sizeDelta;
+                statusAnchorMin.y = 1f;
+                statusAnchorMax.y = 1f;
+                statusPivot.y = 1f;
+                statusPosition.y = 0f;
+                statusSize.y = statusHeight;
+                statusRect.anchorMin = statusAnchorMin;
+                statusRect.anchorMax = statusAnchorMax;
+                statusRect.pivot = statusPivot;
+                statusRect.anchoredPosition = statusPosition;
+                statusRect.sizeDelta = statusSize;
+
+                // Some versions of the Space HUD contain one or more fixed-height wrappers between
+                // Mission Status and its TMP label. Let those wrappers follow the enlarged banner
+                // vertically while preserving every authored horizontal relationship.
+                RectTransform current = textRect != null ? textRect.parent as RectTransform : null;
+                while (current != null && current != statusRect)
+                {
+                    StretchVertically(current, 0f);
+                    current = current.parent as RectTransform;
+                }
             }
+
+            if (textRect != null)
+            {
+                StretchVertically(textRect, MissionStatusVerticalPadding);
+            }
+
             _missionStatusStyled = true;
+        }
+
+        internal static float CalculateMissionStatusHeight(float preferredTextHeight)
+        {
+            return Mathf.Max(
+                MissionStatusMinHeight,
+                Mathf.Max(0f, preferredTextHeight) + MissionStatusVerticalPadding * 2f);
+        }
+
+        private static void StretchVertically(RectTransform rect, float padding)
+        {
+            if (rect == null)
+            {
+                return;
+            }
+
+            Vector2 anchorMin = rect.anchorMin;
+            Vector2 anchorMax = rect.anchorMax;
+            Vector2 offsetMin = rect.offsetMin;
+            Vector2 offsetMax = rect.offsetMax;
+            anchorMin.y = 0f;
+            anchorMax.y = 1f;
+            offsetMin.y = Mathf.Max(0f, padding);
+            offsetMax.y = -Mathf.Max(0f, padding);
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
         }
 
         private void ApplySummaryLabels()
