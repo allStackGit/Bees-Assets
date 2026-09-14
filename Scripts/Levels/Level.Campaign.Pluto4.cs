@@ -30,7 +30,7 @@ namespace Assets.Scripts.Levels
             _dialogueTimer.Reuse(1.5f, () =>
                 Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(1, 4)));
             AddTimer(_dialogueTimer);
-            Stage.Menus.SetMissionStatus("Survive and defend Pluto!");
+            Stage.Menus.SetMissionStatus("Defend Pluto and Survive!");
 
             NextTriggers.Add(new Trigger(
                 () => Stage.CutsceneManager.HitDialogueBreak,
@@ -43,7 +43,8 @@ namespace Assets.Scripts.Levels
                     if (shipTypes.Contains(ConfigData.ShipTypes.Dreadnought)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[7]);
                     if (shipTypes.Contains(ConfigData.ShipTypes.Gunship)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[8]);
                     if (shipTypes.Contains(ConfigData.ShipTypes.Frigate)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[9]);
-                    plutoLines.AddRange(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(10, 3));
+                    if (shipTypes.Contains(ConfigData.ShipTypes.Scout)) plutoLines.Add(Stage.CutsceneManager.PlutoLines_BluerPastures[10]);
+                    plutoLines.AddRange(Stage.CutsceneManager.PlutoLines_BluerPastures.GetRange(11, 2));
                     Stage.CutsceneManager.PlayDialogueSection(plutoLines);
 
                     NextTriggers.Add(new Trigger(
