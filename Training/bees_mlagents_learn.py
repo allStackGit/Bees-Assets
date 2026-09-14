@@ -10,6 +10,8 @@ while applying Bees-specific performance and device fixes:
   and samples worker timer-tree IPC.
 * --bees-cpu-inference keeps PPO/optimizer state on --torch-device while using a
   synchronized CPU actor replica for environment inference.
+* Training results default to .results so Unity does not import checkpoints,
+  logs, and exported networks; an explicit --results-dir still takes precedence.
 
 All other arguments are passed unchanged to mlagents-learn.
 """
@@ -25,6 +27,8 @@ EXPECTED_MLAGENTS_VERSION = "1.1.0"
 THREAD_FLAG = "--bees-torch-threads"
 BATCH_INFERENCE_FLAG = "--bees-batch-inference"
 CPU_INFERENCE_FLAG = "--bees-cpu-inference"
+RESULTS_DIR_FLAG = "--results-dir"
+DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
 _ORIGINAL_MLAGENTS_WORKER = None
 
@@ -80,6 +84,19 @@ def _extract_bees_options(
         index += 1
 
     return trainer_args, torch_threads, batch_inference, cpu_inference
+
+
+def _ensure_results_dir(argv: Sequence[str]) -> List[str]:
+    """Use Unity-ignored .results unless the caller explicitly chooses a path."""
+
+    trainer_args = list(argv)
+    if any(
+        argument == RESULTS_DIR_FLAG
+        or argument.startswith(RESULTS_DIR_FLAG + "=")
+        for argument in trainer_args
+    ):
+        return trainer_args
+    return [*trainer_args, f"{RESULTS_DIR_FLAG}={DEFAULT_RESULTS_DIR}"]
 
 
 class _CpuInferenceActorCache:
@@ -526,6 +543,7 @@ def main() -> None:
         batch_inference,
         cpu_inference,
     ) = _extract_bees_options(sys.argv[1:])
+    trainer_args = _ensure_results_dir(trainer_args)
 
     if cpu_inference and not batch_inference:
         raise SystemExit(
