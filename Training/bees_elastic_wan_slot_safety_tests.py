@@ -1,4 +1,4 @@
-"""Focused tests for elastic WAN actor-slot ownership."""
+"""Focused tests for elastic WAN actor-slot ownership and liveness."""
 
 from __future__ import annotations
 
@@ -20,13 +20,23 @@ class FakeActionSpec:
     discrete_branches = (3, 2)
 
 
+class MismatchedActionSpec:
+    continuous_size = 3
+    discrete_branches = (3, 2)
+
+
 class FakeBehaviorSpec:
     observation_specs = (FakeObservationSpec(),)
     action_spec = FakeActionSpec()
 
 
+class MismatchedBehaviorSpec:
+    observation_specs = (FakeObservationSpec(),)
+    action_spec = MismatchedActionSpec()
+
+
 class SlotSafetyTests(unittest.TestCase):
-    def _broker(self):
+    def _unreferenced_broker(self):
         options = elastic.ElasticWanOptions(
             max_actors=12,
             auth_token_file="unused",
@@ -41,9 +51,13 @@ class SlotSafetyTests(unittest.TestCase):
             "0123456789abcdef0123456789abcdef",
             local_envs=32,
         )
+        broker.initialize_control({})
+        return broker
+
+    def _broker(self):
+        broker = self._unreferenced_broker()
         specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         broker.set_reference_behavior_specs(specs)
-        broker.initialize_control({})
         return broker, specs
 
     def test_same_process_can_refresh_its_slot(self):
@@ -79,6 +93,43 @@ class SlotSafetyTests(unittest.TestCase):
                     "control_epoch": 1,
                     "behavior_specs": specs,
                 }
+            )
+
+    def test_authenticated_control_ack_refreshes_actor_lease(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                "actor_id": 1,
+                "actor_instance_id": "a" * 32,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        before = broker._registrations[1]["last_seen"]
+        broker.acknowledge_reset(
+            {
+                "actor_id": 1,
+                "control_epoch": 1,
+            }
+        )
+        self.assertGreaterEqual(broker._registrations[1]["last_seen"], before)
+
+    def test_exeter_local_behavior_specs_reject_incompatible_early_actor(self):
+        broker = self._unreferenced_broker()
+        remote_specs = {"BeesRL1v1?team=0": MismatchedBehaviorSpec()}
+        broker.register_actor(
+            {
+                "actor_id": 0,
+                "actor_instance_id": "a" * 32,
+                "env_count": 4,
+                "control_epoch": 1,
+                "behavior_specs": remote_specs,
+            }
+        )
+        with self.assertRaisesRegex(RuntimeError, "differ from Exeter"):
+            broker.set_reference_behavior_specs(
+                {"BeesRL1v1?team=0": FakeBehaviorSpec()}
             )
 
 
