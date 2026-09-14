@@ -25,13 +25,13 @@ namespace Bees.Tests.EditMode
         public void MapSizeRangeKeepsGlobalFallbackStableWhileArenaSamplerUsesConfiguredBounds()
         {
             object options = Parse(
-                "--rl-map-size-min", "64",
-                "--rl-map-size-max", "128");
+                "--rl-map-size-min", "32",
+                "--rl-map-size-max", "48");
 
             Assert.That(GetProperty(options, "HasMapSizeRange"), Is.EqualTo(true));
-            Assert.That((float)GetProperty(options, "MapSizeMinimum"), Is.EqualTo(64f));
-            Assert.That((float)GetProperty(options, "MapSizeMaximum"), Is.EqualTo(128f));
-            Assert.That((float)GetProperty(options, "MapSize"), Is.EqualTo(64f),
+            Assert.That((float)GetProperty(options, "MapSizeMinimum"), Is.EqualTo(32f));
+            Assert.That((float)GetProperty(options, "MapSizeMaximum"), Is.EqualTo(48f));
+            Assert.That((float)GetProperty(options, "MapSize"), Is.EqualTo(32f),
                 "Process-global callers must use the conservative minimum instead of mutable episode state.");
 
             Type mapStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
@@ -39,8 +39,10 @@ namespace Bees.Tests.EditMode
             Assert.That(sample, Is.Not.Null);
             for (int i = 0; i < 32; i++)
             {
-                float value = (float)sample.Invoke(null, new object[] { 64f, 128f });
-                Assert.That(value, Is.InRange(64f, 128f));
+                float value = (float)sample.Invoke(null, new object[] { 32f, 48f });
+                Assert.That(value, Is.AnyOf(32f, 36f, 40f, 44f, 48f));
+                Assert.That(value, Is.EqualTo(Mathf.Round(value)));
+                Assert.That((value - 32f) % 4f, Is.EqualTo(0f));
             }
         }
 
