@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static partial class RlPolicySchema
 {
-    internal const int Version = 8;
+    internal const int Version = 9;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int ExpectedObservationSize = 4722;
+    internal const int ExpectedObservationSize = 17270;
     internal const int ExpectedContinuousActions = 34;
     internal const int ExpectedWeaponFireBranchCount = 16;
     internal const int ExpectedWeaponFireBranchSize = 2;
@@ -24,12 +24,13 @@ internal static partial class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v8|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=4722|cont=34|disc=2x16,5,65,65,65|" +
+        "bees-rl-v9|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=17270|cont=34|disc=2x16,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=6|weaponbits=6|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
-        "allies=64|enemies=64|weapons=16|enemy-mounts=16|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=29|capability=12|parent-carrier=19|entity=19|weapon=20|friendly-projectile-speed=1-per-weapon|enemy-projectile-speed=none|enemy-mount=22|mining-slot=7|" +
-        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id";
+        "allies=64|enemies=64|weapons=16|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
+        "self=29|capability=12|parent-carrier=119|entity-core=19|entity=119|weapon=20|weapon-observation=shared-self-ally-enemy|" +
+        "projectile-speed=linear-max200-per-weapon|enemy-mount=0|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|" +
+        "grid=13x13|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
     {
@@ -39,11 +40,11 @@ internal static partial class RlPolicySchema
             errors.Add($"behavior expected {ExpectedBehaviorName} but was {RlOneVsOneAgent.BehaviorName}");
         }
 
-        Check(errors, RlCombatPerception.BaseObservationSize, 4701, "pre-v8 observation prefix size");
-        Check(errors, RlCombatPerception.EpisodeProgressObservationIndex, 4701, "episode progress observation index");
-        Check(errors, RlCombatPerception.ReservedObservationStartIndex, 4702, "reserved observation start index");
+        Check(errors, RlCombatPerception.BaseObservationSize, 17249, "v9 observation prefix size");
+        Check(errors, RlCombatPerception.EpisodeProgressObservationIndex, 17249, "episode progress observation index");
+        Check(errors, RlCombatPerception.ReservedObservationStartIndex, 17250, "reserved observation start index");
         Check(errors, RlCombatPerception.ReservedObservationCount, 20, "reserved observation count");
-        Check(errors, RlCombatPerception.ReservedObservationEndIndex, 4721, "reserved observation end index");
+        Check(errors, RlCombatPerception.ReservedObservationEndIndex, 17269, "reserved observation end index");
         Check(errors, RlCombatPerception.ObservationSize, ExpectedObservationSize, "observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
         Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
@@ -60,12 +61,20 @@ internal static partial class RlPolicySchema
         Check(errors, RlCombatPerception.MapObjectTypeBitCount, 4, "map-object type bits");
         Check(errors, RlCombatPerception.MaxObservedAllies, 64, "ally slots");
         Check(errors, RlCombatPerception.MaxObservedEnemies, 64, "enemy slots");
-        Check(errors, RlCombatPerception.MaxWeaponSlots, 16, "weapon slots");
-        Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 16, "enemy weapon-mount slots");
-        Check(errors, RlCombatPerception.WeaponObservationSize, 20, "friendly weapon observation size");
-        Check(errors, RlCombatPerception.EnemyWeaponMountObservationSize, 22, "enemy weapon-mount observation size");
+        Check(errors, RlCombatPerception.MaxWeaponSlots, 16, "self weapon slots");
+        Check(errors, RlCombatPerception.MaxObservedEntityWeaponSlots, 5, "observed entity weapon slots");
+        Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 0, "standalone enemy weapon-mount slots");
+        Check(errors, RlCombatPerception.EntityCoreObservationSize, 19, "entity core observation size");
+        Check(errors, RlCombatPerception.EntityObservationSize, 119, "rich entity observation size");
+        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 119, "parent-carrier observation size");
+        Check(errors, RlCombatPerception.WeaponObservationSize, 20, "shared weapon observation size");
+        Check(errors, RlCombatPerception.EnemyWeaponMountObservationSize, 0, "standalone enemy weapon-mount observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
+        if (Math.Abs(RlCombatPerception.ProjectileSpeedObservationMax - 200f) > 0.0001f)
+        {
+            errors.Add($"projectile speed normalization max expected 200 but was {RlCombatPerception.ProjectileSpeedObservationMax}");
+        }
 
         ValidateFrozenEnumMappings(errors);
         ValidateEnumRange<ConfigData.ShipTypes>(errors, RlCombatPerception.ShipTypeBitCount, "ship type");
@@ -101,6 +110,14 @@ internal static partial class RlPolicySchema
             error = $"RL policy ABI cannot control {ship.ShipType}: it has {ship.Weapons.Count} authored weapon slots, " +
                     $"but the frozen policy supports {RlCombatPerception.MaxWeaponSlots}. " +
                     "Increase the ABI before canonical training rather than aliasing excess weapons.";
+            return false;
+        }
+
+        if (ship.Weapons != null && ship.Weapons.Count > RlCombatPerception.MaxObservedEntityWeaponSlots)
+        {
+            error = $"RL policy ABI cannot fully observe {ship.ShipType}: it has {ship.Weapons.Count} authored weapon slots, " +
+                    $"but rich ally/enemy observations support {RlCombatPerception.MaxObservedEntityWeaponSlots}. " +
+                    "Increase the ABI before canonical training rather than truncating observed weapons.";
             return false;
         }
 
@@ -150,7 +167,7 @@ internal static partial class RlPolicySchema
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
         // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v8.
+        // within the reserved bit range, but existing values must never be renumbered for ABI v9.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
