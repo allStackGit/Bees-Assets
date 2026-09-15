@@ -1,9 +1,6 @@
-using System.Collections.Generic;
-using System.Linq;
 using Assets.Scripts.UIComponents;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Assets.Scripts.UI_Components
@@ -29,94 +26,78 @@ namespace Assets.Scripts.UI_Components
                 return;
             }
 
-            Button closeButton = menus.SummaryPanel.GetComponentsInChildren<Button>(true)
-                .FirstOrDefault(button => button != null && button.gameObject.name == "Close Button");
-            if (closeButton == null)
-            {
-                return;
-            }
-
-            ConfigureClosePress(menus, closeButton);
+            // The summary continuation control must not depend on the legacy close control having
+            // already been upgraded to a Unity Button. The exact close hit area is owned by the
+            // initial-design regression guard, so do not add a second PointerDown interaction path.
             EnsureContinueButton(menus);
             menus.SummaryPanel.AddComponent<SummaryClosePressMarker>();
-        }
-
-        private static void ConfigureClosePress(GameMenus menus, Button closeButton)
-        {
-            EventTrigger trigger = closeButton.GetComponent<EventTrigger>();
-            if (trigger == null)
-            {
-                trigger = closeButton.gameObject.AddComponent<EventTrigger>();
-            }
-            if (trigger.triggers == null)
-            {
-                trigger.triggers = new List<EventTrigger.Entry>();
-            }
-
-            EventTrigger.Entry press = new EventTrigger.Entry
-            {
-                eventID = EventTriggerType.PointerDown
-            };
-            press.callback.AddListener(_ =>
-            {
-                if (menus.SummaryPanel.activeInHierarchy)
-                {
-                    menus.HideMissionSummary();
-                }
-            });
-            trigger.triggers.Add(press);
         }
 
         private static void EnsureContinueButton(GameMenus menus)
         {
             Transform existing = menus.SummaryPanel.transform.Find(ContinueButtonName);
-            if (existing != null)
+            GameObject buttonObject = existing != null ? existing.gameObject : null;
+            if (buttonObject == null)
             {
-                return;
+                buttonObject = new GameObject(
+                    ContinueButtonName,
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(Image),
+                    typeof(Button));
+                buttonObject.transform.SetParent(menus.SummaryPanel.transform, false);
+
+                RectTransform rect = buttonObject.GetComponent<RectTransform>();
+                rect.anchorMin = new Vector2(0.5f, 0f);
+                rect.anchorMax = new Vector2(0.5f, 0f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.anchoredPosition = new Vector2(0f, 18f);
+                rect.sizeDelta = new Vector2(160f, 38f);
+
+                Image background = buttonObject.GetComponent<Image>();
+                background.color = new Color(0.20f, 0.24f, 0.28f, 0.96f);
             }
 
-            GameObject buttonObject = new GameObject(
-                ContinueButtonName,
-                typeof(RectTransform),
-                typeof(CanvasRenderer),
-                typeof(Image),
-                typeof(Button));
-            buttonObject.transform.SetParent(menus.SummaryPanel.transform, false);
-
-            RectTransform rect = buttonObject.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 18f);
-            rect.sizeDelta = new Vector2(160f, 38f);
-
-            Image background = buttonObject.GetComponent<Image>();
-            background.color = new Color(0.20f, 0.24f, 0.28f, 0.96f);
-
             Button button = buttonObject.GetComponent<Button>();
-            button.targetGraphic = background;
+            if (button == null)
+            {
+                button = buttonObject.AddComponent<Button>();
+            }
+            Image image = buttonObject.GetComponent<Image>();
+            if (image == null)
+            {
+                image = buttonObject.AddComponent<Image>();
+                image.color = new Color(0.20f, 0.24f, 0.28f, 0.96f);
+            }
+            button.targetGraphic = image;
+            button.onClick.RemoveListener(menus.HideMissionSummary);
             button.onClick.AddListener(menus.HideMissionSummary);
 
-            GameObject labelObject = new GameObject(
-                "Label",
-                typeof(RectTransform),
-                typeof(CanvasRenderer),
-                typeof(TextMeshProUGUI));
-            labelObject.transform.SetParent(buttonObject.transform, false);
+            TMP_Text label = buttonObject.GetComponentInChildren<TMP_Text>(true);
+            if (label == null)
+            {
+                GameObject labelObject = new GameObject(
+                    "Label",
+                    typeof(RectTransform),
+                    typeof(CanvasRenderer),
+                    typeof(TextMeshProUGUI));
+                labelObject.transform.SetParent(buttonObject.transform, false);
 
-            RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = Vector2.zero;
-            labelRect.offsetMax = Vector2.zero;
+                RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+                labelRect.anchorMin = Vector2.zero;
+                labelRect.anchorMax = Vector2.one;
+                labelRect.offsetMin = Vector2.zero;
+                labelRect.offsetMax = Vector2.zero;
+                label = labelObject.GetComponent<TextMeshProUGUI>();
+            }
 
-            TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
-            TMP_Text summaryText = menus.SummaryPanel.GetComponentInChildren<TMP_Text>(true);
+            TMP_Text summaryText = menus.SummaryPanel.GetComponentsInChildren<TMP_Text>(true)
+                .FirstOrDefault(text => text != null && text != label);
             if (summaryText != null)
             {
                 label.font = summaryText.font;
             }
-            label.text = "CONTINUE";
+            label.text = "NEXT";
             label.fontSize = 18f;
             label.fontStyle = FontStyles.Bold;
             label.color = Color.white;
