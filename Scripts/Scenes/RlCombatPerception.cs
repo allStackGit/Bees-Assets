@@ -15,8 +15,8 @@ using UnityEngine;
 /// </summary>
 internal sealed class RlCombatPerception
 {
-    internal const int ShipTypeBitCount = 6;
-    internal const int WeaponTypeBitCount = 6;
+    internal const int ShipTypeBitCount = 5;
+    internal const int WeaponTypeBitCount = 4;
     internal const int MapObjectTypeBitCount = 4;
 
     internal const int MaxObservedAllies = 64;
@@ -28,20 +28,20 @@ internal sealed class RlCombatPerception
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int MaxObservedEnemyWeaponMounts = 0;
 
-    internal const int NavigationGridSize = 13;
+    internal const int NavigationGridSize = 21;
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
-    internal const float NavigationGridCellSize = 10f;
+    internal const float NavigationGridCellSize = 6f;
 
-    internal const int SelfObservationSize = 29;
+    internal const int SelfObservationSize = 28;
     internal const int CapabilityObservationSize = 12;
-    internal const int EntityCoreObservationSize = 19;
-    internal const int WeaponObservationSize = 20;
+    internal const int EntityCoreObservationSize = 18;
+    internal const int WeaponObservationSize = 18;
     internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
     internal const int MiningAsteroidObservationSize = 7;
-    internal const int MapObjectObservationSize = 12;
-    internal const int CollisionAsteroidObservationSize = 11;
+    internal const int MapObjectObservationSize = 11;
+    internal const int CollisionAsteroidObservationSize = 10;
     internal const int ObjectiveObservationSize = 16;
     internal const int BaseObservationSize = SelfObservationSize +
         CapabilityObservationSize +
@@ -91,7 +91,6 @@ internal sealed class RlCombatPerception
         internal readonly Vector2 Position;
         internal readonly Vector2 HalfExtents;
         internal readonly float HealthFraction;
-        internal readonly float Activity;
         internal readonly bool Targetable;
 
         internal ObservedMapObject(
@@ -100,7 +99,6 @@ internal sealed class RlCombatPerception
             Vector2 position,
             Vector2 halfExtents,
             float healthFraction,
-            float activity,
             bool targetable)
         {
             Id = id;
@@ -108,7 +106,6 @@ internal sealed class RlCombatPerception
             Position = position;
             HalfExtents = halfExtents;
             HealthFraction = healthFraction;
-            Activity = activity;
             Targetable = targetable;
         }
     }
@@ -210,8 +207,20 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(GetSpecialReadiness(ship));
 
         GameState state = level.State;
-        sensor.AddObservation(NormalizePositive(state.GetShips(side).Count, 64f));
-        sensor.AddObservation(NormalizePositive(state.GetShipsVisibleToHiveMind(side).Count, 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShips(side)), 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShipsNot(side)), 64f));
+    }
+
+    private static int CountLiveShips(List<Ship> ships)
+    {
+        if (ships == null) return 0;
+        int count = 0;
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship candidate = ships[i];
+            if (candidate != null && !candidate.IsDead) count++;
+        }
+        return count;
     }
 
     private static void AddCapabilityObservations(Ship ship, VectorSensor sensor)
@@ -463,7 +472,7 @@ internal sealed class RlCombatPerception
             GetColliderGeometry(ship.Level, mapObject.Collider, mapObject.transform.localPosition, out Vector2 position, out Vector2 halfExtents);
             int type = mapObject is CanisterBomb ? FireTankObservationType : GenericMapObjectObservationType;
             float healthFraction = mapObject.MaxHealth > 0 ? Mathf.Clamp01((float)mapObject.Health / mapObject.MaxHealth) : 0f;
-            _mapObjectCandidates.Add(new ObservedMapObject(mapObject.Id, type, position, halfExtents, healthFraction, 0f, true));
+            _mapObjectCandidates.Add(new ObservedMapObject(mapObject.Id, type, position, halfExtents, healthFraction, true));
         }
 
         _mapObjectCandidates.Sort((left, right) =>
@@ -496,7 +505,6 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(NormalizePositive(halfExtents.x, 20f));
             sensor.AddObservation(NormalizePositive(halfExtents.y, 20f));
             sensor.AddObservation(mapObject.Targetable ? 1f : 0f);
-            sensor.AddObservation(NormalizePositive(mapObject.Activity, 4f));
         }
     }
 
@@ -563,7 +571,6 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(SquashSignedDistance(velocity.x));
             sensor.AddObservation(SquashSignedDistance(velocity.y));
             sensor.AddObservation(asteroid.HealthFraction);
-            sensor.AddObservation(1f);
         }
     }
 
