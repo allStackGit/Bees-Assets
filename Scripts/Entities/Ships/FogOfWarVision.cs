@@ -28,6 +28,12 @@ namespace Assets.Scripts.Entities.Ships
 
         public void LateUpdate()
         {
+            if (Ship == null || Ship.IsDead)
+            {
+                Deactivate();
+                return;
+            }
+
             Vector2 shipPosition = Ship.GetPosition();
             Vector3 currentPosition = Transform.position;
             if (currentPosition.x != shipPosition.x || currentPosition.y != shipPosition.y || currentPosition.z != 0f)
