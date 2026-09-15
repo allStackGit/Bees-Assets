@@ -24,8 +24,8 @@ internal sealed class RlCombatPerception
     internal const int MaxObservedMiningAsteroids = 8;
     internal const int MaxObservedMapObjects = 64;
     internal const int MaxObservedCollisionAsteroids = 48;
-    internal const int MaxWeaponSlots = 16;
-    internal const int MaxObservedEntityWeaponSlots = 5;
+    internal const int MaxWeaponSlots = 5;
+    internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int MaxObservedEnemyWeaponMounts = 0;
 
     internal const int NavigationGridSize = 13;
