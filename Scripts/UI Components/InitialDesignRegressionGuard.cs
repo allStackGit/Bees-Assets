@@ -14,10 +14,10 @@ using UnityEngine.UI;
 namespace Assets.Scripts.UIComponents
 {
     /// <summary>
-    /// Stabilizes the focused regressions found while play-testing the rl/initial-design UI pass.
-    /// It deliberately runs after the presentation/layout guards that own the affected UI, while
-    /// remaining just ahead of PlutoIntroFeedbackGuard so the Honeybee can be frozen before that
-    /// guard consumes the first-contact trigger.
+    /// Stabilizes focused regressions found while play-testing the rl/initial-design UI pass.
+    /// It runs after the presentation/layout guards that own the affected UI, while remaining
+    /// just ahead of PlutoIntroFeedbackGuard so the Honeybee can be frozen before that guard
+    /// consumes the first-contact trigger.
     /// </summary>
     [DefaultExecutionOrder(1250)]
     public sealed class InitialDesignRegressionGuard : MonoBehaviour
@@ -90,16 +90,10 @@ namespace Assets.Scripts.UIComponents
                     continue;
                 }
 
-                // Main tooltip text and all generated controls should use the light-on-dark treatment.
-                TMP_Text[] texts = tooltip.TooltipObject.GetComponentsInChildren<TMP_Text>(true);
-                for (int textIndex = 0; textIndex < texts.Length; textIndex++)
-                {
-                    if (texts[textIndex] != null)
-                    {
-                        texts[textIndex].color = Color.white;
-                    }
-                }
-
+                // Keep body copy light-on-dark. Rich-text color tags continue to override this
+                // base color, so intentionally colored tutorial phrases remain colored.
+                tooltip.TooltipText.color = Color.white;
+                SetGeneratedTutorialControlTextWhite(tooltip);
                 ConfigureExactCloseButton(tooltip.CloseButton, tooltip.Hide);
 
                 Transform footer = tooltip.TooltipSize.Find("Tutorial Sequence Footer");
@@ -117,15 +111,13 @@ namespace Assets.Scripts.UIComponents
                     _stableSequenceSizes[tooltip] = stableSize;
                 }
 
+                // Tooltip and TutorialFeedbackPolishGuard both size the current page. Restoring the
+                // sequence-wide envelope here, after both owners run, prevents the visible panel
+                // from expanding and contracting as Next/Previous changes the current text.
                 if (tooltip.TooltipSize.sizeDelta != stableSize)
                 {
                     tooltip.TooltipSize.sizeDelta = stableSize;
                 }
-            }
-
-            if (_stableSequenceSizes.Count == liveSequences.Count)
-            {
-                return;
             }
 
             List<Tooltip> stale = null;
@@ -142,6 +134,29 @@ namespace Assets.Scripts.UIComponents
                 for (int i = 0; i < stale.Count; i++)
                 {
                     _stableSequenceSizes.Remove(stale[i]);
+                }
+            }
+        }
+
+        private static void SetGeneratedTutorialControlTextWhite(Tooltip tooltip)
+        {
+            Transform footer = tooltip.TooltipSize.Find("Tutorial Sequence Footer");
+            if (footer != null)
+            {
+                TMP_Text[] footerTexts = footer.GetComponentsInChildren<TMP_Text>(true);
+                for (int i = 0; i < footerTexts.Length; i++)
+                {
+                    footerTexts[i].color = Color.white;
+                }
+            }
+
+            Transform tab = tooltip.TooltipSize.Find("Tutorial Info Tab");
+            if (tab != null)
+            {
+                TMP_Text tabText = tab.GetComponentInChildren<TMP_Text>(true);
+                if (tabText != null)
+                {
+                    tabText.color = Color.white;
                 }
             }
         }
@@ -224,7 +239,7 @@ namespace Assets.Scripts.UIComponents
 
         private static void ConfigureExactCloseButton(GameObject closeObject, UnityEngine.Events.UnityAction action)
         {
-            if (closeObject == null)
+            if (closeObject == null || closeObject.GetComponent<InitialDesignExactCloseMarker>() != null)
             {
                 return;
             }
@@ -289,6 +304,8 @@ namespace Assets.Scripts.UIComponents
                 button.onClick.RemoveListener(action);
                 button.onClick.AddListener(action);
             }
+
+            closeObject.AddComponent<InitialDesignExactCloseMarker>();
         }
 
         private static Graphic ResolveVisibleCloseGraphic(GameObject closeObject)
@@ -360,18 +377,6 @@ namespace Assets.Scripts.UIComponents
 
                 Image background = buttonObject.GetComponent<Image>();
                 background.color = new Color(0.20f, 0.24f, 0.28f, 0.96f);
-
-                GameObject labelObject = new GameObject(
-                    "Label",
-                    typeof(RectTransform),
-                    typeof(CanvasRenderer),
-                    typeof(TextMeshProUGUI));
-                labelObject.transform.SetParent(buttonObject.transform, false);
-                RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-                labelRect.anchorMin = Vector2.zero;
-                labelRect.anchorMax = Vector2.one;
-                labelRect.offsetMin = Vector2.zero;
-                labelRect.offsetMax = Vector2.zero;
             }
 
             Button button = buttonObject.GetComponent<Button>();
@@ -482,6 +487,8 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
+            // Let every layout owner settle first, then preserve the final screen-space positions.
+            // This makes the stabilization absolute rather than compounding from the previous pass.
             Canvas.ForceUpdateCanvases();
             bool resolutionChanged = Screen.width != _capturedScreenWidth || Screen.height != _capturedScreenHeight;
             if (_freePlayOptionPositions.Count == 0 || resolutionChanged)
@@ -760,5 +767,9 @@ namespace Assets.Scripts.UIComponents
         {
             ReleaseHoneybee();
         }
+    }
+
+    internal sealed class InitialDesignExactCloseMarker : MonoBehaviour
+    {
     }
 }
