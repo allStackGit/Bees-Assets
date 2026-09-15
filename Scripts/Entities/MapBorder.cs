@@ -76,11 +76,19 @@ namespace Assets.Scripts.Entities
                     return;
                 }
 
-                // Scripted exits deliberately opt out of the playable-map clamp. Do not stop those
-                // ships at the border. Keep a cutscene camera attached while a scripted ship exits;
-                // the owning sequence decides when the follow ends after the ship has disappeared.
+                // Scripted exits deliberately opt out of the playable-map clamp. Keep the camera
+                // attached to non-interactive cutscene ships (such as Pluto I's Scout) while they
+                // leave. If an override-bounds ship is still user-controllable, release the camera
+                // at the edge rather than letting normal play drag it outside the map.
                 if (_collidingShip.CanOverrideBounds)
                 {
+                    if (Stage != null && Stage.IsFollowingShip && Stage.CameraShip == _collidingShip &&
+                        Stage.InputManager != null && Stage.PrimaryLevel != null &&
+                        _collidingShip.Squad != null && _collidingShip.Squad.CanAcceptUserInput)
+                    {
+                        Stage.IsFollowingShip = false;
+                        Stage.SetupCamera();
+                    }
                     return;
                 }
 
@@ -111,7 +119,7 @@ namespace Assets.Scripts.Entities
                     return;
                 }
                 _collisionAsteroid.HasTouchedMapBorder = true;
-                //Debug.Log($"{Name} has touched map border");
+                //Debug.Log($"{_collisionAsteroid.Name} has touched the map border");
 
             }
 
