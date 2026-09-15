@@ -31,12 +31,12 @@ namespace Assets.Scripts.Levels
             Honeybee firstHoneybee = (Honeybee)State.GetBeeShips().First();
 
             Gunship firstGunship = null;
-            int passes = 0;
             bool hasBeenUserControlled = false;
             bool gunshipHasReachedCenterPosition = false;
             HasContinuousTriggers = true;
             ScaledTimer endLevelTimer = new ScaledTimer();
             ScaledTimer cameraMovement = new ScaledTimer();
+            ScaledTimer honeybeeDefeatDialogueTimer = new ScaledTimer();
             Tooltip moveScoutTooltip = null;
 
             firstScout.ProximityCollider = Instantiate(
@@ -246,7 +246,7 @@ namespace Assets.Scripts.Levels
                                                 firstGunship.Squad.CanAcceptUserInput = true;
                                                 firstGunship.Squad.HasCommandQueue = false;
                                                 Stage.IsFollowingShip = false;
-                                                aggressive.SetFinalize("Honeybee reached by gunship, ceding to user control");
+                                                firstGunship.Squad.SetChase(true);
 
                                                 Tooltip controlGunshipTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
                                                 controlGunshipTooltip.Show(
@@ -261,16 +261,50 @@ namespace Assets.Scripts.Levels
                                                         controlGunshipTooltip.Show(
                                                             "You'll want to familiarize yourself with the controls to your bottom left. They aren't usually required, but they are helpful.",
                                                             true);
-                                                        controlGunshipTooltip.Place(new Vector2(-500, 0), new Vector2(150, 150));
+                                                        controlGunshipTooltip.Place(Vector2.zero, new Vector2(150, 150));
                                                         NextTriggers.Add(new Trigger(
-                                                            () => ++passes > 2,
+                                                            () => !ConfigData.UserProgressData.ShowToolTips || !controlGunshipTooltip.TooltipObject.activeInHierarchy,
                                                             () =>
                                                             {
                                                                 Tooltip attackOnSightTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
                                                                 attackOnSightTooltip.Show(
-                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire. Once the Gunship is within range it will automatically fire upon the Honeybee. To chase after an enemy ship, right click on it.",
+                                                                    "When you're ready to engage the Honeybee, click \"Attack on Sight\" (the exclamation point) to disable the Cease Fire.\nChase is already enabled, so the Gunship will automatically follow the Honeybee.\nOnce the Gunship is within range it will automatically fire upon the Honeybee.",
                                                                     true);
-                                                                attackOnSightTooltip.Place(new Vector2(0, -50), new Vector2(150, 300));
+                                                                attackOnSightTooltip.Place(Vector2.zero, new Vector2(150, 300));
+
+                                                                GameObject attackOnSightHighlight = null;
+                                                                if (ConfigData.UserProgressData.ShowToolTips)
+                                                                {
+                                                                    attackOnSightHighlight = Instantiate(
+                                                                        Stage.Menus.UIHighlightTooltipPrefab,
+                                                                        Stage.Menus.ActionBox.AttackOnSightButton.transform);
+                                                                    RectTransform highlightRect = attackOnSightHighlight.GetComponent<RectTransform>();
+                                                                    highlightRect.anchorMin = Vector2.zero;
+                                                                    highlightRect.anchorMax = Vector2.one;
+                                                                    highlightRect.offsetMin = new Vector2(-4, -4);
+                                                                    highlightRect.offsetMax = new Vector2(4, 4);
+                                                                    highlightRect.localScale = Vector3.one;
+                                                                    highlightRect.SetAsLastSibling();
+
+                                                                    Image highlightImage = attackOnSightHighlight.GetComponent<Image>();
+                                                                    if (highlightImage != null)
+                                                                    {
+                                                                        highlightImage.color = Color.red;
+                                                                        highlightImage.raycastTarget = false;
+                                                                    }
+                                                                    attackOnSightHighlight.SetActive(true);
+                                                                }
+
+                                                                NextTriggers.Add(new Trigger(
+                                                                    () => !ConfigData.UserProgressData.ShowToolTips || !attackOnSightTooltip.TooltipObject.activeInHierarchy,
+                                                                    () =>
+                                                                    {
+                                                                        if (attackOnSightHighlight != null)
+                                                                        {
+                                                                            Destroy(attackOnSightHighlight);
+                                                                        }
+                                                                    },
+                                                                    "Level 0 Removing Attack on Sight highlight"));
                                                             },
                                                             "Level 0 Showing Attack on Sight tooltip prompt"));
                                                     },
@@ -293,46 +327,50 @@ namespace Assets.Scripts.Levels
                                                     () => firstHoneybee.IsDead,
                                                     () =>
                                                     {
-                                                        Stage.Menus.TogglePausePanel();
-                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(23, 2));
-                                                        List<Squad> beeSquads = State.GetSquadsBySide(ConfigData.Configuration.AISide);
-                                                        for (int i = 1; i < beeSquads.Count; i++)
+                                                        honeybeeDefeatDialogueTimer.Reuse(1.5f, () =>
                                                         {
-                                                            beeSquads[i].SetStartingPosition(
-                                                                beeSquads[i].GetPosition() + new Vector2((i % 2 == 0 ? 1 : -1) * 25 * i, 0));
-                                                        }
-
-                                                        NextTriggers.Add(new Trigger(
-                                                            () => Stage.CutsceneManager.HitDialogueBreak,
-                                                            () =>
+                                                            Stage.Menus.TogglePausePanel();
+                                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(23, 2));
+                                                            List<Squad> beeSquads = State.GetSquadsBySide(ConfigData.Configuration.AISide);
+                                                            for (int i = 1; i < beeSquads.Count; i++)
                                                             {
-                                                                Stage.Menus.TogglePausePanel();
-                                                                Stage.Menus.ToggleFogOfWar();
-                                                                Stage.Menus.MissionStatus.SetActive(false);
-                                                                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2));
-                                                                Stage.CameraTargetPosition = StartingPositions[ConfigData.Configuration.AISide - 1];
-                                                                Stage.IsCameraMovingToTarget = true;
-                                                                Stage.IsPlayerControlling = false;
-                                                                int ticks = 0;
+                                                                beeSquads[i].SetStartingPosition(
+                                                                    beeSquads[i].GetPosition() + new Vector2((i % 2 == 0 ? 1 : -1) * 25 * i, 0));
+                                                            }
 
-                                                                cameraMovement.Reuse(.5f, () =>
+                                                            NextTriggers.Add(new Trigger(
+                                                                () => Stage.CutsceneManager.HitDialogueBreak,
+                                                                () =>
                                                                 {
-                                                                    if (!Stage.IsCameraMovingToTarget || ticks >= 20)
+                                                                    Stage.Menus.TogglePausePanel();
+                                                                    Stage.Menus.ToggleFogOfWar();
+                                                                    Stage.Menus.MissionStatus.SetActive(false);
+                                                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(25, 2));
+                                                                    Stage.CameraTargetPosition = StartingPositions[ConfigData.Configuration.AISide - 1];
+                                                                    Stage.IsCameraMovingToTarget = true;
+                                                                    Stage.IsPlayerControlling = false;
+                                                                    int ticks = 0;
+
+                                                                    cameraMovement.Reuse(.5f, () =>
                                                                     {
-                                                                        Stage.IsCameraMovingToTarget = false;
-                                                                        CancelTimer(cameraMovement);
-                                                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
-                                                                        endLevelTimer.Reuse(2, CloseLevel);
-                                                                        AddTimer(endLevelTimer);
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        ticks++;
-                                                                    }
-                                                                }, true);
-                                                                AddTimer(cameraMovement);
-                                                            },
-                                                            "Level 0 Showing dialogue after Bees approach"));
+                                                                        if (!Stage.IsCameraMovingToTarget || ticks >= 20)
+                                                                        {
+                                                                            Stage.IsCameraMovingToTarget = false;
+                                                                            CancelTimer(cameraMovement);
+                                                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Anomaly.GetRange(27, 5), true);
+                                                                            endLevelTimer.Reuse(2, CloseLevel);
+                                                                            AddTimer(endLevelTimer);
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            ticks++;
+                                                                        }
+                                                                    }, true);
+                                                                    AddTimer(cameraMovement);
+                                                                },
+                                                                "Level 0 Showing dialogue after Bees approach"));
+                                                        });
+                                                        AddTimer(honeybeeDefeatDialogueTimer);
                                                     },
                                                     "Level 0 Showing Dialogue after defeating Honeybee"));
                                             },
@@ -697,7 +735,6 @@ namespace Assets.Scripts.Levels
                                     {
                                         AddReinforcementSquads(new List<SavedSquad>()
                                         {
-                                            ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Honeybee, 2, true, true),
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Wasp, 4, true, true),
                                             ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.Hornet, 4, true, true),
