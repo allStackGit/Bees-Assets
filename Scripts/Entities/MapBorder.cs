@@ -77,17 +77,10 @@ namespace Assets.Scripts.Entities
                 }
 
                 // Scripted exits deliberately opt out of the playable-map clamp. Do not stop those
-                // ships at the border. If a cutscene camera is following the exiting ship, release
-                // it as the ship crosses the edge so the ship can visibly leave the screen instead
-                // of dragging the camera down/outside the map (Pluto I's Scout retreat).
+                // ships at the border. Keep a cutscene camera attached while a scripted ship exits;
+                // the owning sequence decides when the follow ends after the ship has disappeared.
                 if (_collidingShip.CanOverrideBounds)
                 {
-                    if (Stage != null && Stage.IsFollowingShip && Stage.CameraShip == _collidingShip &&
-                        Stage.InputManager != null && Stage.PrimaryLevel != null)
-                    {
-                        Stage.IsFollowingShip = false;
-                        Stage.SetupCamera();
-                    }
                     return;
                 }
 
@@ -118,7 +111,7 @@ namespace Assets.Scripts.Entities
                     return;
                 }
                 _collisionAsteroid.HasTouchedMapBorder = true;
-                //Debug.Log($"{_collisionAsteroid.Name} has touched the map border");
+                //Debug.Log($"{Name} has touched map border");
 
             }
 
