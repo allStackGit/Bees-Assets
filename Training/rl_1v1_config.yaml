@@ -6,7 +6,7 @@ behaviors:
     hyperparameters:
       batch_size: 512
       buffer_size: 16384
-      learning_rate: 0.00015
+      learning_rate: 0.0003
       # Baseline entropy pressure for continual learning. The Bees PPO
       # compatibility controller starts fresh runs higher (up to 0.004), lowers
       # beta toward this value as reward performance improves/stabilizes, and
