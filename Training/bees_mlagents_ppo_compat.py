@@ -11,11 +11,11 @@ VALUE_KEY_PROBE = "__bees_value_key_probe__"
 MAX_CONTINUOUS_SIGMA = 1.5
 MAX_ADAPTIVE_BETA = 0.004
 INITIAL_BETA_MULTIPLIER = 4.0
-FAST_REWARD_ALPHA = 0.05
-SLOW_REWARD_ALPHA = 0.005
+FAST_REWARD_ALPHA = 0.002
+SLOW_REWARD_ALPHA = 0.00025
 REWARD_SCALE_ALPHA = 0.02
-MIN_ADAPTIVE_EPISODES = 96
-ADAPTIVE_EVALUATION_INTERVAL = 32
+MIN_ADAPTIVE_EPISODES = 3200
+ADAPTIVE_EVALUATION_INTERVAL = 1600
 REWARD_TREND_THRESHOLD = 0.05
 BETA_IMPROVEMENT_MULTIPLIER = 0.80
 BETA_DECLINE_MULTIPLIER = 1.50
@@ -48,7 +48,8 @@ class AdaptiveExplorationController:
     reduce exploration toward that baseline, sustained reward deterioration raises
     it temporarily, and neutral performance relaxes it gradually back toward the
     baseline. Fast and slow exponential moving averages plus an evaluation interval
-    keep individual noisy self-play episodes from changing beta directly.
+    keep individual noisy self-play episodes from changing beta directly. Episode
+    counts are trainer-global across all environment workers.
 
     Resumed training starts at the baseline because the reward-history controller is
     intentionally not checkpoint state; it can raise exploration again after enough
