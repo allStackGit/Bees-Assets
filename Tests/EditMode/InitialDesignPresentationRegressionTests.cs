@@ -26,30 +26,69 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void PlutoTwoTutorialCentersPresentationAndDoesNotOverlapDialogue()
+        public void ScriptedCampaignCameraFitsViewportInsideMapBeforePositionClamp()
         {
             string source = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "UI Components", "PlutoTwoTutorialPresentationGuard.cs"));
+                Application.dataPath, "Scripts", "UI Components", "CampaignCameraViewportBoundsGuard.cs"));
 
-            Assert.That(source, Does.Contain("CenterMissionStatus(stage);"));
-            Assert.That(source, Does.Contain("tooltip.TooltipPosition.localPosition = Vector3.zero;"));
-            Assert.That(source, Does.Contain("Tutorial Sequence Footer"));
-            Assert.That(source, Does.Contain("dialogueManager.DialogueBox.SetActive(false);"));
-            Assert.That(source, Does.Contain("dialogueManager.enabled = false;"));
-            Assert.That(source, Does.Contain("_heldDialogueManager.DialogueBox.SetActive(true);"),
-                "Samuel's queued dialogue must become visible only after the tutorial sequence has closed.");
+            Assert.That(source, Does.Contain("stage.IsFollowingShip"));
+            Assert.That(source, Does.Contain("stage.IsCameraMovingToTarget"));
+            Assert.That(source, Does.Contain("mapBounds.extents.y"));
+            Assert.That(source, Does.Contain("mapBounds.extents.x / aspect"));
+            Assert.That(source, Does.Contain("camera.orthographicSize = maximumOrthographicSize;"));
+            Assert.That(source, Does.Contain("stage.InputManager.MaintainScrollBoundary();"));
         }
 
         [Test]
-        public void PlutoTwoHighlightUsesDimensionsInsteadOfGiantTransformScale()
+        public void TooltipIsLaidOutBeforeItIsRendered()
         {
             string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "Tooltip.cs"));
+
+            Assert.That(source, Does.Contain("private Vector2 _requestedSize = Vector2.zero;"));
+            Assert.That(source, Does.Contain("TooltipObject.SetActive(false);"));
+            Assert.That(source, Does.Contain("ApplyLayout();"));
+            Assert.That(source, Does.Contain("Canvas.ForceUpdateCanvases();"));
+            Assert.That(source, Does.Contain("TooltipObject.SetActive(true);"));
+        }
+
+        [Test]
+        public void PlutoOneAttackOnSightClosesItsTutorialPrompt()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto.cs"));
+
+            Assert.That(source, Does.Contain("firstGunship.Squad.AttackOnSight"));
+            Assert.That(source, Does.Contain("attackOnSightTooltip.Hide();"));
+            Assert.That(source, Does.Contain("Level 0 Closing Attack on Sight prompt"));
+        }
+
+        [Test]
+        public void PlutoTwoTutorialOwnsSizingAndDialogueOrderBeforeRendering()
+        {
+            string missionSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto.cs"));
+            string guardSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "UI Components", "PlutoTwoTutorialPresentationGuard.cs"));
 
-            Assert.That(source, Does.Contain("Mathf.Abs(scale.x - 150f)"));
-            Assert.That(source, Does.Contain("Mathf.Abs(scale.y - 30f)"));
-            Assert.That(source, Does.Contain("rect.localScale = Vector3.one;"));
-            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(150f, 30f);"));
+            Assert.That(missionSource, Does.Contain("basicTooltip.Place(new Vector2(0, -160), new Vector2(150, 100));"));
+            Assert.That(missionSource, Does.Contain("squadNumberHighlightRect.localScale = Vector3.one;"));
+            Assert.That(missionSource, Does.Contain("squadNumberHighlightRect.sizeDelta = new Vector2(150f, 30f);"));
+            Assert.That(missionSource, Does.Not.Contain("squadNumberHighlight.transform.localScale = new Vector2(150, 30);"));
+
+            int sequence = missionSource.IndexOf("basicTooltip.ShowSequence(new List<string>");
+            int combatTrigger = missionSource.IndexOf("Level 1 start combat", sequence);
+            Assert.That(sequence, Is.GreaterThanOrEqualTo(0));
+            Assert.That(combatTrigger, Is.GreaterThan(sequence));
+            string sequenceBlock = missionSource.Substring(sequence, combatTrigger - sequence);
+            Assert.That(sequenceBlock, Does.Contain("tacticalTutorialComplete = true;"));
+            Assert.That(sequenceBlock, Does.Contain("PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2))"));
+            Assert.That(sequenceBlock, Does.Contain("Stage.Menus.TogglePausePanel();"));
+
+            Assert.That(guardSource, Does.Contain("CenterMissionStatus(stage);"));
+            Assert.That(guardSource, Does.Not.Contain("dialogueManager.enabled"));
+            Assert.That(guardSource, Does.Not.Contain("HoldDialogueUntilTutorialEnds"));
+            Assert.That(guardSource, Does.Not.Contain("RepairOverscaledTutorialHighlight"));
         }
 
         [Test]
