@@ -45,8 +45,11 @@ namespace Assets.Scripts.Scenes
             }
             else if (!_stage.IsFollowingShip && ShouldContinueScriptedFollow(cameraShip))
             {
+                // Pluto I temporarily suspends following while the Honeybee reveal owns the camera.
+                // Once that reveal returns player-camera control, resume following the scripted Scout
+                // even if the reveal started before this guard had a chance to cache it.
                 _stage.IsFollowingShip = true;
-                cameraShip = _lastFollowedShip;
+                _lastFollowedShip = cameraShip;
             }
 
             if (_lastFollowedShip != null && _lastFollowedShip.IsDead)
@@ -59,7 +62,10 @@ namespace Assets.Scripts.Scenes
                 Vector2 shipPosition = cameraShip.GetPosition();
                 Vector3 currentPosition = _stage.Camera.transform.position;
                 _stage.Camera.transform.position = new Vector3(shipPosition.x, shipPosition.y, currentPosition.z);
-                ClampCameraToMap(_stage.Camera);
+                if (!ShouldAllowFollowOutsideMap(cameraShip))
+                {
+                    ClampCameraToMap(_stage.Camera);
+                }
             }
             else if (_stage.IsCameraMovingToTarget)
             {
@@ -69,11 +75,15 @@ namespace Assets.Scripts.Scenes
 
         private bool ShouldContinueScriptedFollow(Ship cameraShip)
         {
-            return _lastFollowedShip != null &&
-                object.ReferenceEquals(cameraShip, _lastFollowedShip) &&
-                !_lastFollowedShip.IsDead &&
-                _lastFollowedShip.CanOverrideBounds &&
-                _lastFollowedShip.ShipType == ConfigData.ShipTypes.Scout;
+            return _stage.IsPlayerControlling && ShouldAllowFollowOutsideMap(cameraShip);
+        }
+
+        private static bool ShouldAllowFollowOutsideMap(Ship cameraShip)
+        {
+            return cameraShip != null &&
+                !cameraShip.IsDead &&
+                cameraShip.CanOverrideBounds &&
+                cameraShip.ShipType == ConfigData.ShipTypes.Scout;
         }
 
         private void ClampCameraToMap(Camera camera)
