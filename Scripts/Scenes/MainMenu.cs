@@ -128,8 +128,8 @@ namespace Assets.Scripts.Scenes
                 {
                     ConfigData.CurrentShips = ConfigData.ChallengeModeShips;
                 }
-                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Challenge Mode Completed!";
-                HumanChallengeModeButton.GetComponent<Button>().enabled = false;
+                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Challenge Mode";
+                HumanChallengeModeButton.GetComponent<Button>().enabled = true;
                 IsResettingChallenge = false;
             }
 
@@ -348,7 +348,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.CurrentHumanChallengeLevel = 0;
             ConfigData.UserProgressData.CurrentBeeChallengeLevel = 0;
             ConfigData.UserProgressData.HumanChallengeSavedSquadNumber = 0;
-            ConfigData.UserProgressData.BeeCampaignSavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeChallengeSavedSquadNumber = 0;
             ConfigData.UserProgressData.ChallengeScore = 0;
 
 
