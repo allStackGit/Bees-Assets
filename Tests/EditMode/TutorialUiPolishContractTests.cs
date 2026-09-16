@@ -24,13 +24,30 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("Tutorial Close Hit Area"));
             Assert.That(source, Does.Contain("button.onClick.AddListener(Hide)"));
             Assert.That(source, Does.Contain("Tutorial Info Tab"));
-            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f)"));
-            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight)"));
+            Assert.That(source, Does.Contain("rect.anchoredPosition = new Vector2(-(InfoTabBorder * 2f), 0f)"));
+            Assert.That(source, Does.Contain("rect.sizeDelta = new Vector2(InfoTabWidth + (InfoTabBorder * 2f), InfoTabHeight)"));
             Assert.That(source, Does.Contain("TutorialInfoTabGraphic"));
             Assert.That(source, Does.Contain("Input.GetKeyDown(KeyCode.Space)"));
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+        }
+
+        [Test]
+        public void AttackOnSightTutorialHighlightUsesNonBlockingRedBorder()
+        {
+            string source = ReadSource("Scripts", "UI Components", "UIHighlightBorderStyle.cs");
+            string prefab = ReadSource("Prefabs", "UI", "UI Highlight Tooltip.prefab");
+
+            Assert.That(source, Does.Contain("transform.parent != actionBox.AttackOnSightButton.transform"));
+            Assert.That(source, Does.Contain("fill.enabled = false"));
+            Assert.That(source, Does.Contain("\"Border Top\""));
+            Assert.That(source, Does.Contain("\"Border Bottom\""));
+            Assert.That(source, Does.Contain("\"Border Left\""));
+            Assert.That(source, Does.Contain("\"Border Right\""));
+            Assert.That(source, Does.Contain("edgeImage.color = Color.red"));
+            Assert.That(source, Does.Contain("edgeImage.raycastTarget = false"));
+            Assert.That(prefab, Does.Contain("guid: 45bbba90d8804d65be4da653db25e41b"));
         }
 
         [Test]
@@ -176,6 +193,7 @@ namespace Bees.Tests.EditMode
             int combatGate = source.IndexOf("() => hasSeenFleetMessages", tutorialComplete, System.StringComparison.Ordinal);
             int enemySpawn = source.IndexOf("AddReinforcementSquads(firstSquads", combatGate, System.StringComparison.Ordinal);
 
+            Assert.That(mission, Is.GreaterThanOrEqualTo(0));
             Assert.That(tutorial, Is.GreaterThan(mission));
             Assert.That(tutorialComplete, Is.GreaterThan(tutorial));
             Assert.That(combatGate, Is.GreaterThan(tutorialComplete));
