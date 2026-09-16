@@ -26,19 +26,33 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ScriptedCampaignCameraAlwaysFitsViewportInsideMap()
+        public void ScriptedCampaignCameraLetsOverrideScoutExitMapButClampsOtherTargets()
         {
             string source = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "Scenes", "CampaignCameraFollowGuard.cs"));
 
             Assert.That(source, Does.Contain("_stage.IsFollowingShip"));
             Assert.That(source, Does.Contain("_stage.IsCameraMovingToTarget"));
+            Assert.That(source, Does.Contain("if (!ShouldAllowFollowOutsideMap(cameraShip))"),
+                "The scripted Pluto I Scout must remain camera-followable while it exits the playable area.");
+            Assert.That(source, Does.Contain("cameraShip.CanOverrideBounds"));
+            Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Scout"));
             Assert.That(source, Does.Contain("ClampCameraToMap(_stage.Camera);"));
             Assert.That(source, Does.Contain("mapBounds.extents.y"));
             Assert.That(source, Does.Contain("mapBounds.extents.x / camera.aspect"));
             Assert.That(source, Does.Contain("camera.orthographicSize = maximumVerticalSize;"));
-            Assert.That(source, Does.Not.Contain("if (!ShouldAllowFollowOutsideMap(cameraShip))"),
-                "CanOverrideBounds permits the Scout to leave the map, but must never permit the camera viewport to leave it.");
+        }
+
+        [Test]
+        public void PlutoOnePreservesSelectedGameSpeedAcrossScoutDialogueHandoff()
+        {
+            string source = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Scenes", "CampaignPresentationGuard.cs"));
+
+            Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Scout"));
+            Assert.That(source, Does.Contain("_plutoOneSpeedLevel = Mathf.Clamp(stage.Menus.PlayerGameSpeed.Level, 0, 3);"));
+            Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Gunship"));
+            Assert.That(source, Does.Contain("stage.Menus.PlayerGameSpeed.SetSpeedFromLevel(_plutoOneSpeedLevel);"));
         }
 
         [Test]
