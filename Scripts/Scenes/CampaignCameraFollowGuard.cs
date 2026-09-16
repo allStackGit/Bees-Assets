@@ -45,8 +45,8 @@ namespace Assets.Scripts.Scenes
             }
             else if (!_stage.IsFollowingShip && ShouldContinueScriptedFollow(cameraShip))
             {
-                // Pluto I's Scout deliberately travels beyond the playable ship boundary, but the
-                // camera should keep tracking it until removal while remaining clamped to the map.
+                // Pluto I temporarily suspends following while the reveal owns the camera. Once the
+                // scripted Scout starts leaving, resume following it through the intended handoff.
                 _stage.IsFollowingShip = true;
                 _lastFollowedShip = cameraShip;
             }
@@ -62,9 +62,13 @@ namespace Assets.Scripts.Scenes
                 Vector3 currentPosition = _stage.Camera.transform.position;
                 _stage.Camera.transform.position = new Vector3(shipPosition.x, shipPosition.y, currentPosition.z);
 
-                // CanOverrideBounds applies to the scripted ship, not to the camera. Even while a
-                // Scout exits the playable area, never reveal pixels beyond the authored map.
-                ClampCameraToMap(_stage.Camera);
+                // A CanOverrideBounds Scout is deliberately scripted to leave Pluto I's playable
+                // area. Clamping the camera here pins it to the map edge and makes the follow appear
+                // to stop, so only normal campaign follows are constrained to the authored map.
+                if (!ShouldAllowFollowOutsideMap(cameraShip))
+                {
+                    ClampCameraToMap(_stage.Camera);
+                }
             }
             else if (_stage.IsCameraMovingToTarget)
             {
