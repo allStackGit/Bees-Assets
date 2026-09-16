@@ -1,3 +1,4 @@
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using UnityEngine;
 
@@ -6,6 +7,11 @@ namespace Assets.Scripts.Scenes
     [DefaultExecutionOrder(-10000)]
     internal sealed class CampaignPresentationGuard : MonoBehaviour
     {
+        private global::Stage _speedStage;
+        private int _plutoOneSpeedLevel;
+        private bool _hasPlutoOneSpeed;
+        private bool _plutoOneSpeedRestored;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
         {
@@ -19,6 +25,7 @@ namespace Assets.Scripts.Scenes
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign ||
                 ConfigData.UserProgressData == null || ConfigData.Configuration == null)
             {
+                ResetPlutoOneSpeedState();
                 return;
             }
 
@@ -27,6 +34,7 @@ namespace Assets.Scripts.Scenes
             // which suppresses the mission's in-level dialogue and objective scripting.
             if (ConfigData.LevelOptions != null && ConfigData.LevelOptions.Id < 0)
             {
+                ResetPlutoOneSpeedState();
                 return;
             }
 
@@ -37,6 +45,7 @@ namespace Assets.Scripts.Scenes
                 ConfigData.GameModes.Campaign);
             if (CampaignMissionCatalog.IsCampaignComplete(missionId))
             {
+                ResetPlutoOneSpeedState();
                 return;
             }
 
@@ -46,6 +55,8 @@ namespace Assets.Scripts.Scenes
                 return;
             }
 
+            PreservePlutoOneGameSpeed(stage, missionId);
+
             CampaignMissionCatalog.MissionDefinition mission = CampaignMissionCatalog.Get(missionId);
             stage.HasRandomizedOptions = true;
             stage.OverrideMapIndex = mission.MapIndex;
@@ -53,6 +64,54 @@ namespace Assets.Scripts.Scenes
             stage.GeneratedSquadCountMinimum = 0;
             stage.UseFullyRandomSquads = false;
             stage.UseFullyRandomEnemySquads = false;
+        }
+
+        private void PreservePlutoOneGameSpeed(global::Stage stage, int missionId)
+        {
+            if (_speedStage != stage)
+            {
+                _speedStage = stage;
+                _hasPlutoOneSpeed = false;
+                _plutoOneSpeedRestored = false;
+            }
+
+            if (missionId != 0 || stage.Menus == null || stage.Menus.PlayerGameSpeed == null)
+            {
+                if (missionId != 0)
+                {
+                    _hasPlutoOneSpeed = false;
+                    _plutoOneSpeedRestored = false;
+                }
+                return;
+            }
+
+            Ship cameraShip = stage.CameraShip;
+            if (cameraShip != null && !cameraShip.IsDead && stage.IsFollowingShip &&
+                cameraShip.ShipType == ConfigData.ShipTypes.Scout)
+            {
+                // Dialogue temporarily owns the simulation speed after the scripted Scout leaves.
+                // Keep the player's latest selection so that temporary cutscene state does not
+                // become the Gunship's gameplay speed.
+                _plutoOneSpeedLevel = Mathf.Clamp(stage.Menus.PlayerGameSpeed.Level, 0, 3);
+                _hasPlutoOneSpeed = true;
+                _plutoOneSpeedRestored = false;
+                return;
+            }
+
+            if (_hasPlutoOneSpeed && !_plutoOneSpeedRestored && cameraShip != null &&
+                !cameraShip.IsDead && stage.IsFollowingShip &&
+                cameraShip.ShipType == ConfigData.ShipTypes.Gunship)
+            {
+                stage.Menus.PlayerGameSpeed.SetSpeedFromLevel(_plutoOneSpeedLevel);
+                _plutoOneSpeedRestored = true;
+            }
+        }
+
+        private void ResetPlutoOneSpeedState()
+        {
+            _speedStage = null;
+            _hasPlutoOneSpeed = false;
+            _plutoOneSpeedRestored = false;
         }
     }
 }
