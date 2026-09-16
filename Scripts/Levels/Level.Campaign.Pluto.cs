@@ -296,15 +296,21 @@ namespace Assets.Scripts.Levels
                                                                 }
 
                                                                 NextTriggers.Add(new Trigger(
-                                                                    () => !ConfigData.UserProgressData.ShowToolTips || !attackOnSightTooltip.TooltipObject.activeInHierarchy,
+                                                                    () => !ConfigData.UserProgressData.ShowToolTips ||
+                                                                          firstGunship.Squad.AttackOnSight ||
+                                                                          !attackOnSightTooltip.TooltipObject.activeInHierarchy,
                                                                     () =>
                                                                     {
+                                                                        if (attackOnSightTooltip != null && attackOnSightTooltip.TooltipObject.activeInHierarchy)
+                                                                        {
+                                                                            attackOnSightTooltip.Hide();
+                                                                        }
                                                                         if (attackOnSightHighlight != null)
                                                                         {
                                                                             Destroy(attackOnSightHighlight);
                                                                         }
                                                                     },
-                                                                    "Level 0 Removing Attack on Sight highlight"));
+                                                                    "Level 0 Closing Attack on Sight prompt"));
                                                             },
                                                             "Level 0 Showing Attack on Sight tooltip prompt"));
                                                     },
@@ -435,8 +441,8 @@ namespace Assets.Scripts.Levels
                     if (ConfigData.UserProgressData.ShowToolTips)
                     {
                         basicTooltip = Instantiate(Stage.Menus.TooltipPrefab, Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                        basicTooltip.Place(new Vector2(0, -160), new Vector2(150, 100));
                         basicTooltip.Show("Select the Scout squad with the left mouse button.", true);
-                        basicTooltip.Place(new Vector2(200, 0), new Vector2(150, 100));
 
                         highlightTooltipObject = Instantiate(Stage.Menus.HighlightTooltipPrefab, Map.transform);
                         highlightTooltipObject.SetActive(true);
@@ -453,8 +459,8 @@ namespace Assets.Scripts.Levels
                             if (ConfigData.UserProgressData.ShowToolTips)
                             {
                                 highlightTooltipObject.SetActive(false);
-                                basicTooltip.Show("Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
                                 basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
+                                basicTooltip.Show("Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
 
                                 pointerA = Instantiate(Stage.Menus.PointerArrow, Stage.Menus.UIOverlay.transform);
                                 rectTransform = pointerA.GetComponent<RectTransform>();
@@ -485,9 +491,11 @@ namespace Assets.Scripts.Levels
                                         Destroy(pointerB);
                                         squadNumberHighlight = Instantiate(Stage.Menus.UIHighlightTooltipPrefab, Stage.Menus.UIOverlay.transform);
                                         squadNumberHighlight.SetActive(true);
-                                        squadNumberHighlight.transform.localPosition = new Vector2(-610, 370);
-                                        squadNumberHighlight.transform.localScale = new Vector2(150, 30);
-                                        squadNumberHighlight.transform.SetAsFirstSibling();
+                                        RectTransform squadNumberHighlightRect = squadNumberHighlight.GetComponent<RectTransform>();
+                                        squadNumberHighlightRect.localPosition = new Vector2(-610, 370);
+                                        squadNumberHighlightRect.localScale = Vector3.one;
+                                        squadNumberHighlightRect.sizeDelta = new Vector2(150f, 30f);
+                                        squadNumberHighlightRect.SetAsFirstSibling();
 
                                         basicTooltip.Place(new Vector2(-300, 175), new Vector2(260, 170));
                                         basicTooltip.ShowSequence(new List<string>
@@ -504,11 +512,16 @@ namespace Assets.Scripts.Levels
                                                 Destroy(squadNumberHighlight);
                                                 squadNumberHighlight = null;
                                             }
+                                            Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
+                                            Stage.Menus.TogglePausePanel();
                                         });
                                     }
-
-                                    Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
-                                    Stage.Menus.TogglePausePanel();
+                                    else
+                                    {
+                                        tacticalTutorialComplete = true;
+                                        Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2));
+                                        Stage.Menus.TogglePausePanel();
+                                    }
 
                                     NextTriggers.Add(new Trigger(
                                         () => Stage.CutsceneManager.HitDialogueBreak && tacticalTutorialComplete,
