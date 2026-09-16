@@ -45,9 +45,8 @@ namespace Assets.Scripts.Scenes
             }
             else if (!_stage.IsFollowingShip && ShouldContinueScriptedFollow(cameraShip))
             {
-                // Pluto I temporarily suspends following while the Honeybee reveal owns the camera.
-                // Once that reveal returns player-camera control, resume following the scripted Scout
-                // even if the reveal started before this guard had a chance to cache it.
+                // Pluto I's Scout deliberately travels beyond the playable ship boundary, but the
+                // camera should keep tracking it until removal while remaining clamped to the map.
                 _stage.IsFollowingShip = true;
                 _lastFollowedShip = cameraShip;
             }
@@ -62,10 +61,10 @@ namespace Assets.Scripts.Scenes
                 Vector2 shipPosition = cameraShip.GetPosition();
                 Vector3 currentPosition = _stage.Camera.transform.position;
                 _stage.Camera.transform.position = new Vector3(shipPosition.x, shipPosition.y, currentPosition.z);
-                if (!ShouldAllowFollowOutsideMap(cameraShip))
-                {
-                    ClampCameraToMap(_stage.Camera);
-                }
+
+                // CanOverrideBounds applies to the scripted ship, not to the camera. Even while a
+                // Scout exits the playable area, never reveal pixels beyond the authored map.
+                ClampCameraToMap(_stage.Camera);
             }
             else if (_stage.IsCameraMovingToTarget)
             {
@@ -94,6 +93,8 @@ namespace Assets.Scripts.Scenes
                 return;
             }
 
+            // Position clamping cannot keep the viewport inside the map when the camera itself is
+            // wider/taller than the map. Reduce the zoom first, then clamp its center point.
             float maximumVerticalSize = Mathf.Min(mapBounds.extents.y, mapBounds.extents.x / camera.aspect);
             if (maximumVerticalSize > 0f && camera.orthographicSize > maximumVerticalSize)
             {
