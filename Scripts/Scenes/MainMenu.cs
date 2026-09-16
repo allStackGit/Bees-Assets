@@ -128,8 +128,8 @@ namespace Assets.Scripts.Scenes
                 {
                     ConfigData.CurrentShips = ConfigData.ChallengeModeShips;
                 }
-                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Play Challenge Mode";
-                HumanChallengeModeButton.GetComponent<Button>().enabled = true;
+                HumanChallengeModeButton.transform.GetChild(0).GetComponent<TMP_Text>().text = "Challenge Mode Completed!";
+                HumanChallengeModeButton.GetComponent<Button>().enabled = false;
                 IsResettingChallenge = false;
             }
 
@@ -201,7 +201,13 @@ namespace Assets.Scripts.Scenes
 
         public void ConfirmPlayCampaign()
         {
-            if (ConfigData.UserProgressData.HasPlayedBefore && ConfigData.UserProgressData.ShowToolTips)
+            int currentCampaignLevel = ConfigData.UserProgressData.GetCurrentLevel(
+                ConfigData.Configuration.HumanSide,
+                ConfigData.GameModes.Campaign);
+            bool isReplayingCampaignStart = currentCampaignLevel == 0 &&
+                ConfigData.UserProgressData.HasPlayedBefore;
+
+            if (isReplayingCampaignStart && ConfigData.UserProgressData.ShowToolTips)
             {
                 ViewToolTipsConfirmation = new Dialogue(DialoguePrefab, "This isn't your first rodeo is it, space cowboy?", "It looks like you've played before. Would you like to disable tooltips?",
                 new List<string>() { ConfigData.Configuration.Yes, ConfigData.Configuration.No }, new List<UnityAction>() { DisableTooltips, PlayCampaign,  });
@@ -209,7 +215,7 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                Debug.Log("Hasn't played before, or has disabled tooltips, playing Campaign");
+                Debug.Log("Campaign replay tooltip choice is not needed; playing Campaign");
                 PlayCampaign();
             }
         }
@@ -342,7 +348,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.UserProgressData.CurrentHumanChallengeLevel = 0;
             ConfigData.UserProgressData.CurrentBeeChallengeLevel = 0;
             ConfigData.UserProgressData.HumanChallengeSavedSquadNumber = 0;
-            ConfigData.UserProgressData.BeeChallengeSavedSquadNumber = 0;
+            ConfigData.UserProgressData.BeeCampaignSavedSquadNumber = 0;
             ConfigData.UserProgressData.ChallengeScore = 0;
 
 
