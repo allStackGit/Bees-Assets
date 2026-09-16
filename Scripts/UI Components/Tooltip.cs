@@ -380,7 +380,7 @@ public class Tooltip : MonoBehaviour
         }
 
         // The tab is part of the panel silhouette rather than a floating badge. Extend its left
-        // edge by the steel outline thickness while keeping the right-hand join at the same point.
+        // edge past the tab's own border and the panel outline while keeping the right join fixed.
         GameObject tab = new GameObject(
             "Tutorial Info Tab",
             typeof(RectTransform),
@@ -391,8 +391,8 @@ public class Tooltip : MonoBehaviour
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(0f, 1f);
         rect.pivot = new Vector2(0f, 0f);
-        rect.anchoredPosition = new Vector2(-InfoTabBorder, 0f);
-        rect.sizeDelta = new Vector2(InfoTabWidth + InfoTabBorder, InfoTabHeight);
+        rect.anchoredPosition = new Vector2(-(InfoTabBorder * 2f), 0f);
+        rect.sizeDelta = new Vector2(InfoTabWidth + (InfoTabBorder * 2f), InfoTabHeight);
 
         TutorialInfoTabGraphic border = tab.GetComponent<TutorialInfoTabGraphic>();
         border.color = SteelBorderColor;
