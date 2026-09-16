@@ -210,10 +210,8 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
                 2 * math.pi * math.e * dists.continuous.std**2
                 + ACTION_ENTROPY_EPSILON
             )
-            active_count = torch.clamp(activity.sum(dim=1, keepdim=True), min=1.0)
             entropies.append(
                 (per_dimension_entropy * activity).sum(dim=1, keepdim=True)
-                / active_count
             )
 
     if dists.discrete is not None:
