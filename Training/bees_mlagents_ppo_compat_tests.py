@@ -29,13 +29,29 @@ class AdaptiveExplorationControllerTests(unittest.TestCase):
         self.assertEqual(fresh.current_beta, compat.MAX_ADAPTIVE_BETA)
         self.assertEqual(resumed.current_beta, 0.001)
 
+    def test_no_adaptation_before_long_global_episode_warmup(self):
+        controller = compat.AdaptiveExplorationController(0.001, start_high=False)
+
+        for _ in range(compat.MIN_ADAPTIVE_EPISODES // 2):
+            controller.observe_reward(1.0)
+        for _ in range(compat.MIN_ADAPTIVE_EPISODES // 2 - 1):
+            controller.observe_reward(-1.0)
+
+        self.assertEqual(controller.episode_count, compat.MIN_ADAPTIVE_EPISODES - 1)
+        self.assertEqual(controller.current_beta, controller.baseline_beta)
+
+        controller.observe_reward(-1.0)
+
+        self.assertEqual(controller.episode_count, compat.MIN_ADAPTIVE_EPISODES)
+        self.assertGreater(controller.current_beta, controller.baseline_beta)
+
     def test_sustained_improvement_reduces_beta_toward_baseline(self):
         controller = compat.AdaptiveExplorationController(0.001, start_high=True)
 
-        for _ in range(160):
+        for _ in range(compat.MIN_ADAPTIVE_EPISODES):
             controller.observe_reward(-1.0)
         before_improvement = controller.current_beta
-        for _ in range(192):
+        for _ in range(compat.ADAPTIVE_EVALUATION_INTERVAL):
             controller.observe_reward(1.0)
 
         self.assertLess(controller.current_beta, before_improvement)
@@ -44,10 +60,10 @@ class AdaptiveExplorationControllerTests(unittest.TestCase):
     def test_sustained_decline_raises_beta_from_baseline(self):
         controller = compat.AdaptiveExplorationController(0.001, start_high=False)
 
-        for _ in range(224):
+        for _ in range(compat.MIN_ADAPTIVE_EPISODES):
             controller.observe_reward(1.0)
         before_decline = controller.current_beta
-        for _ in range(160):
+        for _ in range(compat.ADAPTIVE_EVALUATION_INTERVAL):
             controller.observe_reward(-1.0)
 
         self.assertGreater(controller.current_beta, before_decline)
@@ -56,12 +72,12 @@ class AdaptiveExplorationControllerTests(unittest.TestCase):
     def test_stable_reward_relaxes_temporary_boost_toward_baseline(self):
         controller = compat.AdaptiveExplorationController(0.001, start_high=False)
 
-        for _ in range(224):
+        for _ in range(compat.MIN_ADAPTIVE_EPISODES):
             controller.observe_reward(1.0)
-        for _ in range(160):
+        for _ in range(compat.ADAPTIVE_EVALUATION_INTERVAL * 4):
             controller.observe_reward(-1.0)
         boosted_beta = controller.current_beta
-        for _ in range(640):
+        for _ in range(compat.ADAPTIVE_EVALUATION_INTERVAL * 8):
             controller.observe_reward(-1.0)
 
         self.assertLess(controller.current_beta, boosted_beta)
