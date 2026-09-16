@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 8506322838735590266}
   - component: {fileID: 38850767981210130}
   - component: {fileID: 1632059759100595243}
+  - component: {fileID: 784321986412345678}
   m_Layer: 0
   m_Name: UI Highlight Tooltip
   m_TagString: Untagged
@@ -75,3 +76,15 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &784321986412345678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8912504570151464901}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45bbba90d8804d65be4da653db25e41b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
