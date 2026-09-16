@@ -1,3 +1,4 @@
+using Assets.Scripts;
 using Assets.Scripts.Entities.Ships;
 using UnityEngine;
 
@@ -63,7 +64,7 @@ namespace Assets.Scripts.Scenes
         private bool ShouldContinueScriptedFollow(Ship cameraShip)
         {
             return _lastFollowedShip != null &&
-                ReferenceEquals(cameraShip, _lastFollowedShip) &&
+                object.ReferenceEquals(cameraShip, _lastFollowedShip) &&
                 !_lastFollowedShip.IsDead &&
                 _lastFollowedShip.CanOverrideBounds &&
                 _lastFollowedShip.ShipType == ConfigData.ShipTypes.Scout;
