@@ -20,6 +20,12 @@ namespace Assets.Scripts.Scenes
 
         private void LateUpdate()
         {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
+            {
+                _lastFollowedShip = null;
+                return;
+            }
+
             if (_stage == null)
             {
                 _stage = FindObjectOfType<Stage>();
