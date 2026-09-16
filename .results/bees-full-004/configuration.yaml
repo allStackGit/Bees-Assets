@@ -69,8 +69,8 @@ env_settings:
   - Gunship
   - --rl-matchup-mode
   - sampled
-  base_port: 5005
-  num_envs: 32
+  base_port: 12000
+  num_envs: 48
   num_areas: 1
   timeout_wait: 300
   seed: -1
