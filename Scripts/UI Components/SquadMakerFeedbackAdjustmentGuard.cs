@@ -147,6 +147,20 @@ namespace Assets.Scripts.UIComponents
                 }
             }
 
+            // The currently edited squad is intentionally not part of CurrentShips.GetSavedSquads()
+            // until the user presses Save. Its fleet ships are still legitimately reserved while the
+            // editor is open; treating them as orphans returns them to the fleet list and lets the same
+            // FleetShip be added repeatedly, bypassing the squad-size limit visually.
+            SavedSquad workingSquad = _squadMaker.GetCurrentSquad();
+            if (workingSquad != null)
+            {
+                List<SquadShip> workingShips = workingSquad.GetSquadShips();
+                for (int shipIndex = 0; shipIndex < workingShips.Count; shipIndex++)
+                {
+                    referencedFleetIds.Add(workingShips[shipIndex].FleetId);
+                }
+            }
+
             bool changed = false;
             List<FleetShip> fleetShips = ConfigData.CurrentShips.GetFleetShips();
             for (int i = 0; i < fleetShips.Count; i++)
