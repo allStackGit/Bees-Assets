@@ -26,17 +26,19 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void ScriptedCampaignCameraFitsViewportInsideMapBeforePositionClamp()
+        public void ScriptedCampaignCameraAlwaysFitsViewportInsideMap()
         {
             string source = File.ReadAllText(Path.Combine(
-                Application.dataPath, "Scripts", "UI Components", "CampaignCameraViewportBoundsGuard.cs"));
+                Application.dataPath, "Scripts", "Scenes", "CampaignCameraFollowGuard.cs"));
 
-            Assert.That(source, Does.Contain("stage.IsFollowingShip"));
-            Assert.That(source, Does.Contain("stage.IsCameraMovingToTarget"));
+            Assert.That(source, Does.Contain("_stage.IsFollowingShip"));
+            Assert.That(source, Does.Contain("_stage.IsCameraMovingToTarget"));
+            Assert.That(source, Does.Contain("ClampCameraToMap(_stage.Camera);"));
             Assert.That(source, Does.Contain("mapBounds.extents.y"));
-            Assert.That(source, Does.Contain("mapBounds.extents.x / aspect"));
-            Assert.That(source, Does.Contain("camera.orthographicSize = maximumOrthographicSize;"));
-            Assert.That(source, Does.Contain("stage.InputManager.MaintainScrollBoundary();"));
+            Assert.That(source, Does.Contain("mapBounds.extents.x / camera.aspect"));
+            Assert.That(source, Does.Contain("camera.orthographicSize = maximumVerticalSize;"));
+            Assert.That(source, Does.Not.Contain("if (!ShouldAllowFollowOutsideMap(cameraShip))"),
+                "CanOverrideBounds permits the Scout to leave the map, but must never permit the camera viewport to leave it.");
         }
 
         [Test]
