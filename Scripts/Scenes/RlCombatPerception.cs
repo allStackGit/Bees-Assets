@@ -32,13 +32,13 @@ internal sealed class RlCombatPerception
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
     internal const float NavigationGridCellSize = 6f;
 
-    internal const int ShipIdBitCount = 64;
+    internal const int ShipIdentityObservationSize = 1;
     internal const int CommunicationObservationSize = 4;
-    internal const int SelfObservationSize = 28 + ShipIdBitCount;
+    internal const int SelfObservationSize = 28 + ShipIdentityObservationSize;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 18;
     internal const int WeaponObservationSize = 18;
-    internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdBitCount + MaxObservedEntityWeaponSlots * WeaponObservationSize;
+    internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
     internal const int AllyObservationSize = EntityObservationSize + CommunicationObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
@@ -177,7 +177,7 @@ internal sealed class RlCombatPerception
         Vector2 position,
         int frameQuarterTurns)
     {
-        AddShipIdBits(sensor, ship.Id);
+        AddShipIdentityObservation(sensor, ship);
         AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
         Level level = ship.Level;
         Vector2 normalizedPosition = new Vector2(
@@ -333,7 +333,7 @@ internal sealed class RlCombatPerception
     {
         Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(observed.GetPosition() - origin, frameQuarterTurns);
         sensor.AddObservation(1f);
-        AddShipIdBits(sensor, observed.Id);
+        AddShipIdentityObservation(sensor, observed);
         sensor.AddObservation(SquashSignedDistance(relative.x));
         sensor.AddObservation(SquashSignedDistance(relative.y));
         AddHeading(sensor, observed.Rotation, frameQuarterTurns);
@@ -766,15 +766,9 @@ internal sealed class RlCombatPerception
         return positive <= 0f ? 0f : positive / (positive + Mathf.Max(0.0001f, scale));
     }
 
-    private static void AddShipIdBits(VectorSensor sensor, long id)
+    private static void AddShipIdentityObservation(VectorSensor sensor, Ship ship)
     {
-        // Entity IDs are categorical identity, not magnitude. Bit encoding preserves exact equality
-        // without teaching the policy that numerically adjacent IDs are inherently more similar.
-        ulong value = unchecked((ulong)id);
-        for (int bit = 0; bit < ShipIdBitCount; bit++)
-        {
-            sensor.AddObservation((value & (1UL << bit)) != 0UL ? 1f : 0f);
-        }
+        sensor.AddObservation(RlEpisodeShipIdentity.GetObservation(ship));
     }
 
     private static void AddEnumBits(VectorSensor sensor, int value, int bits)
