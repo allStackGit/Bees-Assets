@@ -37,7 +37,7 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int ParentCarrierObservationSize = RlCombatPerception.ParentCarrierObservationSize;
     internal const int EntityObservationSize = RlCombatPerception.EntityObservationSize;
     internal const int AllyObservationSize = RlCombatPerception.AllyObservationSize;
-    internal const int ShipIdBitCount = RlCombatPerception.ShipIdBitCount;
+    internal const int ShipIdentityObservationSize = RlCombatPerception.ShipIdentityObservationSize;
     internal const int CommunicationObservationSize = RlCombatPerception.CommunicationObservationSize;
     internal const int WeaponObservationSize = RlCombatPerception.WeaponObservationSize;
     internal const int EnemyWeaponMountObservationSize = RlCombatPerception.EnemyWeaponMountObservationSize;
