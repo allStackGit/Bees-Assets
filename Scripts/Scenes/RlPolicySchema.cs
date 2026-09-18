@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static partial class RlPolicySchema
 {
-    internal const int Version = 12;
+    internal const int Version = 13;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int ExpectedObservationSize = 24356;
+    internal const int ExpectedObservationSize = 16166;
     internal const int ExpectedContinuousActions = 16;
     internal const int ExpectedWeaponFireBranchCount = 5;
     internal const int ExpectedWeaponFireBranchSize = 2;
@@ -24,11 +24,11 @@ internal static partial class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v12|behavior=BeesRL1v1|network=lstm-1024x4-mem512-seq256|normalize=true|obs=24356|cont=16|disc=2x5,5,65,65,65|" +
+        "bees-rl-v13|behavior=BeesRL1v1|network=lstm-1024x4-mem512-seq256|normalize=true|obs=16166|cont=16|disc=2x5,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=5|weaponbits=4|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=92|ship-id=exact-64bit-categorical|self-counts=live-friendly,live-enemy|capability=12|parent-carrier=172|entity-core=18|entity=172|ally=176-with-private-comm4|weapon=18|weapon-observation=shared-self-ally-enemy|" +
+        "self=29|ship-id=episode-permuted-scalar23|self-counts=live-friendly,live-enemy|capability=12|parent-carrier=109|entity-core=18|entity=109|ally=113-with-private-comm4|weapon=18|weapon-observation=shared-self-ally-enemy|" +
         "projectile-speed=linear-max200-per-weapon|enemy-mount=0|mining-slot=7|map-slot=11|moving-asteroid-slot=10|objective=16|" +
         "grid=21x21@6|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id";
 
@@ -40,11 +40,11 @@ internal static partial class RlPolicySchema
             errors.Add($"behavior expected {ExpectedBehaviorName} but was {RlOneVsOneAgent.BehaviorName}");
         }
 
-        Check(errors, RlCombatPerception.BaseObservationSize, 24335, "v12 observation prefix size");
-        Check(errors, RlCombatPerception.EpisodeProgressObservationIndex, 24335, "episode progress observation index");
-        Check(errors, RlCombatPerception.ReservedObservationStartIndex, 24336, "reserved observation start index");
+        Check(errors, RlCombatPerception.BaseObservationSize, 16145, "v13 observation prefix size");
+        Check(errors, RlCombatPerception.EpisodeProgressObservationIndex, 16145, "episode progress observation index");
+        Check(errors, RlCombatPerception.ReservedObservationStartIndex, 16146, "reserved observation start index");
         Check(errors, RlCombatPerception.ReservedObservationCount, 20, "reserved observation count");
-        Check(errors, RlCombatPerception.ReservedObservationEndIndex, 24355, "reserved observation end index");
+        Check(errors, RlCombatPerception.ReservedObservationEndIndex, 16165, "reserved observation end index");
         Check(errors, RlCombatPerception.ObservationSize, ExpectedObservationSize, "observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
         Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
@@ -64,13 +64,13 @@ internal static partial class RlPolicySchema
         Check(errors, RlCombatPerception.MaxWeaponSlots, 5, "self weapon slots");
         Check(errors, RlCombatPerception.MaxObservedEntityWeaponSlots, 5, "observed entity weapon slots");
         Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 0, "standalone enemy weapon-mount slots");
-        Check(errors, RlCombatPerception.ShipIdBitCount, 64, "ship id bits");
+        Check(errors, RlCombatPerception.ShipIdentityObservationSize, 1, "ship identity observation size");
         Check(errors, RlCombatPerception.CommunicationObservationSize, 4, "communication observation size");
-        Check(errors, RlCombatPerception.SelfObservationSize, 92, "self observation size");
+        Check(errors, RlCombatPerception.SelfObservationSize, 29, "self observation size");
         Check(errors, RlCombatPerception.EntityCoreObservationSize, 18, "entity core observation size");
-        Check(errors, RlCombatPerception.EntityObservationSize, 172, "rich entity observation size");
-        Check(errors, RlCombatPerception.AllyObservationSize, 176, "ally observation size");
-        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 172, "parent-carrier observation size");
+        Check(errors, RlCombatPerception.EntityObservationSize, 109, "rich entity observation size");
+        Check(errors, RlCombatPerception.AllyObservationSize, 113, "ally observation size");
+        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 109, "parent-carrier observation size");
         Check(errors, RlCombatPerception.WeaponObservationSize, 18, "shared weapon observation size");
         Check(errors, RlCombatPerception.EnemyWeaponMountObservationSize, 0, "standalone enemy weapon-mount observation size");
         Check(errors, RlCombatPerception.MapObjectObservationSize, 11, "map-object observation size");
