@@ -36,6 +36,9 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int CapabilityObservationSize = RlCombatPerception.CapabilityObservationSize;
     internal const int ParentCarrierObservationSize = RlCombatPerception.ParentCarrierObservationSize;
     internal const int EntityObservationSize = RlCombatPerception.EntityObservationSize;
+    internal const int AllyObservationSize = RlCombatPerception.AllyObservationSize;
+    internal const int ShipIdBitCount = RlCombatPerception.ShipIdBitCount;
+    internal const int CommunicationObservationSize = RlCombatPerception.CommunicationObservationSize;
     internal const int WeaponObservationSize = RlCombatPerception.WeaponObservationSize;
     internal const int EnemyWeaponMountObservationSize = RlCombatPerception.EnemyWeaponMountObservationSize;
     internal const int MiningAsteroidObservationSize = RlCombatPerception.MiningAsteroidObservationSize;
@@ -50,7 +53,9 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MovementContinuousActionCount = 2;
     internal const int WeaponAimContinuousActionsPerSlot = 2;
     internal const int WeaponAimContinuousActionStart = MovementContinuousActionCount;
-    internal const int ContinuousActionCount = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;
+    internal const int CommunicationContinuousActionCount = 4;
+    internal const int CommunicationContinuousActionStart = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;
+    internal const int ContinuousActionCount = CommunicationContinuousActionStart + CommunicationContinuousActionCount;
     internal const int WeaponFireBranchStart = 0;
     internal const int WeaponFireBranchCount = MaxWeaponSlots;
     internal const int WeaponFireBranchSize = 2;
@@ -78,6 +83,7 @@ internal sealed class RlOneVsOneAgent : Agent
     private const int HealingPerSuccessfulAction = 50;
 
     private static readonly List<RlOneVsOneAgent> Instances = new List<RlOneVsOneAgent>();
+    private static readonly Dictionary<Ship, Vector4> ShipCommunications = new Dictionary<Ship, Vector4>();
     private static readonly Dictionary<Level, Dictionary<int, int>> AgentCounts =
         new Dictionary<Level, Dictionary<int, int>>();
     private static bool _invalidEnvironmentReported;
@@ -447,6 +453,12 @@ internal sealed class RlOneVsOneAgent : Agent
         var continuous = actions.ContinuousActions;
         Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
         ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
+
+        ShipCommunications[_ship] = new Vector4(
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 1], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 2], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 3], -1f, 1f));
 
         var discrete = actions.DiscreteActions;
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
@@ -856,6 +868,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
+        ShipCommunications[_ship] = Vector4.zero;
         _hasParticipatedThisEpisode = true;
         _decisionCounter = 0;
         _nextMiningActionTime = 0f;
@@ -954,6 +967,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (_ship != null)
         {
+            ShipCommunications.Remove(_ship);
             _ship.HasBrain = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
             {
@@ -994,6 +1008,20 @@ internal sealed class RlOneVsOneAgent : Agent
     private static bool HasSpecialAction(Ship ship)
     {
         return ship is YellowJacket || ship is Striker || ship is FireBarge || ship is Barge || ship is Scout;
+    }
+
+    internal static void AddCommunicationObservations(VectorSensor sensor, Ship ally)
+    {
+        if (ally != null && ShipCommunications.TryGetValue(ally, out Vector4 communication))
+        {
+            sensor.AddObservation(communication.x);
+            sensor.AddObservation(communication.y);
+            sensor.AddObservation(communication.z);
+            sensor.AddObservation(communication.w);
+            return;
+        }
+
+        AddZeroObservations(sensor, CommunicationContinuousActionCount);
     }
 
     internal static float SquashSignedDistance(float value)
