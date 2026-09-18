@@ -69,6 +69,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void PositiveTeamSizeHasNoArtificialParserCeiling()
+        {
+            object options = Parse(
+                "--rl-ships-per-side", "128",
+                "--rl-bee-ship-types", "Wasp",
+                "--rl-human-ship-types", "Gunship");
+
+            Assert.That(GetProperty(options, "ShipsPerSide"), Is.EqualTo(128));
+
+            string source = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingOptions.cs");
+            Assert.That(source, Does.Not.Contain("MaximumShipsPerSide"));
+        }
+
+        [Test]
         public void SampledModeRequiresLoadedConfigurationSettings()
         {
             Type configDataType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData");
@@ -94,7 +108,7 @@ namespace Bees.Tests.EditMode
             AssertParseFails("--rl-health-ratio", "1.5");
             AssertParseFails("--rl-map-size", "5");
             AssertParseFails("--rl-episode-timeout", "0");
-            AssertParseFails("--rl-ships-per-side", "17");
+            AssertParseFails("--rl-ships-per-side", "0");
             AssertParseFails("--rl-bee-ship-types", "NotAShip");
             AssertParseFails("--rl-ships-per-side", "3", "--rl-bee-ship-types", "Wasp,Hornet");
             AssertParseFails("--rl-typo", "1");
