@@ -32,11 +32,14 @@ internal sealed class RlCombatPerception
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
     internal const float NavigationGridCellSize = 6f;
 
-    internal const int SelfObservationSize = 28;
+    internal const int ShipIdBitCount = 64;
+    internal const int CommunicationObservationSize = 4;
+    internal const int SelfObservationSize = 28 + ShipIdBitCount;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 18;
     internal const int WeaponObservationSize = 18;
-    internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
+    internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdBitCount + MaxObservedEntityWeaponSlots * WeaponObservationSize;
+    internal const int AllyObservationSize = EntityObservationSize + CommunicationObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
     internal const int MiningAsteroidObservationSize = 7;
@@ -46,7 +49,8 @@ internal sealed class RlCombatPerception
     internal const int BaseObservationSize = SelfObservationSize +
         CapabilityObservationSize +
         ParentCarrierObservationSize +
-        (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
+        MaxObservedAllies * AllyObservationSize +
+        MaxObservedEnemies * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize +
         MaxObservedEnemyWeaponMounts * EnemyWeaponMountObservationSize +
         MaxObservedMiningAsteroids * MiningAsteroidObservationSize +
@@ -150,7 +154,7 @@ internal sealed class RlCombatPerception
         AddCapabilityObservations(ship, sensor);
         AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns);
         CollectAllies(ship, side, origin);
-        AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
+        AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
         CollectVisibleEnemies(ship, side, origin);
         AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);
         AddWeaponSlots(ship, sensor, frameQuarterTurns);
@@ -173,6 +177,7 @@ internal sealed class RlCombatPerception
         Vector2 position,
         int frameQuarterTurns)
     {
+        AddShipIdBits(sensor, ship.Id);
         AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
         Level level = ship.Level;
         Vector2 normalizedPosition = new Vector2(
@@ -295,6 +300,22 @@ internal sealed class RlCombatPerception
         });
     }
 
+    private static void AddAllySlots(VectorSensor sensor, List<Ship> ships, int slots, Vector2 origin, int frameQuarterTurns)
+    {
+        for (int slot = 0; slot < slots; slot++)
+        {
+            if (slot >= ships.Count)
+            {
+                AddZeroObservations(sensor, AllyObservationSize);
+                continue;
+            }
+
+            Ship ally = ships[slot];
+            AddEntityObservation(sensor, ally, origin, frameQuarterTurns);
+            RlOneVsOneAgent.AddCommunicationObservations(sensor, ally);
+        }
+    }
+
     private static void AddEntitySlots(VectorSensor sensor, List<Ship> ships, int slots, Vector2 origin, int frameQuarterTurns)
     {
         for (int slot = 0; slot < slots; slot++)
@@ -312,6 +333,7 @@ internal sealed class RlCombatPerception
     {
         Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(observed.GetPosition() - origin, frameQuarterTurns);
         sensor.AddObservation(1f);
+        AddShipIdBits(sensor, observed.Id);
         sensor.AddObservation(SquashSignedDistance(relative.x));
         sensor.AddObservation(SquashSignedDistance(relative.y));
         AddHeading(sensor, observed.Rotation, frameQuarterTurns);
@@ -742,6 +764,17 @@ internal sealed class RlCombatPerception
     {
         float positive = Mathf.Max(0f, value);
         return positive <= 0f ? 0f : positive / (positive + Mathf.Max(0.0001f, scale));
+    }
+
+    private static void AddShipIdBits(VectorSensor sensor, long id)
+    {
+        // Entity IDs are categorical identity, not magnitude. Bit encoding preserves exact equality
+        // without teaching the policy that numerically adjacent IDs are inherently more similar.
+        ulong value = unchecked((ulong)id);
+        for (int bit = 0; bit < ShipIdBitCount; bit++)
+        {
+            sensor.AddObservation((value & (1UL << bit)) != 0UL ? 1f : 0f);
+        }
     }
 
     private static void AddEnumBits(VectorSensor sensor, int value, int bits)
