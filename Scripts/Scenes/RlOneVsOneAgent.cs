@@ -20,8 +20,8 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const string BehaviorName = "BeesRL1v1";
     internal const int DecisionPeriod = RlOneVsOneTrainingOptions.DefaultDecisionPeriod;
 
-    internal const int ShipTypeBitCount = RlCombatPerception.ShipTypeBitCount;
-    internal const int WeaponTypeBitCount = RlCombatPerception.WeaponTypeBitCount;
+    internal const int ShipTypeObservationSize = RlCombatPerception.ShipTypeObservationSize;
+    internal const int WeaponTypeObservationSize = RlCombatPerception.WeaponTypeObservationSize;
     internal const int MapObjectTypeBitCount = RlCombatPerception.MapObjectTypeBitCount;
     internal const int MaxObservedAllies = RlCombatPerception.MaxObservedAllies;
     internal const int MaxObservedEnemies = RlCombatPerception.MaxObservedEnemies;
