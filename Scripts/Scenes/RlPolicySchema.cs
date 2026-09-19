@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 13;
+    internal const int Version = 14;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int PerceptionObservationSize = 9279;
+    internal const int PerceptionObservationSize = 6809;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
     internal const int ReservedObservationStartIndex = EpisodeProgressObservationIndex + 1;
     internal const int ReservedObservationCount = 20;
@@ -29,11 +29,11 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v13|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=9300|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
+        "bees-rl-v14|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=6830|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
-        "shipbits=5|weaponbits=4|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
+        "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=29|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=59|entity-core=18|entity=59|self-weapon=18|observed-weapon=8|weapon-observation=split-self-vs-observed|mining-slot=7|" +
+        "self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
         "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
@@ -56,8 +56,8 @@ internal static class RlPolicySchema
         Check(errors, RlOneVsOneAgent.MapObjectTargetBranchSize, ExpectedMapObjectTargetBranchSize, "map-object target branch");
         ValidateDiscreteBranchSizes(errors);
 
-        Check(errors, RlCombatPerception.ShipTypeBitCount, 5, "ship type bits");
-        Check(errors, RlCombatPerception.WeaponTypeBitCount, 4, "weapon type bits");
+        Check(errors, RlCombatPerception.ShipTypeObservationSize, 1, "ship type observation size");
+        Check(errors, RlCombatPerception.WeaponTypeObservationSize, 1, "weapon type observation size");
         Check(errors, RlCombatPerception.MapObjectTypeBitCount, 4, "map-object type bits");
         Check(errors, RlCombatPerception.MaxObservedAllies, 64, "ally slots");
         Check(errors, RlCombatPerception.MaxObservedEnemies, 64, "enemy slots");
@@ -65,17 +65,15 @@ internal static class RlPolicySchema
         Check(errors, RlCombatPerception.MaxObservedEntityWeaponSlots, 5, "entity weapon slots");
         Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 0, "enemy weapon-mount slots");
         Check(errors, RlCombatPerception.ShipIdentityObservationSize, 1, "ship identity observation size");
-        Check(errors, RlCombatPerception.SelfObservationSize, 29, "self observation size");
-        Check(errors, RlCombatPerception.SelfWeaponObservationSize, 18, "self weapon observation size");
-        Check(errors, RlCombatPerception.ObservedWeaponObservationSize, 8, "observed weapon observation size");
-        Check(errors, RlCombatPerception.EntityObservationSize, 59, "entity observation size");
-        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 59, "parent-carrier observation size");
+        Check(errors, RlCombatPerception.SelfObservationSize, 25, "self observation size");
+        Check(errors, RlCombatPerception.SelfWeaponObservationSize, 15, "self weapon observation size");
+        Check(errors, RlCombatPerception.ObservedWeaponObservationSize, 5, "observed weapon observation size");
+        Check(errors, RlCombatPerception.EntityObservationSize, 40, "entity observation size");
+        Check(errors, RlCombatPerception.ParentCarrierObservationSize, 40, "parent-carrier observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
 
         ValidateFrozenEnumMappings(errors);
-        ValidateEnumRange<ConfigData.ShipTypes>(errors, RlCombatPerception.ShipTypeBitCount, "ship type");
-        ValidateEnumRange<ConfigData.WeaponTypes>(errors, RlCombatPerception.WeaponTypeBitCount, "weapon type");
 
         if (errors.Count > 0)
         {
@@ -94,11 +92,9 @@ internal static class RlPolicySchema
         }
 
         int shipType = (int)ship.ShipType;
-        int shipTypeLimit = 1 << RlCombatPerception.ShipTypeBitCount;
-        if (shipType < 0 || shipType >= shipTypeLimit)
+        if (shipType < 0 || shipType >= 24)
         {
-            error = $"RL policy cannot encode ship type {ship.ShipType} ({shipType}); " +
-                    $"the frozen {RlCombatPerception.ShipTypeBitCount}-bit field supports 0-{shipTypeLimit - 1}.";
+            error = $"RL policy cannot encode ship type {ship.ShipType} ({shipType}); the frozen scalar vocabulary supports 0-23.";
             return false;
         }
 
@@ -112,7 +108,6 @@ internal static class RlPolicySchema
 
         if (ship.Weapons != null)
         {
-            int weaponTypeLimit = 1 << RlCombatPerception.WeaponTypeBitCount;
             for (int i = 0; i < ship.Weapons.Count; i++)
             {
                 if (ship.Weapons[i] == null)
@@ -120,11 +115,9 @@ internal static class RlPolicySchema
                     continue;
                 }
                 int weaponType = (int)ship.Weapons[i].Type;
-                if (weaponType < 0 || weaponType >= weaponTypeLimit)
+                if (weaponType < 0 || weaponType >= 10)
                 {
-                    error = $"RL policy ABI cannot encode weapon type {ship.Weapons[i].Type} ({weaponType}) on " +
-                            $"{ship.ShipType}; the frozen {RlCombatPerception.WeaponTypeBitCount}-bit field supports " +
-                            $"0-{weaponTypeLimit - 1}.";
+                    error = $"RL policy cannot encode weapon type {ship.Weapons[i].Type} ({weaponType}) on {ship.ShipType}; the frozen scalar vocabulary supports 0-9.";
                     return false;
                 }
             }
