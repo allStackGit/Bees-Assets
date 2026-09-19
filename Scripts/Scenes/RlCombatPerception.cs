@@ -14,8 +14,8 @@ using UnityEngine;
 /// </summary>
 internal sealed class RlCombatPerception
 {
-    internal const int ShipTypeBitCount = 5;
-    internal const int WeaponTypeBitCount = 4;
+    internal const int ShipTypeObservationSize = 1;
+    internal const int WeaponTypeObservationSize = 1;
     internal const int MapObjectTypeBitCount = 4;
 
     internal const int MaxObservedAllies = 64;
@@ -31,11 +31,11 @@ internal sealed class RlCombatPerception
     internal const float NavigationGridCellSize = 10f;
 
     internal const int ShipIdentityObservationSize = 1;
-    internal const int SelfObservationSize = 28 + ShipIdentityObservationSize;
+    internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;
     internal const int CapabilityObservationSize = 12;
-    internal const int EntityCoreObservationSize = 18;
-    internal const int SelfWeaponObservationSize = 18;
-    internal const int ObservedWeaponObservationSize = 8;
+    internal const int EntityCoreObservationSize = 14;
+    internal const int SelfWeaponObservationSize = 15;
+    internal const int ObservedWeaponObservationSize = 5;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
@@ -169,7 +169,7 @@ internal sealed class RlCombatPerception
         int frameQuarterTurns)
     {
         AddShipIdentityObservation(sensor, ship);
-        AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
+        AddShipTypeObservation(sensor, ship.ShipType);
         Level level = ship.Level;
         Vector2 normalizedPosition = new Vector2(
             NormalizeSignedCoordinate(position.x, level.MinX, level.MaxX),
@@ -330,7 +330,7 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
         sensor.AddObservation(observed.IsMobile ? 1f : 0f);
         sensor.AddObservation(observed.IsBomber ? 1f : 0f);
-        AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
+        AddShipTypeObservation(sensor, observed.ShipType);
         AddEntityWeaponSlots(observed, sensor);
     }
 
@@ -367,7 +367,7 @@ internal sealed class RlCombatPerception
         int frameQuarterTurns)
     {
         sensor.AddObservation(1f);
-        AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
+        AddWeaponTypeObservation(sensor, weapon.Type);
         Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
             weapon.GetPosition() - owner.GetPosition(),
             frameQuarterTurns);
@@ -401,7 +401,7 @@ internal sealed class RlCombatPerception
     private static void AddObservedWeaponObservation(Weapon weapon, VectorSensor sensor)
     {
         sensor.AddObservation(1f);
-        AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
+        AddWeaponTypeObservation(sensor, weapon.Type);
         sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
         sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
         sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
@@ -907,6 +907,40 @@ internal sealed class RlCombatPerception
     private static void AddShipIdentityObservation(VectorSensor sensor, Ship ship)
     {
         sensor.AddObservation(RlEpisodeShipIdentity.GetObservation(ship));
+    }
+
+    // Fixed scalar vocabularies deliberately scramble enum order while spacing all
+    // currently frozen categories evenly across [-1, 1]. Numerical proximity
+    // therefore carries no relationship to enum/type ordering.
+    private static readonly int[] ShipTypeScalarPermutation =
+    {
+        11, 2, 19, 7, 22, 4, 15, 0, 17, 9, 23, 5,
+        13, 20, 1, 16, 8, 21, 3, 18, 10, 14, 6, 12
+    };
+
+    private static readonly int[] WeaponTypeScalarPermutation =
+    {
+        4, 9, 1, 7, 0, 6, 3, 8, 2, 5
+    };
+
+    private static void AddShipTypeObservation(VectorSensor sensor, ConfigData.ShipTypes type)
+    {
+        sensor.AddObservation(GetFixedTypeScalar((int)type, ShipTypeScalarPermutation));
+    }
+
+    private static void AddWeaponTypeObservation(VectorSensor sensor, ConfigData.WeaponTypes type)
+    {
+        sensor.AddObservation(GetFixedTypeScalar((int)type, WeaponTypeScalarPermutation));
+    }
+
+    private static float GetFixedTypeScalar(int value, int[] permutation)
+    {
+        if (value < 0 || value >= permutation.Length || permutation.Length <= 1)
+        {
+            return 0f;
+        }
+
+        return -1f + 2f * permutation[value] / (permutation.Length - 1f);
     }
 
     private static void AddEnumBits(VectorSensor sensor, int value, int bits)
