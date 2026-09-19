@@ -14,8 +14,8 @@ using UnityEngine;
 /// </summary>
 internal sealed class RlCombatPerception
 {
-    internal const int ShipTypeBitCount = 6;
-    internal const int WeaponTypeBitCount = 6;
+    internal const int ShipTypeBitCount = 5;
+    internal const int WeaponTypeBitCount = 4;
     internal const int MapObjectTypeBitCount = 4;
 
     internal const int MaxObservedAllies = 64;
@@ -23,8 +23,8 @@ internal sealed class RlCombatPerception
     internal const int MaxObservedMiningAsteroids = 8;
     internal const int MaxObservedMapObjects = 64;
     internal const int MaxObservedCollisionAsteroids = 48;
-    internal const int MaxWeaponSlots = 16;
-    internal const int MaxObservedEnemyWeaponMounts = 16;
+    internal const int MaxWeaponSlots = 5;
+    internal const int MaxObservedEnemyWeaponMounts = 0;
 
     internal const int NavigationGridSize = 13;
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
@@ -32,12 +32,13 @@ internal sealed class RlCombatPerception
 
     internal const int SelfObservationSize = 29;
     internal const int CapabilityObservationSize = 12;
-    internal const int EntityCoreObservationSize = 19;
-    internal const int WeaponObservationSize = 19;
+    internal const int EntityCoreObservationSize = 18;
+    internal const int WeaponObservationSize = 18;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
+    internal const float ProjectileSpeedObservationMax = 200f;
     internal const int MiningAsteroidObservationSize = 7;
     internal const int MapObjectObservationSize = 12;
     internal const int CollisionAsteroidObservationSize = 11;
@@ -370,6 +371,7 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
         sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
         sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
+        sensor.AddObservation(GetProjectileSpeedObservation(weapon));
 
         if (weapon is Turret turret)
         {
@@ -386,6 +388,36 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
             sensor.AddObservation(0f);
         }
+    }
+
+    internal static float GetProjectileSpeedObservation(Weapon weapon)
+    {
+        if (weapon == null || weapon.Stage == null || weapon.Stage.Prefabs == null)
+        {
+            return 0f;
+        }
+
+        GameObject prefab = null;
+        switch (weapon.ProjectileType)
+        {
+            case ConfigData.ProjectileTypes.BeeSmall: prefab = weapon.Stage.Prefabs.BeeSmallLaserShotPrefab; break;
+            case ConfigData.ProjectileTypes.BeeMedium: prefab = weapon.Stage.Prefabs.BeeMediumLaserShotPrefab; break;
+            case ConfigData.ProjectileTypes.BumblebeeShot: prefab = weapon.Stage.Prefabs.BumblebeeShotPrefab; break;
+            case ConfigData.ProjectileTypes.FlagshipShot: prefab = weapon.Stage.Prefabs.FlagshipShotPrefab; break;
+            case ConfigData.ProjectileTypes.Rocket: prefab = weapon.Stage.Prefabs.RocketPrefab; break;
+            case ConfigData.ProjectileTypes.HumanSmall: prefab = weapon.Stage.Prefabs.HumanSmallPrefab; break;
+            case ConfigData.ProjectileTypes.HumanMedium: prefab = weapon.Stage.Prefabs.HumanMediumPrefab; break;
+            case ConfigData.ProjectileTypes.Beam: prefab = weapon.Stage.Prefabs.BeamPrefab; break;
+            case ConfigData.ProjectileTypes.SplitShot: prefab = weapon.Stage.Prefabs.SplitShotPrefab; break;
+            case ConfigData.ProjectileTypes.QueenSmall: prefab = weapon.Stage.Prefabs.QueenSmallPrefab; break;
+            case ConfigData.ProjectileTypes.QueenLarge: prefab = weapon.Stage.Prefabs.QueenLargePrefab; break;
+            case ConfigData.ProjectileTypes.StrikerBomb: prefab = weapon.Stage.Prefabs.StrikerBombPrefab; break;
+        }
+
+        Projectile projectile = prefab != null ? prefab.GetComponent<Projectile>() : null;
+        return projectile != null
+            ? Mathf.Clamp01((float)projectile.Speed / ProjectileSpeedObservationMax)
+            : 0f;
     }
 
     private void CollectVisibleMiningAsteroids(Ship ship, int side, Vector2 origin)
