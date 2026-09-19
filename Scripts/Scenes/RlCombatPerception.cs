@@ -32,10 +32,12 @@ internal sealed class RlCombatPerception
 
     internal const int SelfObservationSize = 29;
     internal const int CapabilityObservationSize = 12;
-    internal const int EntityObservationSize = 19;
-    internal const int ParentCarrierObservationSize = EntityObservationSize;
+    internal const int EntityCoreObservationSize = 19;
     internal const int WeaponObservationSize = 19;
-    internal const int EnemyWeaponMountObservationSize = 22;
+    internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
+    internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
+    internal const int ParentCarrierObservationSize = EntityObservationSize;
+    internal const int EnemyWeaponMountObservationSize = 0;
     internal const int MiningAsteroidObservationSize = 7;
     internal const int MapObjectObservationSize = 12;
     internal const int CollisionAsteroidObservationSize = 11;
@@ -45,7 +47,6 @@ internal sealed class RlCombatPerception
         ParentCarrierObservationSize +
         (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
         MaxWeaponSlots * WeaponObservationSize +
-        MaxObservedEnemyWeaponMounts * EnemyWeaponMountObservationSize +
         MaxObservedMiningAsteroids * MiningAsteroidObservationSize +
         MaxObservedMapObjects * MapObjectObservationSize +
         MaxObservedCollisionAsteroids * CollisionAsteroidObservationSize +
@@ -146,8 +147,7 @@ internal sealed class RlCombatPerception
         AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
         CollectVisibleEnemies(ship, side, origin);
         AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);
-        AddWeaponSlots(ship, sensor, origin, frameQuarterTurns);
-        AddEnemyWeaponMountSlots(sensor, origin, frameQuarterTurns);
+        AddWeaponSlots(ship, sensor, frameQuarterTurns);
         CollectVisibleMiningAsteroids(ship, side, origin);
         AddMiningAsteroidSlots(sensor, origin, frameQuarterTurns);
         CollectVisibleMapObjects(ship, side, origin);
@@ -326,11 +326,11 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(observed.IsMobile ? 1f : 0f);
         sensor.AddObservation(observed.IsBomber ? 1f : 0f);
         AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
+        AddEntityWeaponSlots(observed, sensor, frameQuarterTurns);
     }
 
-    private static void AddWeaponSlots(Ship ship, VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
+    private static void AddWeaponSlots(Ship ship, VectorSensor sensor, int frameQuarterTurns)
     {
-        // Weapon is an authored List rather than an unordered set. Its setup order is the stable slot identity.
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
@@ -338,92 +338,53 @@ internal sealed class RlCombatPerception
                 AddZeroObservations(sensor, WeaponObservationSize);
                 continue;
             }
-
-            Weapon weapon = ship.Weapons[slot];
-            sensor.AddObservation(1f);
-            AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
-            Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
-                weapon.GetPosition() - origin,
-                frameQuarterTurns);
-            float size = Mathf.Max(1f, ship.LongestSide);
-            sensor.AddObservation(Mathf.Clamp(relative.x / size, -1f, 1f));
-            sensor.AddObservation(Mathf.Clamp(relative.y / size, -1f, 1f));
-            sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
-            sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
-            sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
-            sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
-            sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
-
-            if (weapon is Turret turret)
-            {
-                sensor.AddObservation(1f);
-                AddHeading(sensor, turret.Rotation, frameQuarterTurns);
-                sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
-                sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
-            }
-            else
-            {
-                sensor.AddObservation(0f);
-                sensor.AddObservation(0f);
-                sensor.AddObservation(0f);
-                sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
-                sensor.AddObservation(0f);
-            }
+            AddWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);
         }
     }
 
-    private void AddEnemyWeaponMountSlots(VectorSensor sensor, Vector2 origin, int frameQuarterTurns)
+    private static void AddEntityWeaponSlots(Ship ship, VectorSensor sensor, int frameQuarterTurns)
     {
-        int written = 0;
-        for (int enemyIndex = 0;
-             enemyIndex < _enemyCandidates.Count && enemyIndex < MaxObservedEnemies && written < MaxObservedEnemyWeaponMounts;
-             enemyIndex++)
+        for (int slot = 0; slot < MaxObservedEntityWeaponSlots; slot++)
         {
-            Ship enemy = _enemyCandidates[enemyIndex];
-            if (enemy.Weapons == null)
+            if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
             {
+                AddZeroObservations(sensor, WeaponObservationSize);
                 continue;
             }
-
-            for (int weaponIndex = 0; weaponIndex < enemy.Weapons.Count && written < MaxObservedEnemyWeaponMounts; weaponIndex++)
-            {
-                Weapon weapon = enemy.Weapons[weaponIndex];
-                if (weapon == null)
-                {
-                    continue;
-                }
-
-                Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
-                    weapon.GetPosition() - origin,
-                    frameQuarterTurns);
-                sensor.AddObservation(1f);
-                AddEnumBits(sensor, (int)enemy.ShipType, ShipTypeBitCount);
-                AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
-                sensor.AddObservation(SquashSignedDistance(relative.x));
-                sensor.AddObservation(SquashSignedDistance(relative.y));
-                sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
-                sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
-                sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
-                if (weapon is Turret turret)
-                {
-                    sensor.AddObservation(1f);
-                    AddHeading(sensor, turret.Rotation, frameQuarterTurns);
-                    sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
-                }
-                else
-                {
-                    sensor.AddObservation(0f);
-                    sensor.AddObservation(0f);
-                    sensor.AddObservation(0f);
-                    sensor.AddObservation(0f);
-                }
-                written++;
-            }
+            AddWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);
         }
+    }
 
-        for (; written < MaxObservedEnemyWeaponMounts; written++)
+    private static void AddWeaponObservation(Ship owner, Weapon weapon, VectorSensor sensor, int frameQuarterTurns)
+    {
+        sensor.AddObservation(1f);
+        AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
+        Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
+            weapon.GetPosition() - owner.GetPosition(),
+            frameQuarterTurns);
+        float size = Mathf.Max(1f, owner.LongestSide);
+        sensor.AddObservation(Mathf.Clamp(relative.x / size, -1f, 1f));
+        sensor.AddObservation(Mathf.Clamp(relative.y / size, -1f, 1f));
+        sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
+        sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
+        sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
+        sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
+        sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
+
+        if (weapon is Turret turret)
         {
-            AddZeroObservations(sensor, EnemyWeaponMountObservationSize);
+            sensor.AddObservation(1f);
+            AddHeading(sensor, turret.Rotation, frameQuarterTurns);
+            sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
+            sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
+        }
+        else
+        {
+            sensor.AddObservation(0f);
+            sensor.AddObservation(0f);
+            sensor.AddObservation(0f);
+            sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
+            sensor.AddObservation(0f);
         }
     }
 
