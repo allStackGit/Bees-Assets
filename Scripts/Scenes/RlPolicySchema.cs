@@ -148,8 +148,8 @@ internal static class RlPolicySchema
 
     private static void ValidateFrozenEnumMappings(List<string> errors)
     {
-        // Existing identities are part of the policy vocabulary. New enum values may be appended
-        // within the reserved bit range, but existing values must never be renumbered for ABI v9.
+        // Existing enum identities are part of the v15 scalar policy vocabulary. Existing values
+        // must never be renumbered or remapped without an intentional policy ABI change.
         CheckEnum(errors, ConfigData.ShipTypes.Barge, 0, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beacon, 1, "ship");
         CheckEnum(errors, ConfigData.ShipTypes.Beehive, 2, "ship");
@@ -204,17 +204,4 @@ internal static class RlPolicySchema
         }
     }
 
-    private static void ValidateEnumRange<T>(List<string> errors, int bits, string label) where T : Enum
-    {
-        int limit = 1 << bits;
-        Array values = Enum.GetValues(typeof(T));
-        for (int i = 0; i < values.Length; i++)
-        {
-            int value = Convert.ToInt32(values.GetValue(i));
-            if (value < 0 || value >= limit)
-            {
-                errors.Add($"{label} enum value {values.GetValue(i)}={value} exceeds {bits}-bit range 0-{limit - 1}");
-            }
-        }
-    }
 }
