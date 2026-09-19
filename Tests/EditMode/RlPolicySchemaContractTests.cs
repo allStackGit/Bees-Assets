@@ -26,19 +26,19 @@ namespace Bees.Tests.EditMode
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
-            Assert.That(perception, Does.Contain("internal const int ShipTypeBitCount = 5;"));
-            Assert.That(perception, Does.Contain("internal const int WeaponTypeBitCount = 4;"));
+            Assert.That(perception, Does.Contain("internal const int ShipTypeObservationSize = 1;"));
+            Assert.That(perception, Does.Contain("internal const int WeaponTypeObservationSize = 1;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedAllies = 64;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEnemies = 64;"));
             Assert.That(perception, Does.Contain("internal const int MaxWeaponSlots = 5;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEnemyWeaponMounts = 0;"));
             Assert.That(perception, Does.Contain("internal const int ShipIdentityObservationSize = 1;"));
-            Assert.That(perception, Does.Contain("internal const int SelfObservationSize = 28 + ShipIdentityObservationSize;"));
+            Assert.That(perception, Does.Contain("internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;"));
             Assert.That(perception, Does.Contain("AddShipIdentityObservation(sensor, ship);"));
             Assert.That(perception, Does.Contain("AddShipIdentityObservation(sensor, observed);"));
-            Assert.That(perception, Does.Contain("internal const int SelfWeaponObservationSize = 18;"));
-            Assert.That(perception, Does.Contain("internal const int ObservedWeaponObservationSize = 8;"));
+            Assert.That(perception, Does.Contain("internal const int SelfWeaponObservationSize = 15;"));
+            Assert.That(perception, Does.Contain("internal const int ObservedWeaponObservationSize = 5;"));
             Assert.That(perception, Does.Contain("AddObservedWeaponObservation(ship.Weapons[slot], sensor);"));
             Assert.That(perception, Does.Contain("internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;"));
             Assert.That(perception, Does.Contain("AddEntityWeaponSlots(observed, sensor);"));
@@ -46,12 +46,12 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 13;"));
-            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 9279;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 14;"));
+            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 6809;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
             Assert.That(schema, Does.Contain("bees-rl-v13"));
-            Assert.That(schema, Does.Contain("obs=9300"));
+            Assert.That(schema, Does.Contain("obs=6830"));
             Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
             Assert.That(schema, Does.Contain("cont=12"));
