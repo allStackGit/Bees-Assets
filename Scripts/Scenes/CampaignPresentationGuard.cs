@@ -8,7 +8,7 @@ namespace Assets.Scripts.Scenes
     internal sealed class CampaignPresentationGuard : MonoBehaviour
     {
         private global::Stage _speedStage;
-        private int _plutoOneSpeedLevel;
+        private float _plutoOneTimeScale;
         private bool _hasPlutoOneSpeed;
         private bool _plutoOneSpeedRestored;
 
@@ -75,7 +75,7 @@ namespace Assets.Scripts.Scenes
                 _plutoOneSpeedRestored = false;
             }
 
-            if (missionId != 0 || stage.Menus == null || stage.Menus.PlayerGameSpeed == null)
+            if (missionId != 0 || stage.Menus == null)
             {
                 if (missionId != 0)
                 {
@@ -92,7 +92,7 @@ namespace Assets.Scripts.Scenes
                 // Dialogue temporarily owns the simulation speed after the scripted Scout leaves.
                 // Keep the player's latest selection so that temporary cutscene state does not
                 // become the Gunship's gameplay speed.
-                _plutoOneSpeedLevel = Mathf.Clamp(stage.Menus.PlayerGameSpeed.Level, 0, 3);
+                _plutoOneTimeScale = Mathf.Clamp(stage.TimeScale, 1f, 2f);
                 _hasPlutoOneSpeed = true;
                 _plutoOneSpeedRestored = false;
                 return;
@@ -102,7 +102,12 @@ namespace Assets.Scripts.Scenes
                 !cameraShip.IsDead && stage.IsFollowingShip &&
                 cameraShip.ShipType == ConfigData.ShipTypes.Gunship)
             {
-                stage.Menus.PlayerGameSpeed.SetSpeedFromLevel(_plutoOneSpeedLevel);
+                stage.TimeScale = _plutoOneTimeScale;
+                Time.timeScale = stage.TimeScale;
+                if (stage.Menus.GameSpeedButtonText != null)
+                {
+                    stage.Menus.GameSpeedButtonText.text = $"{stage.TimeScale}x";
+                }
                 _plutoOneSpeedRestored = true;
             }
         }

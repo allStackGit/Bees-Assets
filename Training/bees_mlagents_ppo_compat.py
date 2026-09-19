@@ -29,6 +29,44 @@ _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
 _POLICY_DIMENSION_MASK_STATE = threading.local()
 
 
+def _is_bees_action_spec(action_spec) -> bool:
+    if action_spec is None or action_spec.continuous_size != BEES_CONTINUOUS_ACTIONS:
+        return False
+    return tuple(int(size) for size in action_spec.discrete_branches) == BEES_DISCRETE_BRANCHES
+
+
+def _build_bees_continuous_activity_mask(action_spec, masks, reference):
+    """Return 1 for continuous actions that physically exist for each agent sample.
+
+    The first two continuous actions are movement. Each of the five weapon slots
+    reserves two aim outputs. Unity masks the Fire action of a weapon branch when
+    that slot has no turret, making the matching discrete mask a reliable per-sample
+    signal for whether that aim pair can affect the environment.
+    """
+
+    if masks is None or reference is None or not _is_bees_action_spec(action_spec):
+        return None
+    if masks.ndim != 2 or reference.ndim != 2:
+        return None
+    if reference.shape[1] != BEES_CONTINUOUS_ACTIONS:
+        return None
+    if masks.shape[1] < sum(BEES_DISCRETE_BRANCHES):
+        return None
+
+    activity = reference.new_ones(reference.shape)
+    for slot in range(BEES_WEAPON_SLOTS):
+        fire_action_index = slot * 2 + 1
+        slot_active = (masks[:, fire_action_index] > 0.5).to(activity.dtype)
+        aim_start = (
+            BEES_MOVEMENT_CONTINUOUS_ACTIONS
+            + slot * BEES_WEAPON_AIM_ACTIONS_PER_SLOT
+        )
+        activity[:, aim_start : aim_start + BEES_WEAPON_AIM_ACTIONS_PER_SLOT] = (
+            slot_active.unsqueeze(1)
+        )
+    return activity
+
+
 def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
     """Mirror ML-Agents 1.1.0 action statistics while excluding nonexistent aim slots."""
 

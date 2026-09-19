@@ -1,0 +1,23 @@
+R:\Bees\Assets\.venv-mlagents\lib\site-packages\mlagents\torch_utils\torch.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+usage: bees_mlagents_learn.py [-h] [--env ENV_PATH] [--resume]
+                              [--deterministic] [--force] [--run-id RUN_ID]
+                              [--initialize-from RUN_ID] [--seed SEED]
+                              [--inference] [--base-port BASE_PORT]
+                              [--num-envs NUM_ENVS] [--num-areas NUM_AREAS]
+                              [--debug] [--env-args ...]
+                              [--max-lifetime-restarts MAX_LIFETIME_RESTARTS]
+                              [--restarts-rate-limit-n RESTARTS_RATE_LIMIT_N]
+                              [--restarts-rate-limit-period-s RESTARTS_RATE_LIMIT_PERIOD_S]
+                              [--torch] [--tensorflow]
+                              [--results-dir RESULTS_DIR]
+                              [--timeout-wait TIMEOUT_WAIT] [--width WIDTH]
+                              [--height HEIGHT]
+                              [--quality-level QUALITY_LEVEL]
+                              [--time-scale TIME_SCALE]
+                              [--target-frame-rate TARGET_FRAME_RATE]
+                              [--capture-frame-rate CAPTURE_FRAME_RATE]
+                              [--no-graphics] [--no-graphics-monitor]
+                              [--torch-device DEVICE]
+                              [trainer_config_path]
+bees_mlagents_learn.py: error: unrecognized arguments: RL Training

@@ -1,5 +1,6 @@
 using Assets.Scripts;
 using Assets.Scripts.Entities;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
