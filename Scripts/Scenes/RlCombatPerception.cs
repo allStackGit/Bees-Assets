@@ -33,7 +33,7 @@ internal sealed class RlCombatPerception
     internal const int SelfObservationSize = 29;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 18;
-    internal const int WeaponObservationSize = 18;
+    internal const int WeaponObservationSize = 13;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
@@ -373,21 +373,6 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
         sensor.AddObservation(GetProjectileSpeedObservation(weapon));
 
-        if (weapon is Turret turret)
-        {
-            sensor.AddObservation(1f);
-            AddHeading(sensor, turret.Rotation, frameQuarterTurns);
-            sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
-            sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
-        }
-        else
-        {
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(weapon.HasTargetShip ? 1f : 0f);
-            sensor.AddObservation(0f);
-        }
     }
 
     internal static float GetProjectileSpeedObservation(Weapon weapon)
