@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 10;
+    internal const int Version = 11;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int PerceptionObservationSize = 12350;
+    internal const int PerceptionObservationSize = 9100;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
     internal const int ReservedObservationStartIndex = EpisodeProgressObservationIndex + 1;
     internal const int ReservedObservationCount = 20;
@@ -29,11 +29,11 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v10|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=12371|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
+        "bees-rl-v11|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=9121|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shipbits=5|weaponbits=4|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=29|capability=12|parent-carrier=83|entity-core=18|entity=83|weapon=13|weapon-observation=shared-self-ally-enemy|projectile-speed=linear-max200-per-weapon|mining-slot=7|" +
+        "self=29|capability=12|parent-carrier=58|entity-core=18|entity=58|weapon=8|weapon-observation=shared-self-ally-enemy|mining-slot=7|" +
         "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
