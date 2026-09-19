@@ -28,6 +28,9 @@ namespace Bees.Tests.EditMode
 
             Assert.That(perception, Does.Contain("internal const int ShipTypeObservationSize = 1;"));
             Assert.That(perception, Does.Contain("internal const int WeaponTypeObservationSize = 1;"));
+            Assert.That(perception, Does.Contain("11, 2, 19, 7, 22, 4, 15, 0, 17, 9, 23, 5,"));
+            Assert.That(perception, Does.Contain("13, 20, 1, 16, 8, 21, 3, 18, 10, 14, 6, 12"));
+            Assert.That(perception, Does.Contain("4, 9, 1, 7, 0, 6, 3, 8, 2, 5"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedAllies = 64;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEnemies = 64;"));
             Assert.That(perception, Does.Contain("internal const int MaxWeaponSlots = 5;"));
