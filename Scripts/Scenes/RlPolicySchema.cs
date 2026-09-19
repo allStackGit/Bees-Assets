@@ -11,7 +11,7 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 14;
+    internal const int Version = 15;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int PerceptionObservationSize = 6809;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
@@ -29,7 +29,7 @@ internal static class RlPolicySchema
     internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v14|behavior=BeesRL1v1|network=ff-512x3|normalize=true|obs=6830|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
+        "bees-rl-v15|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=6830|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
