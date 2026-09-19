@@ -9,18 +9,6 @@ from typing import Callable, Optional
 
 VALUE_KEY_PROBE = "__bees_value_key_probe__"
 MAX_CONTINUOUS_SIGMA = 1.5
-MAX_ADAPTIVE_BETA = 0.004
-INITIAL_BETA_MULTIPLIER = 4.0
-FAST_REWARD_ALPHA = 0.002
-SLOW_REWARD_ALPHA = 0.00025
-REWARD_SCALE_ALPHA = 0.02
-MIN_ADAPTIVE_EPISODES = 3200
-ADAPTIVE_EVALUATION_INTERVAL = 1600
-REWARD_TREND_THRESHOLD = 0.05
-BETA_IMPROVEMENT_MULTIPLIER = 0.80
-BETA_DECLINE_MULTIPLIER = 1.50
-BETA_NEUTRAL_RELAXATION = 0.15
-
 BEES_MOVEMENT_CONTINUOUS_ACTIONS = 2
 BEES_WEAPON_SLOTS = 16
 BEES_WEAPON_AIM_ACTIONS_PER_SLOT = 2
@@ -472,73 +460,6 @@ def restore_continuous_sigma_guard(original: Optional[Callable] = None) -> None:
     _ORIGINAL_GAUSSIAN_FORWARD = None
 
 
-def install_adaptive_exploration() -> Optional[Callable]:
-    """Make PPO beta respond to sustained terminal-reward improvement or decline."""
-
-    from mlagents.trainers.ppo.trainer import PPOTrainer
-
-    global _ORIGINAL_PPO_CREATE_OPTIMIZER, _ORIGINAL_PPO_PROCESS_TRAJECTORY
-    if _ORIGINAL_PPO_CREATE_OPTIMIZER is not None:
-        return None
-
-    original_create_optimizer = PPOTrainer.create_optimizer
-    original_process_trajectory = PPOTrainer._process_trajectory
-
-    def adaptive_create_optimizer(self):
-        optimizer = original_create_optimizer(self)
-        controller = AdaptiveExplorationController(
-            float(self.hyperparameters.beta),
-            start_high=not self.load,
-        )
-        self._bees_adaptive_exploration = controller
-        optimizer.decay_beta = _AdaptiveBetaSchedule(controller)
-        return optimizer
-
-    def adaptive_process_trajectory(self, trajectory):
-        original_process_trajectory(self, trajectory)
-        if not trajectory.done_reached:
-            return
-
-        controller = getattr(self, "_bees_adaptive_exploration", None)
-        if controller is None or not self.reward_buffer:
-            return
-
-        controller.observe_reward(float(self.reward_buffer[0]))
-        self.stats_reporter.set_stat(
-            "Policy/Adaptive Reward Fast", float(controller.fast_reward)
-        )
-        self.stats_reporter.set_stat(
-            "Policy/Adaptive Reward Slow", float(controller.slow_reward)
-        )
-        self.stats_reporter.set_stat(
-            "Policy/Adaptive Reward Trend", float(controller.normalized_trend)
-        )
-        self.stats_reporter.set_stat(
-            "Policy/Adaptive Beta Target", float(controller.current_beta)
-        )
-
-    PPOTrainer.create_optimizer = adaptive_create_optimizer
-    PPOTrainer._process_trajectory = adaptive_process_trajectory
-    _ORIGINAL_PPO_CREATE_OPTIMIZER = original_create_optimizer
-    _ORIGINAL_PPO_PROCESS_TRAJECTORY = original_process_trajectory
-    return original_create_optimizer
-
-
-def restore_adaptive_exploration() -> None:
-    """Restore ML-Agents' PPO trainer methods after the trainer exits."""
-
-    global _ORIGINAL_PPO_CREATE_OPTIMIZER, _ORIGINAL_PPO_PROCESS_TRAJECTORY
-    if _ORIGINAL_PPO_CREATE_OPTIMIZER is None:
-        return
-
-    from mlagents.trainers.ppo.trainer import PPOTrainer
-
-    PPOTrainer.create_optimizer = _ORIGINAL_PPO_CREATE_OPTIMIZER
-    PPOTrainer._process_trajectory = _ORIGINAL_PPO_PROCESS_TRAJECTORY
-    _ORIGINAL_PPO_CREATE_OPTIMIZER = None
-    _ORIGINAL_PPO_PROCESS_TRAJECTORY = None
-
-
 def install_value_estimate_key_fix() -> Optional[Callable[[str], object]]:
     """Install Bees' ML-Agents 1.1.0 PPO compatibility fixes.
 
@@ -548,10 +469,9 @@ def install_value_estimate_key_fix() -> Optional[Callable[[str], object]]:
     launcher already pins/guards ML-Agents 1.1.0; this adds a second structural
     guard so an unexpected vendor change cannot be patched silently.
 
-    This installer also enables the continuous-sigma guard, inactive continuous
-    weapon-action masking, and reward-responsive beta controller. Keeping all of
-    them behind the launcher's existing compatibility hook avoids changing the
-    policy ABI or requiring a fork of ML-Agents.
+    This installer also enables the continuous-sigma guard and inactive continuous
+    weapon-action masking. PPO beta is left entirely to ML-Agents' configured
+    constant beta schedule so exploration pressure can be adjusted manually.
 
     Returns the original static method when the value-key patch was installed,
     or None when the installed package already exposes the correct key.
@@ -589,9 +509,7 @@ def install_value_estimate_key_fix() -> Optional[Callable[[str], object]]:
     try:
         install_continuous_sigma_guard()
         install_inactive_continuous_action_masking()
-        install_adaptive_exploration()
     except Exception:
-        restore_adaptive_exploration()
         restore_inactive_continuous_action_masking()
         restore_continuous_sigma_guard()
         if patched_value_key:
@@ -609,6 +527,5 @@ def restore_value_estimate_key(original: Optional[Callable[[str], object]]) -> N
 
         RewardSignalUtil.value_estimates_key = staticmethod(original)
 
-    restore_adaptive_exploration()
     restore_inactive_continuous_action_masking()
     restore_continuous_sigma_guard()
