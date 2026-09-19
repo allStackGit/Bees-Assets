@@ -26,29 +26,29 @@ namespace Bees.Tests.EditMode
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
-            Assert.That(perception, Does.Contain("internal const int ShipTypeBitCount = 6;"));
-            Assert.That(perception, Does.Contain("internal const int WeaponTypeBitCount = 6;"));
+            Assert.That(perception, Does.Contain("internal const int ShipTypeBitCount = 5;"));
+            Assert.That(perception, Does.Contain("internal const int WeaponTypeBitCount = 4;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedAllies = 64;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEnemies = 64;"));
-            Assert.That(perception, Does.Contain("internal const int MaxWeaponSlots = 16;"));
+            Assert.That(perception, Does.Contain("internal const int MaxWeaponSlots = 5;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;"));
-            Assert.That(perception, Does.Contain("internal const int MaxObservedEnemyWeaponMounts = 16;"));
+            Assert.That(perception, Does.Contain("internal const int MaxObservedEnemyWeaponMounts = 0;"));
             Assert.That(perception, Does.Contain("internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;"));
             Assert.That(perception, Does.Contain("AddEntityWeaponSlots(observed, sensor, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("AddWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 8;"));
-            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 43549;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 9;"));
+            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 15600;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
-            Assert.That(schema, Does.Contain("bees-rl-v8"));
-            Assert.That(schema, Does.Contain("obs=43570"));
+            Assert.That(schema, Does.Contain("bees-rl-v9"));
+            Assert.That(schema, Does.Contain("obs=15621"));
             Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
-            Assert.That(schema, Does.Contain("cont=34"));
-            Assert.That(schema, Does.Contain("disc=2x16,5,65,65,65"));
+            Assert.That(schema, Does.Contain("cont=12"));
+            Assert.That(schema, Does.Contain("disc=2x5,5,65,65,65"));
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
             Assert.That(schema, Does.Contain("weapon-fire=slotwise-cease-or-fire"));
             Assert.That(agent, Does.Contain("RlPolicySchema.ValidateOrThrow();"));
@@ -97,8 +97,8 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);"));
             Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
                 "Independent weapon branches must not secretly share one retained aim vector.");
-            Assert.That(schema, Does.Contain("ExpectedContinuousActions = 34"));
-            Assert.That(schema, Does.Contain("ExpectedWeaponFireBranchCount = 16"));
+            Assert.That(schema, Does.Contain("ExpectedContinuousActions = 12"));
+            Assert.That(schema, Does.Contain("ExpectedWeaponFireBranchCount = 5"));
         }
 
         [Test]
