@@ -20,25 +20,25 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMiningAsteroids"), Is.EqualTo(8));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedCollisionAsteroids"), Is.EqualTo(48));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemyWeaponMounts"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemyWeaponMounts"), Is.Zero);
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridSize"), Is.EqualTo(13));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridCellCount"), Is.EqualTo(169));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(29));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CapabilityObservationSize"), Is.EqualTo(12));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(19));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(40));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4706));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(34));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(16));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(6830));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchSize"), Is.EqualTo(2));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranch"), Is.EqualTo(16));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranch"), Is.EqualTo(17));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranch"), Is.EqualTo(18));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranch"), Is.EqualTo(19));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "DiscreteBranchCount"), Is.EqualTo(20));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranch"), Is.EqualTo(5));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranch"), Is.EqualTo(6));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranch"), Is.EqualTo(7));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranch"), Is.EqualTo(8));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "DiscreteBranchCount"), Is.EqualTo(9));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ShipSpecialAction"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
@@ -55,15 +55,15 @@ namespace Bees.Tests.EditMode
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             int[] branchSizes = (int[])RuntimeAssembly.InvokeStatic(agentType, "CreateDiscreteBranchSizes");
 
-            Assert.That(branchSizes.Length, Is.EqualTo(20));
-            for (int slot = 0; slot < 16; slot++)
+            Assert.That(branchSizes.Length, Is.EqualTo(9));
+            for (int slot = 0; slot < 5; slot++)
             {
                 Assert.That(branchSizes[slot], Is.EqualTo(2), $"Weapon slot {slot} must have an independent cease/fire branch.");
             }
-            Assert.That(branchSizes[16], Is.EqualTo(5));
-            Assert.That(branchSizes[17], Is.EqualTo(65));
-            Assert.That(branchSizes[18], Is.EqualTo(65));
-            Assert.That(branchSizes[19], Is.EqualTo(65));
+            Assert.That(branchSizes[5], Is.EqualTo(5));
+            Assert.That(branchSizes[6], Is.EqualTo(65));
+            Assert.That(branchSizes[7], Is.EqualTo(65));
+            Assert.That(branchSizes[8], Is.EqualTo(65));
         }
 
         [Test]
@@ -83,13 +83,15 @@ namespace Bees.Tests.EditMode
         public void EnumIdentityEncodingHasCapacityForEveryCurrentShipAndWeaponType()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
-            int shipBits = (int)RuntimeAssembly.GetStaticField(agentType, "ShipTypeBitCount");
-            int weaponBits = (int)RuntimeAssembly.GetStaticField(agentType, "WeaponTypeBitCount");
+            int shipTypeSize = (int)RuntimeAssembly.GetStaticField(agentType, "ShipTypeObservationSize");
+            int weaponTypeSize = (int)RuntimeAssembly.GetStaticField(agentType, "WeaponTypeObservationSize");
             int shipTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes")).Length;
             int weaponTypeCount = Enum.GetValues(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+WeaponTypes")).Length;
 
-            Assert.That(1 << shipBits, Is.GreaterThanOrEqualTo(shipTypeCount));
-            Assert.That(1 << weaponBits, Is.GreaterThanOrEqualTo(weaponTypeCount));
+            Assert.That(shipTypeSize, Is.EqualTo(1));
+            Assert.That(weaponTypeSize, Is.EqualTo(1));
+            Assert.That(shipTypeCount, Is.EqualTo(24));
+            Assert.That(weaponTypeCount, Is.EqualTo(10));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTypeBitCount"), Is.EqualTo(4));
         }
 
