@@ -33,7 +33,7 @@ internal sealed class RlCombatPerception
     internal const int SelfObservationSize = 29;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 18;
-    internal const int WeaponObservationSize = 13;
+    internal const int WeaponObservationSize = 8;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * WeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
@@ -311,67 +311,9 @@ internal sealed class RlCombatPerception
         Vector2 origin,
         int frameQuarterTurns)
     {
-        Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
-            observed.GetPosition() - origin,
-            frameQuarterTurns);
-        sensor.AddObservation(1f);
-        sensor.AddObservation(SquashSignedDistance(relative.x));
-        sensor.AddObservation(SquashSignedDistance(relative.y));
-        AddHeading(sensor, observed.Rotation, frameQuarterTurns);
-        sensor.AddObservation(GetHealthFraction(observed));
-        sensor.AddObservation(NormalizePositive(observed.Speed, 20f));
-        sensor.AddObservation(NormalizePositive(observed.CurrentSpeed, 20f));
-        sensor.AddObservation(NormalizePositive(observed.LongestSide, 10f));
-        sensor.AddObservation(NormalizePositive(observed.MaxRange, 80f));
-        sensor.AddObservation(NormalizePositive(observed.Firepower, 200f));
-        sensor.AddObservation(observed.IsMobile ? 1f : 0f);
-        sensor.AddObservation(observed.IsBomber ? 1f : 0f);
-        AddEnumBits(sensor, (int)observed.ShipType, ShipTypeBitCount);
-        AddEntityWeaponSlots(observed, sensor, frameQuarterTurns);
-    }
-
-    private static void AddWeaponSlots(Ship ship, VectorSensor sensor, int frameQuarterTurns)
-    {
-        for (int slot = 0; slot < MaxWeaponSlots; slot++)
-        {
-            if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
-            {
-                AddZeroObservations(sensor, WeaponObservationSize);
-                continue;
-            }
-            AddWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);
-        }
-    }
-
-    private static void AddEntityWeaponSlots(Ship ship, VectorSensor sensor, int frameQuarterTurns)
-    {
-        for (int slot = 0; slot < MaxObservedEntityWeaponSlots; slot++)
-        {
-            if (ship.Weapons == null || slot >= ship.Weapons.Count || ship.Weapons[slot] == null)
-            {
-                AddZeroObservations(sensor, WeaponObservationSize);
-                continue;
-            }
-            AddWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);
-        }
-    }
-
-    private static void AddWeaponObservation(Ship owner, Weapon weapon, VectorSensor sensor, int frameQuarterTurns)
-    {
-        sensor.AddObservation(1f);
-        AddEnumBits(sensor, (int)weapon.Type, WeaponTypeBitCount);
-        Vector2 relative = RlPolicyCoordinateFrame.WorldToPolicy(
-            weapon.GetPosition() - owner.GetPosition(),
-            frameQuarterTurns);
-        float size = Mathf.Max(1f, owner.LongestSide);
-        sensor.AddObservation(Mathf.Clamp(relative.x / size, -1f, 1f));
-        sensor.AddObservation(Mathf.Clamp(relative.y / size, -1f, 1f));
         sensor.AddObservation(NormalizePositive(weapon.Range, 80f));
         sensor.AddObservation(NormalizePositive(weapon.Power, 100f));
         sensor.AddObservation(NormalizePositive(weapon.RateOfFire, 5f));
-        sensor.AddObservation(NormalizePositive(weapon.RotationRate, 240f));
-        sensor.AddObservation(NormalizePositive(weapon.ProjectileValue, 2f));
-        sensor.AddObservation(GetProjectileSpeedObservation(weapon));
 
     }
 
