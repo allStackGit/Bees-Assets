@@ -30,13 +30,14 @@ internal sealed class RlCombatPerception
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
     internal const float NavigationGridCellSize = 10f;
 
-    internal const int SelfObservationSize = 29;
+    internal const int ShipIdentityObservationSize = 1;
+    internal const int SelfObservationSize = 28 + ShipIdentityObservationSize;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 18;
     internal const int SelfWeaponObservationSize = 18;
     internal const int ObservedWeaponObservationSize = 8;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
-    internal const int EntityObservationSize = EntityCoreObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;
+    internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
     internal const float ProjectileSpeedObservationMax = 200f;
@@ -167,6 +168,7 @@ internal sealed class RlCombatPerception
         Vector2 position,
         int frameQuarterTurns)
     {
+        AddShipIdentityObservation(sensor, ship);
         AddEnumBits(sensor, (int)ship.ShipType, ShipTypeBitCount);
         Level level = ship.Level;
         Vector2 normalizedPosition = new Vector2(
@@ -316,6 +318,7 @@ internal sealed class RlCombatPerception
             observed.GetPosition() - origin,
             frameQuarterTurns);
         sensor.AddObservation(1f);
+        AddShipIdentityObservation(sensor, observed);
         sensor.AddObservation(SquashSignedDistance(relative.x));
         sensor.AddObservation(SquashSignedDistance(relative.y));
         AddHeading(sensor, observed.Rotation, frameQuarterTurns);
@@ -899,6 +902,11 @@ internal sealed class RlCombatPerception
     {
         float positive = Mathf.Max(0f, value);
         return positive <= 0f ? 0f : positive / (positive + Mathf.Max(0.0001f, scale));
+    }
+
+    private static void AddShipIdentityObservation(VectorSensor sensor, Ship ship)
+    {
+        sensor.AddObservation(RlEpisodeShipIdentity.GetObservation(ship));
     }
 
     private static void AddEnumBits(VectorSensor sensor, int value, int bits)
