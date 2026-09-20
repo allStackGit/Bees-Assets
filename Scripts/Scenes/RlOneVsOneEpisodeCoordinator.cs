@@ -131,6 +131,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _humanFirstHitSeconds;
     private bool _beeHasVisibleEnemy;
     private bool _humanHasVisibleEnemy;
+    private bool _beeEverHadVisibleEnemy;
+    private bool _humanEverHadVisibleEnemy;
     private float _beeVisibilityStateStartedAt;
     private float _humanVisibilityStateStartedAt;
     private float _beeNoEnemyVisibleSeconds;
@@ -759,6 +761,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanFirstHitSeconds = -1f;
         _beeHasVisibleEnemy = false;
         _humanHasVisibleEnemy = false;
+        _beeEverHadVisibleEnemy = false;
+        _humanEverHadVisibleEnemy = false;
         _beeVisibilityStateStartedAt = 0f;
         _humanVisibilityStateStartedAt = 0f;
         _beeNoEnemyVisibleSeconds = 0f;
@@ -843,16 +847,20 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 
         float stateStartedAt = sideIndex == 0 ? _beeVisibilityStateStartedAt : _humanVisibilityStateStartedAt;
         float stateDuration = Mathf.Max(0f, elapsed - stateStartedAt);
-        float firstContact = sideIndex == 0 ? _beeFirstContactSeconds : _humanFirstContactSeconds;
+        bool everHadVisibleEnemy = sideIndex == 0 ? _beeEverHadVisibleEnemy : _humanEverHadVisibleEnemy;
 
         if (!previousVisible)
         {
             if (sideIndex == 0)
             {
                 _beeNoEnemyVisibleSeconds += stateDuration;
-                if (_beeFirstContactSeconds < 0f)
+                if (!everHadVisibleEnemy)
                 {
-                    _beeFirstContactSeconds = elapsed;
+                    _beeEverHadVisibleEnemy = true;
+                    if (_beeFirstContactSeconds < 0f)
+                    {
+                        _beeFirstContactSeconds = elapsed;
+                    }
                 }
                 else
                 {
@@ -862,9 +870,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             else
             {
                 _humanNoEnemyVisibleSeconds += stateDuration;
-                if (_humanFirstContactSeconds < 0f)
+                if (!everHadVisibleEnemy)
                 {
-                    _humanFirstContactSeconds = elapsed;
+                    _humanEverHadVisibleEnemy = true;
+                    if (_humanFirstContactSeconds < 0f)
+                    {
+                        _humanFirstContactSeconds = elapsed;
+                    }
                 }
                 else
                 {
@@ -872,7 +884,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 }
             }
         }
-        else if (firstContact >= 0f)
+        else if (everHadVisibleEnemy)
         {
             if (sideIndex == 0)
             {
@@ -907,14 +919,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         bool visible = sideIndex == 0 ? _beeHasVisibleEnemy : _humanHasVisibleEnemy;
         float stateStartedAt = sideIndex == 0 ? _beeVisibilityStateStartedAt : _humanVisibilityStateStartedAt;
         float stateDuration = Mathf.Max(0f, durationSeconds - stateStartedAt);
-        float firstContact = sideIndex == 0 ? _beeFirstContactSeconds : _humanFirstContactSeconds;
+        bool everHadVisibleEnemy = sideIndex == 0 ? _beeEverHadVisibleEnemy : _humanEverHadVisibleEnemy;
 
         if (!visible)
         {
             if (sideIndex == 0)
             {
                 _beeNoEnemyVisibleSeconds += stateDuration;
-                if (firstContact >= 0f)
+                if (everHadVisibleEnemy)
                 {
                     _beeLostContactSeconds += stateDuration;
                 }
@@ -922,7 +934,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             else
             {
                 _humanNoEnemyVisibleSeconds += stateDuration;
-                if (firstContact >= 0f)
+                if (everHadVisibleEnemy)
                 {
                     _humanLostContactSeconds += stateDuration;
                 }
