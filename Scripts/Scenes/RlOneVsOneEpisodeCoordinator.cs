@@ -129,6 +129,16 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private float _humanFirstFireSeconds;
     private float _beeFirstHitSeconds;
     private float _humanFirstHitSeconds;
+    private bool _beeHasVisibleEnemy;
+    private bool _humanHasVisibleEnemy;
+    private float _beeVisibilityStateStartedAt;
+    private float _humanVisibilityStateStartedAt;
+    private float _beeNoEnemyVisibleSeconds;
+    private float _humanNoEnemyVisibleSeconds;
+    private float _beeLostContactSeconds;
+    private float _humanLostContactSeconds;
+    private int _beeContactLossCount;
+    private int _humanContactLossCount;
 
     private readonly HashSet<long>[] _initialShipIds = { new HashSet<long>(), new HashSet<long>() };
     private readonly HashSet<long>[] _seenShipIds = { new HashSet<long>(), new HashSet<long>() };
@@ -747,6 +757,16 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanFirstFireSeconds = -1f;
         _beeFirstHitSeconds = -1f;
         _humanFirstHitSeconds = -1f;
+        _beeHasVisibleEnemy = false;
+        _humanHasVisibleEnemy = false;
+        _beeVisibilityStateStartedAt = 0f;
+        _humanVisibilityStateStartedAt = 0f;
+        _beeNoEnemyVisibleSeconds = 0f;
+        _humanNoEnemyVisibleSeconds = 0f;
+        _beeLostContactSeconds = 0f;
+        _humanLostContactSeconds = 0f;
+        _beeContactLossCount = 0;
+        _humanContactLossCount = 0;
         ResetShipDiagnostics(beeShips, humanShips);
         RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
@@ -788,9 +808,126 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             return;
         }
-        TrackSideShips(level.State.GetShips(ConfigData.Configuration.BeeSide), 0);
-        TrackSideShips(level.State.GetShips(ConfigData.Configuration.HumanSide), 1);
+        int beeSide = ConfigData.Configuration.BeeSide;
+        int humanSide = ConfigData.Configuration.HumanSide;
+        TrackSideShips(level.State.GetShips(beeSide), 0);
+        TrackSideShips(level.State.GetShips(humanSide), 1);
+        TrackEnemyVisibility(level, beeSide, humanSide);
         RlOneVsOneEpisodeDiagnostics.Track(level);
+    }
+
+    private void TrackEnemyVisibility(Level level, int beeSide, int humanSide)
+    {
+        TrackSideEnemyVisibility(level, beeSide, humanSide, 0);
+        TrackSideEnemyVisibility(level, humanSide, beeSide, 1);
+    }
+
+    private void TrackSideEnemyVisibility(Level level, int observerSide, int enemySide, int sideIndex)
+    {
+        bool hasVisibleEnemy = false;
+        foreach (Ship candidate in level.State.GetShipsVisibleToHiveMind(observerSide))
+        {
+            if (candidate != null && !candidate.IsDead && candidate.Side == enemySide)
+            {
+                hasVisibleEnemy = true;
+                break;
+            }
+        }
+
+        float elapsed = ElapsedEpisodeSeconds;
+        bool previousVisible = sideIndex == 0 ? _beeHasVisibleEnemy : _humanHasVisibleEnemy;
+        if (hasVisibleEnemy == previousVisible)
+        {
+            return;
+        }
+
+        float stateStartedAt = sideIndex == 0 ? _beeVisibilityStateStartedAt : _humanVisibilityStateStartedAt;
+        float stateDuration = Mathf.Max(0f, elapsed - stateStartedAt);
+        float firstContact = sideIndex == 0 ? _beeFirstContactSeconds : _humanFirstContactSeconds;
+
+        if (!previousVisible)
+        {
+            if (sideIndex == 0)
+            {
+                _beeNoEnemyVisibleSeconds += stateDuration;
+                if (_beeFirstContactSeconds < 0f)
+                {
+                    _beeFirstContactSeconds = elapsed;
+                }
+                else
+                {
+                    _beeLostContactSeconds += stateDuration;
+                }
+            }
+            else
+            {
+                _humanNoEnemyVisibleSeconds += stateDuration;
+                if (_humanFirstContactSeconds < 0f)
+                {
+                    _humanFirstContactSeconds = elapsed;
+                }
+                else
+                {
+                    _humanLostContactSeconds += stateDuration;
+                }
+            }
+        }
+        else if (firstContact >= 0f)
+        {
+            if (sideIndex == 0)
+            {
+                _beeContactLossCount++;
+            }
+            else
+            {
+                _humanContactLossCount++;
+            }
+        }
+
+        if (sideIndex == 0)
+        {
+            _beeHasVisibleEnemy = hasVisibleEnemy;
+            _beeVisibilityStateStartedAt = elapsed;
+        }
+        else
+        {
+            _humanHasVisibleEnemy = hasVisibleEnemy;
+            _humanVisibilityStateStartedAt = elapsed;
+        }
+    }
+
+    private void FinalizeEnemyVisibilityDiagnostics(float durationSeconds)
+    {
+        FinalizeSideEnemyVisibility(0, durationSeconds);
+        FinalizeSideEnemyVisibility(1, durationSeconds);
+    }
+
+    private void FinalizeSideEnemyVisibility(int sideIndex, float durationSeconds)
+    {
+        bool visible = sideIndex == 0 ? _beeHasVisibleEnemy : _humanHasVisibleEnemy;
+        float stateStartedAt = sideIndex == 0 ? _beeVisibilityStateStartedAt : _humanVisibilityStateStartedAt;
+        float stateDuration = Mathf.Max(0f, durationSeconds - stateStartedAt);
+        float firstContact = sideIndex == 0 ? _beeFirstContactSeconds : _humanFirstContactSeconds;
+
+        if (!visible)
+        {
+            if (sideIndex == 0)
+            {
+                _beeNoEnemyVisibleSeconds += stateDuration;
+                if (firstContact >= 0f)
+                {
+                    _beeLostContactSeconds += stateDuration;
+                }
+            }
+            else
+            {
+                _humanNoEnemyVisibleSeconds += stateDuration;
+                if (firstContact >= 0f)
+                {
+                    _humanLostContactSeconds += stateDuration;
+                }
+            }
+        }
     }
 
     private void TrackSideShips(List<Ship> ships, int sideIndex)
@@ -1011,6 +1148,16 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         int beeFinalTsv = level.State.GetTsvBySide(beeSide);
         int humanFinalTsv = level.State.GetTsvBySide(humanSide);
         float durationSeconds = Mathf.Clamp(ElapsedEpisodeSeconds, 0f, RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds);
+        FinalizeEnemyVisibilityDiagnostics(durationSeconds);
+        float mapSize = RlOneVsOneArenaMapSizeState.GetMapSize(level);
+        float beeNoEnemyVisibleFraction = durationSeconds > 0f ? _beeNoEnemyVisibleSeconds / durationSeconds : 0f;
+        float humanNoEnemyVisibleFraction = durationSeconds > 0f ? _humanNoEnemyVisibleSeconds / durationSeconds : 0f;
+        float beeFirstContactToEnd = _beeFirstContactSeconds >= 0f ? Mathf.Max(0f, durationSeconds - _beeFirstContactSeconds) : -1f;
+        float humanFirstContactToEnd = _humanFirstContactSeconds >= 0f ? Mathf.Max(0f, durationSeconds - _humanFirstContactSeconds) : -1f;
+        float beeFirstContactToFire = _beeFirstContactSeconds >= 0f && _beeFirstFireSeconds >= _beeFirstContactSeconds
+            ? _beeFirstFireSeconds - _beeFirstContactSeconds : -1f;
+        float humanFirstContactToFire = _humanFirstContactSeconds >= 0f && _humanFirstFireSeconds >= _humanFirstContactSeconds
+            ? _humanFirstFireSeconds - _humanFirstContactSeconds : -1f;
 
         float beeTerminal = RlOneVsOneReward.CalculateTerminalReward(beeSide, winningSide, timedOut);
         float humanTerminal = RlOneVsOneReward.CalculateTerminalReward(humanSide, winningSide, timedOut);
@@ -1034,15 +1181,19 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
         Debug.Log(
             $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
-            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
+            $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
             $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
             $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
+            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_no_enemy_visible={_beeNoEnemyVisibleSeconds:F2}s bee_no_enemy_visible_pct={beeNoEnemyVisibleFraction:P2} " +
+            $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
+            $"bee_contact_losses={_beeContactLossCount} bee_lost_contact={_beeLostContactSeconds:F2}s bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
             $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
             $"bee_weapons={FormatWeaponActivity(0)} " +
             $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
             $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
+            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_no_enemy_visible={_humanNoEnemyVisibleSeconds:F2}s human_no_enemy_visible_pct={humanNoEnemyVisibleFraction:P2} " +
+            $"human_contact_to_fire={FormatTime(humanFirstContactToFire)} human_contact_to_end={FormatTime(humanFirstContactToEnd)} " +
+            $"human_contact_losses={_humanContactLossCount} human_lost_contact={_humanLostContactSeconds:F2}s human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
             $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
             $"human_weapons={FormatWeaponActivity(1)} " +
             $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
