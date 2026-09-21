@@ -196,7 +196,7 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(NormalizePositive(ship.CurrentSpeed, 20f));
         sensor.AddObservation(NormalizePositive(ship.RotationSpeed, 240f));
         sensor.AddObservation(NormalizePositive(ship.LongestSide, 10f));
-        sensor.AddObservation(NormalizePositive(ship.Sight, 80f));
+        sensor.AddObservation(NormalizePositive(HiveMindVision.GetEffectiveRange(ship), 80f));
         sensor.AddObservation(NormalizePositive(ship.MaxRange, 80f));
         sensor.AddObservation(NormalizePositive(ship.Firepower, 200f));
         sensor.AddObservation(ship.IsMobile ? 1f : 0f);
