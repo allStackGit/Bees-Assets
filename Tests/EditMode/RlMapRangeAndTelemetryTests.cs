@@ -188,7 +188,7 @@ namespace Bees.Tests.EditMode
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
 
-            Assert.That(config, Does.Contain("learning_rate: 0.00015"));
+            Assert.That(config, Does.Contain("learning_rate: 0.0003"));
             Assert.That(config, Does.Contain("epsilon: 0.15"));
             Assert.That(config, Does.Contain("save_steps: 20000"));
             Assert.That(config, Does.Contain("team_change: 100000"));
