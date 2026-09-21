@@ -1,6 +1,6 @@
 {
     "BeesRL1v1": {
-        "elo": -1671.5246630185907,
+        "elo": -2011.5948137261291,
         "checkpoints": [
             {
                 "steps": 27764,
@@ -181,15 +181,24 @@
                 "auxillary_file_paths": [
                     ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-4510248.pt"
                 ]
+            },
+            {
+                "steps": 5424726,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-5424726.onnx",
+                "reward": -6.073594729105632,
+                "creation_time": 1790013417.7252066,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-5424726.pt"
+                ]
             }
         ],
         "final_checkpoint": {
-            "steps": 4510248,
+            "steps": 5424726,
             "file_path": ".results\\bees-full-006\\BeesRL1v1.onnx",
-            "reward": -10.97834380837374,
-            "creation_time": 1790009240.449909,
+            "reward": -6.073594729105632,
+            "creation_time": 1790013417.7252066,
             "auxillary_file_paths": [
-                ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-4510248.pt"
+                ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-5424726.pt"
             ]
         }
     },

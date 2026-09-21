@@ -14,7 +14,7 @@ behaviors:
       learning_rate_schedule: constant
       beta_schedule: constant
       epsilon_schedule: constant
-    checkpoint_interval: 250000
+    checkpoint_interval: 2000000
     network_settings:
       normalize: true
       hidden_units: 128
@@ -58,7 +58,7 @@ env_settings:
   - --rl-map-size-min
   - '32'
   - --rl-map-size-max
-  - '128'
+  - '48'
   - --rl-episode-timeout
   - '30'
   - --rl-ships-per-side
