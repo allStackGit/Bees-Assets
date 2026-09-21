@@ -234,14 +234,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TrainerUsesAdaptiveExplorationAndBroaderHistoricalOpponentPool()
+        public void TrainerUsesFixedExplorationAndBroaderHistoricalOpponentPool()
         {
             string yaml = ReadSource("Training", "rl_1v1_config.yaml");
             string compatibility = ReadSource("Training", "bees_mlagents_ppo_compat.py");
 
             Assert.That(yaml, Does.Contain("beta: 0.001"));
-            Assert.That(compatibility, Does.Contain("MAX_ADAPTIVE_BETA = 0.004"));
-            Assert.That(compatibility, Does.Contain("install_adaptive_exploration()"));
+            Assert.That(yaml, Does.Contain("beta_schedule: constant"));
+            Assert.That(compatibility, Does.Not.Contain("MAX_ADAPTIVE_BETA"));
+            Assert.That(compatibility, Does.Not.Contain("install_adaptive_exploration"));
             Assert.That(yaml, Does.Contain("window: 30"));
             Assert.That(yaml, Does.Contain("play_against_latest_model_ratio: 0.20"));
         }
