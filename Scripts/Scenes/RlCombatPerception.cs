@@ -30,6 +30,8 @@ internal sealed class RlCombatPerception
     internal const int NavigationGridSize = 13;
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
     internal const float NavigationGridCellSize = 10f;
+    internal const int ExplorationGridSize = RlTeamExplorationGrid.Size;
+    internal const int ExplorationGridCellCount = RlTeamExplorationGrid.CellCount;
 
     internal const int ShipIdentityObservationSize = 1;
     internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;
@@ -55,7 +57,8 @@ internal sealed class RlCombatPerception
         MaxObservedMapObjects * MapObjectObservationSize +
         MaxObservedCollisionAsteroids * CollisionAsteroidObservationSize +
         ObjectiveObservationSize +
-        NavigationGridCellCount;
+        NavigationGridCellCount +
+        ExplorationGridCellCount;
 
     private const int GenericMapObjectObservationType = 2;
     private const int FireTankObservationType = 3;
@@ -160,6 +163,7 @@ internal sealed class RlCombatPerception
         AddCollisionAsteroidSlots(sensor, origin, frameQuarterTurns);
         AddObjectiveObservations(sensor);
         AddNavigationGridObservations(sensor, frameQuarterTurns);
+        AddExplorationGridObservations(ship.Level, side, sensor, frameQuarterTurns);
     }
 
     private static void AddSelfObservations(
@@ -676,6 +680,56 @@ internal sealed class RlCombatPerception
                 frameQuarterTurns);
             sensor.AddObservation(_navigationOccupancy[worldIndex]);
         }
+    }
+
+    private static void AddExplorationGridObservations(
+        Level level,
+        int side,
+        VectorSensor sensor,
+        int frameQuarterTurns)
+    {
+        for (int policyIndex = 0; policyIndex < ExplorationGridCellCount; policyIndex++)
+        {
+            int worldIndex = PolicyGridIndexToWorldIndex(policyIndex, ExplorationGridSize, frameQuarterTurns);
+            sensor.AddObservation(RlOneVsOneEpisodeCoordinator.GetExplorationFreshness(level, side, worldIndex));
+        }
+    }
+
+    // The global exploration grid is even-sized, so rotate around the intersection between its
+    // four center cells. This preserves every cell under the same quarter-turn policy frames used
+    // for positions, headings, movement and the odd-sized local navigation grid.
+    internal static int PolicyGridIndexToWorldIndex(int policyIndex, int gridSize, int quarterTurns)
+    {
+        if (gridSize <= 0 || policyIndex < 0 || policyIndex >= gridSize * gridSize)
+        {
+            return 0;
+        }
+
+        int x = policyIndex % gridSize;
+        int y = policyIndex / gridSize;
+        int turns = ((quarterTurns % 4) + 4) % 4;
+        int worldX;
+        int worldY;
+        switch (turns)
+        {
+            case 1:
+                worldX = y;
+                worldY = gridSize - 1 - x;
+                break;
+            case 2:
+                worldX = gridSize - 1 - x;
+                worldY = gridSize - 1 - y;
+                break;
+            case 3:
+                worldX = gridSize - 1 - y;
+                worldY = x;
+                break;
+            default:
+                worldX = x;
+                worldY = y;
+                break;
+        }
+        return worldY * gridSize + worldX;
     }
 
     private static void MarkNavigationBounds(float[] occupancy, Level level, Vector2 origin)
