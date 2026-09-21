@@ -50,9 +50,11 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Scenes", "CampaignPresentationGuard.cs"));
 
             Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Scout"));
-            Assert.That(source, Does.Contain("_plutoOneSpeedLevel = Mathf.Clamp(stage.Menus.PlayerGameSpeed.Level, 0, 3);"));
+            Assert.That(source, Does.Contain("_plutoOneTimeScale = Mathf.Clamp(stage.TimeScale, 1f, 2f);"));
             Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Gunship"));
-            Assert.That(source, Does.Contain("stage.Menus.PlayerGameSpeed.SetSpeedFromLevel(_plutoOneSpeedLevel);"));
+            Assert.That(source, Does.Contain("stage.TimeScale = _plutoOneTimeScale;"));
+            Assert.That(source, Does.Contain("Time.timeScale = stage.TimeScale;"));
+            Assert.That(source, Does.Contain("stage.Menus.GameSpeedButtonText.text = $\"{stage.TimeScale}x\";"));
         }
 
         [Test]
