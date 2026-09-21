@@ -30,7 +30,7 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(6830));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7086));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchSize"), Is.EqualTo(2));
@@ -364,7 +364,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_mapObjectCandidates.Sort"));
             Assert.That(source, Does.Contain("_collisionAsteroidCandidates.Sort"));
             Assert.That(source, Does.Contain("left.Type.CompareTo(right.Type)"));
-            Assert.That(source, Does.Contain("Weapon is an authored List rather than an unordered set"));
+            Assert.That(source, Does.Contain("for (int slot = 0; slot < MaxObservedEntityWeaponSlots; slot++)"),
+                "Observed weapon mounts must retain authored list order rather than introducing unordered iteration.");
         }
 
         [Test]
