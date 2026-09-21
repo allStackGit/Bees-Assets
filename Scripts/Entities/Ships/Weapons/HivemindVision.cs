@@ -15,13 +15,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public void Create(Ship ship)
         {
             Ship = ship;
-            int range = Ship.Sight;
-            if (range == 0)
+            Range = GetEffectiveRange(Ship);
+            Collider.radius = Range;
+        }
+
+        internal static int GetEffectiveRange(Ship ship)
+        {
+            if (ship == null)
             {
-                range = Ship.MaxRange;
+                return 0;
             }
-            Range = range;
-            Collider.radius = range;
+
+            return ship.Sight != 0 ? ship.Sight : ship.MaxRange;
         }
 
         public void Activate()
