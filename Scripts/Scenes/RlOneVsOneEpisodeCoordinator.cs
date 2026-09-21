@@ -233,6 +233,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
     }
 
+    private readonly RlTeamExplorationGrid _beeExplorationGrid = new RlTeamExplorationGrid();
+    private readonly RlTeamExplorationGrid _humanExplorationGrid = new RlTeamExplorationGrid();
+
     private void Update()
     {
         if (_stage == null || !_stage.IsTrainingNueralNetwork || _level == null || _level.State == null)
@@ -252,6 +255,26 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         {
             TryEnableDiscoveryRewards(_level);
         }
+    }
+
+    internal static float GetExplorationFreshness(Level level, int side, int worldIndex)
+    {
+        RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level, false);
+        if (coordinator == null || !coordinator._episodeActive || ConfigData.Configuration == null)
+        {
+            return 0f;
+        }
+
+        float progress = level.GetNormalizedRlEpisodeProgress();
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            return coordinator._beeExplorationGrid.GetFreshness(worldIndex, progress);
+        }
+        if (side == ConfigData.Configuration.HumanSide)
+        {
+            return coordinator._humanExplorationGrid.GetFreshness(worldIndex, progress);
+        }
+        return 0f;
     }
 
     internal static bool IsControllerForSide(Level level, int side, int teamId)
@@ -771,6 +794,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         _humanLostContactSeconds = 0f;
         _beeContactLossCount = 0;
         _humanContactLossCount = 0;
+        _beeExplorationGrid.Reset();
+        _humanExplorationGrid.Reset();
         ResetShipDiagnostics(beeShips, humanShips);
         RlOneVsOneEpisodeDiagnostics.Begin(level);
         CaptureDiscoveryBaselines(level, beeSide, humanSide);
@@ -814,8 +839,13 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         }
         int beeSide = ConfigData.Configuration.BeeSide;
         int humanSide = ConfigData.Configuration.HumanSide;
-        TrackSideShips(level.State.GetShips(beeSide), 0);
-        TrackSideShips(level.State.GetShips(humanSide), 1);
+        List<Ship> beeShips = level.State.GetShips(beeSide);
+        List<Ship> humanShips = level.State.GetShips(humanSide);
+        TrackSideShips(beeShips, 0);
+        TrackSideShips(humanShips, 1);
+        float episodeProgress = level.GetNormalizedRlEpisodeProgress();
+        _beeExplorationGrid.Update(level, beeShips, episodeProgress);
+        _humanExplorationGrid.Update(level, humanShips, episodeProgress);
         TrackEnemyVisibility(level, beeSide, humanSide);
         RlOneVsOneEpisodeDiagnostics.Track(level);
     }
