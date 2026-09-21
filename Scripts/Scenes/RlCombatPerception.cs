@@ -208,8 +208,26 @@ internal sealed class RlCombatPerception
         sensor.AddObservation(GetSpecialReadiness(ship));
 
         GameState state = level.State;
-        sensor.AddObservation(NormalizePositive(state.GetShips(side).Count, 64f));
-        sensor.AddObservation(NormalizePositive(state.GetShipsVisibleToHiveMind(side).Count, 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShips(side)), 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShipsNot(side)), 64f));
+    }
+
+    private static int CountLiveShips(IEnumerable<Ship> ships)
+    {
+        int count = 0;
+        if (ships == null)
+        {
+            return count;
+        }
+
+        foreach (Ship candidate in ships)
+        {
+            if (candidate != null && !candidate.IsDead)
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static void AddCapabilityObservations(Ship ship, VectorSensor sensor)
