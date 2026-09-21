@@ -105,14 +105,15 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TooltipUsesButtonClickWhileMissionSummaryKeepsPointerDownClose()
+        public void TooltipAndMissionSummaryUseButtonClickClosePaths()
         {
             string tooltip = Read("Scripts", "UI Components", "Tooltip.cs");
             string summary = Read("Scripts", "UI Components", "SummaryClosePressGuard.cs");
             StringAssert.Contains("button.onClick.RemoveListener(Hide);", tooltip);
             StringAssert.Contains("button.onClick.AddListener(Hide);", tooltip);
-            StringAssert.Contains("EventTriggerType.PointerDown", summary);
-            StringAssert.Contains("menus.HideMissionSummary();", summary);
+            StringAssert.Contains("button.onClick.RemoveListener(menus.HideMissionSummary);", summary);
+            StringAssert.Contains("button.onClick.AddListener(menus.HideMissionSummary);", summary);
+            StringAssert.DoesNotContain("EventTriggerType.PointerDown", summary);
         }
 
         [Test]
