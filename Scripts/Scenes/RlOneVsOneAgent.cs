@@ -31,6 +31,8 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int MaxObservedEnemyWeaponMounts = RlCombatPerception.MaxObservedEnemyWeaponMounts;
     internal const int NavigationGridSize = RlCombatPerception.NavigationGridSize;
     internal const int NavigationGridCellCount = RlCombatPerception.NavigationGridCellCount;
+    internal const int ExplorationGridSize = RlCombatPerception.ExplorationGridSize;
+    internal const int ExplorationGridCellCount = RlCombatPerception.ExplorationGridCellCount;
     internal const int MaxWeaponSlots = RlCombatPerception.MaxWeaponSlots;
     internal const int SelfObservationSize = RlCombatPerception.SelfObservationSize;
     internal const int CapabilityObservationSize = RlCombatPerception.CapabilityObservationSize;
@@ -165,6 +167,7 @@ internal sealed class RlOneVsOneAgent : Agent
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} " +
                   $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
                   $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
+                  $"exploration_grid={ExplorationGridSize}x{ExplorationGridSize} " +
                   $"weapon_slots={MaxWeaponSlots} enemy_weapon_mounts={MaxObservedEnemyWeaponMounts} " +
                   $"objective_channels={ObjectiveObservationSize} spawned_ship_control=dynamic " +
                   $"arenas={levels.Count}");
