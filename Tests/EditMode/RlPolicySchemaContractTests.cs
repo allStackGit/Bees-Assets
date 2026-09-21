@@ -62,8 +62,8 @@ namespace Bees.Tests.EditMode
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
             Assert.That(schema, Does.Contain("weapon-fire=slotwise-cease-or-fire"));
             Assert.That(schema, Does.Contain("ship-id=episode-permuted-scalar23"));
-            Assert.That(perception, Does.Contain("internal const int ExplorationGridSize = 16;"));
-            Assert.That(perception, Does.Contain("internal const int ExplorationGridCellCount = ExplorationGridSize * ExplorationGridSize;"));
+            Assert.That(perception, Does.Contain("internal const int ExplorationGridSize = RlTeamExplorationGrid.Size;"));
+            Assert.That(perception, Does.Contain("internal const int ExplorationGridCellCount = RlTeamExplorationGrid.CellCount;"));
             Assert.That(schema, Does.Contain("exploration-grid=16x16-team-shared-sight-recency"));
             Assert.That(agent, Does.Contain("RlCombatPerception.SelfWeaponObservationSize"));
             Assert.That(agent, Does.Not.Contain("RlCombatPerception.WeaponObservationSize"));
