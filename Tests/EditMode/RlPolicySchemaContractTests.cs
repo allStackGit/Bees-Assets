@@ -49,12 +49,12 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 15;"));
-            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 6809;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 16;"));
+            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 7065;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
-            Assert.That(schema, Does.Contain("bees-rl-v15"));
-            Assert.That(schema, Does.Contain("obs=6830"));
+            Assert.That(schema, Does.Contain("bees-rl-v16"));
+            Assert.That(schema, Does.Contain("obs=7086"));
             Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
             Assert.That(schema, Does.Contain("cont=12"));
@@ -62,6 +62,9 @@ namespace Bees.Tests.EditMode
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
             Assert.That(schema, Does.Contain("weapon-fire=slotwise-cease-or-fire"));
             Assert.That(schema, Does.Contain("ship-id=episode-permuted-scalar23"));
+            Assert.That(perception, Does.Contain("internal const int ExplorationGridSize = 16;"));
+            Assert.That(perception, Does.Contain("internal const int ExplorationGridCellCount = ExplorationGridSize * ExplorationGridSize;"));
+            Assert.That(schema, Does.Contain("exploration-grid=16x16-team-shared-sight-recency"));
             Assert.That(agent, Does.Contain("RlCombatPerception.SelfWeaponObservationSize"));
             Assert.That(agent, Does.Not.Contain("RlCombatPerception.WeaponObservationSize"));
             Assert.That(agent, Does.Contain("RlPolicySchema.ValidateOrThrow();"));
