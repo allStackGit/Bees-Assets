@@ -328,8 +328,9 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("NormalizeSignedCoordinate(position.y, level.MinY, level.MaxY)"));
             Assert.That(source, Does.Contain("level.MaxX - level.MinX"));
             Assert.That(source, Does.Contain("level.MaxY - level.MinY"));
-            Assert.That(source, Does.Contain("state.GetShips(side).Count"));
-            Assert.That(source, Does.Contain("state.GetShipsVisibleToHiveMind(side).Count"));
+            Assert.That(source, Does.Contain("CountLiveShips(state.GetShips(side))"));
+            Assert.That(source, Does.Contain("CountLiveShips(state.GetAllEnemyShips(side))"));
+            Assert.That(source, Does.Contain("candidate != null && !candidate.IsDead"));
         }
 
         [Test]
