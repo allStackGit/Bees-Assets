@@ -31,9 +31,9 @@ namespace Bees.Tests.EditMode
 
             Assert.That(source, Does.Contain("private void LateUpdate()"));
             Assert.That(source, Does.Contain("ShouldContinueScriptedFollow(cameraShip)"));
-            Assert.That(source, Does.Contain("_lastFollowedShip.CanOverrideBounds"));
-            Assert.That(source, Does.Contain("_lastFollowedShip.ShipType == ConfigData.ShipTypes.Scout"));
-            Assert.That(source, Does.Contain("!_lastFollowedShip.IsDead"),
+            Assert.That(source, Does.Contain("cameraShip.CanOverrideBounds"));
+            Assert.That(source, Does.Contain("cameraShip.ShipType == ConfigData.ShipTypes.Scout"));
+            Assert.That(source, Does.Contain("!cameraShip.IsDead"),
                 "The scripted Scout follow must persist only until the Scout is removed/dead.");
             Assert.That(source, Does.Contain("float maximumVerticalSize = Mathf.Min"),
                 "Follow zoom must fit entirely inside the map instead of exposing space outside its bounds.");
