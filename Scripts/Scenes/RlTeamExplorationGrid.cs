@@ -1,4 +1,5 @@
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using System.Collections.Generic;
 using UnityEngine;
@@ -42,17 +43,18 @@ internal sealed class RlTeamExplorationGrid
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
-            if (ship == null || ship.IsDead || ship.Sight <= 0f)
+            int visionRange = HiveMindVision.GetEffectiveRange(ship);
+            if (ship == null || ship.IsDead || visionRange <= 0)
             {
                 continue;
             }
 
             Vector2 position = ship.GetPosition();
-            float sightSquared = ship.Sight * ship.Sight;
-            int minX = Mathf.Clamp(Mathf.FloorToInt((position.x - ship.Sight - level.MinX) / cellWidth), 0, Size - 1);
-            int maxX = Mathf.Clamp(Mathf.FloorToInt((position.x + ship.Sight - level.MinX) / cellWidth), 0, Size - 1);
-            int minY = Mathf.Clamp(Mathf.FloorToInt((position.y - ship.Sight - level.MinY) / cellHeight), 0, Size - 1);
-            int maxY = Mathf.Clamp(Mathf.FloorToInt((position.y + ship.Sight - level.MinY) / cellHeight), 0, Size - 1);
+            float sightSquared = visionRange * visionRange;
+            int minX = Mathf.Clamp(Mathf.FloorToInt((position.x - visionRange - level.MinX) / cellWidth), 0, Size - 1);
+            int maxX = Mathf.Clamp(Mathf.FloorToInt((position.x + visionRange - level.MinX) / cellWidth), 0, Size - 1);
+            int minY = Mathf.Clamp(Mathf.FloorToInt((position.y - visionRange - level.MinY) / cellHeight), 0, Size - 1);
+            int maxY = Mathf.Clamp(Mathf.FloorToInt((position.y + visionRange - level.MinY) / cellHeight), 0, Size - 1);
 
             for (int y = minY; y <= maxY; y++)
             {
