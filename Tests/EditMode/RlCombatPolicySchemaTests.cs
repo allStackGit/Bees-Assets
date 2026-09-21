@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -282,6 +283,63 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Not.Contain("MaxObservedProjectiles"));
             Assert.That(source, Does.Not.Contain("AddProjectileSlots"),
                 "Projectile-evasion slots are intentionally excluded; weapon ProjectileValue remains a weapon characteristic.");
+        }
+
+        [Test]
+        public void ExplorationGridUsesEffectiveHiveMindVisionRangeWhenSightIsZero()
+        {
+            Type visionType = RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.HiveMindVision");
+            Type gridType = RuntimeAssembly.GetType("RlTeamExplorationGrid");
+            object grid = Activator.CreateInstance(gridType, true);
+            GameObject levelObject = new GameObject("RL Exploration Vision Level Test");
+            GameObject shipObject = new GameObject("RL Exploration Vision Ship Test");
+            try
+            {
+                Component level = levelObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Levels.Level"));
+                Component ship = shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
+                RuntimeAssembly.SetField(level, "MinX", -16f);
+                RuntimeAssembly.SetField(level, "MinY", -16f);
+                RuntimeAssembly.SetField(level, "MaxX", 16f);
+                RuntimeAssembly.SetField(level, "MaxY", 16f);
+                RuntimeAssembly.SetField(ship, "Level", level);
+                RuntimeAssembly.SetField(ship, "Transform", shipObject.transform);
+                RuntimeAssembly.SetField(ship, "Sight", 0);
+                RuntimeAssembly.SetField(ship, "MaxRange", 40);
+
+                Assert.That((int)RuntimeAssembly.InvokeStatic(visionType, "GetEffectiveRange", ship), Is.EqualTo(40),
+                    "Combat ships with authored Sight=0 must retain the MaxRange fallback used by Hive Mind vision.");
+
+                Type shipListType = typeof(List<>).MakeGenericType(ship.GetType());
+                object ships = Activator.CreateInstance(shipListType);
+                RuntimeAssembly.AddToCollection(ships, ship);
+                RuntimeAssembly.Invoke(grid, "Update", level, ships, 0.25f);
+
+                int cellCount = (int)RuntimeAssembly.GetStaticField(gridType, "CellCount");
+                int freshCells = 0;
+                for (int cell = 0; cell < cellCount; cell++)
+                {
+                    if ((float)RuntimeAssembly.Invoke(grid, "GetFreshness", cell, 0.25f) > 0f)
+                    {
+                        freshCells++;
+                    }
+                }
+
+                Assert.That(freshCells, Is.EqualTo(cellCount),
+                    "A 40-unit vision radius centered on a 32x32 arena should mark every exploration cell fresh.");
+
+                RuntimeAssembly.SetField(ship, "Sight", 80);
+                Assert.That((int)RuntimeAssembly.InvokeStatic(visionType, "GetEffectiveRange", ship), Is.EqualTo(80),
+                    "An explicit Sight value must take precedence over MaxRange.");
+
+                string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
+                Assert.That(perception, Does.Contain("NormalizePositive(HiveMindVision.GetEffectiveRange(ship), 80f)"),
+                    "The policy sight channel must observe the same effective range that drives actual Hive Mind visibility.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(shipObject);
+                UnityEngine.Object.DestroyImmediate(levelObject);
+            }
         }
 
         [Test]
