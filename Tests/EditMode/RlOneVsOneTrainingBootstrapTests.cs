@@ -180,7 +180,7 @@ namespace Bees.Tests.EditMode
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
 
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "BehaviorName"), Is.EqualTo("BeesRL1v1"));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(34));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(12));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 1"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 0"));
@@ -210,12 +210,13 @@ namespace Bees.Tests.EditMode
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(4706));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7086));
             Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
             Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns)"));
-            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, origin, frameQuarterTurns)"));
-            Assert.That(perception, Does.Contain("AddEnemyWeaponMountSlots(sensor, origin, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddEntityWeaponSlots(observed, sensor)"));
             Assert.That(perception, Does.Contain("AddNavigationGridObservations(sensor, frameQuarterTurns)"));
+            Assert.That(perception, Does.Contain("AddExplorationGridObservations(ship.Level, side, sensor, frameQuarterTurns)"));
             Assert.That(perception, Does.Not.Contain("MaxObservedProjectiles"));
             Assert.That(perception, Does.Not.Contain("AddProjectileSlots"),
                 "Projectile-evasion slots are intentionally outside the canonical policy; weapon ProjectileValue remains a weapon characteristic.");
