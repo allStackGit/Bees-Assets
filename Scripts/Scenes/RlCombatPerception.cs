@@ -209,7 +209,7 @@ internal sealed class RlCombatPerception
 
         GameState state = level.State;
         sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShips(side)), 64f));
-        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetShipsNot(side)), 64f));
+        sensor.AddObservation(NormalizePositive(CountLiveShips(state.GetAllEnemyShips(side)), 64f));
     }
 
     private static int CountLiveShips(IEnumerable<Ship> ships)
