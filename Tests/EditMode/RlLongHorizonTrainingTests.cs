@@ -14,7 +14,7 @@ namespace Bees.Tests.EditMode
         {
             string config = ReadSource("Training", "rl_1v1_config.yaml");
 
-            Assert.That(config, Does.Contain("lambd: 1.0"));
+            Assert.That(config, Does.Contain("lambd: 0.95"));
             Assert.That(config, Does.Contain("gamma: 1.0"));
             Assert.That(config, Does.Contain("time_horizon: 2048"));
         }
