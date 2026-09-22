@@ -251,6 +251,8 @@ namespace Assets.Scripts.Entities.Ships
             FinalDestination = Vector2.zero;
             LastKilled = 0;
             CannotChangeMovementOrders = false;
+            IsRlPolicyControlled = false;
+            RlMovementDirection = 360;
             IsFollowingPath = false;
             InCombat = false;
             IsDead = false;
