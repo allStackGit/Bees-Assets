@@ -58,7 +58,7 @@ env_settings:
   - --rl-map-size-min
   - '32'
   - --rl-map-size-max
-  - '64'
+  - '96'
   - --rl-episode-timeout
   - '30'
   - --rl-ships-per-side
