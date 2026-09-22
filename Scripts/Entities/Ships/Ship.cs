@@ -31,7 +31,8 @@ namespace Assets.Scripts.Entities.Ships
         public bool IsDead;
         public bool IsUserControlled;
         public bool IsMobile;
-        public bool HasBrain, IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
+        public bool IsRlPolicyControlled;
+        public bool IsHiveMindControlled, IsMinionShip, HasTargetCoordinates, IsMiningShip, IsWarpGate, IsBeehive,
             HasTargetDirection, HasUserFogOfWarVision, HasProximityCollider, HasShipAnimation, HasRocketFlares,
             HasLeftRocketFlares, HasCenterRocketFlares, HasRightRocketFlares, HasOnlySideRocketFlares, HasMovementMarker,
             HasWaitingTargetCoordinates, HasRemainsShip, FireAtFrontOfShip, IsBomber;
@@ -83,12 +84,7 @@ namespace Assets.Scripts.Entities.Ships
         public volatile HashSet<Pathfinder.MapNode> DebugWalkablePointNodes = new HashSet<Pathfinder.MapNode>();
         public volatile bool PrintDebugImage;
 
-        public int Direction;
-        public bool ShouldDetonate;
-        public ConfigData.ShootingStrategyTypes RLShootingStrategy;
-        public float RLSide;
-        public float RLHealth;
-        public float RLShipType;
+        public int RlMovementDirection = 360;
 
         private bool _combatTimer, _isInBounds;
         private Transform _healthBarFiller;
