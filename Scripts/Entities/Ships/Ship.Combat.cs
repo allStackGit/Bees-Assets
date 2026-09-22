@@ -125,10 +125,6 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            if (target.Level.Stage.IsTrainingNueralNetwork)
-            {
-                target.RLHealth = target.MaxHealth > 0 ? (float)target.Health / target.MaxHealth : 0f;
-            }
             target.UpdateHealthBar();
             if (attacker != null)
             {
