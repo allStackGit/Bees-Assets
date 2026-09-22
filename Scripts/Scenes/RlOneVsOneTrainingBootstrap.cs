@@ -285,7 +285,6 @@ internal static class RlOneVsOneTrainingBootstrap
         stage.IsTrainingHiveMind = false;
         stage.IsTrainingNueralNetwork = true;
         stage.ActivateHiveMind = false;
-        stage.ActivateBrains = false; // The ML-Agents adapters own actions; the historical Brain path is dormant.
         stage.DoesUserHaveController = false;
         stage.UseFullyRandomSquads = true;
         stage.UseFullyRandomEnemySquads = false;
