@@ -10,7 +10,7 @@ behaviors:
       # Fixed entropy pressure. Adaptive beta is disabled; change this value
       # manually between runs/checkpoint resumes if entropy needs correction.
       # Continuous sigma remains hard-capped separately.
-      beta: 0.001
+      beta: 0.00125
       epsilon: 0.15
       lambd: 0.95
       num_epoch: 3
