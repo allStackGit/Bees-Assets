@@ -150,7 +150,10 @@ namespace Assets.Scripts.Entities.Ships
             MinionSquads.Add(squad);
             MinionSquadsCount++;
             squad.IsGrowingSquad = true;
-            squad.AddToCommandList();
+            if (!Stage.IsTrainingNueralNetwork)
+            {
+                squad.AddToCommandList();
+            }
             return squad;
         }
         private void SpawnMinion(int shipIndex)
