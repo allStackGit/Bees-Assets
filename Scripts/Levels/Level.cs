@@ -27,16 +27,12 @@ namespace Assets.Scripts.Levels
         //public float __RotationTest;
         //public Vector2 __OriginalPosition;
         public GameState State;
-        // If hivemind is activate, get commands from the server
-        // If brains are activated, get actions from the nueral network
-        // If IsTrainingNueralNetwork, train the neural network. IsTrainingHiveMind, train the hive mind
-        // Training Hivemind or Nueral Network then there is no player, levels are reset every time, and the camera position doesn't matter
+        // If the Hive Mind is active, get commands from the server.
+        // Dedicated ML-Agents training is owned by the RlOneVsOne policy adapters.
         public bool HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
         public UI_Components.Map Map;
         public LevelConstructor LevelConstructor;
         public Pathfinder Pathfinder;
-        //public SimpleMultiAgentGroup AgentGroup;
-        //public SimpleMultiAgentGroup HumanAgentGroup;
         public float MinX, MinY, MaxX, MaxY;
         public Vector2[] StartingPositions = new Vector2[2];
 
@@ -168,22 +164,6 @@ namespace Assets.Scripts.Levels
             //    {3, Stage.Prefabs.ForestPrefabs },
             //    {4, Stage.Prefabs.TheWallPrefabs }
             //};
-
-            if (Stage.ActivateBrains)
-            {
-                //AgentGroup = new SimpleMultiAgentGroup();
-                //HumanAgentGroup = new SimpleMultiAgentGroup();
-
-                //if (Stage.IsTrainingNueralNetwork)
-                //{
-                //    Academy.Instance.OnEnvironmentReset += () =>
-                //    {
-                //        //Debug.Log($"Reset environment, {Academy.Instance.StepCount}");
-                //    };
-
-                //}
-            }
-
 
             // Setup Game State
             State = gameObject.AddComponent<GameState>();
