@@ -8,28 +8,6 @@ namespace Assets.Scripts.Levels
 {
     public partial class GameState
     {
-        public void AddSpottedShips(List<Ship> spottedShips, Ship spotter)
-        {
-            List<SpottedShip> known = SpottedShips[spotter.Side - 1];
-            for (int i = 0; i < spottedShips.Count; i++)
-            {
-                Ship spotted = spottedShips[i];
-                bool alreadyKnown = false;
-                for (int j = 0; j < known.Count; j++)
-                {
-                    if (known[j].Ship.Id == spotted.Id)
-                    {
-                        alreadyKnown = true;
-                        break;
-                    }
-                }
-                if (!alreadyKnown)
-                {
-                    known.Add(new SpottedShip(spotted, spotter.Id));
-                }
-            }
-        }
-
         public ShipDamageStatus GetShipDamageStatus(int side, Ship potentialTargetShip)
         {
             int sideIndex = side - 1;
