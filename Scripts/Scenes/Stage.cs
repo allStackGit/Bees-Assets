@@ -49,7 +49,6 @@ public class Stage : Scene
     /// <summary>
     /// Whether or not the AI is controlled by the Nueral Network
     /// </summary>
-    public bool ActivateBrains;
     /// <summary>
     /// Whether or not the Hive Mind is active and giving commands
     /// </summary>
