@@ -26,7 +26,6 @@ namespace Bees.Tests.EditMode
                 "MaximumPositiveShapingReward");
             float totalDiscoveryBudget =
                 (float)RuntimeAssembly.GetStaticField(_rewardType, "EnemyShipDiscoveryBudget") +
-                (float)RuntimeAssembly.GetStaticField(_rewardType, "EnemyChildShipDiscoveryBudget") +
                 (float)RuntimeAssembly.GetStaticField(_rewardType, "MiningAsteroidDiscoveryBudget") +
                 (float)RuntimeAssembly.GetStaticField(_rewardType, "StaticObstacleDiscoveryBudget") +
                 (float)RuntimeAssembly.GetStaticField(_rewardType, "MapObjectDiscoveryBudget") +
@@ -65,35 +64,6 @@ namespace Bees.Tests.EditMode
             Assert.That(large, Is.EqualTo(0.15f).Within(0.00001f));
             Assert.That(small + large, Is.EqualTo(budget).Within(0.00001f));
             Assert.That(unexpectedSpawn, Is.LessThanOrEqualTo(budget));
-        }
-
-        [Test]
-        public void ChildShipDiscoveryRewardsEveryFiniteSightingWithoutExceedingItsBudget()
-        {
-            float budget = (float)RuntimeAssembly.GetStaticField(
-                _rewardType,
-                "EnemyChildShipDiscoveryBudget");
-            float accumulated = 0f;
-            float previous = float.MaxValue;
-            for (int discoveryIndex = 0; discoveryIndex < 1000; discoveryIndex++)
-            {
-                float reward = (float)RuntimeAssembly.InvokeStatic(
-                    _rewardType,
-                    "CalculateChildShipDiscoveryReward",
-                    discoveryIndex);
-                Assert.That(reward, Is.GreaterThan(0f));
-                Assert.That(reward, Is.LessThan(previous));
-                accumulated += reward;
-                previous = reward;
-            }
-
-            float first = (float)RuntimeAssembly.InvokeStatic(
-                _rewardType,
-                "CalculateChildShipDiscoveryReward",
-                0);
-
-            Assert.That(first, Is.EqualTo(0.01f).Within(0.00001f));
-            Assert.That(accumulated, Is.LessThan(budget));
         }
 
         [Test]
@@ -200,8 +170,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
             StringAssert.Contains("CalculateBoundedPositiveShapingIncrement(rawBefore, reward)", source);
-            StringAssert.Contains("CalculateChildShipDiscoveryReward(discoveryIndex)", source);
-            StringAssert.Contains("_childShipDiscoveryCount[sideIndex]++", source);
+            StringAssert.Contains("Mathf.Max(1, spotted.Tsv)", source);
+            StringAssert.Contains("RlOneVsOneReward.EnemyShipDiscoveryBudget", source);
         }
     }
 }

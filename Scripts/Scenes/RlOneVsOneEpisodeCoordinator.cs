@@ -164,7 +164,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _miningAsteroidDiscoveryValue = new int[2];
     private readonly int[] _staticObstacleDiscoveryValue = new int[2];
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
-    private readonly int[] _childShipDiscoveryCount = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
     private readonly HashSet<long>[] _rewardedShipDiscoveryIds = { new HashSet<long>(), new HashSet<long>() };
@@ -639,17 +638,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _humanFirstContactSeconds = ElapsedEpisodeSeconds;
         }
 
-        // Free tactical children are still excluded from persistent-fleet TSV shaping, but finding a
-        // previously unseen child is useful information and should reinforce search. Keep child
-        // discovery on its own convergent budget because children can spawn throughout an episode.
-        if (!HasPersistentFleetValue(spotted))
-        {
-            int discoveryIndex = _childShipDiscoveryCount[sideIndex]++;
-            float childReward = RlOneVsOneReward.CalculateChildShipDiscoveryReward(discoveryIndex);
-            ApplyImmediateTsvReward(side, childReward);
-            return;
-        }
-
+        // First sighting of every enemy ship, including free tactical children/minions, uses the
+        // same TSV-scaled enemy-discovery shaping. Children remain excluded only from persistent
+        // fleet-value damage/loss shaping.
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
             Mathf.Max(1, spotted.Tsv),
             _enemyShipDiscoveryValue[sideIndex],
@@ -1039,7 +1030,6 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _miningAsteroidDiscoveryValue[sideIndex] = 0;
             _staticObstacleDiscoveryValue[sideIndex] = 0;
             _mapObjectDiscoveryValue[sideIndex] = 0;
-            _childShipDiscoveryCount[sideIndex] = 0;
             _collisionAsteroidDiscoveryCount[sideIndex] = 0;
             _rawPositiveShapingReward[sideIndex] = 0d;
             _rewardedShipDiscoveryIds[sideIndex].Clear();
