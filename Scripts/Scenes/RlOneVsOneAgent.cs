@@ -508,21 +508,21 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (!_ship.IsMobile || _ship.CannotChangeMovementOrders)
         {
-            _ship.HasBrain = true;
+            _ship.IsRlPolicyControlled = true;
             return;
         }
 
         if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
         {
-            _ship.Direction = 360;
+            _ship.RlMovementDirection = 360;
         }
         else
         {
             Vector2 point = _ship.GetPosition() + movement.normalized;
             int direction = Mathf.RoundToInt(_ship.GetDegreesTowardsPoint(point));
-            _ship.Direction = ((direction % 360) + 360) % 360;
+            _ship.RlMovementDirection = ((direction % 360) + 360) % 360;
         }
-        _ship.HasBrain = true;
+        _ship.IsRlPolicyControlled = true;
     }
 
     private void ApplyWeaponCommand(int slot, Vector2 aimDirection, bool fire)
@@ -868,7 +868,7 @@ internal sealed class RlOneVsOneAgent : Agent
             _ship.Squad.CanAcceptUserInput = false;
         }
 
-        _ship.HasBrain = true;
+        _ship.IsRlPolicyControlled = true;
         Vector2 initialAim = RlPolicyCoordinateFrame.PolicyToWorld(
             Vector2.up,
             RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId));
@@ -954,7 +954,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (_ship != null)
         {
-            _ship.HasBrain = false;
+            _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
             {
                 _ship.Turrets[i].ClearRlControl();
