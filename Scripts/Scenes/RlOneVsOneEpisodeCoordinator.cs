@@ -164,6 +164,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private readonly int[] _miningAsteroidDiscoveryValue = new int[2];
     private readonly int[] _staticObstacleDiscoveryValue = new int[2];
     private readonly int[] _mapObjectDiscoveryValue = new int[2];
+    private readonly int[] _childShipDiscoveryCount = new int[2];
     private readonly int[] _collisionAsteroidDiscoveryCount = new int[2];
     private readonly double[] _rawPositiveShapingReward = new double[2];
     private readonly HashSet<long>[] _rewardedShipDiscoveryIds = { new HashSet<long>(), new HashSet<long>() };
@@ -638,10 +639,14 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _humanFirstContactSeconds = ElapsedEpisodeSeconds;
         }
 
-        // First-contact diagnostics still include free tactical children, but discovering one must
-        // not create persistent fleet-value shaping or consume that category's reward budget.
+        // Free tactical children are still excluded from persistent-fleet TSV shaping, but finding a
+        // previously unseen child is useful information and should reinforce search. Keep child
+        // discovery on its own convergent budget because children can spawn throughout an episode.
         if (!HasPersistentFleetValue(spotted))
         {
+            int discoveryIndex = _childShipDiscoveryCount[sideIndex]++;
+            float childReward = RlOneVsOneReward.CalculateChildShipDiscoveryReward(discoveryIndex);
+            ApplyImmediateTsvReward(side, childReward);
             return;
         }
 
@@ -1034,6 +1039,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _miningAsteroidDiscoveryValue[sideIndex] = 0;
             _staticObstacleDiscoveryValue[sideIndex] = 0;
             _mapObjectDiscoveryValue[sideIndex] = 0;
+            _childShipDiscoveryCount[sideIndex] = 0;
             _collisionAsteroidDiscoveryCount[sideIndex] = 0;
             _rawPositiveShapingReward[sideIndex] = 0d;
             _rewardedShipDiscoveryIds[sideIndex].Clear();

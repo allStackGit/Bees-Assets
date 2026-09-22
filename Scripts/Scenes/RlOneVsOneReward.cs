@@ -22,6 +22,7 @@ internal static class RlOneVsOneReward
     // normalized against the value present when the episode begins. Collision asteroids can spawn
     // indefinitely, so they use a convergent sequence instead of an episode-start denominator.
     internal const float EnemyShipDiscoveryBudget = 0.06f;
+    internal const float EnemyChildShipDiscoveryBudget = 0.02f;
     internal const float MiningAsteroidDiscoveryBudget = 0.015f;
     internal const float StaticObstacleDiscoveryBudget = 0.015f;
     internal const float MapObjectDiscoveryBudget = 0.01f;
@@ -62,6 +63,19 @@ internal static class RlOneVsOneReward
 
         float denominator = Mathf.Max(value, Mathf.Max(1, episodeStartCategoryValue));
         return Mathf.Max(0f, categoryBudget) * value / denominator;
+    }
+
+    /// <summary>
+    /// Child/minion ships can spawn dynamically, so their discovery reward uses the same convergent
+    /// sequence shape as dynamic asteroid discovery. Every newly sighted child receives a positive
+    /// reward, while even infinitely many child spawns cannot consume the regular enemy-ship budget
+    /// or exceed the dedicated child-discovery budget.
+    /// </summary>
+    internal static float CalculateChildShipDiscoveryReward(int discoveryIndex)
+    {
+        int index = Mathf.Max(0, discoveryIndex);
+        float sequenceWeight = 1f / ((index + 1f) * (index + 2f));
+        return EnemyChildShipDiscoveryBudget * sequenceWeight;
     }
 
     /// <summary>
