@@ -981,7 +981,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             if (RlOneVsOneAgent.RequiresPolicyControl(ship))
             {
                 _policyEligibleShipIds[sideIndex].Add(ship.Id);
-                if (ship.HasBrain)
+                if (ship.IsRlPolicyControlled)
                 {
                     _policyControlledShipIds[sideIndex].Add(ship.Id);
                 }
@@ -1014,7 +1014,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled)
             {
                 return false;
             }
