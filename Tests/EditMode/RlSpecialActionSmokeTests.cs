@@ -47,6 +47,18 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("RLSide", ship);
             StringAssert.DoesNotContain("RLHealth", ship);
             StringAssert.DoesNotContain("RLShipType", ship);
+            StringAssert.DoesNotContain("HasBrain", ship);
+            StringAssert.DoesNotContain("NNDirectionalMovement", movement);
+
+            string level = ReadSource("Scripts", "Levels", "Level.cs");
+            string gameState = ReadSource("Scripts", "Levels", "GameState.cs");
+            string queries = ReadSource("Scripts", "Levels", "GameState.Queries.cs");
+            string weapon = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Weapon.cs");
+            StringAssert.DoesNotContain("ActivateBrains", level);
+            StringAssert.DoesNotContain("SpottedShips", gameState);
+            StringAssert.DoesNotContain("AddSpottedShips", queries);
+            StringAssert.DoesNotContain("HasBrain", weapon);
+
             StringAssert.Contains("yellowJacket.TryToDetonate();", agent);
             StringAssert.Contains("fireBarge.Detonate();", agent);
         }
