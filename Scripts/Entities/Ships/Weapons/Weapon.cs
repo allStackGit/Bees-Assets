@@ -206,7 +206,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public void Targeting()
         {
             TargetShip = null;
-            if (Ship.IsUserControlled || Ship.Squad.HasCommand || Ship.HasBrain)
+            if (Ship.IsUserControlled || Ship.Squad.HasCommand)
             {
                 _queue = MakeSortedTargetingList(false);
                 if (!DetermineTargetShip(_queue, true)) DetermineTargetShip(_queue, false);
