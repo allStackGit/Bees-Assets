@@ -19,24 +19,34 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void DirectionalBrainMovementHonorsGameplaySpeedAndStopState()
+        public void RlDirectionalMovementHonorsGameplaySpeedAndStopState()
         {
             string source = ReadSource("Scripts", "Entities", "Ships", "Ship.Movement.cs");
 
             StringAssert.Contains(
                 "new Vector2(CurrentSpeed * Mathf.Sin(_tempAngle), -CurrentSpeed * Mathf.Cos(_tempAngle))",
                 source);
-            StringAssert.Contains("if (HasBrain && !Squad.IsUserControlled)", source);
-            StringAssert.Contains("Direction = 360;", source);
+            StringAssert.Contains("if (IsRlPolicyControlled && !Squad.IsUserControlled)", source);
+            StringAssert.Contains("RlMovementDirection = 360;", source);
         }
 
         [Test]
-        public void DedicatedMlAgentsDoesNotUseLegacyShouldDetonateOwnership()
+        public void LegacyBrainStateIsRemovedAndSpecialActionsRemainPolicyOwned()
         {
+            string ship = ReadSource("Scripts", "Entities", "Ships", "Ship.cs");
             string movement = ReadSource("Scripts", "Entities", "Ships", "Ship.Movement.cs");
+            string stage = ReadSource("Scripts", "Scenes", "Stage.cs");
+            string bootstrap = ReadSource("Scripts", "Scenes", "RlOneVsOneTrainingBootstrap.cs");
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
 
-            StringAssert.Contains("if (ShouldDetonate && Stage.ActivateBrains)", movement);
+            StringAssert.DoesNotContain("ActivateBrains", stage);
+            StringAssert.DoesNotContain("ActivateBrains", bootstrap);
+            StringAssert.DoesNotContain("ShouldDetonate", ship);
+            StringAssert.DoesNotContain("ShouldDetonate", movement);
+            StringAssert.DoesNotContain("RLShootingStrategy", ship);
+            StringAssert.DoesNotContain("RLSide", ship);
+            StringAssert.DoesNotContain("RLHealth", ship);
+            StringAssert.DoesNotContain("RLShipType", ship);
             StringAssert.Contains("yellowJacket.TryToDetonate();", agent);
             StringAssert.Contains("fireBarge.Detonate();", agent);
         }
@@ -62,8 +72,8 @@ namespace Bees.Tests.EditMode
             string source = ReadSource("Scripts", "Entities", "Ships", "Barge.cs");
 
             StringAssert.Contains("SetCurrentSpeed(80, 80);", source);
-            StringAssert.Contains("if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)", source);
-            StringAssert.Contains("Direction = NormalizeDirection(Rotation);", source);
+            StringAssert.Contains("if (Stage.IsTrainingNueralNetwork && IsRlPolicyControlled && !Squad.IsUserControlled)", source);
+            StringAssert.Contains("RlMovementDirection = NormalizeDirection(Rotation);", source);
             StringAssert.Contains("StopMoving(\"Pausing to build up steam before charging\");", source);
         }
 
