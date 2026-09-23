@@ -56,7 +56,7 @@ env_settings:
   - --rl-health-ratio
   - '.05'
   - --rl-map-size-min
-  - '64'
+  - '96'
   - --rl-map-size-max
   - '128'
   - --rl-episode-timeout
@@ -64,9 +64,9 @@ env_settings:
   - --rl-ships-per-side
   - '1'
   - --rl-bee-ship-types
-  - Wasp
+  - Wasp,Hornet,Yellow Jacket,Leafcutter,Bumblebee
   - --rl-human-ship-types
-  - Gunship
+  - Gunship,Barge,Fire Barge, Carrier,Dreadnought,Flagship,Frigate,Cruiser
   - --rl-matchup-mode
   - sampled
   base_port: 12000
