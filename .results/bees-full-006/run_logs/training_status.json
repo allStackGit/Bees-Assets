@@ -1,6 +1,6 @@
 {
     "BeesRL1v1": {
-        "elo": -8457.09548633388,
+        "elo": -10378.658322478774,
         "checkpoints": [
             {
                 "steps": 27764,
@@ -937,15 +937,276 @@
                 "auxillary_file_paths": [
                     ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-23806860.pt"
                 ]
+            },
+            {
+                "steps": 23999891,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-23999891.onnx",
+                "reward": -3.574391824779687,
+                "creation_time": 1790102949.007489,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-23999891.pt"
+                ]
+            },
+            {
+                "steps": 24249785,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24249785.onnx",
+                "reward": -4.997506863127152,
+                "creation_time": 1790103894.571722,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24249785.pt"
+                ]
+            },
+            {
+                "steps": 24499919,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24499919.onnx",
+                "reward": -3.541437229092576,
+                "creation_time": 1790104825.2994688,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24499919.pt"
+                ]
+            },
+            {
+                "steps": 24749938,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24749938.onnx",
+                "reward": -3.4539765129712494,
+                "creation_time": 1790105763.467757,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24749938.pt"
+                ]
+            },
+            {
+                "steps": 24999918,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24999918.onnx",
+                "reward": -1.7655322211129325,
+                "creation_time": 1790106706.8805265,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-24999918.pt"
+                ]
+            },
+            {
+                "steps": 25249786,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25249786.onnx",
+                "reward": -2.3302500247955322,
+                "creation_time": 1790107672.9653678,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25249786.pt"
+                ]
+            },
+            {
+                "steps": 25499954,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25499954.onnx",
+                "reward": -2.8470253526018214,
+                "creation_time": 1790108606.817752,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25499954.pt"
+                ]
+            },
+            {
+                "steps": 25749964,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25749964.onnx",
+                "reward": -1.8902896478373026,
+                "creation_time": 1790109556.5814478,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25749964.pt"
+                ]
+            },
+            {
+                "steps": 25999949,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25999949.onnx",
+                "reward": -1.6123371615157098,
+                "creation_time": 1790110472.0934222,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-25999949.pt"
+                ]
+            },
+            {
+                "steps": 26249940,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26249940.onnx",
+                "reward": -2.767777883392923,
+                "creation_time": 1790111395.465861,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26249940.pt"
+                ]
+            },
+            {
+                "steps": 26499789,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26499789.onnx",
+                "reward": null,
+                "creation_time": 1790112332.8143013,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26499789.pt"
+                ]
+            },
+            {
+                "steps": 26749744,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26749744.onnx",
+                "reward": -5.132795250415802,
+                "creation_time": 1790113268.0139618,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26749744.pt"
+                ]
+            },
+            {
+                "steps": 26999854,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26999854.onnx",
+                "reward": -4.71941607495149,
+                "creation_time": 1790114170.4348722,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-26999854.pt"
+                ]
+            },
+            {
+                "steps": 27249965,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27249965.onnx",
+                "reward": -3.615332382362942,
+                "creation_time": 1790115085.9980814,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27249965.pt"
+                ]
+            },
+            {
+                "steps": 27499883,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27499883.onnx",
+                "reward": -4.545634527658594,
+                "creation_time": 1790116012.4019327,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27499883.pt"
+                ]
+            },
+            {
+                "steps": 27749715,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27749715.onnx",
+                "reward": -3.13964317803239,
+                "creation_time": 1790116987.9742029,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27749715.pt"
+                ]
+            },
+            {
+                "steps": 27999991,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27999991.onnx",
+                "reward": -0.9605892356715084,
+                "creation_time": 1790117923.4390962,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-27999991.pt"
+                ]
+            },
+            {
+                "steps": 28249997,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28249997.onnx",
+                "reward": -5.9291436846517485,
+                "creation_time": 1790118885.400883,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28249997.pt"
+                ]
+            },
+            {
+                "steps": 28499980,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28499980.onnx",
+                "reward": 5.106080532073975,
+                "creation_time": 1790119858.1727357,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28499980.pt"
+                ]
+            },
+            {
+                "steps": 28749929,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28749929.onnx",
+                "reward": -1.7345776781439781,
+                "creation_time": 1790120884.5513935,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28749929.pt"
+                ]
+            },
+            {
+                "steps": 28999784,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28999784.onnx",
+                "reward": -4.304792433074026,
+                "creation_time": 1790121882.1793756,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-28999784.pt"
+                ]
+            },
+            {
+                "steps": 29249931,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29249931.onnx",
+                "reward": -1.9282930785313595,
+                "creation_time": 1790123264.6910598,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29249931.pt"
+                ]
+            },
+            {
+                "steps": 29499998,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29499998.onnx",
+                "reward": -3.110075045248558,
+                "creation_time": 1790124883.9674067,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29499998.pt"
+                ]
+            },
+            {
+                "steps": 29749986,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29749986.onnx",
+                "reward": -2.4529815550289444,
+                "creation_time": 1790126529.7407563,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29749986.pt"
+                ]
+            },
+            {
+                "steps": 29999999,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29999999.onnx",
+                "reward": -2.906129172663478,
+                "creation_time": 1790128241.1565087,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-29999999.pt"
+                ]
+            },
+            {
+                "steps": 30249948,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30249948.onnx",
+                "reward": 0.8265889666297219,
+                "creation_time": 1790129878.6151175,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30249948.pt"
+                ]
+            },
+            {
+                "steps": 30499889,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30499889.onnx",
+                "reward": 2.031291885767132,
+                "creation_time": 1790130994.787888,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30499889.pt"
+                ]
+            },
+            {
+                "steps": 30749888,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30749888.onnx",
+                "reward": -1.3895382676273584,
+                "creation_time": 1790132010.909313,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30749888.pt"
+                ]
+            },
+            {
+                "steps": 30816111,
+                "file_path": ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30816111.onnx",
+                "reward": -5.099880792117781,
+                "creation_time": 1790132281.5862381,
+                "auxillary_file_paths": [
+                    ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30816111.pt"
+                ]
             }
         ],
         "final_checkpoint": {
-            "steps": 23806860,
+            "steps": 30816111,
             "file_path": ".results\\bees-full-006\\BeesRL1v1.onnx",
-            "reward": -0.9636824543659503,
-            "creation_time": 1790102061.8951964,
+            "reward": -5.099880792117781,
+            "creation_time": 1790132281.5862381,
             "auxillary_file_paths": [
-                ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-23806860.pt"
+                ".results\\bees-full-006\\BeesRL1v1\\BeesRL1v1-30816111.pt"
             ]
         }
     },
