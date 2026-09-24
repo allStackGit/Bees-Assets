@@ -98,17 +98,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         command[1] = str(
             options.assets_root / "Training" / "bees_continual_elastic_wan_auto_train.py"
         )
-        command.extend(
-            [
-                f"{elastic.WAN_ACTORS_FLAG}={actor_options.max_actors}",
-                f"{elastic.WAN_MIN_ACTORS_FLAG}={actor_options.min_actors}",
-                f"{elastic.WAN_BROKER_PORT_FLAG}={actor_options.broker_port}",
-                f"{elastic.WAN_AUTH_TOKEN_FILE_FLAG}="
-                f"{Path(actor_options.auth_token_file or '').expanduser().resolve()}",
-                f"{elastic.WAN_MAX_QUEUED_BATCHES_FLAG}={actor_options.max_queued_batches}",
-                f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
-            ]
-        )
+        wan_args = [
+            f"{elastic.WAN_ACTORS_FLAG}={actor_options.max_actors}",
+            f"{elastic.WAN_MIN_ACTORS_FLAG}={actor_options.min_actors}",
+            f"{elastic.WAN_BROKER_PORT_FLAG}={actor_options.broker_port}",
+            f"{elastic.WAN_AUTH_TOKEN_FILE_FLAG}="
+            f"{Path(actor_options.auth_token_file or '').expanduser().resolve()}",
+            f"{elastic.WAN_MAX_QUEUED_BATCHES_FLAG}={actor_options.max_queued_batches}",
+            f"{elastic.WAN_LEASE_SECONDS_FLAG}={actor_options.actor_lease_seconds:g}",
+        ]
+        # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
+        # trainer flags before it so only the server-owned Unity arguments reach the player.
+        try:
+            env_args_index = command.index("--env-args")
+        except ValueError:
+            command.extend(wan_args)
+        else:
+            command[env_args_index:env_args_index] = wan_args
         return command
 
     service.training_command = elastic_training_command
