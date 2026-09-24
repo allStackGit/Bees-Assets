@@ -226,7 +226,7 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
-        _perception.Collect(_ship, _side, sensor, 0);
+        RlOneVsOneAgent.CollectPolicyObservations(_perception, _ship, _side, sensor, 0);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -250,23 +250,6 @@ internal sealed class RlLivePolicyAgent : Agent
         actionMask.SetActionEnabled(RlOneVsOneAgent.SpecialActionBranch, RlOneVsOneAgent.WarpAction,
             canControl && RlOneVsOneAgent.CanUseWarpAction(_ship));
 
-        DisableTargetBranches(actionMask);
-    }
-
-    private static void DisableTargetBranches(IDiscreteActionMask actionMask)
-    {
-        for (int action = 1; action < RlOneVsOneAgent.AllyTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(RlOneVsOneAgent.AllyTargetBranch, action, false);
-        }
-        for (int action = 1; action < RlOneVsOneAgent.EnemyTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(RlOneVsOneAgent.EnemyTargetBranch, action, false);
-        }
-        for (int action = 1; action < RlOneVsOneAgent.MapObjectTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(RlOneVsOneAgent.MapObjectTargetBranch, action, false);
-        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -277,7 +260,8 @@ internal sealed class RlLivePolicyAgent : Agent
         }
 
         ActionSegment<float> continuous = actions.ContinuousActions;
-        ApplyMovement(new Vector2(continuous[0], continuous[1]));
+        RlOneVsOneAgent.ApplyMovementCommand(_ship, new Vector2(continuous[0], continuous[1]));
+        RlOneVsOneAgent.SetCommunicationActions(_ship, continuous);
 
         ActionSegment<int> discrete = actions.DiscreteActions;
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
@@ -290,7 +274,8 @@ internal sealed class RlLivePolicyAgent : Agent
                 _weaponAimDirections[slot] = aim.normalized;
             }
 
-            ApplyWeaponCommand(
+            RlOneVsOneAgent.ApplyWeaponCommand(
+                _ship,
                 slot,
                 _weaponAimDirections[slot],
                 discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] == RlOneVsOneAgent.FireWeaponAction);
@@ -327,39 +312,6 @@ internal sealed class RlLivePolicyAgent : Agent
         {
             discrete[i] = 0;
         }
-    }
-
-    private void ApplyMovement(Vector2 movement)
-    {
-        if (!_ship.IsMobile || _ship.CannotChangeMovementOrders)
-        {
-            _ship.HasBrain = true;
-            return;
-        }
-
-        if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
-        {
-            _ship.Direction = 360;
-        }
-        else
-        {
-            Vector2 point = _ship.GetPosition() + movement.normalized;
-            int direction = Mathf.RoundToInt(_ship.GetDegreesTowardsPoint(point));
-            _ship.Direction = ((direction % 360) + 360) % 360;
-        }
-        _ship.HasBrain = true;
-    }
-
-    private void ApplyWeaponCommand(int slot, Vector2 aimDirection, bool fire)
-    {
-        if (_ship.Weapons == null || slot < 0 || slot >= RlOneVsOneAgent.MaxWeaponSlots || slot >= _ship.Weapons.Count ||
-            !(_ship.Weapons[slot] is Turret turret))
-        {
-            return;
-        }
-
-        Vector2 target = turret.GetPosition() + aimDirection * Mathf.Max(1f, turret.Range);
-        turret.SetRlControl(target, fire);
     }
 
     private bool HasTurretForSlot(int slot)
@@ -578,6 +530,7 @@ internal sealed class RlLivePolicyAgent : Agent
 
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
+        RlOneVsOneAgent.ResetCommunication(_ship);
         _decisionCounter = 0;
         _nextMiningActionTime = 0f;
         _nextHealingActionTime = 0f;
@@ -589,7 +542,7 @@ internal sealed class RlLivePolicyAgent : Agent
             _ship.Squad.IsHiveMindControlled = false;
             _ship.Squad.CanAcceptUserInput = false;
         }
-        _ship.HasBrain = true;
+        _ship.IsRlPolicyControlled = true;
 
         for (int i = 0; i < _ship.Turrets.Count; i++)
         {
@@ -639,7 +592,8 @@ internal sealed class RlLivePolicyAgent : Agent
     {
         if (_ship != null)
         {
-            _ship.HasBrain = false;
+            RlOneVsOneAgent.ClearCommunication(_ship);
+            _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
             {
                 _ship.Turrets[i].ClearRlControl();
