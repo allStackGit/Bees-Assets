@@ -20,5 +20,6 @@
   "remoteTransport": "tailnet",
   "tailnetLearnerName": "bees-learner",
   "tailnetSshPort": 2222,
-  "tailnetLocalSshPort": 2222
+  "tailnetLocalSshPort": 2222,
+  "trainingSshUser": "beestraining"
 }
