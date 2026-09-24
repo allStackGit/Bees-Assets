@@ -31,9 +31,40 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
-            Assert.That(source, Does.Contain("if (_sequenceActive)"));
-            Assert.That(source, Does.Contain("_dialogueManager.gameObject.SetActive(false)"));
-            Assert.That(source, Does.Contain("TooltipText.ForceMeshUpdate(true)"));
+            Assert.That(source, Does.Contain("public bool IsSequenceActive => _sequenceActive;"));
+            Assert.That(source, Does.Not.Contain("TooltipText.ForceMeshUpdate(true)"));
+        }
+
+        [Test]
+        public void ActiveTooltipSequenceIsNotRewrittenOrRemeasuredByPollingPolishGuard()
+        {
+            string source = ReadSource("Scripts", "UI Components", "TutorialFeedbackPolishGuard.cs");
+            int sequenceGuard = source.IndexOf("if (!tooltip.IsSequenceActive)", System.StringComparison.Ordinal);
+            int rewrite = source.IndexOf("PutSentencesOnSeparateLines(tooltip.TooltipText.text)", sequenceGuard, System.StringComparison.Ordinal);
+            int remeasure = source.IndexOf("tooltip.TooltipText.GetPreferredValues", sequenceGuard, System.StringComparison.Ordinal);
+
+            Assert.That(sequenceGuard, Is.GreaterThanOrEqualTo(0));
+            Assert.That(rewrite, Is.GreaterThan(sequenceGuard));
+            Assert.That(remeasure, Is.GreaterThan(sequenceGuard));
+        }
+
+        [Test]
+        public void PlutoTwoSuppressesStaleDialogueForEntireTooltipSequence()
+        {
+            string mission = ReadSource("Scripts", "Levels", "Level.Campaign.Pluto.cs");
+            int plutoTwo = mission.IndexOf("public void Pluto2Reinforcements()", System.StringComparison.Ordinal);
+            int suppress = mission.IndexOf("SetDialoguePresentationSuppressed(true)", plutoTwo, System.StringComparison.Ordinal);
+            int sequence = mission.IndexOf("basicTooltip.ShowSequence", suppress, System.StringComparison.Ordinal);
+            int release = mission.IndexOf("SetDialoguePresentationSuppressed(false)", sequence, System.StringComparison.Ordinal);
+            int intendedDialogue = mission.IndexOf("PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2))", release, System.StringComparison.Ordinal);
+            string cutscene = ReadSource("Scripts", "UI Components", "CutsceneManager.cs");
+
+            Assert.That(suppress, Is.GreaterThan(plutoTwo));
+            Assert.That(sequence, Is.GreaterThan(suppress));
+            Assert.That(release, Is.GreaterThan(sequence));
+            Assert.That(intendedDialogue, Is.GreaterThan(release));
+            Assert.That(cutscene, Does.Contain("if (_dialoguePresentationSuppressed)"));
+            Assert.That(cutscene, Does.Contain("DialogueManager.gameObject.SetActive(false);"));
         }
 
         [Test]
@@ -183,13 +214,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("bool openingDialogueStarted = false;"));
             Assert.That(source, Does.Contain("() => openingDialogueStarted && Stage.CutsceneManager.HitDialogueBreak"));
 
-            int hideDialogue = source.LastIndexOf(
-                "Stage.CutsceneManager.HideDialogue();",
+            int suppressDialogue = source.LastIndexOf(
+                "Stage.CutsceneManager.SetDialoguePresentationSuppressed(true);",
                 tutorial,
                 System.StringComparison.Ordinal);
-            Assert.That(hideDialogue, Is.GreaterThan(plutoTwo),
-                "Pluto II must hide the completed opening dialogue before the multi-page tutorial is shown.");
-            Assert.That(hideDialogue, Is.LessThan(tutorial));
+            Assert.That(suppressDialogue, Is.GreaterThan(plutoTwo),
+                "Pluto II must suppress stale dialogue presentation for the multi-page tutorial.");
+            Assert.That(suppressDialogue, Is.LessThan(tutorial));
 
             Assert.That(source, Does.Contain("(the exclamation point)"));
             Assert.That(source, Does.Not.Contain("(the red exclamation point)"));
