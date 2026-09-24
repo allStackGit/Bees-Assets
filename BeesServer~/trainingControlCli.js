@@ -8,10 +8,10 @@ function usage() {
     return [
         'Usage:',
         '  node trainingControlCli.js status',
-        '  node trainingControlCli.js start [--build-id ID] [--env-arg VALUE ...]',
+        '  node trainingControlCli.js start [--build-id ID --run-id ID --compatibility-key SHA256 [--incompatible]] [--env-arg VALUE ...]',
         '  node trainingControlCli.js stop',
         '  node trainingControlCli.js set-args [--env-arg VALUE ...]',
-        '  node trainingControlCli.js activate-build --build-id ID',
+        '  node trainingControlCli.js activate-build --build-id ID --run-id ID --compatibility-key SHA256 [--incompatible]',
         '  node trainingControlCli.js publish-build --role dedicated|full-game --platform P --build-id ID --archive PATH --entrypoint RELATIVE_PATH',
         '',
         'Environment:',
@@ -47,7 +47,10 @@ function parseOptions(argv) {
             if (next === undefined) throw new Error('--env-arg requires a value');
             values.envArgs.push(next);
             index++;
+        } else if (arg === '--incompatible') {
+            values.incompatible = true;
         } else if (arg === '--role' || arg === '--platform' || arg === '--build-id' ||
+                   arg === '--run-id' || arg === '--compatibility-key' ||
                    arg === '--archive' || arg === '--entrypoint') {
             if (next === undefined) throw new Error(arg + ' requires a value');
             values[arg.slice(2).replace('-', '_')] = next;
@@ -57,6 +60,24 @@ function parseOptions(argv) {
         }
     }
     return { command, values };
+}
+
+function requireReleaseIdentity(values, command) {
+    for (const key of ['build_id', 'run_id', 'compatibility_key']) {
+        if (!values[key]) {
+            throw new Error(
+                command + ' requires --' + key.replaceAll('_', '-'));
+        }
+    }
+    if (!/^[0-9a-f]{64}$/i.test(values.compatibility_key)) {
+        throw new Error('--compatibility-key must be a 64-character SHA-256 hex value');
+    }
+    return {
+        build_id: values.build_id,
+        run_id: values.run_id,
+        compatibility_key: values.compatibility_key.toLowerCase(),
+        incompatible: Boolean(values.incompatible),
+    };
 }
 
 function requestJson(baseUrl, token, method, path, payload = null) {
@@ -112,9 +133,12 @@ async function main(argv = process.argv.slice(2)) {
     if (command === 'status') {
         result = await requestJson(baseUrl, token, 'GET', '/v1/status');
     } else if (command === 'start') {
+        if (values.build_id || values.run_id || values.compatibility_key || values.incompatible) {
+            const release = requireReleaseIdentity(values, 'start');
+            await requestJson(baseUrl, token, 'POST', '/v1/admin/release', release);
+        }
         const patch = { training_enabled: true };
         if (values.envArgs.length) patch.environment_args = values.envArgs;
-        if (values.build_id) patch.canonical_build_id = values.build_id;
         result = await requestJson(baseUrl, token, 'POST', '/v1/admin/state', patch);
     } else if (command === 'stop') {
         result = await requestJson(
@@ -123,10 +147,13 @@ async function main(argv = process.argv.slice(2)) {
         result = await requestJson(
             baseUrl, token, 'POST', '/v1/admin/state', { environment_args: values.envArgs });
     } else if (command === 'activate-build') {
-        if (!values.build_id) throw new Error('activate-build requires --build-id');
-        result = await requestJson(baseUrl, token, 'POST', '/v1/admin/state', {
-            canonical_build_id: values.build_id,
-        });
+        result = await requestJson(
+            baseUrl,
+            token,
+            'POST',
+            '/v1/admin/release',
+            requireReleaseIdentity(values, 'activate-build'),
+        );
     } else if (command === 'publish-build') {
         for (const key of ['role', 'platform', 'build_id', 'archive', 'entrypoint']) {
             if (!values[key]) throw new Error('publish-build requires --' + key.replace('_', '-'));
@@ -155,4 +182,11 @@ if (require.main === module) {
         });
 }
 
-module.exports = { main, parseOptions, requestJson, tokenFromEnvironment, usage };
+module.exports = {
+    main,
+    parseOptions,
+    requestJson,
+    requireReleaseIdentity,
+    tokenFromEnvironment,
+    usage,
+};
