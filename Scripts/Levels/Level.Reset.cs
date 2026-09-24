@@ -56,7 +56,6 @@ namespace Assets.Scripts.Levels
                 }
                 else if (!Stage.IsTraining)
                 {
-                    Debug.Log("Both sides died! no on won!");
                 }
             }
 
@@ -132,13 +131,11 @@ namespace Assets.Scripts.Levels
                 });
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log(Utilities.ListToString(CurrentLevelOptions.ChosenSquads));
                 }
             }
 
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Game mode: {ConfigData.CurrentGameMode}");
 
                 // The action box is player UI. Automated training destroys/omits that hierarchy,
                 // so neither initial setup nor episode resets may touch its serialized references.
@@ -156,7 +153,6 @@ namespace Assets.Scripts.Levels
             StageConfigOptions.Apply(Stage, this);
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Generating {CurrentLevelOptions.EnemySquadGenerationCount} enemy squads for this level");
             }
 
             if (Stage.HasRandomizedOptions)
@@ -167,7 +163,6 @@ namespace Assets.Scripts.Levels
             {
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log("The map does not have randomized options");
                 }
                 CurrentLevelOptions.MapIndex = Stage.OverrideMapIndex;
                 MapData = ConfigData.Maps[CurrentLevelOptions.MapIndex];
@@ -267,7 +262,6 @@ namespace Assets.Scripts.Levels
             }
             else if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
-                Debug.Log($"User squads: {userSquadCount}, AI squads: {aiSquadCount}");
                 Pause();
                 Stage.Menus.NoAliveShipsAlert.SetActive(true);
             }
