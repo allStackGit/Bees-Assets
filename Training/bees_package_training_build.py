@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import stat
 import zipfile
 from pathlib import Path
@@ -43,8 +44,8 @@ def package_build(source: Path, output: Path, entrypoint: str) -> None:
             info = zipfile.ZipInfo(relative)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (file_path.stat().st_mode & 0xFFFF) << 16
-            with file_path.open("rb") as handle:
-                bundle.writestr(info, handle.read())
+            with file_path.open("rb") as source_handle, bundle.open(info, "w") as archive_handle:
+                shutil.copyfileobj(source_handle, archive_handle, length=1024 * 1024)
 
     os.replace(temporary, output)
 
