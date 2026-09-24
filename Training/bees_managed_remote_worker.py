@@ -251,6 +251,7 @@ class RuntimeUpdater:
         self.install_root = install_root
         self.versions_root = install_root / "RuntimeVersions"
         self.versions_root.mkdir(parents=True, exist_ok=True)
+        self.ready_build_path = install_root / "runtime-ready-build.txt"
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
@@ -332,6 +333,11 @@ class RuntimeUpdater:
                 self.staged_bridge = None
                 self.staged_build_id = ""
                 self.last_error = ""
+                _atomic_bytes(
+                    self.ready_build_path,
+                    (staged_build_id + "\n").encode("ascii"),
+                    0o600,
+                )
                 return
             if (
                 runtime_sha == self.staged_sha256
@@ -371,6 +377,11 @@ class RuntimeUpdater:
             self.staged_bridge = staged_bridge
             self.staged_build_id = staged_build_id
             self.last_error = ""
+        _atomic_bytes(
+            self.ready_build_path,
+            (staged_build_id + "\n").encode("ascii"),
+            0o600,
+        )
         print(
             f"[Bees remote] staged worker update runtime={runtime_sha[:12]} "
             f"bridge={bridge_sha[:12]}."
@@ -473,6 +484,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "WindowsPlayer" if os.name == "nt" else "LinuxPlayer",
         "--install-root",
         str(Path(args.install_root).expanduser().resolve() / "ManagedBuilds"),
+        "--runtime-ready-file",
+        str(Path(args.install_root).expanduser().resolve() / "runtime-ready-build.txt"),
         "--",
         sys.executable,
         str(root / "bees_elastic_wan_actor_worker.py"),
