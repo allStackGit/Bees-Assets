@@ -35,7 +35,6 @@ namespace Assets.Scripts.Levels
             if (useStaticObstacles)
             {
                 HasObstacles = true;
-                if (logEnvironment) Debug.Log($"The map has obstacles: {CurrentLevelOptions.Obstacles}");
 
                 bool useAsteroids = hiveMindTraining
                     ? Utilities.CoinToss()
@@ -44,9 +43,6 @@ namespace Assets.Scripts.Levels
                 ActivateCollisionAsteroids = useAsteroids;
                 if (logEnvironment)
                 {
-                    Debug.Log(useAsteroids
-                        ? $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and asteroids as well"
-                        : $"The map has obstacles ({CurrentLevelOptions.Obstacles}) and not asteroids");
                 }
             }
             else
@@ -61,32 +57,25 @@ namespace Assets.Scripts.Levels
                 HasObstacles = useAsteroids;
                 if (logEnvironment)
                 {
-                    Debug.Log(useAsteroids
-                        ? "The map has asteroids but not obstacles"
-                        : "The map does not have asteroids or obstacles");
                 }
             }
 
             if (Stage.DoesUserHaveController && ((CurrentLevelOptions.FogOfWar == -1 && Utilities.CoinToss()) || CurrentLevelOptions.FogOfWar == 1))
             {
                 ActivateFogOfWar = true;
-                if (logEnvironment) Debug.Log("The map has fog of war");
             }
             else
             {
                 ActivateFogOfWar = false;
-                if (logEnvironment) Debug.Log("The map does not have fog of war");
             }
 
             if ((CurrentLevelOptions.Mining == -1 && !HasObstacles && Utilities.CoinToss()) || CurrentLevelOptions.Mining == 1)
             {
                 ActivateMining = true;
-                if (logEnvironment) Debug.Log("The map has mining");
             }
             else
             {
                 ActivateMining = false;
-                if (logEnvironment) Debug.Log("The map does not have mining");
             }
 
             // This currently has an override (the " && false" at the end) to prevent reinforcements.
@@ -225,7 +214,6 @@ namespace Assets.Scripts.Levels
                         obstacle.transform.localScale = vectorPair.Item2;
                         obstacle.Collider.enabled = false;
                         obstacle.Collider.enabled = true;
-                        if (!Stage.IsTraining) Debug.Log($"Spawning saved obstacle of size {obstacle.transform.localScale} at {obstacle.transform.localPosition}");
                         ObstacleMap.Obstacles.Add(obstacle);
                     }
                 }
@@ -234,9 +222,7 @@ namespace Assets.Scripts.Levels
                     GameObject obstacleContainer = Instantiate(Resources.Load<GameObject>($"Obstacles/{CurrentLevelOptions.Obstacles}"), Map.transform);
                     List<StaticObstacle> obstacles = obstacleContainer.GetComponentsInChildren<StaticObstacle>().ToList();
                     HideTitaniaObstacleDebugBackgrounds(CurrentLevelOptions.Obstacles, obstacles);
-                    if (!Stage.IsTraining) Debug.Log($"Spawning obstacles from prefab with count {obstacles.Count}");
                     List<MapObject> objects = obstacleContainer.GetComponentsInChildren<MapObject>().ToList();
-                    if (!Stage.IsTraining) Debug.Log($"Found {objects.Count} map objects in the obstacle prefab");
                     objects.ForEach((o) => o.Setup(this));
                     ObstacleMap.Obstacles = obstacles;
                 }
