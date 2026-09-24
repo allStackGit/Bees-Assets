@@ -37,18 +37,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
-                    IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
                 }
                 else
                 {
                     if (ShouldFire)
                     {
                         TargetPoint = GetTargetPoint(TargetShip);
-                        IsAimedAtTarget = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
+                        IsAlignedWithTargetPoint = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
                     }
                     else
                     {
-                        IsAimedAtTarget = false;
+                        IsAlignedWithTargetPoint = false;
                         if (Ship.IsCeaseFire || !HasValidTarget())
                         {
                             //Debug.Log($"{Name} has no ships to fire at, returning to default aim");
@@ -62,21 +62,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (IsFiringManually)
                 {
                     TargetPoint = Stage.InputManager.GetMousePosition();
-                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+                    IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else
                 {
-                    IsAimedAtTarget = false;
+                    IsAlignedWithTargetPoint = false;
                 }
 
             }
 
-            if (!IsAimedAtTarget)
+            if (!IsAlignedWithTargetPoint)
             {
                 //LaserBuilderAnimation.SetActive(false);
                 Animator.speed = 0;
@@ -102,7 +102,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             // the ship. A queued shot is allowed to charge regardless of that alignment.
             TargetPoint = RlTargetPoint;
             IsFiringAtAsteroid = false;
-            IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
+            IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
             Animator.speed = 1f;
             MoveTargetingMarker();
         }
