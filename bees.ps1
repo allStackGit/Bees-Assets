@@ -871,7 +871,7 @@ function Invoke-Start {
     if(-not(Test-Path -LiteralPath $LatestReleasePath)){
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$false
-            environment_args=$envArgs
+            environment_args=@($envArgs)
         }
         Write-Host "Unified Bees server/control is online on gameplay port $GameplayServerPort."
         Write-Host 'No training release exists yet, so no managed trainers were started. The Unity Editor can connect now.'
@@ -896,7 +896,7 @@ function Invoke-Start {
     $staged=Stage-Release $config $admin $release
     $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
         training_enabled=$true
-        environment_args=$envArgs
+        environment_args=@($envArgs)
     }
     Start-CentralAgentIfNeeded $config $python $unity
 
