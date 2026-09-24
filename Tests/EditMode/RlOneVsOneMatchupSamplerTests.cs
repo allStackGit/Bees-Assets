@@ -167,6 +167,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void TimeoutPriorityWeightBandsTreatRepeatedTimeoutsAsReplayPressure()
+        {
+            Assert.That(CalculateTimeoutPriorityExtraWeight(0.00f), Is.EqualTo(0f));
+            Assert.That(CalculateTimeoutPriorityExtraWeight(0.10f), Is.EqualTo(0f));
+            Assert.That(CalculateTimeoutPriorityExtraWeight(0.20f), Is.EqualTo(0.5f));
+            Assert.That(CalculateTimeoutPriorityExtraWeight(0.30f), Is.EqualTo(1f));
+            Assert.That(CalculateTimeoutPriorityExtraWeight(0.50f), Is.EqualTo(2f));
+            Assert.That(CalculateTimeoutPriorityExtraWeight(1.00f), Is.EqualTo(2f));
+        }
+
+        [Test]
         public void PriorityReplayProbabilityUsesBaselinePlusExtraWeightInsteadOfFixedReplayShare()
         {
             double probability = CalculatePriorityReplayProbability(40d, 2d);
@@ -186,6 +197,23 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             string first = GetPreparedPair(selector);
             RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", _beeSide, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+        }
+
+        [Test]
+        public void TimeoutHistoryPrioritizesAnOtherwiseBalancedMatchup()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship");
+            object selector = CreateSelector(options, 97531, 1000000000000d, 4, 1);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string first = GetPreparedPair(selector);
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, true);
 
             RuntimeAssembly.Invoke(selector, "PrepareEpisode");
             Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
@@ -289,6 +317,15 @@ namespace Bees.Tests.EditMode
         private float CalculatePriorityExtraWeight(float beeScoreRate)
         {
             object value = RuntimeAssembly.InvokeStatic(_selectorType, "CalculatePriorityExtraWeight", beeScoreRate);
+            return (float)value;
+        }
+
+        private float CalculateTimeoutPriorityExtraWeight(float timeoutRate)
+        {
+            object value = RuntimeAssembly.InvokeStatic(
+                _selectorType,
+                "CalculateTimeoutPriorityExtraWeight",
+                timeoutRate);
             return (float)value;
         }
 
