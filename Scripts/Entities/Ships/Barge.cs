@@ -239,7 +239,6 @@ namespace Assets.Scripts.Entities.Ships
                     rlDamageOwner: this,
                     rlSelfInflicted: true);
 
-                if (!Stage.IsTraining) Debug.Log($"{Name} hit {ship.Name} and did {damage} damage");
 
                 if ((ship.Health > 0 || Level.State.GameOver) && gameObject.activeSelf)
                 {
@@ -274,7 +273,6 @@ namespace Assets.Scripts.Entities.Ships
             if (!Stage.IsTraining)
             {
                 BargeLoadingChargeAnimation.SetActive(true);
-                Debug.Log($"{Name} is about to charge");
             }
             yield return _chargeBuildDelay;
 
@@ -285,7 +283,6 @@ namespace Assets.Scripts.Entities.Ships
 
             if (!Stage.IsTraining)
             {
-                Debug.Log($"{Name} is charging");
                 BargeLoadingChargeAnimation.SetActive(false);
                 BargeChargeAnimation.SetActive(true);
                 BargeChargeImageAnimation.SetActive(true);
