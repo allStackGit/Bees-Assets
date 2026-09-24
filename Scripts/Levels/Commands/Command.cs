@@ -371,7 +371,6 @@ namespace Assets.Scripts.Levels.Commands
             {
                 if (!Stage.IsTraining)
                 {
-                    Debug.Log($"Finalizing Command {this} because of {cause}");
                 }
                 if (cause == "")
                 {
