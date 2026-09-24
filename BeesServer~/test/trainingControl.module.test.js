@@ -63,7 +63,7 @@ test('worker token cannot invoke admin endpoints and admin token can inspect sta
 
         const status = await invokeGet(handler, '/v1/status', 'admin-secret');
         assert.equal(status.statusCode, 200);
-        assert.equal(status.body.desired.schema_version, 2);
+        assert.equal(status.body.desired.schema_version, 3);
     });
 });
 
@@ -74,6 +74,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         const archive = path.join(root, 'windows.zip');
         fs.writeFileSync(archive, Buffer.from('windows-build'));
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'build-1',
             archivePath: archive,
@@ -144,6 +145,7 @@ test('training refuses to start while an active platform lacks the canonical bui
             artifactRoot: path.join(root, 'artifacts'),
         });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-1',
             archivePath: windows,
@@ -160,7 +162,7 @@ test('training refuses to start while an active platform lacks the canonical bui
 
         assert.throws(
             () => store.setDesiredState({ training_enabled: true }),
-            /missing active platform artifacts: LinuxPlayer/);
+            /missing active role\/platform artifacts: dedicated:LinuxPlayer/);
         assert.equal(store.state.training_enabled, false);
     });
 });
@@ -173,6 +175,7 @@ test('reloading control state rejects a tampered canonical artifact', () => {
         fs.writeFileSync(source, Buffer.from('original-build'));
         const store = new TrainingControlStore({ statePath, artifactRoot });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-1',
             archivePath: source,
@@ -180,7 +183,7 @@ test('reloading control state rejects a tampered canonical artifact', () => {
         });
         store.setDesiredState({ canonical_build_id: 'release-1' });
 
-        const owned = store.artifact('WindowsPlayer', 'release-1');
+        const owned = store.artifact('dedicated', 'WindowsPlayer', 'release-1');
         fs.writeFileSync(owned.archive_path, Buffer.from('tampered-build'));
 
         assert.throws(
@@ -214,6 +217,7 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
             artifactRoot: path.join(root, 'artifacts'),
         });
         const descriptor = store.publishArtifact({
+            role: 'dedicated',
             platform: 'LinuxPlayer',
             buildId: 'build-123',
             archivePath: source,
@@ -222,7 +226,7 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
 
         assert.equal(descriptor.archive_sha256, expectedSha);
         assert.equal(descriptor.archive_size_bytes, bytes.length);
-        const owned = store.artifact('LinuxPlayer', 'build-123');
+        const owned = store.artifact('dedicated', 'LinuxPlayer', 'build-123');
         assert.notEqual(path.resolve(source), owned.archive_path);
         assert.equal(fs.readFileSync(owned.archive_path).toString('utf8'), bytes.toString('utf8'));
         assert.equal(store.state.revision, 0);
@@ -246,6 +250,7 @@ test('publishing an identical canonical build is idempotent', () => {
             artifactRoot: path.join(root, 'artifacts'),
         });
         const input = {
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'build-1',
             archivePath: source,
@@ -271,18 +276,21 @@ test('one canonical build id selects equivalent platform artifacts and hides mis
             artifactRoot: path.join(root, 'artifacts'),
         });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-42',
             archivePath: windows,
             entrypoint: 'Bees.exe',
         });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'LinuxPlayer',
             buildId: 'release-42',
             archivePath: linux,
             entrypoint: 'Bees.x86_64',
         });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-43',
             archivePath: windows,
@@ -322,16 +330,101 @@ test('a platform/build identity cannot be silently replaced with different bytes
             artifactRoot: path.join(root, 'artifacts'),
         });
         store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-1',
             archivePath: first,
             entrypoint: 'Bees.exe',
         });
         assert.throws(() => store.publishArtifact({
+            role: 'dedicated',
             platform: 'WindowsPlayer',
             buildId: 'release-1',
             archivePath: second,
             entrypoint: 'Bees.exe',
         }), /immutable/);
+    });
+});
+
+test('role-specific Windows builds can share one canonical build id', () => {
+    withTempDir(root => {
+        const training = path.join(root, 'training.zip');
+        const game = path.join(root, 'game.zip');
+        fs.writeFileSync(training, Buffer.from('windows-training'));
+        fs.writeFileSync(game, Buffer.from('windows-game'));
+
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.publishArtifact({
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            buildId: 'release-role-aware',
+            archivePath: training,
+            entrypoint: 'Bees RL Training.exe',
+        });
+        store.publishArtifact({
+            role: 'full-game',
+            platform: 'WindowsPlayer',
+            buildId: 'release-role-aware',
+            archivePath: game,
+            entrypoint: 'Bees.exe',
+        });
+        store.setDesiredState({
+            canonical_build_id: 'release-role-aware',
+            training_enabled: true,
+        });
+
+        const dedicated = store.stateFor({
+            trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
+        });
+        const fullGame = store.stateFor({
+            trainerId: 'game', role: 'full-game', platform: 'WindowsPlayer',
+        });
+        assert.equal(dedicated.build.role, 'dedicated');
+        assert.equal(fullGame.build.role, 'full-game');
+        assert.notEqual(dedicated.build.archive_sha256, fullGame.build.archive_sha256);
+        assert.match(dedicated.build.artifact_url, /\/dedicated\/WindowsPlayer\//);
+        assert.match(fullGame.build.artifact_url, /\/full-game\/WindowsPlayer\//);
+    });
+});
+
+test('schema 2 build catalogs migrate to both roles without breaking an existing deployment', () => {
+    withTempDir(root => {
+        const artifactRoot = path.join(root, 'artifacts');
+        const statePath = path.join(root, 'state.json');
+        fs.mkdirSync(path.join(artifactRoot, 'WindowsPlayer'), { recursive: true });
+        const artifact = path.join(artifactRoot, 'WindowsPlayer', 'legacy.zip');
+        fs.writeFileSync(artifact, Buffer.from('legacy-build'));
+        const sha = crypto.createHash('sha256').update(Buffer.from('legacy-build')).digest('hex');
+        fs.writeFileSync(statePath, JSON.stringify({
+            schema_version: 2,
+            revision: 7,
+            training_enabled: true,
+            environment_args: ['--rl-map-size', '64'],
+            canonical_build_id: 'legacy',
+            builds: {
+                WindowsPlayer: {
+                    legacy: {
+                        platform: 'WindowsPlayer',
+                        build_id: 'legacy',
+                        archive_path: artifact,
+                        archive_sha256: sha,
+                        archive_size_bytes: Buffer.byteLength('legacy-build'),
+                        entrypoint: 'Bees.exe',
+                    },
+                },
+            },
+        }));
+
+        const store = new TrainingControlStore({ statePath, artifactRoot });
+        assert.equal(store.state.schema_version, 3);
+        assert.equal(store.stateFor({
+            trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
+        }).build.role, 'dedicated');
+        assert.equal(store.stateFor({
+            trainerId: 'game', role: 'full-game', platform: 'WindowsPlayer',
+        }).build.role, 'full-game');
     });
 });
