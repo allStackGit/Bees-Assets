@@ -61,18 +61,22 @@ def _remove_existing_parts(destination: Path) -> None:
             existing.unlink()
 
 
-def _sync_chunked(source: Path, destination: Path) -> list[dict[str, Any]]:
+def _sync_chunked(source: Path, destination: Path) -> dict[str, Any]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
     _remove_existing_parts(destination)
     parts: list[dict[str, Any]] = []
+    source_digest = hashlib.sha256()
+    source_bytes = 0
     with source.open("rb") as src:
         index = 1
         while True:
             data = src.read(CHUNK_BYTES)
             if not data:
                 break
+            source_digest.update(data)
+            source_bytes += len(data)
             part = destination.with_name(destination.name + f".part{index:04d}")
             with part.open("wb") as out:
                 out.write(data)
@@ -86,7 +90,11 @@ def _sync_chunked(source: Path, destination: Path) -> list[dict[str, Any]]:
         part = destination.with_name(destination.name + ".part0001")
         part.write_bytes(b"")
         parts.append({"file": part.name, "bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()})
-    return parts
+    return {
+        "source_bytes": source_bytes,
+        "source_sha256": source_digest.hexdigest(),
+        "parts": parts,
+    }
 
 
 def _sync_plain(source: Path, destination: Path) -> dict[str, Any]:
@@ -124,13 +132,11 @@ def sync_run_history(assets_root: Path, bees_root: Path, run_id: str, reason: st
             relative = source.relative_to(root)
             target = destination_root / label / relative
             if chunk_logs:
-                parts = _sync_chunked(source, target)
+                captured = _sync_chunked(source, target)
                 manifest_files.append({
                     "source": str(source),
                     "destination": str(target.relative_to(destination_root)),
-                    "source_bytes": source.stat().st_size,
-                    "source_sha256": _sha256(source),
-                    "parts": parts,
+                    **captured,
                 })
             else:
                 item = _sync_plain(source, target)
