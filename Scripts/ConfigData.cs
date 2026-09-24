@@ -80,10 +80,12 @@ namespace Assets.Scripts
                             DevelopmentPort,
                             DevelopmentServerHostname,
                             DevelopmentWebGlWebSocketURL);
+#else
 #if UNITY_EDITOR
                         _socket = new Socket(DevelopmentPort, EditorServerHostname, UseWebSocketSharp);
 #else
                         _socket = new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
+#endif
 #endif
                     }
                     else
