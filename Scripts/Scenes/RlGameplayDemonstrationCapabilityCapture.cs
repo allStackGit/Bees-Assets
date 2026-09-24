@@ -172,7 +172,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
 
         VectorSensor sensor = new VectorSensor(RlOneVsOneAgent.ObservationSize);
         RlCombatPerception perception = new RlCombatPerception();
-        perception.Collect(ship, ship.Side, sensor, 0);
+        RlOneVsOneAgent.CollectPolicyObservations(perception, ship, ship.Side, sensor, 0);
         if (!(VectorObservationsField.GetValue(sensor) is List<float> observations))
         {
             return false;
