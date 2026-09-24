@@ -183,10 +183,10 @@ namespace Bees.Tests.EditMode
             int hideDialogue = source.LastIndexOf(
                 "Stage.CutsceneManager.HideDialogue();",
                 tutorial,
-                combatGate - tutorial,
                 System.StringComparison.Ordinal);
-            Assert.That(hideDialogue, Is.GreaterThan(tutorial - 300),
+            Assert.That(hideDialogue, Is.GreaterThan(plutoTwo),
                 "Pluto II must hide the completed opening dialogue before the multi-page tutorial is shown.");
+            Assert.That(hideDialogue, Is.LessThan(tutorial));
 
             Assert.That(source, Does.Contain("(the exclamation point)"));
             Assert.That(source, Does.Not.Contain("(the red exclamation point)"));
