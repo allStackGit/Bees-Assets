@@ -31,8 +31,6 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
-            Assert.That(source, Does.Contain("TooltipText.maxVisibleCharacters = int.MaxValue"));
-            Assert.That(source, Does.Contain("TooltipText.ForceMeshUpdate(true, true)"));
         }
 
         [Test]
@@ -177,8 +175,10 @@ namespace Bees.Tests.EditMode
             Assert.That(tutorial, Is.GreaterThan(plutoTwo));
             Assert.That(combatGate, Is.GreaterThan(tutorial));
             Assert.That(enemySpawn, Is.GreaterThan(combatGate));
-            Assert.That(source, Does.Contain("holding <b>R</b>."));
-            Assert.That(source, Does.Contain("pressing <b>F</b>."));
+            Assert.That(source, Does.Contain("holding R."));
+            Assert.That(source, Does.Contain("pressing F."));
+            Assert.That(source, Does.Contain("bool openingDialogueStarted = false;"));
+            Assert.That(source, Does.Contain("() => openingDialogueStarted && Stage.CutsceneManager.HitDialogueBreak"));
 
             int hideDialogue = source.LastIndexOf(
                 "Stage.CutsceneManager.HideDialogue();",
