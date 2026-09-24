@@ -22,17 +22,20 @@ internal static class RlPlayerDerivedActionReplay
 {
     internal const string CatalogFlag = "--bees-adversarial-replay-catalog";
     internal const int CatalogSchemaVersion = 1;
-    internal const int ContinuousActionCount = 34;
-    internal const int WeaponFireBranchCount = 16;
+    internal const int ContinuousActionCount = RlOneVsOneAgent.ContinuousActionCount;
+    internal const int WeaponFireBranchCount = RlOneVsOneAgent.WeaponFireBranchCount;
     internal const int MaximumReplayFrames = 2400;
     internal const int ExpectedFixedStepInterval = 5;
 
+    private const int LegacyContinuousActionCount = 34;
     private const string LegacyReplayMagic = "BEESRPL1";
-    private const string ReplayMagic = "BEESRPL2";
+    private const string CapabilityLegacyReplayMagic = "BEESRPL2";
+    private const string ReplayMagic = "BEESRPL3";
     private const string PlayerDerivedTagPrefix = "player-derived:";
     private const int ReplayHeaderBytes = 24;
-    private const int LegacyReplayFrameBytes = ContinuousActionCount * sizeof(float) + sizeof(ushort);
-    private const int ReplayFrameBytes = LegacyReplayFrameBytes + sizeof(byte);
+    private const int LegacyReplayFrameBytes = LegacyContinuousActionCount * sizeof(float) + sizeof(ushort);
+    private const int CapabilityLegacyReplayFrameBytes = LegacyReplayFrameBytes + sizeof(byte);
+    private const int ReplayFrameBytes = ContinuousActionCount * sizeof(float) + sizeof(ushort) + sizeof(byte);
 
     [Serializable]
     private sealed class ReplayCatalog
@@ -396,13 +399,29 @@ internal static class RlPlayerDerivedActionReplay
         {
             string magic = Encoding.ASCII.GetString(reader.ReadBytes(8));
             bool capabilityAware;
+            bool legacyActionLayout;
+            int encodedContinuousActionCount;
+            int frameBytes;
             if (magic == ReplayMagic)
             {
                 capabilityAware = true;
+                legacyActionLayout = false;
+                encodedContinuousActionCount = ContinuousActionCount;
+                frameBytes = ReplayFrameBytes;
+            }
+            else if (magic == CapabilityLegacyReplayMagic)
+            {
+                capabilityAware = true;
+                legacyActionLayout = true;
+                encodedContinuousActionCount = LegacyContinuousActionCount;
+                frameBytes = CapabilityLegacyReplayFrameBytes;
             }
             else if (magic == LegacyReplayMagic)
             {
                 capabilityAware = false;
+                legacyActionLayout = true;
+                encodedContinuousActionCount = LegacyContinuousActionCount;
+                frameBytes = LegacyReplayFrameBytes;
             }
             else
             {
@@ -412,7 +431,6 @@ internal static class RlPlayerDerivedActionReplay
             int frameCount = reader.ReadInt32();
             int fixedStepInterval = reader.ReadInt32();
             Vector2 sourceDirection = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-            int frameBytes = capabilityAware ? ReplayFrameBytes : LegacyReplayFrameBytes;
             long expectedLength = ReplayHeaderBytes + (long)entry.frameCount * frameBytes;
             if (bytes.LongLength != expectedLength)
             {
@@ -432,7 +450,7 @@ internal static class RlPlayerDerivedActionReplay
             for (int frame = 0; frame < frameCount; frame++)
             {
                 int offset = frame * ContinuousActionCount;
-                for (int action = 0; action < ContinuousActionCount; action++)
+                for (int action = 0; action < encodedContinuousActionCount; action++)
                 {
                     float value = reader.ReadSingle();
                     if (!IsFinite(value) || Mathf.Abs(value) > 1.0001f)
@@ -440,7 +458,17 @@ internal static class RlPlayerDerivedActionReplay
                         throw new ArgumentException(
                             $"Replay artifact contains an invalid continuous action for {entry.scenarioId}.");
                     }
-                    continuous[offset + action] = value;
+
+                    // BEESRPL1/2 encoded movement plus sixteen weapon aim pairs. ABI v18 uses only
+                    // the first five weapon slots and reserves actions 12-15 for live communication,
+                    // so never reinterpret legacy weapon aim values as communication.
+                    if (!legacyActionLayout || action < RlOneVsOneAgent.CommunicationContinuousActionStart)
+                    {
+                        if (action < ContinuousActionCount)
+                        {
+                            continuous[offset + action] = value;
+                        }
+                    }
                 }
                 fireMasks[frame] = reader.ReadUInt16();
                 byte specialAction = capabilityAware ? reader.ReadByte() : (byte)RlOneVsOneAgent.NoSpecialAction;
