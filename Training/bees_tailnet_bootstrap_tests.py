@@ -73,7 +73,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             self.assertNotIn("openssh", source, path.name)
             self.assertNotIn("scp", source, path.name)
             self.assertNotIn("--ssh", source, path.name)
-            self.assertNotIn("ssh tunnel", source, path.name)
+            self.assertNotIn("ssh_command(", source, path.name)
+            self.assertNotIn("shutil.which(\"ssh\")", source, path.name)
 
     def test_tailnet_helper_exposes_private_gateway_bootstrap_and_multi_forward(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
