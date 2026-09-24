@@ -336,6 +336,13 @@ function Get-RemoteSshTarget($Config){
     "$env:USERNAME@$env:COMPUTERNAME"
 }
 
+function Get-RemoteSshUser($Config){
+    $target=Get-RemoteSshTarget $Config
+    if($target -match '^([^@]+)@'){ return $Matches[1] }
+    if($env:USERNAME){ return [string]$env:USERNAME }
+    throw 'Could not determine the Windows SSH user for generated remote launchers.'
+}
+
 function Prepare-RemoteBootstrap($Config){
     if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
@@ -343,12 +350,28 @@ function Prepare-RemoteBootstrap($Config){
 
     $maxActors=[int]$Config.maxRemoteActors
     if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12.' }
-    $sshPort=if($Config.remoteSshPort){[int]$Config.remoteSshPort}else{22}
-    if($sshPort -lt 1 -or $sshPort -gt 65535){ throw 'remoteSshPort must be in 1-65535.' }
+    $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
+    if($transport -ne 'tailnet'){ throw "Generated remote launchers currently require remoteTransport=tailnet; got '$transport'." }
+    $tailnetName=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
+    $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
+    $localPort=if($Config.tailnetLocalSshPort){[int]$Config.tailnetLocalSshPort}else{2222}
+    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535 -or $localPort -lt 1 -or $localPort -gt 65535){ throw 'tailnet SSH ports must be in 1-65535.' }
     $installRoot=if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
     $linuxInstallRoot=if($Config.remoteLinuxInstallRoot){[string]$Config.remoteLinuxInstallRoot}else{'.local/share/bees-training'}
     $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
-    $learner=Get-RemoteSshTarget $Config
+    $sshUser=Get-RemoteSshUser $Config
+    $learner="$sshUser@127.0.0.1"
+    $sshPort=$localPort
+
+    $windowsBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
+    $linuxBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge'
+    if(-not(Test-Path -LiteralPath $windowsBridge) -or -not(Test-Path -LiteralPath $linuxBridge)){ throw "Embedded tailnet bridge binaries are missing. Run '.\Assets\bees.ps1 build' first." }
+    $windowsBridgeBytes=[IO.File]::ReadAllBytes($windowsBridge)
+    $linuxBridgeBytes=[IO.File]::ReadAllBytes($linuxBridge)
+    $windowsBridgeBase64=[Convert]::ToBase64String($windowsBridgeBytes)
+    $linuxBridgeBase64=[Convert]::ToBase64String($linuxBridgeBytes)
+    $windowsBridgeSha=(Get-FileHash -LiteralPath $windowsBridge -Algorithm SHA256).Hash.ToLowerInvariant()
+    $linuxBridgeSha=(Get-FileHash -LiteralPath $linuxBridge -Algorithm SHA256).Hash.ToLowerInvariant()
 
     Ensure-Directory $RemoteRoot
     Ensure-Directory $RuntimeRoot
@@ -379,6 +402,11 @@ function Prepare-RemoteBootstrap($Config){
     $windowsReplacements=@{
         '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
         '__BEES_SSH_PORT__'=[string]$sshPort
+        '__BEES_TAILNET_LEARNER__'=(Escape-SingleQuoted $tailnetName)
+        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
+        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
+        '__BEES_TAILNET_BRIDGE_B64__'=$windowsBridgeBase64
+        '__BEES_TAILNET_BRIDGE_SHA256__'=$windowsBridgeSha
         '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
         '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
         '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
@@ -392,6 +420,11 @@ function Prepare-RemoteBootstrap($Config){
     $linuxReplacements=@{
         '__BEES_LEARNER__'=(Escape-BashDoubleQuoted $learner)
         '__BEES_SSH_PORT__'=[string]$sshPort
+        '__BEES_TAILNET_LEARNER__'=(Escape-BashDoubleQuoted $tailnetName)
+        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
+        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
+        '__BEES_TAILNET_BRIDGE_B64__'=$linuxBridgeBase64
+        '__BEES_TAILNET_BRIDGE_SHA256__'=$linuxBridgeSha
         '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
         '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
         '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-BashDoubleQuoted $runtimeRemote)
@@ -402,13 +435,9 @@ function Prepare-RemoteBootstrap($Config){
     $linuxBody=$linuxBody.Replace("`r`n","`n")
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
 
-    Write-Host "Remote launchers prepared in $RemoteRoot. The learner assigns actor slots automatically."
+    Write-Host "Remote launchers prepared in $RemoteRoot with the embedded tailnet client. No router port forwarding or Tailscale installation is required."
     Write-Host "Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N."
     Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
-    $sshd=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
-    if($null -eq $sshd -or $sshd.Status -ne 'Running'){
-        Write-Warning "Remote launchers require SSH access to this learner. Windows OpenSSH Server (sshd) is not currently running; install/start it or provide another reachable SSH endpoint for remoteSshTarget."
-    }
 }
 
 function Invoke-Start {
