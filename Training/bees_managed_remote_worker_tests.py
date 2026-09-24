@@ -1,4 +1,4 @@
-"""Focused tests for managed remote worker defaults and identity."""
+"""Focused tests for managed remote worker defaults, identity, and tailnet transport."""
 
 from __future__ import annotations
 
@@ -28,23 +28,39 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertEqual(len(first), 32)
 
-    def test_managed_worker_command_uses_actor_key_not_fixed_slot(self):
+    def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
             control_port=7150,
+            broker_port=55051,
             worker_token_file="worker.token",
             install_root="install",
             envs=24,
-            learner="user@learner",
             wan_token_file="wan.token",
             torch_device="cpu",
-            ssh_port=22,
         )
         command = managed._worker_command(args, Path("/runtime"), "a" * 32)
         self.assertIn("--actor-key", command)
         self.assertIn("a" * 32, command)
         self.assertNotIn("--actor-id", command)
-        env_index = command.index("--envs")
-        self.assertEqual(command[env_index + 1], "24")
+        self.assertNotIn("--ssh", command)
+        self.assertEqual(command[command.index("--broker-host") + 1], "127.0.0.1")
+        self.assertEqual(command[command.index("--broker-port") + 1], "55051")
+        self.assertEqual(command[command.index("--envs") + 1], "24")
+
+    def test_tailnet_forward_command_maps_control_and_broker(self):
+        args = Namespace(
+            tailnet_bridge="bridge",
+            tailnet_state="state",
+            tailnet_hostname="bees-worker-test",
+            tailnet_target="100.64.0.10",
+            control_port=7150,
+            broker_port=55051,
+        )
+        command = managed._tailnet_forward_command(args)
+        self.assertIn("forward-multi", command)
+        self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
+        self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
+        self.assertNotIn("ssh", " ".join(command).lower())
 
 
 if __name__ == "__main__":
