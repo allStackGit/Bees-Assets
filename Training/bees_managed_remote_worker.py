@@ -259,6 +259,7 @@ class RuntimeUpdater:
         self.staged_sha256 = ""
         self.staged_root: Optional[Path] = None
         self.staged_bridge: Optional[Path] = None
+        self.staged_build_id = ""
         self.last_error = ""
 
     def start(self) -> None:
@@ -268,12 +269,13 @@ class RuntimeUpdater:
         self._stop.set()
         self._thread.join(timeout=5)
 
-    def staged(self) -> tuple[str, Optional[Path], Optional[Path], str]:
+    def staged(self) -> tuple[str, Optional[Path], Optional[Path], str, str]:
         with self._lock:
             return (
                 self.staged_sha256,
                 self.staged_root,
                 self.staged_bridge,
+                self.staged_build_id,
                 self.last_error,
             )
 
@@ -283,7 +285,7 @@ class RuntimeUpdater:
             raise ValueError("bootstrap token is empty")
         return value
 
-    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes]:
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes, bytes]:
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
             method="GET",
@@ -302,11 +304,16 @@ class RuntimeUpdater:
                 bundle.read("training-worker.token"),
                 bundle.read("wan.token"),
                 bundle.read(bridge_name),
+                bundle.read("latest-training-release.json"),
             )
 
     def _stage_once(self) -> None:
-        runtime_zip, worker_token, wan_token, bridge_bytes = self._fetch_bootstrap()
+        runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
+        release = json.loads(release_bytes.decode("utf-8"))
+        staged_build_id = str(release.get("build_id", "")) if isinstance(release, Mapping) else ""
+        if not staged_build_id:
+            raise ValueError("bootstrap release metadata has no build_id")
         bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
         bridge_sha = hashlib.sha256(bridge_bytes).hexdigest()
         current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
@@ -323,6 +330,7 @@ class RuntimeUpdater:
                 self.staged_sha256 = ""
                 self.staged_root = None
                 self.staged_bridge = None
+                self.staged_build_id = ""
                 self.last_error = ""
                 return
             if (
@@ -361,6 +369,7 @@ class RuntimeUpdater:
             self.staged_sha256 = runtime_sha
             self.staged_root = runtime_root
             self.staged_bridge = staged_bridge
+            self.staged_build_id = staged_build_id
             self.last_error = ""
         print(
             f"[Bees remote] staged worker update runtime={runtime_sha[:12]} "
@@ -415,7 +424,7 @@ def _runtime_cutover_selected(
     trainer_id: str,
     updater: RuntimeUpdater,
 ) -> Optional[Path]:
-    _sha, staged_root, _staged_bridge, _error = updater.staged()
+    _sha, staged_root, _staged_bridge, staged_build_id, _error = updater.staged()
     if staged_root is None:
         return None
     state = _control_state(args, trainer_id)
@@ -423,8 +432,12 @@ def _runtime_cutover_selected(
         return None
     pending = state.get("pending_release")
     if not isinstance(pending, Mapping):
+        if staged_build_id and str(state.get("canonical_build_id", "")) == staged_build_id:
+            return staged_root
         return None
     pending_build = str(pending.get("build_id", ""))
+    if staged_build_id and staged_build_id != pending_build:
+        return None
     phase = str(pending.get("phase", ""))
     incompatible = bool(pending.get("incompatible", False))
     if phase == "rolling" and str(state.get("desired_build_id", "")) == pending_build:
@@ -594,7 +607,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
-                _sha, next_root, staged_bridge, _error = updater.staged()
+                _sha, next_root, staged_bridge, _staged_build_id, _error = updater.staged()
                 if next_root is None:
                     raise RuntimeError("staged runtime disappeared before activation")
                 if staged_bridge is not None:
