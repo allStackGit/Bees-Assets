@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true,Position=0)]
-    [ValidateSet('build','start','stop','status')]
+    [ValidateSet('build','server','start','stop','status')]
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
@@ -31,6 +31,11 @@ $WorkerTokenPath=Join-Path $SecretsRoot 'training-worker.token'
 $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
 $WanTokenPath=Join-Path $SecretsRoot 'wan.token'
 $BootstrapTokenPath=Join-Path $SecretsRoot 'training-bootstrap.token'
+$RunLifecycleRoot=Join-Path $TrainingRoot 'RunLifecycle'
+$RunStatePath=Join-Path $RunLifecycleRoot 'current.json'
+$RunPlanPath=Join-Path $RuntimeRoot 'pending-training-run.json'
+$RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
+$ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
