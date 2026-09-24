@@ -225,7 +225,11 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
 
-function Convert-ToScpPath([string]$Path){ ([IO.Path]::GetFullPath($Path)).Replace('\','/') }
+function Convert-ToScpPath([string]$Path){
+    $value=([IO.Path]::GetFullPath($Path)).Replace('\','/')
+    if($value -match '^[A-Za-z]:/'){ return "/$value" }
+    $value
+}
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 function Escape-BashDoubleQuoted([string]$Value){
     if($Value -notmatch '^[A-Za-z0-9_@.:/%~+\-]+$'){
