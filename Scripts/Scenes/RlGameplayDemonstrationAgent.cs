@@ -437,7 +437,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             return;
         }
 
-        _perception.Collect(_ship, _side, sensor, 0);
+        RlOneVsOneAgent.CollectPolicyObservations(_perception, _ship, _side, sensor, 0);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
