@@ -76,6 +76,13 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             self.assertNotIn("ssh_command(", source, path.name)
             self.assertNotIn("shutil.which(\"ssh\")", source, path.name)
 
+    def test_operator_server_uses_regular_game_development_port(self):
+        source = OPERATOR.read_text(encoding="utf-8")
+        config = (ROOT / "Scripts" / "ConfigData.cs").read_text(encoding="utf-8")
+        self.assertIn("$GameplayServerPort=7146", source)
+        self.assertIn("DevelopmentPort = 7146", config)
+        self.assertIn("([string]$GameplayServerPort)", source)
+
     def test_generated_workers_self_update_runtime_and_gate_release_readiness(self):
         operator = OPERATOR.read_text(encoding="utf-8")
         worker = MANAGED_WORKER.read_text(encoding="utf-8")
