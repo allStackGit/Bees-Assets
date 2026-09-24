@@ -58,7 +58,7 @@ namespace Bees.Tests.EditMode
             float[] continuous = (float[])RuntimeAssembly.GetField(replay, "ContinuousActions");
             ushort[] fireMasks = (ushort[])RuntimeAssembly.GetField(replay, "FireMasks");
             byte[] specialActions = (byte[])RuntimeAssembly.GetField(replay, "SpecialActions");
-            Assert.That(continuous.Length, Is.EqualTo(68));
+            Assert.That(continuous.Length, Is.EqualTo(32));
             Assert.That(continuous[0], Is.EqualTo(1f));
             Assert.That(continuous[3], Is.EqualTo(1f));
             Assert.That(fireMasks, Is.EqualTo(new ushort[] { 1, 2 }));
@@ -73,8 +73,30 @@ namespace Bees.Tests.EditMode
 
             IDictionary catalog = _loadCatalog.Invoke(null, new object[] { catalogPath }) as IDictionary;
             object replay = catalog["adv-aaaaaaaaaaaaaaaaaaaaaaaa"];
+            float[] continuous = (float[])RuntimeAssembly.GetField(replay, "ContinuousActions");
             byte[] specialActions = (byte[])RuntimeAssembly.GetField(replay, "SpecialActions");
+            Assert.That(continuous.Length, Is.EqualTo(32));
             Assert.That(specialActions, Is.EqualTo(new byte[] { 0, 0 }));
+        }
+
+        [Test]
+        public void CatalogNormalizesCapabilityAwareV2ReplayWithoutLeakingOldWeaponAimIntoCommunication()
+        {
+            string replayPath = WriteReplay(frameCount: 1, capabilityAware: true, legacyActionLayout: true);
+            string catalogPath = WriteCatalog(replayPath, frameCount: 1);
+
+            IDictionary catalog = _loadCatalog.Invoke(null, new object[] { catalogPath }) as IDictionary;
+            object replay = catalog["adv-aaaaaaaaaaaaaaaaaaaaaaaa"];
+            float[] continuous = (float[])RuntimeAssembly.GetField(replay, "ContinuousActions");
+            byte[] specialActions = (byte[])RuntimeAssembly.GetField(replay, "SpecialActions");
+            Assert.That(continuous.Length, Is.EqualTo(16));
+            Assert.That(continuous[0], Is.EqualTo(1f));
+            Assert.That(continuous[3], Is.EqualTo(1f));
+            Assert.That(continuous[12], Is.EqualTo(0f));
+            Assert.That(continuous[13], Is.EqualTo(0f));
+            Assert.That(continuous[14], Is.EqualTo(0f));
+            Assert.That(continuous[15], Is.EqualTo(0f));
+            Assert.That(specialActions, Is.EqualTo(new byte[] { 0 }));
         }
 
         [Test]
@@ -173,22 +195,28 @@ namespace Bees.Tests.EditMode
         private string WriteReplay(
             int frameCount,
             bool capabilityAware,
-            byte firstSpecialAction = 0)
+            byte firstSpecialAction = 0,
+            bool legacyActionLayout = false)
         {
             string path = Path.Combine(_tempDirectory, "replay.brpl");
             using (FileStream stream = File.Create(path))
             using (BinaryWriter writer = new BinaryWriter(stream, Encoding.ASCII, false))
             {
-                writer.Write(Encoding.ASCII.GetBytes(capabilityAware ? "BEESRPL2" : "BEESRPL1"));
+                string magic = capabilityAware
+                    ? (legacyActionLayout ? "BEESRPL2" : "BEESRPL3")
+                    : "BEESRPL1";
+                int actionCount = capabilityAware && !legacyActionLayout ? 16 : 34;
+                writer.Write(Encoding.ASCII.GetBytes(magic));
                 writer.Write(frameCount);
                 writer.Write(5);
                 writer.Write(0f);
                 writer.Write(1f);
                 for (int frame = 0; frame < frameCount; frame++)
                 {
-                    for (int action = 0; action < 34; action++)
+                    for (int action = 0; action < actionCount; action++)
                     {
-                        float value = action == 0 ? 1f : action == 3 ? 1f : 0f;
+                        float value = action == 0 ? 1f : action == 3 ? 1f :
+                            legacyActionLayout && action == 13 ? 0.75f : 0f;
                         writer.Write(value);
                     }
                     writer.Write((ushort)(1 << frame));
