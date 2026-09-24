@@ -2,94 +2,216 @@
 
 ## Unified operator commands
 
-With the unified project layout, the Unity project root is `B:\\Bees` and the Git repository is `B:\\Bees\\Assets`. Day-to-day operation is through one PowerShell entry point:
+The unified project layout is:
+
+- Unity project root: `B:\\Bees`
+- Git repository / Unity Assets folder: `B:\\Bees\\Assets`
+- Builds: `B:\\Bees\\Builds`
+- Durable training state/checkpoints: `B:\\Bees\\Training`
+- Machine-local runtime/secrets: `B:\\Bees\\Runtime`, `B:\\Bees\\Secrets`
+
+Day-to-day operation is through `Assets\\bees.ps1`:
 
 ```powershell
 cd B:\Bees
 
+.\Assets\bees.ps1 server
 .\Assets\bees.ps1 build
 .\Assets\bees.ps1 start
 .\Assets\bees.ps1 stop
 .\Assets\bees.ps1 status
 ```
 
-`build` always produces a Windows RL build and Linux RL build. It also builds the small embedded tailnet bridge for Windows and Linux. If Go is not already available, Bees downloads a pinned portable Go toolchain under `B:\\Bees\\Runtime\\Toolchains`, verifies its SHA-256, and uses it without a machine-wide Go installation. Add `-FullGame` to also produce the managed Windows gameplay build:
+`server` starts or refreshes BeesServer only. It does not require a Unity build and is the normal command when the Unity Editor needs the gameplay backend but distributed training is not being started.
+
+`build` always creates Windows and Linux RL builds. Add `-FullGame` to also create the managed Windows gameplay build. Build folders remain outside both Git and Unity import, for example:
+
+```text
+B:\Bees\Builds\2026-09-24 RL Windows
+B:\Bees\Builds\2026-09-24 RL Linux
+B:\Bees\Builds\2026-09-24 Full Game Windows
+```
+
+Rebuilding the same type on the same day requires `-Force`.
+
+`start` starts/keeps BeesServer, the private tailnet gateway, the central managed learner, and distributed training desired state. It publishes the latest compiled release and lets the control plane coordinate activation. `stop` disables training everywhere but leaves BeesServer available for gameplay; `stop -Server` also stops the managed BeesServer and tailnet gateway. `status` is a live dashboard; `status -Once` prints one snapshot.
+
+The authoritative non-secret cluster configuration is `Assets\\Training\\bees.cluster.json`. Machine-specific credentials remain under `B:\\Bees\\Secrets` and are never checked in.
+
+## Builds, run identity, and compatibility
+
+Every compiled training release contains:
+
+- immutable build id
+- source Git commit
+- run id
+- compatibility key
+- compatibility contract
+- Windows/Linux dedicated artifacts and optional full-game artifact
+
+Run identity is calculated automatically by `Training/bees_run_lifecycle.py`. A compatible build keeps the existing run id and optimizer/checkpoint lineage. An incompatible training contract creates a new run id automatically.
+
+The compatibility fingerprint currently includes the continual-learning behavior/schema identity, frozen policy signature, network architecture settings, reward implementation, policy-schema implementation, combat perception, action implementation, exploration-grid implementation, and episode ship identity. This makes policy/reward/observation/action changes fail safe even if a developer forgets to increment a manual schema version. Ordinary non-architectural PPO tuning and other compatible operational changes do not by themselves force a new run.
+
+Durable continual-service phase state is run-scoped. Checkpoints/results remain under the run id in `B:\\Bees\\Training`; a build never deletes the outgoing run's optimizer state, checkpoints, telemetry, or other durable training data.
+
+`generationSteps` remains the number of additional learner steps per continual generation. It is an evaluation/release cadence, not a reset interval.
+
+## Automatic log preservation
+
+Before every new build starts compiling, the currently active run is snapshotted into:
+
+```text
+B:\Bees\Assets\TrainingHistory~\runs\<run-id>\
+```
+
+The trailing `~` keeps the history outside Unity import while allowing Git to track it. Training logs are split into 48 MiB parts so individual tracked files remain below GitHub's per-file hard limit. Each snapshot contains a manifest with hashes and captured byte lengths.
+
+The archive command then creates a Git commit containing only that run-history path and pushes the current branch to `origin`. If the Git commit or push fails, `build` stops before compilation rather than silently proceeding with unprotected logs.
+
+During an incompatible cutover, dedicated trainers stop only after the replacement is fully staged. Each trainer fully flushes its outgoing run-scoped logs to the learner before reporting `stopped`. After the new run is promoted, the old run is snapshotted again so the terminal log tail is committed as well.
+
+Checkpoint/model data is intentionally not copied into GitHub. It remains in the durable `B:\\Bees\\Training` run directories, which are not removed by build or rollout.
+
+## Seamless release rollout
+
+Publishing a build and activating it are separate operations.
+
+For a compatible release:
+
+1. The old release keeps training.
+2. Every active dedicated trainer downloads and verifies the new Unity build in the background.
+3. Remote supervisors also fetch the matching Python runtime, worker/WAN credentials, release metadata, and embedded tailnet helper over the existing private bootstrap channel.
+4. A trainer reports the release prepared only when its Unity artifact and required remote runtime are ready.
+5. Once all active trainers are prepared, the server rolls dedicated trainers one at a time.
+6. Trainers already moved to the pending release stay there while the remaining trainers update.
+7. The central learner is ordered after remote trainers.
+8. After all dedicated trainers report the new build, it becomes canonical.
+
+For an incompatible release:
+
+1. All active trainers continue the old run while the replacement is downloaded and verified.
+2. When every active dedicated trainer is prepared, the server requests a coordinated stop.
+3. Trainers terminate their managed Unity/process trees and completely flush outgoing run logs.
+4. Only after all trainers report `stopped` does the server promote the new build, compatibility key, and run id.
+5. Trainers restart under the new run. The old run's checkpoint/results tree remains intact.
+
+This keeps update interruption limited to the actual process restart/cutover rather than download, extraction, dependency installation, or artifact verification.
+
+The build command automatically stages a successful build into a control server that is already online. Compatible rollouts therefore continue after `build` returns. For an incompatible release, `build` waits for the coordinated cutover and performs the final old-run log archive before returning.
+
+## Managed BeesServer updates
+
+The operator records the Git tree identity of `BeesServer~` when it launches the managed server. `server`, `start`, and live-cluster `build` detect a changed server tree and restart the managed BeesServer automatically while preserving the persisted training desired state and artifact catalog.
+
+If the control port is occupied by a server that was not launched/recorded by the Bees operator, the script refuses to kill it automatically. Stop that unmanaged server once and rerun the command; subsequent source refreshes can then be automatic.
+
+## Private remote workers
+
+`start` prepares:
+
+```text
+B:\Bees\Remote\bees-remote-worker.ps1
+B:\Bees\Remote\bees-remote-worker.sh
+B:\Bees\Remote\bees-remote-runtime.zip
+```
+
+The transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or router port forwarding is required.
+
+On first use, the learner and each remote worker print a Tailscale authorization URL. Their identities are persisted. The generated launcher contains the learner's private tailnet address and bootstrap credential.
+
+The learner gateway exposes only these private tailnet services:
+
+- control, normally 7150
+- WAN rollout broker, normally 55051
+- bootstrap service, normally 7151
+
+The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
+
+After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. The supervisor switches them only at that trainer's assigned build cutover.
+
+Machines that were already running a launcher from before this self-update mechanism existed need one final manual bootstrap with the newly generated launcher. After that transition, routine builds do not require recopying the launcher.
+
+The normal per-machine tuning argument is environment count:
 
 ```powershell
-.\Assets\bees.ps1 build -FullGame
+.\bees-remote-worker.ps1
+.\bees-remote-worker.ps1 -Envs 24
 ```
 
-Build folders are siblings of `Assets`, for example `B:\\Bees\\Builds\\2026-09-24 RL Windows`, `... RL Linux`, and optionally `... Full Game Windows`. Because `Builds` is outside the Git root (`B:\\Bees\\Assets`) and outside Unity's `Assets` import tree, it is neither tracked by Git nor imported/compiled by Unity. Rebuilding the same type on the same day requires `-Force`, preventing stale files from being mixed into a new player.
-
-The build command also creates immutable upload ZIPs and `B:\\Bees\\Builds\\latest-training-release.json`. The release id combines date, time, and source Git commit so repeated same-day builds remain immutable-safe. `start` publishes those archives, activates the release, starts/keeps the centrally managed learner, and writes the configured environment arguments as the authoritative desired state. `stop` disables training everywhere but leaves BeesServer online for gameplay/control; use `stop -Server` when the BeesServer process itself should also exit. `status` is a live dashboard; use `status -Once` for one snapshot.
-
-The authoritative non-secret cluster configuration is checked into Git at `Assets\\Training\\bees.cluster.json`. Edit that file on the training branch so local environment counts, ports, generation size, remote capacity, and similar operational changes are versioned with the code. Machine-specific secrets remain under `B:\\Bees\\Secrets`, outside Git/Unity.
-
-`generationSteps` is the number of additional global learner steps in one continual-learning generation. With the default `1000000`, generation 0 trains to 1,000,000 total steps and evaluates/releases; generation 1 resumes the same optimizer/checkpoint lineage and trains to 2,000,000 total steps; generation 2 trains to 3,000,000, and so on. It is an evaluation/release cadence, not a reset interval.
-
-`start` also starts the bundled private tailnet gateway and prepares `B:\\Bees\\Remote\\bees-remote-runtime.zip` plus one Windows launcher (`bees-remote-worker.ps1`) and one Linux launcher (`bees-remote-worker.sh`). The transport uses Tailscale's embedded userspace networking library directly inside Bees. No Tailscale client, VPN driver, SSH server, SSH client, Windows training account, SSH key, password, SCP step, or router port forwarding is required.
-
-On the learner's first `start`, the embedded node prints a Tailscale login URL. Open it once to authorize the learner into the tailnet; that identity is persisted under `B:\\Bees\\Runtime\\Tailnet`. Each remote launcher likewise prints a one-time authorization URL on its first run and persists its own identity under the worker install root. The learner's private `100.x.x.x` tailnet address is baked into the generated launcher, so MagicDNS and the learner's LAN/WAN address are not required.
-
-The learner gateway exposes three services only inside the tailnet: the existing worker-authenticated control listener, the existing WAN-token-authenticated rollout broker, and a bootstrap endpoint. The bootstrap endpoint additionally requires `B:\\Bees\\Secrets\\training-bootstrap.token`, which is generated by Bees and embedded only in generated worker launchers. It serves the current remote Python runtime plus the worker-scoped control and WAN tokens; it never serves the admin token. Control port `7150`, broker port `55051`, and bootstrap port `7151` remain unavailable on the public Internet.
-
-The only normal per-machine tuning argument is the environment count. On Windows, run `bees-remote-worker.ps1 -Envs 24`; on Linux, run `bash bees-remote-worker.sh --envs 24`. If `Envs`/`--envs` is omitted, the remote supervisor uses four times the CPU threads available to that process, capped at the current 64-environment actor limit. Linux CPU affinity/cgroups are respected through `sched_getaffinity`; Windows process affinity is respected through `GetProcessAffinityMask`. The learner-side WAN broker assigns the first available actor slot automatically, and each remote installation persists a random actor key so reconnects can reclaim the same slot.
-
-Windows workers provision Python 3.10 when needed. Linux workers provision a user-local `uv`/Python 3.10 environment and install only missing base download/hash utilities when necessary. There is no SSH-specific machine setup.
-
-
-BeesServer can act as the desired-state authority for distributed RL workers. The control service is separate from the gameplay WebSocket so training operations do not alter the Unity request/response protocol.
-
-## Server setup
-
-Set separate `BEES_TRAINING_CONTROL_TOKEN` (worker access) and `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (operator changes) before starting BeesServer. When the worker token is present, BeesServer starts the training-control listener on `127.0.0.1:7150` by default. Keep the default loopback binding. The bundled tailnet gateway proxies it privately without exposing the control listener directly; set `BEES_TRAINING_CONTROL_HOST` only when the control port is intentionally exposed on another protected network. Other overrides are `BEES_TRAINING_CONTROL_PORT`, `BEES_TRAINING_CONTROL_STATE`, `BEES_TRAINING_ARTIFACT_ROOT`, and `BEES_TRAINING_CONTROL_LEASE_SECONDS`.
-
-Desired state is persisted under `logs/training-control-state.json` by default. State schema 3 separates dedicated and full-game artifact catalogs; existing schema-2 deployments migrate their prior artifact to both roles to preserve pre-upgrade behavior. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts. On control-plane startup, active canonical artifacts are rechecked for exact size and SHA-256; tampered or truncated canonical bytes fail startup rather than being distributed.
-
-## Canonical builds
-
-Package a compiled build with `Training/bees_package_training_build.py`. The package is a ZIP containing the complete compiled build and an entrypoint such as `Bees.exe` or `Bees.x86_64`.
-
-Publish it from the BeesServer host. The CLI uses `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (or its `_FILE` variant):
-
-```text
-node trainingControlCli.js publish-build --role dedicated --platform WindowsPlayer --build-id 2026-09-24-a --archive C:\\Builds\\BeesWindows.zip --entrypoint "Bees RL Training.exe"
+```bash
+bash bees-remote-worker.sh
+bash bees-remote-worker.sh --envs 24
 ```
 
-Publish every required role/platform artifact under the same logical `--build-id`. Dedicated Windows and Linux training builds use role `dedicated`; the optional Windows gameplay build uses role `full-game`. Publishing only stages immutable artifacts; it does not activate them. Activating `release-42` makes that one source release authoritative across all managed machines. A missing dedicated platform artifact blocks that dedicated trainer from starting (and prevents cluster start when the trainer is currently connected). A missing optional full-game artifact does not block PPO training; that gameplay client remains inference-only until a matching full-game artifact is published.
+If omitted, the worker uses four times the logical CPU threads available to the process, capped at 64. Linux affinity/cgroups and Windows process affinity are respected. Actor slots are assigned centrally; each installation keeps a persistent actor key for safe reconnects.
 
-## Start, stop, arguments, and status
+Windows bootstraps Python 3.10 when necessary. Linux uses a user-local `uv`/Python 3.10 environment.
+
+## Control service state
+
+BeesServer's training-control HTTP service is separate from the gameplay WebSocket. Worker and admin access use separate bearer tokens.
+
+The operator normally sets these automatically:
+
+- `BEES_TRAINING_CONTROL_TOKEN`
+- `BEES_TRAINING_CONTROL_ADMIN_TOKEN`
+- `BEES_TRAINING_CONTROL_STATE`
+- `BEES_TRAINING_ARTIFACT_ROOT`
+- `BEES_TRAINING_LOG_ROOT`
+
+State schema 4 persists:
+
+- desired training state and environment arguments
+- current canonical build
+- active run id and compatibility key
+- pending release/rollout phase
+- dedicated and full-game immutable artifact catalogs
+
+Schema-2 and schema-3 state migrate forward. Canonical artifacts are server-owned copies and are rechecked for exact size/SHA-256 when state is loaded.
+
+Dedicated workers fail closed when the control lease expires. Full-game clients fall back to inference and are not killed merely because control is unavailable.
+
+## Lower-level control CLI
+
+`bees.ps1` is the normal operator interface. `trainingControlCli.js` remains available for diagnostics and unusual deployments.
+
+Artifact publication is still explicit:
 
 ```text
-node trainingControlCli.js activate-build --build-id 2026-09-24-a
-node trainingControlCli.js start --build-id 2026-09-24-a --env-arg --rl-map-size --env-arg 64
+node trainingControlCli.js publish-build --role dedicated --platform WindowsPlayer --build-id release-42 --archive C:\Builds\rl-windows.zip --entrypoint "Bees RL Training.exe"
+```
+
+Manual release activation is now run-aware and uses the coordinated rollout endpoint:
+
+```text
+node trainingControlCli.js activate-build --build-id release-42 --run-id bees-v18-r3-s1-... --compatibility-key <64-hex-sha256>
+```
+
+Add `--incompatible` only when that release intentionally starts a new run. The same release identity arguments may be supplied to `start`; `start` without a build id simply enables the already active release.
+
+Other lower-level commands remain:
+
+```text
+node trainingControlCli.js status
 node trainingControlCli.js set-args --env-arg --rl-map-size --env-arg 128
 node trainingControlCli.js stop
-node trainingControlCli.js status
 ```
 
-Desired-state changes, including canonical build activation and environment arguments, increment a persistent revision. Staging an inactive build does not disturb running workers. Workers observe desired-state revisions on heartbeats and reconcile automatically.
+Direct canonical-build mutation is no longer used by the CLI because it would bypass run identity and staged rollout.
 
-## Managed workers
+## Failure semantics
 
-For normal Windows or Linux rollout workers, prefer the generated one-file launcher described above. The lower-level managed-worker command remains available for debugging or nonstandard deployments.
+Build and runtime downloads are versioned, SHA-256 verified, path-traversal checked, and atomically installed. The learner publishes live bootstrap ZIPs/helper binaries/release metadata by atomic replacement so a worker polling during compilation cannot consume a partially written file.
 
-Run `Training/bees_training_worker_agent.py` persistently on each trainer machine. The launch command after `--` must contain `{env}`. Use `{env_args}` where the server-owned environment argument list belongs.
+A dedicated trainer never switches to an unverified artifact. A compatible rollout keeps other trainers running while one trainer restarts. An incompatible rollout does not promote the new run until every active dedicated trainer has staged the replacement and confirmed the old managed process stopped.
 
-Example lower-level dedicated worker after a private tailnet forward is already present:
+Trainer logs are uploaded by verified append offsets into:
 
 ```text
-python Training/bees_training_worker_agent.py --server-url http://127.0.0.1:7150 --token-file C:\\Bees\\training-control.token --trainer-id remote-example --role dedicated --platform WindowsPlayer --install-root C:\\Bees\\ManagedBuilds -- python Training\\bees_elastic_wan_actor_worker.py --actor-key 0123456789abcdef0123456789abcdef --envs 32 --broker-host 127.0.0.1 --broker-port 55051 --env {env} --auth-token-file C:\\Bees\\wan.token
+B:\Bees\Training\TrainerLogs\<run-id>\<trainer-id>\
 ```
 
-The worker agent also exports the current server argument list as `BEES_TRAINING_ENV_ARGS_JSON`. Elastic/WAN actors receive their actual ML-Agents run/environment configuration from the current central learner session. The generated one-file launcher is preferred because it owns the tailnet forwarding and bootstrap lifecycle automatically.
+Local worker logs are also run-scoped, preventing bytes from an old run from being re-attributed to a new one after restart.
 
-For a managed full game, use `--role full-game`. A server lease loss does not terminate the game process. Player-facing Bees continues using the deployed policy for inference, and `RlLiveTelemetryRecorder` continues writing pending telemetry locally even if the uploader or central trainer is unavailable.
-
-## Failure and update semantics
-
-Dedicated workers terminate the complete managed process tree after the BeesServer lease expires, including ML-Agents/Unity descendants. If BeesServer is reachable but the active canonical build is missing, incompatible, or cannot be verified, they stop immediately rather than continuing with stale code. They restart only after the server is reachable, the platform-equivalent canonical build is available, and desired state says `training`.
-
-Full-game workers keep the game running during a lease outage. Their local control-state file is marked offline/inference. Unity also checks the timestamp and lease duration in that file, so a crashed local supervisor eventually forces inference even if it cannot rewrite the file. When BeesServer returns, heartbeats resume. If the current executable/config still matches the canonical revision, the running game can return to training in place. If the canonical build or command-line environment arguments changed, the live game remains inference-only and is not killed; the agent applies the canonical build/config on the next natural game launch.
-
-Build downloads are staged, checked against the server-advertised size and SHA-256, validated against ZIP path traversal, extracted into a temporary versioned directory, then atomically activated. A partial or invalid download never replaces the usable build.
+Full-game processes keep the current player session alive when a canonical executable/config changes. They switch to inference immediately when required and apply the new executable/config on the next natural game launch.
