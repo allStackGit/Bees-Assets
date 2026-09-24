@@ -365,6 +365,7 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
+        RlGameplayDemonstrationCapabilityCapture.Record(_ship, RlOneVsOneAgent.MiningAction);
         _nextMiningActionTime = Time.time + MiningActionIntervalSeconds;
         asteroid.Health -= amountMined;
         _ship.FleetShip.MineralsMinedThisLevel += amountMined;
@@ -414,6 +415,7 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
+        RlGameplayDemonstrationCapabilityCapture.Record(_ship, RlOneVsOneAgent.HealingAction);
         _nextHealingActionTime = Time.time + HealingActionIntervalSeconds;
         _ship.Health += amountHealed;
         _ship.Tsv = Utilities.CalculateTsv(_ship);
@@ -457,6 +459,7 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
+        RlGameplayDemonstrationCapabilityCapture.Record(_ship, RlOneVsOneAgent.WarpAction);
         if (warpGate.IsUserControlled && warpGate.EnteringWarpGateSound != null)
         {
             warpGate.EnteringWarpGateSound.Play();
