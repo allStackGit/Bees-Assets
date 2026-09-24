@@ -101,6 +101,7 @@ namespace Assets.Scripts.Levels.Commands
 
         private void Timer()
         {
+            FreezeDiagnostics.RecordAggressiveTick(Level);
             Squad squad = GetSquad();
             if (squad.IsDead)
             {
