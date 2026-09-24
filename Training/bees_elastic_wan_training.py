@@ -521,9 +521,9 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             self._active_snapshot_locked(now=now)
             self._expire_claims_locked(now)
+            previous = self._registrations.get(actor_id)
             if actor_key is not None:
                 claim = self._claims.get(actor_key)
-                previous = self._registrations.get(actor_id)
                 owns_previous = previous is not None and previous.get("actor_key") == actor_key
                 if claim is None and not owns_previous:
                     raise ValueError("actor has no active claim for the requested slot")
@@ -531,6 +531,8 @@ class ElasticWanBroker(base.WanActorBroker):
                     raise ValueError("actor claim does not match requested slot")
                 if previous is not None and previous.get("actor_key") not in (None, actor_key):
                     raise ValueError("actor slot is owned by another remote machine")
+            elif previous is not None and previous.get("actor_key") is not None:
+                raise ValueError("actor slot is owned by an automatically assigned remote machine")
             reference = self._reference_signatures
             if reference is None and self._registrations:
                 reference = next(iter(self._registrations.values()))["signatures"]
