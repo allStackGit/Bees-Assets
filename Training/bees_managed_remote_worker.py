@@ -318,6 +318,7 @@ class RuntimeUpdater:
                 )
         archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
         _atomic_bytes(archive, runtime_zip, 0o644)
+        _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
         with self._lock:
             self.staged_sha256 = runtime_sha
             self.staged_root = destination
@@ -415,7 +416,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = _parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parser().parse_args(raw_argv)
     if args.envs is None:
         args.envs = _default_envs()
         print(
@@ -460,6 +462,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
         return 2
 
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
+    updater = RuntimeUpdater(args, install_root)
+    updater.start()
     stop = [False]
 
     def request_stop(_signum: int, _frame: object) -> None:
@@ -471,9 +476,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
+            runtime_cutover: Optional[Path] = None
             try:
                 tailnet = subprocess.Popen(_tailnet_forward_command(args))
-                if not _wait_for_ports((args.control_port, args.broker_port), tailnet, stop):
+                if not _wait_for_ports(
+                    (args.control_port, args.broker_port, args.bootstrap_port),
+                    tailnet,
+                    stop,
+                ):
                     code = tailnet.poll()
                     print(
                         "[Bees remote] tailnet forwarding failed to become ready"
@@ -488,8 +498,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
                     worker = subprocess.Popen(_worker_command(args, root, actor_key))
                     while not stop[0] and tailnet.poll() is None and worker.poll() is None:
+                        runtime_cutover = _runtime_cutover_selected(
+                            args,
+                            trainer_id,
+                            updater,
+                        )
+                        if runtime_cutover is not None:
+                            print(
+                                f"[Bees remote] activating staged worker runtime "
+                                f"{runtime_cutover.name[:12]} at this trainer's rollout turn."
+                            )
+                            break
                         time.sleep(0.5)
-                    if not stop[0]:
+                    if not stop[0] and runtime_cutover is None:
                         if tailnet.poll() is not None:
                             print(
                                 f"[Bees remote] tailnet transport exited ({tailnet.returncode}); restarting.",
@@ -506,10 +527,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _terminate(worker)
                 _terminate(tailnet)
 
+            if runtime_cutover is not None and not stop[0]:
+                updater.stop()
+                next_script = runtime_cutover / "bees_managed_remote_worker.py"
+                if not next_script.is_file():
+                    raise RuntimeError(f"staged runtime is missing {next_script}")
+                os.execv(
+                    sys.executable,
+                    [sys.executable, str(next_script), *raw_argv],
+                )
+
             if not stop[0]:
                 time.sleep(args.reconnect_seconds)
         return 0
     finally:
+        updater.stop()
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
 
