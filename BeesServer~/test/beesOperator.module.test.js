@@ -92,3 +92,10 @@ test('bees.ps1 explicitly waits for Unity GUI process completion', () => {
     assert.match(unityBuild, /\$unityProcess\.ExitCode -ne 0/);
     assert.doesNotMatch(unityBuild, /Invoke-Checked \$Unity/);
 });
+
+test('bees.ps1 includes Unity log tail on nonzero build exit', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const unityBuild = source.match(/function Invoke-UnityBuild[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(unityBuild, /Get-Content -LiteralPath \$logPath -Tail 60/);
+    assert.match(unityBuild, /Last Unity build log lines:/);
+});
