@@ -18,6 +18,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void RewardScaleMatchesOnePointTerminalBasis()
+        {
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "WinReward"), Is.EqualTo(1f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "LossReward"), Is.EqualTo(-1f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "TimeoutReward"), Is.EqualTo(-1.1f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "TsvRewardScale"), Is.EqualTo(0.1f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.01f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "MaximumPositiveShapingReward"), Is.EqualTo(0.2f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "EnemyShipDiscoveryBudget"), Is.EqualTo(0.006f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "MiningAsteroidDiscoveryBudget"), Is.EqualTo(0.0015f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "StaticObstacleDiscoveryBudget"), Is.EqualTo(0.0015f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "MapObjectDiscoveryBudget"), Is.EqualTo(0.001f));
+            Assert.That(RuntimeAssembly.GetStaticField(_rewardType, "CollisionAsteroidDiscoveryBudget"), Is.EqualTo(0.0025f));
+        }
+
+        [Test]
         public void PositiveShapingAndDiscoveryRemainBelowVictory()
         {
             float winReward = (float)RuntimeAssembly.GetStaticField(_rewardType, "WinReward");
