@@ -44,7 +44,6 @@ namespace Assets.Scripts.Data
                 {
                     Debug.LogError("The user save data file is missing");
                 }
-                Debug.Log($"DataFile {filename} doesn't exist");
             }
             else if (shouldFileExist)
             {
