@@ -82,6 +82,32 @@ function Resolve-CommandPath([string]$Name){
     $x.Source
 }
 
+function Resolve-Git {
+    $installed=Get-Command 'git' -ErrorAction SilentlyContinue
+    if($null -ne $installed){ return $installed.Source }
+
+    $candidates=@()
+    if($env:LOCALAPPDATA){
+        $desktopRoot=Join-Path $env:LOCALAPPDATA 'GitHubDesktop'
+        if(Test-Path -LiteralPath $desktopRoot){
+            $candidates+=@(
+                Get-ChildItem -LiteralPath $desktopRoot -Directory -Filter 'app-*' -ErrorAction SilentlyContinue |
+                    Sort-Object Name -Descending |
+                    ForEach-Object { Join-Path $_.FullName 'resources\app\git\cmd\git.exe' }
+            )
+        }
+    }
+    if($env:ProgramFiles){
+        $candidates+=Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
+        $candidates+=Join-Path $env:ProgramFiles 'Git\bin\git.exe'
+    }
+
+    $git=$candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if($git){ return [IO.Path]::GetFullPath([string]$git) }
+
+    throw "Git was not found. Install Git for Windows or GitHub Desktop."
+}
+
 function Resolve-UnityEditor($Config){
     if($env:BEES_UNITY_EDITOR -and (Test-Path -LiteralPath $env:BEES_UNITY_EDITOR)){ return [IO.Path]::GetFullPath($env:BEES_UNITY_EDITOR) }
     if($Config.unityEditor -and (Test-Path -LiteralPath ([string]$Config.unityEditor))){ return [IO.Path]::GetFullPath([string]$Config.unityEditor) }
@@ -355,7 +381,7 @@ function Package-Build([string]$Python,[string]$Source,[string]$Archive,[string]
 }
 
 function Get-GitShortSha {
-    $git=Resolve-CommandPath 'git'; Push-Location $AssetsRoot
+    $git=Resolve-Git; Push-Location $AssetsRoot
     try {
         $sha=(& $git rev-parse --short=12 HEAD).Trim()
         if($LASTEXITCODE -ne 0 -or -not $sha){ throw 'git rev-parse failed.' }
@@ -364,7 +390,7 @@ function Get-GitShortSha {
 }
 
 function Get-GitTreeSha([string]$RelativePath){
-    $git=Resolve-CommandPath 'git'; Push-Location $AssetsRoot
+    $git=Resolve-Git; Push-Location $AssetsRoot
     try {
         $sha=(& $git rev-parse ("HEAD:" + $RelativePath)).Trim()
         if($LASTEXITCODE -ne 0 -or -not $sha){ throw "git rev-parse failed for $RelativePath." }
