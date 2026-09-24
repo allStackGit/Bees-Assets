@@ -411,6 +411,7 @@ def write_local_state(
         "desired_mode": desired.get("desired_mode") if desired else "inference",
         "revision": desired.get("revision") if desired else -1,
         "training_enabled": bool(desired.get("training_enabled")) if desired else False,
+        "run_id": str(desired.get("run_id", "")) if desired else "",
         "environment_args": list(desired.get("environment_args", ())) if desired else [],
         "lease_seconds": float(desired.get("lease_seconds", 20.0)) if desired else 20.0,
         "last_error": last_error,
@@ -478,6 +479,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         timeout=args.request_timeout_seconds,
     )
     managed = ManagedProcess()
+    preparer = BackgroundBuildPreparer(builds, client)
+    log_uploader = TrainingLogUploader(install_root / "logs")
     stop = False
     last_contact = 0.0
     lease_seconds = max(1.0, args.heartbeat_seconds * 2.0)
@@ -497,6 +500,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             received_desired = False
             now = time.monotonic()
             offline = last_contact > 0 and now - last_contact > lease_seconds
+            prepared_build_id, preparation_error = preparer.snapshot()
             heartbeat = default_heartbeat(
                 trainer_id=args.trainer_id,
                 role=args.role,
@@ -504,7 +508,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 process_state=managed.state(args.role, offline=offline),
                 applied_revision=applied_revision,
                 build=active_build,
-                last_error=last_error,
+                prepared_build_id=prepared_build_id,
+                last_error=last_error or preparation_error,
                 metrics=metrics.refresh(),
             )
             try:
@@ -516,8 +521,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
                 mode = str(desired["desired_mode"])
                 revision = int(desired["revision"])
+                run_id = str(desired.get("run_id", ""))
                 environment_args = tuple(str(value) for value in desired["environment_args"])
                 descriptor = desired.get("build")
+                preparer.request(desired.get("prepare_build"))
 
                 if mode == "stopped":
                     managed.stop()
@@ -534,11 +541,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
+                            run_id,
                         )
                         managed.start(
                             command,
                             revision=revision,
                             build_sha256=desired_sha,
+                            run_id=run_id,
                             state_file=state_file,
                             environment_args=environment_args,
                         )
@@ -559,10 +568,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             f"server has no canonical {args.platform} build published"
                         )
                     desired_sha = str(descriptor.get("archive_sha256", ""))
-                    build_or_args_changed = (
-                        managed.build_sha256 != desired_sha
-                        or managed.environment_args != environment_args
-                    )
                     defer_full_game_update = (
                         args.role == "full-game"
                         and full_game_update_requires_deferred_restart(
@@ -571,11 +576,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             environment_args,
                         )
                     )
-                    if args.role == "dedicated" and managed.alive() and build_or_args_changed:
-                        # Never keep producing rollouts under a superseded build/config while a
-                        # replacement artifact is still downloading or being verified.
-                        managed.stop()
-                    elif defer_full_game_update:
+                    if defer_full_game_update:
                         # Preserve the running game. The Unity runtime switches it to InferenceOnly
                         # immediately; after the process exits naturally, the next heartbeat installs
                         # and launches the canonical build/config.
@@ -595,10 +596,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
+                            run_id,
                         )
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
+                            or managed.run_id != run_id
                             or managed.environment_args != environment_args
                             or managed.command != tuple(command)
                         )
@@ -607,12 +610,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 command,
                                 revision=revision,
                                 build_sha256=desired_sha,
+                                run_id=run_id,
                                 state_file=state_file,
                                 environment_args=environment_args,
                             )
                         applied_revision = revision
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
+
+                try:
+                    log_uploader.flush_once(
+                        client,
+                        trainer_id=args.trainer_id,
+                        run_id=run_id,
+                    )
+                except (ControlUnavailable, ControlRejected, OSError, ValueError) as exc:
+                    print(
+                        f"[Bees control] log upload deferred: {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
 
                 # Publish training only after build/config reconciliation completed successfully.
                 # A live full game with a pending canonical update already wrote an inference state
