@@ -34,17 +34,18 @@ namespace Bees.Tests.EditMode
         public void TryParseStateAcceptsManagedTrainingState()
         {
             Type runtime = RuntimeAssembly.GetType("RlTrainingControlRuntime");
-            MethodInfo parse = runtime.GetMethod("TryParseState", StaticFlags);
+            MethodInfo parse = runtime.GetMethod("TryParseStateAtTime", StaticFlags);
             Assert.That(parse, Is.Not.Null);
 
             object[] arguments =
             {
                 "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"," +
                 "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
+                1005d,
                 true
             };
             Assert.That((bool)parse.Invoke(null, arguments), Is.True);
-            Assert.That((bool)arguments[1], Is.False);
+            Assert.That((bool)arguments[2], Is.False);
         }
 
         [Test]
