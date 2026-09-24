@@ -22,7 +22,7 @@ cd B:\Bees
 .\Assets\bees.ps1 status
 ```
 
-`server` starts or refreshes BeesServer only. It does not require a Unity build and is the normal command when the Unity Editor needs the gameplay backend but distributed training is not being started. The regular development gameplay listener runs on TCP `7146`, matching `ConfigData.DevelopmentPort` and `seagrams.softether.net`.
+`server` starts or refreshes BeesServer in test mode on TCP `7146`. The Unity Editor connects to this endpoint at `seagrams.softether.net:7146`, and test mode does not require Steam authentication. No Unity build is required.
 
 `build` always creates Windows and Linux RL builds. Add `-FullGame` to also create the managed Windows gameplay build. Build folders remain outside both Git and Unity import, for example:
 
@@ -34,7 +34,7 @@ B:\Bees\Builds\2026-09-24 Full Game Windows
 
 Rebuilding the same type on the same day requires `-Force`.
 
-`start` starts/keeps BeesServer, the private tailnet gateway, the central managed learner, and distributed training desired state. It publishes the latest compiled release and lets the control plane coordinate activation. `stop` disables training everywhere but leaves BeesServer available for gameplay; `stop -Server` also stops the managed BeesServer and tailnet gateway. `status` is a live dashboard; `status -Once` prints one snapshot.
+`start` always starts/keeps the test-mode BeesServer and training-control plane. Before the first RL build exists, it remains idle with zero managed trainers so the Unity Editor can connect immediately. Once a compiled release exists, `start` also brings up the private tailnet gateway, central managed learner, publishes the release, and enables distributed training. `stop` disables training everywhere but leaves BeesServer available for gameplay; `stop -Server` also stops the managed BeesServer and tailnet gateway. `status` is a live dashboard; `status -Once` prints one snapshot.
 
 The authoritative non-secret cluster configuration is `Assets\\Training\\bees.cluster.json`. Machine-specific credentials remain under `B:\\Bees\\Secrets` and are never checked in.
 
