@@ -30,9 +30,9 @@ contributors = _load("bees_continual_demo_contributors")
 public = _load("bees_continual_public_demo")
 
 
-OBSERVATION_SIZE = 4701
-CONTINUOUS_ACTIONS = 34
-DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
+OBSERVATION_SIZE = 7342
+CONTINUOUS_ACTIONS = 16
+DISCRETE_BRANCHES = [2] * 5 + [5]
 
 
 class PublicDemoQuarantineTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class PublicDemoQuarantineTests(unittest.TestCase):
         return {
             "schemaVersion": 1,
             "batchId": self.batch_id,
-            "demonstrationId": "v7-" + "b" * 24,
+            "demonstrationId": "v18-" + "b" * 24,
             "uploaderUserId": self.uploader_user_id,
             "gameBuildVersion": "2026.09.11+build",
             "source": "Human",
