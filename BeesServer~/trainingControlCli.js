@@ -12,7 +12,7 @@ function usage() {
         '  node trainingControlCli.js stop',
         '  node trainingControlCli.js set-args [--env-arg VALUE ...]',
         '  node trainingControlCli.js activate-build --build-id ID',
-        '  node trainingControlCli.js publish-build --platform P --build-id ID --archive PATH --entrypoint RELATIVE_PATH',
+        '  node trainingControlCli.js publish-build --role dedicated|full-game --platform P --build-id ID --archive PATH --entrypoint RELATIVE_PATH',
         '',
         'Environment:',
         '  BEES_TRAINING_CONTROL_URL   default http://127.0.0.1:7150',
@@ -47,7 +47,7 @@ function parseOptions(argv) {
             if (next === undefined) throw new Error('--env-arg requires a value');
             values.envArgs.push(next);
             index++;
-        } else if (arg === '--platform' || arg === '--build-id' ||
+        } else if (arg === '--role' || arg === '--platform' || arg === '--build-id' ||
                    arg === '--archive' || arg === '--entrypoint') {
             if (next === undefined) throw new Error(arg + ' requires a value');
             values[arg.slice(2).replace('-', '_')] = next;
@@ -128,10 +128,11 @@ async function main(argv = process.argv.slice(2)) {
             canonical_build_id: values.build_id,
         });
     } else if (command === 'publish-build') {
-        for (const key of ['platform', 'build_id', 'archive', 'entrypoint']) {
+        for (const key of ['role', 'platform', 'build_id', 'archive', 'entrypoint']) {
             if (!values[key]) throw new Error('publish-build requires --' + key.replace('_', '-'));
         }
         result = await requestJson(baseUrl, token, 'POST', '/v1/admin/artifact', {
+            role: values.role,
             platform: values.platform,
             build_id: values.build_id,
             archive_path: values.archive,

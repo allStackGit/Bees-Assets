@@ -18,6 +18,7 @@ import hashlib
 import http.client
 import json
 import math
+import os
 import queue
 import signal
 import subprocess
@@ -431,6 +432,11 @@ class ActorSession:
         options.env_settings.seed = int(options.env_settings.seed) + self.worker_offset
         options.engine_settings.no_graphics = not self.graphics
         options.torch_settings.device = self.torch_device
+        managed_log_dir = os.environ.get("BEES_TRAINING_LOG_DIR", "").strip()
+        if managed_log_dir:
+            log_dir = Path(managed_log_dir).expanduser().resolve()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            options.checkpoint_settings.run_logs_dir = str(log_dir)
         return options
 
     def _initial_control(self) -> Mapping[str, Any]:

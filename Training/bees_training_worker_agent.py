@@ -11,10 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -30,12 +32,114 @@ from bees_training_control import (
 
 ENV_PLACEHOLDER = "{env}"
 ENV_ARGS_PLACEHOLDER = "{env_args}"
+BUILD_ID_PLACEHOLDER = "{build_id}"
+EPISODE_LOG_PATTERN = re.compile(
+    r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
+    r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
+    r"bee_fire_requests=(\d+) bee_shots=(\d+) bee_hits=(\d+) bee_damage=(\d+).*?"
+    r"human_fire_requests=(\d+) human_shots=(\d+) human_hits=(\d+) human_damage=(\d+)"
+)
+
+
+class EpisodeLogMetrics:
+    def __init__(self, root: Path, window: int = 100) -> None:
+        self.root = root
+        self.window = max(1, int(window))
+        self._episodes = deque(maxlen=self.window)
+        self._positions: dict[Path, int] = {}
+        self._pending: dict[Path, str] = {}
+
+    def refresh(self) -> dict[str, object]:
+        if self.root.is_dir():
+            for log_path in sorted(self.root.rglob("Player-*.log")):
+                self._read_new(log_path)
+        return self.snapshot()
+
+    def _read_new(self, log_path: Path) -> None:
+        try:
+            size = log_path.stat().st_size
+        except OSError:
+            return
+        position = self._positions.get(log_path)
+        first_read = position is None
+        if position is None:
+            position = max(0, size - 4 * 1024 * 1024)
+        if size < position:
+            position = 0
+            self._pending.pop(log_path, None)
+        try:
+            with log_path.open("rb") as handle:
+                handle.seek(position)
+                data = handle.read()
+        except OSError:
+            return
+        self._positions[log_path] = position + len(data)
+        if not data:
+            return
+        text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
+        complete = text.endswith("\n") or text.endswith("\r")
+        lines = text.splitlines()
+        if not complete and lines:
+            self._pending[log_path] = lines.pop()
+        else:
+            self._pending[log_path] = ""
+        if first_read and position > 0 and lines:
+            lines = lines[1:]
+        for line in lines:
+            match = EPISODE_LOG_PATTERN.search(line)
+            if not match:
+                continue
+            values = match.groups()
+            timeout = values[1] == "True"
+            bee_final = int(values[4])
+            human_final = int(values[6])
+            self._episodes.append({
+                "episode": int(values[0]),
+                "timeout": timeout,
+                "duration": float(values[2]),
+                "bee_win": (not timeout and bee_final > 0 and human_final == 0),
+                "human_win": (not timeout and human_final > 0 and bee_final == 0),
+                "bee_shots": int(values[8]),
+                "bee_hits": int(values[9]),
+                "human_shots": int(values[12]),
+                "human_hits": int(values[13]),
+            })
+
+    def snapshot(self) -> dict[str, object]:
+        episodes = list(self._episodes)
+        count = len(episodes)
+        if count == 0:
+            return {"window_episodes": 0}
+        timeouts = sum(1 for item in episodes if item["timeout"])
+        bee_wins = sum(1 for item in episodes if item["bee_win"])
+        human_wins = sum(1 for item in episodes if item["human_win"])
+        draws = count - timeouts - bee_wins - human_wins
+        bee_shots = sum(int(item["bee_shots"]) for item in episodes)
+        bee_hits = sum(int(item["bee_hits"]) for item in episodes)
+        human_shots = sum(int(item["human_shots"]) for item in episodes)
+        human_hits = sum(int(item["human_hits"]) for item in episodes)
+        return {
+            "window_episodes": count,
+            "last_episode": max(int(item["episode"]) for item in episodes),
+            "timeout_pct": round(100.0 * timeouts / count, 2),
+            "bee_win_pct": round(100.0 * bee_wins / count, 2),
+            "human_win_pct": round(100.0 * human_wins / count, 2),
+            "draw_pct": round(100.0 * draws / count, 2),
+            "avg_duration_s": round(
+                sum(float(item["duration"]) for item in episodes) / count, 2),
+            "bee_hit_pct": round(100.0 * bee_hits / bee_shots, 2) if bee_shots else 0.0,
+            "human_hit_pct": round(
+                100.0 * human_hits / human_shots, 2) if human_shots else 0.0,
+            "bee_shots_per_episode": round(bee_shots / count, 2),
+            "human_shots_per_episode": round(human_shots / count, 2),
+        }
 
 
 def render_command(
     template: Sequence[str],
     entrypoint: Path,
     environment_args: Sequence[str],
+    build_id: str = "",
 ) -> list[str]:
     if not template:
         raise ValueError("managed worker launch command is empty")
@@ -48,7 +152,10 @@ def render_command(
         elif token == ENV_ARGS_PLACEHOLDER:
             rendered.extend(str(value) for value in environment_args)
         else:
-            rendered.append(token.replace(ENV_PLACEHOLDER, str(entrypoint)))
+            rendered.append(
+                token.replace(ENV_PLACEHOLDER, str(entrypoint))
+                .replace(BUILD_ID_PLACEHOLDER, str(build_id))
+            )
             if ENV_PLACEHOLDER in token:
                 saw_env = True
     if not saw_env:
@@ -87,6 +194,9 @@ class ManagedProcess:
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
+        log_dir = state_file.parent / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
         self.process = subprocess.Popen(
             list(command),
             env=environment,
@@ -231,6 +341,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     install_root = Path(args.install_root).expanduser().resolve()
     builds = ManagedBuildStore(install_root)
     state_file = install_root / "control-state.json"
+    metrics = EpisodeLogMetrics(install_root / "logs")
     client = TrainingControlClient(
         args.server_url,
         token,
@@ -264,6 +375,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 applied_revision=applied_revision,
                 build=active_build,
                 last_error=last_error,
+                metrics=metrics.refresh(),
             )
             try:
                 desired = client.heartbeat(heartbeat)
@@ -287,7 +399,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if descriptor and not managed.alive():
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(command_template, entrypoint, environment_args)
+                        command = render_command(
+                            command_template,
+                            entrypoint,
+                            environment_args,
+                            str(active_build["build_id"]),
+                        )
                         managed.start(
                             command,
                             revision=revision,
@@ -343,7 +460,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     else:
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(command_template, entrypoint, environment_args)
+                        command = render_command(
+                            command_template,
+                            entrypoint,
+                            environment_args,
+                            str(active_build["build_id"]),
+                        )
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha

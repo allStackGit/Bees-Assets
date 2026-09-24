@@ -42,6 +42,39 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("max_steps: 100", Path(command0[2]).read_text(encoding="utf-8"))
             self.assertIn("max_steps: 200", Path(command1[2]).read_text(encoding="utf-8"))
 
+    def test_training_command_appends_server_environment_args_last(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            options = service.ServiceOptions(
+                **{
+                    **options.__dict__,
+                    "environment_args": (
+                        "--rl-map-size=128",
+                        "--rl-bee-ship-types=Wasp,Hornet",
+                    ),
+                }
+            )
+            command = service.training_command(options, 0, resume=False)
+            marker = command.index("--env-args")
+            self.assertEqual(
+                command[marker + 1 :],
+                [
+                    "--rl-map-size=128",
+                    "--rl-bee-ship-types=Wasp,Hornet",
+                ],
+            )
+
+    def test_environment_args_json_validation(self):
+        self.assertEqual(
+            service.parse_environment_args_json('["--rl-map-size=64"]'),
+            ("--rl-map-size=64",),
+        )
+        with self.assertRaises(ValueError):
+            service.parse_environment_args_json('{"not":"a-list"}')
+        with self.assertRaises(ValueError):
+            service.parse_environment_args_json('[""]')
+
     def test_state_rejects_run_id_change_and_preserves_phase(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

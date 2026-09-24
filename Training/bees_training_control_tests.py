@@ -108,9 +108,18 @@ class TrainingControlClientTests(unittest.TestCase):
 
     def test_render_command_expands_build_and_environment_arguments(self):
         rendered = agent.render_command(
-            ["python", "worker.py", "--env", "{env}", "--env-args", "{env_args}"],
+            [
+                "python",
+                "worker.py",
+                "--env",
+                "{env}",
+                "--build-id={build_id}",
+                "--env-args",
+                "{env_args}",
+            ],
             Path("/tmp/Bees.x86_64"),
             ["--rl-map-size", "64"],
+            "release-42",
         )
         self.assertEqual(
             rendered,
@@ -119,11 +128,35 @@ class TrainingControlClientTests(unittest.TestCase):
                 "worker.py",
                 "--env",
                 "/tmp/Bees.x86_64",
+                "--build-id=release-42",
                 "--env-args",
                 "--rl-map-size",
                 "64",
             ],
         )
+
+    def test_episode_log_metrics_reports_recent_training_statistics(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "Player-0.log"
+            log.write_text(
+                "RL 1v1 episode=1 timeout=False duration=10.0s "
+                "bee_tsv=100->50 human_tsv=100->0 "
+                "bee_fire_requests=4 bee_shots=3 bee_hits=2 bee_damage=10 "
+                "human_fire_requests=2 human_shots=2 human_hits=1 human_damage=5\n"
+                "RL 1v1 episode=2 timeout=True duration=20.0s "
+                "bee_tsv=100->25 human_tsv=100->25 "
+                "bee_fire_requests=4 bee_shots=4 bee_hits=1 bee_damage=5 "
+                "human_fire_requests=4 human_shots=4 human_hits=2 human_damage=10\n",
+                encoding="utf-8",
+            )
+            metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
+            self.assertEqual(metrics["window_episodes"], 2)
+            self.assertEqual(metrics["last_episode"], 2)
+            self.assertEqual(metrics["timeout_pct"], 50.0)
+            self.assertEqual(metrics["bee_win_pct"], 50.0)
+            self.assertAlmostEqual(metrics["bee_hit_pct"], 100.0 * 3 / 7, places=2)
+            self.assertAlmostEqual(metrics["human_hit_pct"], 50.0, places=2)
 
     def test_managed_build_is_hash_verified_and_installed_versioned(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -134,6 +167,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees_Data/data.bin", b"data")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "LinuxPlayer",
                 "build_id": "build-123",
                 "archive_sha256": control.file_sha256(archive),
@@ -158,6 +192,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees.exe", b"binary")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "WindowsPlayer",
                 "build_id": "build-1",
                 "archive_sha256": "0" * 64,
@@ -178,6 +213,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees.exe", b"binary")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "WindowsPlayer",
                 "build_id": "build-2",
                 "archive_sha256": control.file_sha256(archive),
@@ -189,6 +225,41 @@ class TrainingControlClientTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe artifact member"):
                 store.ensure(FakeClient(archive), descriptor)
             self.assertFalse((root / "escape.txt").exists())
+
+    def test_managed_build_keeps_role_specific_windows_artifacts_separate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            training_archive = root / "training.zip"
+            game_archive = root / "game.zip"
+            with zipfile.ZipFile(training_archive, "w") as bundle:
+                bundle.writestr("Bees RL Training.exe", b"training")
+            with zipfile.ZipFile(game_archive, "w") as bundle:
+                bundle.writestr("Bees.exe", b"game")
+
+            store = control.ManagedBuildStore(root / "managed")
+            training = {
+                "role": "dedicated",
+                "platform": "WindowsPlayer",
+                "build_id": "release-1",
+                "archive_sha256": control.file_sha256(training_archive),
+                "archive_size_bytes": training_archive.stat().st_size,
+                "entrypoint": "Bees RL Training.exe",
+                "artifact_url": "/v1/artifact/dedicated/WindowsPlayer/release-1",
+            }
+            game = {
+                "role": "full-game",
+                "platform": "WindowsPlayer",
+                "build_id": "release-1",
+                "archive_sha256": control.file_sha256(game_archive),
+                "archive_size_bytes": game_archive.stat().st_size,
+                "entrypoint": "Bees.exe",
+                "artifact_url": "/v1/artifact/full-game/WindowsPlayer/release-1",
+            }
+            training_entry, _ = store.ensure(FakeClient(training_archive), training)
+            game_entry, _ = store.ensure(FakeClient(game_archive), game)
+            self.assertNotEqual(training_entry.parent, game_entry.parent)
+            self.assertEqual(training_entry.read_bytes(), b"training")
+            self.assertEqual(game_entry.read_bytes(), b"game")
 
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
