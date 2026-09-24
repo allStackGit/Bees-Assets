@@ -237,6 +237,31 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void RollingWindowStopsPrioritizingTimeoutsOnceRecentEpisodesResolve()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship");
+            object selector = CreateSelector(options, 86420, 1000000000000d, 2, 1);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string first = GetPreparedPair(selector);
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, true);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.EqualTo(first));
+            RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(GetPreparedPair(selector), Is.Not.EqualTo(first));
+        }
+
+        [Test]
         public void RollingWindowStopsPrioritizingAFormerlyImbalancedMatchupOnceRecentResultsBalance()
         {
             object options = Parse(
