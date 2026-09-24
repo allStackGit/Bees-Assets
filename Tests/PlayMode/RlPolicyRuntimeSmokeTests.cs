@@ -217,11 +217,11 @@ namespace Bees.Tests.PlayMode
             }
             Assert.That(waspAgent, Is.Not.Null, "The full Bee roster smoke episode must bind a Wasp policy agent.");
 
-            Assert.That(RuntimeAssembly.GetStaticField(_schemaType, "Version"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(_agentType, "ObservationSize"), Is.EqualTo(4685));
-            Assert.That(RuntimeAssembly.GetStaticField(_agentType, "ContinuousActionCount"), Is.EqualTo(34));
+            Assert.That(RuntimeAssembly.GetStaticField(_schemaType, "Version"), Is.EqualTo(18));
+            Assert.That(RuntimeAssembly.GetStaticField(_agentType, "ObservationSize"), Is.EqualTo(7342));
+            Assert.That(RuntimeAssembly.GetStaticField(_agentType, "ContinuousActionCount"), Is.EqualTo(16));
 
-            object sensor = CreateVectorSensor(4685);
+            object sensor = CreateVectorSensor(7342);
             MethodInfo collectObservations = _agentType.GetMethod("CollectObservations", BindingFlags.Instance | BindingFlags.Public);
             Assert.That(collectObservations, Is.Not.Null);
             collectObservations.Invoke(waspAgent, new[] { sensor });
@@ -231,10 +231,10 @@ namespace Bees.Tests.PlayMode
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.That(getObservations, Is.Not.Null, "ML-Agents VectorSensor must expose its collected vector for smoke validation.");
             object observations = getObservations.Invoke(sensor, null);
-            Assert.That(RuntimeAssembly.GetCount(observations), Is.EqualTo(4685),
+            Assert.That(RuntimeAssembly.GetCount(observations), Is.EqualTo(7342),
                 "The live policy path must emit exactly the frozen observation count.");
 
-            object actions = CreateZeroActionBuffers(34, 20);
+            object actions = CreateZeroActionBuffers(16, 6);
             MethodInfo onActionReceived = _agentType.GetMethod("OnActionReceived", BindingFlags.Instance | BindingFlags.Public);
             Assert.That(onActionReceived, Is.Not.Null);
             onActionReceived.Invoke(waspAgent, new[] { actions });
