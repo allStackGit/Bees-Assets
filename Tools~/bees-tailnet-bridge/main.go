@@ -366,6 +366,9 @@ func atomicWrite(path string, mode os.FileMode, write func(io.Writer) error) err
 	if err := os.Chmod(temp, mode); err != nil {
 		return err
 	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := os.Rename(temp, path); err != nil {
 		return err
 	}
