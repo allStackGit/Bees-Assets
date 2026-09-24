@@ -91,12 +91,17 @@ namespace Bees.Tests.EditMode
         {
             string matchups = ReadSource("Scripts", "Scenes", "RlOneVsOnePerArenaMatchups.cs");
             string mapSizes = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
+            string scenarioSeed = ReadSource("Scripts", "Scenes", "RlOneVsOneScenarioSeed.cs");
+            string evaluationChannel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
 
-            Assert.That(matchups, Does.Contain("_ = Academy.Instance;"));
-            Assert.That(matchups, Does.Contain("UnityEngine.Random.Range(0, int.MaxValue)"));
-            Assert.That(matchups, Does.Contain("GetArenaIndex(level)"));
+            Assert.That(evaluationChannel, Does.Contain("_ = Academy.Instance;"),
+                "Evaluator runs must initialize ML-Agents before scenario seeds consume UnityEngine.Random.");
+            Assert.That(scenarioSeed, Does.Contain("RlOneVsOneEvaluationSideChannel.IsEvaluationMode(args)"));
+            Assert.That(scenarioSeed, Does.Contain("return UnityEngine.Random.Range(0, int.MaxValue);"));
+            Assert.That(scenarioSeed, Does.Contain("return Guid.NewGuid().GetHashCode();"),
+                "Ordinary training intentionally keeps a fresh process-local random root.");
             Assert.That(matchups, Does.Contain(
-                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt)"));
+                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt"));
             Assert.That(mapSizes, Does.Contain(
                 "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt)"));
             Assert.That(matchups, Does.Not.Contain("Guid.NewGuid"));
