@@ -5,7 +5,7 @@ Compact routing map for agents. Search this before broad repository scans, then 
 | Concept / useful aliases | Start with | Current code / assets / symbols to locate | Evidence / related concepts |
 |---|---|---|---|
 | bootstrap, global config, scene startup | `SYSTEM_MAP.md` → Runtime ownership | `ConfigData`, `ConfigData.Runtime`, `Scene`, `Stage` | settings/user-data finalization; lazy socket; profile selection |
-| identity namespaces, stale ownership, IDs | `SYSTEM_MAP.md` → Identity boundaries | `FleetShip.Id`, `SavedSquad.Id`, `Squad.ItemId`, `Ship.Id`, request `Hash`, `OutcomeId` | persistent vs pooled lifetime vs request vs learning identity; BeesServer database model |
+| identity namespaces, stale ownership, IDs | `SYSTEM_MAP.md` → Identity boundaries | `FleetShip.Id`, `SavedSquad.Id`, `Squad.ItemId`, `Ship.Id`, request `Hash`, `OutcomeId` | persistent vs pooled lifetime vs request vs learning identity; `BeesServer~/docs/DATABASE_MODEL.md` |
 | profile persistence, local/server data | `SYSTEM_MAP.md` → Persistence/profile flow | `DataFile`, `UserData`, `ConfigData.Runtime`, `Ships` | missing vs failed read; exact version; local/server/mirror routing |
 | atomic campaign/profile checkpoint | `CampaignCheckpoint`, `BeesServer~/campaignCheckpoint.js` | `__campaign_checkpoint__`, seven profile documents | coalesced client write; one server transaction; no partial profile commit |
 | Level state, reset, teardown, pooling | `SYSTEM_MAP.md` → Runtime ownership; invariants → State/lifecycle | `Level.Reset`, `GameState`, `GameState.Registry`, `Pool`, `Setup`, `ClearData`, `Kill` | loaded flags; deferred release; request-history pruning; soak tests |
