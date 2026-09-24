@@ -167,7 +167,7 @@ namespace Bees.Tests.EditMode
 
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
             Assert.That(coordinator, Does.Contain("!RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side)"));
-            Assert.That(coordinator, Does.Contain("if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)"));
+            Assert.That(coordinator, Does.Contain("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled"));
         }
 
         private string WriteReplay(
