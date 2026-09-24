@@ -1,0 +1,30 @@
+{
+  "name": "BeesServer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node start-server.js",
+    "start:background": "node start-server.js --background",
+    "start:log": "node start-server.js --log",
+    "start:test": "node start-server.js test 7146",
+    "test": "node run-tests.js",
+    "migrate:test": "node migrate.js --test",
+    "migrate:production": "node migrate.js --production",
+    "test:live": "node run-tests.js",
+    "training-control": "node trainingControlCli.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^9.23.0"
+  },
+  "dependencies": {
+    "mime-types": "^3.0.2",
+    "mysql2": "^3.23.2",
+    "object-sizeof": "^2.6.5",
+    "websocket": "^1.0.35",
+    "xxhashjs": "^0.2.2"
+  }
+}

@@ -10,6 +10,7 @@ unauthenticated gRPC protocol is never intentionally exposed to the network.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import subprocess
@@ -22,6 +23,22 @@ import bees_distributed_training as distributed
 
 
 DEFAULT_BASE_PORT = distributed.DEFAULT_BASE_PORT
+
+CONTROL_ENV_ARGS_VARIABLE = "BEES_TRAINING_ENV_ARGS_JSON"
+
+
+def controlled_environment_args(spec_args: Sequence[str]) -> Tuple[str, ...]:
+    raw = os.environ.get(CONTROL_ENV_ARGS_VARIABLE)
+    if raw is None or raw.strip() == "":
+        return tuple(str(value) for value in spec_args)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{CONTROL_ENV_ARGS_VARIABLE} is invalid JSON") from exc
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{CONTROL_ENV_ARGS_VARIABLE} must contain a JSON string list")
+    return tuple(value)
+
 
 
 def parse_worker_ids(value: str) -> Tuple[int, ...]:
@@ -172,7 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         worker_ids = select_worker_ids(spec, args.worker_ids)
         base_port = int(spec["base_port"])
         ports = worker_ports(base_port, worker_ids)
-        unity_args = tuple(str(value) for value in spec["unity_args"])
+        unity_args = controlled_environment_args(spec["unity_args"])
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
