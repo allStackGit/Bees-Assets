@@ -15,7 +15,6 @@ internal static class RlTrainingControlRuntime
 
     private static string _path;
     private static DateTime _nextRefreshUtc = DateTime.MinValue;
-    private static DateTime _lastWriteUtc = DateTime.MinValue;
     private static bool _forceInference = true;
 
     internal static bool ShouldForceInference(bool online, string desiredMode)
@@ -108,17 +107,9 @@ internal static class RlTrainingControlRuntime
             if (!File.Exists(path))
             {
                 _forceInference = true;
-                _lastWriteUtc = DateTime.MinValue;
                 return;
             }
 
-            DateTime writeUtc = File.GetLastWriteTimeUtc(path);
-            if (writeUtc == _lastWriteUtc)
-            {
-                return;
-            }
-
-            _lastWriteUtc = writeUtc;
             if (!TryParseState(File.ReadAllText(path), out bool forceInference))
             {
                 _forceInference = true;
@@ -137,7 +128,6 @@ internal static class RlTrainingControlRuntime
     {
         _path = null;
         _nextRefreshUtc = DateTime.MinValue;
-        _lastWriteUtc = DateTime.MinValue;
         _forceInference = true;
     }
 }
