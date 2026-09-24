@@ -567,12 +567,10 @@ public class Stage : Scene
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
                 BeeShipTypes = new List<ConfigData.ShipTypes>() { BeeShipTypes[Utilities.RandomInt(BeeShipTypes.Count)] };
-                Debug.Log($"The user has selected randomized enemy ship type: {BeeShipTypes[0]}");
             }
             else
             {
                 HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[Utilities.RandomInt(HumanShipTypes.Count)] };
-                Debug.Log($"The user has selected randomized enemy ship type: {HumanShipTypes[0]}");
             }
 
         }
@@ -608,7 +606,6 @@ public class Stage : Scene
             {
                 //Debug.Log($"Option: {level.CurrentLevelOptions.EnemyShipTypeOption}");
                 HumanShipTypes = new List<ConfigData.ShipTypes>() { HumanShipTypes[level.CurrentLevelOptions.EnemyShipTypeOption - 1] };
-                Debug.Log($"The user has selected enemy ship type: {HumanShipTypes[0]}");
             }
         }
     }
