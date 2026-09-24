@@ -424,7 +424,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     parser.add_argument("--generation-steps", type=int, default=DEFAULT_GENERATION_STEPS)
     parser.add_argument("--num-envs", type=int, default=DEFAULT_NUM_ENVS)
-    parser.add_argument("--environment-args-json", default="[]")
+    parser.add_argument(
+        "--environment-args-json",
+        default=os.environ.get("BEES_TRAINING_ENV_ARGS_JSON", "[]"),
+    )
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
     parser.add_argument("--once", action="store_true")
