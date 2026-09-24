@@ -80,10 +80,12 @@ class ManagedProcess:
         revision: int,
         build_sha256: str,
         state_file: Path,
+        environment_args: Sequence[str],
     ) -> None:
         self.stop()
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
+        environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         self.process = subprocess.Popen(list(command), env=environment)
         self.command = tuple(command)
         self.revision = revision
@@ -237,6 +239,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             revision=revision,
                             build_sha256=str(active_build["archive_sha256"]),
                             state_file=state_file,
+                            environment_args=environment_args,
                         )
                 elif mode == "training":
                     if not descriptor:
