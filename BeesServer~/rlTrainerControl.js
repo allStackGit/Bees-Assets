@@ -527,6 +527,12 @@ function installTrainerControl(hostObject, options = {}) {
         });
         httpServer.on('error', error => {
             console.error(`Bees trainer-control server error: ${error.message}`);
+            if (options.onFatalError) {
+                options.onFatalError(error);
+                return;
+            }
+            process.exitCode = 1;
+            process.nextTick(() => process.exit(1));
         });
         httpServer.listen(config.port, config.host, () => {
             const address = httpServer.address();
