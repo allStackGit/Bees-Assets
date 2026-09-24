@@ -1,10 +1,10 @@
 {
   "behavior_name": "BeesRL1v1",
-  "policy_abi_version": 13,
-  "policy_signature": "bees-rl-v13|behavior=BeesRL1v1|network=lstm-1024x4-mem512-seq256|normalize=true|obs=16166|cont=16|disc=2x5,5,65,65,65|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shipbits=5|weaponbits=4|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=29|ship-id=episode-permuted-scalar23|self-counts=live-friendly,live-enemy|capability=12|parent-carrier=109|entity-core=18|entity=109|ally=113-with-private-comm4|weapon=18|weapon-observation=shared-self-ally-enemy|projectile-speed=linear-max200-per-weapon|enemy-mount=0|mining-slot=7|map-slot=11|moving-asteroid-slot=10|objective=16|grid=21x21@6|episode-progress=1|reserved-tail=20|entity-order=distance,type,fleet-id,runtime-id",
-  "observation_schema_version": 9,
-  "action_schema_version": 7,
-  "reward_schema_version": 2,
+  "policy_abi_version": 18,
+  "policy_signature": "bees-rl-v18|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7342|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+  "observation_schema_version": 10,
+  "action_schema_version": 8,
+  "reward_schema_version": 3,
   "scenario_schema_version": 1,
   "promotion": {
     "min_matches_vs_champion": 500,
@@ -37,7 +37,7 @@
   "ingestion": {
     "max_payload_bytes": 16777216,
     "max_steps_per_match": 100000,
-    "telemetry_observation_size": 16166,
+    "telemetry_observation_size": 7342,
     "telemetry_continuous_action_count": 16,
     "telemetry_discrete_branch_sizes": [
       2,
@@ -45,10 +45,7 @@
       2,
       2,
       2,
-      5,
-      65,
-      65,
-      65
+      5
     ]
   }
 }
