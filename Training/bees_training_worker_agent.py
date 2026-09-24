@@ -260,6 +260,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             revision=revision,
                             build_sha256=desired_sha,
                             state_file=state_file,
+                            environment_args=environment_args,
                         )
                     applied_revision = revision
                 else:
