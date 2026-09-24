@@ -108,9 +108,18 @@ class TrainingControlClientTests(unittest.TestCase):
 
     def test_render_command_expands_build_and_environment_arguments(self):
         rendered = agent.render_command(
-            ["python", "worker.py", "--env", "{env}", "--env-args", "{env_args}"],
+            [
+                "python",
+                "worker.py",
+                "--env",
+                "{env}",
+                "--build-id={build_id}",
+                "--env-args",
+                "{env_args}",
+            ],
             Path("/tmp/Bees.x86_64"),
             ["--rl-map-size", "64"],
+            "release-42",
         )
         self.assertEqual(
             rendered,
@@ -119,11 +128,35 @@ class TrainingControlClientTests(unittest.TestCase):
                 "worker.py",
                 "--env",
                 "/tmp/Bees.x86_64",
+                "--build-id=release-42",
                 "--env-args",
                 "--rl-map-size",
                 "64",
             ],
         )
+
+    def test_episode_log_metrics_reports_recent_training_statistics(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            log = root / "Player-0.log"
+            log.write_text(
+                "RL 1v1 episode=1 timeout=False duration=10.0s "
+                "bee_tsv=100->50 human_tsv=100->0 "
+                "bee_fire_requests=4 bee_shots=3 bee_hits=2 bee_damage=10 "
+                "human_fire_requests=2 human_shots=2 human_hits=1 human_damage=5\n"
+                "RL 1v1 episode=2 timeout=True duration=20.0s "
+                "bee_tsv=100->25 human_tsv=100->25 "
+                "bee_fire_requests=4 bee_shots=4 bee_hits=1 bee_damage=5 "
+                "human_fire_requests=4 human_shots=4 human_hits=2 human_damage=10\n",
+                encoding="utf-8",
+            )
+            metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
+            self.assertEqual(metrics["window_episodes"], 2)
+            self.assertEqual(metrics["last_episode"], 2)
+            self.assertEqual(metrics["timeout_pct"], 50.0)
+            self.assertEqual(metrics["bee_win_pct"], 50.0)
+            self.assertAlmostEqual(metrics["bee_hit_pct"], 100.0 * 3 / 7, places=2)
+            self.assertAlmostEqual(metrics["human_hit_pct"], 50.0, places=2)
 
     def test_managed_build_is_hash_verified_and_installed_versioned(self):
         with tempfile.TemporaryDirectory() as temp:
