@@ -68,6 +68,8 @@ If the user supplies a location that should have been routable, a known fact is 
 
 ## 6. Completion transaction
 
+Use `.agents/skills/continuous-learning/SKILL.md` for the closed-loop candidate disposition workflow.
+
 Before completion, consider each candidate as **promote**, **refresh**, **defer**, or **reject**. Update durable knowledge only when justified. A task with no worthwhile lesson should leave no learning-document churn.
 
 For code-bearing changes, apply `.agents/skills/code-quality/SKILL.md` only to touched code and immediate interfaces. For pure documentation/skill changes, review the changed guidance directly; no production-code quality scan is required.
