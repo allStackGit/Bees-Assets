@@ -433,6 +433,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--role", choices=("dedicated", "full-game"), required=True)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--install-root", required=True)
+    parser.add_argument("--runtime-ready-file", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=15.0)
     parser.add_argument(
@@ -456,7 +457,9 @@ def _normalized_launch_command(values: Sequence[str]) -> list[str]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = _parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parser().parse_args(raw_argv)
+    startup_source_sha = file_sha256(Path(__file__).resolve())
     if args.heartbeat_seconds <= 0 or args.request_timeout_seconds <= 0:
         print("error: heartbeat and request timeout must be positive", file=sys.stderr)
         return 2
@@ -501,6 +504,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             now = time.monotonic()
             offline = last_contact > 0 and now - last_contact > lease_seconds
             prepared_build_id, preparation_error = preparer.snapshot()
+            if prepared_build_id and args.runtime_ready_file:
+                try:
+                    runtime_ready_build = Path(args.runtime_ready_file).expanduser().read_text(
+                        encoding="ascii"
+                    ).strip()
+                except OSError:
+                    runtime_ready_build = ""
+                if runtime_ready_build != prepared_build_id:
+                    prepared_build_id = ""
             heartbeat = default_heartbeat(
                 trainer_id=args.trainer_id,
                 role=args.role,
@@ -525,6 +537,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 environment_args = tuple(str(value) for value in desired["environment_args"])
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
+
+                desired_build_id = str(desired.get("desired_build_id", ""))
+                active_build_id = str(active_build.get("build_id", "")) if active_build else ""
+                source_changed = file_sha256(Path(__file__).resolve()) != startup_source_sha
+                if source_changed and (
+                    mode == "stopped"
+                    or (desired_build_id and desired_build_id != active_build_id)
+                ):
+                    managed.stop()
+                    try:
+                        log_uploader.flush_once(
+                            client,
+                            trainer_id=args.trainer_id,
+                            run_id=run_id,
+                        )
+                    except (ControlUnavailable, ControlRejected, OSError, ValueError):
+                        pass
+                    os.execv(
+                        sys.executable,
+                        [sys.executable, str(Path(__file__).resolve()), *raw_argv],
+                    )
 
                 if mode == "stopped":
                     managed.stop()
