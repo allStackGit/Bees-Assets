@@ -486,6 +486,9 @@ class TrainingControlStore {
             build_sha256: typeof payload.build_sha256 === 'string' ? payload.build_sha256.slice(0, 64) : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
+            metrics: payload.metrics && typeof payload.metrics === 'object' && !Array.isArray(payload.metrics)
+                ? payload.metrics
+                : {},
             last_seen_ms: now,
         };
         this.trainers.set(trainerId, record);
