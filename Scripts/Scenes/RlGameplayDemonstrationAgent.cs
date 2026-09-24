@@ -486,9 +486,9 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
                 : RlOneVsOneAgent.CeaseWeaponAction;
         }
 
-        // One-shot ship/mining/healing/warp actions are not inferred from aftermath. Those need
-        // explicit authoritative event hooks so demonstrations never invent an action that did not
-        // occur. Until those hooks are added, the special branch remains NoSpecialAction.
+        // One-shot ship/mining/healing/warp actions are captured by authoritative event hooks as
+        // separate capability demonstrations. The continuous gameplay recorder therefore keeps the
+        // special branch neutral instead of inferring capabilities from aftermath.
         discrete[RlOneVsOneAgent.SpecialActionBranch] = RlOneVsOneAgent.NoSpecialAction;
     }
 
@@ -557,31 +557,24 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             return false;
         }
 
-        // The historical squad flag can remain true even when Stage has disabled the Hive Mind.
-        // Do not turn that stale ownership metadata into a training demonstration.
-        if (expectedSource == DemonstrationSource.HiveMind &&
-            (stage == null || !stage.ActivateHiveMind || stage.ActivateRlPolicy))
+        if (stage == null || ConfigData.Configuration == null)
         {
             return false;
         }
 
-        bool liveRlControlled = IsLiveRlControlled(stage, level, ship);
-        DemonstrationSource actualSource = DetermineSource(
-            ship.Squad.IsUserControlled,
-            ship.Squad.IsHiveMindControlled,
-            liveRlControlled);
-        return actualSource == expectedSource;
-    }
-
-    private static bool IsLiveRlControlled(Stage stage, Level level, Ship ship)
-    {
-        if (stage == null || level == null || ship == null || ConfigData.Configuration == null ||
-            !stage.ActivateHiveMind || !stage.ActivateRlPolicy)
+        RlProductionControllerRouter.ControllerKind controller =
+            RlProductionControllerRouter.Resolve(stage, level, ship.Side);
+        if (expectedSource == DemonstrationSource.Human)
         {
-            return false;
+            return controller == RlProductionControllerRouter.ControllerKind.Player &&
+                   ship.Squad.IsUserControlled;
         }
-
-        return RlLivePolicyAgent.ShouldControlSide(level.HasPlayer, ship.Side, ConfigData.Configuration.AISide);
+        if (expectedSource == DemonstrationSource.HiveMind)
+        {
+            return controller == RlProductionControllerRouter.ControllerKind.HiveMind &&
+                   ship.Squad.IsHiveMindControlled;
+        }
+        return false;
     }
 
     private bool IsObservedByAnotherAgent(Ship candidate)
