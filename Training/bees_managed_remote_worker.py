@@ -8,6 +8,7 @@ a small persistent actor key so reconnects can reclaim its current slot safely.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
 from pathlib import Path
 import shutil
@@ -33,6 +34,23 @@ def _available_cpu_threads() -> int:
                 return count
         except (OSError, TypeError):
             pass
+
+    if os.name == "nt":
+        try:
+            process_mask = ctypes.c_size_t()
+            system_mask = ctypes.c_size_t()
+            kernel32 = ctypes.windll.kernel32
+            if kernel32.GetProcessAffinityMask(
+                kernel32.GetCurrentProcess(),
+                ctypes.byref(process_mask),
+                ctypes.byref(system_mask),
+            ):
+                count = int(process_mask.value).bit_count()
+                if count > 0:
+                    return count
+        except (AttributeError, OSError, ValueError):
+            pass
+
     return max(1, int(os.cpu_count() or 1))
 
 
