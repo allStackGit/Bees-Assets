@@ -226,7 +226,7 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
         _socketOpen = false;
         _socketClosed = false;
         _socket = new WebSocket(url, "game");
-        if (!ConfigData.Test)
+        if (ConfigData.Production)
         {
             _socket.SslConfiguration.EnabledSslProtocols = SslProtocols.Tls12;
         }
