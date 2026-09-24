@@ -32,7 +32,6 @@ namespace Assets.Scripts.Scenes
         public int TargetFrameRate;
         public ConfigData.SceneTypes Type;
 
-        public int __Updates = 0;
         private int _automaticReconnectAttempts;
         private bool _pausedForNetworkDisconnect;
         private bool _hasShownDeadVersionAlert;
@@ -199,7 +198,6 @@ namespace Assets.Scripts.Scenes
             if (_resends > 0)
             {
                 Debug.LogWarning($"Resending {_resends} timed-out requests");
-                ConfigData.__TotalResends += _resends;
             }
         }
 
