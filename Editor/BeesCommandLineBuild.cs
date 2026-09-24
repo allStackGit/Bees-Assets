@@ -10,6 +10,14 @@ internal static class BeesCommandLineBuild
 {
     private const string OutputArgument = "-beesOutput";
     private const string RlScene = "Assets/Scenes/RL 1v1 Training.unity";
+    private static readonly string[] FullGameExcludedScenes =
+    {
+        RlScene,
+        "Assets/Scenes/Hivemind Training.unity",
+        "Assets/Scenes/Hivemind Training (4k).unity",
+        "Assets/Scenes/Hivemind Training Downsized.unity",
+        "Assets/Scenes/Sprite Mask Test.unity",
+    };
 
     public static void BuildWindowsRl()
     {
@@ -32,7 +40,8 @@ internal static class BeesCommandLineBuild
         string[] scenes = EditorBuildSettings.scenes
             .Where(scene => scene.enabled && !string.IsNullOrWhiteSpace(scene.path))
             .Select(scene => scene.path)
-            .Where(path => !string.Equals(path, RlScene, StringComparison.OrdinalIgnoreCase))
+            .Where(path => !FullGameExcludedScenes.Any(
+                excluded => string.Equals(path, excluded, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
 
         if (scenes.Length == 0)
