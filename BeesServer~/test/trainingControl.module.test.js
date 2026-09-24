@@ -71,6 +71,14 @@ test('desired state is persisted and maps stop to inference for full games only'
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
         const store = new TrainingControlStore({ statePath, artifactRoot: path.join(root, 'artifacts') });
+        const archive = path.join(root, 'windows.zip');
+        fs.writeFileSync(archive, Buffer.from('windows-build'));
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'build-1',
+            archivePath: archive,
+            entrypoint: 'Bees.exe',
+        });
 
         assert.equal(store.stateFor({
             trainerId: 'dedicated-1', role: 'dedicated', platform: 'WindowsPlayer',
@@ -123,6 +131,74 @@ test('heartbeats retain machine-readable lease status', () => {
         assert.equal(store.status().trainers[0].stale, false);
         now += 10001;
         assert.equal(store.status().trainers[0].stale, true);
+    });
+});
+
+
+test('training refuses to start while an active platform lacks the canonical build', () => {
+    withTempDir(root => {
+        const windows = path.join(root, 'windows.zip');
+        fs.writeFileSync(windows, Buffer.from('windows-build'));
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-1',
+            archivePath: windows,
+            entrypoint: 'Bees.exe',
+        });
+        store.setDesiredState({ canonical_build_id: 'release-1' });
+        store.heartbeat({
+            trainer_id: 'linux-1',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'stopped',
+            applied_revision: 1,
+        });
+
+        assert.throws(
+            () => store.setDesiredState({ training_enabled: true }),
+            /missing active platform artifacts: LinuxPlayer/);
+        assert.equal(store.state.training_enabled, false);
+    });
+});
+
+test('reloading control state rejects a tampered canonical artifact', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const source = path.join(root, 'windows.zip');
+        fs.writeFileSync(source, Buffer.from('original-build'));
+        const store = new TrainingControlStore({ statePath, artifactRoot });
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-1',
+            archivePath: source,
+            entrypoint: 'Bees.exe',
+        });
+        store.setDesiredState({ canonical_build_id: 'release-1' });
+
+        const owned = store.artifact('WindowsPlayer', 'release-1');
+        fs.writeFileSync(owned.archive_path, Buffer.from('tampered-build'));
+
+        assert.throws(
+            () => new TrainingControlStore({ statePath, artifactRoot }),
+            /canonical artifact/);
+    });
+});
+
+test('canonical build activation requires at least one published artifact', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        assert.throws(
+            () => store.setDesiredState({ canonical_build_id: 'missing-build' }),
+            /no published platform artifact/);
+        assert.equal(store.state.canonical_build_id, '');
     });
 });
 
