@@ -90,26 +90,38 @@ if(Test-Path -LiteralPath $RuntimeRoot){Remove-Item -LiteralPath $RuntimeRoot -R
 $null=New-Item -ItemType Directory -Force -Path $RuntimeRoot
 Expand-Archive -LiteralPath $runtimeZip -DestinationPath $RuntimeRoot -Force
 
+function Test-Python310([string]$Exe,[string[]]$Prefix=@()){
+    if(-not $Exe -or -not(Test-Path -LiteralPath $Exe)){return $false}
+    & $Exe @Prefix -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
+    $LASTEXITCODE -eq 0
+}
+
 function Resolve-PythonLauncher {
     $py=Resolve-Exe 'py'
-    if($py){
-        & $py -3.10 -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
-        if($LASTEXITCODE -eq 0){return @($py,'-3.10')}
-    }
+    if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
+
     $python=Resolve-Exe 'python'
-    if($python){
-        & $python -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
-        if($LASTEXITCODE -eq 0){return @($python)}
+    if($python -and (Test-Python310 $python)){return @($python)}
+
+    foreach($candidate in @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+        'C:\Program Files\Python310\python.exe'
+    )){
+        if(Test-Python310 $candidate){return @($candidate)}
     }
+
     $winget=Resolve-Exe 'winget'
     if($winget){
         Write-Host 'Python 3.10 was not found. Installing it with winget...'
         & $winget install --id Python.Python.3.10 -e --accept-package-agreements --accept-source-agreements --silent
-        $py=Resolve-Exe 'py'
-        if($py){
-            & $py -3.10 -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
-            if($LASTEXITCODE -eq 0){return @($py,'-3.10')}
+        foreach($candidate in @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+            'C:\Program Files\Python310\python.exe'
+        )){
+            if(Test-Python310 $candidate){return @($candidate)}
         }
+        $py=Resolve-Exe 'py'
+        if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
     }
     throw 'Python 3.10 is required and could not be installed automatically.'
 }
