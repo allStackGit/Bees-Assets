@@ -429,6 +429,7 @@ function Wait-ReleaseRollout($Config,[string]$AdminToken,[string]$BuildId,[int]$
 function Invoke-Build {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
+    $sourceSha=Get-GitShortSha
 
     $outgoingRun=Get-ActiveRunId $config
     if($outgoingRun){
@@ -449,7 +450,7 @@ function Invoke-Build {
     Ensure-Directory $BuildsRoot
     $date=Get-Date -Format 'yyyy-MM-dd'
     $time=Get-Date -Format 'HHmmss'
-    $sha=Get-GitShortSha
+    $sha=$sourceSha
     $buildId="$date-$time-$sha"
     $win=Join-Path $BuildsRoot "$date RL Windows"
     $linux=Join-Path $BuildsRoot "$date RL Linux"
@@ -493,13 +494,15 @@ function Invoke-Build {
         }
     }
 
+    $previousRunId=$null
+    if($plan.previous_run_id){ $previousRunId=[string]$plan.previous_run_id }
     $release=[pscustomobject]@{
         schema_version=2
         build_id=$buildId
         source_commit=$sha
         created_utc=[DateTime]::UtcNow.ToString('o')
         run_id=[string]$plan.run_id
-        previous_run_id=if($plan.previous_run_id){[string]$plan.previous_run_id}else{$null}
+        previous_run_id=$previousRunId
         compatibility_key=[string]$plan.compatibility_key
         incompatible=[bool]$plan.incompatible
         contract=$plan.contract
