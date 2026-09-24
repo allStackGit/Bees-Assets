@@ -123,6 +123,7 @@ def write_local_state(
         "revision": desired.get("revision") if desired else -1,
         "training_enabled": bool(desired.get("training_enabled")) if desired else False,
         "environment_args": list(desired.get("environment_args", ())) if desired else [],
+        "lease_seconds": float(desired.get("lease_seconds", 20.0)) if desired else 20.0,
         "last_error": last_error,
         "updated_unix_seconds": time.time(),
     }
