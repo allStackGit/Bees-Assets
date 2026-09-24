@@ -14,7 +14,6 @@
   "expectedTrainers": [],
   "remoteSshTarget": "",
   "remoteSshPort": 22,
-  "remoteDefaultEnvs": 32,
   "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
   "remoteTorchDevice": "cpu",
   "remoteLinuxInstallRoot": ".local/share/bees-training"
