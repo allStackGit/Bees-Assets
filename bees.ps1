@@ -389,20 +389,37 @@ function Assert-UnityProjectAvailableForBatchBuild {
 function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[string]$Entrypoint,[string]$LogName){
     $logRoot=Join-Path $LogsRoot 'Build'; Ensure-Directory $logRoot
     $logPath=Join-Path $logRoot $LogName
-    $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$Output,'-logFile',$logPath)
+
+    $stagingRoot=Join-Path $RuntimeRoot 'BuildStaging'
+    Ensure-Directory $stagingRoot
+    $stageName=($Method -replace '[^A-Za-z0-9_.-]','_')
+    $staging=Join-Path $stagingRoot $stageName
+    if(Test-Path -LiteralPath $staging){ Remove-Item -LiteralPath $staging -Recurse -Force }
+    Ensure-Directory $staging
+
+    $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$staging,'-logFile',$logPath)
     Write-Host "Unity: $Method -> $Output"
     Invoke-Checked $Unity $args $BeesRoot
 
-    $expected=Join-Path $Output $Entrypoint
-    if(-not(Test-Path -LiteralPath $expected)){
+    $stagedEntrypoint=Join-Path $staging $Entrypoint
+    if(-not(Test-Path -LiteralPath $stagedEntrypoint)){
+        $found=@(
+            Get-ChildItem -LiteralPath $BuildsRoot -Recurse -File -Filter $Entrypoint -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+        )
         $tail=''
         if(Test-Path -LiteralPath $logPath){
             $tail=(@(Get-Content -LiteralPath $logPath -Tail 40 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
         }
-        $message="Unity exited without producing the expected build entrypoint: $expected"
+        $message="Unity exited without producing the expected staged build entrypoint: $stagedEntrypoint"
+        if($found.Count){ $message += [Environment]::NewLine + "Matching executable(s) found elsewhere:" + [Environment]::NewLine + ($found -join [Environment]::NewLine) }
         if($tail){ $message += [Environment]::NewLine + "Last Unity build log lines:" + [Environment]::NewLine + $tail }
         throw $message
     }
+
+    if(Test-Path -LiteralPath $Output){ Remove-Item -LiteralPath $Output -Recurse -Force }
+    Ensure-Directory (Split-Path -Parent $Output)
+    Move-Item -LiteralPath $staging -Destination $Output
 }
 
 function Package-Build([string]$Python,[string]$Source,[string]$Archive,[string]$Entrypoint){
