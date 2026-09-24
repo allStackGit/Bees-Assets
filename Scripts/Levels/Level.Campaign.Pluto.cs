@@ -424,12 +424,17 @@ namespace Assets.Scripts.Levels
             Stage.CutsceneManager.Setup(Pluto2Ending);
             Stage.Menus.TogglePausePanel();
 
+            bool openingDialogueStarted = false;
+            Stage.CutsceneManager.HitDialogueBreak = false;
             _dialogueTimer.Reuse(1.5f, () =>
-                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 1)));
+            {
+                openingDialogueStarted = true;
+                Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(2, 1));
+            });
             AddTimer(_dialogueTimer);
 
             Triggers.Add(new Trigger(
-                () => Stage.CutsceneManager.HitDialogueBreak,
+                () => openingDialogueStarted && Stage.CutsceneManager.HitDialogueBreak,
                 () =>
                 {
                     Stage.Menus.TogglePausePanel();
@@ -506,8 +511,8 @@ namespace Assets.Scripts.Levels
                                         {
                                             "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
                                             "If you need to select multiple squads, click and drag the mouse over the squads.",
-                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding <b>R</b>.",
-                                            "You can manually fire towards your cursor with any selected ships by pressing <b>F</b>."
+                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding R.",
+                                            "You can manually fire towards your cursor with any selected ships by pressing F."
                                         }, true, () =>
                                         {
                                             tacticalTutorialComplete = true;
