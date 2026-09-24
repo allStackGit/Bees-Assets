@@ -72,6 +72,7 @@ test('enabled autostart launches the autonomous service with shared quarantine a
     env.BEES_RL_CONTINUAL_RETRY_SECONDS = '7.5';
     env.BEES_RL_CONTINUAL_RUN_ID = 'bees-continuous-test';
     env.BEES_RL_PLATFORM = 'WindowsPlayer';
+    env.BEES_RL_CLUSTER_ENV_ARGS_JSON = '["--rl-map-size=128","--rl-bee-ship-types=Wasp,Hornet"]';
 
     const spec = buildContinualLearningSpec(env);
     assert.equal(spec.executable, 'python-test');
@@ -84,6 +85,7 @@ test('enabled autostart launches the autonomous service with shared quarantine a
     assert.ok(spec.args.includes('--retry-seconds=7.5'));
     assert.ok(spec.args.includes('--run-id=bees-continuous-test'));
     assert.ok(spec.args.includes('--platform=WindowsPlayer'));
+    assert.ok(spec.args.includes('--environment-args-json=["--rl-map-size=128","--rl-bee-ship-types=Wasp,Hornet"]'));
 });
 
 test('ordinary non-WAN training still rejects zero local environments', t => {
@@ -173,4 +175,12 @@ test('stray WAN settings are rejected rather than silently ignored', t => {
     const { env } = fixture(t);
     env[WAN_BROKER_PORT_ENV] = '56051';
     assert.throws(() => buildContinualLearningSpec(env), new RegExp(WAN_ACTORS_ENV));
+});
+test('invalid central environment-argument JSON fails before trainer startup', t => {
+    const { env } = fixture(t);
+    env.BEES_RL_CLUSTER_ENV_ARGS_JSON = '{"not":"a-list"}';
+    assert.throws(() => buildContinualLearningSpec(env), /JSON array of strings/);
+
+    env.BEES_RL_CLUSTER_ENV_ARGS_JSON = 'not-json';
+    assert.throws(() => buildContinualLearningSpec(env), /valid JSON/);
 });
