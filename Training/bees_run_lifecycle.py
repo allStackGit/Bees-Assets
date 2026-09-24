@@ -37,6 +37,63 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _semantic_csharp_sha256(path: Path) -> str:
+    """Hash C# code while ignoring comments and insignificant whitespace."""
+    text = path.read_text(encoding="utf-8")
+    output: list[str] = []
+    index = 0
+    state = "code"
+    quote = ""
+    while index < len(text):
+        current = text[index]
+        following = text[index + 1] if index + 1 < len(text) else ""
+
+        if state == "line-comment":
+            if current in "\r\n":
+                state = "code"
+            index += 1
+            continue
+
+        if state == "block-comment":
+            if current == "*" and following == "/":
+                state = "code"
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if state in ("string", "char"):
+            output.append(current)
+            if current == "\\" and index + 1 < len(text):
+                output.append(text[index + 1])
+                index += 2
+                continue
+            if current == quote:
+                state = "code"
+            index += 1
+            continue
+
+        if current == "/" and following == "/":
+            state = "line-comment"
+            index += 2
+            continue
+        if current == "/" and following == "*":
+            state = "block-comment"
+            index += 2
+            continue
+        if current in ('"', "'"):
+            state = "string" if current == '"' else "char"
+            quote = current
+            output.append(current)
+            index += 1
+            continue
+        if not current.isspace():
+            output.append(current)
+        index += 1
+
+    return _sha256_bytes("".join(output).encode("utf-8"))
+
+
 def _network_settings_block(text: str) -> str:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     start = None
@@ -103,10 +160,10 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     # Reward semantics are intentionally part of compatibility even if a future editor forgets to
     # increment reward_schema_version. PolicySchema source is hashed too so ABI edits cannot silently
     # reuse an optimizer lineage before its mirrored JSON signature is corrected.
-    payload["reward_source_sha256"] = _file_sha256(reward_path)
-    payload["policy_schema_source_sha256"] = _file_sha256(policy_path)
+    payload["reward_source_sha256"] = _semantic_csharp_sha256(reward_path)
+    payload["policy_schema_source_sha256"] = _semantic_csharp_sha256(policy_path)
     for name, path in semantic_sources.items():
-        payload[name] = _file_sha256(path)
+        payload[name] = _semantic_csharp_sha256(path)
     return payload
 
 
