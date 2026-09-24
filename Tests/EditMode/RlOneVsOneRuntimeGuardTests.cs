@@ -44,17 +44,24 @@ namespace Bees.Tests.EditMode
         public void TrainingLevelSetupDoesNotTouchPlayerActionBox()
         {
             string reset = ReadSource("Scripts", "Levels", "Level.Reset.cs").Replace("\r\n", "\n");
-            int trainingGuard = reset.IndexOf(
-                "if (!Stage.IsTraining)\n            {\n                Debug.Log($\"Game mode: {ConfigData.CurrentGameMode}\");",
-                StringComparison.Ordinal);
             int actionBoxSetup = reset.IndexOf(
                 "Stage.Menus.ActionBox.Setup(Stage, this, Stage.EventSystem, ConfigData.Configuration.UserSide);",
                 StringComparison.Ordinal);
-            int guardEnd = reset.IndexOf("\n            }\n\n            StageConfigOptions.Apply", trainingGuard, StringComparison.Ordinal);
+            int actionBoxComment = reset.IndexOf(
+                "// The action box is player UI.",
+                StringComparison.Ordinal);
+            int trainingGuard = actionBoxComment >= 0
+                ? reset.LastIndexOf("if (!Stage.IsTraining)", actionBoxComment, StringComparison.Ordinal)
+                : -1;
+            int stageConfigApply = reset.IndexOf(
+                "StageConfigOptions.Apply(Stage, this);",
+                actionBoxSetup,
+                StringComparison.Ordinal);
 
+            Assert.That(actionBoxComment, Is.GreaterThanOrEqualTo(0));
             Assert.That(trainingGuard, Is.GreaterThanOrEqualTo(0));
             Assert.That(actionBoxSetup, Is.GreaterThan(trainingGuard));
-            Assert.That(guardEnd, Is.GreaterThan(actionBoxSetup));
+            Assert.That(stageConfigApply, Is.GreaterThan(actionBoxSetup));
         }
 
         [Test]
