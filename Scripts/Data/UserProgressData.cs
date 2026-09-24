@@ -271,7 +271,6 @@ namespace Assets.Scripts.Data
                     int targetLevel = missionId + 1;
                     if (CampaignMissionCatalog.IsCampaignComplete(targetLevel))
                     {
-                        Debug.Log($"Campaign mission {missionId} completed the currently available campaign; advancing progress to terminal level {targetLevel}.");
                         SetCurrentLevel(targetLevel);
                         return;
                     }
@@ -280,7 +279,6 @@ namespace Assets.Scripts.Data
                         return;
                     }
 
-                    Debug.Log($"Advancing campaign from {currentLevel} to {targetLevel} after mission {missionId}");
                     SetCurrentLevel(targetLevel);
                     return;
                 }
@@ -288,7 +286,6 @@ namespace Assets.Scripts.Data
                 int fallbackTargetLevel = currentLevel + 1;
                 if (CampaignMissionCatalog.IsCampaignComplete(fallbackTargetLevel))
                 {
-                    Debug.Log($"Campaign level {currentLevel} completed the currently available campaign; advancing progress to terminal level {fallbackTargetLevel}.");
                     SetCurrentLevel(fallbackTargetLevel);
                     return;
                 }
@@ -298,12 +295,10 @@ namespace Assets.Scripts.Data
             {
                 if (ConfigData.Configuration.UserSide == ConfigData.Configuration.HumanSide)
                 {
-                    Debug.Log($"Advancing from {CurrentHumanChallengeLevel} to {CurrentHumanChallengeLevel + 1} in the human challenge mode");
                     SetCurrentLevel(CurrentHumanChallengeLevel + 1);
                 }
                 else
                 {
-                    Debug.Log($"Advancing from {CurrentBeeChallengeLevel} to {CurrentBeeChallengeLevel + 1} in the bee challenge mode");
                     SetCurrentLevel(CurrentBeeChallengeLevel + 1);
                 }
             }
