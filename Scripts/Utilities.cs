@@ -795,7 +795,6 @@ namespace Assets.Scripts
             }
             if (_randomCoordinate_loops == 100)
             {
-                Debug.Log($"Couldn't find a random coordinate that was in bounds: {_randomCoordinate_newLocation}, {minDistance}, {maxDistance}");
             }
             return _randomCoordinate_newLocation;
         }
@@ -945,7 +944,6 @@ namespace Assets.Scripts
 
             if (squad.HasCustomColor)
             {
-                Debug.Log($"Saving custom color ({squad.Color}) {type} sprites for {squad.Name}");
                 List<SquadShip> cacheSquadShips = squad.GetSquadShips().ToList();
                 for (int i = 0; i < cacheSquadShips.Count; i++) 
                 {
@@ -1001,7 +999,6 @@ namespace Assets.Scripts
                                         }
                                         catch (Exception e)
                                         {
-                                            Debug.Log($"Error while trying to save cached sprites: {e}");
                                         }
                                         cacheSquadIndex++;
                                         yield return ConfigData.WaitForEndOfFrame;
@@ -1027,7 +1024,6 @@ namespace Assets.Scripts
                                 }
                                 catch (Exception e)
                                 {
-                                    Debug.Log($"Error while trying to save cached sprites for {cacheSquadShip.GetFleetShip().Name}: {e}");
                                 }
                                 cacheSquadIndex++;
                                 yield return ConfigData.WaitForEndOfFrame;
@@ -1042,7 +1038,6 @@ namespace Assets.Scripts
                 ConfigData.CurrentShips.SaveFleetData();
             }
 
-            Debug.Log($"Drawing and saving sprites for {squad.Name} took {(Time.realtimeSinceStartup - cacheSquadStartTime)}s");
 
             if (dialogue != null)
             {
