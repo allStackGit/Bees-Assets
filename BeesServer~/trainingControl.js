@@ -188,9 +188,11 @@ class TrainingControlStore {
         }
 
         if (!state.canonical_build_id) return;
+        let canonicalArtifacts = 0;
         for (const [platform, versions] of Object.entries(state.builds)) {
             const record = versions[state.canonical_build_id];
             if (!record) continue;
+            canonicalArtifacts++;
             const stats = fs.statSync(record.archive_path);
             if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
                 throw new Error(
@@ -200,6 +202,9 @@ class TrainingControlStore {
                 throw new Error(
                     'training-control canonical artifact hash is invalid for ' + platform);
             }
+        }
+        if (canonicalArtifacts === 0) {
+            throw new Error('training-control canonical build has no published platform artifact');
         }
     }
 
@@ -379,7 +384,11 @@ class TrainingControlStore {
         trainerId = requireString(trainerId, 'trainer_id', 128);
         role = requireRole(role);
         platform = requireString(platform, 'platform', 64);
-        const desiredMode = this.state.training_enabled
+        const buildRecord = this.state.canonical_build_id &&
+            this.state.builds[platform] &&
+            this.state.builds[platform][this.state.canonical_build_id];
+        const canTrain = this.state.training_enabled && Boolean(buildRecord);
+        const desiredMode = canTrain
             ? 'training'
             : role === 'full-game' ? 'inference' : 'stopped';
         return {
@@ -393,10 +402,7 @@ class TrainingControlStore {
             environment_args: [...this.state.environment_args],
             canonical_build_id: this.state.canonical_build_id,
             lease_seconds: this.leaseSeconds,
-            build: publicBuildDescriptor(
-                this.state.canonical_build_id &&
-                this.state.builds[platform] &&
-                this.state.builds[platform][this.state.canonical_build_id]),
+            build: publicBuildDescriptor(buildRecord),
         };
     }
 
