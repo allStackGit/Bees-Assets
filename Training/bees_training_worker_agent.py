@@ -15,6 +15,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -33,6 +34,7 @@ from bees_training_control import (
 ENV_PLACEHOLDER = "{env}"
 ENV_ARGS_PLACEHOLDER = "{env_args}"
 BUILD_ID_PLACEHOLDER = "{build_id}"
+RUN_ID_PLACEHOLDER = "{run_id}"
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -140,6 +142,7 @@ def render_command(
     entrypoint: Path,
     environment_args: Sequence[str],
     build_id: str = "",
+    run_id: str = "",
 ) -> list[str]:
     if not template:
         raise ValueError("managed worker launch command is empty")
@@ -155,6 +158,7 @@ def render_command(
             rendered.append(
                 token.replace(ENV_PLACEHOLDER, str(entrypoint))
                 .replace(BUILD_ID_PLACEHOLDER, str(build_id))
+                .replace(RUN_ID_PLACEHOLDER, str(run_id))
             )
             if ENV_PLACEHOLDER in token:
                 saw_env = True
@@ -163,12 +167,135 @@ def render_command(
     return rendered
 
 
+class BackgroundBuildPreparer:
+    def __init__(self, builds: ManagedBuildStore, client: TrainingControlClient) -> None:
+        self.builds = builds
+        self.client = client
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._requested_build_id = ""
+        self.prepared_build_id = ""
+        self.last_error = ""
+
+    def request(self, descriptor: Optional[Mapping[str, Any]]) -> None:
+        if not descriptor:
+            return
+        build_id = str(descriptor.get("build_id", ""))
+        if not build_id:
+            return
+        try:
+            if self.builds.is_prepared(descriptor):
+                with self._lock:
+                    self.prepared_build_id = build_id
+                    self.last_error = ""
+                return
+        except (OSError, ValueError) as exc:
+            with self._lock:
+                self.last_error = f"{type(exc).__name__}: {exc}"
+            return
+
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._requested_build_id = build_id
+            payload = dict(descriptor)
+            self._thread = threading.Thread(
+                target=self._prepare,
+                args=(payload,),
+                name=f"bees-build-prepare-{build_id}",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def _prepare(self, descriptor: Mapping[str, Any]) -> None:
+        build_id = str(descriptor.get("build_id", ""))
+        try:
+            self.builds.prepare(self.client, descriptor)
+            with self._lock:
+                self.prepared_build_id = build_id
+                self.last_error = ""
+        except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
+            with self._lock:
+                self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def snapshot(self) -> tuple[str, str]:
+        with self._lock:
+            return self.prepared_build_id, self.last_error
+
+
+class TrainingLogUploader:
+    CHUNK_BYTES = 1024 * 1024
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._positions: dict[Path, int] = {}
+
+    def flush_once(
+        self,
+        client: TrainingControlClient,
+        *,
+        trainer_id: str,
+        run_id: str,
+    ) -> None:
+        if not run_id or not self.root.is_dir():
+            return
+        budget = self.CHUNK_BYTES
+        for log_path in sorted(self.root.rglob("*")):
+            if budget <= 0:
+                break
+            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+                continue
+            relative = log_path.relative_to(self.root).as_posix()
+            try:
+                size = log_path.stat().st_size
+            except OSError:
+                continue
+            position = self._positions.get(log_path, 0)
+            if size < position:
+                next_offset = client.upload_log_chunk(
+                    trainer_id=trainer_id,
+                    run_id=run_id,
+                    relative_path=relative,
+                    offset=0,
+                    data=b"",
+                    reset=True,
+                )
+                if next_offset < 0:
+                    next_offset = -next_offset - 1
+                position = next_offset
+                self._positions[log_path] = position
+            if size <= position:
+                continue
+            amount = min(budget, size - position)
+            try:
+                with log_path.open("rb") as handle:
+                    handle.seek(position)
+                    data = handle.read(amount)
+            except OSError:
+                continue
+            if not data:
+                continue
+            next_offset = client.upload_log_chunk(
+                trainer_id=trainer_id,
+                run_id=run_id,
+                relative_path=relative,
+                offset=position,
+                data=data,
+            )
+            if next_offset < 0:
+                self._positions[log_path] = -next_offset - 1
+                continue
+            self._positions[log_path] = next_offset
+            budget -= len(data)
+
+
 class ManagedProcess:
     def __init__(self) -> None:
         self.process: Optional[subprocess.Popen] = None
         self.command: tuple[str, ...] = ()
         self.revision = -1
         self.build_sha256 = ""
+        self.run_id = ""
         self.environment_args: tuple[str, ...] = ()
 
     def alive(self) -> bool:
@@ -187,6 +314,7 @@ class ManagedProcess:
         *,
         revision: int,
         build_sha256: str,
+        run_id: str,
         state_file: Path,
         environment_args: Sequence[str],
     ) -> None:
@@ -194,6 +322,7 @@ class ManagedProcess:
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
+        environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         log_dir = state_file.parent / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
@@ -205,6 +334,7 @@ class ManagedProcess:
         self.command = tuple(command)
         self.revision = revision
         self.build_sha256 = build_sha256
+        self.run_id = str(run_id)
         self.environment_args = tuple(str(value) for value in environment_args)
 
     def stop(self) -> None:
