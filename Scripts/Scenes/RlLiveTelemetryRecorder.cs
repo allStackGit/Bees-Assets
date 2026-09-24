@@ -431,7 +431,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         }
 
         VectorSensor sensor = new VectorSensor(RlPolicySchema.ObservationSize);
-        _perception.Collect(ship, ship.Side, sensor, 0);
+        RlOneVsOneAgent.CollectPolicyObservations(_perception, ship, ship.Side, sensor, 0);
         if (!(VectorObservationsField.GetValue(sensor) is List<float> observations) ||
             observations.Count != RlPolicySchema.ObservationSize)
         {
