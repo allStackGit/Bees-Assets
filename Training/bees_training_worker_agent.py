@@ -138,6 +138,26 @@ class ManagedProcess:
             pass
 
 
+def full_game_update_requires_deferred_restart(
+    managed: ManagedProcess,
+    desired_build_sha256: str,
+    environment_args: Sequence[str],
+) -> bool:
+    """Keep a live player session intact when its executable/config becomes stale.
+
+    The Unity runtime can switch the current process to inference immediately through the local
+    control-state file. The canonical build/config is therefore applied on the next natural game
+    launch instead of killing an active match.
+    """
+    return (
+        managed.alive()
+        and (
+            managed.build_sha256 != desired_build_sha256
+            or managed.environment_args != tuple(str(value) for value in environment_args)
+        )
+    )
+
+
 def write_local_state(
     path: Path,
     *,
@@ -261,11 +281,66 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     managed.stop()
                     applied_revision = revision
                 elif mode == "inference" and args.role == "full-game":
-                    # A stop-state change alone is applied live through control-state.json and must
-                    # not restart a player's game. Build/env changes are different: reconcile them
-                    # while the server is online so every managed full game reaches canonical state.
-                    applied_revision = revision
-                    if descriptor:
+                    # Stop/inference changes apply live through control-state.json. Never kill an
+                    # active player session merely to install a newer build or command-line config.
+                    # If the game is already gone, prepare the canonical next launch immediately.
+                    if descriptor and not managed.alive():
+                        entrypoint, active_build = builds.ensure(client, descriptor)
+                        desired_sha = str(active_build["archive_sha256"])
+                        command = render_command(command_template, entrypoint, environment_args)
+                        managed.start(
+                            command,
+                            revision=revision,
+                            build_sha256=desired_sha,
+                            state_file=state_file,
+                            environment_args=environment_args,
+                        )
+                        applied_revision = revision
+                    elif descriptor and full_game_update_requires_deferred_restart(
+                        managed,
+                        str(descriptor.get("archive_sha256", "")),
+                        environment_args,
+                    ):
+                        # The latest desired mode is applied below, but the process revision remains
+                        # intentionally stale so status shows that canonical build/config is pending.
+                        pass
+                    else:
+                        applied_revision = revision
+                elif mode == "training":
+                    if not descriptor:
+                        raise RuntimeError(
+                            f"server has no canonical {args.platform} build published"
+                        )
+                    desired_sha = str(descriptor.get("archive_sha256", ""))
+                    build_or_args_changed = (
+                        managed.build_sha256 != desired_sha
+                        or managed.environment_args != environment_args
+                    )
+                    defer_full_game_update = (
+                        args.role == "full-game"
+                        and full_game_update_requires_deferred_restart(
+                            managed,
+                            desired_sha,
+                            environment_args,
+                        )
+                    )
+                    if args.role == "dedicated" and managed.alive() and build_or_args_changed:
+                        # Never keep producing rollouts under a superseded build/config while a
+                        # replacement artifact is still downloading or being verified.
+                        managed.stop()
+                    elif defer_full_game_update:
+                        # Preserve the running game. The Unity runtime switches it to InferenceOnly
+                        # immediately; after the process exits naturally, the next heartbeat installs
+                        # and launches the canonical build/config.
+                        inference_desired = dict(desired)
+                        inference_desired["desired_mode"] = "inference"
+                        write_local_state(
+                            state_file,
+                            desired=inference_desired,
+                            online=True,
+                            last_error="canonical build/config pending next game launch",
+                        )
+                    else:
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
                         command = render_command(command_template, entrypoint, environment_args)
@@ -283,60 +358,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 state_file=state_file,
                                 environment_args=environment_args,
                             )
-                elif mode == "training":
-                    if not descriptor:
-                        raise RuntimeError(
-                            f"server has no canonical {args.platform} build published"
-                        )
-                    desired_sha = str(descriptor.get("archive_sha256", ""))
-                    build_or_args_changed = (
-                        managed.build_sha256 != desired_sha
-                        or managed.environment_args != environment_args
-                    )
-                    if args.role == "dedicated" and managed.alive() and build_or_args_changed:
-                        # Never keep producing rollouts under a superseded build/config while a
-                        # replacement artifact is still downloading or being verified.
-                        managed.stop()
-                    elif args.role == "full-game" and managed.alive() and build_or_args_changed:
-                        # Keep the current player session alive while the replacement downloads, but
-                        # prevent old-build experience from being treated as active training.
-                        inference_desired = dict(desired)
-                        inference_desired["desired_mode"] = "inference"
-                        write_local_state(
-                            state_file,
-                            desired=inference_desired,
-                            online=True,
-                            last_error="",
-                        )
-                    entrypoint, active_build = builds.ensure(client, descriptor)
-                    desired_sha = str(active_build["archive_sha256"])
-                    command = render_command(command_template, entrypoint, environment_args)
-                    needs_restart = (
-                        not managed.alive()
-                        or managed.build_sha256 != desired_sha
-                        or managed.environment_args != environment_args
-                        or managed.command != tuple(command)
-                    )
-                    if needs_restart:
-                        managed.start(
-                            command,
-                            revision=revision,
-                            build_sha256=desired_sha,
-                            state_file=state_file,
-                            environment_args=environment_args,
-                        )
-                    applied_revision = revision
+                        applied_revision = revision
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
 
-                # Publish the authoritative local mode only after build/config reconciliation
-                # completed successfully. Unity therefore cannot enter training on stale bytes.
-                write_local_state(
-                    state_file,
-                    desired=desired,
-                    online=True,
-                    last_error="",
-                )
+                # Publish training only after build/config reconciliation completed successfully.
+                # A live full game with a pending canonical update already wrote an inference state
+                # above and must remain inference until its next process launch.
+                if not (
+                    mode == "training"
+                    and args.role == "full-game"
+                    and descriptor
+                    and full_game_update_requires_deferred_restart(
+                        managed,
+                        str(descriptor.get("archive_sha256", "")),
+                        environment_args,
+                    )
+                ):
+                    write_local_state(
+                        state_file,
+                        desired=desired,
+                        online=True,
+                        last_error="",
+                    )
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
