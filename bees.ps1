@@ -237,7 +237,7 @@ function Start-TailnetGatewayIfNeeded($Config){
 }
 
 
-function Invoke-Checkedfunction Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
+function Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
     Push-Location $WorkingDirectory
     try {
         & $Exe @Args
@@ -408,7 +408,7 @@ function Escape-BashDoubleQuoted([string]$Value){
     $Value
 }
 
-function Prepare-RemoteBootstrapfunction Prepare-RemoteBootstrap($Config){
+function Prepare-RemoteBootstrap($Config){
     if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
