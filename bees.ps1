@@ -249,9 +249,7 @@ function Prepare-RemoteBootstrap($Config){
     if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
 
     $maxActors=[int]$Config.maxRemoteActors
-    if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12 for generated remote launchers.' }
-    $defaultEnvs=if($Config.remoteDefaultEnvs){[int]$Config.remoteDefaultEnvs}else{32}
-    if($defaultEnvs -lt 1 -or $defaultEnvs -gt 64){ throw 'remoteDefaultEnvs must be in 1-64.' }
+    if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12.' }
     $sshPort=if($Config.remoteSshPort){[int]$Config.remoteSshPort}else{22}
     if($sshPort -lt 1 -or $sshPort -gt 65535){ throw 'remoteSshPort must be in 1-65535.' }
     $installRoot=if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
@@ -280,43 +278,40 @@ function Prepare-RemoteBootstrap($Config){
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
     $utf8NoBom=New-Object Text.UTF8Encoding($false)
-    for($actorId=0;$actorId -lt $maxActors;$actorId++){
-        $windowsBody=$windowsTemplate
-        $windowsReplacements=@{
-            '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
-            '__BEES_ACTOR_ID__'=[string]$actorId
-            '__BEES_ENVS__'=[string]$defaultEnvs
-            '__BEES_SSH_PORT__'=[string]$sshPort
-            '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
-            '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
-            '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
-            '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
-            '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
-        }
-        foreach($key in $windowsReplacements.Keys){$windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])}
-        $windowsOutput=Join-Path $RemoteRoot "bees-remote-worker-$actorId.ps1"
-        [IO.File]::WriteAllText($windowsOutput,$windowsBody,$utf8NoBom)
 
-        $linuxBody=$linuxTemplate
-        $linuxReplacements=@{
-            '__BEES_LEARNER__'=(Escape-BashDoubleQuoted $learner)
-            '__BEES_ACTOR_ID__'=[string]$actorId
-            '__BEES_ENVS__'=[string]$defaultEnvs
-            '__BEES_SSH_PORT__'=[string]$sshPort
-            '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
-            '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
-            '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-BashDoubleQuoted $runtimeRemote)
-            '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $workerTokenRemote)
-            '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $wanTokenRemote)
-        }
-        foreach($key in $linuxReplacements.Keys){$linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])}
-        $linuxBody=$linuxBody.Replace("`r`n","`n")
-        $linuxOutput=Join-Path $RemoteRoot "bees-remote-worker-$actorId.sh"
-        [IO.File]::WriteAllText($linuxOutput,$linuxBody,$utf8NoBom)
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+
+    $windowsBody=$windowsTemplate
+    $windowsReplacements=@{
+        '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
+        '__BEES_SSH_PORT__'=[string]$sshPort
+        '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
+        '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
+        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
+        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
+        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
     }
-    Write-Host "Remote launchers prepared in $RemoteRoot (actor slots 0-$($maxActors-1), default $defaultEnvs envs each)."
-    Write-Host "Windows: copy bees-remote-worker-N.ps1 and run it."
-    Write-Host "Linux:   copy bees-remote-worker-N.sh and run 'bash bees-remote-worker-N.sh'."
+    foreach($key in $windowsReplacements.Keys){$windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])}
+    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
+
+    $linuxBody=$linuxTemplate
+    $linuxReplacements=@{
+        '__BEES_LEARNER__'=(Escape-BashDoubleQuoted $learner)
+        '__BEES_SSH_PORT__'=[string]$sshPort
+        '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
+        '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
+        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-BashDoubleQuoted $runtimeRemote)
+        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $workerTokenRemote)
+        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $wanTokenRemote)
+    }
+    foreach($key in $linuxReplacements.Keys){$linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])}
+    $linuxBody=$linuxBody.Replace("`r`n","`n")
+    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
+
+    Write-Host "Remote launchers prepared in $RemoteRoot. The learner assigns actor slots automatically."
+    Write-Host "Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N."
+    Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
     $sshd=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     if($null -eq $sshd -or $sshd.Status -ne 'Running'){
         Write-Warning "Remote launchers require SSH access to this learner. Windows OpenSSH Server (sshd) is not currently running; install/start it or provide another reachable SSH endpoint for remoteSshTarget."
