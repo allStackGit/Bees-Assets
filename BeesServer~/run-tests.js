@@ -101,6 +101,7 @@ async function main() {
     await run(process.execPath, ['--check', 'start-server.js']);
     await run(process.execPath, ['--check', 'rlContinualLearningLauncher.js']);
     await run(process.execPath, ['--check', 'rlContinualLearningSupervisor.js']);
+    await run(process.execPath, ['--check', 'rlTrainerControl.js']);
     await run(process.execPath, ['--check', 'campaignCheckpoint.js']);
     await run(process.execPath, ['--check', 'siServerDev.js']);
     await run(process.execPath, ['--check', 'migrate.js']);
