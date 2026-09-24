@@ -37,6 +37,7 @@ $RunPlanPath=Join-Path $RuntimeRoot 'pending-training-run.json'
 $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
+$ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
@@ -361,6 +362,15 @@ function Get-GitShortSha {
     } finally { Pop-Location }
 }
 
+function Get-GitTreeSha([string]$RelativePath){
+    $git=Resolve-CommandPath 'git'; Push-Location $AssetsRoot
+    try {
+        $sha=(& $git rev-parse ("HEAD:" + $RelativePath)).Trim()
+        if($LASTEXITCODE -ne 0 -or -not $sha){ throw "git rev-parse failed for $RelativePath." }
+        $sha
+    } finally { Pop-Location }
+}
+
 function Get-ActiveRunId($Config){
     if(Test-Path -LiteralPath $AdminTokenPath){
         try {
@@ -538,6 +548,8 @@ function Invoke-Build {
     if(Test-Path -LiteralPath $AdminTokenPath){
         $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
         if($admin -and (Test-Control ([string]$config.controlUrl) $admin)){
+            $worker=Ensure-TokenFile $WorkerTokenPath
+            Start-BeesServerIfNeeded $config $worker $admin
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
                 Prepare-RemoteBootstrap $config
@@ -575,7 +587,45 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
-    if(Test-Control $base $AdminToken){ return }
+    $serverSourceHash=Get-GitTreeSha 'BeesServer~'
+    $online=Test-Control $base $AdminToken
+
+    if($online){
+        $managedState=$null
+        if(Test-Path -LiteralPath $ServerStatePath){
+            try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
+        }
+        if(
+            $null -ne $managedState -and
+            ([string]$managedState.source_hash) -eq $serverSourceHash
+        ){
+            return
+        }
+
+        $managedPid=0
+        if(Test-Path -LiteralPath $ServerPidPath){
+            [void][int]::TryParse(
+                (Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),
+                [ref]$managedPid
+            )
+        }
+        if($managedPid -le 0 -or -not(Get-Process -Id $managedPid -ErrorAction SilentlyContinue)){
+            throw 'BeesServer is online but is not owned by the Bees operator state. Stop the unmanaged server once, then rerun this command so future source updates can be automatic.'
+        }
+        Write-Host 'BeesServer source changed; restarting the managed server without changing desired training state.'
+        Stop-ProcessTree $managedPid
+        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
+
+        $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
+        $deadline=[DateTime]::UtcNow.AddSeconds(15)
+        while([DateTime]::UtcNow -lt $deadline){
+            $open=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
+            if(-not $open){break}
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
     $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
     if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
@@ -588,15 +638,30 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
     $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'; $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
     $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
+    $launchedPid=0
     Push-Location $ServerRoot
     try {
         $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 2>&1)
         if($LASTEXITCODE -ne 0){ throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)" }
         $joined=$output -join [Environment]::NewLine; Write-Host $joined
-        if($joined -match 'PID\s+(\d+)'){ $Matches[1] | Set-Content -LiteralPath $ServerPidPath -NoNewline }
+        if($joined -match 'PID\s+(\d+)'){
+            $launchedPid=[int]$Matches[1]
+            $launchedPid | Set-Content -LiteralPath $ServerPidPath -NoNewline
+        }
     } finally { Pop-Location }
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
-    while([DateTime]::UtcNow -lt $deadline){ if(Test-Control $base $AdminToken){ return }; Start-Sleep -Milliseconds 500 }
+    while([DateTime]::UtcNow -lt $deadline){
+        if(Test-Control $base $AdminToken){
+            [pscustomobject]@{
+                schema_version=1
+                pid=$launchedPid
+                source_hash=$serverSourceHash
+                started_utc=[DateTime]::UtcNow.ToString('o')
+            } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    }
     throw "Training control did not become reachable at $base. Check $serverLog."
 }
 
@@ -820,6 +885,7 @@ function Invoke-Stop {
         [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id)
         Stop-ProcessTree $id
         Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
         Write-Host 'BeesServer stopped.'
     }
     if($Server -and (Test-Path -LiteralPath $TailnetGatewayPidPath)){
