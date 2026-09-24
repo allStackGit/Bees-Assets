@@ -978,7 +978,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
                 continue;
             }
             _seenShipIds[sideIndex].Add(ship.Id);
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship))
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship) &&
+                !RlPlayerDerivedActionReplay.IsScriptedSide(ship.Level, ship.Side))
             {
                 _policyEligibleShipIds[sideIndex].Add(ship.Id);
                 if (ship.IsRlPolicyControlled)
@@ -1014,7 +1015,8 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled)
+            if (!RlPlayerDerivedActionReplay.IsScriptedSide(level, side) &&
+                RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled)
             {
                 return false;
             }
