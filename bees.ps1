@@ -252,6 +252,7 @@ function Start-TailnetGatewayIfNeeded($Config){
         $WorkerTokenPath,
         $WanTokenPath,
         $BootstrapTokenPath,
+        $LatestReleasePath,
         [string]$bridges.distribution_windows,
         [string]$bridges.distribution_linux
     )){
@@ -278,6 +279,7 @@ function Start-TailnetGatewayIfNeeded($Config){
         '--runtime',$runtimeZip,
         '--worker-token',$WorkerTokenPath,
         '--wan-token',$WanTokenPath,
+        '--release',$LatestReleasePath,
         '--windows-bridge',[string]$bridges.distribution_windows,
         '--linux-bridge',[string]$bridges.distribution_linux,
         '--bootstrap-token',$BootstrapTokenPath
