@@ -23,6 +23,7 @@ namespace Bees.Tests.EditMode
         private MethodInfo _buildLayout;
         private Type _perArenaMatchupsType;
         private Type _trainingOptionsType;
+        private Type _adversarialMatchupSelectorType;
         private Type _matchupSelectorType;
         private Type _arenaMapSizeStateType;
         private Type _episodeResultType;
@@ -60,6 +61,7 @@ namespace Bees.Tests.EditMode
 
             _perArenaMatchupsType = RuntimeAssembly.GetType("RlOneVsOnePerArenaMatchups");
             _trainingOptionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
+            _adversarialMatchupSelectorType = RuntimeAssembly.GetType("RlOneVsOneAdversarialMatchupSelector");
             _matchupSelectorType = RuntimeAssembly.GetType("RlOneVsOneEpisodeMatchupSelector");
             _prepareMatchupEpisode = _perArenaMatchupsType.GetMethod("PrepareEpisode", flags);
             _handleMatchupEpisodeEnded = _perArenaMatchupsType.GetMethod("HandleEpisodeEnded", flags);
@@ -192,15 +194,22 @@ namespace Bees.Tests.EditMode
                     "--rl-bee-ship-types=Wasp,Hornet",
                     "--rl-human-ship-types=Gunship,Frigate"
                 });
-            ConstructorInfo selectorConstructor = _matchupSelectorType.GetConstructor(
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                null,
-                new[] { _trainingOptionsType, typeof(int) },
-                null);
+            ConstructorInfo selectorConstructor = null;
+            foreach (ConstructorInfo candidate in _adversarialMatchupSelectorType.GetConstructors(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (candidate.GetParameters().Length == 3)
+                {
+                    selectorConstructor = candidate;
+                    break;
+                }
+            }
             Assert.That(selectorConstructor, Is.Not.Null);
 
-            object selectorA = selectorConstructor.Invoke(new[] { options, (object)101 });
-            object selectorB = selectorConstructor.Invoke(new[] { options, (object)202 });
+            Type scenarioType = RuntimeAssembly.GetType("RlPlayerDerivedAdversarialScenario");
+            Array noScenarios = Array.CreateInstance(scenarioType, 0);
+            object selectorA = selectorConstructor.Invoke(new object[] { options, 101, noScenarios });
+            object selectorB = selectorConstructor.Invoke(new object[] { options, 202, noScenarios });
             FieldInfo selectorsField = _perArenaMatchupsType.GetField(
                 "Selectors",
                 BindingFlags.Static | BindingFlags.NonPublic);
@@ -213,19 +222,25 @@ namespace Bees.Tests.EditMode
             _prepareMatchupEpisode.Invoke(null, new object[] { _arenaB });
             Assert.That((int)_getSelectorCountForTests.Invoke(null, null), Is.EqualTo(2));
 
+            FieldInfo normalSelectorField = _adversarialMatchupSelectorType.GetField(
+                "_normalSelector",
+                BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo outcomeRecorded = _matchupSelectorType.GetField(
                 "_currentOutcomeRecorded",
                 BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(normalSelectorField, Is.Not.Null);
             Assert.That(outcomeRecorded, Is.Not.Null);
-            Assert.That((bool)outcomeRecorded.GetValue(selectorA), Is.False);
-            Assert.That((bool)outcomeRecorded.GetValue(selectorB), Is.False);
+            object normalSelectorA = normalSelectorField.GetValue(selectorA);
+            object normalSelectorB = normalSelectorField.GetValue(selectorB);
+            Assert.That((bool)outcomeRecorded.GetValue(normalSelectorA), Is.False);
+            Assert.That((bool)outcomeRecorded.GetValue(normalSelectorB), Is.False);
 
             object drawResult = Activator.CreateInstance(_episodeResultType);
             _handleMatchupEpisodeEnded.Invoke(null, new[] { _arenaA, drawResult });
 
-            Assert.That((bool)outcomeRecorded.GetValue(selectorA), Is.True,
+            Assert.That((bool)outcomeRecorded.GetValue(normalSelectorA), Is.True,
                 "The completed arena must record the outcome against its own prepared matchup.");
-            Assert.That((bool)outcomeRecorded.GetValue(selectorB), Is.False,
+            Assert.That((bool)outcomeRecorded.GetValue(normalSelectorB), Is.False,
                 "An asynchronously running arena must not consume or mutate another arena's outcome.");
         }
 
