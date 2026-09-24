@@ -57,6 +57,7 @@ class ServiceOptions:
     run_id: str
     generation_steps: int
     num_envs: int
+    environment_args: tuple[str, ...]
     platform: str
     retry_seconds: float
     once: bool
@@ -72,6 +73,19 @@ def _required_path(value: str, label: str, *, file: bool = False, directory: boo
     if directory and not path.is_dir():
         raise ValueError(f"{label} does not exist or is not a directory: {path}")
     return path
+
+
+def parse_environment_args_json(value: str) -> tuple[str, ...]:
+    """Parse the server-owned Unity environment argument list without shell re-tokenization."""
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--environment-args-json must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise ValueError("--environment-args-json must be a JSON array of strings")
+    if any(item == "" for item in parsed):
+        raise ValueError("--environment-args-json may not contain empty strings")
+    return tuple(parsed)
 
 
 def rewrite_max_steps(text: str, max_steps: int) -> str:
@@ -220,6 +234,12 @@ def training_command(options: ServiceOptions, index: int, *, resume: bool) -> li
     ]
     if resume:
         command.append("--resume")
+    if options.environment_args:
+        # ML-Agents treats --env-args as the remainder of the command. Keep this last so all
+        # trainer/control flags remain trainer arguments while the canonical list is passed verbatim
+        # to every local/remote Unity environment.
+        command.append("--env-args")
+        command.extend(options.environment_args)
     return command
 
 
@@ -408,6 +428,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     parser.add_argument("--generation-steps", type=int, default=DEFAULT_GENERATION_STEPS)
     parser.add_argument("--num-envs", type=int, default=DEFAULT_NUM_ENVS)
+    parser.add_argument("--environment-args-json", default="[]")
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
     parser.add_argument("--once", action="store_true")
@@ -454,6 +475,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         run_id=args.run_id.strip(),
         generation_steps=args.generation_steps,
         num_envs=args.num_envs,
+        environment_args=parse_environment_args_json(args.environment_args_json),
         platform=args.platform,
         retry_seconds=args.retry_seconds,
         once=args.once,
