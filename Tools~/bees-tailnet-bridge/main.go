@@ -215,6 +215,7 @@ func bootstrapHandler(
 	runtimePath,
 	workerTokenPath,
 	wanTokenPath,
+	releasePath,
 	windowsBridgePath,
 	linuxBridgePath string,
 ) http.Handler {
@@ -232,6 +233,7 @@ func bootstrapHandler(
 			runtimePath,
 			workerTokenPath,
 			wanTokenPath,
+			releasePath,
 			windowsBridgePath,
 			linuxBridgePath,
 		} {
@@ -253,6 +255,9 @@ func bootstrapHandler(
 		}
 		if err := zipFile(z, "wan.token", wanTokenPath, 0o600); err != nil {
 			log.Printf("[Bees tailnet] bootstrap WAN token write failed: %v", err)
+		}
+		if err := zipFile(z, "latest-training-release.json", releasePath, 0o600); err != nil {
+			log.Printf("[Bees tailnet] bootstrap release metadata write failed: %v", err)
 		}
 		if err := zipFile(z, "bees-tailnet-bridge-windows.exe", windowsBridgePath, 0o700); err != nil {
 			log.Printf("[Bees tailnet] bootstrap Windows bridge write failed: %v", err)
@@ -283,6 +288,7 @@ func runGateway(args []string) error {
 	runtimePath := fs.String("runtime", "", "remote runtime zip path")
 	workerTokenPath := fs.String("worker-token", "", "worker token path")
 	wanTokenPath := fs.String("wan-token", "", "WAN token path")
+	releasePath := fs.String("release", "", "latest training release metadata path")
 	windowsBridgePath := fs.String("windows-bridge", "", "Windows bridge distribution path")
 	linuxBridgePath := fs.String("linux-bridge", "", "Linux bridge distribution path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
@@ -338,6 +344,7 @@ func runGateway(args []string) error {
 		*runtimePath,
 		*workerTokenPath,
 		*wanTokenPath,
+		*releasePath,
 		*windowsBridgePath,
 		*linuxBridgePath,
 	)}
