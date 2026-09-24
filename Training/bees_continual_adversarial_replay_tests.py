@@ -16,8 +16,8 @@ from bees_continual_learning import ContinualLearningError, ValidationError
 
 
 OBSERVATION_SIZE = replay.EXPECTED_OBSERVATION_SIZE
-CONTINUOUS_ACTIONS = 34
-DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
+CONTINUOUS_ACTIONS = 16
+DISCRETE_BRANCHES = [2] * 5 + [5]
 SCENARIO_ID = "adv-" + "a" * 24
 OTHER_SCENARIO_ID = "adv-" + "b" * 24
 BATCH_ID = "demo-" + "c" * 24
@@ -27,22 +27,21 @@ def normalize_positive(value: float, scale: float) -> float:
     return value / (value + scale)
 
 
-def set_enum_bits(values, start, bits, value):
-    for bit in range(bits):
-        values[start + bit] = 1.0 if value & (1 << bit) else 0.0
+def set_ship_type(values, index, ship_type):
+    values[index] = mine._ship_type_scalar(ship_type)
 
 
 def observation(*, self_ship=13, enemy_ship=21, enemy_visible=True):
     values = [0.0] * OBSERVATION_SIZE
     usable = 86.0
-    set_enum_bits(values, replay.SELF_SHIP_BIT_START, replay.SHIP_TYPE_BIT_COUNT, self_ship)
+    set_ship_type(values, replay.SELF_SHIP_TYPE_INDEX, self_ship)
     values[replay.SELF_POSITION_X_INDEX] = 0.0
     values[replay.SELF_POSITION_Y_INDEX] = 0.5
     values[replay.LEVEL_SIZE_X_INDEX] = normalize_positive(usable, 100.0)
     values[replay.LEVEL_SIZE_Y_INDEX] = normalize_positive(usable, 100.0)
     if enemy_visible:
         values[mine.FIRST_ENEMY_SLOT_INDEX] = 1.0
-        set_enum_bits(values, mine.ENEMY_SHIP_BIT_START, replay.SHIP_TYPE_BIT_COUNT, enemy_ship)
+        set_ship_type(values, mine.FIRST_ENEMY_SHIP_TYPE_INDEX, enemy_ship)
     return values
 
 
@@ -131,7 +130,7 @@ class AdversarialReplayTests(unittest.TestCase):
         continuous[0] = 1.0
         continuous[2] = 0.0
         continuous[3] = 1.0
-        discrete = [0] * 20
+        discrete = [0] * len(DISCRETE_BRANCHES)
         discrete[0] = 1
         return continuous, discrete
 
@@ -244,7 +243,7 @@ class AdversarialReplayTests(unittest.TestCase):
                     record_count=10,
                 )
 
-    def test_compile_writes_v2_header_frames_and_neutral_tail_contract(self):
+    def test_compile_writes_v3_header_frames_and_neutral_tail_contract(self):
         self.register(record_count=10)
         result = self.compile()
 
@@ -257,7 +256,7 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertEqual(interval, replay.REPLAY_FIXED_STEP_INTERVAL)
         self.assertAlmostEqual(start_x, 0.0, places=5)
         self.assertAlmostEqual(start_y, 1.0, places=5)
-        first_frame = struct.unpack("<34fHB", payload[24 : 24 + 139])
+        first_frame = struct.unpack("<16fHB", payload[24 : 24 + 67])
         self.assertAlmostEqual(first_frame[0], 1.0)
         self.assertAlmostEqual(first_frame[3], 1.0)
         self.assertEqual(first_frame[-2], 1)
@@ -267,13 +266,13 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertEqual(result["terminal_behavior"], "neutral")
         self.assertEqual(result["schema_version"], replay.REPLAY_ARTIFACT_SCHEMA_VERSION)
         self.assertEqual(result["special_action_count"], 0)
-        self.assertFalse(result["target_branches_supported"])
+        self.assertFalse(result["target_branches_present"])
 
         metadata = json.loads(Path(result["metadata_path"]).read_text(encoding="utf-8"))
         self.assertEqual(metadata["artifact_sha256"], result["artifact_sha256"])
         self.assertEqual(metadata["frame_count"], 10)
 
-    def test_compile_preserves_capability_action_in_v2_frame(self):
+    def test_compile_preserves_capability_action_in_v3_frame(self):
         self.register(record_count=10)
 
         def special_reader(pair_info):
@@ -285,9 +284,9 @@ class AdversarialReplayTests(unittest.TestCase):
         result = self.compile(action_reader=special_reader)
         self.assertEqual(result["special_action_count"], 1)
         payload = Path(result["artifact_path"]).read_bytes()
-        frame_size = 139
+        frame_size = 67
         fifth = struct.unpack(
-            "<34fHB",
+            "<16fHB",
             payload[24 + 4 * frame_size : 24 + 5 * frame_size],
         )
         self.assertEqual(fifth[-1], 1)
@@ -300,7 +299,7 @@ class AdversarialReplayTests(unittest.TestCase):
         self.assertTrue(result["source_first_episode_terminal_found"])
         self.assertFalse(result["truncated"])
 
-    def test_compile_rejects_invalid_capability_or_reserved_target_actions(self):
+    def test_compile_rejects_invalid_capability_action(self):
         self.register(record_count=10)
 
         def invalid_special_reader(pair_info):
@@ -311,37 +310,10 @@ class AdversarialReplayTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.compile(action_reader=invalid_special_reader)
 
-        def target_reader(pair_info):
-            continuous, discrete = self.action_reader(pair_info)
-            discrete[replay.ENEMY_TARGET_BRANCH] = 1
-            return continuous, discrete
-
-        with self.assertRaises(ValidationError):
-            self.compile(action_reader=target_reader)
-
-    def test_legacy_registration_still_compiles_byte_identical_v1_shape(self):
+    def test_legacy_registration_is_rejected_for_current_policy_abi(self):
         self.write_legacy_registration(record_count=10)
-        result = self.compile()
-        payload = Path(result["artifact_path"]).read_bytes()
-        magic, frame_count, interval, _, _ = struct.unpack("<8sii2f", payload[:24])
-        self.assertEqual(magic, replay.LEGACY_REPLAY_MAGIC)
-        self.assertEqual(frame_count, 10)
-        self.assertEqual(interval, replay.REPLAY_FIXED_STEP_INTERVAL)
-        self.assertEqual(len(payload), 24 + 10 * 138)
-        self.assertEqual(
-            result["schema_version"], replay.LEGACY_REPLAY_ARTIFACT_SCHEMA_VERSION
-        )
-
-    def test_legacy_registration_rejects_capability_action(self):
-        self.write_legacy_registration(record_count=10)
-
-        def special_reader(pair_info):
-            continuous, discrete = self.action_reader(pair_info)
-            discrete[replay.SPECIAL_ACTION_BRANCH] = 1
-            return continuous, discrete
-
         with self.assertRaises(ValidationError):
-            self.compile(action_reader=special_reader)
+            self.compile()
 
     def test_compile_rejects_source_ship_identity_mismatch_anywhere_in_prefix(self):
         self.register(record_count=10)
