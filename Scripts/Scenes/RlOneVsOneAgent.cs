@@ -314,7 +314,9 @@ internal sealed class RlOneVsOneAgent : Agent
 
     internal static bool RequiresPolicyControl(Ship ship)
     {
-        return ship != null && !ship.IsDead &&
+        // Beacons are passive Hive Mind vision sources. They contribute shared environmental
+        // knowledge but must never consume their own policy trajectory.
+        return ship != null && !(ship is Beacon) && !ship.IsDead &&
                (ship.IsMobile || ship.HasWeapons || HasSpecialAction(ship) ||
                 CanUseMiningAction(ship) || CanUseHealingAction(ship) || CanUseWarpAction(ship));
     }
