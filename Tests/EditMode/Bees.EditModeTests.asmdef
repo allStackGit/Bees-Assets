@@ -3,7 +3,7 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "Unity.MLAgents"
+        "Unity.ML-Agents"
     ],
     "includePlatforms": [
         "Editor"
