@@ -379,6 +379,18 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         }
     }
 
+    private sealed class CompositionPriorityEntry
+    {
+        internal readonly ConfigData.ShipTypes[] Composition;
+        internal readonly string Key;
+
+        internal CompositionPriorityEntry(ConfigData.ShipTypes[] composition)
+        {
+            Composition = composition;
+            Key = BuildCompositionKey(composition);
+        }
+    }
+
     private readonly RlOneVsOneTrainingOptions _options;
     private readonly RlOneVsOneMatchupSampler _sampler;
     private readonly RlShipCompositionSampler _beeCompositionSampler;
@@ -391,8 +403,9 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         new Dictionary<string, OutcomeHistoryState>();
     private readonly Dictionary<string, OutcomeHistoryState> _humanCompositionHistory =
         new Dictionary<string, OutcomeHistoryState>();
-    private readonly List<ConfigData.ShipTypes[]> _validBeeCompositions;
-    private readonly List<ConfigData.ShipTypes[]> _validHumanCompositions;
+    private readonly List<CompositionPriorityEntry> _validBeeCompositions;
+    private readonly List<CompositionPriorityEntry> _validHumanCompositions;
+    private readonly string[,] _validMatchupKeys;
     private readonly Random _priorityRandom;
     private readonly double _priorityWeightScale;
     private readonly int _priorityOutcomeWindow;
@@ -474,6 +487,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         _currentHumanComposition = new ConfigData.ShipTypes[_options.ShipsPerSide];
         _validBeeCompositions = BuildValidCompositionList(_beeCompositionSampler);
         _validHumanCompositions = BuildValidCompositionList(_humanCompositionSampler);
+        _validMatchupKeys = BuildValidMatchupKeys(_validBeeCompositions, _validHumanCompositions);
         _baselineMatchupWeight = (double)_validBeeCompositions.Count * _validHumanCompositions.Count;
     }
 
@@ -721,12 +735,13 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         double totalExtraWeight = 0d;
         for (int beeIndex = 0; beeIndex < _validBeeCompositions.Count; beeIndex++)
         {
-            ConfigData.ShipTypes[] beeComposition = _validBeeCompositions[beeIndex];
+            CompositionPriorityEntry beeEntry = _validBeeCompositions[beeIndex];
             for (int humanIndex = 0; humanIndex < _validHumanCompositions.Count; humanIndex++)
             {
                 totalExtraWeight += GetHierarchicalPriorityExtraWeight(
-                    beeComposition,
-                    _validHumanCompositions[humanIndex]) * _priorityWeightScale;
+                    beeEntry,
+                    _validHumanCompositions[humanIndex],
+                    _validMatchupKeys[beeIndex, humanIndex]) * _priorityWeightScale;
             }
         }
 
@@ -737,58 +752,60 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         }
 
         double roll = _priorityRandom.NextDouble() * totalExtraWeight;
-        ConfigData.ShipTypes[] lastBeeComposition = null;
-        ConfigData.ShipTypes[] lastHumanComposition = null;
+        CompositionPriorityEntry lastBeeEntry = null;
+        CompositionPriorityEntry lastHumanEntry = null;
         for (int beeIndex = 0; beeIndex < _validBeeCompositions.Count; beeIndex++)
         {
-            ConfigData.ShipTypes[] beeComposition = _validBeeCompositions[beeIndex];
+            CompositionPriorityEntry beeEntry = _validBeeCompositions[beeIndex];
             for (int humanIndex = 0; humanIndex < _validHumanCompositions.Count; humanIndex++)
             {
-                ConfigData.ShipTypes[] humanComposition = _validHumanCompositions[humanIndex];
+                CompositionPriorityEntry humanEntry = _validHumanCompositions[humanIndex];
                 double extraWeight = GetHierarchicalPriorityExtraWeight(
-                    beeComposition,
-                    humanComposition) * _priorityWeightScale;
+                    beeEntry,
+                    humanEntry,
+                    _validMatchupKeys[beeIndex, humanIndex]) * _priorityWeightScale;
                 if (extraWeight <= 0d)
                 {
                     continue;
                 }
 
-                lastBeeComposition = beeComposition;
-                lastHumanComposition = humanComposition;
+                lastBeeEntry = beeEntry;
+                lastHumanEntry = humanEntry;
                 if (roll < extraWeight)
                 {
-                    ApplyPrioritizedCompositionPair(beeComposition, humanComposition);
+                    ApplyPrioritizedCompositionPair(beeEntry.Composition, humanEntry.Composition);
                     return true;
                 }
                 roll -= extraWeight;
             }
         }
 
-        if (lastBeeComposition != null && lastHumanComposition != null)
+        if (lastBeeEntry != null && lastHumanEntry != null)
         {
-            ApplyPrioritizedCompositionPair(lastBeeComposition, lastHumanComposition);
+            ApplyPrioritizedCompositionPair(lastBeeEntry.Composition, lastHumanEntry.Composition);
             return true;
         }
         return false;
     }
 
     private float GetHierarchicalPriorityExtraWeight(
-        ConfigData.ShipTypes[] beeComposition,
-        ConfigData.ShipTypes[] humanComposition)
+        CompositionPriorityEntry beeEntry,
+        CompositionPriorityEntry humanEntry,
+        string matchupKey)
     {
         float exactWeight = 0f;
         MatchupHistoryState exactState;
-        if (_priorityHistory.TryGetValue(BuildMatchupKey(beeComposition, humanComposition), out exactState))
+        if (_priorityHistory.TryGetValue(matchupKey, out exactState))
         {
             exactWeight = GetEligiblePriorityExtraWeight(exactState);
         }
 
         float beeWeight = GetCompositionPriorityExtraWeight(
             _beeCompositionHistory,
-            BuildCompositionKey(beeComposition));
+            beeEntry.Key);
         float humanWeight = GetCompositionPriorityExtraWeight(
             _humanCompositionHistory,
-            BuildCompositionKey(humanComposition));
+            humanEntry.Key);
         return Math.Max(exactWeight, Math.Max(beeWeight, humanWeight));
     }
 
@@ -829,18 +846,34 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
         state.AddOutcome(beeScore, timedOut, _priorityOutcomeWindow);
     }
 
-    private static List<ConfigData.ShipTypes[]> BuildValidCompositionList(RlShipCompositionSampler sampler)
+    private static List<CompositionPriorityEntry> BuildValidCompositionList(RlShipCompositionSampler sampler)
     {
-        List<ConfigData.ShipTypes[]> compositions = new List<ConfigData.ShipTypes[]>();
+        List<CompositionPriorityEntry> compositions = new List<CompositionPriorityEntry>();
         for (long rank = 0; rank < sampler.CombinationCount; rank++)
         {
             ConfigData.ShipTypes[] composition = sampler.CreateCompositionForRank(rank);
             if (RlShipCombatCapability.HasAnyWeapon(composition))
             {
-                compositions.Add(composition);
+                compositions.Add(new CompositionPriorityEntry(composition));
             }
         }
         return compositions;
+    }
+
+    private static string[,] BuildValidMatchupKeys(
+        IReadOnlyList<CompositionPriorityEntry> beeCompositions,
+        IReadOnlyList<CompositionPriorityEntry> humanCompositions)
+    {
+        string[,] keys = new string[beeCompositions.Count, humanCompositions.Count];
+        for (int beeIndex = 0; beeIndex < beeCompositions.Count; beeIndex++)
+        {
+            for (int humanIndex = 0; humanIndex < humanCompositions.Count; humanIndex++)
+            {
+                keys[beeIndex, humanIndex] =
+                    beeCompositions[beeIndex].Key + "|" + humanCompositions[humanIndex].Key;
+            }
+        }
+        return keys;
     }
 
     private void ApplyPrioritizedCompositionPair(
