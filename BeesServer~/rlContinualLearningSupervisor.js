@@ -19,7 +19,7 @@ function terminateProcessTree(processHandle, options = {}) {
             ['/PID', String(processHandle.pid), '/T', '/F'],
             { stdio: 'ignore', windowsHide: true },
         );
-        if (!result || result.error || (result.status !== 0 && result.status !== null)) {
+        if (!result || result.error || result.status !== 0) {
             try { processHandle.kill(); } catch { /* already gone */ }
         }
         return;
