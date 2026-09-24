@@ -20,12 +20,12 @@ namespace Assets.Scripts
 
         public const string LocalServerHostname = "seagrams.softether.net";
         public const string GlobalServerHostname = "seagrams7.softether.net";
-        public const string TestServerHostname = GlobalServerHostname;
+        public const string TestServerHostname = LocalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
         public const string ProductionServerHostname = GlobalServerHostname;
         public const string DevelopmentWebGlWebSocketURL = "wss://seagrams.softether.net/bees-ws/";
         public const int DevelopmentPort = 7146;
-        public const int TestPort = 7143;
+        public const int TestPort = 7146;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
         public const int StandardMaxTimeOnQueue = 10;
@@ -66,6 +66,11 @@ namespace Assets.Scripts
             {
                 if (_socket == null)
                 {
+#if UNITY_EDITOR
+                    // The Editor always uses the local test-mode BeesServer. Test mode deliberately
+                    // does not require Steam authentication and shares the normal development port.
+                    _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
+#else
                     if (Test)
                     {
                         _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
@@ -89,6 +94,7 @@ namespace Assets.Scripts
                             UseWebSocketSharp,
                             secure: true);
                     }
+#endif
                 }
                 return _socket;
             }
