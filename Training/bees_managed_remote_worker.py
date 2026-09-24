@@ -1,7 +1,7 @@
 """Persistent one-command remote Bees rollout worker supervisor.
 
 The worker uses the bundled userspace tailnet bridge for both BeesServer control traffic and WAN
-rollout traffic. No SSH service, SSH client, account, password, key, or SCP transport is involved.
+rollout traffic. No separate remote-login service, account, password, key, or file-copy transport is involved.
 The learner-side WAN broker assigns an available actor slot automatically. Each remote installation
 keeps a persistent actor key so reconnects can reclaim its current slot safely.
 """
