@@ -25,7 +25,7 @@ This means Human-vs-NN, Human-vs-Hive-Mind, Hive-Mind-vs-NN, Hive-Mind-vs-Hive-M
 Successful ship-special, mining, healing, and warp actions are captured at their authoritative capability-event boundary. Telemetry is split into segments of at most 64 decisions and stored under:
 
 ```text
-Application.persistentDataPath/RlLiveTelemetry/PolicyV8/
+Application.persistentDataPath/RlLiveTelemetry/PolicyV18/
   Draft/
   Pending/
   Invalid/
