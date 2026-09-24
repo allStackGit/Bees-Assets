@@ -357,7 +357,7 @@ class TrainingControlStore {
     }
 
     publishArtifact({ role, platform, buildId, archivePath, entrypoint }) {
-        role = requireRole(role);
+        role = role == null ? 'dedicated' : requireRole(role);
         platform = requireString(platform, 'platform', 64);
         buildId = requireString(buildId, 'build_id', 128);
         entrypoint = requireString(entrypoint, 'entrypoint', 512);
