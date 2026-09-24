@@ -39,6 +39,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ProductionControllerRouterDistinguishesPlayerHiveMindAndNeuralOwnership()
+        {
+            Type router = RuntimeAssembly.GetType("RlProductionControllerRouter");
+            Type controllerKind = router.GetNestedType("ControllerKind", BindingFlags.NonPublic);
+            MethodInfo resolve = router.GetMethod("ResolveForTests", StaticFlags);
+            Assert.That(controllerKind, Is.Not.Null);
+            Assert.That(resolve, Is.Not.Null);
+
+            object player = Enum.Parse(controllerKind, "Player");
+            object hiveMind = Enum.Parse(controllerKind, "HiveMind");
+            object neural = Enum.Parse(controllerKind, "NeuralNetwork");
+            object none = Enum.Parse(controllerKind, "None");
+
+            Assert.That(resolve.Invoke(null, new object[] { true, true, true, true }), Is.EqualTo(player));
+            Assert.That(resolve.Invoke(null, new object[] { false, false, true, false }), Is.EqualTo(hiveMind));
+            Assert.That(resolve.Invoke(null, new object[] { false, false, true, true }), Is.EqualTo(neural));
+            Assert.That(resolve.Invoke(null, new object[] { false, false, false, false }), Is.EqualTo(none));
+        }
+
+        [Test]
         public void ReusedLevelStartTimeCreatesANewTelemetryGeneration()
         {
             Type recorder = RuntimeAssembly.GetType("RlLiveTelemetryRecorder");
