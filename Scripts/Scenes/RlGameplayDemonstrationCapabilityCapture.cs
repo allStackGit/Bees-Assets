@@ -96,21 +96,15 @@ internal static class RlGameplayDemonstrationCapabilityCapture
             return CaptureSource.None;
         }
 
-        Stage stage = ship.Level.Stage;
-        bool liveRlControlled = stage.ActivateHiveMind && stage.ActivateRlPolicy &&
-            RlLivePolicyAgent.ShouldControlSide(
-                ship.Level.HasPlayer,
-                ship.Side,
-                ConfigData.Configuration.AISide);
-        if (liveRlControlled)
-        {
-            return CaptureSource.None;
-        }
-        if (ship.Squad.IsUserControlled)
+        RlProductionControllerRouter.ControllerKind controller =
+            RlProductionControllerRouter.Resolve(ship.Level.Stage, ship.Level, ship.Side);
+        if (controller == RlProductionControllerRouter.ControllerKind.Player &&
+            ship.Squad.IsUserControlled)
         {
             return CaptureSource.Human;
         }
-        if (ship.Squad.IsHiveMindControlled && stage.ActivateHiveMind && !stage.ActivateRlPolicy)
+        if (controller == RlProductionControllerRouter.ControllerKind.HiveMind &&
+            ship.Squad.IsHiveMindControlled)
         {
             return CaptureSource.HiveMind;
         }
