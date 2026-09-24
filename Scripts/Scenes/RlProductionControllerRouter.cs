@@ -51,7 +51,7 @@ internal static class RlProductionControllerRouter
             {
                 resolved = ControllerKind.Player;
             }
-            else if (stage.ActivateHiveMind && stage.ActivateBrains)
+            else if (stage.ActivateHiveMind && stage.ActivateRlPolicy)
             {
                 resolved = ControllerKind.NeuralNetwork;
             }
@@ -189,7 +189,7 @@ internal static class RlProductionControllerRouter
 
         if (expected == ControllerKind.NeuralNetwork)
         {
-            return stage.ActivateHiveMind && stage.ActivateBrains &&
+            return stage.ActivateHiveMind && stage.ActivateRlPolicy &&
                    !NeuralNetworkUnavailableStages.Contains(stage);
         }
         if (expected == ControllerKind.HiveMind)
@@ -200,7 +200,7 @@ internal static class RlProductionControllerRouter
             {
                 return true;
             }
-            return stage.ActivateHiveMind && !stage.ActivateBrains;
+            return stage.ActivateHiveMind && !stage.ActivateRlPolicy;
         }
         return false;
     }
