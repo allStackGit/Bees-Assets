@@ -991,7 +991,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (perception == null || ship == null || sensor == null)
         {
-            throw new ArgumentNullException();
+            throw new System.ArgumentNullException();
         }
 
         perception.Collect(ship, side, sensor, frameQuarterTurns);
