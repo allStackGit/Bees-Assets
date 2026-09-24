@@ -151,13 +151,13 @@ internal static class RlProductionControllerRouter
         bool hasPlayer,
         bool userOwnsSide,
         bool activateHiveMind,
-        bool activateBrains)
+        bool activateRlPolicy)
     {
         if (hasPlayer && userOwnsSide)
         {
             return ControllerKind.Player;
         }
-        if (activateHiveMind && activateBrains)
+        if (activateHiveMind && activateRlPolicy)
         {
             return ControllerKind.NeuralNetwork;
         }
