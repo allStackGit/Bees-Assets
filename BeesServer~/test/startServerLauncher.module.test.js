@@ -3,7 +3,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { parseLauncherOptions } = require('../start-server');
+const { DEVELOPMENT_DATABASE, parseLauncherOptions } = require('../start-server');
+
+test('server launcher defaults to the bees development database', () => {
+    assert.equal(DEVELOPMENT_DATABASE.name, 'bees');
+});
 
 test('server launcher preserves legacy server arguments', () => {
     assert.deepEqual(parseLauncherOptions(['test', '7146']), {
