@@ -101,7 +101,6 @@ namespace Assets.Scripts.Levels
 
         public void Neptune3EndingWithoutCarrier()
         {
-            Debug.Log("Level 5 complete");
             if (WinningSide == ConfigData.Configuration.AISide)
             {
                 ConfigData.CurrentShips.GetFleetShips()
