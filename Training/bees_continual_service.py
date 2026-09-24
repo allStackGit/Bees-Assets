@@ -57,10 +57,10 @@ class ServiceOptions:
     run_id: str
     generation_steps: int
     num_envs: int
-    environment_args: tuple[str, ...]
     platform: str
     retry_seconds: float
     once: bool
+    environment_args: tuple[str, ...] = ()
 
 
 Runner = Callable[..., subprocess.CompletedProcess]
