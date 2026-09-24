@@ -30,6 +30,7 @@ $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
 $WanTokenPath=Join-Path $SecretsRoot 'wan.token'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
+$CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 
 function Ensure-Directory([string]$Path){ $null=New-Item -ItemType Directory -Force -Path $Path }
 
@@ -187,20 +188,32 @@ function Publish-Release($Config,[string]$AdminToken,$Release){
 
 function Quote-Arg([string]$Value){ if($Value -notmatch '[\s"]'){return $Value}; '"' + ($Value.Replace('"','\"')) + '"' }
 
+function Get-StringSha256([string]$Value){
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try{$bytes=[Text.Encoding]::UTF8.GetBytes($Value);([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+}
+
 function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
     Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory (Join-Path $BeesRoot 'ManagedBuilds\central-learner')
-    if(Test-Path -LiteralPath $CentralAgentPidPath){
-        $pidValue=0; [void][int]::TryParse((Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),[ref]$pidValue)
-        if($pidValue -gt 0 -and (Get-Process -Id $pidValue -ErrorAction SilentlyContinue)){ return }
-        Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
-    }
     $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
     $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'; $service=Join-Path $AssetsRoot 'Training\bees_continual_elastic_wan_service.py'
     $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
     $args=@($agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',(Join-Path $BeesRoot 'ManagedBuilds\central-learner'),'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString)
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
+        if($null -ne $existing -and $existing.pid -and (Get-Process -Id ([int]$existing.pid) -ErrorAction SilentlyContinue)){
+            if(([string]$existing.command_hash) -eq $commandHash){ return }
+            Write-Host 'Central training configuration changed; restarting the managed central agent.'
+            Stop-ProcessTree ([int]$existing.pid)
+        }
+    }
+    Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
     $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
-    $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline; Write-Host "Central training agent started with PID $($p.Id)."
+    $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
+    [pscustomobject]@{pid=$p.Id;command_hash=$commandHash;started_utc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
+    Write-Host "Central training agent started with PID $($p.Id)."
 }
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
