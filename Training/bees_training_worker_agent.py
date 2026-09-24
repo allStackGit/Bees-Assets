@@ -257,6 +257,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         raise RuntimeError(
                             f"server has no canonical {args.platform} build published"
                         )
+                    desired_sha = str(descriptor.get("archive_sha256", ""))
+                    if args.role == "dedicated" and managed.alive() and (
+                        managed.build_sha256 != desired_sha
+                        or managed.environment_args != environment_args
+                    ):
+                        # Never keep producing rollouts under a superseded build/config while a
+                        # replacement artifact is still downloading or being verified.
+                        managed.stop()
                     entrypoint, active_build = builds.ensure(client, descriptor)
                     desired_sha = str(active_build["archive_sha256"])
                     command = render_command(command_template, entrypoint, environment_args)
