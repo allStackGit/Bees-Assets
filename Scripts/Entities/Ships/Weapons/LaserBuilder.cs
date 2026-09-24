@@ -105,7 +105,7 @@ namespace Assets.Scripts.Entities.Ships
         }
         protected virtual bool CanCompleteQueuedShot()
         {
-            return IsAimedAtTarget;
+            return IsAlignedWithTargetPoint;
         }
         protected virtual void OnShotResolved(bool fired) { }
         protected override void SetTargetShip(Ship ship)
@@ -125,7 +125,7 @@ namespace Assets.Scripts.Entities.Ships
             if (IsRlControlled)
             {
                 TargetPoint = RlTargetPoint;
-                IsAimedAtTarget = true;
+                IsAlignedWithTargetPoint = true;
                 IsFiringAtAsteroid = false;
                 if (!_rlShotQueued && LaserBuilderAnimation.activeSelf)
                 {
@@ -135,25 +135,25 @@ namespace Assets.Scripts.Entities.Ships
             else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = true;
+                IsAlignedWithTargetPoint = true;
             }
             else
             {
                 if (ShouldFire)
                 {
                     TargetPoint = GetTargetPoint(TargetShip);
-                    IsAimedAtTarget = true;
+                    IsAlignedWithTargetPoint = true;
                     IsFiringAtAsteroid = false;
                 }
                 else if (ShouldFireAtAsteroid)
                 {
                     TargetPoint = TargetAsteroid.GetPosition();
-                    IsAimedAtTarget = true;
+                    IsAlignedWithTargetPoint = true;
                     IsFiringAtAsteroid = true;
                 }
                 else
                 {
-                    IsAimedAtTarget = false;
+                    IsAlignedWithTargetPoint = false;
                     IsFiringAtAsteroid = false;
                 }
             }
@@ -164,13 +164,13 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
-            if ((IsFiringManually && IsAimedAtTarget) || (IsFiringAtAsteroid && IsAimedAtTarget))
+            if ((IsFiringManually && IsAlignedWithTargetPoint) || (IsFiringAtAsteroid && IsAlignedWithTargetPoint))
             {
                 LaserBuilderAnimation.SetActive(true);
             }
             else
             {
-                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || Ship.IsCeaseFire || !IsAimedAtTarget))
+                if (LaserBuilderAnimation.activeSelf && (!HasTargetShip || Ship.IsCeaseFire || !IsAlignedWithTargetPoint))
                 {
                     //Debug.Log($"{Name} has no TargetShip, deactivating animation");
                     LaserBuilderAnimation.SetActive(false);
