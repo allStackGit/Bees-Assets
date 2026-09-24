@@ -1,0 +1,20 @@
+{
+  "controlUrl": "http://127.0.0.1:7150",
+  "controlHost": "127.0.0.1",
+  "controlPort": 7150,
+  "unityEditor": "",
+  "python": "python",
+  "node": "node",
+  "numLocalEnvs": 0,
+  "maxRemoteActors": 12,
+  "minRemoteActors": 0,
+  "brokerPort": 55051,
+  "generationSteps": 1000000,
+  "environmentArgs": [],
+  "expectedTrainers": [],
+  "remoteSshTarget": "",
+  "remoteSshPort": 22,
+  "remoteDefaultEnvs": 32,
+  "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
+  "remoteTorchDevice": "cpu"
+}
