@@ -49,6 +49,7 @@ $TailnetGatewayPidPath=Join-Path $TailnetRoot 'gateway.pid'
 $TailnetGatewayLogPath=Join-Path $LogsRoot 'Training\tailnet-gateway.out.log'
 $TailnetGatewayErrPath=Join-Path $LogsRoot 'Training\tailnet-gateway.err.log'
 $TailnetAddressPath=Join-Path $TailnetRoot 'learner-ipv4.txt'
+$GameplayServerPort=7146
 $GoVersion='1.27.1'
 $GoWindowsZipSha256='a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9be4caabd2edd95d'
 
@@ -641,7 +642,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $launchedPid=0
     Push-Location $ServerRoot
     try {
-        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 2>&1)
+        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" ([string]$GameplayServerPort) 2>&1)
         if($LASTEXITCODE -ne 0){ throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)" }
         $joined=$output -join [Environment]::NewLine; Write-Host $joined
         if($joined -match 'PID\s+(\d+)'){
