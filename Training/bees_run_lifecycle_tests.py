@@ -64,6 +64,19 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertEqual(second["run_id"], first["run_id"])
             self.assertEqual(second["compatibility_key"], first["compatibility_key"])
 
+    def test_comment_only_rl_source_change_keeps_run_compatible(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+            reward = assets / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
+            reward.write_text("// explanatory comment\nreward-v1\n", encoding="utf-8")
+            second = lifecycle.plan_run(assets, state)
+            self.assertFalse(second["incompatible"])
+            self.assertEqual(second["run_id"], first["run_id"])
+
     def test_reward_change_creates_new_run_even_without_manual_version_bump(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
