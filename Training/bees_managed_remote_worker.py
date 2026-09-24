@@ -258,6 +258,7 @@ class RuntimeUpdater:
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
         self.staged_sha256 = ""
         self.staged_root: Optional[Path] = None
+        self.staged_bridge: Optional[Path] = None
         self.last_error = ""
 
     def start(self) -> None:
@@ -267,9 +268,14 @@ class RuntimeUpdater:
         self._stop.set()
         self._thread.join(timeout=5)
 
-    def staged(self) -> tuple[str, Optional[Path], str]:
+    def staged(self) -> tuple[str, Optional[Path], Optional[Path], str]:
         with self._lock:
-            return self.staged_sha256, self.staged_root, self.last_error
+            return (
+                self.staged_sha256,
+                self.staged_root,
+                self.staged_bridge,
+                self.last_error,
+            )
 
     def _bootstrap_token(self) -> str:
         value = Path(self.args.bootstrap_token_file).expanduser().read_text(encoding="ascii").strip()
@@ -277,7 +283,7 @@ class RuntimeUpdater:
             raise ValueError("bootstrap token is empty")
         return value
 
-    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes]:
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes, bytes]:
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
             method="GET",
@@ -286,44 +292,80 @@ class RuntimeUpdater:
         with urllib.request.urlopen(request, timeout=120.0) as response:
             outer = response.read()
         with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
+            bridge_name = (
+                "bees-tailnet-bridge-windows.exe"
+                if os.name == "nt"
+                else "bees-tailnet-bridge-linux"
+            )
             return (
                 bundle.read("bees-remote-runtime.zip"),
                 bundle.read("training-worker.token"),
                 bundle.read("wan.token"),
+                bundle.read(bridge_name),
             )
 
     def _stage_once(self) -> None:
-        runtime_zip, worker_token, wan_token = self._fetch_bootstrap()
+        runtime_zip, worker_token, wan_token, bridge_bytes = self._fetch_bootstrap()
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
+        bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
+        bridge_sha = hashlib.sha256(bridge_bytes).hexdigest()
+        current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
         _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
         _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
-        if runtime_sha == self.current_sha256:
-            return
+
+        runtime_changed = runtime_sha != self.current_sha256
+        bridge_changed = bridge_sha != current_bridge_sha
         with self._lock:
-            if runtime_sha == self.staged_sha256 and self.staged_root is not None:
+            if (
+                not runtime_changed
+                and not bridge_changed
+            ):
+                self.staged_sha256 = ""
+                self.staged_root = None
+                self.staged_bridge = None
+                self.last_error = ""
+                return
+            if (
+                runtime_sha == self.staged_sha256
+                and self.staged_root is not None
+                and (not bridge_changed or self.staged_bridge is not None)
+            ):
                 return
 
         destination = self.versions_root / runtime_sha
-        if not (destination / "bees_managed_remote_worker.py").is_file():
+        if runtime_changed and not (destination / "bees_managed_remote_worker.py").is_file():
             _safe_extract_runtime(runtime_zip, destination)
-        requirements = destination / "bees_remote_requirements.txt"
-        if requirements.is_file():
-            completed = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
-                check=False,
-            )
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    f"runtime dependency preparation failed with exit code {completed.returncode}"
+        runtime_root = destination if runtime_changed else Path(__file__).resolve().parent
+        if runtime_changed:
+            requirements = destination / "bees_remote_requirements.txt"
+            if requirements.is_file():
+                completed = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
+                    check=False,
                 )
-        archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
-        _atomic_bytes(archive, runtime_zip, 0o644)
-        _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
+                if completed.returncode != 0:
+                    raise RuntimeError(
+                        f"runtime dependency preparation failed with exit code {completed.returncode}"
+                    )
+            archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
+            _atomic_bytes(archive, runtime_zip, 0o644)
+            _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
+
+        staged_bridge = None
+        if bridge_changed:
+            suffix = ".exe" if os.name == "nt" else ""
+            staged_bridge = bridge_path.with_name("bees-tailnet-bridge.next" + suffix)
+            _atomic_bytes(staged_bridge, bridge_bytes, 0o700)
+
         with self._lock:
             self.staged_sha256 = runtime_sha
-            self.staged_root = destination
+            self.staged_root = runtime_root
+            self.staged_bridge = staged_bridge
             self.last_error = ""
-        print(f"[Bees remote] staged updated worker runtime {runtime_sha[:12]}.")
+        print(
+            f"[Bees remote] staged worker update runtime={runtime_sha[:12]} "
+            f"bridge={bridge_sha[:12]}."
+        )
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -373,7 +415,7 @@ def _runtime_cutover_selected(
     trainer_id: str,
     updater: RuntimeUpdater,
 ) -> Optional[Path]:
-    _sha, staged_root, _error = updater.staged()
+    _sha, staged_root, _staged_bridge, _error = updater.staged()
     if staged_root is None:
         return None
     state = _control_state(args, trainer_id)
@@ -552,7 +594,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
-                next_script = runtime_cutover / "bees_managed_remote_worker.py"
+                _sha, next_root, staged_bridge, _error = updater.staged()
+                if next_root is None:
+                    raise RuntimeError("staged runtime disappeared before activation")
+                if staged_bridge is not None:
+                    active_bridge = Path(args.tailnet_bridge).expanduser().resolve()
+                    os.replace(staged_bridge, active_bridge)
+                    try:
+                        os.chmod(active_bridge, 0o700)
+                    except OSError:
+                        pass
+                next_script = next_root / "bees_managed_remote_worker.py"
                 if not next_script.is_file():
                     raise RuntimeError(f"staged runtime is missing {next_script}")
                 os.execv(
