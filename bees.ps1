@@ -281,33 +281,195 @@ function Get-GitShortSha {
     } finally { Pop-Location }
 }
 
+function Get-ActiveRunId($Config){
+    if(Test-Path -LiteralPath $AdminTokenPath){
+        try {
+            $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+            if($admin -and (Test-Control ([string]$Config.controlUrl) $admin)){
+                $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $admin
+                if($status.desired -and $status.desired.run_id){
+                    return ([string]$status.desired.run_id).Trim()
+                }
+            }
+        } catch {}
+    }
+    if(Test-Path -LiteralPath $RunStatePath){
+        try {
+            $state=Get-Content -LiteralPath $RunStatePath -Raw | ConvertFrom-Json
+            if($state.run_id){ return ([string]$state.run_id).Trim() }
+        } catch {}
+    }
+    $null
+}
+
+function Archive-TrainingRun([string]$Python,[string]$RunId,[string]$Reason){
+    if(-not $RunId){ return }
+    if(-not(Test-Path -LiteralPath $ArchiveRunScript)){
+        throw "Training log archive helper is missing: $ArchiveRunScript"
+    }
+    Write-Host "Archiving and pushing training logs for run $RunId ($Reason)..."
+    Invoke-Checked $Python @(
+        $ArchiveRunScript,
+        '--assets-root',$AssetsRoot,
+        '--bees-root',$BeesRoot,
+        '--run-id',$RunId,
+        '--reason',$Reason
+    ) $AssetsRoot
+}
+
+function New-TrainingRunPlan([string]$Python){
+    if(-not(Test-Path -LiteralPath $RunLifecycleScript)){
+        throw "Training run lifecycle helper is missing: $RunLifecycleScript"
+    }
+    Ensure-Directory $RunLifecycleRoot
+    Ensure-Directory $RuntimeRoot
+    Remove-Item -LiteralPath $RunPlanPath -Force -ErrorAction SilentlyContinue
+    Invoke-Checked $Python @(
+        $RunLifecycleScript,'plan',
+        '--assets-root',$AssetsRoot,
+        '--state',$RunStatePath,
+        '--out',$RunPlanPath
+    ) $AssetsRoot
+    Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
+}
+
+function Commit-TrainingRunPlan([string]$Python){
+    Invoke-Checked $Python @(
+        $RunLifecycleScript,'commit',
+        '--state',$RunStatePath,
+        '--plan',$RunPlanPath
+    ) $AssetsRoot
+}
+
+function Stage-Release($Config,[string]$AdminToken,$Release){
+    $body=@{
+        build_id=[string]$Release.build_id
+        run_id=[string]$Release.run_id
+        compatibility_key=[string]$Release.compatibility_key
+        incompatible=[bool]$Release.incompatible
+    }
+    Invoke-ControlPost "$($Config.controlUrl)/v1/admin/release" $AdminToken $body
+}
+
+function Wait-ReleaseRollout($Config,[string]$AdminToken,[string]$BuildId,[int]$TimeoutSeconds=600){
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while([DateTime]::UtcNow -lt $deadline){
+        $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+        $pending=$status.desired.pending_release
+        if($null -eq $pending -and ([string]$status.desired.canonical_build_id) -eq $BuildId){
+            return $status
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Timed out waiting for release $BuildId to finish coordinated rollout."
+}
+
 function Invoke-Build {
-    $config=Get-ClusterConfig; $unity=Resolve-UnityEditor $config; $python=Resolve-Python $config
+    $config=Get-ClusterConfig
+    $python=Resolve-Python $config
+
+    $outgoingRun=Get-ActiveRunId $config
+    if($outgoingRun){
+        Archive-TrainingRun $python $outgoingRun 'pre-build'
+    }
+
+    $plan=New-TrainingRunPlan $python
+    if([bool]$plan.incompatible){
+        Write-Host "Training contract changed incompatibly. New run: $($plan.run_id)"
+    } elseif([bool]$plan.new_run){
+        Write-Host "Creating initial training run: $($plan.run_id)"
+    } else {
+        Write-Host "Training contract is compatible; continuing run $($plan.run_id)."
+    }
+
+    $unity=Resolve-UnityEditor $config
     Build-TailnetBridge
     Ensure-Directory $BuildsRoot
-    $date=Get-Date -Format 'yyyy-MM-dd'; $time=Get-Date -Format 'HHmmss'; $sha=Get-GitShortSha; $buildId="$date-$time-$sha"
-    $win=Join-Path $BuildsRoot "$date RL Windows"; $linux=Join-Path $BuildsRoot "$date RL Linux"; $game=Join-Path $BuildsRoot "$date Full Game Windows"
-    Reset-BuildDirectory $win; Reset-BuildDirectory $linux; if($FullGame){ Reset-BuildDirectory $game }
+    $date=Get-Date -Format 'yyyy-MM-dd'
+    $time=Get-Date -Format 'HHmmss'
+    $sha=Get-GitShortSha
+    $buildId="$date-$time-$sha"
+    $win=Join-Path $BuildsRoot "$date RL Windows"
+    $linux=Join-Path $BuildsRoot "$date RL Linux"
+    $game=Join-Path $BuildsRoot "$date Full Game Windows"
+    Reset-BuildDirectory $win
+    Reset-BuildDirectory $linux
+    if($FullGame){ Reset-BuildDirectory $game }
+
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl' $win "$date-rl-windows.log"
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl' $linux "$date-rl-linux.log"
-    if($FullGame){ Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game "$date-full-game-windows.log" }
+    if($FullGame){
+        Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game "$date-full-game-windows.log"
+    }
 
     $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
-    if(Test-Path -LiteralPath $packageRoot){ if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }; Remove-Item -LiteralPath $packageRoot -Recurse -Force }
+    if(Test-Path -LiteralPath $packageRoot){
+        if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }
+        Remove-Item -LiteralPath $packageRoot -Recurse -Force
+    }
     Ensure-Directory $packageRoot
-    $winZip=Join-Path $packageRoot 'rl-windows.zip'; $linuxZip=Join-Path $packageRoot 'rl-linux.zip'
+    $winZip=Join-Path $packageRoot 'rl-windows.zip'
+    $linuxZip=Join-Path $packageRoot 'rl-linux.zip'
     Package-Build $python $win $winZip 'Bees RL Training.exe'
     Package-Build $python $linux $linuxZip 'Bees RL Training.x86_64'
     $artifacts=@(
-        [pscustomobject]@{role='dedicated';platform='WindowsPlayer';folder=$win;archive=$winZip;entrypoint='Bees RL Training.exe'},
-        [pscustomobject]@{role='dedicated';platform='LinuxPlayer';folder=$linux;archive=$linuxZip;entrypoint='Bees RL Training.x86_64'}
+        [pscustomobject]@{
+            role='dedicated';platform='WindowsPlayer';folder=$win
+            archive=$winZip;entrypoint='Bees RL Training.exe'
+        },
+        [pscustomobject]@{
+            role='dedicated';platform='LinuxPlayer';folder=$linux
+            archive=$linuxZip;entrypoint='Bees RL Training.x86_64'
+        }
     )
     if($FullGame){
-        $gameZip=Join-Path $packageRoot 'full-game-windows.zip'; Package-Build $python $game $gameZip 'Bees.exe'
-        $artifacts+=[pscustomobject]@{role='full-game';platform='WindowsPlayer';folder=$game;archive=$gameZip;entrypoint='Bees.exe'}
+        $gameZip=Join-Path $packageRoot 'full-game-windows.zip'
+        Package-Build $python $game $gameZip 'Bees.exe'
+        $artifacts+=[pscustomobject]@{
+            role='full-game';platform='WindowsPlayer';folder=$game
+            archive=$gameZip;entrypoint='Bees.exe'
+        }
     }
-    [pscustomobject]@{schema_version=1;build_id=$buildId;source_commit=$sha;created_utc=[DateTime]::UtcNow.ToString('o');artifacts=$artifacts} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $LatestReleasePath -Encoding UTF8
-    Write-Host ""; Write-Host "Build complete: $buildId"; $artifacts | Format-Table role,platform,folder -AutoSize
+
+    $release=[pscustomobject]@{
+        schema_version=2
+        build_id=$buildId
+        source_commit=$sha
+        created_utc=[DateTime]::UtcNow.ToString('o')
+        run_id=[string]$plan.run_id
+        previous_run_id=if($plan.previous_run_id){[string]$plan.previous_run_id}else{$null}
+        compatibility_key=[string]$plan.compatibility_key
+        incompatible=[bool]$plan.incompatible
+        contract=$plan.contract
+        artifacts=$artifacts
+    }
+    $release | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $LatestReleasePath -Encoding UTF8
+    Commit-TrainingRunPlan $python
+
+    Write-Host ""
+    Write-Host "Build complete: $buildId  run=$($release.run_id)"
+    $artifacts | Format-Table role,platform,folder -AutoSize
+
+    if(Test-Path -LiteralPath $AdminTokenPath){
+        $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+        if($admin -and (Test-Control ([string]$config.controlUrl) $admin)){
+            Write-Host 'Training control is online; staging this release without stopping the active cluster.'
+            if(Test-Path -LiteralPath $TailnetAddressPath){
+                Prepare-RemoteBootstrap $config
+            }
+            Publish-Release $config $admin $release
+            $staged=Stage-Release $config $admin $release
+            Write-Host "Release staged: build=$buildId phase=$(if($staged.pending_release){$staged.pending_release.phase}else{'active'})"
+            if([bool]$release.incompatible){
+                $null=Wait-ReleaseRollout $config $admin $buildId
+                if($release.previous_run_id){
+                    Start-Sleep -Seconds 2
+                    Archive-TrainingRun $python ([string]$release.previous_run_id) 'incompatible-run-final'
+                }
+                Write-Host "Incompatible cutover complete. Active run: $($release.run_id)"
+            }
+        }
+    }
 }
 
 function New-SecureToken {
