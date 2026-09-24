@@ -9,7 +9,6 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         private void TargetingSequence()
         {
-            FreezeDiagnostics.RecordTurretTargetingPass(Level, ShipsWithinRange.Count);
 
             if (IsRlControlled)
             {
