@@ -110,6 +110,7 @@ class TrainingControlClient:
         revision = value.get("revision")
         lease_seconds = value.get("lease_seconds")
         environment_args = value.get("environment_args")
+        canonical_build_id = value.get("canonical_build_id")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
             raise ControlRejected("training-control revision is invalid")
         if not isinstance(lease_seconds, (int, float)) or isinstance(lease_seconds, bool) or lease_seconds <= 0:
@@ -118,8 +119,18 @@ class TrainingControlClient:
             not isinstance(item, str) for item in environment_args
         ):
             raise ControlRejected("training-control environment_args is invalid")
+        if not isinstance(canonical_build_id, str):
+            raise ControlRejected("training-control canonical_build_id is invalid")
         if value.get("desired_mode") not in ("training", "stopped", "inference"):
             raise ControlRejected("training-control desired_mode is invalid")
+        build = value.get("build")
+        if build is not None:
+            if not isinstance(build, Mapping):
+                raise ControlRejected("training-control build descriptor is malformed")
+            if not canonical_build_id or build.get("build_id") != canonical_build_id:
+                raise ControlRejected(
+                    "training-control build does not match canonical_build_id"
+                )
         return value
 
     def heartbeat(self, payload: Mapping[str, object]) -> Mapping[str, Any]:
