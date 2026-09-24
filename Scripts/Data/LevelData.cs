@@ -83,7 +83,6 @@ namespace Assets.Scripts.Data
 
         public LevelOptions GetLevel(int levelId)
         {
-            Debug.Log($"Getting level #{levelId}");
             LevelOptions level = _levels.FirstOrDefault(candidate => candidate.Id == levelId);
             if (level == null)
             {
