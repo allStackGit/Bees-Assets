@@ -127,7 +127,6 @@ namespace Assets.Scripts.Levels
             }
         }
 
-        private double _timeDouble, _levelOver_fps, _levelOver_fups;
         private ScaledTimer _saveAndEndHalfSecond = new ScaledTimer();
         private ScaledTimer _saveAndEndFiveSecond = new ScaledTimer();
 
@@ -199,7 +198,6 @@ namespace Assets.Scripts.Levels
 
             if (!Stage.IsTrainingNueralNetwork)
             {
-                Stage.DebugLogger.__LevelCompletes++;
                 State.LevelEnded = true;
                 Pause();
 
@@ -210,27 +208,6 @@ namespace Assets.Scripts.Levels
                         squad.GetCommand().SetFinalize("Level ended");
                     }
                 });
-
-                if (!Stage.IsTraining)
-                {
-                    _timeDouble = ConfigData.Stopwatch.Elapsed.TotalSeconds;
-                    _levelOver_fps = Time.frameCount / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
-                    _levelOver_fups = Stage.FixedUpdates / (_timeDouble > 0 ? _timeDouble : 0.0000000000000000001);
-                    ConfigData.__TotalLength += Time.realtimeSinceStartup - Stage.StartTime;
-                    ConfigData.__AverageC2C = ConfigData.__TotalC2C / ConfigData.__TotalRequests;
-                    ConfigData.__AverageWireTime = ConfigData.__TotalWireTime / ConfigData.__TotalRequests;
-                    ConfigData.__AverageProcessingTime = ConfigData.__TotalProcessingTime / ConfigData.__TotalRequests;
-
-                    Debug.Log($"{$"fps: {_levelOver_fps}".PadRight(10).Substring(0, 10)}  {$"fups: {_levelOver_fups}".PadRight(10).Substring(0, 10)}     " +
-                          $"{$"CPS: {Stage.DebugLogger.__HivemindCommands / ConfigData.Stopwatch.Elapsed.TotalSeconds}".PadRight(9).Substring(0, 9)}   " +
-                          $"LTO: {Stage.DebugLogger.__LevelTimeouts} LC: {Stage.DebugLogger.__LevelCompletes} AveLT: {(int)ConfigData.__AverageLength}s || Hashes: {ConfigData.UsedHashes.Count}"
-                    );
-
-                    Debug.Log($"{$"C2C: {ConfigData.__AverageC2C}".PadRight(10).Substring(0, 10)}ms  {$"WT: {ConfigData.__AverageWireTime}".PadRight(10).Substring(0, 10)}ms     " +
-                          $"{$"APT: {ConfigData.__AverageProcessingTime}".PadRight(9).Substring(0, 9)}ms " +
-                          $"Resend%: {Math.Round((double)ConfigData.__TotalResends / ConfigData.__TotalRequests, 4) * 100}%"
-                    );
-                }
 
                 if (State.IsSideKilled(ConfigData.Configuration.BeeSide) && !State.IsSideKilled(ConfigData.Configuration.HumanSide))
                 {
