@@ -592,12 +592,18 @@ class TrainingControlStore {
                 }
             }
         }
+        const pending = this.state.pending_release
+            ? { ...this.state.pending_release }
+            : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             revision: this.state.revision,
             training_enabled: this.state.training_enabled,
             environment_args: [...this.state.environment_args],
             canonical_build_id: this.state.canonical_build_id,
+            run_id: this.state.run_id,
+            compatibility_key: this.state.compatibility_key,
+            pending_release: pending,
             lease_seconds: this.leaseSeconds,
             builds,
         };
@@ -607,14 +613,30 @@ class TrainingControlStore {
         trainerId = requireString(trainerId, 'trainer_id', 128);
         role = requireRole(role);
         platform = requireString(platform, 'platform', 64);
+        this._advanceRollout();
+
         const catalog = this._catalogForRole(role);
-        const buildRecord = this.state.canonical_build_id &&
+        let desiredBuildId = this.state.canonical_build_id;
+        let forcedStop = false;
+        const pending = this.state.pending_release;
+        if (role === 'dedicated' && pending) {
+            if (pending.phase === 'rolling' && this._rollingTargetId() === trainerId) {
+                desiredBuildId = pending.build_id;
+            } else if (pending.phase === 'stopping') {
+                forcedStop = true;
+            }
+        }
+
+        const buildRecord = desiredBuildId &&
             catalog[platform] &&
-            catalog[platform][this.state.canonical_build_id];
-        const canTrain = this.state.training_enabled && Boolean(buildRecord);
+            catalog[platform][desiredBuildId];
+        const canTrain = this.state.training_enabled && Boolean(buildRecord) && !forcedStop;
         const desiredMode = canTrain
             ? 'training'
             : role === 'full-game' ? 'inference' : 'stopped';
+        const prepareRecord = pending
+            ? this._pendingRecordFor(role, platform)
+            : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             trainer_id: trainerId,
@@ -625,8 +647,13 @@ class TrainingControlStore {
             desired_mode: desiredMode,
             environment_args: [...this.state.environment_args],
             canonical_build_id: this.state.canonical_build_id,
+            desired_build_id: desiredBuildId,
+            run_id: this.state.run_id,
+            compatibility_key: this.state.compatibility_key,
+            pending_release: pending ? { ...pending } : null,
             lease_seconds: this.leaseSeconds,
             build: publicBuildDescriptor(buildRecord),
+            prepare_build: publicBuildDescriptor(prepareRecord),
         };
     }
 
@@ -647,6 +674,9 @@ class TrainingControlStore {
             process_state: typeof payload.process_state === 'string' ? payload.process_state.slice(0, 64) : '',
             build_id: typeof payload.build_id === 'string' ? payload.build_id.slice(0, 128) : '',
             build_sha256: typeof payload.build_sha256 === 'string' ? payload.build_sha256.slice(0, 64) : '',
+            prepared_build_id: typeof payload.prepared_build_id === 'string'
+                ? payload.prepared_build_id.slice(0, 128)
+                : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
             metrics: payload.metrics && typeof payload.metrics === 'object' && !Array.isArray(payload.metrics)
@@ -655,10 +685,12 @@ class TrainingControlStore {
             last_seen_ms: now,
         };
         this.trainers.set(trainerId, record);
+        this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
 
     status() {
+        this._advanceRollout();
         const now = this.now();
         const staleAfter = this.leaseSeconds * 1000;
         const trainers = [...this.trainers.values()]
@@ -677,6 +709,45 @@ class TrainingControlStore {
         buildId = requireString(buildId, 'build_id', 128);
         return this._catalogForRole(role)[platform]?.[buildId] || null;
     }
+
+    appendTrainerLog({ trainerId, runId, relativePath, offset, reset, data }) {
+        trainerId = requireString(trainerId, 'trainer_id', 128);
+        runId = requireString(runId, 'run_id', 128);
+        relativePath = requireString(relativePath, 'path', 1024).replace(/\\/g, '/');
+        if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            !/^[A-Za-z0-9._-]+$/.test(runId) ||
+            relativePath.startsWith('/') ||
+            relativePath.split('/').some(part => !part || part === '.' || part === '..')) {
+            throw Object.assign(new Error('trainer log identity/path is unsafe'), { statusCode: 400 });
+        }
+        if (!Number.isInteger(offset) || offset < 0) {
+            throw Object.assign(new Error('log offset must be a non-negative integer'), { statusCode: 400 });
+        }
+        if (!Buffer.isBuffer(data) || data.length > 1024 * 1024) {
+            throw Object.assign(new Error('log chunk must be at most 1 MiB'), { statusCode: 413 });
+        }
+        const root = path.join(this.logRoot, runId, trainerId);
+        const destination = path.resolve(root, relativePath);
+        const resolvedRoot = path.resolve(root) + path.sep;
+        if (!destination.startsWith(resolvedRoot)) {
+            throw Object.assign(new Error('trainer log path escapes its run root'), { statusCode: 400 });
+        }
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        if (reset) {
+            fs.writeFileSync(destination, Buffer.alloc(0), { mode: 0o600 });
+        }
+        const current = fs.existsSync(destination) ? fs.statSync(destination).size : 0;
+        if (current !== offset) {
+            const error = Object.assign(new Error('trainer log offset mismatch'), { statusCode: 409 });
+            error.expectedOffset = current;
+            throw error;
+        }
+        if (data.length > 0) {
+            fs.appendFileSync(destination, data, { mode: 0o600 });
+        }
+        return { next_offset: current + data.length };
+    }
+
 }
 
 function authenticated(request, tokens) {
