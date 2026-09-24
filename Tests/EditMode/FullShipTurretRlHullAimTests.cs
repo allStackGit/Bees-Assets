@@ -30,7 +30,7 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Not.Contain("Ship.CurrentSpeed = 0f;"));
             Assert.That(source, Does.Not.Contain("Ship.RotationSpeed = 0f;"));
             Assert.That(source, Does.Not.Contain("Ship.Body.linearVelocity = Vector2.zero;"));
-            Assert.That(source, Does.Contain("IsAimedAtTarget = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));"));
+            Assert.That(source, Does.Contain("IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));"));
         }
 
         [Test]
@@ -41,7 +41,7 @@ namespace Bees.Tests.EditMode
 
             Assert.That(targeting, Does.Contain("ReadyToFire && RlFireRequested && CanAcceptRlFireRequest() && !Ship.IsCeaseFire"));
             Assert.That(targeting, Does.Contain("protected virtual bool CanAcceptRlFireRequest()"));
-            Assert.That(targeting, Does.Contain("return IsAimedAtTarget;"));
+            Assert.That(targeting, Does.Contain("return IsAlignedWithTargetPoint;"));
             Assert.That(fullShipTurret, Does.Contain("protected override bool CanAcceptRlFireRequest()"));
             Assert.That(fullShipTurret, Does.Contain("return true;"));
         }
