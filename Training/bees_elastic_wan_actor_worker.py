@@ -9,6 +9,7 @@ Unity simulation and policy inference locally and never owns PPO optimizer/check
 from __future__ import annotations
 
 import argparse
+import json
 import secrets
 import signal
 import subprocess
@@ -25,15 +26,54 @@ import bees_wan_actor_worker as worker
 
 
 class ElasticBrokerClient(worker.BrokerClient):
-    def __init__(self, *args: Any, actor_id: int, env_count: int, **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        actor_id: Optional[int],
+        actor_key: Optional[str],
+        env_count: int,
+        **kwargs: Any,
+    ):
         super().__init__(*args, **kwargs)
+        self.requested_actor_id = actor_id
         self.actor_id = actor_id
+        self.actor_key = actor_key
         self.env_count = env_count
         self.actor_instance_id = secrets.token_hex(16)
 
+    def claim(self, session_id: str) -> int:
+        if self.requested_actor_id is not None:
+            self.actor_id = self.requested_actor_id
+            return self.actor_id
+        if not self.actor_key:
+            raise RuntimeError("automatic actor allocation requires actor_key")
+        status, _headers, body = self._request(
+            "POST",
+            "/claim",
+            payload={
+                "session_id": session_id,
+                "actor_key": self.actor_key,
+                "actor_instance_id": self.actor_instance_id,
+                "env_count": self.env_count,
+            },
+        )
+        if status != 200:
+            raise RuntimeError(f"Unexpected WAN broker claim status {status}")
+        value = json.loads(body.decode("utf-8"))
+        actor_id = value.get("actor_id") if isinstance(value, Mapping) else None
+        if not isinstance(actor_id, int) or isinstance(actor_id, bool) or actor_id < 0:
+            raise RuntimeError("WAN broker returned an invalid actor slot")
+        self.actor_id = actor_id
+        return actor_id
+
     def _owned_payload(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self.actor_id is None:
+            raise RuntimeError("WAN actor has not claimed a central slot")
         enriched = dict(payload)
+        enriched["actor_id"] = self.actor_id
         enriched["actor_instance_id"] = self.actor_instance_id
+        if self.actor_key:
+            enriched["actor_key"] = self.actor_key
         return enriched
 
     def register(self, payload: Mapping[str, Any]) -> None:
@@ -52,7 +92,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a persistent elastic WAN Bees rollout actor with local policy inference."
     )
-    parser.add_argument("--actor-id", required=True, type=int, help="Stable remote slot, normally 0-11.")
+    parser.add_argument(
+        "--actor-id",
+        type=int,
+        default=None,
+        help="Optional fixed actor slot for manual/debug use. Managed workers omit this.",
+    )
+    parser.add_argument(
+        "--actor-key",
+        default=None,
+        help="Persistent remote-machine identity used for automatic central slot allocation.",
+    )
     parser.add_argument(
         "--envs",
         type=int,
@@ -109,8 +159,11 @@ def _elastic_session(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
-    if args.actor_id < 0:
+    if args.actor_id is not None and args.actor_id < 0:
         print("error: --actor-id must be non-negative", file=sys.stderr)
+        return 2
+    if args.actor_id is None and not args.actor_key:
+        print("error: --actor-key is required when --actor-id is omitted", file=sys.stderr)
         return 2
     if not 1 <= args.envs <= elastic.MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in 1-{elastic.MAX_ENVS_PER_ACTOR}", file=sys.stderr)
@@ -169,6 +222,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.local_port,
             token,
             actor_id=args.actor_id,
+            actor_key=args.actor_key,
             env_count=args.envs,
         )
         while not stop.is_set():
@@ -177,15 +231,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return 4
             try:
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
+                session_id = raw_session.get("session_id")
+                if not isinstance(session_id, str) or not session_id:
+                    raise RuntimeError("Elastic WAN session is missing session_id")
+                actor_id = client.claim(session_id)
+                print(f"[Bees WAN actor] learner assigned actor slot {actor_id}.")
                 session, worker_offset, _capacity_envs = _elastic_session(
                     raw_session,
-                    actor_id=args.actor_id,
+                    actor_id=actor_id,
                     env_count=args.envs,
                 )
                 actor_session = elastic_session.ElasticActorSession(
                     client,
                     session,
-                    actor_id=args.actor_id,
+                    actor_id=actor_id,
                     env_path=env_path,
                     local_base_port=args.local_base_port,
                     torch_device=args.torch_device,
