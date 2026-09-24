@@ -76,6 +76,22 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             self.assertNotIn("ssh_command(", source, path.name)
             self.assertNotIn("shutil.which(\"ssh\")", source, path.name)
 
+    def test_generated_workers_self_update_runtime_and_gate_release_readiness(self):
+        operator = OPERATOR.read_text(encoding="utf-8")
+        worker = MANAGED_WORKER.read_text(encoding="utf-8")
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("runtime-ready-build.txt", worker)
+        self.assertIn("--runtime-ready-file", worker)
+        self.assertIn("latest-training-release.json", worker)
+        self.assertIn("--runtime-archive", windows)
+        self.assertIn("--bootstrap-token-file", windows)
+        self.assertIn("--runtime-archive", linux)
+        self.assertIn("--bootstrap-token-file", linux)
+        self.assertIn("'--release',$LatestReleasePath", operator)
+        self.assertIn("'--windows-bridge',[string]$bridges.distribution_windows", operator)
+        self.assertIn("'--linux-bridge',[string]$bridges.distribution_linux", operator)
+
     def test_tailnet_helper_exposes_private_gateway_bootstrap_and_multi_forward(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
         for command in ('case "auth":', 'case "gateway":', 'case "fetch":', 'case "forward-multi":'):
