@@ -12,7 +12,7 @@ const {
     buildTrainerControlConfig,
     installTrainerControl,
     trainingConfigIdentity,
-} = require('./rlTrainerControl');
+} = require('../rlTrainerControl');
 
 function tempBuild(t, name = 'Bees.x86_64') {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-control-'));
