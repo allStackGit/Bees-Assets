@@ -40,6 +40,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 ["python", "worker.py"],
                 revision=1,
                 build_sha256="a" * 64,
+                run_id="run-a",
                 state_file=Path("state.json"),
                 environment_args=(),
             )
@@ -114,12 +115,14 @@ class TrainingControlClientTests(unittest.TestCase):
                 "--env",
                 "{env}",
                 "--build-id={build_id}",
+                "--run-id={run_id}",
                 "--env-args",
                 "{env_args}",
             ],
             Path("/tmp/Bees.x86_64"),
             ["--rl-map-size", "64"],
             "release-42",
+            "run-42",
         )
         self.assertEqual(
             rendered,
@@ -129,6 +132,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 "--env",
                 "/tmp/Bees.x86_64",
                 "--build-id=release-42",
+                "--run-id=run-42",
                 "--env-args",
                 "--rl-map-size",
                 "64",
@@ -183,6 +187,34 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(installed["archive_sha256"], descriptor["archive_sha256"])
             current = json.loads((root / "managed" / "current.json").read_text(encoding="utf-8"))
             self.assertEqual(current["build_id"], "build-123")
+
+    def test_managed_build_prepare_does_not_activate_until_ensure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / "build.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("Bees.x86_64", b"binary")
+            descriptor = {
+                "role": "dedicated",
+                "platform": "LinuxPlayer",
+                "build_id": "build-prepared",
+                "archive_sha256": control.file_sha256(archive),
+                "archive_size_bytes": archive.stat().st_size,
+                "entrypoint": "Bees.x86_64",
+                "artifact_url": "/v1/artifact/dedicated/LinuxPlayer/build-prepared",
+            }
+            store = control.ManagedBuildStore(root / "managed")
+            prepared, _ = store.prepare(FakeClient(archive), descriptor)
+            self.assertTrue(prepared.is_file())
+            self.assertTrue(store.is_prepared(descriptor))
+            self.assertFalse((root / "managed" / "current.json").exists())
+
+            activated, _ = store.ensure(FakeClient(archive), descriptor)
+            self.assertEqual(activated, prepared)
+            current = json.loads(
+                (root / "managed" / "current.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(current["build_id"], "build-prepared")
 
     def test_managed_build_rejects_archive_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:
