@@ -17,9 +17,7 @@ namespace Assets.Scripts.Levels
         /// </summary>
         private void LevelTimeOut()
         {
-            if (!Stage.IsTraining) Debug.Log("Level timed out!");
-            Stage.DebugLogger.__LevelTimeouts++;
-            IsRestarting = true;
+                        IsRestarting = true;
             if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage))
             {
                 global::RlOneVsOneEpisodeCoordinator.CompleteTimeout(this);
@@ -40,7 +38,6 @@ namespace Assets.Scripts.Levels
 
         public void SaveAndEnd()
         {
-            if (!Stage.IsTraining) Debug.Log("Saving and ending");
             if (Stage.RecordStats && !Stage.IsTraining)
             {
                 for (_save_i = 0; _save_i < AllSquads.Count; _save_i++)
@@ -143,7 +140,6 @@ namespace Assets.Scripts.Levels
                         ConfigData.UserProgressData.ChallengeScore += State.PlayerScore;
                         Stage.Menus.ShowLevelSummary(() =>
                         {
-                            Debug.Log("Showing level ended dialogue after challenge level summary");
                             _levelEndedDialogueTimer.Reuse(1, LevelEndedDialogue);
                             AddTimer(_levelEndedDialogueTimer);
                         });
