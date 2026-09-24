@@ -25,8 +25,19 @@ internal static class RlTrainingControlRuntime
 
     internal static bool TryParseState(string json, out bool forceInference)
     {
+        double nowUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d;
+        return TryParseStateAtTime(json, nowUnixSeconds, out forceInference);
+    }
+
+    internal static bool TryParseStateAtTime(
+        string json,
+        double nowUnixSeconds,
+        out bool forceInference)
+    {
         forceInference = true;
-        if (string.IsNullOrWhiteSpace(json))
+        if (string.IsNullOrWhiteSpace(json) ||
+            double.IsNaN(nowUnixSeconds) ||
+            double.IsInfinity(nowUnixSeconds))
         {
             return false;
         }
@@ -43,8 +54,13 @@ internal static class RlTrainingControlRuntime
 
         JToken onlineToken = value["online"];
         JToken modeToken = value["desired_mode"];
+        JToken updatedToken = value["updated_unix_seconds"];
+        JToken leaseToken = value["lease_seconds"];
         if (onlineToken == null || onlineToken.Type != JTokenType.Boolean ||
-            modeToken == null || modeToken.Type != JTokenType.String)
+            modeToken == null || modeToken.Type != JTokenType.String ||
+            !TryFiniteNumber(updatedToken, out double updatedUnixSeconds) ||
+            !TryFiniteNumber(leaseToken, out double leaseSeconds) ||
+            leaseSeconds <= 0d)
         {
             return false;
         }
@@ -58,8 +74,30 @@ internal static class RlTrainingControlRuntime
             return false;
         }
 
-        forceInference = ShouldForceInference(online, desiredMode);
+        double ageSeconds = Math.Max(0d, nowUnixSeconds - updatedUnixSeconds);
+        bool leaseCurrent = ageSeconds <= leaseSeconds;
+        forceInference = ShouldForceInference(online && leaseCurrent, desiredMode);
         return true;
+    }
+
+    private static bool TryFiniteNumber(JToken token, out double value)
+    {
+        value = 0d;
+        if (token == null ||
+            (token.Type != JTokenType.Integer && token.Type != JTokenType.Float))
+        {
+            return false;
+        }
+
+        try
+        {
+            value = token.Value<double>();
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     internal static bool TryGetForceInference(out bool forceInference)
