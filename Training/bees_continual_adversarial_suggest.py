@@ -1,9 +1,9 @@
 """Suggest reproducible tactical geometry from an approved public Human demonstration.
 
 This is deliberately an operator-assist tool, not automatic tactic registration. It revalidates the
-approved immutable demonstration, decodes policy ABI v8 observations, and reports geometry that can
-help reconstruct the situation in headless training. ABI v8 appends episode-progress/reserved tail
-values after the v7 tactical fields, so the geometry indices used here retain the same meaning. The
+approved immutable demonstration, decodes policy ABI v18 observations, and reports geometry that can
+help reconstruct the situation in headless training. The indices below are frozen against the compact
+v18 perception layout and its episode-progress/reserved tail. The
 observation stream does not prove that an estimated setup parameter caused the tactic, so the result
 must still be reviewed before registration.
 """
@@ -33,18 +33,18 @@ from bees_continual_native_demo import (
 
 
 SUGGESTION_SCHEMA_VERSION = 1
-SUPPORTED_POLICY_ABI_VERSION = 8
-EXPECTED_OBSERVATION_SIZE = 4722
-SELF_POSITION_X_INDEX = 6
-SELF_POSITION_Y_INDEX = 7
-LEVEL_SIZE_X_INDEX = 8
-LEVEL_SIZE_Y_INDEX = 9
-FIRST_ENEMY_SLOT_INDEX = 29 + 12 + 19 + 64 * 19
-FIRST_ENEMY_X_INDEX = FIRST_ENEMY_SLOT_INDEX + 1
-FIRST_ENEMY_Y_INDEX = FIRST_ENEMY_SLOT_INDEX + 2
+SUPPORTED_POLICY_ABI_VERSION = 18
+EXPECTED_OBSERVATION_SIZE = 7342
+SELF_POSITION_X_INDEX = 2
+SELF_POSITION_Y_INDEX = 3
+LEVEL_SIZE_X_INDEX = 4
+LEVEL_SIZE_Y_INDEX = 5
+FIRST_ENEMY_SLOT_INDEX = 25 + 12 + 40 + 64 * 44
+FIRST_ENEMY_X_INDEX = FIRST_ENEMY_SLOT_INDEX + 2
+FIRST_ENEMY_Y_INDEX = FIRST_ENEMY_SLOT_INDEX + 3
 LEVEL_SIZE_NORMALIZATION_SCALE = 100.0
 LOCAL_DISTANCE_SQUASH_SCALE = 40.0
-# ABI v8 preserves the earlier Level.Min/Max fields, which subtract ConfigData.MapEdgePadding=(5,5)
+# ABI v18 uses the same Level.Min/Max bounds, which subtract ConfigData.MapEdgePadding=(5,5)
 # from each edge. Keep this guarded by a focused source-level test.
 MAP_EDGE_PADDING_PER_SIDE = 5.0
 
@@ -102,7 +102,7 @@ def _invert_signed_distance(value: float, label: str) -> float:
 def infer_geometry_from_observations(
     observations: Sequence[Sequence[float]],
 ) -> Mapping[str, object]:
-    """Infer map/setup hints from already-decoded ABI v8 vector observations."""
+    """Infer map/setup hints from already-decoded ABI v18 vector observations."""
     if not observations:
         raise ValidationError("Demonstration contains no observations to inspect.")
 
