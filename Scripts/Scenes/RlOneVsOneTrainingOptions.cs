@@ -33,7 +33,6 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const int DefaultEpisodeTimeoutSeconds = 120;
     internal const int DefaultShipsPerSide = 1;
     internal const int DefaultDecisionPeriod = 5;
-    internal const int MaximumShipsPerSide = 16;
     internal const float MinimumMapSize = 10f;
     internal const RlOneVsOneMatchupMode DefaultMatchupMode = RlOneVsOneMatchupMode.Fixed;
 
@@ -229,9 +228,9 @@ internal sealed class RlOneVsOneTrainingOptions
         {
             throw new ArgumentException($"{EpisodeTimeoutFlag} must be a positive whole number of seconds.");
         }
-        if (ShipsPerSide < 1 || ShipsPerSide > MaximumShipsPerSide)
+        if (ShipsPerSide < 1)
         {
-            throw new ArgumentException($"{ShipsPerSideFlag} must be between 1 and {MaximumShipsPerSide}.");
+            throw new ArgumentException($"{ShipsPerSideFlag} must be a positive whole number.");
         }
         if (DecisionPeriod <= 0)
         {
