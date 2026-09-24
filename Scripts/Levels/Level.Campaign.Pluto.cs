@@ -16,7 +16,6 @@ namespace Assets.Scripts.Levels
         public void Pluto1Anomaly()
         {
             FishTankTrigger();
-            Debug.Log("Setting triggers for level 0");
 
             LevelConstructor.SpawnShipsAndSquads(new List<SavedSquad>()
             {
