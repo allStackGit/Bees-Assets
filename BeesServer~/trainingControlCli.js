@@ -8,9 +8,10 @@ function usage() {
     return [
         'Usage:',
         '  node trainingControlCli.js status',
-        '  node trainingControlCli.js start [--env-arg VALUE ...]',
+        '  node trainingControlCli.js start [--build-id ID] [--env-arg VALUE ...]',
         '  node trainingControlCli.js stop',
         '  node trainingControlCli.js set-args [--env-arg VALUE ...]',
+        '  node trainingControlCli.js activate-build --build-id ID',
         '  node trainingControlCli.js publish-build --platform P --build-id ID --archive PATH --entrypoint RELATIVE_PATH',
         '',
         'Environment:',
@@ -113,6 +114,7 @@ async function main(argv = process.argv.slice(2)) {
     } else if (command === 'start') {
         const patch = { training_enabled: true };
         if (values.envArgs.length) patch.environment_args = values.envArgs;
+        if (values.build_id) patch.canonical_build_id = values.build_id;
         result = await requestJson(baseUrl, token, 'POST', '/v1/admin/state', patch);
     } else if (command === 'stop') {
         result = await requestJson(
@@ -120,6 +122,11 @@ async function main(argv = process.argv.slice(2)) {
     } else if (command === 'set-args') {
         result = await requestJson(
             baseUrl, token, 'POST', '/v1/admin/state', { environment_args: values.envArgs });
+    } else if (command === 'activate-build') {
+        if (!values.build_id) throw new Error('activate-build requires --build-id');
+        result = await requestJson(baseUrl, token, 'POST', '/v1/admin/state', {
+            canonical_build_id: values.build_id,
+        });
     } else if (command === 'publish-build') {
         for (const key of ['platform', 'build_id', 'archive', 'entrypoint']) {
             if (!values[key]) throw new Error('publish-build requires --' + key.replace('_', '-'));
