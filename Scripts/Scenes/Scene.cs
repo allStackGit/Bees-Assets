@@ -62,12 +62,10 @@ namespace Assets.Scripts.Scenes
                 if (TargetFrameRate > 0)
                 {
                     Application.targetFrameRate = TargetFrameRate;
-                    Debug.Log($"Target Frame rate set to {Application.targetFrameRate} fps");
                 }
                 else if (TargetFrameRate == -1)
                 {
                     QualitySettings.vSyncCount = 1;
-                    Debug.Log($"Target Frane rate set to sync to display at {Screen.currentResolution.refreshRateRatio} fps");
                 }
             }
             InvokeRepeating(nameof(LoadSettingsWhenOpen), .1f, .1f);
@@ -95,7 +93,6 @@ namespace Assets.Scripts.Scenes
         }
         public void Exit()
         {
-            Debug.Log("Exiting game!");
             Application.Quit();
         }
         /// <summary>
@@ -280,7 +277,6 @@ namespace Assets.Scripts.Scenes
 
                     if (!NetworkDisconnection.IsOpen)
                     {
-                        Debug.Log($"Network disconnected!");
                         if (Type == ConfigData.SceneTypes.Stage)
                         {
                             Level primaryLevel = ((Stage)this).PrimaryLevel;
