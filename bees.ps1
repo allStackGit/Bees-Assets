@@ -284,6 +284,10 @@ function Prepare-RemoteBootstrap($Config){
     }
     Write-Host "Remote launchers prepared in $RemoteRoot (actor slots 0-$($maxActors-1), default $defaultEnvs envs each)."
     Write-Host "Copy one bees-remote-worker-N.ps1 file to each remote Windows machine and run it."
+    $sshd=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
+    if($null -eq $sshd -or $sshd.Status -ne 'Running'){
+        Write-Warning "Remote launchers require SSH access to this learner. Windows OpenSSH Server (sshd) is not currently running; install/start it or provide another reachable SSH endpoint for remoteSshTarget."
+    }
 }
 
 function Invoke-Start {
