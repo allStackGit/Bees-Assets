@@ -98,19 +98,6 @@ namespace Assets.Scripts.Levels
         public int PlayerScore;
         public int PlayerMineralsReceived;
 
-        public List<string> __Squads, __SquadsAwaitingCommands, __PastCommands, __Obstacles;
-
-        public void UpdateDebugVariables()
-        {
-            __Squads = GetAllSquads().Select(squad => squad.ToString()).ToList();
-            __SquadsAwaitingCommands = SquadsAwaitingCommands.Select(squad => squad.ToString()).ToList();
-            __PastCommands = PastCommands.Select(command =>
-                $"Command #{command.OutcomeId} - {command.CommandType} against {command.Enemy} ended with {command.Tsv}" +
-                $" TSV due to \"{command.FinalizationCause}\" and took {command.Age} ticks").ToList();
-            __Obstacles = Obstacles.Select(obstacle =>
-                $"{obstacle.Name} at {obstacle.GetPosition()} with {obstacle.Health} health").ToList();
-        }
-
         public void Setup(Level level)
         {
             Level = level;
