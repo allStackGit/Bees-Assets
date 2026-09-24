@@ -1,0 +1,11 @@
+/node_modules
+/v
+/table_dumps
+/logs
+*.log
+claude-router/config.json
+favicon.ico
+.vs
+.vs/BeesServer/v17/DocumentLayout.json
+.vs/BeesServer/v17/DocumentLayout.backup.json
+.vs/BeesServer/v17/.suo
