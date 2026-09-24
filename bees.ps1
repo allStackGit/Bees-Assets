@@ -673,7 +673,7 @@ function Get-LatestRelease {
 
 function Publish-Release($Config,[string]$AdminToken,$Release){
     foreach($a in @($Release.artifacts)){
-        if(-not(Test-Path -LiteralPath ([string]$a.archive)){ throw "Release artifact is missing: $($a.archive)" }
+        if(-not (Test-Path -LiteralPath ([string]$a.archive))){ throw "Release artifact is missing: $($a.archive)" }
         $body=@{role=[string]$a.role;platform=[string]$a.platform;build_id=[string]$Release.build_id;archive_path=[string]$a.archive;entrypoint=[string]$a.entrypoint}
         $null=Invoke-ControlPost "$($Config.controlUrl)/v1/admin/artifact" $AdminToken $body
     }
