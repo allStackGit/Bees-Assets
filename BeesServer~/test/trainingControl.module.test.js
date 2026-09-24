@@ -63,7 +63,7 @@ test('worker token cannot invoke admin endpoints and admin token can inspect sta
 
         const status = await invokeGet(handler, '/v1/status', 'admin-secret');
         assert.equal(status.statusCode, 200);
-        assert.equal(status.body.desired.schema_version, 3);
+        assert.equal(status.body.desired.schema_version, 4);
     });
 });
 
@@ -419,7 +419,7 @@ test('schema 2 build catalogs migrate to both roles without breaking an existing
         }));
 
         const store = new TrainingControlStore({ statePath, artifactRoot });
-        assert.equal(store.state.schema_version, 3);
+        assert.equal(store.state.schema_version, 4);
         assert.equal(store.stateFor({
             trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
         }).build.role, 'dedicated');
@@ -467,5 +467,268 @@ test('missing optional full-game artifact does not block dedicated training', ()
         assert.equal(store.stateFor({
             trainerId: 'game', role: 'full-game', platform: 'WindowsPlayer',
         }).desired_mode, 'inference');
+    });
+});
+
+
+test('compatible release prestages everywhere and rolls one dedicated trainer at a time', () => {
+    withTempDir(root => {
+        const artifactRoot = path.join(root, 'artifacts');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot,
+        });
+        const oldArchive = path.join(root, 'old.zip');
+        const newArchive = path.join(root, 'new.zip');
+        fs.writeFileSync(oldArchive, Buffer.from('old-build'));
+        fs.writeFileSync(newArchive, Buffer.from('new-build'));
+        for (const [buildId, archive] of [['old', oldArchive], ['new', newArchive]]) {
+            store.publishArtifact({
+                role: 'dedicated',
+                platform: 'WindowsPlayer',
+                buildId,
+                archivePath: archive,
+                entrypoint: 'Bees.exe',
+            });
+        }
+
+        const key = 'a'.repeat(64);
+        store.stageRelease({
+            buildId: 'old',
+            runId: 'run-a',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: '',
+            applied_revision: 1,
+        });
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: '',
+            applied_revision: 1,
+        });
+
+        let staged = store.stageRelease({
+            buildId: 'new',
+            runId: 'run-a',
+            compatibilityKey: key,
+            incompatible: false,
+        });
+        assert.equal(staged.pending_release.phase, 'preparing');
+        assert.equal(store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'WindowsPlayer',
+        }).build.build_id, 'old');
+
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 2,
+        });
+        const centralPreparation = store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 2,
+        });
+        assert.equal(centralPreparation.pending_release.phase, 'rolling');
+
+        const remoteTurn = store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'WindowsPlayer',
+        });
+        assert.equal(remoteTurn.desired_build_id, 'new');
+        assert.equal(remoteTurn.build.build_id, 'new');
+
+        const afterRemote = store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'new',
+            prepared_build_id: 'new',
+            applied_revision: 3,
+        });
+        assert.equal(afterRemote.desired_build_id, 'new');
+        assert.equal(store.state.canonical_build_id, 'old');
+
+        const centralTurn = store.stateFor({
+            trainerId: 'central-learner', role: 'dedicated', platform: 'WindowsPlayer',
+        });
+        assert.equal(centralTurn.desired_build_id, 'new');
+
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'new',
+            prepared_build_id: 'new',
+            applied_revision: 4,
+        });
+        assert.equal(store.state.canonical_build_id, 'new');
+        assert.equal(store.state.run_id, 'run-a');
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
+test('incompatible release waits for prestaging, stops all trainers, then switches run', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldArchive = path.join(root, 'old.zip');
+        const newArchive = path.join(root, 'new.zip');
+        fs.writeFileSync(oldArchive, Buffer.from('old-build'));
+        fs.writeFileSync(newArchive, Buffer.from('new-build'));
+        for (const [buildId, archive] of [['old', oldArchive], ['new', newArchive]]) {
+            store.publishArtifact({
+                role: 'dedicated',
+                platform: 'WindowsPlayer',
+                buildId,
+                archivePath: archive,
+                entrypoint: 'Bees.exe',
+            });
+        }
+
+        store.stageRelease({
+            buildId: 'old',
+            runId: 'run-old',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            store.heartbeat({
+                trainer_id: trainerId,
+                role: 'dedicated',
+                platform: 'WindowsPlayer',
+                process_state: 'running',
+                build_id: 'old',
+                prepared_build_id: '',
+                applied_revision: 1,
+            });
+        }
+
+        store.stageRelease({
+            buildId: 'new',
+            runId: 'run-new',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: true,
+        });
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 2,
+        });
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 2,
+        });
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.equal(store.state.run_id, 'run-old');
+        assert.equal(store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'WindowsPlayer',
+        }).desired_mode, 'stopped');
+
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'stopped',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 3,
+        });
+        assert.equal(store.state.run_id, 'run-old');
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'stopped',
+            build_id: 'old',
+            prepared_build_id: 'new',
+            applied_revision: 3,
+        });
+
+        assert.equal(store.state.canonical_build_id, 'new');
+        assert.equal(store.state.run_id, 'run-new');
+        assert.equal(store.state.compatibility_key, 'b'.repeat(64));
+        assert.equal(store.state.pending_release, null);
+        const restarted = store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'WindowsPlayer',
+        });
+        assert.equal(restarted.desired_mode, 'training');
+        assert.equal(restarted.build.build_id, 'new');
+    });
+});
+
+test('trainer logs append by verified offset under their run and trainer namespace', () => {
+    withTempDir(root => {
+        const logRoot = path.join(root, 'logs');
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            logRoot,
+        });
+        let result = store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-a',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: false,
+            data: Buffer.from('abc'),
+        });
+        assert.equal(result.next_offset, 3);
+        result = store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-a',
+            relativePath: 'Player-0.log',
+            offset: 3,
+            reset: false,
+            data: Buffer.from('def'),
+        });
+        assert.equal(result.next_offset, 6);
+        assert.equal(
+            fs.readFileSync(path.join(logRoot, 'run-a', 'trainer-a', 'Player-0.log'), 'utf8'),
+            'abcdef',
+        );
+        assert.throws(() => store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-a',
+            relativePath: '../escape.log',
+            offset: 0,
+            reset: false,
+            data: Buffer.from('bad'),
+        }), /unsafe/);
     });
 });
