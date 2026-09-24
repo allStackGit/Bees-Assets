@@ -502,6 +502,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $env:BEES_TRAINING_CONTROL_ENABLED='1'; $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken; $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
     $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
     $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'; $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
+    $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
     Push-Location $ServerRoot
     try {
         $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 2>&1)
@@ -539,10 +540,9 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
     $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
     $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'; $service=Join-Path $AssetsRoot 'Training\bees_continual_elastic_wan_service.py'
     $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
-    $args=@($agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',(Join-Path $BeesRoot 'ManagedBuilds\central-learner'),'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
+    $args=@($agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',(Join-Path $BeesRoot 'ManagedBuilds\central-learner'),'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-    $sourceSha=Get-GitShortSha
-    $commandHash=Get-StringSha256 ($sourceSha + [Environment]::NewLine + $Python + [Environment]::NewLine + $argString)
+    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString)
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing -and $existing.pid -and (Get-Process -Id ([int]$existing.pid) -ErrorAction SilentlyContinue)){
@@ -673,6 +673,14 @@ function Prepare-RemoteBootstrap($Config){
     Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
 }
 
+function Invoke-Server {
+    $config=Get-ClusterConfig
+    $worker=Ensure-TokenFile $WorkerTokenPath
+    $admin=Ensure-TokenFile $AdminTokenPath
+    Start-BeesServerIfNeeded $config $worker $admin
+    Write-Host 'BeesServer is online for normal gameplay/Unity Editor connections. No Unity build is required.'
+}
+
 function Invoke-Start {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
@@ -681,22 +689,29 @@ function Invoke-Start {
     $admin=Ensure-TokenFile $AdminTokenPath
     $null=Ensure-TokenFile $WanTokenPath
     $null=Ensure-TokenFile $BootstrapTokenPath
+    $release=Get-LatestRelease
+    if(-not $release.run_id -or -not $release.compatibility_key){
+        throw "Latest release predates automatic run lifecycle metadata. Run '.\Assets\bees.ps1 build' first."
+    }
 
+    Start-BeesServerIfNeeded $config $worker $admin
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
-    $release=Get-LatestRelease
-    Start-BeesServerIfNeeded $config $worker $admin
     Publish-Release $config $admin $release
-    Start-CentralAgentIfNeeded $config $python $unity
     Start-TailnetGatewayIfNeeded $config
 
+    $staged=Stage-Release $config $admin $release
     $envArgs=Get-EnvironmentArgs $config
     $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
         training_enabled=$true
-        canonical_build_id=[string]$release.build_id
         environment_args=$envArgs
     }
-    Write-Host "Training requested: build=$($desired.canonical_build_id) revision=$($desired.revision)"
+    Start-CentralAgentIfNeeded $config $python $unity
+
+    Write-Host "Training requested: build=$($release.build_id) run=$($release.run_id) revision=$($desired.revision)"
+    if($staged.pending_release){
+        Write-Host "Release rollout: $($staged.pending_release.phase) incompatible=$($staged.pending_release.incompatible)"
+    }
     Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
     Start-Sleep -Seconds 1
     Show-Status $config $admin $true
@@ -752,7 +767,8 @@ function Show-Status($Config,[string]$AdminToken,[bool]$Single){
         Write-Host "Bees distributed learning status  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"; Write-Host ('='*78)
         try {
             $s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken; $d=$s.desired
-            Write-Host "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"; Write-Host "Build:  $($d.canonical_build_id)"; Write-Host "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
+            Write-Host "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"; Write-Host "Build:  $($d.canonical_build_id)   Run: $($d.run_id)"; Write-Host "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
+            if($d.pending_release){ Write-Host "Pending release: build=$($d.pending_release.build_id) phase=$($d.pending_release.phase) incompatible=$($d.pending_release.incompatible)" }
             $ea=@($d.environment_args); Write-Host "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"; Write-Host ''
             $rows=@($s.trainers|ForEach-Object{
                 $m=$_.metrics
@@ -771,6 +787,7 @@ function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $Adm
 
 switch($Command){
     'build'{Invoke-Build}
+    'server'{Invoke-Server}
     'start'{Invoke-Start}
     'stop'{Invoke-Stop}
     'status'{Invoke-Status}
