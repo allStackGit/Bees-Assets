@@ -30,6 +30,7 @@ $LatestReleasePath=Join-Path $BuildsRoot 'latest-training-release.json'
 $WorkerTokenPath=Join-Path $SecretsRoot 'training-worker.token'
 $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
 $WanTokenPath=Join-Path $SecretsRoot 'wan.token'
+$BootstrapTokenPath=Join-Path $SecretsRoot 'training-bootstrap.token'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
@@ -142,25 +143,7 @@ function Build-TailnetBridge {
     }
 }
 
-function Ensure-OpenSshServer {
-    $service=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
-    if($null -eq $service){
-        Write-Host 'Windows OpenSSH Server is not installed. Installing it as a Bees-managed prerequisite...'
-        try {
-            $null=Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' -ErrorAction Stop
-        } catch {
-            throw "Bees could not install Windows OpenSSH Server automatically. Run bees.ps1 start once from an elevated PowerShell window. $($_.Exception.Message)"
-        }
-        $service=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
-    }
-    if($null -eq $service){
-        throw 'Windows OpenSSH Server installation completed but the sshd service is unavailable.'
-    }
-    Set-Service -Name 'sshd' -StartupType Automatic
-    if($service.Status -ne 'Running'){ Start-Service -Name 'sshd' }
-}
-
-function Start-TailnetGatewayIfNeeded($Config){
+function Ensure-TailnetIdentity($Config){
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
     if($transport -ne 'tailnet'){ return }
 
@@ -169,16 +152,9 @@ function Start-TailnetGatewayIfNeeded($Config){
         throw "Embedded tailnet bridge is missing. Run '.\Assets\bees.ps1 build' first."
     }
 
-    Ensure-OpenSshServer
-
     $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
     if($hostname -notmatch '^[A-Za-z0-9-]{1,63}$'){
         throw 'tailnetLearnerName must contain only letters, digits, and dashes.'
-    }
-
-    $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
-    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535){
-        throw 'tailnetSshPort must be in 1-65535.'
     }
 
     $state=Join-Path $TailnetRoot 'LearnerState'
@@ -195,19 +171,52 @@ function Start-TailnetGatewayIfNeeded($Config){
     if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
         throw "Unexpected learner tailnet IPv4 address: $tailnetIp"
     }
+}
+
+function Start-TailnetGatewayIfNeeded($Config){
+    $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
+    if($transport -ne 'tailnet'){ return }
+
+    $bridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
+    $state=Join-Path $TailnetRoot 'LearnerState'
+    $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
+    $controlPort=[int]$Config.controlPort
+    $brokerPort=[int]$Config.brokerPort
+    $bootstrapPort=if($Config.tailnetBootstrapPort){[int]$Config.tailnetBootstrapPort}else{7151}
+    foreach($port in @($controlPort,$brokerPort,$bootstrapPort)){
+        if($port -lt 1 -or $port -gt 65535){ throw 'Tailnet gateway ports must be in 1-65535.' }
+    }
+    if($controlPort -eq $brokerPort -or $controlPort -eq $bootstrapPort -or $brokerPort -eq $bootstrapPort){
+        throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
+    }
+
+    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
+    foreach($path in @($runtimeZip,$WorkerTokenPath,$WanTokenPath,$BootstrapTokenPath)){
+        if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
+    }
 
     if(Test-Path -LiteralPath $TailnetGatewayPidPath){
         $oldPid=0
         [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$oldPid)
         if($oldPid -gt 0 -and (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)){
-            Write-Host ("Embedded tailnet gateway already running at {0}:{1} (PID {2})." -f $tailnetIp,$tailnetPort,$oldPid)
-            return
+            Stop-ProcessTree $oldPid
         }
         Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
     }
 
     Ensure-Directory (Split-Path -Parent $TailnetGatewayLogPath)
-    $argList=@('serve','--state',$state,'--hostname',$hostname,'--listen',(":$tailnetPort"),'--target','127.0.0.1:22')
+    $argList=@(
+        'gateway',
+        '--state',$state,
+        '--hostname',$hostname,
+        '--control-port',[string]$controlPort,
+        '--broker-port',[string]$brokerPort,
+        '--bootstrap-port',[string]$bootstrapPort,
+        '--runtime',$runtimeZip,
+        '--worker-token',$WorkerTokenPath,
+        '--wan-token',$WanTokenPath,
+        '--bootstrap-token',$BootstrapTokenPath
+    )
     $startArgs=@{
         FilePath=$bridge
         ArgumentList=$argList
@@ -223,11 +232,12 @@ function Start-TailnetGatewayIfNeeded($Config){
         throw "Embedded tailnet gateway exited during startup. Check $TailnetGatewayErrPath"
     }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
-    Write-Host ("Embedded tailnet gateway online at {0}:{1} as {2} (PID {3})." -f $tailnetIp,$tailnetPort,$hostname,$p.Id)
+    $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+    Write-Host ("Embedded tailnet gateway online at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,$p.Id)
 }
 
 
-function Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
+function Invoke-Checkedfunction Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
     Push-Location $WorkingDirectory
     try {
         & $Exe @Args
@@ -390,11 +400,6 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
 
-function Convert-ToScpPath([string]$Path){
-    $value=([IO.Path]::GetFullPath($Path)).Replace('\','/')
-    if($value -match '^[A-Za-z]:/'){ return "/$value" }
-    $value
-}
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 function Escape-BashDoubleQuoted([string]$Value){
     if($Value -notmatch '^[A-Za-z0-9_@.:/%~+\-]+$'){
@@ -403,123 +408,34 @@ function Escape-BashDoubleQuoted([string]$Value){
     $Value
 }
 
-function Get-RemoteSshTarget($Config){
-    if($Config.remoteSshTarget -and ([string]$Config.remoteSshTarget).Trim()){ return ([string]$Config.remoteSshTarget).Trim() }
-    "$env:USERNAME@$env:COMPUTERNAME"
-}
-
-function Get-RemoteSshUser($Config){
-    if($Config.trainingSshUser -and ([string]$Config.trainingSshUser).Trim()){
-        $configured=([string]$Config.trainingSshUser).Trim()
-        if($configured -notmatch '^[A-Za-z0-9._-]+$'){
-            throw 'trainingSshUser must be a local Windows account name containing only letters, digits, dot, underscore, or dash.'
-        }
-        return $configured
-    }
-
-    $target=Get-RemoteSshTarget $Config
-    if($target -match '^([^@]+)@'){ return $Matches[1] }
-    if($env:USERNAME){ return [string]$env:USERNAME }
-    throw 'Could not determine the Windows SSH user for generated remote launchers.'
-}
-
-function Get-TrainingSshIdentity($Config){
-    $user=Get-RemoteSshUser $Config
-    $identity="$env:COMPUTERNAME\$user"
-    try {
-        $account=New-Object Security.Principal.NTAccount($identity)
-        $null=$account.Translate([Security.Principal.SecurityIdentifier])
-    } catch {
-        throw "Dedicated Bees SSH account '$user' does not exist on this Windows learner. Create it once, then rerun start. Example from elevated PowerShell: New-LocalUser -Name '$user' -Password (Read-Host -AsSecureString 'Password')"
-    }
-    $identity
-}
-
-function Set-TrainingSshFileAcl([string]$Path,[string]$Identity,[bool]$AllowRead){
-    if(-not(Test-Path -LiteralPath $Path)){
-        throw "Cannot configure Bees SSH access because the required file is missing: $Path"
-    }
-
-    $acl=Get-Acl -LiteralPath $Path
-    foreach($rule in @($acl.Access)){
-        if(-not $rule.IsInherited -and $rule.IdentityReference.Value -ieq $Identity){
-            [void]$acl.RemoveAccessRuleSpecific($rule)
-        }
-    }
-
-    $denyWrite=[Security.AccessControl.FileSystemRights]::WriteData -bor [Security.AccessControl.FileSystemRights]::AppendData -bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::WriteAttributes -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
-    $denyRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,$denyWrite,[Security.AccessControl.AccessControlType]::Deny)
-    $acl.AddAccessRule($denyRule)
-
-    if($AllowRead){
-        $readRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,[Security.AccessControl.FileSystemRights]::ReadAndExecute,[Security.AccessControl.AccessControlType]::Allow)
-        $acl.AddAccessRule($readRule)
-    } else {
-        $denyRead=[Security.AccessControl.FileSystemRights]::ReadData -bor [Security.AccessControl.FileSystemRights]::ReadAttributes -bor [Security.AccessControl.FileSystemRights]::ReadExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::ExecuteFile
-        $denyReadRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,$denyRead,[Security.AccessControl.AccessControlType]::Deny)
-        $acl.AddAccessRule($denyReadRule)
-    }
-
-    Set-Acl -LiteralPath $Path -AclObject $acl
-}
-
-function Ensure-TrainingSshAccess($Config){
-    $identity=Get-TrainingSshIdentity $Config
-    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-
-    foreach($path in @($runtimeZip,$WorkerTokenPath,$WanTokenPath)){
-        Set-TrainingSshFileAcl $path $identity $true
-    }
-
-    # The admin token is intentionally unavailable to rollout workers even when a broader
-    # inherited Users ACL exists higher in B:\Bees.
-    Set-TrainingSshFileAcl $AdminTokenPath $identity $false
-
-    Write-Host "Dedicated SSH account $identity has read-only access to the remote runtime and worker tokens; the admin token is blocked."
-}
-
-function Prepare-RemoteBootstrap($Config){
-    if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){
-        throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate"
-    }
-    if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){
-        throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate"
-    }
-    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){
-        throw "Remote requirements file is missing: $RemoteRequirementsPath"
-    }
+function Prepare-RemoteBootstrapfunction Prepare-RemoteBootstrap($Config){
+    if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
+    if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
+    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
 
     $maxActors=[int]$Config.maxRemoteActors
-    if($maxActors -lt 1 -or $maxActors -gt 12){
-        throw 'maxRemoteActors must be in 1-12.'
-    }
-
+    if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12.' }
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
-    if($transport -ne 'tailnet'){
-        throw "Generated remote launchers require remoteTransport=tailnet; got '$transport'."
+    if($transport -ne 'tailnet'){ throw "Generated remote launchers require remoteTransport=tailnet; got '$transport'." }
+
+    $controlPort=[int]$Config.controlPort
+    $brokerPort=[int]$Config.brokerPort
+    $bootstrapPort=if($Config.tailnetBootstrapPort){[int]$Config.tailnetBootstrapPort}else{7151}
+    foreach($port in @($controlPort,$brokerPort,$bootstrapPort)){
+        if($port -lt 1 -or $port -gt 65535){ throw 'Configured Bees ports must be in 1-65535.' }
+    }
+    if($controlPort -eq $brokerPort -or $controlPort -eq $bootstrapPort -or $brokerPort -eq $bootstrapPort){
+        throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
     }
 
-    $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
-    $localPort=if($Config.tailnetLocalSshPort){[int]$Config.tailnetLocalSshPort}else{2222}
-    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535 -or $localPort -lt 1 -or $localPort -gt 65535){
-        throw 'tailnet SSH ports must be in 1-65535.'
-    }
-
-    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
-        throw 'Learner tailnet address is missing. Start the embedded tailnet gateway first.'
-    }
+    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){ throw 'Learner tailnet address is missing. Authenticate the embedded tailnet first.' }
     $tailnetTarget=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-    if($tailnetTarget -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
-        throw "Unexpected learner tailnet IPv4 address: $tailnetTarget"
-    }
+    if($tailnetTarget -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){ throw "Unexpected learner tailnet IPv4 address: $tailnetTarget" }
 
     $installRoot=if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
     $linuxInstallRoot=if($Config.remoteLinuxInstallRoot){[string]$Config.remoteLinuxInstallRoot}else{'.local/share/bees-training'}
     $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
-
-    $sshUser=Get-RemoteSshUser $Config
-    $learner="$sshUser@127.0.0.1"
-    $sshPort=$localPort
+    $bootstrapToken=Ensure-TokenFile $BootstrapTokenPath
 
     $windowsBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
     $linuxBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge'
@@ -546,9 +462,6 @@ function Prepare-RemoteBootstrap($Config){
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    $runtimeRemote=Convert-ToScpPath (Join-Path $RemoteRoot 'bees-remote-runtime.zip')
-    $workerTokenRemote=Convert-ToScpPath $WorkerTokenPath
-    $wanTokenRemote=Convert-ToScpPath $WanTokenPath
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
     $utf8NoBom=New-Object Text.UTF8Encoding($false)
@@ -558,64 +471,68 @@ function Prepare-RemoteBootstrap($Config){
 
     $windowsBody=$windowsTemplate
     $windowsReplacements=@{
-        '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
-        '__BEES_SSH_PORT__'=[string]$sshPort
         '__BEES_TAILNET_LEARNER__'=(Escape-SingleQuoted $tailnetTarget)
-        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
-        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
+        '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
+        '__BEES_CONTROL_PORT__'=[string]$controlPort
+        '__BEES_BROKER_PORT__'=[string]$brokerPort
         '__BEES_TAILNET_BRIDGE_B64__'=$windowsBridgeBase64
         '__BEES_TAILNET_BRIDGE_SHA256__'=$windowsBridgeSha
+        '__BEES_BOOTSTRAP_TOKEN__'=(Escape-SingleQuoted $bootstrapToken)
         '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
         '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
-        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
-        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
-        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
     }
-    foreach($key in $windowsReplacements.Keys){
-        $windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])
-    }
+    foreach($key in $windowsReplacements.Keys){ $windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key]) }
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
     $linuxReplacements=@{
-        '__BEES_LEARNER__'=(Escape-BashDoubleQuoted $learner)
-        '__BEES_SSH_PORT__'=[string]$sshPort
         '__BEES_TAILNET_LEARNER__'=(Escape-BashDoubleQuoted $tailnetTarget)
-        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
-        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
+        '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
+        '__BEES_CONTROL_PORT__'=[string]$controlPort
+        '__BEES_BROKER_PORT__'=[string]$brokerPort
         '__BEES_TAILNET_BRIDGE_B64__'=$linuxBridgeBase64
         '__BEES_TAILNET_BRIDGE_SHA256__'=$linuxBridgeSha
+        '__BEES_BOOTSTRAP_TOKEN__'=(Escape-BashDoubleQuoted $bootstrapToken)
         '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
         '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
-        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-BashDoubleQuoted $runtimeRemote)
-        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $workerTokenRemote)
-        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $wanTokenRemote)
     }
-    foreach($key in $linuxReplacements.Keys){
-        $linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])
-    }
+    foreach($key in $linuxReplacements.Keys){ $linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key]) }
     $linuxBody=[regex]::Replace($linuxBody,"\r\n","\n")
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
 
-    Write-Host "Remote launchers prepared in $RemoteRoot with the embedded tailnet client."
-    Write-Host 'No router port forwarding or separate Tailscale installation is required.'
+    Write-Host "Remote launchers prepared in $RemoteRoot."
+    Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
     Write-Host 'Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N.'
     Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
 }
 
 function Invoke-Start {
-    $config=Get-ClusterConfig; $python=Resolve-Python $config; $unity=Resolve-UnityEditor $config
-    $worker=Ensure-TokenFile $WorkerTokenPath; $admin=Ensure-TokenFile $AdminTokenPath; $null=Ensure-TokenFile $WanTokenPath
-    Start-TailnetGatewayIfNeeded $config
+    $config=Get-ClusterConfig
+    $python=Resolve-Python $config
+    $unity=Resolve-UnityEditor $config
+    $worker=Ensure-TokenFile $WorkerTokenPath
+    $admin=Ensure-TokenFile $AdminTokenPath
+    $null=Ensure-TokenFile $WanTokenPath
+    $null=Ensure-TokenFile $BootstrapTokenPath
+
+    Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
-    Ensure-TrainingSshAccess $config
     $release=Get-LatestRelease
-    Start-BeesServerIfNeeded $config $worker $admin; Publish-Release $config $admin $release; Start-CentralAgentIfNeeded $config $python $unity
+    Start-BeesServerIfNeeded $config $worker $admin
+    Publish-Release $config $admin $release
+    Start-CentralAgentIfNeeded $config $python $unity
+    Start-TailnetGatewayIfNeeded $config
+
     $envArgs=Get-EnvironmentArgs $config
-    $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$true;canonical_build_id=[string]$release.build_id;environment_args=$envArgs}
+    $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
+        training_enabled=$true
+        canonical_build_id=[string]$release.build_id
+        environment_args=$envArgs
+    }
     Write-Host "Training requested: build=$($desired.canonical_build_id) revision=$($desired.revision)"
     Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
-    Start-Sleep -Seconds 1; Show-Status $config $admin $true
+    Start-Sleep -Seconds 1
+    Show-Status $config $admin $true
 }
 
 function Stop-ProcessTree([int]$Id){ if($Id -gt 0 -and (Get-Process -Id $Id -ErrorAction SilentlyContinue)){ & taskkill /PID $Id /T /F *> $null } }
