@@ -441,7 +441,7 @@ function New-TrainingRunPlan([string]$Python){
     Ensure-Directory $RunLifecycleRoot
     Ensure-Directory $RuntimeRoot
     Remove-Item -LiteralPath $RunPlanPath -Force -ErrorAction SilentlyContinue
-    Invoke-Checked $Python @(
+    $null=Invoke-Checked $Python @(
         $RunLifecycleScript,'plan',
         '--assets-root',$AssetsRoot,
         '--state',$RunStatePath,
