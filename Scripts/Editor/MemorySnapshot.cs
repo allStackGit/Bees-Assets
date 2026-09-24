@@ -29,9 +29,10 @@ public class SafeMemorySnapshotTaker
         // Take snapshot using the Memory Profiler
         MemoryProfiler.TakeSnapshot(snapshotPath, (path, success) =>
         {
-            if (success)
-            else
+            if (!success)
+            {
                 Debug.LogError("Failed to save snapshot.");
+            }
         });
     }
 }
