@@ -97,8 +97,8 @@ namespace Bees.Tests.EditMode
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
             Assert.That(agent, Does.Not.Contain("Mathf.Min(i, MaxWeaponSlots - 1)"));
-            Assert.That(agent, Does.Contain("slot >= _ship.Weapons.Count"));
-            Assert.That(agent, Does.Contain("_ship.Weapons[slot] is Turret turret"));
+            Assert.That(agent, Does.Contain("slot >= ship.Weapons.Count"));
+            Assert.That(agent, Does.Contain("ship.Weapons[slot] is Turret turret"));
             Assert.That(schema, Does.Contain("ship.Weapons.Count > RlCombatPerception.MaxWeaponSlots"));
             Assert.That(agent, Does.Contain("RlPolicySchema.TryValidateShip(_ship, out string schemaError)"));
         }
@@ -118,7 +118,7 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("Vector2 policyAim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);"));
             Assert.That(agent, Does.Contain("_weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld("));
             Assert.That(agent, Does.Contain("bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;"));
-            Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);"));
+            Assert.That(agent, Does.Contain("ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);"));
             Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
                 "Independent weapon branches must not secretly share one retained aim vector.");
             Assert.That(schema, Does.Contain("ExpectedContinuousActions = 16"));
@@ -132,9 +132,12 @@ namespace Bees.Tests.EditMode
             string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
 
             Assert.That(agent, Does.Contain("private static readonly Dictionary<Ship, Vector4> ShipCommunications"));
-            Assert.That(agent, Does.Contain("ShipCommunications[_ship] = Vector4.zero;"));
-            Assert.That(agent, Does.Contain("ShipCommunications[_ship] = new Vector4("));
-            Assert.That(agent, Does.Contain("ShipCommunications.Remove(_ship);"));
+            Assert.That(agent, Does.Contain("ResetCommunication(_ship);"));
+            Assert.That(agent, Does.Contain("SetCommunicationActions(_ship, continuous);"));
+            Assert.That(agent, Does.Contain("ClearCommunication(_ship);"));
+            Assert.That(agent, Does.Contain("ShipCommunications[ship] = Vector4.zero;"));
+            Assert.That(agent, Does.Contain("ShipCommunications[ship] = new Vector4("));
+            Assert.That(agent, Does.Contain("ShipCommunications.Remove(ship);"));
             Assert.That(agent, Does.Contain("ShipCommunications.TryGetValue(ally, out Vector4 communication)"));
             Assert.That(perception, Does.Contain("AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);"),
@@ -150,8 +153,9 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("RlPolicyCoordinateFrame.WorldToPolicy("));
             Assert.That(perception, Does.Contain("WorldGridIndexForPolicyIndex("));
             Assert.That(perception, Does.Contain("AddHeading(sensor, ship.Rotation, frameQuarterTurns);"));
-            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns);"));
-            Assert.That(agent, Does.Contain("ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));"));
+            Assert.That(agent, Does.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);"));
+            Assert.That(agent, Does.Contain("perception.Collect(ship, side, sensor, frameQuarterTurns);"));
+            Assert.That(agent, Does.Contain("ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));"));
             Assert.That(agent, Does.Contain("RlPolicyCoordinateFrame.EndEpisode(level);"));
         }
 
