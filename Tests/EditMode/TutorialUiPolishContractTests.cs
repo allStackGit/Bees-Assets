@@ -31,6 +31,9 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+            Assert.That(source, Does.Contain("if (_sequenceActive)"));
+            Assert.That(source, Does.Contain("_dialogueManager.gameObject.SetActive(false)"));
+            Assert.That(source, Does.Contain("TooltipText.ForceMeshUpdate(true)"));
         }
 
         [Test]
