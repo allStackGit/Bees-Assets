@@ -111,6 +111,8 @@ class TrainingControlStore {
     constructor(options = {}) {
         this.statePath = path.resolve(
             options.statePath || path.join(__dirname, 'logs', 'training-control-state.json'));
+        this.artifactRoot = path.resolve(
+            options.artifactRoot || path.join(__dirname, 'training-artifacts'));
         this.leaseSeconds = Number(options.leaseSeconds || DEFAULT_LEASE_SECONDS);
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
@@ -185,16 +187,34 @@ class TrainingControlStore {
         platform = requireString(platform, 'platform', 64);
         buildId = requireString(buildId, 'build_id', 128);
         entrypoint = requireString(entrypoint, 'entrypoint', 512);
-        const resolved = path.resolve(requireString(archivePath, 'archive_path', 4096));
-        const stats = fs.statSync(resolved);
+        if (!/^[A-Za-z0-9._-]+$/.test(platform) || !/^[A-Za-z0-9._-]+$/.test(buildId)) {
+            throw Object.assign(
+                new Error('platform and build_id may contain only letters, digits, dot, underscore, and dash'),
+                { statusCode: 400 });
+        }
+        const source = path.resolve(requireString(archivePath, 'archive_path', 4096));
+        const stats = fs.statSync(source);
         if (!stats.isFile()) {
             throw Object.assign(new Error('archive_path must name a file'), { statusCode: 400 });
+        }
+        const archiveSha256 = sha256File(source);
+        const platformRoot = path.join(this.artifactRoot, platform);
+        fs.mkdirSync(platformRoot, { recursive: true });
+        const destination = path.join(platformRoot, buildId + '-' + archiveSha256 + '.zip');
+        if (!fs.existsSync(destination)) {
+            const temporary = destination + '.tmp-' + process.pid + '-' + crypto.randomBytes(6).toString('hex');
+            fs.copyFileSync(source, temporary);
+            if (sha256File(temporary) !== archiveSha256) {
+                fs.unlinkSync(temporary);
+                throw new Error('canonical build copy failed SHA-256 verification');
+            }
+            fs.renameSync(temporary, destination);
         }
         const record = {
             platform,
             build_id: buildId,
-            archive_path: resolved,
-            archive_sha256: sha256File(resolved),
+            archive_path: destination,
+            archive_sha256: archiveSha256,
             archive_size_bytes: stats.size,
             entrypoint,
         };
@@ -380,6 +400,7 @@ function startTrainingControl(options = {}) {
     }
     const store = options.store || new TrainingControlStore({
         statePath: options.statePath || process.env.BEES_TRAINING_CONTROL_STATE,
+        artifactRoot: options.artifactRoot || process.env.BEES_TRAINING_ARTIFACT_ROOT,
         leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
     });
     const httpModule = options.httpModule || http;
