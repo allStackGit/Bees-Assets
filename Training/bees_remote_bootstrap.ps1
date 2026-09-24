@@ -58,8 +58,18 @@ function Resolve-Exe([string]$Name){
 $ssh=Resolve-Exe 'ssh'
 $scp=Resolve-Exe 'scp'
 if(-not $ssh -or -not $scp){
-    throw "OpenSSH Client is required. Install the Windows 'OpenSSH Client' optional feature, then run this file again."
+    try {
+        Write-Host 'OpenSSH Client was not found. Attempting to install the Windows optional feature...'
+        $null=Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' -ErrorAction Stop
+        $ssh=Resolve-Exe 'ssh'
+        $scp=Resolve-Exe 'scp'
+        if(-not $ssh -and (Test-Path -LiteralPath "$env:WINDIR\System32\OpenSSH\ssh.exe")){$ssh="$env:WINDIR\System32\OpenSSH\ssh.exe"}
+        if(-not $scp -and (Test-Path -LiteralPath "$env:WINDIR\System32\OpenSSH\scp.exe")){$scp="$env:WINDIR\System32\OpenSSH\scp.exe"}
+    } catch {
+        throw "OpenSSH Client is required and automatic installation failed. Run this launcher once as Administrator or install the Windows OpenSSH Client optional feature."
+    }
 }
+if(-not $ssh -or -not $scp){throw 'OpenSSH Client installation completed but ssh/scp could not be located.'}
 
 $InstallRoot=[IO.Path]::GetFullPath($InstallRoot)
 $RuntimeRoot=Join-Path $InstallRoot 'Runtime'
