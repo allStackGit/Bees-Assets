@@ -172,6 +172,9 @@ fi
 
 echo "[Bees remote] ensuring Python 3.10 environment at $VENV_ROOT"
 "$UV_BIN" python install 3.10
+if [[ -x "$VENV_ROOT/bin/python" ]] && ! "$VENV_ROOT/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 10)' >/dev/null 2>&1; then
+    rm -rf "$VENV_ROOT"
+fi
 if [[ ! -x "$VENV_ROOT/bin/python" ]]; then
     "$UV_BIN" venv --python 3.10 "$VENV_ROOT"
 fi
