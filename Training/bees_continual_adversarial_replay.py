@@ -410,7 +410,7 @@ def _validate_action_record(
     if special_action != 0 and not allow_capability_actions:
         raise ValidationError(
             "Legacy scripted replay does not accept capability-event actions. Register a new replay attachment "
-            "to use capability-aware replay format v2."
+            "to use the current capability-aware replay format."
         )
     return normalized, fire_mask, special_action
 
