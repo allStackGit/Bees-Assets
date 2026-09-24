@@ -74,7 +74,7 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
             return;
         }
 
-        Stage stage = Object.FindFirstObjectByType<Stage>();
+        Stage stage = UnityEngine.Object.FindFirstObjectByType<Stage>();
         if (stage == null)
         {
             return;
