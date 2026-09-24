@@ -93,7 +93,7 @@ internal static class RlOneVsOneCombatTelemetry
             {
                 state.AccurateAimSamples[sideIndex]++;
             }
-            if (turret.IsAimedAtTarget)
+            if (turret.IsAlignedWithTargetPoint)
             {
                 state.AlignedTurretSamples[sideIndex]++;
             }
