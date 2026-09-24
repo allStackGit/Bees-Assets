@@ -82,9 +82,11 @@ test('desired state is persisted and maps stop to inference for full games only'
         const updated = store.setDesiredState({
             training_enabled: true,
             environment_args: ['--rl-map-size', '64'],
+            canonical_build_id: 'build-1',
         });
         assert.equal(updated.revision, 1);
         assert.equal(updated.training_enabled, true);
+        assert.equal(updated.canonical_build_id, 'build-1');
 
         const reloaded = new TrainingControlStore({
             statePath,
@@ -96,6 +98,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         assert.equal(desired.desired_mode, 'training');
         assert.deepEqual(desired.environment_args, ['--rl-map-size', '64']);
         assert.equal(desired.revision, 1);
+        assert.equal(desired.canonical_build_id, 'build-1');
     });
 });
 
@@ -143,9 +146,17 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
 
         assert.equal(descriptor.archive_sha256, expectedSha);
         assert.equal(descriptor.archive_size_bytes, bytes.length);
-        const owned = store.artifact('LinuxPlayer');
+        const owned = store.artifact('LinuxPlayer', 'build-123');
         assert.notEqual(path.resolve(source), owned.archive_path);
         assert.equal(fs.readFileSync(owned.archive_path).toString('utf8'), bytes.toString('utf8'));
+        assert.equal(store.state.revision, 0);
+
+        store.setDesiredState({ canonical_build_id: 'build-123' });
+        const active = store.stateFor({
+            trainerId: 'linux-1', role: 'dedicated', platform: 'LinuxPlayer',
+        });
+        assert.equal(active.build.build_id, 'build-123');
+        assert.equal(active.canonical_build_id, 'build-123');
         assert.equal(store.state.revision, 1);
     });
 });
@@ -168,5 +179,75 @@ test('publishing an identical canonical build is idempotent', () => {
         const revision = store.state.revision;
         store.publishArtifact(input);
         assert.equal(store.state.revision, revision);
+    });
+});
+
+
+test('one canonical build id selects equivalent platform artifacts and hides mismatches', () => {
+    withTempDir(root => {
+        const windows = path.join(root, 'windows.zip');
+        const linux = path.join(root, 'linux.zip');
+        fs.writeFileSync(windows, Buffer.from('windows-build'));
+        fs.writeFileSync(linux, Buffer.from('linux-build'));
+
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-42',
+            archivePath: windows,
+            entrypoint: 'Bees.exe',
+        });
+        store.publishArtifact({
+            platform: 'LinuxPlayer',
+            buildId: 'release-42',
+            archivePath: linux,
+            entrypoint: 'Bees.x86_64',
+        });
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-43',
+            archivePath: windows,
+            entrypoint: 'Bees.exe',
+        });
+
+        store.setDesiredState({ canonical_build_id: 'release-42', training_enabled: true });
+
+        assert.equal(store.stateFor({
+            trainerId: 'win', role: 'dedicated', platform: 'WindowsPlayer',
+        }).build.build_id, 'release-42');
+        assert.equal(store.stateFor({
+            trainerId: 'linux', role: 'dedicated', platform: 'LinuxPlayer',
+        }).build.build_id, 'release-42');
+        assert.equal(store.stateFor({
+            trainerId: 'mac', role: 'dedicated', platform: 'MacPlayer',
+        }).build, null);
+    });
+});
+
+test('a platform/build identity cannot be silently replaced with different bytes', () => {
+    withTempDir(root => {
+        const first = path.join(root, 'first.zip');
+        const second = path.join(root, 'second.zip');
+        fs.writeFileSync(first, Buffer.from('first'));
+        fs.writeFileSync(second, Buffer.from('second'));
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-1',
+            archivePath: first,
+            entrypoint: 'Bees.exe',
+        });
+        assert.throws(() => store.publishArtifact({
+            platform: 'WindowsPlayer',
+            buildId: 'release-1',
+            archivePath: second,
+            entrypoint: 'Bees.exe',
+        }), /immutable/);
     });
 });
