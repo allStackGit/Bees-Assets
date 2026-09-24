@@ -89,7 +89,6 @@ namespace Assets.Scripts.Levels.Commands
         {
             IsDead = false;
             Level = squad.Level;
-            Stage.DebugLogger.__CommandCounts[(int)CommandType]++;
             Side = squad.Side;
             SetSquad(squad);
             EnemySquad = enemy;
