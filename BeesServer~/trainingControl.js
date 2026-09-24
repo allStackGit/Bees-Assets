@@ -267,7 +267,7 @@ class TrainingControlStore {
         const cutoff = this.now() - this.leaseSeconds * 1000;
         const activeTargets = new Map();
         for (const record of this.trainers.values()) {
-            if (record.last_seen_ms < cutoff) continue;
+            if (record.last_seen_ms < cutoff || record.role !== 'dedicated') continue;
             activeTargets.set(record.role + '|' + record.platform, {
                 role: record.role,
                 platform: record.platform,
@@ -321,7 +321,7 @@ class TrainingControlStore {
             if (missingTargets.length > 0) {
                 throw Object.assign(
                     new Error(
-                        'canonical build is missing active role/platform artifacts: ' +
+                        'canonical build is missing active dedicated role/platform artifacts: ' +
                         missingTargets.join(', ')),
                     { statusCode: 409 });
             }
