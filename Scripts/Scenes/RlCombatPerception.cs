@@ -409,7 +409,7 @@ internal sealed class RlCombatPerception
             sensor.AddObservation(1f);
             AddHeading(sensor, turret.Rotation, frameQuarterTurns);
             sensor.AddObservation(turret.ReadyToFire ? 1f : 0f);
-            sensor.AddObservation(turret.IsAimedAtTarget ? 1f : 0f);
+            sensor.AddObservation(turret.IsAlignedWithTargetPoint ? 1f : 0f);
         }
         else
         {
