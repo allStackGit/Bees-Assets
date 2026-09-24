@@ -83,10 +83,12 @@ namespace Bees.Tests.EditMode
 
             Assert.That(coordinator, Does.Contain("int appliedTsvLoss = HasPersistentFleetValue(target) ? Mathf.Max(0, tsvLoss) : 0;"),
                 "Damage to free tactical children must not create positive or negative persistent-TSV shaping.");
-            Assert.That(coordinator, Does.Contain("if (!HasPersistentFleetValue(spotted))"),
-                "Discovering a free tactical child must not manufacture enemy-fleet discovery reward.");
+            Assert.That(coordinator, Does.Contain("Mathf.Max(1, spotted.Tsv)"),
+                "Every newly discovered tactical enemy, including spawned children, retains a small first-sighting signal.");
             Assert.That(coordinator, Does.Contain("ship != null && !ship.IsDead && HasPersistentFleetValue(ship)"),
                 "Temporary children present at episode start must not dilute the persistent enemy discovery denominator.");
+            Assert.That(coordinator, Does.Contain("Children remain excluded only from persistent"),
+                "Temporary children are discoverable tactical entities but remain excluded from persistent fleet-value loss shaping.");
         }
 
         [Test]
