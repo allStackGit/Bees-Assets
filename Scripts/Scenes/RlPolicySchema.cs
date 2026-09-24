@@ -11,26 +11,26 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 17;
+    internal const int Version = 18;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int PerceptionObservationSize = 7065;
+    internal const int PerceptionObservationSize = 7321;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
     internal const int ReservedObservationStartIndex = EpisodeProgressObservationIndex + 1;
     internal const int ReservedObservationCount = 20;
     internal const int ReservedObservationEndExclusive = ReservedObservationStartIndex + ReservedObservationCount;
     internal const int ExpectedObservationSize = ReservedObservationEndExclusive;
-    internal const int ExpectedContinuousActions = 12;
+    internal const int ExpectedContinuousActions = 16;
     internal const int ExpectedWeaponFireBranchCount = 5;
     internal const int ExpectedWeaponFireBranchSize = 2;
     internal const int ExpectedDiscreteBranchCount = 6;
     internal const int ExpectedSpecialActionBranchSize = 5;
 
     internal const string Signature =
-        "bees-rl-v17|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7086|tail=episode-progress+20-reserved|cont=12|disc=2x5,5|" +
+        "bees-rl-v18|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7342|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
-        "self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
+        "self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
         "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
@@ -44,6 +44,8 @@ internal static class RlPolicySchema
         Check(errors, RlCombatPerception.ObservationSize, PerceptionObservationSize, "perception observation size");
         Check(errors, RlOneVsOneAgent.ObservationSize, ExpectedObservationSize, "total observation size");
         Check(errors, RlOneVsOneAgent.ContinuousActionCount, ExpectedContinuousActions, "continuous actions");
+        Check(errors, RlOneVsOneAgent.CommunicationContinuousActionCount, 4, "communication continuous actions");
+        Check(errors, RlOneVsOneAgent.CommunicationContinuousActionStart, 12, "communication continuous action start");
         Check(errors, RlOneVsOneAgent.WeaponFireBranchCount, ExpectedWeaponFireBranchCount, "weapon fire branch count");
         Check(errors, RlOneVsOneAgent.WeaponFireBranchSize, ExpectedWeaponFireBranchSize, "weapon fire branch size");
         Check(errors, RlOneVsOneAgent.DiscreteBranchCount, ExpectedDiscreteBranchCount, "discrete branch count");
@@ -59,10 +61,12 @@ internal static class RlPolicySchema
         Check(errors, RlCombatPerception.MaxObservedEntityWeaponSlots, 5, "entity weapon slots");
         Check(errors, RlCombatPerception.MaxObservedEnemyWeaponMounts, 0, "enemy weapon-mount slots");
         Check(errors, RlCombatPerception.ShipIdentityObservationSize, 1, "ship identity observation size");
+        Check(errors, RlCombatPerception.CommunicationObservationSize, 4, "communication observation size");
         Check(errors, RlCombatPerception.SelfObservationSize, 25, "self observation size");
         Check(errors, RlCombatPerception.SelfWeaponObservationSize, 15, "self weapon observation size");
         Check(errors, RlCombatPerception.ObservedWeaponObservationSize, 5, "observed weapon observation size");
         Check(errors, RlCombatPerception.EntityObservationSize, 40, "entity observation size");
+        Check(errors, RlCombatPerception.AllyObservationSize, 44, "ally observation size");
         Check(errors, RlCombatPerception.ParentCarrierObservationSize, 40, "parent-carrier observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
