@@ -267,7 +267,7 @@ namespace Bees.Tests.EditMode
             string yaml = ReadSource("Training", "rl_1v1_config.yaml");
             string compatibility = ReadSource("Training", "bees_mlagents_ppo_compat.py");
 
-            Assert.That(yaml, Does.Contain("beta: 0.001"));
+            Assert.That(yaml, Does.Contain("beta: 0.00125"));
             Assert.That(yaml, Does.Contain("beta_schedule: constant"));
             Assert.That(compatibility, Does.Not.Contain("MAX_ADAPTIVE_BETA"));
             Assert.That(compatibility, Does.Not.Contain("install_adaptive_exploration"));
