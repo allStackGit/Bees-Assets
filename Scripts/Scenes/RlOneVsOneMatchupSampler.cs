@@ -309,8 +309,8 @@ internal sealed class RlShipCompositionSampler
 /// <summary>
 /// Holds the sampled composition selected for the current episode. One-ship training preserves the
 /// shuffled Cartesian coverage contract, while multi-ship training samples unordered compositions
-/// uniformly and then randomizes their formation-slot order. Imbalanced recent matchup results add
-/// 0.5x, 1x or 2x replay weight on top of every matchup's permanent 1x baseline weight.
+/// uniformly and then randomizes their formation-slot order. Recent faction imbalance or repeated
+/// timeouts add 0.5x, 1x or 2x replay weight on top of every matchup's permanent 1x baseline weight.
 /// </summary>
 internal sealed class RlOneVsOneEpisodeMatchupSelector
 {
@@ -326,11 +326,19 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
     {
         internal readonly ConfigData.ShipTypes[] BeeComposition;
         internal readonly ConfigData.ShipTypes[] HumanComposition;
-        private readonly Queue<float> _beeScores = new Queue<float>();
-        private float _beeScoreSum;
+        private struct OutcomeSample
+        {
+            internal float BeeScore;
+            internal bool TimedOut;
+        }
 
-        internal int OutcomeCount => _beeScores.Count;
-        internal float BeeScoreRate => _beeScores.Count > 0 ? _beeScoreSum / _beeScores.Count : 0.5f;
+        private readonly Queue<OutcomeSample> _outcomes = new Queue<OutcomeSample>();
+        private float _beeScoreSum;
+        private int _timeoutCount;
+
+        internal int OutcomeCount => _outcomes.Count;
+        internal float BeeScoreRate => _outcomes.Count > 0 ? _beeScoreSum / _outcomes.Count : 0.5f;
+        internal float TimeoutRate => _outcomes.Count > 0 ? (float)_timeoutCount / _outcomes.Count : 0f;
 
         internal MatchupHistoryState(
             ConfigData.ShipTypes[] beeComposition,
@@ -340,13 +348,27 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             HumanComposition = humanComposition;
         }
 
-        internal void AddOutcome(float beeScore, int window)
+        internal void AddOutcome(float beeScore, bool timedOut, int window)
         {
-            _beeScores.Enqueue(beeScore);
-            _beeScoreSum += beeScore;
-            while (_beeScores.Count > window)
+            _outcomes.Enqueue(new OutcomeSample
             {
-                _beeScoreSum -= _beeScores.Dequeue();
+                BeeScore = beeScore,
+                TimedOut = timedOut
+            });
+            _beeScoreSum += beeScore;
+            if (timedOut)
+            {
+                _timeoutCount++;
+            }
+
+            while (_outcomes.Count > window)
+            {
+                OutcomeSample removed = _outcomes.Dequeue();
+                _beeScoreSum -= removed.BeeScore;
+                if (removed.TimedOut)
+                {
+                    _timeoutCount--;
+                }
             }
         }
     }
@@ -492,7 +514,7 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             state = new MatchupHistoryState(beeComposition, humanComposition);
             _priorityHistory.Add(key, state);
         }
-        state.AddOutcome(beeScore, _priorityOutcomeWindow);
+        state.AddOutcome(beeScore, timedOut, _priorityOutcomeWindow);
         _currentOutcomeRecorded = true;
     }
 
@@ -559,6 +581,24 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
             return 0.5f;
         }
         if (imbalance <= 0.40f)
+        {
+            return 1f;
+        }
+        return 2f;
+    }
+
+    internal static float CalculateTimeoutPriorityExtraWeight(float timeoutRate)
+    {
+        float boundedRate = Math.Max(0f, Math.Min(1f, timeoutRate));
+        if (boundedRate <= 0.10f)
+        {
+            return 0f;
+        }
+        if (boundedRate <= 0.25f)
+        {
+            return 0.5f;
+        }
+        if (boundedRate <= 0.40f)
         {
             return 1f;
         }
@@ -636,9 +676,14 @@ internal sealed class RlOneVsOneEpisodeMatchupSelector
 
     private float GetEligiblePriorityExtraWeight(MatchupHistoryState state)
     {
-        return state.OutcomeCount < _priorityMinimumSamples
-            ? 0f
-            : CalculatePriorityExtraWeight(state.BeeScoreRate);
+        if (state.OutcomeCount < _priorityMinimumSamples)
+        {
+            return 0f;
+        }
+
+        float imbalanceWeight = CalculatePriorityExtraWeight(state.BeeScoreRate);
+        float timeoutWeight = CalculateTimeoutPriorityExtraWeight(state.TimeoutRate);
+        return Math.Max(imbalanceWeight, timeoutWeight);
     }
 
     private void ApplyPrioritizedMatchup(MatchupHistoryState state)
