@@ -320,6 +320,128 @@ class TrainingControlStore {
             .sort();
     }
 
+    _activeDedicatedTrainers() {
+        const cutoff = this.now() - this.leaseSeconds * 1000;
+        return [...this.trainers.values()]
+            .filter(record => record.role === 'dedicated' && record.last_seen_ms >= cutoff)
+            .sort((left, right) => {
+                const leftCentral = left.trainer_id === 'central-learner' ? 1 : 0;
+                const rightCentral = right.trainer_id === 'central-learner' ? 1 : 0;
+                return leftCentral - rightCentral ||
+                    left.trainer_id.localeCompare(right.trainer_id);
+            });
+    }
+
+    _pendingRecordFor(role, platform) {
+        const pending = this.state.pending_release;
+        if (!pending) return null;
+        return this._catalogForRole(role)[platform]?.[pending.build_id] || null;
+    }
+
+    _allDedicatedPrepared(pending) {
+        const trainers = this._activeDedicatedTrainers();
+        if (trainers.length === 0) return true;
+        return trainers.every(record =>
+            record.build_id === pending.build_id ||
+            record.prepared_build_id === pending.build_id);
+    }
+
+    _rollingTargetId() {
+        const pending = this.state.pending_release;
+        if (!pending || pending.phase !== 'rolling') return null;
+        const remaining = this._activeDedicatedTrainers()
+            .filter(record => record.build_id !== pending.build_id);
+        return remaining.length ? remaining[0].trainer_id : null;
+    }
+
+    _promotePendingRelease() {
+        const pending = this.state.pending_release;
+        if (!pending) return false;
+        this.state.canonical_build_id = pending.build_id;
+        this.state.run_id = pending.run_id;
+        this.state.compatibility_key = pending.compatibility_key;
+        this.state.pending_release = null;
+        this.state.revision++;
+        this._persist();
+        return true;
+    }
+
+    _advanceRollout() {
+        const pending = this.state.pending_release;
+        if (!pending) return false;
+        const trainers = this._activeDedicatedTrainers();
+
+        if (pending.phase === 'preparing') {
+            if (!this._allDedicatedPrepared(pending)) return false;
+            if (!this.state.training_enabled || trainers.length === 0) {
+                return this._promotePendingRelease();
+            }
+            pending.phase = pending.incompatible ? 'stopping' : 'rolling';
+            this.state.revision++;
+            this._persist();
+            return true;
+        }
+
+        if (pending.phase === 'rolling') {
+            if (trainers.every(record => record.build_id === pending.build_id)) {
+                return this._promotePendingRelease();
+            }
+            return false;
+        }
+
+        if (pending.phase === 'stopping') {
+            if (trainers.every(record => record.process_state === 'stopped')) {
+                return this._promotePendingRelease();
+            }
+        }
+        return false;
+    }
+
+    stageRelease({ buildId, runId, compatibilityKey, incompatible = false }) {
+        buildId = requireString(buildId, 'build_id', 128);
+        runId = requireString(runId, 'run_id', 128);
+        compatibilityKey = requireString(compatibilityKey, 'compatibility_key', 64).toLowerCase();
+        if (!/^[A-Za-z0-9._-]+$/.test(buildId) ||
+            !/^[A-Za-z0-9._-]+$/.test(runId) ||
+            !/^[0-9a-f]{64}$/.test(compatibilityKey)) {
+            throw Object.assign(new Error('release identity is malformed'), { statusCode: 400 });
+        }
+        if (typeof incompatible !== 'boolean') {
+            throw Object.assign(new Error('incompatible must be boolean'), { statusCode: 400 });
+        }
+        if (!this._hasBuild(buildId)) {
+            throw Object.assign(
+                new Error('release build has no published platform artifact'),
+                { statusCode: 409 });
+        }
+        const missingTargets = this._missingActiveTargets(buildId);
+        if (missingTargets.length > 0) {
+            throw Object.assign(
+                new Error(
+                    'release is missing active dedicated role/platform artifacts: ' +
+                    missingTargets.join(', ')),
+                { statusCode: 409 });
+        }
+        if (this.state.canonical_build_id === buildId &&
+            this.state.run_id === runId &&
+            this.state.compatibility_key === compatibilityKey &&
+            this.state.pending_release === null) {
+            return this.desiredState();
+        }
+
+        this.state.pending_release = {
+            build_id: buildId,
+            run_id: runId,
+            compatibility_key: compatibilityKey,
+            incompatible,
+            phase: 'preparing',
+        };
+        this.state.revision++;
+        this._persist();
+        this._advanceRollout();
+        return this.desiredState();
+    }
+
     _persist() {
         atomicWriteJson(this.statePath, this.state);
     }
