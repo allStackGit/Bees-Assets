@@ -25,7 +25,8 @@ Mandatory rules for every coding/development task in this repository.
 - Runtime/persistence/pooling → `Level`, `GameState`, `ConfigData`, `Ships`, `DataFile`; optional `context/RUNTIME.md`.
 - Pathfinding/performance → `Pathfinder*`, movement/obstacles; optional `context/PATHFINDING.md`.
 - Combat/targeting → `Ship`, `Weapon`, `RangeCollider`; optional `context/COMBAT.md`.
-- Network/WebGL → socket/request/bridge code; optional `context/NETWORKING.md`; inspect BeesServer before shared-contract changes.
+- Network/WebGL → socket/request/bridge code; optional `context/NETWORKING.md`; inspect `BeesServer~/` before shared-contract changes.
+- BeesServer/backend/training control → `BeesServer~/AGENTS.md` first, then the exact server source/test; server subtree rules apply in addition to this root file.
 - UI → exact guard/controller/prefab/scene; optional `context/UI.md`.
 - Campaign/assets → exact mission/asset; optional `context/CAMPAIGN_ASSETS.md`.
 - Replay/agent workflow → exact implementation/test/skill; optional `context/ENGINEERING.md`.
