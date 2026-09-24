@@ -405,10 +405,22 @@ function createServer(options = {}) {
     server.db = databaseFromLegacyConfig(server.db, launch);
     patchServer(server, runtime);
     applyTestIsolation(server, launch);
-    if (launch.start !== false) server.start();
-    const trainingControl = launch.test || launch.trainingControl === false
-        ? null
-        : startTrainingControlFromEnvironment(launch.trainingControlOptions || {});
+    let trainingControl = null;
+    if (launch.start !== false) {
+        try {
+            trainingControl = launch.test || launch.trainingControl === false
+                ? null
+                : startTrainingControlFromEnvironment(launch.trainingControlOptions || {});
+            server.start();
+        } catch (error) {
+            try {
+                trainingControl?.server?.close();
+            } catch {
+                // Startup is already failing; control-listener cleanup is best-effort.
+            }
+            throw error;
+        }
+    }
     return { server, runtime, trainingControl };
 }
 
