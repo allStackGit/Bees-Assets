@@ -23,7 +23,13 @@ Build folders are siblings of `Assets`, for example `B:\\Bees\\Builds\\2026-09-2
 
 The build command also creates immutable upload ZIPs and `B:\\Bees\\Builds\\latest-training-release.json`. The release id combines date, time, and source Git commit so repeated same-day builds remain immutable-safe. `start` publishes those archives, activates the release, starts/keeps the centrally managed learner, and writes the configured environment arguments as the authoritative desired state. `stop` disables training everywhere but leaves BeesServer online for gameplay/control; use `stop -Server` when the BeesServer process itself should also exit. `status` is a live dashboard; use `status -Once` for one snapshot.
 
-The first command invocation creates `B:\\Bees\\Config\\training.json` from the checked-in template. Machine-specific secrets are generated under `B:\\Bees\\Secrets`, outside Git/Unity. Remote machines still require a one-time persistent managed-worker installation (and their control/WAN token files); after that, normal build/start/stop/status operation is centralized.
+The authoritative non-secret cluster configuration is checked into Git at `Assets\\Training\\bees.cluster.json`. Edit that file on the training branch so environment counts, remote defaults, ports, generation size, and similar operational changes are versioned with the code. Machine-specific secrets remain under `B:\\Bees\\Secrets`, outside Git/Unity.
+
+`generationSteps` is the number of additional global learner steps in one continual-learning generation. With the default `1000000`, generation 0 trains to 1,000,000 total steps and evaluates/releases; generation 1 resumes the same optimizer/checkpoint lineage and trains to 2,000,000 total steps; generation 2 trains to 3,000,000, and so on. It is an evaluation/release cadence, not a reset interval.
+
+`start` also prepares `B:\\Bees\\Remote\\bees-remote-runtime.zip` and one self-contained launcher per configured actor slot: `bees-remote-worker-0.ps1`, `bees-remote-worker-1.ps1`, etc. Copy one launcher to a remote Windows machine and run it. The launcher uses SSH/SCP to fetch the current worker runtime and worker-only tokens, creates/updates a Python 3.10 virtual environment, starts the control tunnel, downloads the canonical Unity build through BeesServer, and joins the elastic rollout pool. It does not contain the admin token.
+
+The learner must be reachable by SSH. When `remoteSshTarget` is blank, `start` generates launchers targeting `<current-user>@<current-computer-name>`, which is convenient on a LAN. Set `remoteSshTarget` in the tracked config to a resolvable LAN address, VPN address, or WAN SSH hostname when that automatic target is not appropriate. Key-based SSH is recommended for unattended reconnects.
 
 
 BeesServer can act as the desired-state authority for distributed RL workers. The control service is separate from the gameplay WebSocket so training operations do not alter the Unity request/response protocol.
@@ -59,6 +65,8 @@ node trainingControlCli.js status
 Desired-state changes, including canonical build activation and environment arguments, increment a persistent revision. Staging an inactive build does not disturb running workers. Workers observe desired-state revisions on heartbeats and reconcile automatically.
 
 ## Managed workers
+
+For the normal Windows rollout-worker path, prefer the generated one-file launcher described above. The lower-level managed-worker command remains available for debugging or nonstandard deployments.
 
 Run `Training/bees_training_worker_agent.py` persistently on each trainer machine. The launch command after `--` must contain `{env}`. Use `{env_args}` where the server-owned environment argument list belongs.
 
