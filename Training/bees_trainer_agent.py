@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import json
 import os
-import platform as platform_module
 import shutil
 import signal
 import socket
@@ -31,7 +30,6 @@ from typing import Any, Mapping, Optional, Sequence
 DEFAULT_CONTROL_PORT = 7148
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 DEFAULT_LEASE_SECONDS = 30.0
-DEFAULT_RECONNECT_SECONDS = 5.0
 CHUNK_SIZE = 1024 * 1024
 
 
