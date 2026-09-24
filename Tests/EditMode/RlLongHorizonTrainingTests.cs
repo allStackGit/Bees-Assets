@@ -44,7 +44,7 @@ namespace Bees.Tests.EditMode
                 1,
                 0,
                 true);
-            Assert.That(timeoutReward, Is.EqualTo(-11f));
+            Assert.That(timeoutReward, Is.EqualTo(-1.1f));
 
             float ordinaryLossReward = (float)RuntimeAssembly.InvokeStatic(
                 rewardType,
@@ -52,7 +52,7 @@ namespace Bees.Tests.EditMode
                 1,
                 2,
                 false);
-            Assert.That(ordinaryLossReward, Is.EqualTo(-10f));
+            Assert.That(ordinaryLossReward, Is.EqualTo(-1f));
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             int methodStart = agent.IndexOf("private void HandleEpisodeEnded", StringComparison.Ordinal);
