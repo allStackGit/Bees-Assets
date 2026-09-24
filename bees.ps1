@@ -409,10 +409,73 @@ function Get-RemoteSshTarget($Config){
 }
 
 function Get-RemoteSshUser($Config){
+    if($Config.trainingSshUser -and ([string]$Config.trainingSshUser).Trim()){
+        $configured=([string]$Config.trainingSshUser).Trim()
+        if($configured -notmatch '^[A-Za-z0-9._-]+$'){
+            throw 'trainingSshUser must be a local Windows account name containing only letters, digits, dot, underscore, or dash.'
+        }
+        return $configured
+    }
+
     $target=Get-RemoteSshTarget $Config
     if($target -match '^([^@]+)@'){ return $Matches[1] }
     if($env:USERNAME){ return [string]$env:USERNAME }
     throw 'Could not determine the Windows SSH user for generated remote launchers.'
+}
+
+function Get-TrainingSshIdentity($Config){
+    $user=Get-RemoteSshUser $Config
+    $identity="$env:COMPUTERNAME\$user"
+    try {
+        $account=New-Object Security.Principal.NTAccount($identity)
+        $null=$account.Translate([Security.Principal.SecurityIdentifier])
+    } catch {
+        throw "Dedicated Bees SSH account '$user' does not exist on this Windows learner. Create it once, then rerun start. Example from elevated PowerShell: New-LocalUser -Name '$user' -Password (Read-Host -AsSecureString 'Password')"
+    }
+    $identity
+}
+
+function Set-TrainingSshFileAcl([string]$Path,[string]$Identity,[bool]$AllowRead){
+    if(-not(Test-Path -LiteralPath $Path)){
+        throw "Cannot configure Bees SSH access because the required file is missing: $Path"
+    }
+
+    $acl=Get-Acl -LiteralPath $Path
+    foreach($rule in @($acl.Access)){
+        if(-not $rule.IsInherited -and $rule.IdentityReference.Value -ieq $Identity){
+            [void]$acl.RemoveAccessRuleSpecific($rule)
+        }
+    }
+
+    $denyWrite=[Security.AccessControl.FileSystemRights]::WriteData -bor [Security.AccessControl.FileSystemRights]::AppendData -bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::WriteAttributes -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+    $denyRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,$denyWrite,[Security.AccessControl.AccessControlType]::Deny)
+    $acl.AddAccessRule($denyRule)
+
+    if($AllowRead){
+        $readRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,[Security.AccessControl.FileSystemRights]::ReadAndExecute,[Security.AccessControl.AccessControlType]::Allow)
+        $acl.AddAccessRule($readRule)
+    } else {
+        $denyRead=[Security.AccessControl.FileSystemRights]::ReadData -bor [Security.AccessControl.FileSystemRights]::ReadAttributes -bor [Security.AccessControl.FileSystemRights]::ReadExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::ExecuteFile
+        $denyReadRule=New-Object Security.AccessControl.FileSystemAccessRule($Identity,$denyRead,[Security.AccessControl.AccessControlType]::Deny)
+        $acl.AddAccessRule($denyReadRule)
+    }
+
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Ensure-TrainingSshAccess($Config){
+    $identity=Get-TrainingSshIdentity $Config
+    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
+
+    foreach($path in @($runtimeZip,$WorkerTokenPath,$WanTokenPath)){
+        Set-TrainingSshFileAcl $path $identity $true
+    }
+
+    # The admin token is intentionally unavailable to rollout workers even when a broader
+    # inherited Users ACL exists higher in B:\Bees.
+    Set-TrainingSshFileAcl $AdminTokenPath $identity $false
+
+    Write-Host "Dedicated SSH account $identity has read-only access to the remote runtime and worker tokens; the admin token is blocked."
 }
 
 function Prepare-RemoteBootstrap($Config){
@@ -545,6 +608,7 @@ function Invoke-Start {
     $worker=Ensure-TokenFile $WorkerTokenPath; $admin=Ensure-TokenFile $AdminTokenPath; $null=Ensure-TokenFile $WanTokenPath
     Start-TailnetGatewayIfNeeded $config
     Prepare-RemoteBootstrap $config
+    Ensure-TrainingSshAccess $config
     $release=Get-LatestRelease
     Start-BeesServerIfNeeded $config $worker $admin; Publish-Release $config $admin $release; Start-CentralAgentIfNeeded $config $python $unity
     $envArgs=Get-EnvironmentArgs $config
