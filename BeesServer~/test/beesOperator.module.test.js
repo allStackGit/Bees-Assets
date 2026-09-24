@@ -70,3 +70,11 @@ test('bees.ps1 validates Unity project availability and build entrypoints', () =
     assert.match(source, /Bees RL Training\.exe/);
     assert.match(source, /Bees RL Training\.x86_64/);
 });
+
+test('bees.ps1 stages Unity builds before moving them into dated folders', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /BuildStaging/);
+    assert.match(source, /-beesOutput',\$staging/);
+    assert.match(source, /Move-Item -LiteralPath \$staging -Destination \$Output/);
+    assert.match(source, /Matching executable\(s\) found elsewhere:/);
+});
