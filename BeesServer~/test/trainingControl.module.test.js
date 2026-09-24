@@ -10,11 +10,18 @@ const { TrainingControlStore, createTrainingControlHandler } = require('../train
 
 function withTempDir(work) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-training-control-'));
+    let result;
     try {
-        return work(root);
-    } finally {
+        result = work(root);
+    } catch (error) {
         fs.rmSync(root, { recursive: true, force: true });
+        throw error;
     }
+    if (result && typeof result.then === 'function') {
+        return result.finally(() => fs.rmSync(root, { recursive: true, force: true }));
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    return result;
 }
 
 
