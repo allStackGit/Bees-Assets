@@ -11,7 +11,6 @@ namespace Assets.Scripts.Entities.Ships
 {
     public partial class Ship : Entity
     {
-        public bool ShowDebug;
         public int Health, MaxHealth, OriginalHealth, OriginalTsv, Sight, Clearance, MaxRange, HalfMaxRange;
         public float SizeClass, ProjectileValue, Speed, SpecialFirePower, CurrentSpeed, LongestSide;
         public GameObject ShipExplosion, HealthBar, MiniMapIcon, ShipAnimation, MovementMarker;
