@@ -409,6 +409,7 @@ def default_heartbeat(
     process_state: str,
     applied_revision: int,
     build: Optional[Mapping[str, Any]],
+    prepared_build_id: str = "",
     last_error: str = "",
     metrics: Optional[Mapping[str, object]] = None,
 ) -> dict[str, object]:
@@ -422,6 +423,7 @@ def default_heartbeat(
         "applied_revision": applied_revision,
         "build_id": str(build.get("build_id", "")) if build else "",
         "build_sha256": str(build.get("archive_sha256", "")) if build else "",
+        "prepared_build_id": str(prepared_build_id or ""),
         "last_error": last_error,
         "metrics": dict(metrics or {}),
     }
