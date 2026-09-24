@@ -519,13 +519,11 @@ public class DialogueManager : MonoBehaviour
 
     void EndDialogue()
     {
-        Debug.Log("Dialogue ended.");
         CutsceneManager.EndDialogue();
     }
     public void GoToNextLine()
     {
         SpacebarImage.sprite = PressedSpacebar;
-        Debug.Log($"Go to next line");
         EventSystem.GetComponent<UnityEngine.EventSystems.EventSystem>().SetSelectedGameObject(null);
         DisplayNextLineWithDelay(.5f);
     }
