@@ -182,9 +182,7 @@ public class Tooltip : MonoBehaviour
         if (ConfigData.UserProgressData.ShowToolTips)
         {
             TooltipObject.SetActive(false);
-            TooltipText.maxVisibleCharacters = int.MaxValue;
             TooltipText.text = text;
-            Debug.Log($"Showing tooltip: {text}");
             CloseButton.SetActive(hasX);
             _sequenceFooter.SetActive(false);
             ApplyLayout();
@@ -205,7 +203,6 @@ public class Tooltip : MonoBehaviour
         }
 
         TooltipObject.SetActive(false);
-        TooltipText.maxVisibleCharacters = int.MaxValue;
         TooltipText.text = _sequencePages[_sequenceIndex];
         _sequenceFooter.SetActive(true);
         _previousButton.interactable = _sequenceIndex > 0;
@@ -213,13 +210,8 @@ public class Tooltip : MonoBehaviour
         _nextLabel.text = (_sequenceIndex == _sequencePages.Count - 1 ? "CLOSE" : "NEXT") +
                           $" ({_sequenceIndex + 1}/{_sequencePages.Count})";
         ApplyLayout();
-        TooltipObject.SetActive(true);
         Canvas.ForceUpdateCanvases();
-
-        // Rebuild the TMP geometry from the complete page after the panel has its final size.
-        // This avoids stale wrapped glyph data carrying across sequence pages (observed as the
-        // final glyph of a wrapped word being repeated across the tooltip).
-        TooltipText.ForceMeshUpdate(true, true);
+        TooltipObject.SetActive(true);
     }
 
     private void PreviousPage()
@@ -284,8 +276,6 @@ public class Tooltip : MonoBehaviour
         _authoredFontSize = TooltipText.fontSize;
         TooltipText.fontSize = Mathf.Max(_authoredFontSize + 2f, _authoredFontSize * 1.1f);
         TooltipText.enableWordWrapping = true;
-        TooltipText.overflowMode = TextOverflowModes.Overflow;
-        TooltipText.maxVisibleCharacters = int.MaxValue;
 
         ConfigureTextPadding();
         ConfigureCloseButton();
