@@ -1,11 +1,11 @@
 """Run one elastic Bees WAN rollout actor.
 
-Each remote machine chooses its own ``--envs`` count from 1 through 64. Managed workers present a
+Each remote machine chooses its own --envs count from 1 through 64. Managed workers present a
 persistent machine key and the central learner assigns an available actor slot automatically; manual
-``--actor-id`` remains available only for debugging/nonstandard launches. The learner reserves 64
+--actor-id remains available only for debugging/nonstandard launches. The learner reserves 64
 global worker IDs per slot, so changing one machine's environment count never renumbers another
-actor. The underlying actor session performs Unity simulation and policy inference locally and never
-owns PPO optimizer/checkpoint state.
+actor. The actor talks to the WAN broker through the private tailnet forwarding owned by the managed
+remote supervisor; no SSH tunnel is created here.
 """
 
 from __future__ import annotations
@@ -14,10 +14,8 @@ import argparse
 import json
 import secrets
 import signal
-import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -111,19 +109,19 @@ def _parser() -> argparse.ArgumentParser:
         default=32,
         help="Local Unity environment count for this machine (1-64; default 32).",
     )
-    parser.add_argument("--ssh", required=True, help="SSH target for Exeter, e.g. user@exeter.")
+    parser.add_argument(
+        "--broker-host",
+        default="127.0.0.1",
+        help="WAN broker host. Managed remotes use the local tailnet forward.",
+    )
+    parser.add_argument("--broker-port", type=int, default=wan.DEFAULT_BROKER_PORT)
     parser.add_argument("--env", required=True, help="Path to the matching Bees training build.")
     parser.add_argument("--auth-token-file", required=True)
-    parser.add_argument("--broker-port", type=int, default=wan.DEFAULT_BROKER_PORT)
-    parser.add_argument("--local-port", type=int, default=wan.DEFAULT_BROKER_PORT)
     parser.add_argument("--local-base-port", type=int, default=5005)
-    parser.add_argument("--ssh-executable", default="ssh")
-    parser.add_argument("--ssh-option", action="append", default=[])
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--graphics", action="store_true")
     parser.add_argument("--reconnect-seconds", type=float, default=worker.DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=worker.DEFAULT_LOCAL_UPLOAD_QUEUE)
-    parser.add_argument("--tunnel-startup-seconds", type=float, default=1.0)
     return parser
 
 
@@ -151,8 +149,6 @@ def _elastic_session(
     if not 1 <= env_count <= max_envs:
         raise RuntimeError(f"--envs must be between 1 and {max_envs}")
 
-    # ActorSession's transport/inference machinery predates elastic env counts. Supply compatible
-    # per-session values, then override the global worker offset below with the fixed 64-ID slot.
     compatible = dict(session)
     compatible["actor_count"] = max_actors
     compatible["envs_per_actor"] = env_count
@@ -170,8 +166,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.envs <= elastic.MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in 1-{elastic.MAX_ENVS_PER_ACTOR}", file=sys.stderr)
         return 2
-    if not 1 <= args.broker_port <= 65535 or not 1 <= args.local_port <= 65535:
-        print("error: broker/local ports must be in 1-65535", file=sys.stderr)
+    if not 1 <= args.broker_port <= 65535:
+        print("error: --broker-port must be in 1-65535", file=sys.stderr)
+        return 2
+    if not str(args.broker_host).strip():
+        print("error: --broker-host is required", file=sys.stderr)
         return 2
     if not 1 <= args.local_base_port <= 65535:
         print("error: --local-base-port must be in 1-65535", file=sys.stderr)
@@ -179,8 +178,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.local_base_port + args.envs - 1 > 65535:
         print("error: local ML-Agents worker ports would exceed 65535", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.upload_queue <= 0 or args.tunnel_startup_seconds < 0:
-        print("error: reconnect/upload/tunnel values are outside valid bounds", file=sys.stderr)
+    if args.reconnect_seconds <= 0 or args.upload_queue <= 0:
+        print("error: reconnect/upload values are outside valid bounds", file=sys.stderr)
         return 2
 
     env_path = Path(args.env).expanduser().resolve()
@@ -200,37 +199,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
-    tunnel: Optional[subprocess.Popen] = None
     try:
-        tunnel = subprocess.Popen(
-            worker.ssh_command(
-                args.ssh_executable,
-                args.ssh,
-                local_port=args.local_port,
-                broker_port=args.broker_port,
-                options=args.ssh_option,
-            ),
-            stdin=subprocess.DEVNULL,
-        )
-        deadline = time.monotonic() + args.tunnel_startup_seconds
-        while time.monotonic() < deadline and tunnel.poll() is None and not stop.is_set():
-            time.sleep(0.05)
-        if tunnel.poll() is not None:
-            print(f"error: SSH tunnel exited during startup ({tunnel.returncode}).", file=sys.stderr)
-            return 3
-
         client = ElasticBrokerClient(
-            "127.0.0.1",
-            args.local_port,
+            args.broker_host,
+            args.broker_port,
             token,
             actor_id=args.actor_id,
             actor_key=args.actor_key,
             env_count=args.envs,
         )
         while not stop.is_set():
-            if tunnel.poll() is not None:
-                print(f"error: SSH tunnel exited ({tunnel.returncode}).", file=sys.stderr)
-                return 4
             try:
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
                 session_id = raw_session.get("session_id")
@@ -254,10 +232,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     stop=stop,
                     upload_queue_size=args.upload_queue,
                 )
-                # Fixed slot assignment prevents worker-ID collisions when actors have different env counts.
                 actor_session.worker_offset = worker_offset
-                # Start with local Exeter envs plus this actor. The first post-registration state sync
-                # replaces this with the exact live topology and keeps updating it as actors join/leave.
                 actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
                 try:
                     actor_session.start()
@@ -280,7 +255,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 stop.wait(args.reconnect_seconds)
         return 0
     finally:
-        worker._terminate(tunnel)
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
 
