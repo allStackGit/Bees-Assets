@@ -48,6 +48,44 @@ class TrainingControlClientTests(unittest.TestCase):
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
 
+    def test_full_game_canonical_change_is_deferred_while_process_is_alive(self):
+        managed = agent.ManagedProcess()
+        fake = mock.Mock()
+        fake.poll.return_value = None
+        managed.process = fake
+        managed.build_sha256 = "a" * 64
+        managed.environment_args = ("--rl-map-size", "64")
+
+        self.assertTrue(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "b" * 64,
+                ("--rl-map-size", "64"),
+            )
+        )
+        self.assertTrue(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "a" * 64,
+                ("--rl-map-size", "128"),
+            )
+        )
+        self.assertFalse(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "a" * 64,
+                ("--rl-map-size", "64"),
+            )
+        )
+        fake.poll.return_value = 0
+        self.assertFalse(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "b" * 64,
+                ("--rl-map-size", "128"),
+            )
+        )
+
     def test_render_command_expands_build_and_environment_arguments(self):
         rendered = agent.render_command(
             ["python", "worker.py", "--env", "{env}", "--env-args", "{env_args}"],
