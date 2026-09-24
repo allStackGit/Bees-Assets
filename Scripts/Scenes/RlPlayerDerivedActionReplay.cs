@@ -690,7 +690,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
             _ship.Squad.IsHiveMindControlled = true;
             _ship.Squad.CanAcceptUserInput = false;
         }
-        _ship.HasBrain = true;
+        _ship.IsRlPolicyControlled = true;
         ConfigureRotationToCurrentSpawn();
         Vector2 defaultAim = Rotate(Vector2.up);
         for (int slot = 0; slot < _aimDirections.Length; slot++)
@@ -994,7 +994,7 @@ internal sealed class RlPlayerDerivedActionReplayController : MonoBehaviour
     {
         if (_ship != null)
         {
-            _ship.HasBrain = false;
+            _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
             {
                 _ship.Turrets[i].ClearRlControl();
