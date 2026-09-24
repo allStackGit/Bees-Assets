@@ -3,8 +3,8 @@
 The miner is intentionally diagnostic. It never creates training scenarios automatically. It
 revalidates every approved native demo and summarizes a small set of current-policy signals that an
 operator can understand: fleet identity, range at fire decisions, map-edge occupancy, distance
-trend, movement activity, firing cadence, and special-action use. ABI v8 preserves those tactical
-fields and appends its new episode-progress/reserved tail afterward. Repeated signatures can then be
+trend, movement activity, firing cadence, and special-action use. The decoder is frozen to the
+compact ABI v18 observation/action layout and scrambled scalar ship-type vocabulary. Repeated signatures can then be
 reviewed and converted into immutable adversarial scenarios through the normal registry.
 """
 
@@ -35,6 +35,8 @@ from bees_continual_adversarial_suggest import (
     FIRST_ENEMY_SLOT_INDEX,
     FIRST_ENEMY_X_INDEX,
     FIRST_ENEMY_Y_INDEX,
+    SELF_POSITION_X_INDEX,
+    SELF_POSITION_Y_INDEX,
     SUPPORTED_POLICY_ABI_VERSION,
     _default_observation_reader,
     _invert_positive_normalization,
@@ -44,16 +46,15 @@ from bees_continual_adversarial_suggest import (
 
 
 MIN_TACTIC_RECORDS = 8
-EXPECTED_CONTINUOUS_ACTIONS = 34
-EXPECTED_DISCRETE_ACTIONS = 20
+EXPECTED_CONTINUOUS_ACTIONS = 16
+EXPECTED_DISCRETE_ACTIONS = 6
 MOVEMENT_DEAD_ZONE = 0.2
-SELF_SHIP_BIT_START = 0
-SHIP_TYPE_BIT_COUNT = 6
-SELF_MAX_RANGE_INDEX = 18
+SELF_SHIP_TYPE_INDEX = 1
+SELF_MAX_RANGE_INDEX = 14
 SELF_MAX_RANGE_SCALE = 80.0
-ENEMY_SHIP_BIT_START = FIRST_ENEMY_SLOT_INDEX + 13
-WEAPON_FIRE_BRANCH_COUNT = 16
-SPECIAL_ACTION_BRANCH = 16
+FIRST_ENEMY_SHIP_TYPE_INDEX = FIRST_ENEMY_SLOT_INDEX + 14
+WEAPON_FIRE_BRANCH_COUNT = 5
+SPECIAL_ACTION_BRANCH = 5
 EDGE_NORMALIZED_THRESHOLD = 0.75
 DISTANCE_TREND_EPSILON = 0.25
 
@@ -113,15 +114,31 @@ def _default_action_reader(pair_info: object) -> Tuple[Sequence[float], Sequence
     return continuous, discrete
 
 
-def _decode_enum_bits(values: Sequence[float], start: int, bits: int) -> int:
-    result = 0
-    for bit in range(bits):
-        value = float(values[start + bit])
-        if not math.isfinite(value):
-            raise ValidationError("Tactical signature observation contains a non-finite enum bit.")
-        if value >= 0.5:
-            result |= 1 << bit
-    return result
+SHIP_TYPE_SCALAR_PERMUTATION = (
+    11, 2, 19, 7, 22, 4, 15, 0, 17, 9, 23, 5,
+    13, 20, 1, 16, 8, 21, 3, 18, 10, 14, 6, 12,
+)
+
+
+def _ship_type_scalar(ship_type: int) -> float:
+    return -1.0 + 2.0 * SHIP_TYPE_SCALAR_PERMUTATION[ship_type] / (
+        len(SHIP_TYPE_SCALAR_PERMUTATION) - 1
+    )
+
+
+def _decode_ship_type_scalar(value: float) -> int:
+    value = float(value)
+    if not math.isfinite(value) or value < -1.0001 or value > 1.0001:
+        raise ValidationError("Tactical signature contains an invalid ship-type scalar.")
+    best = min(
+        range(len(SHIP_TYPE_SCALAR_PERMUTATION)),
+        key=lambda ship_type: abs(value - _ship_type_scalar(ship_type)),
+    )
+    if abs(value - _ship_type_scalar(best)) > 1e-3:
+        raise ValidationError(
+            f"Tactical signature ship-type scalar {value!r} is not in the frozen ABI v18 vocabulary."
+        )
+    return best
 
 
 def _enemy_distance(values: Sequence[float]) -> Optional[float]:
@@ -141,7 +158,7 @@ def _enemy_distance(values: Sequence[float]) -> Optional[float]:
 def _enemy_ship_type(values: Sequence[float]) -> Optional[int]:
     if float(values[FIRST_ENEMY_SLOT_INDEX]) < 0.5:
         return None
-    return _decode_enum_bits(values, ENEMY_SHIP_BIT_START, SHIP_TYPE_BIT_COUNT)
+    return _decode_ship_type_scalar(values[FIRST_ENEMY_SHIP_TYPE_INDEX])
 
 
 def _movement_style(
@@ -236,8 +253,8 @@ def analyze_tactical_signature(
         normalized_discrete.append(discrete)
 
     geometry = infer_geometry_from_observations(normalized_observations)
-    self_ship_type = _decode_enum_bits(
-        normalized_observations[0], SELF_SHIP_BIT_START, SHIP_TYPE_BIT_COUNT
+    self_ship_type = _decode_ship_type_scalar(
+        normalized_observations[0][SELF_SHIP_TYPE_INDEX]
     )
     first_enemy_ship_type = None
     for observation in normalized_observations:
@@ -264,7 +281,7 @@ def analyze_tactical_signature(
         if movement_magnitude > MOVEMENT_DEAD_ZONE:
             movement_active += 1
 
-        if max(abs(observation[6]), abs(observation[7])) >= EDGE_NORMALIZED_THRESHOLD:
+        if max(abs(observation[SELF_POSITION_X_INDEX]), abs(observation[SELF_POSITION_Y_INDEX])) >= EDGE_NORMALIZED_THRESHOLD:
             edge_occupied += 1
 
         enemy_distance = _enemy_distance(observation)
