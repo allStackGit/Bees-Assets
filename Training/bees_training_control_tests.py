@@ -134,6 +134,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees_Data/data.bin", b"data")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "LinuxPlayer",
                 "build_id": "build-123",
                 "archive_sha256": control.file_sha256(archive),
@@ -158,6 +159,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees.exe", b"binary")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "WindowsPlayer",
                 "build_id": "build-1",
                 "archive_sha256": "0" * 64,
@@ -178,6 +180,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 bundle.writestr("Bees.exe", b"binary")
 
             descriptor = {
+                "role": "dedicated",
                 "platform": "WindowsPlayer",
                 "build_id": "build-2",
                 "archive_sha256": control.file_sha256(archive),
@@ -189,6 +192,41 @@ class TrainingControlClientTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe artifact member"):
                 store.ensure(FakeClient(archive), descriptor)
             self.assertFalse((root / "escape.txt").exists())
+
+    def test_managed_build_keeps_role_specific_windows_artifacts_separate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            training_archive = root / "training.zip"
+            game_archive = root / "game.zip"
+            with zipfile.ZipFile(training_archive, "w") as bundle:
+                bundle.writestr("Bees RL Training.exe", b"training")
+            with zipfile.ZipFile(game_archive, "w") as bundle:
+                bundle.writestr("Bees.exe", b"game")
+
+            store = control.ManagedBuildStore(root / "managed")
+            training = {
+                "role": "dedicated",
+                "platform": "WindowsPlayer",
+                "build_id": "release-1",
+                "archive_sha256": control.file_sha256(training_archive),
+                "archive_size_bytes": training_archive.stat().st_size,
+                "entrypoint": "Bees RL Training.exe",
+                "artifact_url": "/v1/artifact/dedicated/WindowsPlayer/release-1",
+            }
+            game = {
+                "role": "full-game",
+                "platform": "WindowsPlayer",
+                "build_id": "release-1",
+                "archive_sha256": control.file_sha256(game_archive),
+                "archive_size_bytes": game_archive.stat().st_size,
+                "entrypoint": "Bees.exe",
+                "artifact_url": "/v1/artifact/full-game/WindowsPlayer/release-1",
+            }
+            training_entry, _ = store.ensure(FakeClient(training_archive), training)
+            game_entry, _ = store.ensure(FakeClient(game_archive), game)
+            self.assertNotEqual(training_entry.parent, game_entry.parent)
+            self.assertEqual(training_entry.read_bytes(), b"training")
+            self.assertEqual(game_entry.read_bytes(), b"game")
 
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
