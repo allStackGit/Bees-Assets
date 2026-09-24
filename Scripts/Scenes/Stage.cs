@@ -47,6 +47,11 @@ public class Stage : Scene
     /// </summary>
     public bool IsTraining;
     /// <summary>
+    /// Whether ordinary gameplay AI sides may be controlled by the deployed RL policy.
+    /// This is independent from dedicated ML-Agents training.
+    /// </summary>
+    public bool ActivateRlPolicy;
+    /// <summary>
     /// Whether or not the Hive Mind is active and giving commands
     /// </summary>
     public bool ActivateHiveMind;
