@@ -361,8 +361,14 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
         CloseSocket();
         while (_responses.TryDequeue(out _)) { }
         while (_transportErrors.TryDequeue(out _)) { }
-        string scheme = ConfigData.Test ? "ws" : "wss";
-        string url = $"{scheme}://{ConfigData.Hostname}:{ConfigData.Port}";
+        string scheme = ConfigData.Production ? "wss" : "ws";
+        string hostname = ConfigData.Test
+            ? ConfigData.TestServerHostname
+            : ConfigData.Development ? ConfigData.DevelopmentServerHostname : ConfigData.ProductionServerHostname;
+        int port = ConfigData.Test
+            ? ConfigData.TestPort
+            : ConfigData.Development ? ConfigData.DevelopmentPort : ConfigData.ProductionPort;
+        string url = $"{scheme}://{hostname}:{port}";
         _socketOpen = false;
         _socketClosed = false;
         _socket = new WebSocket(url, "game");
