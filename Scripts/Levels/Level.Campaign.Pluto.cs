@@ -498,6 +498,10 @@ namespace Assets.Scripts.Levels
                                         squadNumberHighlightRect.SetAsFirstSibling();
 
                                         basicTooltip.Place(new Vector2(-300, 175), new Vector2(260, 170));
+                                        // The opening dialogue section has already reached its break here. Keep
+                                        // tutorial presentation exclusive so a stale/re-activated dialogue box
+                                        // cannot overlap the tooltip sequence.
+                                        Stage.CutsceneManager.HideDialogue();
                                         basicTooltip.ShowSequence(new List<string>
                                         {
                                             "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
