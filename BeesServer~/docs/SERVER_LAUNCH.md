@@ -73,3 +73,14 @@ kill <pid>
 ```
 
 The launcher does not automatically restart a crashed process or start it after a machine reboot. A system service such as systemd should be used if those behaviours are required.
+
+
+## Server-controlled distributed training
+
+When `BEES_RL_TRAINER_CONTROL=1`, BeesServer also owns the desired state for dedicated rollout machines. The control service defaults to loopback port 7148 and is intended to be reached through SSH forwarding. Each rollout node runs `Training/bees_trainer_agent.py`, renews a short server lease, and stops its dedicated training process if that lease expires. When BeesServer restarts, its new server epoch causes connected agents to reconcile the current build/configuration and restart training.
+
+The server publishes a content-addressed manifest for the canonical training build configured by `BEES_RL_TRAINING_ENV` / `BEES_RL_TRAINER_BUILD_DIR`. Remote nodes download missing files, verify every SHA-256 and size, stage the complete build, then switch atomically. If the central trainer is not Linux, `BEES_RL_LINUX_TRAINER_BUILD_DIR` is required by default so Linux rollout nodes receive the equivalent build.
+
+The trainer-control bearer token comes from `BEES_RL_CONTROL_TOKEN_FILE`, or falls back to `BEES_RL_WAN_AUTH_TOKEN_FILE`. Keep the HTTP control endpoint on loopback and use SSH forwarding rather than exposing it directly.
+
+Background continual-learning supervision is tied to the BeesServer process. If the spawned BeesServer PID disappears, its watchdog stops the central continual-learning child instead of continuing training independently.
