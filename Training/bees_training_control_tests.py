@@ -113,6 +113,8 @@ class TrainingControlClientTests(unittest.TestCase):
             value = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(value["desired_mode"], "inference")
             self.assertFalse(value["online"])
+            self.assertEqual(value["lease_seconds"], 20.0)
+            self.assertGreater(value["updated_unix_seconds"], 0)
 
 
     def test_legacy_remote_worker_honors_server_owned_environment_arguments(self):
