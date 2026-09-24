@@ -77,7 +77,7 @@ internal sealed class RlProductionControllerCoordinator : MonoBehaviour
         {
             // Keep old scene/runtime consumers aware that neural control exists. Mixed ownership is
             // corrected per side by ConfigureProductionControllerOwnership below.
-            _stage.ActivateBrains = true;
+            _stage.ActivateRlPolicy = true;
         }
     }
 
