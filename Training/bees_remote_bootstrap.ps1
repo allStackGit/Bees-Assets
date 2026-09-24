@@ -170,8 +170,11 @@ $workerArgs=@(
     '--tailnet-hostname',$workerHostname,
     '--tailnet-target',$TailnetLearner,
     '--control-port',[string]$ControlPort,
+    '--bootstrap-port',[string]$TailnetBootstrapPort,
     '--broker-port',[string]$BrokerPort,
     '--install-root',$InstallRoot,
+    '--runtime-archive',$runtimeZip,
+    '--bootstrap-token-file',$bootstrapTokenPath,
     '--worker-token-file',$workerToken,
     '--wan-token-file',$wanToken,
     '--torch-device',$TorchDevice
