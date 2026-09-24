@@ -63,7 +63,7 @@ test('worker token cannot invoke admin endpoints and admin token can inspect sta
 
         const status = await invokeGet(handler, '/v1/status', 'admin-secret');
         assert.equal(status.statusCode, 200);
-        assert.equal(status.body.desired.schema_version, 1);
+        assert.equal(status.body.desired.schema_version, 2);
     });
 });
 
