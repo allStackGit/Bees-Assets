@@ -354,6 +354,20 @@ def _control_state(args: argparse.Namespace, trainer_id: str) -> Optional[Mappin
         return None
 
 
+def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
+    try:
+        token = Path(args.worker_token_file).expanduser().read_text(encoding="utf-8").strip()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.control_port}/v1/status",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return value if isinstance(value, Mapping) else None
+    except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+        return None
+
+
 def _runtime_cutover_selected(
     args: argparse.Namespace,
     trainer_id: str,
@@ -374,7 +388,16 @@ def _runtime_cutover_selected(
     if phase == "rolling" and str(state.get("desired_build_id", "")) == pending_build:
         return staged_root
     if incompatible and phase == "stopping" and state.get("desired_mode") == "stopped":
-        return staged_root
+        status = _control_status(args)
+        trainers = status.get("trainers", ()) if isinstance(status, Mapping) else ()
+        if isinstance(trainers, list):
+            for record in trainers:
+                if (
+                    isinstance(record, Mapping)
+                    and record.get("trainer_id") == trainer_id
+                    and record.get("process_state") == "stopped"
+                ):
+                    return staged_root
     return None
 
 
