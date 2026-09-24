@@ -402,6 +402,13 @@ function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[strin
     Invoke-Checked $Unity $args $BeesRoot
 
     $stagedEntrypoint=Join-Path $staging $Entrypoint
+    $entrypointDeadline=[DateTime]::UtcNow.AddSeconds(30)
+    while(
+        -not(Test-Path -LiteralPath $stagedEntrypoint) -and
+        [DateTime]::UtcNow -lt $entrypointDeadline
+    ){
+        Start-Sleep -Milliseconds 250
+    }
     if(-not(Test-Path -LiteralPath $stagedEntrypoint)){
         $found=@(
             Get-ChildItem -LiteralPath $BuildsRoot -Recurse -File -Filter $Entrypoint -ErrorAction SilentlyContinue |
