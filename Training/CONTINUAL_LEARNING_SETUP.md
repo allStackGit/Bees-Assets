@@ -2,7 +2,7 @@
 
 The continual-learning tools extend the project's existing ML-Agents 1.1.0 environment. They do not replace or upgrade that environment.
 
-The current frozen policy contract is ABI v8: behavior `BeesRL1v1`, 4722 vector observations, 34 continuous actions, and discrete branches `2x16,5,65,65,65`. ABI v8 appends one episode-progress value plus 20 reserved tail values after the prior 4701 observation fields. Existing tactical field indices are unchanged, but v7 models and demonstrations are not ABI-compatible with v8 and must not be relabeled or silently reused as v8 data.
+The current frozen policy contract is ABI v18: behavior `BeesRL1v1`, 7342 vector observations, 16 continuous actions, and discrete branches `2x5,5`. The vector contains 7321 perception values followed by episode progress and 20 reserved tail values. v17 models and demonstrations are not ABI-compatible with v18 and must not be relabeled or silently reused as v18 data.
 
 ## CPU baseline
 
@@ -33,7 +33,7 @@ Recordings use the shared `BeesRL1v1` observation/action ABI and are stored belo
 
 ```text
 RlDemonstrations/
-  PolicyV8/
+  PolicyV18/
     capture-manifest.json
     Human/
       human-s0.demo
@@ -52,15 +52,15 @@ To include a trusted native Human directory in a continual training run:
 ```powershell
 python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
   --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-full-v8-001 --resume `
-  --continual-root="F:\RLDemo\BeesContinualV8" `
+  --run-id=bees-full-v18-001 --resume `
+  --continual-root="F:\RLDemo\BeesContinualV18" `
   --continual-game-build="2026.09.12" `
-  --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV8\Human"
+  --continual-human-demo-dir="C:\path\to\RlDemonstrations\PolicyV18\Human"
 ```
 
 Before ML-Agents starts, the wrapper verifies the Human/PolicyV directory, capture manifest, frozen signature, non-empty `.demo` files, and file stability. It creates an immutable content-addressed snapshot and derives a runtime trainer YAML that adds behavioral cloning without modifying the committed base trainer YAML. `human_imitation` in `Training/continual_learning_config.json` controls the BC strength, step count, and batch size.
 
-Do not point an ABI-v8 run at `PolicyV7`. There is no automatic v7-to-v8 demonstration conversion path.
+Do not point an ABI-v18 run at `PolicyV17`. There is no automatic v7-to-v8 demonstration conversion path.
 
 ### Central native `.demo` archive
 
@@ -68,11 +68,11 @@ Trusted native demonstrations can be imported into the persistent continual-lear
 
 ```powershell
 python Training\bees_continual_native_demo.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   --demonstration-id="player-match-20260912-001-human-s0" `
-  --model-id="bees-rl-v8-<deployed-model-id>" `
+  --model-id="bees-rl-v18-<deployed-model-id>" `
   --game-build="2026.09.12" `
-  "C:\path\to\RlDemonstrations\PolicyV8\Human\human-s0.demo"
+  "C:\path\to\RlDemonstrations\PolicyV18\Human\human-s0.demo"
 ```
 
 `model-id` identifies the compatible deployed-policy context for the captured match; it does not claim that the Human actions came from that model. Native ingestion validates the capture manifest/signature, ML-Agents behavior shape, configured payload/record limits, model compatibility, and immutable SHA-256 identities.
@@ -87,14 +87,14 @@ A Production desktop build can separately opt into uploading previously closed H
 
 `RlDemonstrationUploader` snapshots only files already closed before the current run begins recording. Upload uses a dedicated Steam-authenticated WSS connection and bounded chunks. The client, BeesServer, and trainer enforce the same 16 MiB combined demonstration-plus-manifest cap.
 
-BeesServer accepts only `Human` uploads through `rl-demo-begin`, `rl-demo-chunk`, and `rl-demo-complete`. Sessions are bound to the authenticated Steam user and connection, rate/size limited, hash checked, and quarantined with `readyForTraining: false`. The server's accepted capture policy is part of the cross-repository frozen ABI contract; for the current build it is ABI v8 / 4722 observations with the exact `RlPolicySchema.Signature`.
+BeesServer accepts only `Human` uploads through `rl-demo-begin`, `rl-demo-chunk`, and `rl-demo-complete`. Sessions are bound to the authenticated Steam user and connection, rate/size limited, hash checked, and quarantined with `readyForTraining: false`. The server's accepted capture policy is part of the cross-repository frozen ABI contract; for the current build it is ABI v18 / 7342 observations with the exact `RlPolicySchema.Signature`.
 
 Archive one validated server quarantine bundle centrally with:
 
 ```powershell
 python Training\bees_continual_public_demo.py `
-  --root="F:\RLDemo\BeesContinualV8" `
-  --model-id="bees-rl-v8-<deployed-model-id>" `
+  --root="F:\RLDemo\BeesContinualV18" `
+  --model-id="bees-rl-v18-<deployed-model-id>" `
   "D:\BeesRlDemonstrations\incoming\rl-demo-<batch-id>.json"
 ```
 
@@ -106,7 +106,7 @@ Approve a structurally valid public batch only after review:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   approve demo-<central-batch-id> `
   --reviewer="manual-review-2026-09" `
   --reason="Clean long-range kiting example" `
@@ -117,7 +117,7 @@ Revoke an approved batch permanently if later review finds a problem:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   revoke demo-<central-batch-id> `
   --reviewer="manual-review-2026-09" `
   --reason="Retrospective review found unusable play"
@@ -127,7 +127,7 @@ Materialize only an explicit approved selection:
 
 ```powershell
 python Training\bees_continual_demo_curation.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   materialize demo-<batch-a> demo-<batch-b> demo-<batch-c>
 ```
 
@@ -143,7 +143,7 @@ Mine repeated explainable signatures from approved current-ABI demonstrations:
 
 ```powershell
 python Training\bees_continual_adversarial_mine.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   demo-<batch-a> demo-<batch-b> demo-<batch-c> `
   --minimum-count=2
 ```
@@ -152,11 +152,11 @@ For one approved demonstration, inspect non-authoritative tactical geometry sugg
 
 ```powershell
 python Training\bees_continual_adversarial_suggest.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   demo-<batch-a>
 ```
 
-ABI v8 appends its episode-progress/reserved tail after the fields consumed by the miner/suggester, so the existing ship/range/map indices retain their meaning. The tools still require the exact current observation size and fail closed on another ABI.
+The miner and geometry suggester decode the frozen ABI v18 compact-field indices directly, including scrambled scalar ship identities, current map/position fields, and the first visible enemy slot. They require the exact current observation size and fail closed on another ABI.
 
 ### Register reviewed scenario pressure
 
@@ -164,7 +164,7 @@ After review, register an immutable scenario from one or more approved batches:
 
 ```powershell
 python Training\bees_continual_adversarial.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   register demo-<batch-a> demo-<batch-b> `
   --bee-composition="Wasp" `
   --human-composition="Gunship" `
@@ -182,20 +182,20 @@ For a reviewed 1v1 scenario, one approved source batch can be attached as a boun
 
 ```powershell
 python Training\bees_continual_adversarial_replay.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   register adv-<scenario-id> `
   --source-batch=demo-<batch-a> `
   --side=Human `
   --record-count=1200
 ```
 
-The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. Target-selection branches remain fail-closed because the live policy still masks them and there is no authoritative target-command replay contract. Separately captured one-event capability demonstrations are not automatically stitched into a tactical replay prefix. The scripted side is excluded from PPO learner action/reward ownership and becomes neutral after the recorded prefix.
+The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. ABI v18 no longer contains the old ally/enemy/map target-selection branches. Separately captured one-event capability demonstrations are not automatically stitched into a tactical replay prefix. The scripted side is excluded from PPO learner action/reward ownership and becomes neutral after the recorded prefix.
 
 You can compile/check one attachment explicitly:
 
 ```powershell
 python Training\bees_continual_adversarial_replay.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   compile adv-<scenario-id>
 ```
 
@@ -206,8 +206,8 @@ The training launcher automatically builds the content-addressed replay catalog 
 ```powershell
 python Training\bees_continual_adversarial_train.py Training\rl_1v1_config.yaml `
   --env="F:\RLDemo\Bees RL Training" `
-  --run-id=bees-adversarial-v8-001 `
-  --continual-root="F:\RLDemo\BeesContinualV8" `
+  --run-id=bees-adversarial-v18-001 `
+  --continual-root="F:\RLDemo\BeesContinualV18" `
   --continual-game-build="2026.09.12" `
   --continual-adversarial-scenarios=adv-<scenario-a>,adv-<scenario-b> `
   --env-args `
@@ -225,10 +225,10 @@ Use paired diagnostic evaluation to compare a candidate with a baseline under th
 
 ```powershell
 python Training\bees_continual_adversarial_evaluate.py `
-  --root="F:\RLDemo\BeesContinualV8" `
-  --candidate="bees-rl-v8-<candidate-id>" `
-  --baseline="bees-rl-v8-<baseline-id>" `
-  --opponent="bees-rl-v8-<opponent-id>" `
+  --root="F:\RLDemo\BeesContinualV18" `
+  --candidate="bees-rl-v18-<candidate-id>" `
+  --baseline="bees-rl-v18-<baseline-id>" `
+  --opponent="bees-rl-v18-<opponent-id>" `
   --env="F:\RLDemo\Bees RL Training" `
   --scenario=adv-<scenario-a> `
   --scenario=adv-<scenario-b> `
@@ -244,13 +244,13 @@ When `promotion.min_competency_cases` is greater than zero, pin the trusted perm
 
 ```powershell
 python Training\bees_continual_learning.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   pin-competency-suite <suite.json>
 ```
 
 Use `--replace` only for an intentional suite revision. Replacing the suite changes the promotion-policy fingerprint and invalidates older promotion evidence.
 
-A current-ABI suite uses model IDs from the same v8 registry, for example:
+A current-ABI suite uses model IDs from the same v18 registry, for example:
 
 ```json
 {
@@ -258,7 +258,7 @@ A current-ABI suite uses model IDs from the same v8 registry, for example:
   "cases": [
     {
       "name": "large-map-aiming",
-      "opponent_model_id": "bees-rl-v8-...",
+      "opponent_model_id": "bees-rl-v18-...",
       "matches": 200,
       "minimum": 0.55,
       "metric": "score_rate",
@@ -273,8 +273,8 @@ Normal candidates must pass the authoritative evaluator before `promote`. The on
 
 ```powershell
 python Training\bees_continual_bootstrap.py `
-  --store="F:\RLDemo\BeesContinualV8" `
-  --candidate="bees-rl-v8-<candidate-id>" `
+  --store="F:\RLDemo\BeesContinualV18" `
+  --candidate="bees-rl-v18-<candidate-id>" `
   --reason="Trusted generation-zero baseline"
 ```
 
@@ -296,9 +296,9 @@ Stable ONNX exports registered by `bees_continual_train.py` can be consumed by t
 
 ```powershell
 python Training\bees_continual_release.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   --env="F:\RLDemo\Bees RL Training" `
-  --competency-suite="F:\RLDemo\bees-rl-v8-competency.json" `
+  --competency-suite="F:\RLDemo\bees-rl-v18-competency.json" `
   --seed=36
 ```
 
@@ -312,7 +312,7 @@ Package and publish the registry's current champion:
 
 ```powershell
 python Training\bees_continual_deployment.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   publish
 ```
 
@@ -322,7 +322,7 @@ Before making a player build, stage that exact published champion into the Unity
 
 ```powershell
 python Training\bees_continual_unity_bundle.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   --assets-root="R:\Bees\Assets"
 ```
 
@@ -339,7 +339,7 @@ At runtime, `RlLivePolicyModelBootstrap` validates the bundled deployment manife
 
 After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build so the build-staged fallback matches the registry champion. A rollback changes the authoritative current champion and therefore restages the prior champion package.
 
-ABI compatibility is strict. A v7 champion cannot be deployed into the current v8 player build. A compatible v8 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v8 store).
+ABI compatibility is strict. A v17 champion cannot be deployed into the current v18 player build. A compatible v18 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v8 store).
 
 ### Authenticated desktop hot distribution
 
@@ -347,7 +347,7 @@ To publish a platform-specific hot bundle for the current champion, run the hot-
 
 ```powershell
 python Training\bees_continual_hot_release.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   --unity="C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe" `
   --assets-root="R:\Bees\Assets" `
   --distribution-root="D:\BeesRlModels" `
@@ -364,12 +364,12 @@ For an intentional rollback, the guarded release rollback can restore the previo
 
 ```powershell
 python Training\bees_continual_release_rollback.py `
-  --root="F:\RLDemo\BeesContinualV8" `
+  --root="F:\RLDemo\BeesContinualV18" `
   --distribution-root="D:\BeesRlModels" `
   --platform=WindowsPlayer
 ```
 
-Omitting `--target` restores the registry's recorded previous champion. Supply `--target=bees-rl-v8-...` to restore a particular historical champion or to retry release reconciliation after a partial rollback failure. Hot-bundle reactivation only uses retained immutable bundles that still exactly match the newly current deployment.
+Omitting `--target` restores the registry's recorded previous champion. Supply `--target=bees-rl-v18-...` to restore a particular historical champion or to retry release reconciliation after a partial rollback failure. Hot-bundle reactivation only uses retained immutable bundles that still exactly match the newly current deployment.
 
 ## GPU ONNX Runtime (optional)
 
