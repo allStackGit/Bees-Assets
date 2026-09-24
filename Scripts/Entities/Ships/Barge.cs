@@ -265,6 +265,7 @@ namespace Assets.Scripts.Entities.Ships
                 yield break;
             }
 
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "barge_charge");
             int lifecycleId = ++_chargeLifecycleId;
             StopMoving("Pausing to build up steam before charging");
