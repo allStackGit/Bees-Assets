@@ -252,7 +252,7 @@ function Prepare-RemoteBootstrap($Config){
     if(Test-Path -LiteralPath $staging){Remove-Item -LiteralPath $staging -Recurse -Force}
     Ensure-Directory $staging
     try {
-        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | Copy-Item -Destination $staging
+        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
         if(Test-Path -LiteralPath $runtimeZip){Remove-Item -LiteralPath $runtimeZip -Force}
