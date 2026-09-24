@@ -136,7 +136,6 @@ namespace Assets.Scripts.Levels
             {
                 if (!squad.IsImmobile && !squad.HasCommandQueue && !squad.HasCommand)
                 {
-                    Debug.Log($"Adding squad {squad} to hivemind command list");
                     squad.AddToCommandList();
                 }
             });
@@ -144,10 +143,8 @@ namespace Assets.Scripts.Levels
 
         public void PostSetupTest()
         {
-            Debug.Log("POST SETUP TEST HAS BEEN CALLED");
             Debug.LogWarning("POST SETUP TEST HAS BEEN CALLED");
             CreateHumanTarget(Vector2.zero);
-            Debug.Log("Placed Human Target");
         }
 
         public HumanTarget CreateHumanTarget(Vector2 position)
