@@ -1,9 +1,11 @@
 """Run one elastic Bees WAN rollout actor.
 
-Each remote machine chooses its own ``--envs`` count from 1 through 64. Actor IDs are stable slots
-0 through 11 by default; the central trainer reserves 64 global worker IDs per slot, so changing one
-machine's environment count never renumbers another actor. The underlying actor session performs
-Unity simulation and policy inference locally and never owns PPO optimizer/checkpoint state.
+Each remote machine chooses its own ``--envs`` count from 1 through 64. Managed workers present a
+persistent machine key and the central learner assigns an available actor slot automatically; manual
+``--actor-id`` remains available only for debugging/nonstandard launches. The learner reserves 64
+global worker IDs per slot, so changing one machine's environment count never renumbers another
+actor. The underlying actor session performs Unity simulation and policy inference locally and never
+owns PPO optimizer/checkpoint state.
 """
 
 from __future__ import annotations
