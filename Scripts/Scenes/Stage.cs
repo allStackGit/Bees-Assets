@@ -654,8 +654,6 @@ public class Stage : Scene
 
         }
 
-        DebugLogger.LogData();
-
     }
     void FixedUpdate()
     {
