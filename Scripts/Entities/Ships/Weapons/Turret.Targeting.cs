@@ -35,7 +35,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             TargetingPasses++;
-            if ((ReadyToFire && IsAimedAtTarget) || TargetingPasses == PassesPerFire)
+            if ((ReadyToFire && IsAlignedWithTargetPoint) || TargetingPasses == PassesPerFire)
             {
                 TryToFire();
             }
@@ -59,7 +59,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
 
         protected virtual bool CanAcceptRlFireRequest()
         {
-            return IsAimedAtTarget;
+            return IsAlignedWithTargetPoint;
         }
 
         public void TryToFindAsteroidTarget()
@@ -156,14 +156,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             if (IsFiringManually || IsFiringAtAsteroid)
             {
-                if (IsAimedAtTarget && !Ship.IsCeaseFire)
+                if (IsAlignedWithTargetPoint && !Ship.IsCeaseFire)
                 {
                     FireAtPoint();
                 }
             }
             else if (ShouldFire)
             {
-                if (IsAimedAtTarget)
+                if (IsAlignedWithTargetPoint)
                 {
                     Fire();
                 }
