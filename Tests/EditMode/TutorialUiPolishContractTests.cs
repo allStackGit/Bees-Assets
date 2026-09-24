@@ -31,6 +31,8 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("_previousButton"));
             Assert.That(source, Does.Contain("_nextButton"));
             Assert.That(source, Does.Contain("_sequenceIndex + 1"));
+            Assert.That(source, Does.Contain("TooltipText.maxVisibleCharacters = int.MaxValue"));
+            Assert.That(source, Does.Contain("TooltipText.ForceMeshUpdate(true, true)"));
         }
 
         [Test]
@@ -177,6 +179,15 @@ namespace Bees.Tests.EditMode
             Assert.That(enemySpawn, Is.GreaterThan(combatGate));
             Assert.That(source, Does.Contain("holding <b>R</b>."));
             Assert.That(source, Does.Contain("pressing <b>F</b>."));
+
+            int hideDialogue = source.LastIndexOf(
+                "Stage.CutsceneManager.HideDialogue();",
+                tutorial,
+                combatGate - tutorial,
+                System.StringComparison.Ordinal);
+            Assert.That(hideDialogue, Is.GreaterThan(tutorial - 300),
+                "Pluto II must hide the completed opening dialogue before the multi-page tutorial is shown.");
+
             Assert.That(source, Does.Contain("(the exclamation point)"));
             Assert.That(source, Does.Not.Contain("(the red exclamation point)"));
         }
