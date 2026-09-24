@@ -61,3 +61,12 @@ test('bees.ps1 prefers resumable curl for portable Go downloads', () => {
     assert.match(source, /'--continue-at','-','--output',\$temporary,\$url/);
     assert.match(source, /Invoke-WebRequest -UseBasicParsing -Uri \$url -OutFile \$temporary/);
 });
+
+test('bees.ps1 validates Unity project availability and build entrypoints', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /Temp\\UnityLockfile/);
+    assert.match(source, /Assert-UnityProjectAvailableForBatchBuild/);
+    assert.match(source, /Unity exited without producing the expected build entrypoint/);
+    assert.match(source, /Bees RL Training\.exe/);
+    assert.match(source, /Bees RL Training\.x86_64/);
+});
