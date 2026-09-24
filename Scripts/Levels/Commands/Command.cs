@@ -358,8 +358,6 @@ namespace Assets.Scripts.Levels.Commands
         }
 
         private StoredCommand _finalize_storedCommand;
-        private StoredCommand _finalize_squadCommand;
-        private string _finalize_enemyName;
 
         private void Finalize(string cause)
         {
@@ -436,15 +434,6 @@ namespace Assets.Scripts.Levels.Commands
                         _finalize_storedCommand.IsFinalized = true;
                     }
 
-                    if (false)
-                    {
-                        _finalize_squadCommand = null;
-                    }
-                    else
-                    {
-                            Debug.LogError($"Could not find squad command for OutcomeId #{OutcomeId} in Squad {GetSquad().Name}");
-                        }
-                    }
                 }
 
                 ClearData();
