@@ -1,11 +1,38 @@
 'use strict';
 
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { buildContinualLearningSpec } = require('./rlContinualLearningLauncher');
 
 const DEFAULT_RESTART_MS = 5000;
 const DEFAULT_SERVER_POLL_MS = 1000;
 const SUPERVISED_SERVER_PID_ENV = 'BEES_RL_SUPERVISED_SERVER_PID';
+
+function terminateProcessTree(processHandle, options = {}) {
+    if (!processHandle || !Number.isSafeInteger(processHandle.pid) || processHandle.pid <= 0) return;
+    const platform = options.platform || process.platform;
+    const killProcess = options.killProcess || process.kill;
+    const spawnSyncProcess = options.spawnSyncProcess || spawnSync;
+
+    if (platform === 'win32') {
+        const result = spawnSyncProcess(
+            'taskkill',
+            ['/PID', String(processHandle.pid), '/T', '/F'],
+            { stdio: 'ignore', windowsHide: true },
+        );
+        if (!result || result.error || (result.status !== 0 && result.status !== null)) {
+            try { processHandle.kill(); } catch { /* already gone */ }
+        }
+        return;
+    }
+
+    try {
+        // The supervisor starts the service as a process-group leader on POSIX. Its ML-Agents and
+        // Unity descendants inherit that group, so one signal cannot leave orphaned trainers behind.
+        killProcess(-processHandle.pid, 'SIGTERM');
+    } catch {
+        try { processHandle.kill(); } catch { /* already gone */ }
+    }
+}
 
 function installContinualLearningSupervisor(server, options = {}) {
     if (!server || Object.prototype.hasOwnProperty.call(server, '__beesContinualLearningSupervisor')) {
@@ -28,6 +55,7 @@ function installContinualLearningSupervisor(server, options = {}) {
     const schedule = options.schedule || setTimeout;
     const cancel = options.cancel || clearTimeout;
     const restartMs = options.restartMs ?? DEFAULT_RESTART_MS;
+    const terminateTree = options.terminateProcessTree || terminateProcessTree;
     if (!Number.isFinite(restartMs) || restartMs < 0) {
         throw new TypeError('Continual-learning restart delay must be a non-negative finite number.');
     }
@@ -65,6 +93,7 @@ function installContinualLearningSupervisor(server, options = {}) {
                 env,
                 stdio: 'inherit',
                 windowsHide: true,
+                detached: process.platform !== 'win32',
             });
         } catch (error) {
             scheduleRestart(`spawn error: ${error.message}`);
@@ -94,7 +123,7 @@ function installContinualLearningSupervisor(server, options = {}) {
         const current = child;
         child = null;
         if (current && current.exitCode === null && current.signalCode === null) {
-            try { current.kill(); } catch { /* best-effort shutdown */ }
+            terminateTree(current);
         }
     };
 
@@ -196,6 +225,7 @@ module.exports = {
     DEFAULT_RESTART_MS,
     DEFAULT_SERVER_POLL_MS,
     SUPERVISED_SERVER_PID_ENV,
+    terminateProcessTree,
     installContinualLearningSupervisor,
     processIsAlive,
     installServerLifetimeGuard,
