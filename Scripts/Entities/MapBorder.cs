@@ -57,13 +57,11 @@ namespace Assets.Scripts.Entities
             _collidingThing = collider.gameObject;
             if (!IsTraining)
             {
-                Debug.Log($"{Name} collided with {_collidingThing.name}");
             }
             if (_collidingThing.CompareTag("Ship"))
             {
                 if (!IsTraining)
                 {
-                    Debug.Log($"{Name} Hit by ship");
                 }
 
                 // Some ship prefabs expose a tagged child collider rather than putting every
@@ -96,7 +94,6 @@ namespace Assets.Scripts.Entities
                 {
                     if (!IsTraining)
                     {
-                        Debug.Log($"{Name} hit the map border while moving in a direction");
                     }
                     if (_collidingShip.ShipType == ConfigData.ShipTypes.Barge)
                     {
