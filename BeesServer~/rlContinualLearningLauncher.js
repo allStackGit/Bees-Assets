@@ -1,5 +1,6 @@
 'use strict';
 
+const { parseClusterEnvArgs } = require('./rlTrainerControl');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -191,6 +192,13 @@ function buildContinualLearningSpec(env = process.env) {
     );
     if (retrySeconds) args.push(retrySeconds);
     if (wan) args.push(...wan.args);
+
+    // Keep the continual learner's actual Unity --env-args identical to the control-plane
+    // revision advertised to rollout nodes.
+    const clusterEnvironmentArgs = parseClusterEnvArgs(env);
+    if (clusterEnvironmentArgs.length) {
+        args.push(`--environment-args-json=${JSON.stringify(clusterEnvironmentArgs)}`);
+    }
 
     return Object.freeze({
         executable: python,
