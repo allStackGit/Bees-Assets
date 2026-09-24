@@ -68,25 +68,26 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            string formatted = PutSentencesOnSeparateLines(tooltip.TooltipText.text);
-            if (tooltip.TooltipText.text != formatted)
+            if (!tooltip.IsSequenceActive)
             {
-                tooltip.TooltipText.text = formatted;
-            }
+                string formatted = PutSentencesOnSeparateLines(tooltip.TooltipText.text);
+                if (tooltip.TooltipText.text != formatted)
+                {
+                    tooltip.TooltipText.text = formatted;
+                }
 
-            float width = tooltip.TooltipSize.sizeDelta.x;
-            if (width <= 0f)
-            {
-                width = tooltip.TooltipSize.rect.width;
+                float width = tooltip.TooltipSize.sizeDelta.x;
+                if (width <= 0f)
+                {
+                    width = tooltip.TooltipSize.rect.width;
+                }
+                float contentWidth = Mathf.Max(1f, width - HorizontalPadding * 2f);
+                float preferredHeight = tooltip.TooltipText.GetPreferredValues(formatted, contentWidth, 0f).y;
+                float requiredHeight = preferredHeight + VerticalPadding * 2f;
+                Vector2 size = tooltip.TooltipSize.sizeDelta;
+                size.y = Mathf.Max(minimumHeight, requiredHeight);
+                tooltip.TooltipSize.sizeDelta = size;
             }
-            float contentWidth = Mathf.Max(1f, width - HorizontalPadding * 2f);
-            float preferredHeight = tooltip.TooltipText.GetPreferredValues(formatted, contentWidth, 0f).y;
-            Transform footer = tooltip.TooltipSize.Find("Tutorial Sequence Footer");
-            float footerHeight = footer != null && footer.gameObject.activeSelf ? SequenceFooterHeight : 0f;
-            float requiredHeight = preferredHeight + VerticalPadding * 2f + footerHeight;
-            Vector2 size = tooltip.TooltipSize.sizeDelta;
-            size.y = Mathf.Max(minimumHeight, requiredHeight);
-            tooltip.TooltipSize.sizeDelta = size;
 
             ConfigureDoubleBorder(tooltip);
             StyleSequenceButton(tooltip.TooltipSize.Find("Tutorial Sequence Footer/Previous"));
