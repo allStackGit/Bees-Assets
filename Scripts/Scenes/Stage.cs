@@ -312,10 +312,6 @@ public class Stage : Scene
     /// </summary>
     public Dictionary<(int, int), Pathfinder.Grid> PathfinderGrids = new Dictionary<(int, int), Pathfinder.Grid>();
     /// <summary>
-    /// Handles logging debug variables for the stage
-    /// </summary>
-    public DebugLogger DebugLogger;
-    /// <summary>
     /// Whether or not the player is controlling the ships or if there's a cut scene or something loading. 
     /// Only valid for levels that have a player
     /// </summary>
@@ -348,7 +344,6 @@ public class Stage : Scene
         //Debug.Log($"Start level stage");
         Name = "Level";
         base.Start();
-        DebugLogger.__CommandCounts = new int[21];
 
     }
     int _spawn_i;
