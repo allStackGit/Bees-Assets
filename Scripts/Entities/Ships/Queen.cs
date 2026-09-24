@@ -103,15 +103,14 @@ namespace Assets.Scripts.Entities.Ships
 
         private void SpawnMinions()
         {
-            // A wave owns one coroutine rather than one coroutine per minion. Capture the
-            // wave count/gathering point now, matching the old fan-out's fixed ship-index set.
+            // A wave owns one coroutine rather than one coroutine per minion. Newly spawned
+            // minions receive no scripted movement orders; the RL policy owns them immediately.
             CurrentMinionSquad = null;
             int waveMinionCount = MinionCount;
-            Vector2 squadGatheringPoint = GetPosition() + SpawnPoint;
-            StartCoroutine(SpawnMinionWave(waveMinionCount, squadGatheringPoint));
+            StartCoroutine(SpawnMinionWave(waveMinionCount));
         }
 
-        private IEnumerator SpawnMinionWave(int waveMinionCount, Vector2 squadGatheringPoint)
+        private IEnumerator SpawnMinionWave(int waveMinionCount)
         {
             float elapsed = 0f;
             for (int shipIndex = 0; shipIndex < waveMinionCount; shipIndex++)
@@ -123,7 +122,7 @@ namespace Assets.Scripts.Entities.Ships
                     elapsed += Time.deltaTime;
                 }
 
-                SpawnMinion(shipIndex, squadGatheringPoint);
+                SpawnMinion(shipIndex);
             }
         }
 
@@ -151,10 +150,13 @@ namespace Assets.Scripts.Entities.Ships
             MinionSquads.Add(squad);
             MinionSquadsCount++;
             squad.IsGrowingSquad = true;
-            squad.AddToCommandList();
+            if (!Stage.IsTrainingNueralNetwork)
+            {
+                squad.AddToCommandList();
+            }
             return squad;
         }
-        private void SpawnMinion(int shipIndex, Vector2 squadGatheringPoint)
+        private void SpawnMinion(int shipIndex)
         {
             //Debug.Log($"Spawning minion {MinionType} #{shipIndex}");
             Squad squad = CurrentMinionSquad;
@@ -180,18 +182,6 @@ namespace Assets.Scripts.Entities.Ships
             Vector2 position = GetPosition();
             ship.Transform.localPosition = Utilities.RotatePointAroundPoint(position, position + SpawnPoint, Rotation * Mathf.Deg2Rad);
 
-            if (shipIndex > 0 && squad.HasDestination)
-            {
-                //Debug.Log($"Moving minion {ship.Name} to gathering point: {squad.Destination + ship.OffsetFromCenter}");
-                ship.MoveToPoint(squad.Destination + ship.OffsetFromCenter);
-            }
-            else
-            {
-                squad.Move(squadGatheringPoint + new Vector2(0, -10));
-                //Debug.Log($"Moving minion {ship.Name} to gathering point: {squadGatheringPoint + offset + new Vector2(0, -10)}");
-                ship.MoveToPoint(squadGatheringPoint + offset + new Vector2(0, -10));
-            }
-            //ship.SetSquadName();
 
         }
 

@@ -299,10 +299,10 @@ namespace Assets.Scripts.Entities.Ships
 
             // Scripted commands may supply a target and retain their historical auto-aim. The
             // ML-Agents directional movement path ignores HasTargetDirection, so its charge must
-            // explicitly lock the Direction field to the heading established before wind-up.
-            if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)
+            // explicitly lock the RL movement direction to the heading established before wind-up.
+            if (Stage.IsTrainingNueralNetwork && IsRlPolicyControlled && !Squad.IsUserControlled)
             {
-                Direction = NormalizeDirection(Rotation);
+                RlMovementDirection = NormalizeDirection(Rotation);
             }
             else if (target != null && !target.IsDead)
             {

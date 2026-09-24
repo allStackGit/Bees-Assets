@@ -240,7 +240,7 @@ namespace Bees.Tests.PlayMode
             onActionReceived.Invoke(waspAgent, new[] { actions });
 
             object wasp = RuntimeAssembly.GetField(waspAgent, "_ship");
-            Assert.That((bool)GetMember(wasp, "HasBrain"), Is.True,
+            Assert.That((bool)GetMember(wasp, "IsRlPolicyControlled"), Is.True,
                 "A zero-action smoke decision must still traverse the live movement control primitive.");
 
             AssertRewardRouting(beeAgents, humanAgents, beeSide, humanSide);

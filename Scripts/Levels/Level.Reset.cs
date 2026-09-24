@@ -60,14 +60,6 @@ namespace Assets.Scripts.Levels
                 }
             }
 
-            // RemoveShip prunes spotting entries during ordinary lifecycle teardown. Reset already
-            // owns the entire old episode, so clear the existing containers once before killing
-            // the snapshot instead of nulling/recreating them or repeatedly scanning old sightings.
-            for (_reset_i = 0; _reset_i < State.SpottedShips.Length; _reset_i++)
-            {
-                State.SpottedShips[_reset_i]?.Clear();
-            }
-
             for (_reset_i = 0; _reset_i < _resetShips.Count; _reset_i++)
             {
                 _resetShips[_reset_i].EndKill();

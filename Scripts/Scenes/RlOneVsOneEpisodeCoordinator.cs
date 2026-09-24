@@ -638,13 +638,9 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             _humanFirstContactSeconds = ElapsedEpisodeSeconds;
         }
 
-        // First-contact diagnostics still include free tactical children, but discovering one must
-        // not create persistent fleet-value shaping or consume that category's reward budget.
-        if (!HasPersistentFleetValue(spotted))
-        {
-            return;
-        }
-
+        // First sighting of every enemy ship, including free tactical children/minions, uses the
+        // same TSV-scaled enemy-discovery shaping. Children remain excluded only from persistent
+        // fleet-value damage/loss shaping.
         float reward = RlOneVsOneReward.CalculateStaticDiscoveryReward(
             Mathf.Max(1, spotted.Tsv),
             _enemyShipDiscoveryValue[sideIndex],
@@ -985,7 +981,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
             if (RlOneVsOneAgent.RequiresPolicyControl(ship))
             {
                 _policyEligibleShipIds[sideIndex].Add(ship.Id);
-                if (ship.HasBrain)
+                if (ship.IsRlPolicyControlled)
                 {
                     _policyControlledShipIds[sideIndex].Add(ship.Id);
                 }
@@ -1018,7 +1014,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
-            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain)
+            if (RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled)
             {
                 return false;
             }

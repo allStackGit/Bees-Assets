@@ -237,9 +237,9 @@ namespace Assets.Scripts.Entities.Ships
 
         private void Move()
         {
-            if (HasBrain && !Squad.IsUserControlled)
+            if (IsRlPolicyControlled && !Squad.IsUserControlled)
             {
-                NNDirectionalMovement();
+                RlDirectionalMovement();
             }
             else if (HasTargetCoordinates)
             {
@@ -253,18 +253,9 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        private void NNDirectionalMovement()
+        private void RlDirectionalMovement()
         {
-            // The historical Brain owns ShouldDetonate. Dedicated ML-Agents training disables
-            // that Brain and controls suicide/special actions through its explicit special branch.
-            if (ShouldDetonate && Stage.ActivateBrains)
-            {
-                if (ShipType == ConfigData.ShipTypes.Striker) ((Striker)this).TryToDropBombs();
-                else if (ShipType == ConfigData.ShipTypes.YellowJacket) ((YellowJacket)this).TryToDetonate();
-                else if (ShipType == ConfigData.ShipTypes.FireBarge) ((FireBarge)this).Detonate();
-            }
-
-            if (Direction == 360)
+            if (RlMovementDirection == 360)
             {
                 Body.linearVelocity = Vector2.zero;
                 IsMoving = false;
@@ -272,7 +263,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             if (!HasTargetCoordinates || DistanceToPoint(TargetCoordinates) > GetHeight())
             {
-                Utilities.TimedRotationDifference(this, Direction, RotationSpeed);
+                Utilities.TimedRotationDifference(this, RlMovementDirection, RotationSpeed);
             }
             _tempAngle = (Rotation - 180) * Mathf.Deg2Rad;
             // Directional controllers must honor gameplay speed state just like the normal movement
@@ -419,11 +410,11 @@ namespace Assets.Scripts.Entities.Ships
             FinalDestination = Vector2.zero;
             Body.linearVelocity = Vector2.zero;
             IsMoving = false;
-            // HasBrain directional movement does not consume HasTargetCoordinates/HasTargetDirection.
+            // RL directional movement does not consume HasTargetCoordinates/HasTargetDirection.
             // Reset its sentinel too so a gameplay StopMoving call actually stops an RL-controlled ship.
-            if (HasBrain && !Squad.IsUserControlled)
+            if (IsRlPolicyControlled && !Squad.IsUserControlled)
             {
-                Direction = 360;
+                RlMovementDirection = 360;
             }
             ClearPreviousDesintation();
             if (HasRocketFlares)

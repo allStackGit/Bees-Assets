@@ -42,7 +42,6 @@ namespace Assets.Scripts.Levels
         private bool _hasEliminationSnapshot;
         private readonly bool[] _eliminationSnapshot = new bool[2];
         public int[] InitialTsv = { 0, 0 };
-        public List<SpottedShip>[] SpottedShips = { new List<SpottedShip>(), new List<SpottedShip>() };
         public int[] OriginalSquadCounts = { 0, 0 };
         public Level Level;
         public Stage Stage;
@@ -199,8 +198,6 @@ namespace Assets.Scripts.Levels
             FogOfWarVisions.Clear();
             for (int side = 0; side < 2; side++)
             {
-                if (SpottedShips[side] == null) SpottedShips[side] = new List<SpottedShip>();
-                else SpottedShips[side].Clear();
                 InitialTsv[side] = 0;
                 OriginalSquadCounts[side] = 0;
                 if (HivemindShips[side] == null) HivemindShips[side] = new Dictionary<long, HashSet<Ship>>();

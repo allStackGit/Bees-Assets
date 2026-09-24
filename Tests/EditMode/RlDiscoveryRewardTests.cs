@@ -170,6 +170,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
             StringAssert.Contains("CalculateBoundedPositiveShapingIncrement(rawBefore, reward)", source);
+            StringAssert.Contains("Mathf.Max(1, spotted.Tsv)", source);
+            StringAssert.Contains("RlOneVsOneReward.EnemyShipDiscoveryBudget", source);
         }
     }
 }

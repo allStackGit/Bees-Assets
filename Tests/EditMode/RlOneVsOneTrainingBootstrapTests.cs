@@ -42,7 +42,6 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetField(_stage, "IsTrainingHiveMind"), Is.False);
             Assert.That(RuntimeAssembly.GetField(_stage, "IsTrainingNueralNetwork"), Is.True);
             Assert.That(RuntimeAssembly.GetField(_stage, "ActivateHiveMind"), Is.False);
-            Assert.That(RuntimeAssembly.GetField(_stage, "ActivateBrains"), Is.False);
             Assert.That(RuntimeAssembly.GetField(_stage, "DoesUserHaveController"), Is.False);
             Assert.That(RuntimeAssembly.GetField(_stage, "UseFullyRandomSquads"), Is.True);
             Assert.That(RuntimeAssembly.GetField(_stage, "HasRandomizedOptions"), Is.False);
@@ -226,7 +225,7 @@ namespace Bees.Tests.EditMode
         public void PolicyOwnsMovementAndIndependentWeaponAimFireWhileWeaponTimerOwnsRateOfFire()
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("_ship.Direction = 360"));
+            Assert.That(agent, Does.Contain("_ship.RlMovementDirection = 360"));
             Assert.That(agent, Does.Contain("for (int slot = 0; slot < MaxWeaponSlots; slot++)"));
             Assert.That(agent, Does.Contain("WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot"));
             Assert.That(agent, Does.Contain("discrete[WeaponFireBranchStart + slot] == FireWeaponAction"));
