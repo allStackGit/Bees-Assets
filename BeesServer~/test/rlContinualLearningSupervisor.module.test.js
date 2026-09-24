@@ -5,6 +5,7 @@ const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
 const {
+    terminateProcessTree,
     installContinualLearningSupervisor,
     installServerLifetimeGuard,
 } = require('../rlContinualLearningSupervisor');
@@ -47,6 +48,7 @@ test('supervisor restarts an unexpectedly exited continual-learning process', ()
         schedule,
         cancel,
         restartMs: 25,
+        terminateProcessTree: child => child.kill(),
     });
 
     assert.equal(children.length, 1);
@@ -99,4 +101,25 @@ test('server lifetime guard stops continual learning when the supervised BeesSer
     assert.equal(cancelled, true);
     assert.equal(exited, true);
     guard.stop();
+});
+
+test('POSIX process-tree shutdown targets the service process group', () => {
+    const calls = [];
+    terminateProcessTree({ pid: 4242, kill() { calls.push(['fallback']); } }, {
+        platform: 'linux',
+        killProcess: (pid, signal) => calls.push([pid, signal]),
+    });
+    assert.deepEqual(calls, [[-4242, 'SIGTERM']]);
+});
+
+test('Windows process-tree shutdown uses taskkill tree mode', () => {
+    const calls = [];
+    terminateProcessTree({ pid: 5252, kill() { calls.push(['fallback']); } }, {
+        platform: 'win32',
+        spawnSyncProcess: (command, args) => {
+            calls.push([command, ...args]);
+            return { status: 0 };
+        },
+    });
+    assert.deepEqual(calls, [['taskkill', '/PID', '5252', '/T', '/F']]);
 });
