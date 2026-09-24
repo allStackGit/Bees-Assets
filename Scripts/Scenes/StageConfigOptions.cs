@@ -37,12 +37,10 @@ public static class StageConfigOptions
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
                 KeepOnly(stage.BeeShipTypes, Utilities.RandomInt(stage.BeeShipTypes.Count));
-                Debug.Log($"The user has selected randomized enemy ship type: {stage.BeeShipTypes[0]}");
             }
             else
             {
                 KeepOnly(stage.HumanShipTypes, Utilities.RandomInt(stage.HumanShipTypes.Count));
-                Debug.Log($"The user has selected randomized enemy ship type: {stage.HumanShipTypes[0]}");
             }
         }
         else if (enemyShipTypeOption == 0)
@@ -57,7 +55,6 @@ public static class StageConfigOptions
         else
         {
             KeepOnly(stage.HumanShipTypes, enemyShipTypeOption - 1);
-            Debug.Log($"The user has selected enemy ship type: {stage.HumanShipTypes[0]}");
         }
     }
 
