@@ -53,6 +53,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     Weapon.ShipsWithinRange.Add(_shipEnter.Id, _shipEnter);
                     _shipEnter.WeaponsThatHaveUsWithinRange.Add(Weapon);
                     Weapon.HasCachedChanged = true;
+                    FreezeDiagnostics.RecordWeaponRangeEnter(Weapon.Level);
                 }
 
             }
