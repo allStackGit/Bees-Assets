@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.35906.104 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "BeesServer", "BeesServer.esproj", "{5365362F-BED1-DDA3-985A-ABDCFC71384B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5365362F-BED1-DDA3-985A-ABDCFC71384B}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8E27A88B-4E24-49A4-B7FD-67A105827659}
+	EndGlobalSection
+EndGlobal

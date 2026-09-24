@@ -24,6 +24,10 @@ For documentation/skill/agent-workflow-only changes, the normal fast path is: `A
 
 Maintained documentation is a source-grounded navigation model, not unquestioned truth. Revalidate material facts against current code, assets, configuration and tests when correctness depends on them; repair stale knowledge when found.
 
+### BeesServer monorepo subtree
+
+`BeesServer~/` is the in-repository backend project. For any task that reads, reviews, modifies, debugs, audits, optimizes, tests, or otherwise works with that subtree, also read `BeesServer~/AGENTS.md` and `BeesServer~/docs/engineering/CONTEXT_INDEX.md` before substantive server work. The server subtree rules apply in addition to this root file.
+
 ## Branch discipline
 
 Respect an explicitly named branch. Otherwise, do not make ordinary development changes directly on `main`; create a descriptive task branch from the latest appropriate base. Specialist skills may impose stricter rules.
