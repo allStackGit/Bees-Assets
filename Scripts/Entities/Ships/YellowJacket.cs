@@ -90,6 +90,7 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             HasCompletedRun = true;
             global::RlOneVsOneEpisodeDiagnostics.RecordSpecialAction(this, "yellow_jacket_detonate");
 
