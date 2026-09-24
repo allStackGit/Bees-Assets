@@ -60,7 +60,7 @@ python Training\bees_continual_train.py Training\rl_1v1_config.yaml `
 
 Before ML-Agents starts, the wrapper verifies the Human/PolicyV directory, capture manifest, frozen signature, non-empty `.demo` files, and file stability. It creates an immutable content-addressed snapshot and derives a runtime trainer YAML that adds behavioral cloning without modifying the committed base trainer YAML. `human_imitation` in `Training/continual_learning_config.json` controls the BC strength, step count, and batch size.
 
-Do not point an ABI-v18 run at `PolicyV17`. There is no automatic v7-to-v8 demonstration conversion path.
+Do not point an ABI-v18 run at `PolicyV17`. There is no automatic v17-to-v18 demonstration conversion path.
 
 ### Central native `.demo` archive
 
@@ -339,7 +339,7 @@ At runtime, `RlLivePolicyModelBootstrap` validates the bundled deployment manife
 
 After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build so the build-staged fallback matches the registry champion. A rollback changes the authoritative current champion and therefore restages the prior champion package.
 
-ABI compatibility is strict. A v17 champion cannot be deployed into the current v18 player build. A compatible v18 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v8 store).
+ABI compatibility is strict. A v17 champion cannot be deployed into the current v18 player build. A compatible v18 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v18 store).
 
 ### Authenticated desktop hot distribution
 
