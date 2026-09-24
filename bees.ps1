@@ -379,11 +379,30 @@ function Reset-BuildDirectory([string]$Path){
     Ensure-Directory $Path
 }
 
-function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[string]$LogName){
+function Assert-UnityProjectAvailableForBatchBuild {
+    $lock=Join-Path $BeesRoot 'Temp\UnityLockfile'
+    if(Test-Path -LiteralPath $lock){
+        throw "The Bees Unity project appears to already be open in the Unity Editor. Close the Editor before running '.\Assets\bees.ps1 build'. If Unity is definitely closed, remove the stale lock file: $lock"
+    }
+}
+
+function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[string]$Entrypoint,[string]$LogName){
     $logRoot=Join-Path $LogsRoot 'Build'; Ensure-Directory $logRoot
-    $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$Output,'-logFile',(Join-Path $logRoot $LogName))
+    $logPath=Join-Path $logRoot $LogName
+    $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$Output,'-logFile',$logPath)
     Write-Host "Unity: $Method -> $Output"
     Invoke-Checked $Unity $args $BeesRoot
+
+    $expected=Join-Path $Output $Entrypoint
+    if(-not(Test-Path -LiteralPath $expected)){
+        $tail=''
+        if(Test-Path -LiteralPath $logPath){
+            $tail=(@(Get-Content -LiteralPath $logPath -Tail 40 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
+        }
+        $message="Unity exited without producing the expected build entrypoint: $expected"
+        if($tail){ $message += [Environment]::NewLine + "Last Unity build log lines:" + [Environment]::NewLine + $tail }
+        throw $message
+    }
 }
 
 function Package-Build([string]$Python,[string]$Source,[string]$Archive,[string]$Entrypoint){
@@ -526,10 +545,11 @@ function Invoke-Build {
     Reset-BuildDirectory $linux
     if($FullGame){ Reset-BuildDirectory $game }
 
-    Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl' $win "$date-rl-windows.log"
-    Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl' $linux "$date-rl-linux.log"
+    Assert-UnityProjectAvailableForBatchBuild
+    Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl' $win 'Bees RL Training.exe' "$date-rl-windows.log"
+    Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl' $linux 'Bees RL Training.x86_64' "$date-rl-linux.log"
     if($FullGame){
-        Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game "$date-full-game-windows.log"
+        Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game 'Bees.exe' "$date-full-game-windows.log"
     }
 
     $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
