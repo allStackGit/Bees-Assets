@@ -118,10 +118,11 @@ namespace Bees.Tests.EditMode
             Type rewardType = RuntimeAssembly.GetType("RlOneVsOneReward");
             Assert.That(rewardType, Is.Not.Null);
 
-            Assert.That(GetConstant(rewardType, "WinReward"), Is.EqualTo(10f));
-            Assert.That(GetConstant(rewardType, "LossReward"), Is.EqualTo(-10f));
-            Assert.That(GetConstant(rewardType, "TsvRewardScale"), Is.EqualTo(1f));
-            Assert.That(GetConstant(rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.1f));
+            Assert.That(GetConstant(rewardType, "WinReward"), Is.EqualTo(1f));
+            Assert.That(GetConstant(rewardType, "LossReward"), Is.EqualTo(-1f));
+            Assert.That(GetConstant(rewardType, "TimeoutReward"), Is.EqualTo(-1.1f));
+            Assert.That(GetConstant(rewardType, "TsvRewardScale"), Is.EqualTo(0.1f));
+            Assert.That(GetConstant(rewardType, "MaximumEpisodeTimePenalty"), Is.EqualTo(0.01f));
 
             MethodInfo immediateTsvReward = rewardType.GetMethod("CalculateTsvLossReward", BindingFlags.Static | BindingFlags.NonPublic);
             MethodInfo tsvReward = rewardType.GetMethod("CalculateTsvDeltaReward", BindingFlags.Static | BindingFlags.NonPublic);
@@ -133,9 +134,9 @@ namespace Bees.Tests.EditMode
             float immediate = (float)immediateTsvReward.Invoke(null, new object[] { 30, 300 });
             float tsv = (float)tsvReward.Invoke(null, new object[] { 100, 80, 200, 150, 300 });
             float fullTimeoutPenalty = (float)timePenalty.Invoke(null, new object[] { 120f });
-            Assert.That(immediate, Is.EqualTo(0.1f).Within(0.0001f));
-            Assert.That(tsv, Is.EqualTo(0.1f).Within(0.0001f));
-            Assert.That(fullTimeoutPenalty, Is.EqualTo(-0.1f).Within(0.0001f));
+            Assert.That(immediate, Is.EqualTo(0.01f).Within(0.0001f));
+            Assert.That(tsv, Is.EqualTo(0.01f).Within(0.0001f));
+            Assert.That(fullTimeoutPenalty, Is.EqualTo(-0.01f).Within(0.0001f));
         }
 
         [Test]
@@ -179,12 +180,12 @@ namespace Bees.Tests.EditMode
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
 
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "BehaviorName"), Is.EqualTo("BeesRL1v1"));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(16));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.BeeSide, 1"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 0"));
             Assert.That(agent, Does.Contain("CreateAgent(stage, level, ConfigData.Configuration.HumanSide, 1"));
-            Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
+            Assert.That(agent, Does.Contain("CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns)"));
             Assert.That(agent, Does.Not.Contain("GetAllEnemyShips("));
         }
 
@@ -209,7 +210,7 @@ namespace Bees.Tests.EditMode
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string perception = ReadSource("Scripts", "Scenes", "RlCombatPerception.cs");
 
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7086));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7342));
             Assert.That(agent, Does.Contain("_perception.Collect(_ship, _side, sensor, frameQuarterTurns)"));
             Assert.That(perception, Does.Contain("AddSelfObservations(ship, side, sensor, origin, frameQuarterTurns)"));
             Assert.That(perception, Does.Contain("AddWeaponSlots(ship, sensor, frameQuarterTurns)"));
@@ -225,11 +226,11 @@ namespace Bees.Tests.EditMode
         public void PolicyOwnsMovementAndIndependentWeaponAimFireWhileWeaponTimerOwnsRateOfFire()
         {
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
-            Assert.That(agent, Does.Contain("_ship.RlMovementDirection = 360"));
+            Assert.That(agent, Does.Contain("ship.RlMovementDirection = 360"));
             Assert.That(agent, Does.Contain("for (int slot = 0; slot < MaxWeaponSlots; slot++)"));
             Assert.That(agent, Does.Contain("WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot"));
             Assert.That(agent, Does.Contain("discrete[WeaponFireBranchStart + slot] == FireWeaponAction"));
-            Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire)"));
+            Assert.That(agent, Does.Contain("ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire)"));
             Assert.That(agent, Does.Contain("turret.SetRlControl(target, fire)"));
 
             string aiming = ReadSource("Scripts", "Entities", "Ships", "Weapons", "Turret.Aiming.cs");
