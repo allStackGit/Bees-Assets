@@ -1,9 +1,8 @@
 """Persistent one-command remote Bees rollout worker supervisor.
 
-This process owns the training-control SSH tunnel and supervises the existing managed worker agent.
-The managed worker downloads the canonical Unity build from BeesServer; the elastic actor opens its
-own broker SSH tunnel and performs rollout inference locally. No PPO optimizer/checkpoint state lives
-on this machine.
+This process owns the training-control SSH tunnel and supervises the managed worker agent. The
+learner-side WAN broker assigns an available actor slot automatically. Each remote installation keeps
+a small persistent actor key so reconnects can reclaim its current slot safely.
 """
 
 from __future__ import annotations
@@ -18,17 +17,39 @@ import subprocess
 import sys
 import time
 from typing import Optional, Sequence
+import uuid
 
 
 DEFAULT_RECONNECT_SECONDS = 5.0
+MAX_ENVS_PER_ACTOR = 64
+
+
+def _available_cpu_threads() -> int:
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            count = len(affinity(0))
+            if count > 0:
+                return count
+        except (OSError, TypeError):
+            pass
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _default_envs() -> int:
+    return min(MAX_ENVS_PER_ACTOR, 4 * _available_cpu_threads())
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run one self-healing managed remote Bees rollout worker.")
     parser.add_argument("--learner", required=True, help="SSH target for the learner, e.g. user@exeter.")
     parser.add_argument("--ssh-port", type=int, default=22)
-    parser.add_argument("--actor-id", type=int, required=True)
-    parser.add_argument("--envs", type=int, default=32)
+    parser.add_argument(
+        "--envs",
+        type=int,
+        default=None,
+        help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
+    )
     parser.add_argument("--control-port", type=int, default=7150)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--worker-token-file", required=True)
@@ -36,6 +57,30 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
+
+
+def _load_actor_key(install_root: Path) -> str:
+    install_root.mkdir(parents=True, exist_ok=True)
+    path = install_root / "actor-key.txt"
+    try:
+        existing = path.read_text(encoding="ascii").strip().lower()
+    except FileNotFoundError:
+        existing = ""
+    if existing:
+        if len(existing) != 32 or any(ch not in "0123456789abcdef" for ch in existing):
+            raise ValueError(f"invalid persistent actor key: {path}")
+        return existing
+
+    candidate = uuid.uuid4().hex
+    try:
+        with path.open("x", encoding="ascii") as handle:
+            handle.write(candidate + "\n")
+    except FileExistsError:
+        existing = path.read_text(encoding="ascii").strip().lower()
+        if len(existing) != 32 or any(ch not in "0123456789abcdef" for ch in existing):
+            raise ValueError(f"invalid persistent actor key: {path}")
+        return existing
+    return candidate
 
 
 def _terminate(process: Optional[subprocess.Popen]) -> None:
@@ -95,8 +140,8 @@ def _ssh_tunnel_command(ssh: str, learner: str, ssh_port: int, control_port: int
     ]
 
 
-def _worker_command(args: argparse.Namespace, root: Path) -> list[str]:
-    trainer_id = f"remote-{socket.gethostname().lower()}-{args.actor_id}"
+def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
+    trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     command = [
         sys.executable,
         str(root / "bees_training_worker_agent.py"),
@@ -115,8 +160,8 @@ def _worker_command(args: argparse.Namespace, root: Path) -> list[str]:
         "--",
         sys.executable,
         str(root / "bees_elastic_wan_actor_worker.py"),
-        "--actor-id",
-        str(args.actor_id),
+        "--actor-key",
+        actor_key,
         "--envs",
         str(args.envs),
         "--ssh",
@@ -135,11 +180,14 @@ def _worker_command(args: argparse.Namespace, root: Path) -> list[str]:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
-    if not 0 <= args.actor_id <= 11:
-        print("error: --actor-id must be in 0-11", file=sys.stderr)
-        return 2
-    if not 1 <= args.envs <= 64:
-        print("error: --envs must be in 1-64", file=sys.stderr)
+    if args.envs is None:
+        args.envs = _default_envs()
+        print(
+            f"[Bees remote] --envs omitted; using {args.envs} "
+            f"(4 x {_available_cpu_threads()} available CPU threads, cap {MAX_ENVS_PER_ACTOR})."
+        )
+    if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
+        print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
         return 2
     if not 1 <= args.ssh_port <= 65535 or not 1 <= args.control_port <= 65535:
         print("error: SSH/control ports must be in 1-65535", file=sys.stderr)
@@ -158,6 +206,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not (root / required).is_file():
             print(f"error: remote runtime is missing {required}", file=sys.stderr)
             return 2
+
+    install_root = Path(args.install_root).expanduser().resolve()
+    try:
+        actor_key = _load_actor_key(install_root)
+    except (OSError, ValueError) as exc:
+        print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
+        return 2
 
     stop = [False]
 
@@ -183,8 +238,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         file=sys.stderr,
                     )
                 else:
-                    print(f"[Bees remote] control tunnel ready; actor={args.actor_id} envs={args.envs}.")
-                    worker = subprocess.Popen(_worker_command(args, root))
+                    print(
+                        f"[Bees remote] control tunnel ready; identity={actor_key[:8]} "
+                        f"envs={args.envs}; actor slot will be assigned by the learner."
+                    )
+                    worker = subprocess.Popen(_worker_command(args, root, actor_key))
                     while not stop[0] and tunnel.poll() is None and worker.poll() is None:
                         time.sleep(0.5)
                     if not stop[0]:
