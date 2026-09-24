@@ -53,8 +53,20 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
         self.assertEqual(config["remoteTransport"], "tailnet")
         self.assertEqual(config["tailnetLearnerName"], "bees-learner")
+        self.assertEqual(config["trainingSshUser"], "beestraining")
+        self.assertEqual(config["remoteSshTarget"], "192.168.36.3")
         self.assertGreater(config["tailnetSshPort"], 0)
         self.assertGreater(config["tailnetLocalSshPort"], 0)
+
+    def test_dedicated_ssh_user_is_read_only_and_admin_token_is_blocked(self):
+        source = OPERATOR.read_text(encoding="utf-8")
+        self.assertIn("function Ensure-TrainingSshAccess", source)
+        self.assertIn("function Set-TrainingSshFileAcl", source)
+        self.assertIn("foreach($path in @($runtimeZip,$WorkerTokenPath,$WanTokenPath))", source)
+        self.assertIn("Set-TrainingSshFileAcl $AdminTokenPath $identity $false", source)
+        self.assertIn("Ensure-TrainingSshAccess $config", source)
+        self.assertIn("[Security.AccessControl.FileSystemRights]::Delete", source)
+        self.assertIn("[Security.AccessControl.FileSystemRights]::TakeOwnership", source)
 
     def test_tailnet_helper_exposes_required_modes(self):
         source = TAILNET_MAIN.read_text(encoding="utf-8")
