@@ -222,7 +222,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 last_contact = time.monotonic()
                 lease_seconds = float(desired["lease_seconds"])
                 last_error = ""
-                write_local_state(state_file, desired=desired, online=True, last_error="")
 
                 mode = str(desired["desired_mode"])
                 revision = int(desired["revision"])
@@ -261,13 +260,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             f"server has no canonical {args.platform} build published"
                         )
                     desired_sha = str(descriptor.get("archive_sha256", ""))
-                    if args.role == "dedicated" and managed.alive() and (
+                    build_or_args_changed = (
                         managed.build_sha256 != desired_sha
                         or managed.environment_args != environment_args
-                    ):
+                    )
+                    if args.role == "dedicated" and managed.alive() and build_or_args_changed:
                         # Never keep producing rollouts under a superseded build/config while a
                         # replacement artifact is still downloading or being verified.
                         managed.stop()
+                    elif args.role == "full-game" and managed.alive() and build_or_args_changed:
+                        # Keep the current player session alive while the replacement downloads, but
+                        # prevent old-build experience from being treated as active training.
+                        inference_desired = dict(desired)
+                        inference_desired["desired_mode"] = "inference"
+                        write_local_state(
+                            state_file,
+                            desired=inference_desired,
+                            online=True,
+                            last_error="",
+                        )
                     entrypoint, active_build = builds.ensure(client, descriptor)
                     desired_sha = str(active_build["archive_sha256"])
                     command = render_command(command_template, entrypoint, environment_args)
@@ -288,6 +299,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     applied_revision = revision
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
+
+                # Publish the authoritative local mode only after build/config reconciliation
+                # completed successfully. Unity therefore cannot enter training on stale bytes.
+                write_local_state(
+                    state_file,
+                    desired=desired,
+                    online=True,
+                    last_error="",
+                )
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
