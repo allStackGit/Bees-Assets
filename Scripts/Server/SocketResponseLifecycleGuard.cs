@@ -69,7 +69,7 @@ namespace Assets.Scripts.Server
             // response may arrive after the standing request has been removed. Match the response
             // to the historical request and suppress it only when that captured squad lifecycle is
             // no longer current. Truly unknown hashes still reach Socket.Message and remain errors.
-            foreach (ServerRequest request in ConfigData.__PastServerRequests)
+            foreach (ServerRequest request in ConfigData.RequestHistory)
             {
                 if (request == null || request.Hash != response.Hash)
                 {
