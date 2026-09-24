@@ -14,7 +14,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            bool shouldShowMarker = Ship.Squad.IsSelected && IsAimedAtTarget && !IsFiringManually;
+            bool shouldShowMarker = Ship.Squad.IsSelected && IsAlignedWithTargetPoint && !IsFiringManually;
             if (shouldShowMarker)
             {
                 TargetingMarker.transform.position = TargetPoint;
@@ -30,29 +30,29 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             if (IsRlControlled)
             {
                 TargetPoint = RlTargetPoint;
-                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                 IsFiringAtAsteroid = false;
             }
             else if (IsFiringManually)
             {
                 TargetPoint = Stage.InputManager.GetMousePosition();
-                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
             }
             else if (ShouldFire)
             {
                 TargetPoint = GetTargetPoint(TargetShip);
-                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                 IsFiringAtAsteroid = false;
             }
             else if (ShouldFireAtAsteroid)
             {
                 TargetPoint = TargetAsteroid.GetPosition();
-                IsAimedAtTarget = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
+                IsAlignedWithTargetPoint = Utilities.TimedRotation(this, GetDegreesTowardsPoint(TargetPoint), RotationRate);
                 IsFiringAtAsteroid = true;
             }
             else
             {
-                IsAimedAtTarget = false;
+                IsAlignedWithTargetPoint = false;
                 if (Rotation != Ship.Rotation && (Ship.IsCeaseFire || !HasValidTarget()))
                 {
                     Utilities.TimedRotation(this, Ship.Rotation, RotationRate);
