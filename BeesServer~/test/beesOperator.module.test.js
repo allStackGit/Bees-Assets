@@ -84,3 +84,11 @@ test('bees.ps1 waits for Unity entrypoint visibility after batch exit', () => {
     assert.match(source, /entrypointDeadline=\[DateTime\]::UtcNow\.AddSeconds\(30\)/);
     assert.match(source, /Start-Sleep -Milliseconds 250/);
 });
+
+test('bees.ps1 explicitly waits for Unity GUI process completion', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const unityBuild = source.match(/function Invoke-UnityBuild[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(unityBuild, /Start-Process -FilePath \$Unity[\s\S]*?-Wait -PassThru/);
+    assert.match(unityBuild, /\$unityProcess\.ExitCode -ne 0/);
+    assert.doesNotMatch(unityBuild, /Invoke-Checked \$Unity/);
+});
