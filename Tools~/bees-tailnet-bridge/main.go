@@ -53,6 +53,7 @@ func server(c *commonFlags) (*tsnet.Server, error) {
 func runAuth(args []string) error {
 	fs := flag.NewFlagSet("auth", flag.ContinueOnError)
 	c := addCommon(fs)
+	ipFile := fs.String("ip-file", "", "optional file to write this node's tailnet IPv4 address")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -67,11 +68,20 @@ func runAuth(args []string) error {
 	ctx, timeoutCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer timeoutCancel()
 
-	status, err := s.Up(ctx)
+	_, err = s.Up(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("[Bees tailnet] authenticated hostname=%s tailscale_ip=%s\n", c.hostname, status.TailscaleIPs[0])
+	ip4, _ := s.TailscaleIPs()
+	if !ip4.IsValid() {
+		return errors.New("tailnet authentication completed without an IPv4 address")
+	}
+	if strings.TrimSpace(*ipFile) != "" {
+		if err := os.WriteFile(*ipFile, []byte(ip4.String()+"\n"), 0o600); err != nil {
+			return fmt.Errorf("write tailnet IPv4 file: %w", err)
+		}
+	}
+	fmt.Printf("[Bees tailnet] authenticated hostname=%s tailscale_ip=%s\n", c.hostname, ip4)
 	return nil
 }
 
