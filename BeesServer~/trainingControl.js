@@ -799,6 +799,16 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 sendJson(response, 200, store.setDesiredState(await readJsonBody(request)));
                 return;
             }
+            if (request.method === 'POST' && url.pathname === '/v1/admin/release') {
+                const body = await readJsonBody(request);
+                sendJson(response, 200, store.stageRelease({
+                    buildId: body.build_id,
+                    runId: body.run_id,
+                    compatibilityKey: body.compatibility_key,
+                    incompatible: body.incompatible,
+                }));
+                return;
+            }
             if (request.method === 'POST' && url.pathname === '/v1/admin/artifact') {
                 const body = await readJsonBody(request);
                 sendJson(response, 200, store.publishArtifact({
@@ -808,6 +818,19 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     archivePath: body.archive_path,
                     entrypoint: body.entrypoint,
                 }));
+                return;
+            }
+            if (request.method === 'POST' && url.pathname === '/v1/log') {
+                const offset = Number(url.searchParams.get('offset'));
+                const result = store.appendTrainerLog({
+                    trainerId: url.searchParams.get('trainer_id'),
+                    runId: url.searchParams.get('run_id'),
+                    relativePath: url.searchParams.get('path'),
+                    offset,
+                    reset: url.searchParams.get('reset') === '1',
+                    data: await readRawBody(request),
+                });
+                sendJson(response, 200, result);
                 return;
             }
             const artifactMatch = request.method === 'GET' &&
@@ -836,10 +859,12 @@ function createTrainingControlHandler(store, token, adminToken = null) {
             sendJson(response, 404, { error: 'not-found' });
         } catch (error) {
             const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
-            sendJson(response, statusCode, {
+            const body = {
                 error: statusCode >= 500 ? 'internal-error' : 'invalid-request',
                 message: error.message,
-            });
+            };
+            if (Number.isInteger(error.expectedOffset)) body.expected_offset = error.expectedOffset;
+            sendJson(response, statusCode, body);
         }
     };
 }
@@ -856,6 +881,7 @@ function startTrainingControl(options = {}) {
     const store = options.store || new TrainingControlStore({
         statePath: options.statePath || process.env.BEES_TRAINING_CONTROL_STATE,
         artifactRoot: options.artifactRoot || process.env.BEES_TRAINING_ARTIFACT_ROOT,
+        logRoot: options.logRoot || process.env.BEES_TRAINING_LOG_ROOT,
         leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
     });
     const httpModule = options.httpModule || http;
