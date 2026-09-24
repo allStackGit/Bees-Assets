@@ -38,12 +38,13 @@ def _file_sha256(path: Path) -> str:
 
 
 def _semantic_csharp_sha256(path: Path) -> str:
-    """Hash C# code while ignoring comments and insignificant whitespace."""
+    """Hash C# code while ignoring comments and indentation-only formatting changes."""
     text = path.read_text(encoding="utf-8")
     output: list[str] = []
     index = 0
     state = "code"
     quote = ""
+    pending_space = False
     while index < len(text):
         current = text[index]
         following = text[index + 1] if index + 1 < len(text) else ""
@@ -74,24 +75,31 @@ def _semantic_csharp_sha256(path: Path) -> str:
             continue
 
         if current == "/" and following == "/":
+            pending_space = True
             state = "line-comment"
             index += 2
             continue
         if current == "/" and following == "*":
+            pending_space = True
             state = "block-comment"
             index += 2
             continue
+        if current.isspace():
+            pending_space = True
+            index += 1
+            continue
+
+        if pending_space and output and output[-1] != " ":
+            output.append(" ")
+        pending_space = False
+
         if current in ('"', "'"):
             state = "string" if current == '"' else "char"
             quote = current
-            output.append(current)
-            index += 1
-            continue
-        if not current.isspace():
-            output.append(current)
+        output.append(current)
         index += 1
 
-    return _sha256_bytes("".join(output).encode("utf-8"))
+    return _sha256_bytes("".join(output).strip().encode("utf-8"))
 
 
 def _network_settings_block(text: str) -> str:
