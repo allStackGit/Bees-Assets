@@ -34,9 +34,9 @@ adversarial = _load("bees_continual_adversarial")
 suggest = _load("bees_continual_adversarial_suggest")
 
 
-OBSERVATION_SIZE = 4722
-CONTINUOUS_ACTIONS = 34
-DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
+OBSERVATION_SIZE = 7342
+CONTINUOUS_ACTIONS = 16
+DISCRETE_BRANCHES = [2] * 5 + [5]
 
 
 def normalize_positive(value: float, scale: float) -> float:
@@ -64,14 +64,14 @@ def observation(*, map_size=96.0, center_y=24.0, enemy_distance=None):
 
 class FakeStore:
     def __init__(self):
-        self.compatibility = SimpleNamespace(policy_abi_version=8)
+        self.compatibility = SimpleNamespace(policy_abi_version=18)
 
     def _require_initialized(self):
         return None
 
 
 class TacticalGeometrySuggestionTests(unittest.TestCase):
-    def test_v8_observation_preserves_map_spawn_and_first_contact_geometry(self):
+    def test_v18_observation_preserves_map_spawn_and_first_contact_geometry(self):
         result = suggest.infer_geometry_from_observations(
             [
                 observation(enemy_distance=None),
@@ -119,9 +119,9 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
         self.assertIsNone(result["spawn_separation_ratio_estimate"])
         self.assertIsNone(result["registration_candidate"])
 
-    def test_appended_v8_tail_does_not_change_legacy_tactical_geometry_fields(self):
+    def test_v18_tail_does_not_change_tactical_geometry_fields(self):
         values = observation(enemy_distance=30.0)
-        for index in range(4701, OBSERVATION_SIZE):
+        for index in range(7321, OBSERVATION_SIZE):
             values[index] = 0.75
         result = suggest.infer_geometry_from_observations([values])
         self.assertAlmostEqual(result["map_size_estimate"], 96.0, places=5)
@@ -164,13 +164,13 @@ class TacticalGeometrySuggestionTests(unittest.TestCase):
 
             approval.assert_called_once()
             self.assertFalse(result["authoritative"])
-            self.assertEqual(result["policy_abi_version"], 8)
+            self.assertEqual(result["policy_abi_version"], 18)
             self.assertIsNotNone(result["inferred"]["registration_candidate"])
             self.assertTrue(any("Review" in value for value in result["caveats"]))
 
-    def test_only_policy_abi_v8_is_interpreted(self):
+    def test_only_policy_abi_v18_is_interpreted(self):
         store = FakeStore()
-        store.compatibility.policy_abi_version = 7
+        store.compatibility.policy_abi_version = 17
         with self.assertRaises(continual.ValidationError):
             suggest.suggest_tactical_geometry(store, "demo-" + "a" * 24)
 
