@@ -7,6 +7,7 @@ const Database = require('./database');
 const { patchGame, invalidateStrategyCache } = require('./gamePersistence');
 const { patchOutcomeDurability } = require('./outcomeReservations');
 const { installCampaignCheckpoint } = require('./campaignCheckpoint');
+const { startTrainingControlFromEnvironment } = require('./trainingControl');
 
 const SOCKET_PATCHED = Symbol('beesSocketConnectionPatched');
 const CONNECTION_STATE_TAIL = Symbol('beesConnectionStateTail');
@@ -405,7 +406,10 @@ function createServer(options = {}) {
     patchServer(server, runtime);
     applyTestIsolation(server, launch);
     if (launch.start !== false) server.start();
-    return { server, runtime };
+    const trainingControl = launch.test || launch.trainingControl === false
+        ? null
+        : startTrainingControlFromEnvironment(launch.trainingControlOptions || {});
+    return { server, runtime, trainingControl };
 }
 
 if (require.main === module) createServer();
