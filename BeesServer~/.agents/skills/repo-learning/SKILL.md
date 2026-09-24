@@ -10,7 +10,7 @@ The objective is a progressively more accurate backend model that becomes **chea
 ## 1. Route before reading
 
 1. Start from the already-fetched root `AGENTS.md`.
-2. Read `docs/engineering/CONTEXT_INDEX.md` and choose the closest protocol/data/runtime concept or alias.
+2. Read `docs/engineering/CONTEXT_INDEX.md` and choose the closest protocol/data/runtime concept or alias. Use `.agents/skills/search-index/SKILL.md` when the routing/search procedure itself is needed.
 3. Inspect the named current source/tests/schema and only the owner-document section(s) needed to understand the contract.
 4. Load `PROJECT_CONSTITUTION.md`, `SYSTEM_MAP.md`, `INVARIANTS.md`, detailed database/development memory, validation history, or specialist skills only when the task/routing/risk requires them.
 5. Do not read unrelated maintained backend history merely to become generally familiar with the repository.
