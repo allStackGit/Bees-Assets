@@ -12,7 +12,7 @@
   "generationSteps": 1000000,
   "environmentArgs": [],
   "expectedTrainers": [],
-  "remoteSshTarget": "",
+  "remoteSshTarget": "192.168.36.3",
   "remoteSshPort": 22,
   "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
   "remoteTorchDevice": "cpu",
