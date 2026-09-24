@@ -34,7 +34,7 @@ Compact routing map for agents. Search this before broad repository scans, then 
 | persistent strategy IDs | `DATABASE_MODEL.md` → Strategy identity | legacy Game registries, Unity conversion tables | command 1–15; targeting/shooting 1–40; IDs/order are stored-data compatibility |
 | request queue, event loop | `server.js`, `requestQueue.module.test.js` | queue snapshot drain + scheduled next drain | linear burst handling; no repeated front shifts; ordinary request concurrency preserved |
 | live test topology | validation policy; `docs/LIVE_INTEGRATION_TESTING.md` | `run-tests.js`, `testServerConfig.js`, `test/` | `npm test` migrates bees_test, starts temp real server, Node suite, teardown |
-| Unity protocol/client boundary | `SYSTEM_MAP.md` → Cross-repository boundary; Bees context index | request/response shapes, settings, user data, reconnect, learning keys | inspect Bees-Assets before wire/identity/persistence changes |
+| Unity protocol/client boundary | `SYSTEM_MAP.md` → Cross-project boundary; enclosing `docs/engineering/CONTEXT_INDEX.md` | request/response shapes, settings, user data, reconnect, learning keys | inspect Bees-Assets before wire/identity/persistence changes |
 | media server | `mediaServer.js` | safe path resolution, byte ranges | independent HTTP media utility; traversal/range tests |
 | maintenance debt, legacy monolith | `QUALITY_LEDGER.md` | `siServerDev.js`, duplicate consolidation layers, tracked `node_modules` | refactor only with strategy-ID/protocol/test preservation |
 | agent learning, context, retrieval | this file; `LEARNING_STATE.md`; repo-learning skill | `.agents/skills/{repo-learning,continuous-learning,search-index,code-quality}` | repeated misses; quality ledger; engineering guardrail tests |
@@ -46,6 +46,6 @@ Compact routing map for agents. Search this before broad repository scans, then 
 - Name the coordination domain before changing concurrency: per-request/connection, per-socket state, per-user profile, per-Game persistence, or server-wide consolidation.
 - Name the identity namespace before converting a value: account/user, request hash, server Game, temporary OutcomeId, matchup hash, strategy ID, or physical row ID.
 - When behavior is supplied by a modular overlay, inspect both the overlay and the transformed legacy contract it replaces; do not assume direct `siServerDev.js` behavior is authoritative production behavior.
-- For Unity-facing behavior, inspect Bees-Assets as well as server tests.
+- For Unity-facing behavior, inspect the Unity client in the enclosing Bees-Assets repository as well as server tests.
 - When one concept repeatedly requires another, add the relationship here rather than copying implementation detail.
 - Update stale routes when touched code moves. Material behavior must still be verified from current source/tests/schema and client contracts when relevant.
