@@ -22,7 +22,7 @@ cd B:\Bees
 .\Assets\bees.ps1 status
 ```
 
-`server` starts or refreshes BeesServer only. It does not require a Unity build and is the normal command when the Unity Editor needs the gameplay backend but distributed training is not being started.
+`server` starts or refreshes BeesServer only. It does not require a Unity build and is the normal command when the Unity Editor needs the gameplay backend but distributed training is not being started. The regular development gameplay listener runs on TCP `7146`, matching `ConfigData.DevelopmentPort` and `seagrams.softether.net`.
 
 `build` always creates Windows and Linux RL builds. Add `-FullGame` to also create the managed Windows gameplay build. Build folders remain outside both Git and Unity import, for example:
 
