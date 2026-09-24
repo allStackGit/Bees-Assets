@@ -505,7 +505,7 @@ namespace Assets.Scripts.Levels
                                         // The opening dialogue section has already reached its break here. Keep
                                         // tutorial presentation exclusive so a stale/re-activated dialogue box
                                         // cannot overlap the tooltip sequence.
-                                        Stage.CutsceneManager.HideDialogue();
+                                        Stage.CutsceneManager.SetDialoguePresentationSuppressed(true);
                                         basicTooltip.ShowSequence(new List<string>
                                         {
                                             "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
@@ -514,6 +514,7 @@ namespace Assets.Scripts.Levels
                                             "You can manually fire towards your cursor with any selected ships by pressing F."
                                         }, true, () =>
                                         {
+                                            Stage.CutsceneManager.SetDialoguePresentationSuppressed(false);
                                             tacticalTutorialComplete = true;
                                             if (squadNumberHighlight != null)
                                             {
