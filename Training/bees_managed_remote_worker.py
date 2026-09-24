@@ -1,8 +1,9 @@
 """Persistent one-command remote Bees rollout worker supervisor.
 
-This process owns the training-control SSH tunnel and supervises the managed worker agent. The
-learner-side WAN broker assigns an available actor slot automatically. Each remote installation keeps
-a small persistent actor key so reconnects can reclaim its current slot safely.
+The worker uses the bundled userspace tailnet bridge for both BeesServer control traffic and WAN
+rollout traffic. No SSH service, SSH client, account, password, key, or SCP transport is involved.
+The learner-side WAN broker assigns an available actor slot automatically. Each remote installation
+keeps a persistent actor key so reconnects can reclaim its current slot safely.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import argparse
 import ctypes
 import os
 from pathlib import Path
-import shutil
 import signal
 import socket
 import subprocess
@@ -60,8 +60,18 @@ def _default_envs() -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run one self-healing managed remote Bees rollout worker.")
-    parser.add_argument("--learner", required=True, help="SSH target for the learner, e.g. user@exeter.")
-    parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument(
+        "--tailnet-bridge",
+        required=True,
+        help="Path to the bundled bees-tailnet-bridge executable.",
+    )
+    parser.add_argument("--tailnet-state", required=True)
+    parser.add_argument("--tailnet-hostname", required=True)
+    parser.add_argument(
+        "--tailnet-target",
+        required=True,
+        help="Learner tailnet IPv4 address baked into the generated launcher.",
+    )
     parser.add_argument(
         "--envs",
         type=int,
@@ -69,6 +79,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
     )
     parser.add_argument("--control-port", type=int, default=7150)
+    parser.add_argument("--broker-port", type=int, default=55051)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--worker-token-file", required=True)
     parser.add_argument("--wan-token-file", required=True)
@@ -127,40 +138,46 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
             pass
 
 
-def _wait_for_port(port: int, process: subprocess.Popen, stop: list[bool], timeout: float = 15.0) -> bool:
+def _wait_for_ports(
+    ports: Sequence[int],
+    process: subprocess.Popen,
+    stop: list[bool],
+    timeout: float = 20.0,
+) -> bool:
+    pending = set(int(port) for port in ports)
     deadline = time.monotonic() + timeout
-    while not stop[0] and time.monotonic() < deadline:
+    while not stop[0] and pending and time.monotonic() < deadline:
         if process.poll() is not None:
             return False
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                return True
-        except OSError:
+        for port in tuple(pending):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+                    pending.remove(port)
+            except OSError:
+                pass
+        if pending:
             time.sleep(0.2)
-    return False
+    return not pending
 
 
-def _ssh_tunnel_command(ssh: str, learner: str, ssh_port: int, control_port: int) -> list[str]:
+def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
     return [
-        ssh,
-        "-N",
-        "-p",
-        str(ssh_port),
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "ServerAliveInterval=30",
-        "-o",
-        "ServerAliveCountMax=3",
-        "-L",
-        f"127.0.0.1:{control_port}:127.0.0.1:{control_port}",
-        learner,
+        str(Path(args.tailnet_bridge).expanduser().resolve()),
+        "forward-multi",
+        "--state",
+        str(Path(args.tailnet_state).expanduser().resolve()),
+        "--hostname",
+        args.tailnet_hostname,
+        "--map",
+        f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
+        "--map",
+        f"127.0.0.1:{args.broker_port}={args.tailnet_target}:{args.broker_port}",
     ]
 
 
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
-    command = [
+    return [
         sys.executable,
         str(root / "bees_training_worker_agent.py"),
         "--server-url",
@@ -182,8 +199,10 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         actor_key,
         "--envs",
         str(args.envs),
-        "--ssh",
-        args.learner,
+        "--broker-host",
+        "127.0.0.1",
+        "--broker-port",
+        str(args.broker_port),
         "--env",
         "{env}",
         "--auth-token-file",
@@ -191,9 +210,6 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         "--torch-device",
         args.torch_device,
     ]
-    if args.ssh_port != 22:
-        command.extend(["--ssh-option", f"Port={args.ssh_port}"])
-    return command
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -207,16 +223,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
         return 2
-    if not 1 <= args.ssh_port <= 65535 or not 1 <= args.control_port <= 65535:
-        print("error: SSH/control ports must be in 1-65535", file=sys.stderr)
+    if not 1 <= args.control_port <= 65535 or not 1 <= args.broker_port <= 65535:
+        print("error: control/broker ports must be in 1-65535", file=sys.stderr)
+        return 2
+    if args.control_port == args.broker_port:
+        print("error: control and broker ports must be distinct", file=sys.stderr)
         return 2
     if args.reconnect_seconds <= 0:
         print("error: --reconnect-seconds must be positive", file=sys.stderr)
         return 2
+    if not str(args.tailnet_target).strip():
+        print("error: --tailnet-target is required", file=sys.stderr)
+        return 2
 
-    ssh = shutil.which("ssh")
-    if ssh is None:
-        print("error: OpenSSH client 'ssh' is not available on PATH", file=sys.stderr)
+    bridge = Path(args.tailnet_bridge).expanduser().resolve()
+    if not bridge.is_file():
+        print(f"error: bundled tailnet bridge does not exist: {bridge}", file=sys.stderr)
         return 2
 
     root = Path(__file__).resolve().parent
@@ -241,32 +263,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         while not stop[0]:
-            tunnel: Optional[subprocess.Popen] = None
+            tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
             try:
-                tunnel = subprocess.Popen(_ssh_tunnel_command(
-                    ssh, args.learner, args.ssh_port, args.control_port
-                ))
-                if not _wait_for_port(args.control_port, tunnel, stop):
-                    code = tunnel.poll()
+                tailnet = subprocess.Popen(_tailnet_forward_command(args))
+                if not _wait_for_ports((args.control_port, args.broker_port), tailnet, stop):
+                    code = tailnet.poll()
                     print(
-                        "[Bees remote] control SSH tunnel failed to become ready"
+                        "[Bees remote] tailnet forwarding failed to become ready"
                         + ("" if code is None else f" (exit {code})")
                         + ".",
                         file=sys.stderr,
                     )
                 else:
                     print(
-                        f"[Bees remote] control tunnel ready; identity={actor_key[:8]} "
+                        f"[Bees remote] private transport ready; identity={actor_key[:8]} "
                         f"envs={args.envs}; actor slot will be assigned by the learner."
                     )
                     worker = subprocess.Popen(_worker_command(args, root, actor_key))
-                    while not stop[0] and tunnel.poll() is None and worker.poll() is None:
+                    while not stop[0] and tailnet.poll() is None and worker.poll() is None:
                         time.sleep(0.5)
                     if not stop[0]:
-                        if tunnel.poll() is not None:
+                        if tailnet.poll() is not None:
                             print(
-                                f"[Bees remote] control tunnel exited ({tunnel.returncode}); restarting.",
+                                f"[Bees remote] tailnet transport exited ({tailnet.returncode}); restarting.",
                                 file=sys.stderr,
                             )
                         elif worker.poll() is not None:
@@ -278,7 +298,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 stop[0] = True
             finally:
                 _terminate(worker)
-                _terminate(tunnel)
+                _terminate(tailnet)
 
             if not stop[0]:
                 time.sleep(args.reconnect_seconds)
