@@ -10,15 +10,24 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
+import io
+import json
 import os
 from pathlib import Path
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
+import threading
 import time
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
+import zipfile
 
 
 DEFAULT_RECONNECT_SECONDS = 5.0
@@ -79,10 +88,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
     )
     parser.add_argument("--control-port", type=int, default=7150)
+    parser.add_argument("--bootstrap-port", type=int, default=7151)
     parser.add_argument("--broker-port", type=int, default=55051)
     parser.add_argument("--install-root", required=True)
+    parser.add_argument("--runtime-archive", required=True)
+    parser.add_argument("--bootstrap-token-file", required=True)
     parser.add_argument("--worker-token-file", required=True)
     parser.add_argument("--wan-token-file", required=True)
+    parser.add_argument("--runtime-poll-seconds", type=float, default=20.0)
     parser.add_argument("--torch-device", default="cpu")
     parser.add_argument("--reconnect-seconds", type=float, default=DEFAULT_RECONNECT_SECONDS)
     return parser
@@ -172,7 +185,196 @@ def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
         f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
         "--map",
         f"127.0.0.1:{args.broker_port}={args.tailnet_target}:{args.broker_port}",
+        "--map",
+        f"127.0.0.1:{args.bootstrap_port}={args.tailnet_target}:{args.bootstrap_port}",
     ]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes(data)
+    try:
+        os.chmod(temporary, mode)
+    except OSError:
+        pass
+    os.replace(temporary, path)
+
+
+def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
+    temporary = destination.with_name(destination.name + ".tmp")
+    if temporary.exists():
+        import shutil
+        shutil.rmtree(temporary)
+    temporary.mkdir(parents=True, exist_ok=False)
+    try:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
+            root = temporary.resolve()
+            for member in bundle.infolist():
+                normalized = member.filename.replace("\\", "/")
+                if (
+                    not normalized
+                    or normalized.startswith("/")
+                    or normalized.startswith("../")
+                    or "/../" in normalized
+                ):
+                    raise ValueError(f"unsafe runtime member: {member.filename!r}")
+                target = (temporary / normalized).resolve()
+                target.relative_to(root)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with bundle.open(member, "r") as source, target.open("wb") as output:
+                    output.write(source.read())
+        if destination.exists():
+            import shutil
+            shutil.rmtree(destination)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            import shutil
+            shutil.rmtree(temporary, ignore_errors=True)
+
+
+class RuntimeUpdater:
+    def __init__(self, args: argparse.Namespace, install_root: Path) -> None:
+        self.args = args
+        self.install_root = install_root
+        self.versions_root = install_root / "RuntimeVersions"
+        self.versions_root.mkdir(parents=True, exist_ok=True)
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
+        archive = Path(args.runtime_archive).expanduser().resolve()
+        self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
+        self.staged_sha256 = ""
+        self.staged_root: Optional[Path] = None
+        self.last_error = ""
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=5)
+
+    def staged(self) -> tuple[str, Optional[Path], str]:
+        with self._lock:
+            return self.staged_sha256, self.staged_root, self.last_error
+
+    def _bootstrap_token(self) -> str:
+        value = Path(self.args.bootstrap_token_file).expanduser().read_text(encoding="ascii").strip()
+        if not value:
+            raise ValueError("bootstrap token is empty")
+        return value
+
+    def _fetch_bootstrap(self) -> tuple[bytes, bytes, bytes]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.args.bootstrap_port}/bootstrap",
+            method="GET",
+            headers={"Authorization": "Bearer " + self._bootstrap_token()},
+        )
+        with urllib.request.urlopen(request, timeout=120.0) as response:
+            outer = response.read()
+        with zipfile.ZipFile(io.BytesIO(outer), "r") as bundle:
+            return (
+                bundle.read("bees-remote-runtime.zip"),
+                bundle.read("training-worker.token"),
+                bundle.read("wan.token"),
+            )
+
+    def _stage_once(self) -> None:
+        runtime_zip, worker_token, wan_token = self._fetch_bootstrap()
+        runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
+        _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
+        _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
+        if runtime_sha == self.current_sha256:
+            return
+        with self._lock:
+            if runtime_sha == self.staged_sha256 and self.staged_root is not None:
+                return
+
+        destination = self.versions_root / runtime_sha
+        if not (destination / "bees_managed_remote_worker.py").is_file():
+            _safe_extract_runtime(runtime_zip, destination)
+        requirements = destination / "bees_remote_requirements.txt"
+        if requirements.is_file():
+            completed = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"runtime dependency preparation failed with exit code {completed.returncode}"
+                )
+        archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
+        _atomic_bytes(archive, runtime_zip, 0o644)
+        with self._lock:
+            self.staged_sha256 = runtime_sha
+            self.staged_root = destination
+            self.last_error = ""
+        print(f"[Bees remote] staged updated worker runtime {runtime_sha[:12]}.")
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._stage_once()
+            except (OSError, ValueError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as exc:
+                with self._lock:
+                    self.last_error = f"{type(exc).__name__}: {exc}"
+            self._stop.wait(self.args.runtime_poll_seconds)
+
+
+def _control_state(args: argparse.Namespace, trainer_id: str) -> Optional[Mapping[str, object]]:
+    try:
+        token = Path(args.worker_token_file).expanduser().read_text(encoding="utf-8").strip()
+        query = urllib.parse.urlencode({
+            "trainer_id": trainer_id,
+            "role": "dedicated",
+            "platform": "WindowsPlayer" if os.name == "nt" else "LinuxPlayer",
+        })
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{args.control_port}/v1/state?{query}",
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return value if isinstance(value, Mapping) else None
+    except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+        return None
+
+
+def _runtime_cutover_selected(
+    args: argparse.Namespace,
+    trainer_id: str,
+    updater: RuntimeUpdater,
+) -> Optional[Path]:
+    _sha, staged_root, _error = updater.staged()
+    if staged_root is None:
+        return None
+    state = _control_state(args, trainer_id)
+    if not state:
+        return None
+    pending = state.get("pending_release")
+    if not isinstance(pending, Mapping):
+        return None
+    pending_build = str(pending.get("build_id", ""))
+    phase = str(pending.get("phase", ""))
+    incompatible = bool(pending.get("incompatible", False))
+    if phase == "rolling" and str(state.get("desired_build_id", "")) == pending_build:
+        return staged_root
+    if incompatible and phase == "stopping" and state.get("desired_mode") == "stopped":
+        return staged_root
+    return None
 
 
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
@@ -223,14 +425,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
         return 2
-    if not 1 <= args.control_port <= 65535 or not 1 <= args.broker_port <= 65535:
-        print("error: control/broker ports must be in 1-65535", file=sys.stderr)
+    if (
+        not 1 <= args.control_port <= 65535
+        or not 1 <= args.bootstrap_port <= 65535
+        or not 1 <= args.broker_port <= 65535
+    ):
+        print("error: control/bootstrap/broker ports must be in 1-65535", file=sys.stderr)
         return 2
-    if args.control_port == args.broker_port:
-        print("error: control and broker ports must be distinct", file=sys.stderr)
+    if len({args.control_port, args.bootstrap_port, args.broker_port}) != 3:
+        print("error: control/bootstrap/broker ports must be distinct", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0:
-        print("error: --reconnect-seconds must be positive", file=sys.stderr)
+    if args.reconnect_seconds <= 0 or args.runtime_poll_seconds <= 0:
+        print("error: reconnect/runtime-poll seconds must be positive", file=sys.stderr)
         return 2
     if not str(args.tailnet_target).strip():
         print("error: --tailnet-target is required", file=sys.stderr)
