@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { buildContinualLearningSpec } = require('./rlContinualLearningLauncher');
+const { buildTrainerControlConfig } = require('./rlTrainerControl');
 const {
     DEFAULT_RESTART_MS: CONTINUAL_RESTART_MS,
     installContinualLearningSupervisor,
@@ -81,6 +82,8 @@ function launchServer(options = parseLauncherOptions()) {
     // Validate autonomous-learning configuration before launching the gameplay server. If the
     // one-command learning system was explicitly enabled, incomplete host configuration is fatal.
     const continualSpec = buildContinualLearningSpec(env);
+    // Fail before starting either server or training if the authoritative cluster/build config is invalid.
+    buildTrainerControlConfig(env, { scanBuilds: false });
 
     const child = spawn(process.execPath, [serverPath, ...options.serverArgs], {
         cwd: __dirname,
@@ -98,7 +101,10 @@ function launchServer(options = parseLauncherOptions()) {
             cwd: __dirname,
             detached: true,
             stdio,
-            env,
+            env: {
+                ...env,
+                BEES_RL_SUPERVISED_SERVER_PID: String(child.pid),
+            },
         });
         watchdog.on('error', error => {
             console.error(`Failed to start Bees continual-learning watchdog: ${error.message}`);
