@@ -178,7 +178,7 @@ class ElasticBrokerTests(unittest.TestCase):
 
     def test_same_remote_identity_reclaims_its_slot(self):
         broker, specs = self._broker()
-        actor_id = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
+        actor_id = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         broker.register_actor(
             {
                 "actor_id": actor_id,
@@ -200,7 +200,7 @@ class ElasticBrokerTests(unittest.TestCase):
 
     def test_claimed_slot_cannot_be_registered_by_another_identity(self):
         broker, specs = self._broker()
-        actor_id = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
+        actor_id = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         with self.assertRaisesRegex(ValueError, "no active claim|owned by another"):
             broker.register_actor(
                 {
@@ -210,6 +210,38 @@ class ElasticBrokerTests(unittest.TestCase):
                     "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
+                }
+            )
+
+
+    def test_reclaim_transfers_slot_to_new_process_instance(self):
+        broker, specs = self._broker()
+        actor_id = broker.claim_actor(
+            {"actor_key": "machine-a", "actor_instance_id": "old-process", "env_count": 8}
+        )
+        broker.register_actor(
+            {
+                "actor_id": actor_id,
+                "actor_key": "machine-a",
+                "actor_instance_id": "old-process",
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        self.assertEqual(
+            broker.claim_actor(
+                {"actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
+            ),
+            actor_id,
+        )
+        with self.assertRaisesRegex(ValueError, "another remote process"):
+            broker.acknowledge_reset(
+                {
+                    "actor_id": actor_id,
+                    "actor_key": "machine-a",
+                    "actor_instance_id": "old-process",
+                    "control_epoch": 1,
                 }
             )
 
