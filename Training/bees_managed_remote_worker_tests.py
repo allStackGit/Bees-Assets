@@ -47,6 +47,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(command[command.index("--broker-host") + 1], "127.0.0.1")
         self.assertEqual(command[command.index("--broker-port") + 1], "55051")
         self.assertEqual(command[command.index("--envs") + 1], "24")
+        self.assertIn("--runtime-ready-file", command)
+        ready = command[command.index("--runtime-ready-file") + 1]
+        self.assertTrue(ready.endswith("runtime-ready-build.txt"))
 
     def test_tailnet_forward_command_maps_control_and_broker(self):
         args = Namespace(
