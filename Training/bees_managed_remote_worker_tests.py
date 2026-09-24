@@ -31,6 +31,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
             control_port=7150,
+            bootstrap_port=7151,
             broker_port=55051,
             worker_token_file="worker.token",
             install_root="install",
@@ -54,12 +55,14 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             tailnet_hostname="bees-worker-test",
             tailnet_target="100.64.0.10",
             control_port=7150,
+            bootstrap_port=7151,
             broker_port=55051,
         )
         command = managed._tailnet_forward_command(args)
         self.assertIn("forward-multi", command)
         self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
         self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
+        self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
         self.assertNotIn("ssh", " ".join(command).lower())
 
 
