@@ -397,6 +397,12 @@ function parseLaunchOptions(argv = process.argv) {
     return { test, port };
 }
 
+function shouldStartTrainingControl(launch, env = process.env) {
+    if (launch.trainingControl === false) return false;
+    if (!launch.test) return true;
+    return launch.trainingControl === true || env.BEES_TEST_TRAINING_CONTROL_ENABLED === '1';
+}
+
 function createServer(options = {}) {
     const runtime = loadLegacyRuntime(options);
     installCampaignCheckpoint(runtime);
@@ -408,9 +414,9 @@ function createServer(options = {}) {
     let trainingControl = null;
     if (launch.start !== false) {
         try {
-            trainingControl = launch.test || launch.trainingControl === false
-                ? null
-                : startTrainingControlFromEnvironment(launch.trainingControlOptions || {});
+            trainingControl = shouldStartTrainingControl(launch)
+                ? startTrainingControlFromEnvironment(launch.trainingControlOptions || {})
+                : null;
             server.start();
         } catch (error) {
             try {
@@ -432,5 +438,6 @@ module.exports = {
     patchSocketConnection,
     patchServer,
     applyTestIsolation,
+    shouldStartTrainingControl,
     pendingRequestKey,
 };
