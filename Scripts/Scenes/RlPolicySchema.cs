@@ -11,7 +11,7 @@ using System.Collections.Generic;
 /// </summary>
 internal static class RlPolicySchema
 {
-    internal const int Version = 16;
+    internal const int Version = 17;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
     internal const int PerceptionObservationSize = 7065;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
@@ -24,12 +24,9 @@ internal static class RlPolicySchema
     internal const int ExpectedWeaponFireBranchSize = 2;
     internal const int ExpectedDiscreteBranchCount = 9;
     internal const int ExpectedSpecialActionBranchSize = 5;
-    internal const int ExpectedAllyTargetBranchSize = 65;
-    internal const int ExpectedEnemyTargetBranchSize = 65;
-    internal const int ExpectedMapObjectTargetBranchSize = 65;
 
     internal const string Signature =
-        "bees-rl-v16|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7086|tail=episode-progress+20-reserved|cont=12|disc=2x5,5,65,65,65|" +
+        "bees-rl-v17|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7086|tail=episode-progress+20-reserved|cont=12|disc=2x5,5|" +
         "coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|" +
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
@@ -51,9 +48,6 @@ internal static class RlPolicySchema
         Check(errors, RlOneVsOneAgent.WeaponFireBranchSize, ExpectedWeaponFireBranchSize, "weapon fire branch size");
         Check(errors, RlOneVsOneAgent.DiscreteBranchCount, ExpectedDiscreteBranchCount, "discrete branch count");
         Check(errors, RlOneVsOneAgent.SpecialActionBranchSize, ExpectedSpecialActionBranchSize, "special branch");
-        Check(errors, RlOneVsOneAgent.AllyTargetBranchSize, ExpectedAllyTargetBranchSize, "ally target branch");
-        Check(errors, RlOneVsOneAgent.EnemyTargetBranchSize, ExpectedEnemyTargetBranchSize, "enemy target branch");
-        Check(errors, RlOneVsOneAgent.MapObjectTargetBranchSize, ExpectedMapObjectTargetBranchSize, "map-object target branch");
         ValidateDiscreteBranchSizes(errors);
 
         Check(errors, RlCombatPerception.ShipTypeObservationSize, 1, "ship type observation size");
@@ -143,9 +137,6 @@ internal static class RlPolicySchema
             Check(errors, branchSizes[slot], ExpectedWeaponFireBranchSize, $"weapon fire branch {slot}");
         }
         Check(errors, branchSizes[RlOneVsOneAgent.SpecialActionBranch], ExpectedSpecialActionBranchSize, "special branch array entry");
-        Check(errors, branchSizes[RlOneVsOneAgent.AllyTargetBranch], ExpectedAllyTargetBranchSize, "ally target branch array entry");
-        Check(errors, branchSizes[RlOneVsOneAgent.EnemyTargetBranch], ExpectedEnemyTargetBranchSize, "enemy target branch array entry");
-        Check(errors, branchSizes[RlOneVsOneAgent.MapObjectTargetBranch], ExpectedMapObjectTargetBranchSize, "map-object target branch array entry");
     }
 
     private static void ValidateFrozenEnumMappings(List<string> errors)
