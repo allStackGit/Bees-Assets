@@ -105,7 +105,7 @@ function Get-GitShortSha {
 function Invoke-Build {
     $config=Get-ClusterConfig; $unity=Resolve-UnityEditor $config; $python=Resolve-Python $config
     Ensure-Directory $BuildsRoot
-    $date=Get-Date -Format 'yyyy-MM-dd'; $sha=Get-GitShortSha; $buildId="$date-$sha"
+    $date=Get-Date -Format 'yyyy-MM-dd'; $time=Get-Date -Format 'HHmmss'; $sha=Get-GitShortSha; $buildId="$date-$time-$sha"
     $win=Join-Path $BuildsRoot "$date RL Windows"; $linux=Join-Path $BuildsRoot "$date RL Linux"; $game=Join-Path $BuildsRoot "$date Full Game Windows"
     Reset-BuildDirectory $win; Reset-BuildDirectory $linux; if($FullGame){ Reset-BuildDirectory $game }
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl' $win "$date-rl-windows.log"
@@ -149,6 +149,9 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
     if(Test-Control $base $AdminToken){ return }
+    $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
+    $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
+    if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
     if(-not $env:BEES_TLS_KEY_PATH -or -not $env:BEES_TLS_CERT_PATH){ throw 'BeesServer is offline. Set BEES_TLS_KEY_PATH and BEES_TLS_CERT_PATH once on this machine.' }
     $node=Resolve-Node $Config; $npm=Resolve-Npm
     if(-not(Test-Path -LiteralPath (Join-Path $ServerRoot 'node_modules'))){ Write-Host 'Installing BeesServer dependencies...'; Invoke-Checked $npm @('ci') $ServerRoot }
