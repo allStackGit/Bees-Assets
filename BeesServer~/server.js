@@ -402,6 +402,8 @@ function createServer(options = {}) {
     installCampaignCheckpoint(runtime);
     const launch = { ...parseLaunchOptions(options.argv || process.argv), ...options };
     const server = new runtime.Server(Boolean(launch.test), launch.port || 7143);
+    server.allowInsecureAuthentication = launch.allowInsecureAuthentication === true ||
+        process.env.BEES_ALLOW_INSECURE_DEVELOPMENT_AUTH === '1';
     server.db = databaseFromLegacyConfig(server.db, launch);
     patchServer(server, runtime);
     applyTestIsolation(server, launch);
