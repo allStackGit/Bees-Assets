@@ -179,10 +179,18 @@ function buildManifest(platform, rootPath, executable, gameBuildVersion, options
             fileMap: null,
         });
     }
-    const files = walkBuildFiles(root);
+    let files = walkBuildFiles(root);
     const entrypoint = path.relative(root, entrypointAbsolute).split(path.sep).join('/');
     if (!files.some(file => file.path === entrypoint)) {
         throw new Error(`Trainer entrypoint is not present in build manifest: ${entrypoint}`);
+    }
+    if (platform === 'linux-x64') {
+        // Linux builds commonly live on a Windows BeesServer host, where NTFS stat mode bits cannot
+        // preserve the executable flag. The remote installer must always make the canonical Linux
+        // entrypoint executable after hash verification.
+        files = files.map(file => file.path === entrypoint
+            ? { ...file, mode: file.mode | 0o111 }
+            : file);
     }
     const identity = {
         schema_version: 1,
@@ -271,9 +279,10 @@ function buildTrainerControlConfig(env = process.env, options = {}) {
     const port = parseInteger(env, PORT_ENV, DEFAULT_PORT, options.allowPortZero ? 0 : 1, 65535);
     const leaseSeconds = parsePositiveNumber(env, LEASE_SECONDS_ENV, DEFAULT_LEASE_SECONDS);
     const trainingEnabled = String(env[TRAINING_ENABLED_ENV] ?? '1').trim() !== '0';
-    const gameBuildVersion = nonEmpty(env.BEES_RL_GAME_BUILD_VERSION)
-        ? env.BEES_RL_GAME_BUILD_VERSION.trim()
-        : 'unspecified';
+    if (!nonEmpty(env.BEES_RL_GAME_BUILD_VERSION)) {
+        throw new Error(`BEES_RL_GAME_BUILD_VERSION is required when ${ENABLE_ENV}=1.`);
+    }
+    const gameBuildVersion = env.BEES_RL_GAME_BUILD_VERSION.trim();
     if (!nonEmpty(env.BEES_RL_TRAINING_ENV)) {
         throw new Error(`BEES_RL_TRAINING_ENV is required when ${ENABLE_ENV}=1.`);
     }
