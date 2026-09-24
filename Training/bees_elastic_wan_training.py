@@ -461,6 +461,9 @@ class ElasticWanBroker(base.WanActorBroker):
         env_count = payload.get("env_count")
         if not isinstance(env_count, int) or isinstance(env_count, bool) or not 1 <= env_count <= MAX_ENVS_PER_ACTOR:
             raise ValueError(f"actor env_count must be in [1,{MAX_ENVS_PER_ACTOR}]")
+        actor_instance_id = payload.get("actor_instance_id")
+        if not isinstance(actor_instance_id, str) or not actor_instance_id or len(actor_instance_id) > 128:
+            raise ValueError("actor_instance_id must be a non-empty string up to 128 characters")
 
         now = time.monotonic()
         with self._condition:
@@ -470,12 +473,14 @@ class ElasticWanBroker(base.WanActorBroker):
             for actor_id, record in self._registrations.items():
                 if record.get("actor_key") == actor_key:
                     record["last_seen"] = now
+                    record["actor_instance_id"] = actor_instance_id
                     return int(actor_id)
 
             existing = self._claims.get(actor_key)
             if existing is not None:
                 existing["last_seen"] = now
                 existing["env_count"] = env_count
+                existing["actor_instance_id"] = actor_instance_id
                 return int(existing["actor_id"])
 
             occupied = set(self._registrations)
@@ -491,6 +496,7 @@ class ElasticWanBroker(base.WanActorBroker):
             self._claims[actor_key] = {
                 "actor_id": actor_id,
                 "env_count": env_count,
+                "actor_instance_id": actor_instance_id,
                 "last_seen": now,
             }
             return actor_id
@@ -512,10 +518,17 @@ class ElasticWanBroker(base.WanActorBroker):
             for name, spec in behavior_specs.items()
         }
         actor_key = payload.get("actor_key")
+        actor_instance_id = payload.get("actor_instance_id")
         if actor_key is not None and (
             not isinstance(actor_key, str) or not actor_key or len(actor_key) > 128
         ):
             raise ValueError("actor_key must be a non-empty string up to 128 characters")
+        if actor_key is not None and (
+            not isinstance(actor_instance_id, str)
+            or not actor_instance_id
+            or len(actor_instance_id) > 128
+        ):
+            raise ValueError("actor_instance_id must identify automatically assigned actors")
 
         now = time.monotonic()
         with self._condition:
@@ -524,11 +537,18 @@ class ElasticWanBroker(base.WanActorBroker):
             previous = self._registrations.get(actor_id)
             if actor_key is not None:
                 claim = self._claims.get(actor_key)
-                owns_previous = previous is not None and previous.get("actor_key") == actor_key
+                owns_previous = (
+                    previous is not None
+                    and previous.get("actor_key") == actor_key
+                    and previous.get("actor_instance_id") == actor_instance_id
+                )
                 if claim is None and not owns_previous:
                     raise ValueError("actor has no active claim for the requested slot")
-                if claim is not None and int(claim["actor_id"]) != actor_id:
-                    raise ValueError("actor claim does not match requested slot")
+                if claim is not None and (
+                    int(claim["actor_id"]) != actor_id
+                    or claim.get("actor_instance_id") != actor_instance_id
+                ):
+                    raise ValueError("actor claim does not match requested slot or process")
                 if previous is not None and previous.get("actor_key") not in (None, actor_key):
                     raise ValueError("actor slot is owned by another remote machine")
             elif previous is not None and previous.get("actor_key") is not None:
@@ -545,6 +565,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 "signatures": signatures,
                 "env_count": env_count,
                 "actor_key": actor_key,
+                "actor_instance_id": actor_instance_id,
                 "registered_at": now,
                 "last_seen": now,
             }
@@ -601,12 +622,34 @@ class ElasticWanBroker(base.WanActorBroker):
                 "local_envs": self.local_envs,
             }
 
+    def _validate_dynamic_owner_locked(self, actor_id: int, payload: Mapping[str, Any]) -> None:
+        record = self._registrations.get(actor_id)
+        if record is None:
+            raise ValueError("actor is not registered")
+        actor_key = record.get("actor_key")
+        if actor_key is None:
+            return
+        if (
+            payload.get("actor_key") != actor_key
+            or payload.get("actor_instance_id") != record.get("actor_instance_id")
+        ):
+            raise ValueError("actor slot is owned by another remote process")
+
+    def acknowledge_reset(self, payload: Mapping[str, Any]) -> None:
+        actor_id = self._validate_actor_id(payload.get("actor_id"))
+        with self._condition:
+            self._active_snapshot_locked()
+            self._validate_dynamic_owner_locked(actor_id, payload)
+            self._registrations[actor_id]["last_seen"] = time.monotonic()
+        super().acknowledge_reset(payload)
+
     def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         with self._condition:
             active = self._active_snapshot_locked()
             if actor_id not in active:
                 raise ValueError("actor lease expired; re-register before uploading trajectories")
+            self._validate_dynamic_owner_locked(actor_id, payload)
             self._registrations[actor_id]["last_seen"] = time.monotonic()
             env_count = int(self._registrations[actor_id]["env_count"])
         if payload.get("control_epoch") != self.control_epoch:
