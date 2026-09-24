@@ -169,6 +169,48 @@ class ElasticBrokerTests(unittest.TestCase):
                 }
             )
 
+    def test_central_claims_first_available_actor_slots(self):
+        broker, _specs = self._broker()
+        first = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
+        second = broker.claim_actor({"actor_key": "machine-b", "env_count": 12})
+        self.assertEqual(first, 0)
+        self.assertEqual(second, 1)
+
+    def test_same_remote_identity_reclaims_its_slot(self):
+        broker, specs = self._broker()
+        actor_id = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
+        broker.register_actor(
+            {
+                "actor_id": actor_id,
+                "actor_key": "machine-a",
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        self.assertEqual(
+            broker.claim_actor({"actor_key": "machine-a", "env_count": 16}),
+            actor_id,
+        )
+        self.assertEqual(
+            broker.claim_actor({"actor_key": "machine-b", "env_count": 4}),
+            1,
+        )
+
+    def test_claimed_slot_cannot_be_registered_by_another_identity(self):
+        broker, specs = self._broker()
+        actor_id = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
+        with self.assertRaisesRegex(ValueError, "no active claim|owned by another"):
+            broker.register_actor(
+                {
+                    "actor_id": actor_id,
+                    "actor_key": "machine-b",
+                    "env_count": 8,
+                    "control_epoch": 1,
+                    "behavior_specs": specs,
+                }
+            )
+
 
 class CapacityDiagnosticTests(unittest.TestCase):
     def test_meaningful_gain_reports_beneficial(self):
