@@ -77,7 +77,8 @@ function Resolve-PortableGo {
     $installed=Get-Command 'go' -ErrorAction SilentlyContinue
     if($null -ne $installed){ return $installed.Source }
 
-    $toolchains=Join-Path $RuntimeRoot 'Toolchains'; Ensure-Directory $toolchains
+    $toolchains=Join-Path $RuntimeRoot 'Toolchains'
+    Ensure-Directory $toolchains
     $root=Join-Path $toolchains "go$GoVersion"
     $exe=Join-Path $root 'go\bin\go.exe'
     if(Test-Path -LiteralPath $exe){ return $exe }
@@ -96,7 +97,9 @@ function Resolve-PortableGo {
         Move-Item -LiteralPath $temporary -Destination $archive -Force
     } else {
         $actual=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-        if($actual -ne $GoWindowsZipSha256){ throw "Cached portable Go archive failed SHA-256 verification: $archive" }
+        if($actual -ne $GoWindowsZipSha256){
+            throw "Cached portable Go archive failed SHA-256 verification: $archive"
+        }
     }
 
     if(Test-Path -LiteralPath $root){ Remove-Item -LiteralPath $root -Recurse -Force }
@@ -110,23 +113,31 @@ function Build-TailnetBridge {
     if(-not(Test-Path -LiteralPath (Join-Path $TailnetToolRoot 'main.go')) -or -not(Test-Path -LiteralPath (Join-Path $TailnetToolRoot 'go.mod'))){
         throw "Embedded tailnet bridge source is missing: $TailnetToolRoot"
     }
+
     $go=Resolve-PortableGo
     Ensure-Directory $TailnetBinRoot
     $source=Join-Path $TailnetRoot 'BuildSource'
     if(Test-Path -LiteralPath $source){ Remove-Item -LiteralPath $source -Recurse -Force }
     Copy-Item -LiteralPath $TailnetToolRoot -Destination $source -Recurse -Force
 
-    $oldGoos=$env:GOOS; $oldGoarch=$env:GOARCH; $oldCgo=$env:CGO_ENABLED
+    $oldGoos=$env:GOOS
+    $oldGoarch=$env:GOARCH
+    $oldCgo=$env:CGO_ENABLED
     try {
-        $env:GOARCH='amd64'; $env:CGO_ENABLED='0'
+        $env:GOARCH='amd64'
+        $env:CGO_ENABLED='0'
+
         $env:GOOS='windows'
         Write-Host 'Building embedded Bees tailnet bridge for Windows...'
         Invoke-Checked $go @('build','-mod=mod','-trimpath','-ldflags=-s -w','-o',(Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'),'.') $source
+
         $env:GOOS='linux'
         Write-Host 'Building embedded Bees tailnet bridge for Linux...'
         Invoke-Checked $go @('build','-mod=mod','-trimpath','-ldflags=-s -w','-o',(Join-Path $TailnetBinRoot 'bees-tailnet-bridge'),'.') $source
     } finally {
-        $env:GOOS=$oldGoos; $env:GOARCH=$oldGoarch; $env:CGO_ENABLED=$oldCgo
+        $env:GOOS=$oldGoos
+        $env:GOARCH=$oldGoarch
+        $env:CGO_ENABLED=$oldCgo
         Remove-Item -LiteralPath $source -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
@@ -142,7 +153,9 @@ function Ensure-OpenSshServer {
         }
         $service=Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     }
-    if($null -eq $service){ throw 'Windows OpenSSH Server installation completed but the sshd service is unavailable.' }
+    if($null -eq $service){
+        throw 'Windows OpenSSH Server installation completed but the sshd service is unavailable.'
+    }
     Set-Service -Name 'sshd' -StartupType Automatic
     if($service.Status -ne 'Running'){ Start-Service -Name 'sshd' }
 }
@@ -152,21 +165,36 @@ function Start-TailnetGatewayIfNeeded($Config){
     if($transport -ne 'tailnet'){ return }
 
     $bridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
-    if(-not(Test-Path -LiteralPath $bridge)){ throw "Embedded tailnet bridge is missing. Run '.\Assets\bees.ps1 build' first." }
+    if(-not(Test-Path -LiteralPath $bridge)){
+        throw "Embedded tailnet bridge is missing. Run '.\Assets\bees.ps1 build' first."
+    }
+
     Ensure-OpenSshServer
 
     $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
-    if($hostname -notmatch '^[A-Za-z0-9-]{1,63}$'){ throw 'tailnetLearnerName must contain only letters, digits, and dashes.' }
-    $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
-    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535){ throw 'tailnetSshPort must be in 1-65535.' }
+    if($hostname -notmatch '^[A-Za-z0-9-]{1,63}$'){
+        throw 'tailnetLearnerName must contain only letters, digits, and dashes.'
+    }
 
-    $state=Join-Path $TailnetRoot 'LearnerState'; Ensure-Directory $state
+    $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
+    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535){
+        throw 'tailnetSshPort must be in 1-65535.'
+    }
+
+    $state=Join-Path $TailnetRoot 'LearnerState'
+    Ensure-Directory $state
     Ensure-Directory (Split-Path -Parent $TailnetAddressPath)
+
     Write-Host 'Checking embedded Bees tailnet identity. On first use, open the Tailscale login URL shown below.'
     Invoke-Checked $bridge @('auth','--state',$state,'--hostname',$hostname,'--ip-file',$TailnetAddressPath) $AssetsRoot
-    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){ throw 'Embedded tailnet authentication did not produce a learner IPv4 address.' }
+
+    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
+        throw 'Embedded tailnet authentication did not produce a learner IPv4 address.'
+    }
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-    if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){ throw "Unexpected learner tailnet IPv4 address: $tailnetIp" }
+    if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
+        throw "Unexpected learner tailnet IPv4 address: $tailnetIp"
+    }
 
     if(Test-Path -LiteralPath $TailnetGatewayPidPath){
         $oldPid=0
@@ -180,12 +208,24 @@ function Start-TailnetGatewayIfNeeded($Config){
 
     Ensure-Directory (Split-Path -Parent $TailnetGatewayLogPath)
     $argList=@('serve','--state',$state,'--hostname',$hostname,'--listen',(":$tailnetPort"),'--target','127.0.0.1:22')
-    $p=Start-Process -FilePath $bridge -ArgumentList $argList -WorkingDirectory $AssetsRoot -RedirectStandardOutput $TailnetGatewayLogPath -RedirectStandardError $TailnetGatewayErrPath -WindowStyle Hidden -PassThru
+    $startArgs=@{
+        FilePath=$bridge
+        ArgumentList=$argList
+        WorkingDirectory=$AssetsRoot
+        RedirectStandardOutput=$TailnetGatewayLogPath
+        RedirectStandardError=$TailnetGatewayErrPath
+        WindowStyle='Hidden'
+        PassThru=$true
+    }
+    $p=Start-Process @startArgs
     Start-Sleep -Milliseconds 750
-    if($p.HasExited){ throw "Embedded tailnet gateway exited during startup. Check $TailnetGatewayErrPath" }
+    if($p.HasExited){
+        throw "Embedded tailnet gateway exited during startup. Check $TailnetGatewayErrPath"
+    }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
     Write-Host ("Embedded tailnet gateway online at {0}:{1} as {2} (PID {3})." -f $tailnetIp,$tailnetPort,$hostname,$p.Id)
 }
+
 
 function Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
     Push-Location $WorkingDirectory
@@ -376,202 +416,55 @@ function Get-RemoteSshUser($Config){
 }
 
 function Prepare-RemoteBootstrap($Config){
-    if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
-    if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
-    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
+    if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){
+        throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate"
+    }
+    if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){
+        throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate"
+    }
+    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){
+        throw "Remote requirements file is missing: $RemoteRequirementsPath"
+    }
 
     $maxActors=[int]$Config.maxRemoteActors
-    if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12.' }
+    if($maxActors -lt 1 -or $maxActors -gt 12){
+        throw 'maxRemoteActors must be in 1-12.'
+    }
+
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
-    if($transport -ne 'tailnet'){ throw "Generated remote launchers currently require remoteTransport=tailnet; got '$transport'." }
+    if($transport -ne 'tailnet'){
+        throw "Generated remote launchers require remoteTransport=tailnet; got '$transport'."
+    }
+
     $tailnetPort=if($Config.tailnetSshPort){[int]$Config.tailnetSshPort}else{2222}
     $localPort=if($Config.tailnetLocalSshPort){[int]$Config.tailnetLocalSshPort}else{2222}
-    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535 -or $localPort -lt 1 -or $localPort -gt 65535){ throw 'tailnet SSH ports must be in 1-65535.' }
-    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){ throw "Learner tailnet address is missing. Start the embedded tailnet gateway first." }
+    if($tailnetPort -lt 1 -or $tailnetPort -gt 65535 -or $localPort -lt 1 -or $localPort -gt 65535){
+        throw 'tailnet SSH ports must be in 1-65535.'
+    }
+
+    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
+        throw 'Learner tailnet address is missing. Start the embedded tailnet gateway first.'
+    }
     $tailnetTarget=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-    if($tailnetTarget -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
-    $linuxInstallRoot=if($Config.remoteLinuxInstallRoot){[string]$Config.remoteLinuxInstallRoot}else{'.local/share/bees-training'}
-    $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
-    $sshUser=Get-RemoteSshUser $Config
-    $learner="$sshUser@127.0.0.1"
-    $sshPort=$localPort
-
-    $windowsBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
-    $linuxBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge'
-    if(-not(Test-Path -LiteralPath $windowsBridge) -or -not(Test-Path -LiteralPath $linuxBridge)){ throw "Embedded tailnet bridge binaries are missing. Run '.\Assets\bees.ps1 build' first." }
-    $windowsBridgeBytes=[IO.File]::ReadAllBytes($windowsBridge)
-    $linuxBridgeBytes=[IO.File]::ReadAllBytes($linuxBridge)
-    $windowsBridgeBase64=[Convert]::ToBase64String($windowsBridgeBytes)
-    $linuxBridgeBase64=[Convert]::ToBase64String($linuxBridgeBytes)
-    $windowsBridgeSha=(Get-FileHash -LiteralPath $windowsBridge -Algorithm SHA256).Hash.ToLowerInvariant()
-    $linuxBridgeSha=(Get-FileHash -LiteralPath $linuxBridge -Algorithm SHA256).Hash.ToLowerInvariant()
-
-    Ensure-Directory $RemoteRoot
-    Ensure-Directory $RuntimeRoot
-    $staging=Join-Path $RuntimeRoot 'remote-runtime-staging'
-    if(Test-Path -LiteralPath $staging){Remove-Item -LiteralPath $staging -Recurse -Force}
-    Ensure-Directory $staging
-    try {
-        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
-        Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
-        $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-        if(Test-Path -LiteralPath $runtimeZip){Remove-Item -LiteralPath $runtimeZip -Force}
-        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZip -CompressionLevel Optimal
-    } finally {
-        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    if($tailnetTarget -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
+        throw "Unexpected learner tailnet IPv4 address: $tailnetTarget"
     }
 
-    $runtimeRemote=Convert-ToScpPath (Join-Path $RemoteRoot 'bees-remote-runtime.zip')
-    $workerTokenRemote=Convert-ToScpPath $WorkerTokenPath
-    $wanTokenRemote=Convert-ToScpPath $WanTokenPath
-    $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
-    $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
-    $utf8NoBom=New-Object Text.UTF8Encoding($false)
-
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-
-    $windowsBody=$windowsTemplate
-    $windowsReplacements=@{
-        '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
-        '__BEES_SSH_PORT__'=[string]$sshPort
-        '__BEES_TAILNET_LEARNER__'=(Escape-SingleQuoted $tailnetTarget)
-        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
-        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
-        '__BEES_TAILNET_BRIDGE_B64__'=$windowsBridgeBase64
-        '__BEES_TAILNET_BRIDGE_SHA256__'=$windowsBridgeSha
-        '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
-        '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
-        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
-        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
-        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
-    }
-    foreach($key in $windowsReplacements.Keys){$windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])}
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
-
-    $linuxBody=$linuxTemplate
-    $linuxReplacements=@{
-        '__BEES_LEARNER__'=(Escape-BashDoubleQuoted $learner)
-        '__BEES_SSH_PORT__'=[string]$sshPort
-        '__BEES_TAILNET_LEARNER__'=(Escape-BashDoubleQuoted $tailnetTarget)
-        '__BEES_TAILNET_PORT__'=[string]$tailnetPort
-        '__BEES_TAILNET_LOCAL_PORT__'=[string]$localPort
-        '__BEES_TAILNET_BRIDGE_B64__'=$linuxBridgeBase64
-        '__BEES_TAILNET_BRIDGE_SHA256__'=$linuxBridgeSha
-        '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
-        '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
-        '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-BashDoubleQuoted $runtimeRemote)
-        '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $workerTokenRemote)
-        '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $wanTokenRemote)
-    }
-    foreach($key in $linuxReplacements.Keys){$linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])}
-    $linuxBody=$linuxBody.Replace("`r`n","`n")
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
-
-    Write-Host "Remote launchers prepared in $RemoteRoot with the embedded tailnet client. No router port forwarding or Tailscale installation is required."
-    Write-Host "Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N."
-    Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
-}
-
-function Invoke-Start {
-    $config=Get-ClusterConfig; $python=Resolve-Python $config; $unity=Resolve-UnityEditor $config
-    $worker=Ensure-TokenFile $WorkerTokenPath; $admin=Ensure-TokenFile $AdminTokenPath; $null=Ensure-TokenFile $WanTokenPath
-    Start-TailnetGatewayIfNeeded $config
-    Prepare-RemoteBootstrap $config
-    $release=Get-LatestRelease
-    Start-BeesServerIfNeeded $config $worker $admin; Publish-Release $config $admin $release; Start-CentralAgentIfNeeded $config $python $unity
-    $envArgs=Get-EnvironmentArgs $config
-    $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$true;canonical_build_id=[string]$release.build_id;environment_args=$envArgs}
-    Write-Host "Training requested: build=$($desired.canonical_build_id) revision=$($desired.revision)"
-    Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
-    Start-Sleep -Seconds 1; Show-Status $config $admin $true
-}
-
-function Stop-ProcessTree([int]$Id){ if($Id -gt 0 -and (Get-Process -Id $Id -ErrorAction SilentlyContinue)){ & taskkill /PID $Id /T /F *> $null } }
-
-function Invoke-Stop {
-    $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath
-    if(Test-Control ([string]$config.controlUrl) $admin){
-        $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$false}; Write-Host "Training stop requested at revision $($desired.revision)."
-        $deadline=[DateTime]::UtcNow.AddSeconds(30)
-        while([DateTime]::UtcNow -lt $deadline){
-            $s=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
-            $running=@($s.trainers|Where-Object{-not $_.stale -and $_.role -eq 'dedicated' -and $_.process_state -ne 'stopped'})
-            if($running.Count -eq 0){break}; Start-Sleep -Milliseconds 500
-        }
-    } else { Write-Warning 'Training control is offline; dedicated workers should fail closed after lease expiry.' }
-    if($Server -and (Test-Path -LiteralPath $ServerPidPath)){
-        $id=0; [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id); Stop-ProcessTree $id
-        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue; Write-Host 'BeesServer stopped.'
-        if(Test-Path -LiteralPath $TailnetGatewayPidPath){
-            $tailnetPid=0
-            [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$tailnetPid)
-            Stop-ProcessTree $tailnetPid
-            Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
-            Write-Host 'Embedded Bees tailnet gateway stopped.'
-        }
-    }
-}
-
-function Get-LocalLearnerStats {
-    $elo=$null; $step=$null; $reward=$null
-    foreach($root in @((Join-Path $LogsRoot 'Training'),(Join-Path $TrainingRoot 'trainer-results'))){
-        if(-not(Test-Path -LiteralPath $root)){continue}
-        foreach($file in @(Get-ChildItem -LiteralPath $root -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)){
-            foreach($line in @(Get-Content -LiteralPath $file.FullName -Tail 1000 -ErrorAction SilentlyContinue)){
-                if($line -match '(?i)\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)'){$elo=[double]$Matches[1]}
-                if($line -match '(?i)\bStep\s*[:=]\s*(\d+)'){$step=[long]$Matches[1]}
-                if($line -match '(?i)Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)'){$reward=[double]$Matches[1]}
-            }
-        }
-    }
-    [pscustomobject]@{ELO=$elo;Step=$step;MeanReward=$reward}
-}
-
-function Show-Status($Config,[string]$AdminToken,[bool]$Single){
-    do {
-        if(-not $Single){Clear-Host}
-        Write-Host "Bees distributed learning status  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"; Write-Host ('='*78)
-        try {
-            $s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken; $d=$s.desired
-            Write-Host "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"; Write-Host "Build:  $($d.canonical_build_id)"; Write-Host "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
-            $ea=@($d.environment_args); Write-Host "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"; Write-Host ''
-            $rows=@($s.trainers|ForEach-Object{
-                $m=$_.metrics
-                [pscustomobject]@{Trainer=$_.trainer_id;Role=$_.role;Platform=$_.platform;State=if($_.stale){'STALE'}else{$_.process_state};Build=$_.build_id;Rev=$_.applied_revision;Age=('{0:N1}s'-f[double]$_.age_seconds);Timeout=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.timeout_pct}else{'-'};BWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_win_pct}else{'-'};HWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_win_pct}else{'-'};Draw=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.draw_pct}else{'-'};Dur=if($m -and $m.window_episodes){'{0:N1}s'-f[double]$m.avg_duration_s}else{'-'};BeeHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_hit_pct}else{'-'};HumanHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_hit_pct}else{'-'};Error=$_.last_error}
-            })
-            if($rows.Count){$rows|Format-Table Trainer,Role,Platform,State,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize}else{Write-Host 'No managed trainers/gameplay builds have checked in.'}
-            $expected=@($Config.expectedTrainers)
-            if($expected.Count){$present=@($s.trainers|ForEach-Object{[string]$_.trainer_id});$missing=@($expected|Where-Object{$present -notcontains [string]$_});if($missing.Count){Write-Warning "Expected trainers not connected: $($missing -join ', ')"}}
-            $l=Get-LocalLearnerStats; Write-Host ''; Write-Host ("Learner logs: Step={0}  ELO={1}  MeanReward={2}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}))
-        } catch { Write-Host "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)" }
-        if($Single){return}; Write-Host ''; Write-Host "Refreshing every $RefreshSeconds s. Ctrl+C to stop."; Start-Sleep -Seconds $RefreshSeconds
-    } while($true)
-}
-
-function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath; Show-Status $config $admin ([bool]$Once) }
-
-switch($Command){
-    'build'{Invoke-Build}
-    'start'{Invoke-Start}
-    'stop'{Invoke-Stop}
-    'status'{Invoke-Status}
-}
-){ throw "Unexpected learner tailnet IPv4 address: $tailnetTarget" }
     $installRoot=if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
     $linuxInstallRoot=if($Config.remoteLinuxInstallRoot){[string]$Config.remoteLinuxInstallRoot}else{'.local/share/bees-training'}
     $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
+
     $sshUser=Get-RemoteSshUser $Config
     $learner="$sshUser@127.0.0.1"
     $sshPort=$localPort
 
     $windowsBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
     $linuxBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge'
-    if(-not(Test-Path -LiteralPath $windowsBridge) -or -not(Test-Path -LiteralPath $linuxBridge)){ throw "Embedded tailnet bridge binaries are missing. Run '.\Assets\bees.ps1 build' first." }
-    $windowsBridgeBytes=[IO.File]::ReadAllBytes($windowsBridge)
-    $linuxBridgeBytes=[IO.File]::ReadAllBytes($linuxBridge)
-    $windowsBridgeBase64=[Convert]::ToBase64String($windowsBridgeBytes)
-    $linuxBridgeBase64=[Convert]::ToBase64String($linuxBridgeBytes)
+    if(-not(Test-Path -LiteralPath $windowsBridge) -or -not(Test-Path -LiteralPath $linuxBridge)){
+        throw "Embedded tailnet bridge binaries are missing. Run '.\Assets\bees.ps1 build' first."
+    }
+    $windowsBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($windowsBridge))
+    $linuxBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($linuxBridge))
     $windowsBridgeSha=(Get-FileHash -LiteralPath $windowsBridge -Algorithm SHA256).Hash.ToLowerInvariant()
     $linuxBridgeSha=(Get-FileHash -LiteralPath $linuxBridge -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -615,7 +508,9 @@ switch($Command){
         '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
         '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
     }
-    foreach($key in $windowsReplacements.Keys){$windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])}
+    foreach($key in $windowsReplacements.Keys){
+        $windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key])
+    }
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
@@ -633,12 +528,15 @@ switch($Command){
         '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $workerTokenRemote)
         '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-BashDoubleQuoted $wanTokenRemote)
     }
-    foreach($key in $linuxReplacements.Keys){$linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])}
-    $linuxBody=$linuxBody.Replace("`r`n","`n")
+    foreach($key in $linuxReplacements.Keys){
+        $linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key])
+    }
+    $linuxBody=[regex]::Replace($linuxBody,"\r\n","\n")
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
 
-    Write-Host "Remote launchers prepared in $RemoteRoot with the embedded tailnet client. No router port forwarding or Tailscale installation is required."
-    Write-Host "Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N."
+    Write-Host "Remote launchers prepared in $RemoteRoot with the embedded tailnet client."
+    Write-Host 'No router port forwarding or separate Tailscale installation is required.'
+    Write-Host 'Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N.'
     Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
 }
 
@@ -670,15 +568,18 @@ function Invoke-Stop {
         }
     } else { Write-Warning 'Training control is offline; dedicated workers should fail closed after lease expiry.' }
     if($Server -and (Test-Path -LiteralPath $ServerPidPath)){
-        $id=0; [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id); Stop-ProcessTree $id
-        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue; Write-Host 'BeesServer stopped.'
-        if(Test-Path -LiteralPath $TailnetGatewayPidPath){
-            $tailnetPid=0
-            [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$tailnetPid)
-            Stop-ProcessTree $tailnetPid
-            Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
-            Write-Host 'Embedded Bees tailnet gateway stopped.'
-        }
+        $id=0
+        [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id)
+        Stop-ProcessTree $id
+        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+        Write-Host 'BeesServer stopped.'
+    }
+    if($Server -and (Test-Path -LiteralPath $TailnetGatewayPidPath)){
+        $tailnetPid=0
+        [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$tailnetPid)
+        Stop-ProcessTree $tailnetPid
+        Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+        Write-Host 'Embedded Bees tailnet gateway stopped.'
     }
 }
 
