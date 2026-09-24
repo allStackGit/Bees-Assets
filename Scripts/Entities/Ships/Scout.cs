@@ -89,6 +89,7 @@ namespace Assets.Scripts.Entities.Ships
                 return;
             }
 
+            global::RlGameplayDemonstrationCapabilityCapture.Record(this, global::RlOneVsOneAgent.ShipSpecialAction);
             TimeSinceLastBeaconDropped = BeaconClock;
             long id = TransientIdAllocator.GetFleetShipId();
             Beacon ship = (Beacon)Level.LevelConstructor.InstantiateShip(MinionType);
