@@ -182,7 +182,8 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("TryEnableDiscoveryRewards(_level);", source);
             StringAssert.Contains("ArePolicyControlledShipsReady(level, beeSide)", source);
             StringAssert.Contains("ArePolicyControlledShipsReady(level, humanSide)", source);
-            StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.HasBrain", source);
+            StringAssert.Contains("!RlPlayerDerivedActionReplay.IsScriptedSide(level, side)", source);
+            StringAssert.Contains("RlOneVsOneAgent.RequiresPolicyControl(ship) && !ship.IsRlPolicyControlled", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, beeSide);", source);
             StringAssert.Contains("RewardExistingDiscoveries(level, humanSide);", source);
             StringAssert.Contains("CalculateBoundedPositiveShapingIncrement(rawBefore, reward)", source);
