@@ -867,7 +867,7 @@ function Invoke-Start {
 
     Start-BeesServerIfNeeded $config $worker $admin
 
-    $envArgs=Get-EnvironmentArgs $config
+    $envArgs=@(Get-EnvironmentArgs $config)
     if(-not(Test-Path -LiteralPath $LatestReleasePath)){
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$false
