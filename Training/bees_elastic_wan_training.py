@@ -470,18 +470,22 @@ class ElasticWanBroker(base.WanActorBroker):
             self._active_snapshot_locked(now=now)
             self._expire_claims_locked(now)
 
-            for actor_id, record in self._registrations.items():
-                if record.get("actor_key") == actor_key:
-                    record["last_seen"] = now
-                    record["actor_instance_id"] = actor_instance_id
-                    return int(actor_id)
-
             existing = self._claims.get(actor_key)
             if existing is not None:
                 existing["last_seen"] = now
                 existing["env_count"] = env_count
                 existing["actor_instance_id"] = actor_instance_id
                 return int(existing["actor_id"])
+
+            for actor_id, record in self._registrations.items():
+                if record.get("actor_key") == actor_key:
+                    self._claims[actor_key] = {
+                        "actor_id": int(actor_id),
+                        "env_count": env_count,
+                        "actor_instance_id": actor_instance_id,
+                        "last_seen": now,
+                    }
+                    return int(actor_id)
 
             occupied = set(self._registrations)
             occupied.update(int(claim["actor_id"]) for claim in self._claims.values())
