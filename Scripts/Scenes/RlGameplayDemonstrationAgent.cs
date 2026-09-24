@@ -129,7 +129,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
 
     internal static Vector2 EncodeMovementDirection(int direction)
     {
-        // Ship.Direction == 360 is the existing stop sentinel. RlOneVsOneAgent converts an action
+        // RlMovementDirection == 360 is the stop sentinel. RlOneVsOneAgent converts an action
         // vector into degrees with -atan2(x, y), so this is the exact inverse for unit movement.
         if (direction < 0 || direction >= 360)
         {
@@ -138,6 +138,36 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
 
         float radians = direction * Mathf.Deg2Rad;
         return new Vector2(-Mathf.Sin(radians), Mathf.Cos(radians));
+    }
+
+    internal static Vector2 EncodeCurrentMovement(Ship ship)
+    {
+        if (ship == null || !ship.IsMobile)
+        {
+            return Vector2.zero;
+        }
+
+        if (ship.IsRlPolicyControlled)
+        {
+            return EncodeMovementDirection(ship.RlMovementDirection);
+        }
+
+        if (ship.Body != null && ship.Body.linearVelocity.sqrMagnitude > 0.0001f)
+        {
+            return ship.Body.linearVelocity.normalized;
+        }
+
+        if (ship.HasTargetCoordinates)
+        {
+            return EncodeMovementDirection(Mathf.RoundToInt(ship.GetDegreesTowardsPoint(ship.TargetCoordinates)));
+        }
+
+        if (ship.HasTargetDirection)
+        {
+            return EncodeMovementDirection(Mathf.RoundToInt(ship.TargetDirection));
+        }
+
+        return Vector2.zero;
     }
 
     internal static int DetermineSourceForTests(bool isUserControlled, bool isHiveMindControlled, bool isLiveRlControlled)
@@ -459,7 +489,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             return;
         }
 
-        Vector2 movement = EncodeMovementDirection(_ship.Direction);
+        Vector2 movement = EncodeCurrentMovement(_ship);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
 
