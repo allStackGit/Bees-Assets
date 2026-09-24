@@ -1,6 +1,5 @@
 param(
     [string]$Learner='',
-    [int]$ActorId=-1,
     [int]$Envs=0,
     [int]$SshPort=0,
     [string]$InstallRoot='',
@@ -11,8 +10,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
 $DefaultLearner='__BEES_LEARNER__'
-$DefaultActorId='__BEES_ACTOR_ID__'
-$DefaultEnvs='__BEES_ENVS__'
 $DefaultSshPort='__BEES_SSH_PORT__'
 $DefaultInstallRoot='__BEES_INSTALL_ROOT__'
 $DefaultTorchDevice='__BEES_TORCH_DEVICE__'
@@ -28,8 +25,6 @@ function Require-GeneratedValue([string]$Value,[string]$Name){
 
 foreach($item in @(
     @($DefaultLearner,'Learner'),
-    @($DefaultActorId,'ActorId'),
-    @($DefaultEnvs,'Envs'),
     @($DefaultSshPort,'SshPort'),
     @($DefaultInstallRoot,'InstallRoot'),
     @($DefaultTorchDevice,'TorchDevice'),
@@ -39,14 +34,11 @@ foreach($item in @(
 )){ Require-GeneratedValue ([string]$item[0]) ([string]$item[1]) }
 
 if(-not $Learner){$Learner=$DefaultLearner}
-if($ActorId -lt 0){$ActorId=[int]$DefaultActorId}
-if($Envs -le 0){$Envs=[int]$DefaultEnvs}
 if($SshPort -le 0){$SshPort=[int]$DefaultSshPort}
 if(-not $InstallRoot){$InstallRoot=[Environment]::ExpandEnvironmentVariables($DefaultInstallRoot)}
 if(-not $TorchDevice){$TorchDevice=$DefaultTorchDevice}
 
-if($ActorId -lt 0 -or $ActorId -gt 11){throw 'ActorId must be in 0-11.'}
-if($Envs -lt 1 -or $Envs -gt 64){throw 'Envs must be in 1-64.'}
+if($Envs -lt 0 -or $Envs -gt 64){throw 'Envs must be in 1-64 when specified.'}
 if($SshPort -lt 1 -or $SshPort -gt 65535){throw 'SshPort must be in 1-65535.'}
 
 function Resolve-Exe([string]$Name){
@@ -161,8 +153,22 @@ if($currentStamp -ne $requirementsHash){
 }
 
 $worker=Join-Path $RuntimeRoot 'bees_managed_remote_worker.py'
+$workerArgs=@(
+    $worker,
+    '--learner',$Learner,
+    '--ssh-port',[string]$SshPort,
+    '--install-root',$InstallRoot,
+    '--worker-token-file',$workerToken,
+    '--wan-token-file',$wanToken,
+    '--torch-device',$TorchDevice
+)
+if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
 Write-Host ""
-Write-Host "Starting Bees remote actor $ActorId with $Envs environments via $Learner."
-Write-Host 'Leave this window open. Ctrl+C stops this remote worker.'
-& $venvPython $worker --learner $Learner --ssh-port $SshPort --actor-id $ActorId --envs $Envs --install-root $InstallRoot --worker-token-file $workerToken --wan-token-file $wanToken --torch-device $TorchDevice
+if($Envs -gt 0){
+    Write-Host "Starting Bees remote worker with $Envs environments via $Learner."
+}else{
+    Write-Host "Starting Bees remote worker via $Learner; environment count will default to 4x available CPU threads (maximum 64)."
+}
+Write-Host 'The learner assigns the actor slot automatically. Leave this window open; Ctrl+C stops this remote worker.'
+& $venvPython @workerArgs
 exit $LASTEXITCODE
