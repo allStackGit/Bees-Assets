@@ -2,98 +2,21 @@ using Assets.Scripts;
 using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
-using Unity.MLAgents;
 using UnityEngine;
-
-/// <summary>
-/// Creates private deterministic RNG seeds for RL scenario samplers. ML-Agents seeds
-/// UnityEngine.Random when its communicator initializes. We capture one process root from that state,
-/// then derive stable per-arena/per-stream seeds so asynchronous arena timing cannot swap RNG streams.
-/// </summary>
-internal static class RlOneVsOneScenarioSeed
-{
-    internal const int MatchupStreamSalt = 0x4D415443; // "MATC"
-    internal const int MapSizeStreamSalt = 0x4D415053; // "MAPS"
-
-    private static int? _rootSeed;
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics()
-    {
-        _rootSeed = null;
-    }
-
-    internal static void EnsureMlAgentsSeedIsInitialized()
-    {
-        _ = Academy.Instance;
-    }
-
-    internal static int Create(Level level, int streamSalt)
-    {
-        if (level == null)
-        {
-            throw new ArgumentNullException(nameof(level));
-        }
-
-        return Derive(GetRootSeed(), GetArenaIndex(level), streamSalt);
-    }
-
-    private static int GetRootSeed()
-    {
-        EnsureMlAgentsSeedIsInitialized();
-        if (!_rootSeed.HasValue)
-        {
-            // Academy initialization applies the trainer-provided seed to UnityEngine.Random. Capture
-            // exactly one value immediately afterwards; scenario sampling then uses only private RNGs.
-            _rootSeed = UnityEngine.Random.Range(0, int.MaxValue);
-        }
-        return _rootSeed.Value;
-    }
-
-    private static int GetArenaIndex(Level level)
-    {
-        IReadOnlyList<Level> levels = level.Stage?.Levels;
-        if (levels != null)
-        {
-            for (int index = 0; index < levels.Count; index++)
-            {
-                if (ReferenceEquals(levels[index], level))
-                {
-                    return index;
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "RL scenario seed requested before the Level was registered with its Stage.");
-    }
-
-    internal static int Derive(int rootSeed, int arenaIndex, int streamSalt)
-    {
-        if (arenaIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(arenaIndex));
-        }
-
-        unchecked
-        {
-            int hash = rootSeed;
-            hash = (hash * 397) ^ arenaIndex;
-            hash = (hash * 397) ^ streamSalt;
-            return hash & int.MaxValue;
-        }
-    }
-}
 
 /// <summary>
 /// Owns sampled matchup state per training Level. A selector contains both the prepared matchup and
 /// its recent-result history, so keeping one selector per Level prevents asynchronously completing
 /// arenas from overwriting each other's prepared matchup or attributing outcomes to the wrong pair.
+/// Player-derived adversarial pressure wraps that selector per arena and reserves only its explicitly
+/// configured bounded fraction of episodes.
 /// </summary>
 internal static class RlOneVsOnePerArenaMatchups
 {
-    private static readonly Dictionary<Level, RlOneVsOneEpisodeMatchupSelector> Selectors =
-        new Dictionary<Level, RlOneVsOneEpisodeMatchupSelector>();
+    private static readonly Dictionary<Level, RlOneVsOneAdversarialMatchupSelector> Selectors =
+        new Dictionary<Level, RlOneVsOneAdversarialMatchupSelector>();
+    private static readonly HashSet<Level> PlayerDerivedPressureLevels = new HashSet<Level>();
+    private static readonly HashSet<Level> PreparedEpisodes = new HashSet<Level>();
 
     static RlOneVsOnePerArenaMatchups()
     {
@@ -104,11 +27,34 @@ internal static class RlOneVsOnePerArenaMatchups
     private static void ResetForSceneLoad()
     {
         Selectors.Clear();
+        PlayerDerivedPressureLevels.Clear();
+        PreparedEpisodes.Clear();
     }
 
+    /// <summary>
+    /// Prepare exactly one matchup for the current Level episode. Map setup may call this before ship
+    /// setup so player-derived tactical geometry can affect the map; the existing ship-setup call is
+    /// deliberately retained and becomes an idempotent no-op for the same episode.
+    /// </summary>
     internal static void PrepareEpisode(Level level)
     {
-        GetSelector(level).PrepareEpisode();
+        if (level == null)
+        {
+            throw new ArgumentNullException(nameof(level));
+        }
+        if (PreparedEpisodes.Contains(level))
+        {
+            return;
+        }
+
+        RlOneVsOneAdversarialMatchupSelector selector = GetSelector(level);
+        selector.PrepareEpisode();
+        PreparedEpisodes.Add(level);
+        RlPlayerDerivedActionReplay.PrepareEpisode(level);
+        if (PlayerDerivedPressureLevels.Contains(level))
+        {
+            RlPlayerDerivedPressureTelemetry.RecordPrepared(level, selector.CurrentPressureTag);
+        }
     }
 
     internal static ConfigData.ShipTypes GetShipType(Level level, int side, int shipIndex)
@@ -116,29 +62,59 @@ internal static class RlOneVsOnePerArenaMatchups
         return GetSelector(level).GetShipType(side, shipIndex);
     }
 
-    private static RlOneVsOneEpisodeMatchupSelector GetSelector(Level level)
+    internal static string GetCurrentPressureTag(Level level)
+    {
+        if (level == null || !PreparedEpisodes.Contains(level) ||
+            !Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
+        {
+            return null;
+        }
+        return selector.CurrentPressureTag;
+    }
+
+    private static RlOneVsOneAdversarialMatchupSelector GetSelector(Level level)
     {
         if (level == null)
         {
             throw new ArgumentNullException(nameof(level));
         }
 
-        if (!Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
+        if (!Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
-            RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
-            int seed = RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt);
-            selector = new RlOneVsOneEpisodeMatchupSelector(options, seed);
+            string[] args = Environment.GetCommandLineArgs();
+            RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(args);
+            IReadOnlyList<RlPlayerDerivedAdversarialScenario> playerDerivedScenarios =
+                RlPlayerDerivedAdversarialPressure.Parse(args, options);
+            int seed = RlOneVsOneScenarioSeed.Create(
+                level,
+                RlOneVsOneScenarioSeed.MatchupStreamSalt,
+                args);
+            selector = new RlOneVsOneAdversarialMatchupSelector(
+                options,
+                seed,
+                playerDerivedScenarios);
             Selectors.Add(level, selector);
+            if (playerDerivedScenarios.Count > 0)
+            {
+                PlayerDerivedPressureLevels.Add(level);
+            }
         }
         return selector;
     }
 
     private static void HandleEpisodeEnded(Level level, RlOneVsOneEpisodeCoordinator.EpisodeResult result)
     {
-        if (level != null && Selectors.TryGetValue(level, out RlOneVsOneEpisodeMatchupSelector selector))
+        if (level == null)
+        {
+            return;
+        }
+
+        RlPlayerDerivedActionReplay.EndEpisode(level);
+        if (Selectors.TryGetValue(level, out RlOneVsOneAdversarialMatchupSelector selector))
         {
             selector.RecordEpisodeOutcome(result.WinningSide, result.TimedOut);
         }
+        PreparedEpisodes.Remove(level);
     }
 
     internal static int GetSelectorCountForTests()
@@ -146,8 +122,18 @@ internal static class RlOneVsOnePerArenaMatchups
         return Selectors.Count;
     }
 
+    internal static int GetPreparedEpisodeCountForTests()
+    {
+        return PreparedEpisodes.Count;
+    }
+
     internal static void ResetForTests()
     {
         Selectors.Clear();
+        PlayerDerivedPressureLevels.Clear();
+        PreparedEpisodes.Clear();
+        RlPlayerDerivedPressureTelemetry.ResetForTests();
+        RlPlayerDerivedActionReplay.ResetForTests();
+        RlOneVsOneScenarioSeed.ResetForTests();
     }
 }
