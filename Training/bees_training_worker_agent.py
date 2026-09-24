@@ -303,6 +303,21 @@ class TrainingLogUploader:
             uploaded += len(data)
         return uploaded
 
+    def _has_pending_local_bytes(self, run_id: str) -> bool:
+        run_root = self.root / run_id
+        if not run_root.is_dir():
+            return False
+        for log_path in sorted(run_root.rglob("*")):
+            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+                continue
+            try:
+                size = log_path.stat().st_size
+            except OSError:
+                continue
+            if self._positions.get(log_path, 0) != size:
+                return True
+        return False
+
     def flush_all(
         self,
         client: TrainingControlClient,
@@ -312,11 +327,12 @@ class TrainingLogUploader:
         maximum_passes: int = 10000,
     ) -> None:
         for _ in range(maximum_passes):
-            if self.flush_once(
+            self.flush_once(
                 client,
                 trainer_id=trainer_id,
                 run_id=run_id,
-            ) <= 0:
+            )
+            if not self._has_pending_local_bytes(run_id):
                 return
         raise RuntimeError(
             f"training log flush exceeded {maximum_passes} passes for run {run_id}"
