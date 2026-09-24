@@ -245,8 +245,6 @@ namespace Assets.Scripts.Scenes
         // Update is called once per frame
         protected virtual void Update()
         {
-            __Updates++;
-
             // WebSocketSharp dispatches open/error/close events through Socket.Update's bounded
             // main-thread queue. Keep pumping it even when RL no longer depends on the server so
             // IsOpen/HasClosed and any already-arrived response state remain truthful.
