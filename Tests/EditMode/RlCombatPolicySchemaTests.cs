@@ -63,16 +63,20 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TacticalPerceptionCapacityIsIndependentOfTrainingPopulationLimit()
+        public void TacticalPerceptionCapacityRemainsBoundedWithoutTrainingPopulationLimit()
         {
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
-            Type optionsType = RuntimeAssembly.GetType("RlOneVsOneTrainingOptions");
+            string options = File.ReadAllText(Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "RlOneVsOneTrainingOptions.cs"));
 
-            int trainingMaximum = (int)RuntimeAssembly.GetStaticField(optionsType, "MaximumShipsPerSide");
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedAllies"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemies"), Is.EqualTo(64));
-            Assert.That(64, Is.GreaterThan(trainingMaximum),
-                "Deployment-scale tactical perception must not be capped by the current curriculum population limit.");
+            Assert.That(options, Does.Not.Contain("MaximumShipsPerSide"));
+            Assert.That(options, Does.Contain("if (ShipsPerSide < 1)"),
+                "Training population may exceed tactical top-K capacity; only non-positive team sizes are invalid.");
         }
 
         [Test]
