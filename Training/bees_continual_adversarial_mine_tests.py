@@ -36,8 +36,8 @@ mine = _load("bees_continual_adversarial_mine")
 
 
 OBSERVATION_SIZE = suggest.EXPECTED_OBSERVATION_SIZE
-CONTINUOUS_ACTIONS = 34
-DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
+CONTINUOUS_ACTIONS = 16
+DISCRETE_BRANCHES = [2] * 5 + [5]
 
 
 def normalize_positive(value: float, scale: float) -> float:
@@ -49,9 +49,8 @@ def squash_distance(value: float) -> float:
     return 0.0 if absolute == 0 else (1 if value > 0 else -1) * absolute / (absolute + 40.0)
 
 
-def set_bits(values, start, value, bits=6):
-    for bit in range(bits):
-        values[start + bit] = 1.0 if value & (1 << bit) else 0.0
+def set_ship_type(values, index, ship_type):
+    values[index] = mine._ship_type_scalar(ship_type)
 
 
 def tactic_observation(*, enemy_distance=30.0, edge=0.8, self_ship=13, enemy_ship=21, max_range=20.0):
@@ -62,11 +61,11 @@ def tactic_observation(*, enemy_distance=30.0, edge=0.8, self_ship=13, enemy_shi
     values[suggest.SELF_POSITION_X_INDEX] = edge
     values[suggest.SELF_POSITION_Y_INDEX] = 0.0
     values[mine.SELF_MAX_RANGE_INDEX] = normalize_positive(max_range, 80.0)
-    set_bits(values, mine.SELF_SHIP_BIT_START, self_ship)
+    set_ship_type(values, mine.SELF_SHIP_TYPE_INDEX, self_ship)
     values[suggest.FIRST_ENEMY_SLOT_INDEX] = 1.0
     values[suggest.FIRST_ENEMY_X_INDEX] = squash_distance(enemy_distance)
     values[suggest.FIRST_ENEMY_Y_INDEX] = 0.0
-    set_bits(values, mine.ENEMY_SHIP_BIT_START, enemy_ship)
+    set_ship_type(values, mine.FIRST_ENEMY_SHIP_TYPE_INDEX, enemy_ship)
     return values
 
 
