@@ -3,6 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { buildContinualLearningSpec } = require('./rlContinualLearningLauncher');
+const {
+    DEFAULT_RESTART_MS: CONTINUAL_RESTART_MS,
+    installContinualLearningSupervisor,
+} = require('./rlContinualLearningSupervisor');
 
 // DEVELOPMENT POLICY: These credentials are intentionally committed directly in source for ease
 // of access during the current development phase. The database does not currently contain important
@@ -73,6 +78,9 @@ function launchServer(options = parseLauncherOptions()) {
         BEES_DB_PASSWORD: process.env.BEES_DB_PASSWORD || DEVELOPMENT_DATABASE.password,
         BEES_DB_NAME: process.env.BEES_DB_NAME || DEVELOPMENT_DATABASE.name,
     };
+    // Validate autonomous-learning configuration before launching the gameplay server. If the
+    // one-command learning system was explicitly enabled, incomplete host configuration is fatal.
+    const continualSpec = buildContinualLearningSpec(env);
 
     const child = spawn(process.execPath, [serverPath, ...options.serverArgs], {
         cwd: __dirname,
@@ -81,9 +89,33 @@ function launchServer(options = parseLauncherOptions()) {
         env,
     });
 
+    let continualSupervisor = null;
+    let watchdog = null;
+    if (continualSpec && options.background) {
+        // The launcher exits after a background start, so give supervision to a detached watchdog.
+        const watchdogPath = path.join(__dirname, 'rlContinualLearningSupervisor.js');
+        watchdog = spawn(process.execPath, [watchdogPath], {
+            cwd: __dirname,
+            detached: true,
+            stdio,
+            env,
+        });
+        watchdog.on('error', error => {
+            console.error(`Failed to start Bees continual-learning watchdog: ${error.message}`);
+        });
+        watchdog.unref();
+    } else if (continualSpec) {
+        continualSupervisor = installContinualLearningSupervisor({}, {
+            env,
+            spec: continualSpec,
+            restartMs: CONTINUAL_RESTART_MS,
+        });
+    }
+
     if (log) fs.closeSync(log.fd);
 
     child.on('error', error => {
+        continualSupervisor?.stop();
         console.error(`Failed to start Bees server: ${error.message}`);
         process.exitCode = 1;
     });
@@ -91,11 +123,15 @@ function launchServer(options = parseLauncherOptions()) {
     if (options.background) {
         child.unref();
         const destination = log ? `; logging to ${log.path}` : '';
-        console.log(`Bees server started in background with PID ${child.pid}${destination}`);
+        const learning = continualSpec
+            ? `; continual-learning watchdog PID ${watchdog?.pid ?? 'unknown'}`
+            : '';
+        console.log(`Bees server started in background with PID ${child.pid}${learning}${destination}`);
         return child;
     }
 
     child.on('exit', (code, signal) => {
+        continualSupervisor?.stop();
         if (signal) process.exitCode = 1;
         else process.exitCode = code ?? 1;
     });
@@ -104,4 +140,10 @@ function launchServer(options = parseLauncherOptions()) {
 
 if (require.main === module) launchServer();
 
-module.exports = { DEVELOPMENT_DATABASE, parseLauncherOptions, openLog, launchServer };
+module.exports = {
+    DEVELOPMENT_DATABASE,
+    CONTINUAL_RESTART_MS,
+    parseLauncherOptions,
+    openLog,
+    launchServer,
+};
