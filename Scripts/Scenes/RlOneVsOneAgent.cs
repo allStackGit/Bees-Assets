@@ -59,19 +59,13 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int CeaseWeaponAction = 0;
     internal const int FireWeaponAction = 1;
     internal const int SpecialActionBranch = WeaponFireBranchStart + WeaponFireBranchCount;
-    internal const int AllyTargetBranch = SpecialActionBranch + 1;
-    internal const int EnemyTargetBranch = AllyTargetBranch + 1;
-    internal const int MapObjectTargetBranch = EnemyTargetBranch + 1;
-    internal const int DiscreteBranchCount = MapObjectTargetBranch + 1;
+    internal const int DiscreteBranchCount = SpecialActionBranch + 1;
     internal const int NoSpecialAction = 0;
     internal const int ShipSpecialAction = 1;
     internal const int MiningAction = 2;
     internal const int HealingAction = 3;
     internal const int WarpAction = 4;
     internal const int SpecialActionBranchSize = 5;
-    internal const int AllyTargetBranchSize = 1 + MaxObservedAllies;
-    internal const int EnemyTargetBranchSize = 1 + MaxObservedEnemies;
-    internal const int MapObjectTargetBranchSize = 1 + MaxObservedMapObjects;
 
     private const float MovementDeadZone = 0.2f;
     private const float AimDeadZone = 0.1f;
@@ -162,8 +156,7 @@ internal sealed class RlOneVsOneAgent : Agent
         Debug.Log($"RL policy ABI v{RlPolicySchema.Version} {RlPolicySchema.Signature} " +
                   $"observations={ObservationSize} continuous_actions={ContinuousActionCount} " +
                   $"weapon_fire_branches={WeaponFireBranchCount}x{WeaponFireBranchSize} " +
-                  $"special_branch={SpecialActionBranchSize} ally_target_branch={AllyTargetBranchSize} " +
-                  $"enemy_target_branch={EnemyTargetBranchSize} map_object_target_branch={MapObjectTargetBranchSize} " +
+                  $"special_branch={SpecialActionBranchSize} " +
                   $"allies={MaxObservedAllies} enemies={MaxObservedEnemies} " +
                   $"moving_asteroids={MaxObservedCollisionAsteroids} mining_asteroids={MaxObservedMiningAsteroids} " +
                   $"map_objects={MaxObservedMapObjects} navigation_grid={NavigationGridSize}x{NavigationGridSize} " +
@@ -245,9 +238,6 @@ internal sealed class RlOneVsOneAgent : Agent
             branchSizes[WeaponFireBranchStart + slot] = WeaponFireBranchSize;
         }
         branchSizes[SpecialActionBranch] = SpecialActionBranchSize;
-        branchSizes[AllyTargetBranch] = AllyTargetBranchSize;
-        branchSizes[EnemyTargetBranch] = EnemyTargetBranchSize;
-        branchSizes[MapObjectTargetBranch] = MapObjectTargetBranchSize;
         return branchSizes;
     }
 
@@ -427,18 +417,6 @@ internal sealed class RlOneVsOneAgent : Agent
         actionMask.SetActionEnabled(SpecialActionBranch, WarpAction,
             canControl && CanUseWarpAction(_ship));
 
-        for (int action = 1; action < AllyTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(AllyTargetBranch, action, false);
-        }
-        for (int action = 1; action < EnemyTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(EnemyTargetBranch, action, false);
-        }
-        for (int action = 1; action < MapObjectTargetBranchSize; action++)
-        {
-            actionMask.SetActionEnabled(MapObjectTargetBranch, action, false);
-        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -499,9 +477,6 @@ internal sealed class RlOneVsOneAgent : Agent
             discrete[WeaponFireBranchStart + slot] = Random.Range(0, WeaponFireBranchSize);
         }
         discrete[SpecialActionBranch] = Random.Range(0, SpecialActionBranchSize);
-        discrete[AllyTargetBranch] = 0;
-        discrete[EnemyTargetBranch] = 0;
-        discrete[MapObjectTargetBranch] = 0;
     }
 
     private void ApplyMovement(Vector2 movement)
