@@ -35,7 +35,6 @@ namespace Assets.Scripts.Scenes
         }
         public void ContinueGame()
         {
-            Debug.Log($"Continuing Game! User is on level #{ConfigData.UserProgressData.GetCurrentLevel(ConfigData.Configuration.UserSide)}");
             //SceneManager.LoadSceneAsync("Level Intro"); 
             //SceneManager.LoadSceneAsync("Squad Maker");
             DeselectButton();
@@ -159,7 +158,6 @@ namespace Assets.Scripts.Scenes
         {
             string name = NameInput.text;
             name = Utilities.ValidateInputString(name);
-            Debug.Log($"Name: {name}");
             if (name.Trim().Length > 0)
             {
                 CommanderNameDialogue.SetActive(false);
@@ -178,14 +176,12 @@ namespace Assets.Scripts.Scenes
         public void GoToSettings()
         {
             DeselectButton();
-            Debug.Log("Settings!");
         }
         public void GoToTrainingRoom(string side)
         {
             DeselectButton();
             ConfigData.CurrentGameMode = ConfigData.GameModes.FreePlay;
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
-            Debug.Log("Training Room!");
             SetupSquadMaker(side);
         }
 
@@ -215,14 +211,12 @@ namespace Assets.Scripts.Scenes
             }
             else
             {
-                Debug.Log("Campaign replay tooltip choice is not needed; playing Campaign");
                 PlayCampaign();
             }
         }
 
         public void DisableTooltips()
         {
-            Debug.Log("Disabling tooltips");
             ConfigData.UserProgressData.ShowToolTips = false;
             ConfigData.UserProgressData.Save();
             PlayCampaign();
@@ -230,7 +224,6 @@ namespace Assets.Scripts.Scenes
        
         public void PlayCampaign()
         {
-            Debug.Log("Playing Campaign!");
             HumanCampaignModeButton.GetComponent<Button>().enabled = false;
             if (ConfigData.Configuration.UserSide != ConfigData.Configuration.HumanSide)
             {
@@ -478,7 +471,6 @@ namespace Assets.Scripts.Scenes
         {
             //ConfigData.SaveAll();
             DeselectButton();
-            Debug.Log("Exiting Game!");
             Application.Quit();
         }
 
