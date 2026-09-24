@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const CONTROL_SCHEMA_VERSION = 2;
+const CONTROL_SCHEMA_VERSION = 3;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 20;
@@ -98,13 +98,14 @@ function normalizeEnvironmentArgs(value) {
 function publicBuildDescriptor(record) {
     if (!record) return null;
     return {
+        role: record.role,
         platform: record.platform,
         build_id: record.build_id,
         archive_sha256: record.archive_sha256,
         archive_size_bytes: record.archive_size_bytes,
         entrypoint: record.entrypoint,
-        artifact_url: '/v1/artifact/' + encodeURIComponent(record.platform) + '/' +
-            encodeURIComponent(record.build_id),
+        artifact_url: '/v1/artifact/' + encodeURIComponent(record.role) + '/' +
+            encodeURIComponent(record.platform) + '/' + encodeURIComponent(record.build_id),
     };
 }
 
@@ -131,13 +132,38 @@ class TrainingControlStore {
             environment_args: [],
             canonical_build_id: "",
             builds: {},
+            full_game_builds: {},
         };
     }
 
     _loadState() {
         if (!fs.existsSync(this.statePath)) return this._defaultState();
-        const parsed = JSON.parse(fs.readFileSync(this.statePath, 'utf8'));
-        if (!parsed || parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
+        let parsed = JSON.parse(fs.readFileSync(this.statePath, 'utf8'));
+        if (!parsed || !Number.isInteger(parsed.schema_version)) {
+            throw new Error('training-control state schema is incompatible');
+        }
+        if (parsed.schema_version === 2) {
+            const fullGameBuilds = {};
+            for (const [platform, versions] of Object.entries(parsed.builds || {})) {
+                fullGameBuilds[platform] = {};
+                for (const [buildId, record] of Object.entries(versions || {})) {
+                    fullGameBuilds[platform][buildId] = {
+                        ...record,
+                        role: 'full-game',
+                    };
+                    versions[buildId] = {
+                        ...record,
+                        role: 'dedicated',
+                    };
+                }
+            }
+            parsed = {
+                ...parsed,
+                schema_version: CONTROL_SCHEMA_VERSION,
+                full_game_builds: fullGameBuilds,
+            };
+            atomicWriteJson(this.statePath, parsed);
+        } else if (parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
             throw new Error('training-control state schema is incompatible');
         }
         if (!Number.isInteger(parsed.revision) || parsed.revision < 0) {
@@ -151,8 +177,10 @@ class TrainingControlStore {
             (parsed.canonical_build_id && !/^[A-Za-z0-9._-]+$/.test(parsed.canonical_build_id))) {
             throw new Error('training-control state canonical_build_id is invalid');
         }
-        if (!parsed.builds || typeof parsed.builds !== 'object' || Array.isArray(parsed.builds)) {
-            throw new Error('training-control state builds map is invalid');
+        if (!parsed.builds || typeof parsed.builds !== 'object' || Array.isArray(parsed.builds) ||
+            !parsed.full_game_builds || typeof parsed.full_game_builds !== 'object' ||
+            Array.isArray(parsed.full_game_builds)) {
+            throw new Error('training-control state build catalogs are invalid');
         }
         this._validateStoredBuilds(parsed);
         if (parsed.training_enabled && !parsed.canonical_build_id) {
@@ -161,67 +189,93 @@ class TrainingControlStore {
         return parsed;
     }
 
+    _catalogForRole(role) {
+        return role === 'full-game' ? this.state.full_game_builds : this.state.builds;
+    }
+
     _validateStoredBuilds(state) {
         const safeIdentity = /^[A-Za-z0-9._-]+$/;
-        for (const [platform, versions] of Object.entries(state.builds)) {
-            if (!safeIdentity.test(platform) ||
-                !versions || typeof versions !== 'object' || Array.isArray(versions)) {
-                throw new Error('training-control persisted build catalog is invalid for ' + platform);
-            }
-            for (const [buildId, record] of Object.entries(versions)) {
-                if (!safeIdentity.test(buildId) ||
-                    !record || typeof record !== 'object' || Array.isArray(record) ||
-                    record.platform !== platform ||
-                    record.build_id !== buildId ||
-                    typeof record.archive_sha256 !== 'string' ||
-                    !/^[0-9a-f]{64}$/.test(record.archive_sha256) ||
-                    !Number.isInteger(record.archive_size_bytes) ||
-                    record.archive_size_bytes <= 0 ||
-                    typeof record.archive_path !== 'string' || !record.archive_path ||
-                    typeof record.entrypoint !== 'string' || !record.entrypoint) {
+        const catalogs = [
+            ['dedicated', state.builds],
+            ['full-game', state.full_game_builds],
+        ];
+        for (const [role, catalog] of catalogs) {
+            for (const [platform, versions] of Object.entries(catalog)) {
+                if (!safeIdentity.test(platform) ||
+                    !versions || typeof versions !== 'object' || Array.isArray(versions)) {
                     throw new Error(
-                        'training-control persisted build descriptor is invalid for ' +
-                        platform + '/' + buildId);
+                        'training-control persisted build catalog is invalid for ' +
+                        role + '/' + platform);
                 }
-                record.archive_path = path.resolve(record.archive_path);
+                for (const [buildId, record] of Object.entries(versions)) {
+                    if (!safeIdentity.test(buildId) ||
+                        !record || typeof record !== 'object' || Array.isArray(record) ||
+                        record.role !== role ||
+                        record.platform !== platform ||
+                        record.build_id !== buildId ||
+                        typeof record.archive_sha256 !== 'string' ||
+                        !/^[0-9a-f]{64}$/.test(record.archive_sha256) ||
+                        !Number.isInteger(record.archive_size_bytes) ||
+                        record.archive_size_bytes <= 0 ||
+                        typeof record.archive_path !== 'string' || !record.archive_path ||
+                        typeof record.entrypoint !== 'string' || !record.entrypoint) {
+                        throw new Error(
+                            'training-control persisted build descriptor is invalid for ' +
+                            role + '/' + platform + '/' + buildId);
+                    }
+                    record.archive_path = path.resolve(record.archive_path);
+                }
             }
         }
 
         if (!state.canonical_build_id) return;
         let canonicalArtifacts = 0;
-        for (const [platform, versions] of Object.entries(state.builds)) {
-            const record = versions[state.canonical_build_id];
-            if (!record) continue;
-            canonicalArtifacts++;
-            const stats = fs.statSync(record.archive_path);
-            if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
-                throw new Error(
-                    'training-control canonical artifact size is invalid for ' + platform);
-            }
-            if (sha256File(record.archive_path) !== record.archive_sha256) {
-                throw new Error(
-                    'training-control canonical artifact hash is invalid for ' + platform);
+        const verifiedPaths = new Set();
+        for (const [role, catalog] of catalogs) {
+            for (const [platform, versions] of Object.entries(catalog)) {
+                const record = versions[state.canonical_build_id];
+                if (!record) continue;
+                canonicalArtifacts++;
+                if (verifiedPaths.has(record.archive_path)) continue;
+                verifiedPaths.add(record.archive_path);
+                const stats = fs.statSync(record.archive_path);
+                if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
+                    throw new Error(
+                        'training-control canonical artifact size is invalid for ' +
+                        role + '/' + platform);
+                }
+                if (sha256File(record.archive_path) !== record.archive_sha256) {
+                    throw new Error(
+                        'training-control canonical artifact hash is invalid for ' +
+                        role + '/' + platform);
+                }
             }
         }
         if (canonicalArtifacts === 0) {
-            throw new Error('training-control canonical build has no published platform artifact');
+            throw new Error('training-control canonical build has no published role/platform artifact');
         }
     }
 
     _hasBuild(buildId) {
         if (!buildId) return false;
-        return Object.values(this.state.builds).some(
-            versions => versions && versions[buildId]);
+        return [this.state.builds, this.state.full_game_builds].some(
+            catalog => Object.values(catalog).some(
+                versions => versions && versions[buildId]));
     }
 
-    _missingActivePlatforms(buildId) {
+    _missingActiveTargets(buildId) {
         const cutoff = this.now() - this.leaseSeconds * 1000;
-        const activePlatforms = new Set(
-            [...this.trainers.values()]
-                .filter(record => record.last_seen_ms >= cutoff)
-                .map(record => record.platform));
-        return [...activePlatforms]
-            .filter(platform => !this.state.builds[platform]?.[buildId])
+        const activeTargets = new Map();
+        for (const record of this.trainers.values()) {
+            if (record.last_seen_ms < cutoff) continue;
+            activeTargets.set(record.role + '|' + record.platform, {
+                role: record.role,
+                platform: record.platform,
+            });
+        }
+        return [...activeTargets.values()]
+            .filter(target => !this._catalogForRole(target.role)[target.platform]?.[buildId])
+            .map(target => target.role + ':' + target.platform)
             .sort();
     }
 
@@ -263,12 +317,12 @@ class TrainingControlStore {
                 { statusCode: 409 });
         }
         if (requestedTraining) {
-            const missingPlatforms = this._missingActivePlatforms(requestedBuildId);
-            if (missingPlatforms.length > 0) {
+            const missingTargets = this._missingActiveTargets(requestedBuildId);
+            if (missingTargets.length > 0) {
                 throw Object.assign(
                     new Error(
-                        'canonical build is missing active platform artifacts: ' +
-                        missingPlatforms.join(', ')),
+                        'canonical build is missing active role/platform artifacts: ' +
+                        missingTargets.join(', ')),
                     { statusCode: 409 });
             }
         }
@@ -302,7 +356,8 @@ class TrainingControlStore {
         return this.desiredState();
     }
 
-    publishArtifact({ platform, buildId, archivePath, entrypoint }) {
+    publishArtifact({ role, platform, buildId, archivePath, entrypoint }) {
+        role = requireRole(role);
         platform = requireString(platform, 'platform', 64);
         buildId = requireString(buildId, 'build_id', 128);
         entrypoint = requireString(entrypoint, 'entrypoint', 512);
@@ -317,7 +372,7 @@ class TrainingControlStore {
             throw Object.assign(new Error('archive_path must name a file'), { statusCode: 400 });
         }
         const archiveSha256 = sha256File(source);
-        const platformRoot = path.join(this.artifactRoot, platform);
+        const platformRoot = path.join(this.artifactRoot, role, platform);
         fs.mkdirSync(platformRoot, { recursive: true });
         const destination = path.join(platformRoot, buildId + '-' + archiveSha256 + '.zip');
         if (!fs.existsSync(destination)) {
@@ -330,6 +385,7 @@ class TrainingControlStore {
             fs.renameSync(temporary, destination);
         }
         const record = {
+            role,
             platform,
             build_id: buildId,
             archive_path: destination,
@@ -337,23 +393,24 @@ class TrainingControlStore {
             archive_size_bytes: stats.size,
             entrypoint,
         };
-        if (!this.state.builds[platform] ||
-            typeof this.state.builds[platform] !== 'object' ||
-            Array.isArray(this.state.builds[platform])) {
-            this.state.builds[platform] = {};
+        const catalog = this._catalogForRole(role);
+        if (!catalog[platform] ||
+            typeof catalog[platform] !== 'object' ||
+            Array.isArray(catalog[platform])) {
+            catalog[platform] = {};
         }
-        const previous = this.state.builds[platform][buildId];
+        const previous = catalog[platform][buildId];
         if (previous) {
             if (previous.archive_sha256 !== record.archive_sha256 ||
                 previous.entrypoint !== record.entrypoint ||
                 previous.archive_size_bytes !== record.archive_size_bytes) {
                 throw Object.assign(
-                    new Error('published platform/build identity is immutable; use a new build_id'),
+                    new Error('published role/platform/build identity is immutable; use a new build_id'),
                     { statusCode: 409 });
             }
             return publicBuildDescriptor(previous);
         }
-        this.state.builds[platform][buildId] = record;
+        catalog[platform][buildId] = record;
         if (buildId === this.state.canonical_build_id) {
             this.state.revision++;
         }
@@ -362,11 +419,14 @@ class TrainingControlStore {
     }
 
     desiredState() {
-        const builds = {};
+        const builds = { dedicated: {}, 'full-game': {} };
         if (this.state.canonical_build_id) {
-            for (const [platform, versions] of Object.entries(this.state.builds)) {
-                const record = versions && versions[this.state.canonical_build_id];
-                if (record) builds[platform] = publicBuildDescriptor(record);
+            for (const role of VALID_ROLES) {
+                const catalog = this._catalogForRole(role);
+                for (const [platform, versions] of Object.entries(catalog)) {
+                    const record = versions && versions[this.state.canonical_build_id];
+                    if (record) builds[role][platform] = publicBuildDescriptor(record);
+                }
             }
         }
         return {
@@ -384,9 +444,10 @@ class TrainingControlStore {
         trainerId = requireString(trainerId, 'trainer_id', 128);
         role = requireRole(role);
         platform = requireString(platform, 'platform', 64);
+        const catalog = this._catalogForRole(role);
         const buildRecord = this.state.canonical_build_id &&
-            this.state.builds[platform] &&
-            this.state.builds[platform][this.state.canonical_build_id];
+            catalog[platform] &&
+            catalog[platform][this.state.canonical_build_id];
         const canTrain = this.state.training_enabled && Boolean(buildRecord);
         const desiredMode = canTrain
             ? 'training'
@@ -444,10 +505,11 @@ class TrainingControlStore {
         return { desired: this.desiredState(), trainers };
     }
 
-    artifact(platform, buildId) {
+    artifact(role, platform, buildId) {
+        role = requireRole(role);
         platform = requireString(platform, 'platform', 64);
         buildId = requireString(buildId, 'build_id', 128);
-        return this.state.builds[platform]?.[buildId] || null;
+        return this._catalogForRole(role)[platform]?.[buildId] || null;
     }
 }
 
@@ -503,6 +565,7 @@ function createTrainingControlHandler(store, token, adminToken = null) {
             if (request.method === 'POST' && url.pathname === '/v1/admin/artifact') {
                 const body = await readJsonBody(request);
                 sendJson(response, 200, store.publishArtifact({
+                    role: body.role,
                     platform: body.platform,
                     buildId: body.build_id,
                     archivePath: body.archive_path,
@@ -511,11 +574,12 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 return;
             }
             const artifactMatch = request.method === 'GET' &&
-                url.pathname.match(/^\/v1\/artifact\/([^/]+)\/([^/]+)$/);
+                url.pathname.match(/^\/v1\/artifact\/([^/]+)\/([^/]+)\/([^/]+)$/);
             if (artifactMatch) {
-                const platform = decodeURIComponent(artifactMatch[1]);
-                const buildId = decodeURIComponent(artifactMatch[2]);
-                const record = store.artifact(platform, buildId);
+                const role = decodeURIComponent(artifactMatch[1]);
+                const platform = decodeURIComponent(artifactMatch[2]);
+                const buildId = decodeURIComponent(artifactMatch[3]);
+                const record = store.artifact(role, platform, buildId);
                 if (!record || !fs.existsSync(record.archive_path)) {
                     sendJson(response, 404, { error: 'artifact-not-found' });
                     return;
