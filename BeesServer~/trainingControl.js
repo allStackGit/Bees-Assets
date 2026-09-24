@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const CONTROL_SCHEMA_VERSION = 3;
+const CONTROL_SCHEMA_VERSION = 4;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 20;
@@ -63,6 +63,24 @@ function readJsonBody(request, limitBytes = 1024 * 1024) {
     });
 }
 
+function readRawBody(request, limitBytes = 1024 * 1024) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        let total = 0;
+        request.on('data', chunk => {
+            total += chunk.length;
+            if (total > limitBytes) {
+                reject(Object.assign(new Error('request body exceeds limit'), { statusCode: 413 }));
+                request.destroy();
+                return;
+            }
+            chunks.push(chunk);
+        });
+        request.on('end', () => resolve(Buffer.concat(chunks)));
+        request.on('error', reject);
+    });
+}
+
 function sendJson(response, statusCode, value) {
     const body = Buffer.from(JSON.stringify(value) + '\n', 'utf8');
     response.writeHead(statusCode, {
@@ -115,6 +133,8 @@ class TrainingControlStore {
             options.statePath || path.join(__dirname, 'logs', 'training-control-state.json'));
         this.artifactRoot = path.resolve(
             options.artifactRoot || path.join(__dirname, 'training-artifacts'));
+        this.logRoot = path.resolve(
+            options.logRoot || path.join(__dirname, 'training-logs'));
         this.leaseSeconds = Number(options.leaseSeconds || DEFAULT_LEASE_SECONDS);
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
@@ -131,6 +151,9 @@ class TrainingControlStore {
             training_enabled: false,
             environment_args: [],
             canonical_build_id: "",
+            run_id: "",
+            compatibility_key: "",
+            pending_release: null,
             builds: {},
             full_game_builds: {},
         };
@@ -147,20 +170,19 @@ class TrainingControlStore {
             for (const [platform, versions] of Object.entries(parsed.builds || {})) {
                 fullGameBuilds[platform] = {};
                 for (const [buildId, record] of Object.entries(versions || {})) {
-                    fullGameBuilds[platform][buildId] = {
-                        ...record,
-                        role: 'full-game',
-                    };
-                    versions[buildId] = {
-                        ...record,
-                        role: 'dedicated',
-                    };
+                    fullGameBuilds[platform][buildId] = { ...record, role: 'full-game' };
+                    versions[buildId] = { ...record, role: 'dedicated' };
                 }
             }
+            parsed = { ...parsed, schema_version: 3, full_game_builds: fullGameBuilds };
+        }
+        if (parsed.schema_version === 3) {
             parsed = {
                 ...parsed,
                 schema_version: CONTROL_SCHEMA_VERSION,
-                full_game_builds: fullGameBuilds,
+                run_id: "",
+                compatibility_key: "",
+                pending_release: null,
             };
             atomicWriteJson(this.statePath, parsed);
         } else if (parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
@@ -173,6 +195,25 @@ class TrainingControlStore {
             throw new Error('training-control state training_enabled is invalid');
         }
         parsed.environment_args = normalizeEnvironmentArgs(parsed.environment_args || []);
+        if (typeof parsed.run_id !== 'string' ||
+            (parsed.run_id && !/^[A-Za-z0-9._-]+$/.test(parsed.run_id))) {
+            throw new Error('training-control state run_id is invalid');
+        }
+        if (typeof parsed.compatibility_key !== 'string' ||
+            (parsed.compatibility_key && !/^[0-9a-f]{64}$/.test(parsed.compatibility_key))) {
+            throw new Error('training-control state compatibility_key is invalid');
+        }
+        if (parsed.pending_release !== null) {
+            const pending = parsed.pending_release;
+            if (!pending || typeof pending !== 'object' || Array.isArray(pending) ||
+                typeof pending.build_id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(pending.build_id) ||
+                typeof pending.run_id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(pending.run_id) ||
+                typeof pending.compatibility_key !== 'string' || !/^[0-9a-f]{64}$/.test(pending.compatibility_key) ||
+                typeof pending.incompatible !== 'boolean' ||
+                !['preparing', 'rolling', 'stopping'].includes(pending.phase)) {
+                throw new Error('training-control pending release is invalid');
+            }
+        }
         if (typeof parsed.canonical_build_id !== 'string' ||
             (parsed.canonical_build_id && !/^[A-Za-z0-9._-]+$/.test(parsed.canonical_build_id))) {
             throw new Error('training-control state canonical_build_id is invalid');
