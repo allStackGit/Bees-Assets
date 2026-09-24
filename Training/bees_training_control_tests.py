@@ -45,6 +45,13 @@ class TrainingControlClientTests(unittest.TestCase):
                 environment_args=(),
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            environment = popen.call_args.kwargs["env"]
+            self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
+            self.assertTrue(
+                Path(environment["BEES_TRAINING_LOG_DIR"]).as_posix().endswith(
+                    "logs/run-a"
+                )
+            )
             managed.stop()
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
@@ -68,6 +75,76 @@ class TrainingControlClientTests(unittest.TestCase):
             run.call_args.args[0],
             ["taskkill", "/PID", "5252", "/T", "/F"],
         )
+
+    def test_training_log_uploader_flushes_only_selected_run(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {}
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    return -len(current) - 1
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "run-old").mkdir()
+            (root / "run-new").mkdir()
+            (root / "run-old" / "Player-0.log").write_bytes(b"old-data")
+            (root / "run-new" / "Player-0.log").write_bytes(b"new-data")
+            uploader = agent.TrainingLogUploader(root)
+            client = UploadClient()
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run-old")
+
+            self.assertEqual(
+                client.files[("worker-a", "run-old", "Player-0.log")],
+                b"old-data",
+            )
+            self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
+
+    def test_episode_metrics_reset_when_run_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            old = root / "run-old"
+            new = root / "run-new"
+            old.mkdir()
+            new.mkdir()
+            old_line = (
+                "RL 1v1 episode=1 timeout=False duration=10.0s "
+                "bee_tsv=100->50 human_tsv=100->0 "
+                "bee_fire_requests=1 bee_shots=1 bee_hits=1 bee_damage=10 "
+                "human_fire_requests=1 human_shots=1 human_hits=0 human_damage=0\n"
+            )
+            new_line = (
+                "RL 1v1 episode=2 timeout=True duration=20.0s "
+                "bee_tsv=100->50 human_tsv=100->50 "
+                "bee_fire_requests=1 bee_shots=1 bee_hits=0 bee_damage=0 "
+                "human_fire_requests=1 human_shots=1 human_hits=0 human_damage=0\n"
+            )
+            (old / "Player-0.log").write_text(old_line, encoding="utf-8")
+            (new / "Player-0.log").write_text(new_line, encoding="utf-8")
+            metrics = agent.EpisodeLogMetrics(root, window=10)
+
+            self.assertEqual(metrics.refresh("run-old")["last_episode"], 1)
+            current = metrics.refresh("run-new")
+            self.assertEqual(current["last_episode"], 2)
+            self.assertEqual(current["window_episodes"], 1)
 
     def test_full_game_canonical_change_is_deferred_while_process_is_alive(self):
         managed = agent.ManagedProcess()
