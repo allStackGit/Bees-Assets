@@ -18,7 +18,7 @@ Once you can name the affected contract, current symbols/schema, important owner
 
 For documentation/skill/agent-workflow-only changes, the normal fast path is: `AGENTS.md -> CONTEXT_INDEX.md -> affected docs/skills -> direct guardrail tests if any`. Do not load backend/database architecture unless the guidance change actually depends on it.
 
-Maintained documentation is a source-grounded navigation model, not unquestioned truth. Revalidate material facts against current code/tests/schema and the Unity client when a cross-project contract depends on them.
+Maintained documentation is a source-grounded navigation model, not unquestioned truth. Revalidate material facts against current code/tests/schema and the Unity client when a cross-repository contract depends on them.
 
 ## Branch discipline
 
