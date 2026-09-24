@@ -210,7 +210,14 @@ func zipFile(z *zip.Writer, archiveName, path string, mode os.FileMode) error {
 	return err
 }
 
-func bootstrapHandler(token, runtimePath, workerTokenPath, wanTokenPath string) http.Handler {
+func bootstrapHandler(
+	token,
+	runtimePath,
+	workerTokenPath,
+	wanTokenPath,
+	windowsBridgePath,
+	linuxBridgePath string,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/bootstrap" {
 			http.NotFound(w, r)
@@ -221,7 +228,13 @@ func bootstrapHandler(token, runtimePath, workerTokenPath, wanTokenPath string) 
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		for _, path := range []string{runtimePath, workerTokenPath, wanTokenPath} {
+		for _, path := range []string{
+			runtimePath,
+			workerTokenPath,
+			wanTokenPath,
+			windowsBridgePath,
+			linuxBridgePath,
+		} {
 			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
 				http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
 				return
@@ -240,6 +253,12 @@ func bootstrapHandler(token, runtimePath, workerTokenPath, wanTokenPath string) 
 		}
 		if err := zipFile(z, "wan.token", wanTokenPath, 0o600); err != nil {
 			log.Printf("[Bees tailnet] bootstrap WAN token write failed: %v", err)
+		}
+		if err := zipFile(z, "bees-tailnet-bridge-windows.exe", windowsBridgePath, 0o700); err != nil {
+			log.Printf("[Bees tailnet] bootstrap Windows bridge write failed: %v", err)
+		}
+		if err := zipFile(z, "bees-tailnet-bridge-linux", linuxBridgePath, 0o700); err != nil {
+			log.Printf("[Bees tailnet] bootstrap Linux bridge write failed: %v", err)
 		}
 		if err := z.Close(); err != nil {
 			log.Printf("[Bees tailnet] bootstrap zip close failed: %v", err)
@@ -264,6 +283,8 @@ func runGateway(args []string) error {
 	runtimePath := fs.String("runtime", "", "remote runtime zip path")
 	workerTokenPath := fs.String("worker-token", "", "worker token path")
 	wanTokenPath := fs.String("wan-token", "", "WAN token path")
+	windowsBridgePath := fs.String("windows-bridge", "", "Windows bridge distribution path")
+	linuxBridgePath := fs.String("linux-bridge", "", "Linux bridge distribution path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -312,7 +333,14 @@ func runGateway(args []string) error {
 
 	go proxyListener(ctx, controlLn, localDial(fmt.Sprintf("127.0.0.1:%d", *controlPort)), "control")
 	go proxyListener(ctx, brokerLn, localDial(fmt.Sprintf("127.0.0.1:%d", *brokerPort)), "broker")
-	httpServer := &http.Server{Handler: bootstrapHandler(token, *runtimePath, *workerTokenPath, *wanTokenPath)}
+	httpServer := &http.Server{Handler: bootstrapHandler(
+		token,
+		*runtimePath,
+		*workerTokenPath,
+		*wanTokenPath,
+		*windowsBridgePath,
+		*linuxBridgePath,
+	)}
 	go func() {
 		if err := httpServer.Serve(bootstrapLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[Bees tailnet] bootstrap HTTP server failed: %v", err)
