@@ -124,10 +124,6 @@ namespace Assets.Scripts.Levels.Commands
                 GetSquad().SetShootingStrategy(ShootingStrategy.ShootingStrategyType);
                 GetSquad().ClearTargets();
 
-                if (Stage.DebugLogger.IsDebugging)
-                {
-                    GetSquad().PastCommands.Add(new StoredCommand(this));
-                }
                 HasStoredOutcomeRecord = Level.State.AddCommand(this);
                 if (!Stage.IsTraining)
                 {
@@ -440,19 +436,12 @@ namespace Assets.Scripts.Levels.Commands
                         _finalize_storedCommand.IsFinalized = true;
                     }
 
-                    if (Stage.DebugLogger.IsDebugging)
+                    if (false)
                     {
-                        _finalize_squadCommand = GetSquad().PastCommands.FirstOrDefault(c => c.OutcomeId == OutcomeId);
-                        if (_finalize_squadCommand != null)
-                        {
-                            _finalize_enemyName = EnemySquad != null ? EnemySquad.Name : "N/A";
-                            _finalize_squadCommand.Enemy = _finalize_enemyName;
-                            _finalize_squadCommand.Tsv = Tsv;
-                            _finalize_squadCommand.FinalizationCause = cause;
-                            _finalize_squadCommand.IsFinalized = true;
-                        }
-                        else
-                        {
+                        _finalize_squadCommand = null;
+                    }
+                    else
+                    {
                             Debug.LogError($"Could not find squad command for OutcomeId #{OutcomeId} in Squad {GetSquad().Name}");
                         }
                     }
