@@ -1,0 +1,781 @@
+using Assets.Scripts;
+using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Levels;
+using Newtonsoft.Json;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using Unity.MLAgents.Sensors;
+using UnityEngine;
+
+/// <summary>
+/// Automatically records eligible combat decisions in ordinary desktop gameplay. Human, Hive Mind,
+/// and deployed-neural ships are sampled through the exact NN-visible observation/action ABI. The
+/// dedicated ML-Agents training runtime is deliberately excluded because it contributes directly
+/// through fresh PPO rollouts. Completed gameplay segments remain off-policy/quarantined until
+/// server and central validation.
+/// </summary>
+internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
+{
+    internal const string DisableCommandLineFlag = "--rl-disable-automatic-telemetry";
+    internal const string TelemetryDirectoryName = "RlLiveTelemetry";
+    internal const int MaxStepsPerSegment = 64;
+
+    private const string ModeName = "gameplay-controller-live";
+    private static readonly FieldInfo VectorObservationsField = typeof(VectorSensor).GetField(
+        "m_Observations", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BootstrapDeploymentField = typeof(RlLivePolicyModelBootstrap).GetField(
+        "_deploymentId", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static RlLiveTelemetryRecorder _instance;
+
+    [Serializable]
+    internal sealed class DeploymentCompatibility
+    {
+        public string behavior_name;
+        public int policy_abi_version;
+        public int observation_schema_version;
+        public int action_schema_version;
+        public int reward_schema_version;
+        public int scenario_schema_version;
+    }
+
+    [Serializable]
+    internal sealed class DeploymentIdentity
+    {
+        public string model_id;
+        public string model_sha256;
+        public string behavior_name;
+        public string policy_signature;
+        public DeploymentCompatibility compatibility;
+        public string game_build_version;
+    }
+
+    [Serializable]
+    internal sealed class DeploymentManifest
+    {
+        public int schema_version;
+        public string deployment_id;
+        public DeploymentIdentity identity;
+    }
+
+    internal sealed class TelemetryStep
+    {
+        public string agent_key;
+        public string controller_kind;
+        public int decision_index;
+        public float[] observation;
+        public float[] continuous_action;
+        public int[] discrete_action;
+    }
+
+    internal sealed class TelemetryPayload
+    {
+        public int schema_version = RlLiveTelemetryContract.SchemaVersion;
+        public string match_id;
+        public string source_match_id;
+        public int segment_index;
+        public string game_build_version;
+        public string mode = ModeName;
+        public string result;
+        public string model_id;
+        public string model_sha256;
+        public string deployment_id;
+        public string policy_signature;
+        public string behavior_name;
+        public int policy_abi_version;
+        public int observation_schema_version;
+        public int action_schema_version;
+        public int reward_schema_version;
+        public int scenario_schema_version;
+        public List<TelemetryStep> steps = new List<TelemetryStep>();
+    }
+
+    private sealed class LevelSession
+    {
+        public Level Level;
+        public float LevelStartTime;
+        public string SourceMatchId;
+        public int SegmentIndex;
+        public int DecisionCounter;
+        public bool Completed;
+        public TelemetryPayload Current;
+        public readonly Dictionary<long, int> DecisionByShip = new Dictionary<long, int>();
+        public readonly Dictionary<long, string> AgentKeyByShip = new Dictionary<long, string>();
+        public readonly List<string> DraftPaths = new List<string>();
+    }
+
+    private readonly Dictionary<Level, LevelSession> _sessions = new Dictionary<Level, LevelSession>();
+    private readonly RlCombatPerception _perception = new RlCombatPerception();
+    private Stage _stage;
+    private DeploymentManifest _cachedManifest;
+    private string _cachedDeploymentId;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void InstallForGameplayStage()
+    {
+        if (RlOneVsOneTrainingBootstrap.IsDedicatedTrainingRuntime ||
+            IsDisabled(Environment.GetCommandLineArgs()))
+        {
+            return;
+        }
+
+        Stage stage = UnityEngine.Object.FindFirstObjectByType<Stage>();
+        if (stage == null)
+        {
+            return;
+        }
+
+        RlLiveTelemetryRecorder recorder = stage.GetComponent<RlLiveTelemetryRecorder>();
+        if (recorder == null)
+        {
+            recorder = stage.gameObject.AddComponent<RlLiveTelemetryRecorder>();
+        }
+        recorder._stage = stage;
+        _instance = recorder;
+        stage.StartCoroutine(recorder.EnableWhenReady());
+    }
+
+    private IEnumerator EnableWhenReady()
+    {
+        while (_stage != null && (!_stage.IsFinalized || ConfigData.Configuration == null))
+        {
+            yield return null;
+        }
+#if UNITY_WEBGL
+        yield break;
+#else
+        if (_stage == null)
+        {
+            enabled = false;
+            yield break;
+        }
+
+        try
+        {
+            RlLiveTelemetryContract.ValidateOrThrow();
+            Directory.CreateDirectory(GetPendingDirectory());
+            Directory.CreateDirectory(GetDraftDirectory());
+            RecoverAbandonedDrafts();
+            Debug.Log(
+                "Automatic gameplay telemetry enabled for human, Hive Mind, and deployed-neural " +
+                "ships; completed segments remain quarantined until server and central validation.");
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Automatic gameplay telemetry disabled: " + exception.Message);
+            enabled = false;
+        }
+#endif
+    }
+
+    private void OnDestroy()
+    {
+#if !UNITY_WEBGL
+        foreach (LevelSession session in _sessions.Values)
+        {
+            if (session == null || session.Completed)
+            {
+                continue;
+            }
+            try
+            {
+                string result = session.Level != null && session.Level.State != null &&
+                                session.Level.State.LevelEnded
+                    ? ResolveCompletedResult(session.Level)
+                    : "timeout";
+                CompleteSession(session, result);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not finalize gameplay telemetry during teardown: " + exception.Message);
+            }
+        }
+#endif
+        if (_instance == this)
+        {
+            _instance = null;
+        }
+    }
+
+    private void FixedUpdate()
+    {
+#if UNITY_WEBGL
+        return;
+#else
+        if (!enabled || _stage == null)
+        {
+            return;
+        }
+
+        IReadOnlyList<Level> levels = _stage.Levels;
+        for (int i = 0; i < levels.Count; i++)
+        {
+            Level level = levels[i];
+            if (level == null || level.State == null)
+            {
+                continue;
+            }
+
+            LevelSession session = GetSession(level);
+            if (session.Completed)
+            {
+                continue;
+            }
+            if (level.State.LevelEnded)
+            {
+                CompleteSession(session, ResolveCompletedResult(level));
+                continue;
+            }
+
+            session.DecisionCounter++;
+            if (session.DecisionCounter < RlOneVsOneTrainingOptions.DefaultDecisionPeriod)
+            {
+                continue;
+            }
+            session.DecisionCounter = 0;
+            RecordGameplayShips(session, RlOneVsOneAgent.NoSpecialAction, null);
+        }
+#endif
+    }
+
+    internal static void RecordCapability(Ship ship, int specialAction)
+    {
+#if !UNITY_WEBGL
+        if (_instance == null || ship == null || ship.Level == null ||
+            specialAction <= RlOneVsOneAgent.NoSpecialAction ||
+            specialAction >= RlOneVsOneAgent.SpecialActionBranchSize)
+        {
+            return;
+        }
+        _instance.RecordCapabilityInternal(ship, specialAction);
+#endif
+    }
+
+    private void RecordCapabilityInternal(Ship ship, int specialAction)
+    {
+        if (!enabled || _stage == null || ship.Squad == null || ship.IsDead ||
+            ship.Level.State == null || ship.Level.State.LevelEnded)
+        {
+            return;
+        }
+        RlProductionControllerRouter.ControllerKind controller =
+            RlProductionControllerRouter.Resolve(_stage, ship.Level, ship.Side);
+        if (!RlProductionControllerRouter.IsExternalExpert(controller))
+        {
+            return;
+        }
+
+        LevelSession session = GetSession(ship.Level);
+        if (!session.Completed)
+        {
+            RecordGameplayShips(session, specialAction, ship);
+        }
+    }
+
+    private static bool IsDisabled(IReadOnlyList<string> args)
+    {
+        if (args == null)
+        {
+            return false;
+        }
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (string.Equals(args[i], DisableCommandLineFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private LevelSession GetSession(Level level)
+    {
+        if (_sessions.TryGetValue(level, out LevelSession existing))
+        {
+            if (!HasLevelGenerationChanged(existing.LevelStartTime, level.StartTime))
+            {
+                return existing;
+            }
+
+            if (!existing.Completed)
+            {
+                CompleteSession(existing, "timeout");
+            }
+            _sessions.Remove(level);
+        }
+
+        LevelSession created = new LevelSession
+        {
+            Level = level,
+            LevelStartTime = level.StartTime,
+            SourceMatchId = "live-" + Guid.NewGuid().ToString("N")
+        };
+        _sessions.Add(level, created);
+        return created;
+    }
+
+    internal static bool HasLevelGenerationChanged(float capturedStartTime, float currentStartTime)
+    {
+        return capturedStartTime != currentStartTime;
+    }
+
+    private void RecordGameplayShips(LevelSession session, int specialAction, Ship capabilityShip)
+    {
+        if (!TryResolveCurrentDeployment(out DeploymentManifest manifest, out string identityError))
+        {
+            Debug.LogWarning(
+                "Skipping gameplay telemetry because compatible policy identity is unavailable: " +
+                identityError);
+            return;
+        }
+
+        List<Ship> ships = session.Level.State.GetShips(ConfigData.Configuration.BeeSide);
+        RecordEligibleList(session, ships, manifest, specialAction, capabilityShip);
+        ships = session.Level.State.GetShips(ConfigData.Configuration.HumanSide);
+        RecordEligibleList(session, ships, manifest, specialAction, capabilityShip);
+    }
+
+    private void RecordEligibleList(
+        LevelSession session,
+        List<Ship> ships,
+        DeploymentManifest manifest,
+        int specialAction,
+        Ship capabilityShip)
+    {
+        for (int i = 0; i < ships.Count; i++)
+        {
+            Ship ship = ships[i];
+            if (ship == null || ship.IsDead || ship.Squad == null ||
+                !RlOneVsOneAgent.RequiresPolicyControl(ship))
+            {
+                continue;
+            }
+            RlProductionControllerRouter.ControllerKind controller =
+                RlProductionControllerRouter.Resolve(_stage, session.Level, ship.Side);
+            if (!RlProductionControllerRouter.IsExternalExpert(controller))
+            {
+                continue;
+            }
+            if (capabilityShip != null && ship != capabilityShip)
+            {
+                continue;
+            }
+            if (!RlPolicySchema.TryValidateShip(ship, out string schemaError))
+            {
+                Debug.LogWarning("Skipping incompatible gameplay telemetry ship: " + schemaError);
+                continue;
+            }
+
+            if (session.Current != null &&
+                !string.Equals(session.Current.deployment_id, manifest.deployment_id, StringComparison.Ordinal))
+            {
+                FlushDraft(session);
+            }
+
+            TelemetryPayload payload = EnsurePayload(session, manifest);
+            if (!TryCreateStep(session, ship, controller, specialAction, out TelemetryStep step))
+            {
+                continue;
+            }
+            payload.steps.Add(step);
+            if (payload.steps.Count >= MaxStepsPerSegment)
+            {
+                FlushDraft(session);
+            }
+        }
+    }
+
+    private TelemetryPayload EnsurePayload(LevelSession session, DeploymentManifest manifest)
+    {
+        if (session.Current != null)
+        {
+            return session.Current;
+        }
+
+        DeploymentIdentity identity = manifest.identity;
+        session.Current = new TelemetryPayload
+        {
+            match_id = $"{session.SourceMatchId}-s{session.SegmentIndex:D6}",
+            source_match_id = session.SourceMatchId,
+            segment_index = session.SegmentIndex,
+            game_build_version = identity.game_build_version,
+            result = "draw",
+            model_id = identity.model_id,
+            model_sha256 = identity.model_sha256,
+            deployment_id = manifest.deployment_id,
+            policy_signature = identity.policy_signature,
+            behavior_name = identity.behavior_name,
+            policy_abi_version = identity.compatibility.policy_abi_version,
+            observation_schema_version = identity.compatibility.observation_schema_version,
+            action_schema_version = identity.compatibility.action_schema_version,
+            reward_schema_version = identity.compatibility.reward_schema_version,
+            scenario_schema_version = identity.compatibility.scenario_schema_version
+        };
+        return session.Current;
+    }
+
+    private bool TryCreateStep(
+        LevelSession session,
+        Ship ship,
+        RlProductionControllerRouter.ControllerKind controller,
+        int specialAction,
+        out TelemetryStep step)
+    {
+        step = null;
+        if (VectorObservationsField == null)
+        {
+            return false;
+        }
+
+        VectorSensor sensor = new VectorSensor(RlPolicySchema.ObservationSize);
+        _perception.Collect(ship, ship.Side, sensor, 0);
+        if (!(VectorObservationsField.GetValue(sensor) is List<float> observations) ||
+            observations.Count != RlPolicySchema.ObservationSize)
+        {
+            return false;
+        }
+
+        float[] continuous = new float[RlOneVsOneAgent.ContinuousActionCount];
+        int[] discrete = new int[RlOneVsOneAgent.DiscreteBranchCount];
+        Vector2 movement = RlGameplayDemonstrationAgent.EncodeMovementDirection(ship.Direction);
+        continuous[0] = movement.x;
+        continuous[1] = movement.y;
+
+        for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
+        {
+            if (ship.Weapons == null || slot >= ship.Weapons.Count || !(ship.Weapons[slot] is Turret turret))
+            {
+                continue;
+            }
+
+            int aimStart = RlOneVsOneAgent.WeaponAimContinuousActionStart +
+                           slot * RlOneVsOneAgent.WeaponAimContinuousActionsPerSlot;
+            Vector2 aim = turret.TargetPoint - turret.GetPosition();
+            if (aim.sqrMagnitude > 0.0001f)
+            {
+                aim.Normalize();
+                continuous[aimStart] = aim.x;
+                continuous[aimStart + 1] = aim.y;
+            }
+
+            bool fireRequested = turret.IsFiringManually || turret.ShouldFire || turret.ShouldFireAtAsteroid;
+            discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] = fireRequested
+                ? RlOneVsOneAgent.FireWeaponAction
+                : RlOneVsOneAgent.CeaseWeaponAction;
+        }
+        discrete[RlOneVsOneAgent.SpecialActionBranch] = specialAction;
+
+        if (!session.DecisionByShip.TryGetValue(ship.Id, out int decisionIndex))
+        {
+            decisionIndex = 0;
+        }
+        else
+        {
+            decisionIndex++;
+        }
+        session.DecisionByShip[ship.Id] = decisionIndex;
+
+        if (!session.AgentKeyByShip.TryGetValue(ship.Id, out string agentKey))
+        {
+            agentKey = $"agent-{session.AgentKeyByShip.Count:D3}";
+            session.AgentKeyByShip.Add(ship.Id, agentKey);
+        }
+
+        step = new TelemetryStep
+        {
+            agent_key = agentKey,
+            controller_kind = RlProductionControllerRouter.ExternalSourceName(controller),
+            decision_index = decisionIndex,
+            observation = observations.ToArray(),
+            continuous_action = continuous,
+            discrete_action = discrete
+        };
+        return true;
+    }
+
+    private void FlushDraft(LevelSession session)
+    {
+        TelemetryPayload payload = session.Current;
+        session.Current = null;
+        if (payload == null || payload.steps == null || payload.steps.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(GetDraftDirectory());
+            string path = Path.Combine(GetDraftDirectory(), payload.match_id + ".draft.json");
+            WriteAtomic(path, JsonConvert.SerializeObject(payload, Formatting.None));
+            if (!session.DraftPaths.Contains(path))
+            {
+                session.DraftPaths.Add(path);
+            }
+            session.SegmentIndex++;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Could not persist gameplay telemetry draft: " + exception.Message);
+        }
+    }
+
+    private void CompleteSession(LevelSession session, string result)
+    {
+        if (session.Completed)
+        {
+            return;
+        }
+
+        FlushDraft(session);
+        for (int i = 0; i < session.DraftPaths.Count; i++)
+        {
+            string draft = session.DraftPaths[i];
+            try
+            {
+                if (!File.Exists(draft))
+                {
+                    continue;
+                }
+                TelemetryPayload payload = JsonConvert.DeserializeObject<TelemetryPayload>(File.ReadAllText(draft));
+                if (payload == null || payload.steps == null || payload.steps.Count == 0)
+                {
+                    File.Delete(draft);
+                    continue;
+                }
+                payload.result = result;
+                Directory.CreateDirectory(GetPendingDirectory());
+                string pending = Path.Combine(GetPendingDirectory(), payload.match_id + ".json");
+                WriteAtomic(pending, JsonConvert.SerializeObject(payload, Formatting.None));
+                File.Delete(draft);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not finalize gameplay telemetry segment: " + exception.Message);
+            }
+        }
+        session.Completed = true;
+    }
+
+    private static string ResolveCompletedResult(Level level)
+    {
+        if (level == null || ConfigData.Configuration == null)
+        {
+            return "draw";
+        }
+        if (level.WinningSide == ConfigData.Configuration.BeeSide)
+        {
+            return "bee_win";
+        }
+        if (level.WinningSide == ConfigData.Configuration.HumanSide)
+        {
+            return "human_win";
+        }
+        return "draw";
+    }
+
+    private bool TryResolveCurrentDeployment(out DeploymentManifest manifest, out string error)
+    {
+        manifest = null;
+        error = null;
+        string activeDeploymentId = null;
+        RlLivePolicyModelBootstrap bootstrap = _stage != null
+            ? _stage.GetComponent<RlLivePolicyModelBootstrap>()
+            : null;
+        if (bootstrap != null && BootstrapDeploymentField != null)
+        {
+            activeDeploymentId = BootstrapDeploymentField.GetValue(bootstrap) as string;
+        }
+
+        if (!string.IsNullOrEmpty(activeDeploymentId) && _cachedManifest != null &&
+            string.Equals(_cachedDeploymentId, activeDeploymentId, StringComparison.Ordinal))
+        {
+            manifest = _cachedManifest;
+            return true;
+        }
+
+        TextAsset bundled = Resources.Load<TextAsset>(RlLivePolicyModelBootstrap.ManifestResourcePath);
+        if (bundled != null && TryParseManifest(bundled.text, activeDeploymentId, out manifest))
+        {
+            CacheManifest(manifest);
+            if (string.IsNullOrEmpty(activeDeploymentId) ||
+                string.Equals(manifest.deployment_id, activeDeploymentId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (string.IsNullOrEmpty(activeDeploymentId))
+        {
+            if (_cachedManifest != null)
+            {
+                manifest = _cachedManifest;
+                return true;
+            }
+            error = "no compatible bundled policy manifest is available to define the gameplay-data ABI";
+            return false;
+        }
+
+        string hotPath = Path.Combine(
+            Application.persistentDataPath,
+            "RlPolicyHotBundles",
+            activeDeploymentId + ".bundle");
+        if (!File.Exists(hotPath))
+        {
+            error = "hot deployment manifest bundle is unavailable";
+            return false;
+        }
+
+        AssetBundle bundle = AssetBundle.LoadFromFile(hotPath);
+        if (bundle == null)
+        {
+            error = "hot deployment bundle could not be loaded for telemetry identity";
+            return false;
+        }
+        try
+        {
+            TextAsset hotManifest = bundle.LoadAsset<TextAsset>(RlLivePolicyModelUpdater.ManifestAddress);
+            if (hotManifest == null || !TryParseManifest(hotManifest.text, activeDeploymentId, out manifest))
+            {
+                error = "hot deployment manifest does not match the active deployment";
+                return false;
+            }
+            CacheManifest(manifest);
+            return true;
+        }
+        finally
+        {
+            bundle.Unload(true);
+        }
+    }
+
+    private static bool TryParseManifest(string json, string expectedDeploymentId, out DeploymentManifest manifest)
+    {
+        manifest = null;
+        try
+        {
+            manifest = JsonUtility.FromJson<DeploymentManifest>(json);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (manifest == null || manifest.schema_version != RlLivePolicyModelBootstrap.DeploymentManifestSchemaVersion ||
+            !IsContentId(manifest.deployment_id, "deploy-", 24) ||
+            (!string.IsNullOrEmpty(expectedDeploymentId) &&
+             !string.Equals(manifest.deployment_id, expectedDeploymentId, StringComparison.Ordinal)) ||
+            manifest.identity == null || manifest.identity.compatibility == null ||
+            !IsContentId(manifest.identity.model_id, $"bees-rl-v{RlPolicySchema.Version}-", 24) ||
+            !IsLowerHex(manifest.identity.model_sha256, 64) ||
+            string.IsNullOrWhiteSpace(manifest.identity.game_build_version) ||
+            !string.Equals(manifest.identity.behavior_name, RlPolicySchema.ExpectedBehaviorName, StringComparison.Ordinal) ||
+            !string.Equals(manifest.identity.policy_signature, RlPolicySchema.Signature, StringComparison.Ordinal) ||
+            !string.Equals(manifest.identity.compatibility.behavior_name, RlPolicySchema.ExpectedBehaviorName, StringComparison.Ordinal) ||
+            manifest.identity.compatibility.policy_abi_version != RlPolicySchema.Version ||
+            manifest.identity.compatibility.observation_schema_version != RlPolicySchema.ObservationSchemaVersion ||
+            manifest.identity.compatibility.action_schema_version != RlPolicySchema.ActionSchemaVersion ||
+            manifest.identity.compatibility.reward_schema_version != RlPolicySchema.RewardSchemaVersion ||
+            manifest.identity.compatibility.scenario_schema_version != RlPolicySchema.ScenarioSchemaVersion)
+        {
+            manifest = null;
+            return false;
+        }
+        return true;
+    }
+
+    private void CacheManifest(DeploymentManifest manifest)
+    {
+        _cachedManifest = manifest;
+        _cachedDeploymentId = manifest.deployment_id;
+    }
+
+    private static bool IsContentId(string value, string prefix, int hexLength)
+    {
+        return value != null && value.StartsWith(prefix, StringComparison.Ordinal) &&
+               value.Length == prefix.Length + hexLength &&
+               IsLowerHex(value.Substring(prefix.Length), hexLength);
+    }
+
+    private static bool IsLowerHex(string value, int expectedLength)
+    {
+        if (value == null || value.Length != expectedLength)
+        {
+            return false;
+        }
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static string GetRootDirectory()
+    {
+        return Path.Combine(
+            Application.persistentDataPath,
+            TelemetryDirectoryName,
+            $"PolicyV{RlPolicySchema.Version}");
+    }
+
+    internal static string GetPendingDirectory()
+    {
+        return Path.Combine(GetRootDirectory(), "Pending");
+    }
+
+    private static string GetDraftDirectory()
+    {
+        return Path.Combine(GetRootDirectory(), "Draft");
+    }
+
+    private static void RecoverAbandonedDrafts()
+    {
+        string draftDirectory = GetDraftDirectory();
+        if (!Directory.Exists(draftDirectory))
+        {
+            return;
+        }
+
+        foreach (string path in Directory.GetFiles(draftDirectory, "*.draft.json"))
+        {
+            try
+            {
+                TelemetryPayload payload = JsonConvert.DeserializeObject<TelemetryPayload>(File.ReadAllText(path));
+                if (payload == null || payload.steps == null || payload.steps.Count == 0)
+                {
+                    File.Delete(path);
+                    continue;
+                }
+                payload.result = "timeout";
+                Directory.CreateDirectory(GetPendingDirectory());
+                string pending = Path.Combine(GetPendingDirectory(), payload.match_id + ".json");
+                WriteAtomic(pending, JsonConvert.SerializeObject(payload, Formatting.None));
+                File.Delete(path);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not recover abandoned gameplay telemetry draft: " + exception.Message);
+            }
+        }
+    }
+
+    private static void WriteAtomic(string destination, string text)
+    {
+        string directory = Path.GetDirectoryName(destination);
+        Directory.CreateDirectory(directory);
+        string temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        File.WriteAllText(temp, text);
+        if (File.Exists(destination))
+        {
+            File.Delete(temp);
+            return;
+        }
+        File.Move(temp, destination);
+    }
+}

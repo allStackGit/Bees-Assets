@@ -1,0 +1,4 @@
+# Add-on dependency for Bees continual-learning frozen ONNX policies.
+# Install this into the existing Bees ML-Agents 1.1.0 virtual environment.
+# This is the CPU baseline used by the committed continual-learning configuration.
+onnxruntime>=1.16,<2

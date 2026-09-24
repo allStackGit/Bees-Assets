@@ -1,0 +1,849 @@
+"""Run Bees ML-Agents with continual-learning candidate registration enabled.
+
+This is an opt-in wrapper around Training/bees_mlagents_learn.py. Existing training commands
+remain valid and unchanged. When --continual-root is supplied, stable exported ONNX checkpoints
+are copied into the immutable continual-learning registry as candidates while training continues.
+The configured historical-league share can also replace the non-learning GhostTrainer policy with
+an immutable historical ONNX policy at ordinary self-play swap boundaries. Trusted native
+ML-Agents human demonstrations can optionally be snapshotted and mixed in through behavioral
+cloning without changing the committed base trainer YAML.
+
+Example:
+    python Training/bees_continual_train.py Training/rl_1v1_config.yaml \
+      --env="F:\\RLDemo\\Bees RL Training" --run-id=bees-full-001 --resume \
+      --torch-device=cuda --bees-batch-inference --bees-cpu-inference \
+      --continual-root="F:\\RLDemo\\BeesContinual" \
+      --continual-game-build="2026.09.10"
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+import shutil
+import sys
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+
+
+CONTINUAL_ROOT_FLAG = "--continual-root"
+CONTINUAL_CONFIG_FLAG = "--continual-config"
+GAME_BUILD_FLAG = "--continual-game-build"
+PARENT_MODEL_FLAG = "--continual-parent-model-id"
+SCAN_SECONDS_FLAG = "--continual-scan-seconds"
+HUMAN_DEMO_DIR_FLAG = "--continual-human-demo-dir"
+DEFAULT_SCAN_SECONDS = 2.0
+DEFAULT_HISTORICAL_POLICY_CACHE_SIZE = 4
+HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION = 2
+CAPTURE_MANIFEST_FILE_NAME = "capture-manifest.json"
+CAPTURE_MANIFEST_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class ContinualOptions:
+    root: Optional[str] = None
+    config: Optional[str] = None
+    game_build: Optional[str] = None
+    parent_model_id: Optional[str] = None
+    human_demo_dir: Optional[str] = None
+    scan_seconds: float = DEFAULT_SCAN_SECONDS
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.root)
+
+
+def _read_value(
+    argv: Sequence[str],
+    index: int,
+    flag: str,
+) -> Tuple[Optional[str], int]:
+    argument = argv[index]
+    if argument == flag:
+        if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+            raise SystemExit(f"{flag} requires a value.")
+        return argv[index + 1], index + 2
+    prefix = flag + "="
+    if argument.startswith(prefix):
+        value = argument[len(prefix):]
+        if not value:
+            raise SystemExit(f"{flag} requires a value.")
+        return value, index + 1
+    return None, index
+
+
+def extract_continual_options(argv: Sequence[str]) -> Tuple[List[str], ContinualOptions]:
+    trainer_args: List[str] = []
+    values = {
+        "root": None,
+        "config": None,
+        "game_build": None,
+        "parent_model_id": None,
+        "human_demo_dir": None,
+        "scan_seconds": DEFAULT_SCAN_SECONDS,
+    }
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        matched = False
+        for flag, key in (
+            (CONTINUAL_ROOT_FLAG, "root"),
+            (CONTINUAL_CONFIG_FLAG, "config"),
+            (GAME_BUILD_FLAG, "game_build"),
+            (PARENT_MODEL_FLAG, "parent_model_id"),
+            (HUMAN_DEMO_DIR_FLAG, "human_demo_dir"),
+        ):
+            value, next_index = _read_value(argv, index, flag)
+            if value is not None:
+                values[key] = value
+                index = next_index
+                matched = True
+                break
+        if matched:
+            continue
+
+        value, next_index = _read_value(argv, index, SCAN_SECONDS_FLAG)
+        if value is not None:
+            try:
+                seconds = float(value)
+            except ValueError as exc:
+                raise SystemExit(f"{SCAN_SECONDS_FLAG} requires a positive number.") from exc
+            if seconds <= 0:
+                raise SystemExit(f"{SCAN_SECONDS_FLAG} requires a positive number.")
+            values["scan_seconds"] = seconds
+            index = next_index
+            continue
+
+        if argument.startswith("--continual-"):
+            raise SystemExit(f"Unknown continual-learning option {argument!r}.")
+
+        trainer_args.append(argument)
+        index += 1
+
+    options = ContinualOptions(**values)
+    if options.enabled and not options.game_build:
+        raise SystemExit(
+            f"{GAME_BUILD_FLAG} is required when {CONTINUAL_ROOT_FLAG} is enabled."
+        )
+    if not options.enabled and any(
+        (options.config, options.game_build, options.parent_model_id, options.human_demo_dir)
+    ):
+        raise SystemExit(
+            f"{CONTINUAL_ROOT_FLAG} is required when other --continual-* options are used."
+        )
+    return trainer_args, options
+
+
+def _trainer_arg(argv: Sequence[str], flag: str) -> Optional[str]:
+    for index, argument in enumerate(argv):
+        if argument == flag:
+            if index + 1 < len(argv):
+                return argv[index + 1]
+            return None
+        prefix = flag + "="
+        if argument.startswith(prefix):
+            return argument[len(prefix):]
+    return None
+
+
+def _training_config_index(argv: Sequence[str]) -> Optional[int]:
+    for index, argument in enumerate(argv):
+        if not argument.startswith("-") and argument.lower().endswith((".yaml", ".yml")):
+            return index
+    return None
+
+
+def infer_run_context(argv: Sequence[str]) -> Tuple[Path, str, Path]:
+    run_id = _trainer_arg(argv, "--run-id")
+    if not run_id:
+        raise SystemExit(
+            "Continual candidate registration requires ML-Agents --run-id."
+        )
+    results_dir = Path(_trainer_arg(argv, "--results-dir") or "results")
+    config_index = _training_config_index(argv)
+    if config_index is None:
+        raise SystemExit(
+            "Could not identify the ML-Agents trainer YAML for continual model metadata."
+        )
+    return results_dir / run_id, run_id, Path(argv[config_index])
+
+
+def replace_training_config_argument(argv: Sequence[str], training_config: Path) -> List[str]:
+    config_index = _training_config_index(argv)
+    if config_index is None:
+        raise SystemExit("Could not replace the ML-Agents trainer YAML.")
+    replaced = list(argv)
+    replaced[config_index] = str(training_config)
+    return replaced
+
+
+def historical_training_settings(
+    config: Mapping[str, object],
+    trainer_args: Sequence[str],
+) -> Tuple[float, Optional[str], int, int]:
+    settings = config.get("historical_league", {})
+    if not isinstance(settings, dict):
+        raise SystemExit("historical_league configuration must be an object.")
+
+    raw_ratio = settings.get("training_ratio", 0.0)
+    if isinstance(raw_ratio, bool):
+        raise SystemExit("historical_league.training_ratio must be in [0,1].")
+    try:
+        ratio = float(raw_ratio)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("historical_league.training_ratio must be in [0,1].") from exc
+    if not math.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
+        raise SystemExit("historical_league.training_ratio must be in [0,1].")
+
+    raw_provider = settings.get("training_onnx_provider")
+    if raw_provider is None:
+        provider = None
+    elif not isinstance(raw_provider, str) or not raw_provider.strip():
+        raise SystemExit(
+            "historical_league.training_onnx_provider must be a non-empty string or null."
+        )
+    else:
+        provider = raw_provider.strip()
+
+    raw_cache_size = settings.get(
+        "training_policy_cache_size",
+        DEFAULT_HISTORICAL_POLICY_CACHE_SIZE,
+    )
+    if isinstance(raw_cache_size, bool):
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        )
+    try:
+        cache_size = int(raw_cache_size)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        ) from exc
+    if cache_size <= 0 or (
+        isinstance(raw_cache_size, float) and not raw_cache_size.is_integer()
+    ):
+        raise SystemExit(
+            "historical_league.training_policy_cache_size must be a positive integer."
+        )
+
+    seed_text = _trainer_arg(trainer_args, "--seed")
+    try:
+        seed = 0 if seed_text is None else int(seed_text)
+    except ValueError as exc:
+        raise SystemExit("ML-Agents --seed must be an integer for continual league sampling.") from exc
+    return ratio, provider, seed, cache_size
+
+
+def _positive_integer_setting(value: object, label: str) -> int:
+    if isinstance(value, bool):
+        raise SystemExit(f"{label} must be a positive integer.")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"{label} must be a positive integer.") from exc
+    if parsed <= 0 or (isinstance(value, float) and not value.is_integer()):
+        raise SystemExit(f"{label} must be a positive integer.")
+    return parsed
+
+
+def human_imitation_settings(config: Mapping[str, object]) -> Tuple[float, int, int]:
+    settings = config.get("human_imitation")
+    if not isinstance(settings, dict):
+        raise SystemExit(
+            "continual human demonstrations require a human_imitation configuration object."
+        )
+
+    raw_strength = settings.get("strength")
+    if isinstance(raw_strength, bool):
+        raise SystemExit("human_imitation.strength must be a finite positive number.")
+    try:
+        strength = float(raw_strength)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("human_imitation.strength must be a finite positive number.") from exc
+    if not math.isfinite(strength) or strength <= 0.0:
+        raise SystemExit("human_imitation.strength must be a finite positive number.")
+
+    steps = _positive_integer_setting(settings.get("steps"), "human_imitation.steps")
+    batch_size = _positive_integer_setting(
+        settings.get("batch_size"), "human_imitation.batch_size"
+    )
+    return strength, steps, batch_size
+
+
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_capture_manifest(
+    source: Path,
+    continual_config: Mapping[str, object],
+) -> Tuple[Path, Dict[str, object], str]:
+    if source.name.lower() != "human":
+        raise SystemExit(
+            f"Human demonstration directory must be the capture Human directory, not: {source}"
+        )
+
+    expected_behavior = str(continual_config.get("behavior_name", "")).strip()
+    expected_signature = str(continual_config.get("policy_signature", "")).strip()
+    try:
+        expected_abi = int(continual_config["policy_abi_version"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SystemExit(
+            "continual config must define integer policy_abi_version for human demonstrations."
+        ) from exc
+    if not expected_behavior:
+        raise SystemExit(
+            "continual config must define behavior_name for human demonstrations."
+        )
+    if not expected_signature:
+        raise SystemExit(
+            "continual config must define policy_signature for human demonstrations."
+        )
+
+    policy_directory = source.parent
+    expected_policy_directory = f"PolicyV{expected_abi}"
+    if policy_directory.name != expected_policy_directory:
+        raise SystemExit(
+            f"Human demonstration directory must be below {expected_policy_directory}, "
+            f"but was below {policy_directory.name!r}."
+        )
+
+    manifest_path = policy_directory / CAPTURE_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"Human demonstration capture manifest is missing: {manifest_path}"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"Human demonstration capture manifest is invalid JSON: {manifest_path}: {exc}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise SystemExit(
+            f"Human demonstration capture manifest must contain an object: {manifest_path}"
+        )
+
+    if manifest.get("schemaVersion") != CAPTURE_MANIFEST_SCHEMA_VERSION:
+        raise SystemExit(
+            f"Human demonstration capture manifest schema mismatch at {manifest_path}: "
+            f"expected {CAPTURE_MANIFEST_SCHEMA_VERSION}, got {manifest.get('schemaVersion')!r}."
+        )
+    if manifest.get("behaviorName") != expected_behavior:
+        raise SystemExit(
+            f"Human demonstration behavior mismatch at {manifest_path}: "
+            f"expected {expected_behavior!r}, got {manifest.get('behaviorName')!r}."
+        )
+    if manifest.get("policyAbiVersion") != expected_abi:
+        raise SystemExit(
+            f"Human demonstration policy ABI mismatch at {manifest_path}: "
+            f"expected {expected_abi}, got {manifest.get('policyAbiVersion')!r}."
+        )
+    if manifest.get("policySignature") != expected_signature:
+        raise SystemExit(
+            f"Human demonstration policy signature mismatch at {manifest_path}."
+        )
+
+    observation_size = manifest.get("observationSize")
+    continuous_actions = manifest.get("continuousActionCount")
+    discrete_branches = manifest.get("discreteBranchSizes")
+    if not isinstance(observation_size, int) or isinstance(observation_size, bool) or observation_size <= 0:
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid observationSize: {manifest_path}"
+        )
+    if (
+        not isinstance(continuous_actions, int)
+        or isinstance(continuous_actions, bool)
+        or continuous_actions < 0
+    ):
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid continuousActionCount: {manifest_path}"
+        )
+    if (
+        not isinstance(discrete_branches, list)
+        or not discrete_branches
+        or any(
+            not isinstance(size, int) or isinstance(size, bool) or size <= 0
+            for size in discrete_branches
+        )
+    ):
+        raise SystemExit(
+            f"Human demonstration capture manifest has invalid discreteBranchSizes: {manifest_path}"
+        )
+
+    return manifest_path, manifest, _sha256_file(manifest_path)
+
+
+def validate_human_demonstration_directory(
+    path: str | Path,
+    continual_config: Mapping[str, object],
+) -> Tuple[Path, List[Path], Path, Dict[str, object], str]:
+    source = Path(path).expanduser().resolve()
+    if not source.is_dir():
+        raise SystemExit(f"Human demonstration directory does not exist: {source}")
+
+    manifest_path, capture_manifest, capture_manifest_hash = _load_capture_manifest(
+        source,
+        continual_config,
+    )
+    demo_files = sorted(
+        candidate for candidate in source.glob("*.demo") if candidate.is_file()
+    )
+    if not demo_files:
+        raise SystemExit(f"Human demonstration directory contains no .demo files: {source}")
+
+    for demo in demo_files:
+        if demo.stat().st_size <= 0:
+            raise SystemExit(f"Human demonstration file is empty: {demo}")
+        if demo.name.lower().startswith("hivemind-"):
+            raise SystemExit(
+                f"Refusing to use Hive Mind demonstration as human imitation data: {demo}"
+            )
+    return source, demo_files, manifest_path, capture_manifest, capture_manifest_hash
+
+
+def snapshot_human_demonstrations(
+    source_dir: str | Path,
+    continual_root: str | Path,
+    continual_config: Mapping[str, object],
+) -> Tuple[Path, str, int]:
+    (
+        source,
+        demo_files,
+        capture_manifest_path,
+        capture_manifest,
+        capture_manifest_hash,
+    ) = validate_human_demonstration_directory(source_dir, continual_config)
+    entries = []
+    for demo in demo_files:
+        entries.append(
+            {
+                "name": demo.name,
+                "sha256": _sha256_file(demo),
+                "size": demo.stat().st_size,
+            }
+        )
+
+    manifest = {
+        "schema_version": HUMAN_DEMO_SNAPSHOT_SCHEMA_VERSION,
+        "capture_manifest": {
+            "sha256": capture_manifest_hash,
+            "metadata": capture_manifest,
+        },
+        "files": entries,
+    }
+    manifest_bytes = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    snapshot_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    destination = (
+        Path(continual_root).expanduser().resolve()
+        / "experience"
+        / "human-training-sets"
+        / f"human-demo-set-{snapshot_hash[:24]}"
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+
+    for demo, entry in zip(demo_files, entries):
+        target = destination / demo.name
+        if target.exists():
+            if _sha256_file(target) != entry["sha256"]:
+                raise SystemExit(
+                    f"Immutable human demonstration snapshot conflicts with existing file: {target}"
+                )
+            continue
+        temp = target.with_name(target.name + f".{os.getpid()}.tmp")
+        try:
+            shutil.copy2(demo, temp)
+            if _sha256_file(temp) != entry["sha256"]:
+                raise SystemExit(
+                    f"Human demonstration changed while being snapshotted: {demo}. "
+                    "Stop recording before starting training."
+                )
+            os.replace(temp, target)
+        finally:
+            if temp.exists():
+                temp.unlink()
+
+    capture_target = destination / CAPTURE_MANIFEST_FILE_NAME
+    if capture_target.exists():
+        if _sha256_file(capture_target) != capture_manifest_hash:
+            raise SystemExit(
+                f"Immutable human demonstration snapshot conflicts with capture manifest: {capture_target}"
+            )
+    else:
+        capture_temp = capture_target.with_name(
+            capture_target.name + f".{os.getpid()}.tmp"
+        )
+        try:
+            shutil.copy2(capture_manifest_path, capture_temp)
+            if _sha256_file(capture_temp) != capture_manifest_hash:
+                raise SystemExit(
+                    f"Human demonstration capture manifest changed while being snapshotted: "
+                    f"{capture_manifest_path}. Stop recording before starting training."
+                )
+            os.replace(capture_temp, capture_target)
+        finally:
+            if capture_temp.exists():
+                capture_temp.unlink()
+
+    manifest_path = destination / "manifest.json"
+    manifest_text = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if manifest_path.exists():
+        if manifest_path.read_text(encoding="utf-8") != manifest_text:
+            raise SystemExit(
+                f"Immutable human demonstration snapshot manifest conflicts: {manifest_path}"
+            )
+    else:
+        manifest_path.write_text(manifest_text, encoding="utf-8")
+
+    # Re-check the sources after the copy. This catches a recorder that appended to a file after
+    # the initial content hash but before the snapshot completed.
+    for demo, entry in zip(demo_files, entries):
+        if _sha256_file(demo) != entry["sha256"]:
+            raise SystemExit(
+                f"Human demonstration changed while being snapshotted: {demo}. "
+                "Stop recording before starting training."
+            )
+    if _sha256_file(capture_manifest_path) != capture_manifest_hash:
+        raise SystemExit(
+            f"Human demonstration capture manifest changed while being snapshotted: "
+            f"{capture_manifest_path}. Stop recording before starting training."
+        )
+
+    return destination, snapshot_hash, len(entries)
+
+
+def prepare_human_imitation_config(
+    source_config: Path,
+    *,
+    output_root: str | Path,
+    demo_directory: Path,
+    behavior_name: str,
+    strength: float,
+    steps: int,
+    batch_size: int,
+) -> Path:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise SystemExit(
+            "PyYAML is required for human demonstration training; use the project's ML-Agents environment."
+        ) from exc
+
+    source = source_config.expanduser().resolve()
+    if not source.is_file():
+        raise SystemExit(f"ML-Agents trainer YAML does not exist: {source}")
+    try:
+        loaded = yaml.safe_load(source.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"Could not load ML-Agents trainer YAML {source}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"ML-Agents trainer YAML must contain an object: {source}")
+
+    behaviors = loaded.get("behaviors")
+    if not isinstance(behaviors, dict):
+        raise SystemExit("ML-Agents trainer YAML is missing behaviors.")
+    behavior = behaviors.get(behavior_name)
+    if not isinstance(behavior, dict):
+        raise SystemExit(
+            f"ML-Agents trainer YAML is missing behavior {behavior_name!r}."
+        )
+    if "behavioral_cloning" in behavior:
+        raise SystemExit(
+            f"Behavior {behavior_name!r} already defines behavioral_cloning; remove it or omit "
+            f"{HUMAN_DEMO_DIR_FLAG} so the source of imitation settings is unambiguous."
+        )
+
+    behavior["behavioral_cloning"] = {
+        "demo_path": str(demo_directory.resolve()),
+        "strength": strength,
+        "steps": steps,
+        "batch_size": batch_size,
+    }
+    rendered = yaml.safe_dump(loaded, sort_keys=False)
+    rendered_hash = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    output_dir = Path(output_root).expanduser().resolve() / "runtime-configs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / f"human-bc-{rendered_hash[:24]}.yaml"
+    if output.exists():
+        if output.read_text(encoding="utf-8") != rendered:
+            raise SystemExit(f"Generated trainer-config hash collision at {output}")
+        return output
+
+    temp = output.with_name(output.name + f".{os.getpid()}.tmp")
+    try:
+        temp.write_text(rendered, encoding="utf-8")
+        os.replace(temp, output)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return output
+
+
+_STEP_PATTERNS = (
+    re.compile(r"(?:^|[-_])(?:step[-_]?)?(\d{4,})(?:$|[-_.])", re.IGNORECASE),
+    re.compile(r"^(\d{4,})$"),
+)
+
+
+def infer_training_step(path: Path) -> Optional[int]:
+    candidates = [path.stem] + [part for part in reversed(path.parts[:-1])]
+    for candidate in candidates:
+        for pattern in _STEP_PATTERNS:
+            matches = list(pattern.finditer(candidate))
+            if matches:
+                return int(matches[-1].group(1))
+    return None
+
+
+class CandidateMonitor:
+    def __init__(
+        self,
+        store,
+        *,
+        results_run_dir: Path,
+        run_id: str,
+        game_build: str,
+        training_config: Path,
+        parent_model_id: Optional[str],
+        interval_seconds: float,
+    ) -> None:
+        self.store = store
+        self.results_run_dir = results_run_dir
+        self.run_id = run_id
+        self.game_build = game_build
+        self.training_config = training_config
+        self.parent_model_id = parent_model_id
+        self.interval_seconds = interval_seconds
+        self._stats: Dict[str, Tuple[int, int, int]] = {}
+        self._registered: Dict[str, Tuple[int, int]] = {}
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.errors: List[str] = []
+
+    def prime_existing(self) -> None:
+        """Treat pre-existing exports as baseline, not newly produced candidates."""
+        if not self.results_run_dir.exists():
+            return
+        for path in sorted(self.results_run_dir.rglob("*.onnx")):
+            try:
+                stat = path.stat()
+            except OSError as exc:
+                message = f"{path}: {type(exc).__name__}: {exc}"
+                if message not in self.errors:
+                    self.errors.append(message)
+                    print(
+                        f"[Bees continual] candidate baseline scan failed: {message}",
+                        file=sys.stderr,
+                    )
+                continue
+            if stat.st_size <= 0:
+                continue
+            self._registered[str(path.resolve())] = (stat.st_size, stat.st_mtime_ns)
+
+    def start(self) -> None:
+        # On --resume the results tree can contain thousands of old checkpoints.
+        # Their original build/config/lineage metadata is not recoverable from the
+        # current command, so only exports created or changed after this point are
+        # eligible for automatic registration.
+        self.prime_existing()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="BeesContinualCandidateMonitor",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(5.0, self.interval_seconds * 3))
+        # Two immediate scans let a final checkpoint become stable without an artificial delay.
+        self.scan_once()
+        self.scan_once()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            self.scan_once()
+
+    def scan_once(self) -> None:
+        if not self.results_run_dir.exists():
+            return
+        for path in sorted(self.results_run_dir.rglob("*.onnx")):
+            try:
+                self._consider(path)
+            except Exception as exc:
+                message = f"{path}: {type(exc).__name__}: {exc}"
+                if message not in self.errors:
+                    self.errors.append(message)
+                    print(f"[Bees continual] candidate registration failed: {message}", file=sys.stderr)
+
+    def _consider(self, path: Path) -> None:
+        stat = path.stat()
+        key = str(path.resolve())
+        identity = (stat.st_size, stat.st_mtime_ns)
+        if stat.st_size <= 0:
+            return
+        if self._registered.get(key) == identity:
+            return
+
+        previous = self._stats.get(key)
+        if previous is None or previous[:2] != identity:
+            self._stats[key] = (identity[0], identity[1], 1)
+            return
+        stable_count = previous[2] + 1
+        self._stats[key] = (identity[0], identity[1], stable_count)
+        if stable_count < 2:
+            return
+
+        step = infer_training_step(path)
+        if step is None:
+            return
+
+        model = self.store.register_model(
+            path,
+            training_run_id=self.run_id,
+            training_step=step,
+            game_build_version=self.game_build,
+            parent_model_id=self.parent_model_id,
+            training_config_path=self.training_config,
+            source_checkpoint=str(path),
+            status="candidate",
+            metadata={"registration_source": "bees_continual_train"},
+        )
+        self._registered[key] = identity
+        print(
+            f"[Bees continual] registered candidate model_id={model['model_id']} step={step} "
+            f"artifact={path}"
+        )
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    trainer_args, options = extract_continual_options(raw_args)
+
+    if not options.enabled:
+        import bees_mlagents_learn as launcher
+
+        original_argv = sys.argv
+        try:
+            sys.argv = [original_argv[0], *trainer_args]
+            launcher.main()
+        finally:
+            sys.argv = original_argv
+        return 0
+
+    from bees_continual_learning import ContinualLearningStore, load_config
+    from bees_continual_historical import install_historical_opponents
+    import bees_mlagents_learn as launcher
+
+    results_run_dir, run_id, training_config = infer_run_context(trainer_args)
+    continual_config = load_config(options.config) if options.config else load_config()
+    store = ContinualLearningStore(options.root, continual_config)
+    store.initialize()
+
+    if options.human_demo_dir:
+        strength, imitation_steps, imitation_batch_size = human_imitation_settings(
+            continual_config
+        )
+        demo_snapshot, demo_snapshot_hash, demo_file_count = snapshot_human_demonstrations(
+            options.human_demo_dir,
+            store.root,
+            continual_config,
+        )
+        training_config = prepare_human_imitation_config(
+            training_config,
+            output_root=store.root,
+            demo_directory=demo_snapshot,
+            behavior_name=str(continual_config["behavior_name"]),
+            strength=strength,
+            steps=imitation_steps,
+            batch_size=imitation_batch_size,
+        )
+        trainer_args = replace_training_config_argument(trainer_args, training_config)
+        print(
+            f"[Bees continual] human behavioral cloning enabled demos={demo_file_count} "
+            f"set={demo_snapshot_hash[:24]} strength={strength:g} steps={imitation_steps} "
+            f"batch_size={imitation_batch_size}"
+        )
+
+    parent_model_id = options.parent_model_id or store.current_champion_id()
+    if parent_model_id:
+        store.get_model(parent_model_id)  # Fail before training if lineage metadata is invalid.
+
+    (
+        historical_ratio,
+        historical_provider,
+        historical_seed,
+        historical_cache_size,
+    ) = historical_training_settings(
+        continual_config,
+        trainer_args,
+    )
+    historical_patch = None
+    if historical_ratio > 0.0:
+        historical_patch = install_historical_opponents(
+            store,
+            ratio=historical_ratio,
+            seed=historical_seed,
+            provider=historical_provider,
+            cache_size=historical_cache_size,
+        )
+        print(
+            f"[Bees continual] persistent historical opponent share={historical_ratio:.1%} "
+            f"provider={historical_provider or 'CPUExecutionProvider'} "
+            f"policy_cache={historical_cache_size}"
+        )
+
+    monitor = CandidateMonitor(
+        store,
+        results_run_dir=results_run_dir,
+        run_id=run_id,
+        game_build=options.game_build or "",
+        training_config=training_config,
+        parent_model_id=parent_model_id,
+        interval_seconds=options.scan_seconds,
+    )
+    print(
+        f"[Bees continual] root={store.root} run_id={run_id} "
+        f"parent_model_id={parent_model_id or 'none'} results={results_run_dir}"
+    )
+    monitor.start()
+
+    original_argv = sys.argv
+    try:
+        sys.argv = [original_argv[0], *trainer_args]
+        launcher.main()
+    finally:
+        sys.argv = original_argv
+        if historical_patch is not None:
+            historical_patch.restore()
+        monitor.stop()
+
+    if monitor.errors:
+        print(
+            f"[Bees continual] completed with {len(monitor.errors)} candidate-registration error(s).",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
