@@ -28,11 +28,15 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(25));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CapabilityObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ParentCarrierObservationSize"), Is.EqualTo(40));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyObservationSize"), Is.EqualTo(44));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationObservationSize"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7086));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7342));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionCount"), Is.EqualTo(4));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionStart"), Is.EqualTo(12));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(16));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchSize"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranch"), Is.EqualTo(5));
