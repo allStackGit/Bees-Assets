@@ -48,6 +48,26 @@ class TrainingControlClientTests(unittest.TestCase):
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
 
+    def test_managed_process_stops_windows_process_tree(self):
+        fake = mock.Mock()
+        fake.pid = 5252
+        fake.poll.return_value = None
+        fake.wait.return_value = 0
+
+        with (
+            mock.patch.object(agent.os, "name", "nt"),
+            mock.patch.object(agent.subprocess, "run") as run,
+        ):
+            managed = agent.ManagedProcess()
+            managed.process = fake
+            managed.stop()
+
+        run.assert_called_once()
+        self.assertEqual(
+            run.call_args.args[0],
+            ["taskkill", "/PID", "5252", "/T", "/F"],
+        )
+
     def test_full_game_canonical_change_is_deferred_while_process_is_alive(self):
         managed = agent.ManagedProcess()
         fake = mock.Mock()
