@@ -39,6 +39,7 @@ internal sealed class RlLivePolicyAgent : Agent
     private readonly Vector2[] _weaponAimDirections = new Vector2[RlOneVsOneAgent.MaxWeaponSlots];
     private readonly List<Ship> _bindCandidates = new List<Ship>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
+    private BehaviorParameters _behaviorParameters;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallForPlayerFacingStage()
@@ -179,6 +180,8 @@ internal sealed class RlLivePolicyAgent : Agent
     public override void Initialize()
     {
         Instances.Add(this);
+        _behaviorParameters = GetComponent<BehaviorParameters>();
+        RlTrainingControlRuntime.Apply(_behaviorParameters);
         ResetWeaponAimDirections();
     }
 
@@ -191,6 +194,7 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void FixedUpdate()
     {
+        RlTrainingControlRuntime.Apply(_behaviorParameters);
         if (!IsLiveRlEnabled(_stage) || _level == null ||
             RlProductionControllerRouter.Resolve(_stage, _level, _side) !=
             RlProductionControllerRouter.ControllerKind.NeuralNetwork)
