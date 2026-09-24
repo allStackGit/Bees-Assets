@@ -188,6 +188,18 @@ namespace Assets.Scripts.Levels.Commands
 
             _miningRate = ConfigData.MiningRate * ShipsCurrentlyMining.Count;
             _amountMined = math.min(_miningRate, TargetAstroid.Health);
+            int captureBaseAmount = _amountMined / ShipsCurrentlyMining.Count;
+            int captureRemainder = _amountMined % ShipsCurrentlyMining.Count;
+            for (int i = 0; i < ShipsCurrentlyMining.Count; i++)
+            {
+                if (captureBaseAmount + (i < captureRemainder ? 1 : 0) > 0)
+                {
+                    global::RlGameplayDemonstrationCapabilityCapture.Record(
+                        ShipsCurrentlyMining[i],
+                        global::RlOneVsOneAgent.MiningAction);
+                }
+            }
+
             Tsv += _amountMined;
             TargetAstroid.Health -= _amountMined;
 
