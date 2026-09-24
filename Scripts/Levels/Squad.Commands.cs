@@ -34,7 +34,6 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Setting {this} Command to {command}");
             }
             _command = command;
             HasCommand = command != null;
@@ -85,7 +84,6 @@ namespace Assets.Scripts.Levels
         {
             if (!Stage.IsTraining)
             {
-                Debug.Log($"Adding {this} to squads awaiting hive mind commands");
             }
             Level.State.AddToSquadsAwaitingHiveMindCommands(this);
         }
