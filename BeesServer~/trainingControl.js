@@ -147,13 +147,77 @@ class TrainingControlStore {
             throw new Error('training-control state training_enabled is invalid');
         }
         parsed.environment_args = normalizeEnvironmentArgs(parsed.environment_args || []);
-        if (typeof parsed.canonical_build_id !== 'string') {
+        if (typeof parsed.canonical_build_id !== 'string' ||
+            (parsed.canonical_build_id && !/^[A-Za-z0-9._-]+$/.test(parsed.canonical_build_id))) {
             throw new Error('training-control state canonical_build_id is invalid');
         }
         if (!parsed.builds || typeof parsed.builds !== 'object' || Array.isArray(parsed.builds)) {
             throw new Error('training-control state builds map is invalid');
         }
+        this._validateStoredBuilds(parsed);
+        if (parsed.training_enabled && !parsed.canonical_build_id) {
+            throw new Error('training-control persisted training state has no canonical build');
+        }
         return parsed;
+    }
+
+    _validateStoredBuilds(state) {
+        const safeIdentity = /^[A-Za-z0-9._-]+$/;
+        for (const [platform, versions] of Object.entries(state.builds)) {
+            if (!safeIdentity.test(platform) ||
+                !versions || typeof versions !== 'object' || Array.isArray(versions)) {
+                throw new Error('training-control persisted build catalog is invalid for ' + platform);
+            }
+            for (const [buildId, record] of Object.entries(versions)) {
+                if (!safeIdentity.test(buildId) ||
+                    !record || typeof record !== 'object' || Array.isArray(record) ||
+                    record.platform !== platform ||
+                    record.build_id !== buildId ||
+                    typeof record.archive_sha256 !== 'string' ||
+                    !/^[0-9a-f]{64}$/.test(record.archive_sha256) ||
+                    !Number.isInteger(record.archive_size_bytes) ||
+                    record.archive_size_bytes <= 0 ||
+                    typeof record.archive_path !== 'string' || !record.archive_path ||
+                    typeof record.entrypoint !== 'string' || !record.entrypoint) {
+                    throw new Error(
+                        'training-control persisted build descriptor is invalid for ' +
+                        platform + '/' + buildId);
+                }
+                record.archive_path = path.resolve(record.archive_path);
+            }
+        }
+
+        if (!state.canonical_build_id) return;
+        for (const [platform, versions] of Object.entries(state.builds)) {
+            const record = versions[state.canonical_build_id];
+            if (!record) continue;
+            const stats = fs.statSync(record.archive_path);
+            if (!stats.isFile() || stats.size !== record.archive_size_bytes) {
+                throw new Error(
+                    'training-control canonical artifact size is invalid for ' + platform);
+            }
+            if (sha256File(record.archive_path) !== record.archive_sha256) {
+                throw new Error(
+                    'training-control canonical artifact hash is invalid for ' + platform);
+            }
+        }
+    }
+
+    _hasBuild(buildId) {
+        if (!buildId) return false;
+        return Object.values(this.state.builds).some(
+            versions => versions && versions[buildId]);
+    }
+
+    _missingActivePlatforms(buildId) {
+        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const activePlatforms = new Set(
+            [...this.trainers.values()]
+                .filter(record => record.last_seen_ms >= cutoff)
+                .map(record => record.platform));
+        return [...activePlatforms]
+            .filter(platform => !this.state.builds[platform]?.[buildId])
+            .sort();
     }
 
     _persist() {
@@ -164,6 +228,46 @@ class TrainingControlStore {
         if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
             throw Object.assign(new Error('desired-state patch must be an object'), { statusCode: 400 });
         }
+
+        let requestedBuildId = this.state.canonical_build_id;
+        if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id')) {
+            requestedBuildId = patch.canonical_build_id === ""
+                ? ""
+                : requireString(patch.canonical_build_id, 'canonical_build_id', 128);
+            if (requestedBuildId && !/^[A-Za-z0-9._-]+$/.test(requestedBuildId)) {
+                throw Object.assign(
+                    new Error('canonical_build_id may contain only letters, digits, dot, underscore, and dash'),
+                    { statusCode: 400 });
+            }
+            if (requestedBuildId && !this._hasBuild(requestedBuildId)) {
+                throw Object.assign(
+                    new Error('canonical_build_id has no published platform artifact'),
+                    { statusCode: 409 });
+            }
+        }
+
+        const requestedTraining = Object.prototype.hasOwnProperty.call(patch, 'training_enabled')
+            ? patch.training_enabled
+            : this.state.training_enabled;
+        if (typeof requestedTraining !== 'boolean') {
+            throw Object.assign(new Error('training_enabled must be boolean'), { statusCode: 400 });
+        }
+        if (requestedTraining && !requestedBuildId) {
+            throw Object.assign(
+                new Error('training cannot start without a canonical_build_id'),
+                { statusCode: 409 });
+        }
+        if (requestedTraining) {
+            const missingPlatforms = this._missingActivePlatforms(requestedBuildId);
+            if (missingPlatforms.length > 0) {
+                throw Object.assign(
+                    new Error(
+                        'canonical build is missing active platform artifacts: ' +
+                        missingPlatforms.join(', ')),
+                    { statusCode: 409 });
+            }
+        }
+
         let changed = false;
         if (Object.prototype.hasOwnProperty.call(patch, 'training_enabled')) {
             if (typeof patch.training_enabled !== 'boolean') {
@@ -181,19 +285,10 @@ class TrainingControlStore {
                 changed = true;
             }
         }
-        if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id')) {
-            const buildId = patch.canonical_build_id === ""
-                ? ""
-                : requireString(patch.canonical_build_id, 'canonical_build_id', 128);
-            if (buildId && !/^[A-Za-z0-9._-]+$/.test(buildId)) {
-                throw Object.assign(
-                    new Error('canonical_build_id may contain only letters, digits, dot, underscore, and dash'),
-                    { statusCode: 400 });
-            }
-            if (buildId !== this.state.canonical_build_id) {
-                this.state.canonical_build_id = buildId;
-                changed = true;
-            }
+        if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id') &&
+            requestedBuildId !== this.state.canonical_build_id) {
+            this.state.canonical_build_id = requestedBuildId;
+            changed = true;
         }
         if (changed) {
             this.state.revision++;
@@ -254,6 +349,9 @@ class TrainingControlStore {
             return publicBuildDescriptor(previous);
         }
         this.state.builds[platform][buildId] = record;
+        if (buildId === this.state.canonical_build_id) {
+            this.state.revision++;
+        }
         this._persist();
         return publicBuildDescriptor(record);
     }
