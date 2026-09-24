@@ -32,6 +32,7 @@ from bees_training_control import (
 
 ENV_PLACEHOLDER = "{env}"
 ENV_ARGS_PLACEHOLDER = "{env_args}"
+BUILD_ID_PLACEHOLDER = "{build_id}"
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -138,6 +139,7 @@ def render_command(
     template: Sequence[str],
     entrypoint: Path,
     environment_args: Sequence[str],
+    build_id: str = "",
 ) -> list[str]:
     if not template:
         raise ValueError("managed worker launch command is empty")
@@ -150,7 +152,10 @@ def render_command(
         elif token == ENV_ARGS_PLACEHOLDER:
             rendered.extend(str(value) for value in environment_args)
         else:
-            rendered.append(token.replace(ENV_PLACEHOLDER, str(entrypoint)))
+            rendered.append(
+                token.replace(ENV_PLACEHOLDER, str(entrypoint))
+                .replace(BUILD_ID_PLACEHOLDER, str(build_id))
+            )
             if ENV_PLACEHOLDER in token:
                 saw_env = True
     if not saw_env:
@@ -394,7 +399,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if descriptor and not managed.alive():
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(command_template, entrypoint, environment_args)
+                        command = render_command(
+                            command_template,
+                            entrypoint,
+                            environment_args,
+                            str(active_build["build_id"]),
+                        )
                         managed.start(
                             command,
                             revision=revision,
@@ -450,7 +460,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     else:
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(command_template, entrypoint, environment_args)
+                        command = render_command(
+                            command_template,
+                            entrypoint,
+                            environment_args,
+                            str(active_build["build_id"]),
+                        )
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
