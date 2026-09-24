@@ -6,6 +6,7 @@ const test = require('node:test');
 
 const {
     installContinualLearningSupervisor,
+    installServerLifetimeGuard,
 } = require('../rlContinualLearningSupervisor');
 
 function fakeChild(pid) {
@@ -72,4 +73,30 @@ test('disabled supervisor does not spawn a process', () => {
     });
     assert.equal(supervisor, null);
     assert.equal(server.__beesContinualLearningSupervisor, null);
+});
+
+
+test('server lifetime guard stops continual learning when the supervised BeesServer exits', () => {
+    let callback = null;
+    let cancelled = false;
+    let exited = false;
+    let stopped = false;
+    const supervisor = { stop() { stopped = true; } };
+    const guard = installServerLifetimeGuard(supervisor, 4242, {
+        pollMs: 10,
+        schedule: scheduled => {
+            callback = scheduled;
+            return { unref() {} };
+        },
+        cancel: () => { cancelled = true; },
+        isAlive: () => false,
+        onServerExit: () => { exited = true; },
+    });
+
+    assert.equal(typeof callback, 'function');
+    callback();
+    assert.equal(stopped, true);
+    assert.equal(cancelled, true);
+    assert.equal(exited, true);
+    guard.stop();
 });
