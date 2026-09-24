@@ -450,7 +450,7 @@ internal sealed class RlLivePolicyModelBootstrap : MonoBehaviour
             return;
         }
         _bindingActive = false;
-        _stage.ActivateBrains = false;
+        _stage.ActivateRlPolicy = false;
         _fallbackPending = true;
         RlProductionControllerRouter.SetNeuralNetworkAvailable(_stage, false);
         Debug.LogError(
