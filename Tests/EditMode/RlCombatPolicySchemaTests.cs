@@ -36,18 +36,12 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchCount"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WeaponFireBranchSize"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranch"), Is.EqualTo(5));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranch"), Is.EqualTo(6));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranch"), Is.EqualTo(7));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranch"), Is.EqualTo(8));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "DiscreteBranchCount"), Is.EqualTo(9));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "DiscreteBranchCount"), Is.EqualTo(6));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SpecialActionBranchSize"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ShipSpecialAction"), Is.EqualTo(1));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAction"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "HealingAction"), Is.EqualTo(3));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "WarpAction"), Is.EqualTo(4));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "AllyTargetBranchSize"), Is.EqualTo(65));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "EnemyTargetBranchSize"), Is.EqualTo(65));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectTargetBranchSize"), Is.EqualTo(65));
         }
 
         [Test]
@@ -56,15 +50,12 @@ namespace Bees.Tests.EditMode
             Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
             int[] branchSizes = (int[])RuntimeAssembly.InvokeStatic(agentType, "CreateDiscreteBranchSizes");
 
-            Assert.That(branchSizes.Length, Is.EqualTo(9));
+            Assert.That(branchSizes.Length, Is.EqualTo(6));
             for (int slot = 0; slot < 5; slot++)
             {
                 Assert.That(branchSizes[slot], Is.EqualTo(2), $"Weapon slot {slot} must have an independent cease/fire branch.");
             }
             Assert.That(branchSizes[5], Is.EqualTo(5));
-            Assert.That(branchSizes[6], Is.EqualTo(65));
-            Assert.That(branchSizes[7], Is.EqualTo(65));
-            Assert.That(branchSizes[8], Is.EqualTo(65));
         }
 
         [Test]
