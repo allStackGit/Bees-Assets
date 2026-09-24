@@ -4,6 +4,8 @@ const { spawn } = require('node:child_process');
 const { buildContinualLearningSpec } = require('./rlContinualLearningLauncher');
 
 const DEFAULT_RESTART_MS = 5000;
+const DEFAULT_SERVER_POLL_MS = 1000;
+const SUPERVISED_SERVER_PID_ENV = 'BEES_RL_SUPERVISED_SERVER_PID';
 
 function installContinualLearningSupervisor(server, options = {}) {
     if (!server || Object.prototype.hasOwnProperty.call(server, '__beesContinualLearningSupervisor')) {
@@ -115,14 +117,74 @@ function installContinualLearningSupervisor(server, options = {}) {
     return supervisor;
 }
 
-function runWatchdog(env = process.env) {
+function processIsAlive(pid, signalProcess = process.kill) {
+    try {
+        signalProcess(pid, 0);
+        return true;
+    } catch (error) {
+        return error?.code === 'EPERM';
+    }
+}
+
+function installServerLifetimeGuard(supervisor, serverPid, options = {}) {
+    if (!supervisor) throw new TypeError('Server lifetime guard requires a continual-learning supervisor.');
+    if (!Number.isSafeInteger(serverPid) || serverPid <= 0) {
+        throw new TypeError('Supervised BeesServer PID must be a positive integer.');
+    }
+    const pollMs = options.pollMs ?? DEFAULT_SERVER_POLL_MS;
+    if (!Number.isFinite(pollMs) || pollMs <= 0) {
+        throw new TypeError('Server lifetime poll delay must be a positive finite number.');
+    }
+    const schedule = options.schedule || setInterval;
+    const cancel = options.cancel || clearInterval;
+    const isAlive = options.isAlive || processIsAlive;
+    const onServerExit = options.onServerExit || (() => {
+        process.exitCode = 0;
+        setImmediate(() => process.exit(0));
+    });
+    let timer = null;
+    const check = () => {
+        if (isAlive(serverPid)) return;
+        if (timer !== null) {
+            cancel(timer);
+            timer = null;
+        }
+        console.error(`BeesServer PID ${serverPid} stopped; stopping continual-learning watchdog.`);
+        supervisor.stop();
+        onServerExit();
+    };
+    timer = schedule(check, pollMs);
+    timer?.unref?.();
+    return Object.freeze({
+        stop() {
+            if (timer !== null) {
+                cancel(timer);
+                timer = null;
+            }
+        },
+        check,
+        serverPid,
+    });
+}
+
+function runWatchdog(env = process.env, options = {}) {
     const spec = buildContinualLearningSpec(env);
     if (!spec) {
         console.error('Continual-learning watchdog started without BEES_RL_CONTINUAL_AUTOSTART=1.');
         return 2;
     }
     const host = {};
-    installContinualLearningSupervisor(host, { env, spec });
+    const supervisor = installContinualLearningSupervisor(host, { env, spec });
+    const rawServerPid = String(env[SUPERVISED_SERVER_PID_ENV] || '').trim();
+    if (rawServerPid) {
+        const serverPid = Number(rawServerPid);
+        if (!Number.isSafeInteger(serverPid) || serverPid <= 0) {
+            console.error(`${SUPERVISED_SERVER_PID_ENV} must be a positive integer.`);
+            supervisor?.stop();
+            return 2;
+        }
+        installServerLifetimeGuard(supervisor, serverPid, options);
+    }
     return 0;
 }
 
@@ -132,6 +194,10 @@ if (require.main === module) {
 
 module.exports = {
     DEFAULT_RESTART_MS,
+    DEFAULT_SERVER_POLL_MS,
+    SUPERVISED_SERVER_PID_ENV,
     installContinualLearningSupervisor,
+    processIsAlive,
+    installServerLifetimeGuard,
     runWatchdog,
 };
