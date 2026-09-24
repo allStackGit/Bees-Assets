@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -260,6 +261,7 @@ class RuntimeUpdater:
         self.staged_sha256 = ""
         self.staged_root: Optional[Path] = None
         self.staged_bridge: Optional[Path] = None
+        self.staged_python: Optional[Path] = None
         self.staged_build_id = ""
         self.last_error = ""
 
@@ -270,12 +272,15 @@ class RuntimeUpdater:
         self._stop.set()
         self._thread.join(timeout=5)
 
-    def staged(self) -> tuple[str, Optional[Path], Optional[Path], str, str]:
+    def staged(
+        self,
+    ) -> tuple[str, Optional[Path], Optional[Path], Optional[Path], str, str]:
         with self._lock:
             return (
                 self.staged_sha256,
                 self.staged_root,
                 self.staged_bridge,
+                self.staged_python,
                 self.staged_build_id,
                 self.last_error,
             )
@@ -308,6 +313,107 @@ class RuntimeUpdater:
                 bundle.read("latest-training-release.json"),
             )
 
+    def _prepare_python_for_requirements(
+        self,
+        runtime_root: Path,
+    ) -> Path:
+        requirements = runtime_root / "bees_remote_requirements.txt"
+        if not requirements.is_file():
+            return Path(sys.executable).resolve()
+
+        active_requirements = Path(__file__).resolve().parent / "bees_remote_requirements.txt"
+        new_hash = _sha256_file(requirements)
+        active_hash = _sha256_file(active_requirements) if active_requirements.is_file() else ""
+        if new_hash == active_hash:
+            return Path(sys.executable).resolve()
+
+        venv_root = self.install_root / "VenvVersions" / new_hash
+        python_path = (
+            venv_root / "Scripts" / "python.exe"
+            if os.name == "nt"
+            else venv_root / "bin" / "python"
+        )
+        if python_path.is_file():
+            return python_path.resolve()
+
+        venv_root.parent.mkdir(parents=True, exist_ok=True)
+        temporary = venv_root.with_name(venv_root.name + ".tmp")
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+        if os.name == "nt":
+            completed = subprocess.run(
+                [sys.executable, "-m", "venv", str(temporary)],
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "failed to create staged Windows Python environment "
+                    f"(exit {completed.returncode})"
+                )
+            staged_python = temporary / "Scripts" / "python.exe"
+            completed = subprocess.run(
+                [
+                    str(staged_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    str(requirements),
+                ],
+                check=False,
+            )
+        else:
+            uv = shutil.which("uv")
+            if not uv:
+                candidate = Path.home() / ".local" / "bin" / "uv"
+                uv = str(candidate) if candidate.is_file() else ""
+            if not uv:
+                raise RuntimeError(
+                    "changed remote requirements need uv on Linux; rerun the generated "
+                    "launcher once to restore the managed uv installation"
+                )
+            completed = subprocess.run(
+                [uv, "venv", "--python", "3.10", str(temporary)],
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "failed to create staged Linux Python environment "
+                    f"(exit {completed.returncode})"
+                )
+            staged_python = temporary / "bin" / "python"
+            completed = subprocess.run(
+                [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    str(staged_python),
+                    "-r",
+                    str(requirements),
+                ],
+                check=False,
+            )
+
+        if completed.returncode != 0:
+            shutil.rmtree(temporary, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency installation failed "
+                f"(exit {completed.returncode})"
+            )
+        if venv_root.exists():
+            shutil.rmtree(venv_root)
+        os.replace(temporary, venv_root)
+        python_path = (
+            venv_root / "Scripts" / "python.exe"
+            if os.name == "nt"
+            else venv_root / "bin" / "python"
+        )
+        if not python_path.is_file():
+            raise RuntimeError("staged Python environment is missing its interpreter")
+        return python_path.resolve()
+
     def _stage_once(self) -> None:
         runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
@@ -331,6 +437,7 @@ class RuntimeUpdater:
                 self.staged_sha256 = ""
                 self.staged_root = None
                 self.staged_bridge = None
+                self.staged_python = None
                 self.staged_build_id = ""
                 self.last_error = ""
                 _atomic_bytes(
@@ -350,17 +457,8 @@ class RuntimeUpdater:
         if runtime_changed and not (destination / "bees_managed_remote_worker.py").is_file():
             _safe_extract_runtime(runtime_zip, destination)
         runtime_root = destination if runtime_changed else Path(__file__).resolve().parent
+        staged_python = self._prepare_python_for_requirements(runtime_root)
         if runtime_changed:
-            requirements = destination / "bees_remote_requirements.txt"
-            if requirements.is_file():
-                completed = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
-                    check=False,
-                )
-                if completed.returncode != 0:
-                    raise RuntimeError(
-                        f"runtime dependency preparation failed with exit code {completed.returncode}"
-                    )
             archive = self.install_root / "Downloads" / f"bees-remote-runtime-{runtime_sha}.zip"
             _atomic_bytes(archive, runtime_zip, 0o644)
             _atomic_bytes(Path(self.args.runtime_archive).expanduser().resolve(), runtime_zip, 0o644)
@@ -375,6 +473,7 @@ class RuntimeUpdater:
             self.staged_sha256 = runtime_sha
             self.staged_root = runtime_root
             self.staged_bridge = staged_bridge
+            self.staged_python = staged_python
             self.staged_build_id = staged_build_id
             self.last_error = ""
         _atomic_bytes(
@@ -435,7 +534,7 @@ def _runtime_cutover_selected(
     trainer_id: str,
     updater: RuntimeUpdater,
 ) -> Optional[Path]:
-    _sha, staged_root, _staged_bridge, staged_build_id, _error = updater.staged()
+    _sha, staged_root, _staged_bridge, _staged_python, staged_build_id, _error = updater.staged()
     if staged_root is None:
         return None
     state = _control_state(args, trainer_id)
@@ -620,7 +719,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
-                _sha, next_root, staged_bridge, _staged_build_id, _error = updater.staged()
+                _sha, next_root, staged_bridge, staged_python, _staged_build_id, _error = updater.staged()
                 if next_root is None:
                     raise RuntimeError("staged runtime disappeared before activation")
                 if staged_bridge is not None:
@@ -633,9 +732,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 next_script = next_root / "bees_managed_remote_worker.py"
                 if not next_script.is_file():
                     raise RuntimeError(f"staged runtime is missing {next_script}")
+                next_python = str(staged_python or Path(sys.executable).resolve())
                 os.execv(
-                    sys.executable,
-                    [sys.executable, str(next_script), *raw_argv],
+                    next_python,
+                    [next_python, str(next_script), *raw_argv],
                 )
 
             if not stop[0]:
