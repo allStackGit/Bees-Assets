@@ -630,7 +630,6 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
     if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
-    if(-not $env:BEES_TLS_KEY_PATH -or -not $env:BEES_TLS_CERT_PATH){ throw 'BeesServer is offline. Set BEES_TLS_KEY_PATH and BEES_TLS_CERT_PATH once on this machine.' }
     $node=Resolve-Node $Config; $npm=Resolve-Npm
     if(-not(Test-Path -LiteralPath (Join-Path $ServerRoot 'node_modules'))){ Write-Host 'Installing BeesServer dependencies...'; Invoke-Checked $npm @('ci') $ServerRoot }
     Ensure-Directory (Join-Path $LogsRoot 'Server'); Ensure-Directory (Join-Path $TrainingRoot 'Control'); Ensure-Directory $RuntimeRoot
@@ -639,10 +638,11 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
     $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'; $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
     $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
+    $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
     $launchedPid=0
     Push-Location $ServerRoot
     try {
-        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" ([string]$GameplayServerPort) 2>&1)
+        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 'test' ([string]$GameplayServerPort) 2>&1)
         if($LASTEXITCODE -ne 0){ throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)" }
         $joined=$output -join [Environment]::NewLine; Write-Host $joined
         if($joined -match 'PID\s+(\d+)'){
@@ -829,30 +829,45 @@ function Invoke-Server {
     $worker=Ensure-TokenFile $WorkerTokenPath
     $admin=Ensure-TokenFile $AdminTokenPath
     Start-BeesServerIfNeeded $config $worker $admin
-    Write-Host 'BeesServer is online for normal gameplay/Unity Editor connections. No Unity build is required.'
+    Write-Host 'BeesServer test mode is online on port 7146 for Unity Editor/gameplay connections. No Unity build or Steam authentication is required.'
 }
 
 function Invoke-Start {
     $config=Get-ClusterConfig
-    $python=Resolve-Python $config
-    $unity=Resolve-UnityEditor $config
     $worker=Ensure-TokenFile $WorkerTokenPath
     $admin=Ensure-TokenFile $AdminTokenPath
     $null=Ensure-TokenFile $WanTokenPath
     $null=Ensure-TokenFile $BootstrapTokenPath
+
+    Start-BeesServerIfNeeded $config $worker $admin
+
+    $envArgs=Get-EnvironmentArgs $config
+    if(-not(Test-Path -LiteralPath $LatestReleasePath)){
+        $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
+            training_enabled=$false
+            environment_args=$envArgs
+        }
+        Write-Host "Unified Bees server/control is online on gameplay port $GameplayServerPort."
+        Write-Host 'No training release exists yet, so no managed trainers were started. The Unity Editor can connect now.'
+        Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
+        Start-Sleep -Seconds 1
+        Show-Status $config $admin $true
+        return
+    }
+
     $release=Get-LatestRelease
     if(-not $release.run_id -or -not $release.compatibility_key){
         throw "Latest release predates automatic run lifecycle metadata. Run '.\Assets\bees.ps1 build' first."
     }
 
-    Start-BeesServerIfNeeded $config $worker $admin
+    $python=Resolve-Python $config
+    $unity=Resolve-UnityEditor $config
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
     Publish-Release $config $admin $release
     Start-TailnetGatewayIfNeeded $config
 
     $staged=Stage-Release $config $admin $release
-    $envArgs=Get-EnvironmentArgs $config
     $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
         training_enabled=$true
         environment_args=$envArgs
