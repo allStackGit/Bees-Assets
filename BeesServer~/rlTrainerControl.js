@@ -594,6 +594,7 @@ module.exports = {
     canonicalJson,
     hashFileSync,
     buildManifest,
+    parseClusterEnvArgs,
     trainingConfigIdentity,
     buildTrainerControlConfig,
     installTrainerControl,
