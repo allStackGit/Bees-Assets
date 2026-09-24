@@ -19,9 +19,9 @@ from bees_continual_learning import (
 from bees_continual_native_demo import ingest_native_demonstration
 
 
-OBSERVATION_SIZE = 4701
-CONTINUOUS_ACTIONS = 34
-DISCRETE_BRANCHES = [2] * 16 + [5, 65, 65, 65]
+OBSERVATION_SIZE = 7342
+CONTINUOUS_ACTIONS = 16
+DISCRETE_BRANCHES = [2] * 5 + [5]
 
 
 class NativeDemoIngestionTests(unittest.TestCase):
