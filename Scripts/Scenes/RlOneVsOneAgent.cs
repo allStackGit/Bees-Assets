@@ -71,8 +71,8 @@ internal sealed class RlOneVsOneAgent : Agent
     internal const int WarpAction = 4;
     internal const int SpecialActionBranchSize = 5;
 
-    private const float MovementDeadZone = 0.2f;
-    private const float AimDeadZone = 0.1f;
+    internal const float MovementDeadZone = 0.2f;
+    internal const float AimDeadZone = 0.1f;
     private const float MiningActionIntervalSeconds = 5f;
     private const float HealingActionIntervalSeconds = 1f;
     private const int HealingPerSuccessfulAction = 50;
@@ -399,9 +399,7 @@ internal sealed class RlOneVsOneAgent : Agent
         }
 
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
-        _perception.Collect(_ship, _side, sensor, frameQuarterTurns);
-        sensor.AddObservation(_ship.Level.GetNormalizedRlEpisodeProgress());
-        AddZeroObservations(sensor, RlPolicySchema.ReservedObservationCount);
+        CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -434,13 +432,8 @@ internal sealed class RlOneVsOneAgent : Agent
         int frameQuarterTurns = RlPolicyCoordinateFrame.GetQuarterTurns(_ship.Level, _teamId);
         var continuous = actions.ContinuousActions;
         Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
-        ApplyMovement(RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
-
-        ShipCommunications[_ship] = new Vector4(
-            Mathf.Clamp(continuous[CommunicationContinuousActionStart], -1f, 1f),
-            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 1], -1f, 1f),
-            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 2], -1f, 1f),
-            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 3], -1f, 1f));
+        ApplyMovementCommand(_ship, RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
+        SetCommunicationActions(_ship, continuous);
 
         var discrete = actions.DiscreteActions;
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
@@ -455,7 +448,7 @@ internal sealed class RlOneVsOneAgent : Agent
             }
 
             bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
-            ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);
+            ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
         switch (discrete[SpecialActionBranch])
@@ -490,35 +483,39 @@ internal sealed class RlOneVsOneAgent : Agent
         discrete[SpecialActionBranch] = Random.Range(0, SpecialActionBranchSize);
     }
 
-    private void ApplyMovement(Vector2 movement)
+    internal static void ApplyMovementCommand(Ship ship, Vector2 movement)
     {
-        if (!_ship.IsMobile || _ship.CannotChangeMovementOrders)
+        if (ship == null)
         {
-            _ship.IsRlPolicyControlled = true;
+            return;
+        }
+        if (!ship.IsMobile || ship.CannotChangeMovementOrders)
+        {
+            ship.IsRlPolicyControlled = true;
             return;
         }
 
         if (movement.sqrMagnitude < MovementDeadZone * MovementDeadZone)
         {
-            _ship.RlMovementDirection = 360;
+            ship.RlMovementDirection = 360;
         }
         else
         {
-            Vector2 point = _ship.GetPosition() + movement.normalized;
-            int direction = Mathf.RoundToInt(_ship.GetDegreesTowardsPoint(point));
-            _ship.RlMovementDirection = ((direction % 360) + 360) % 360;
+            Vector2 point = ship.GetPosition() + movement.normalized;
+            int direction = Mathf.RoundToInt(ship.GetDegreesTowardsPoint(point));
+            ship.RlMovementDirection = ((direction % 360) + 360) % 360;
         }
-        _ship.IsRlPolicyControlled = true;
+        ship.IsRlPolicyControlled = true;
     }
 
-    private void ApplyWeaponCommand(int slot, Vector2 aimDirection, bool fire)
+    internal static void ApplyWeaponCommand(Ship ship, int slot, Vector2 aimDirection, bool fire)
     {
-        if (_ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= _ship.Weapons.Count)
+        if (ship == null || ship.Weapons == null || slot < 0 || slot >= MaxWeaponSlots || slot >= ship.Weapons.Count)
         {
             return;
         }
 
-        if (!(_ship.Weapons[slot] is Turret turret))
+        if (!(ship.Weapons[slot] is Turret turret))
         {
             return;
         }
@@ -786,7 +783,8 @@ internal sealed class RlOneVsOneAgent : Agent
 
     private bool IsCurrentController()
     {
-        return RlOneVsOneEpisodeCoordinator.IsControllerForSide(_level, _side, _teamId);
+        return !RlPlayerDerivedActionReplay.IsScriptedSide(_level, _side) &&
+               RlOneVsOneEpisodeCoordinator.IsControllerForSide(_level, _side, _teamId);
     }
 
     private bool TryBindShip()
@@ -842,7 +840,7 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _boundRuntimeShipId = _ship.Id;
         _hasBoundShip = true;
-        ShipCommunications[_ship] = Vector4.zero;
+        ResetCommunication(_ship);
         _hasParticipatedThisEpisode = true;
         _decisionCounter = 0;
         _nextMiningActionTime = 0f;
@@ -941,7 +939,7 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         if (_ship != null)
         {
-            ShipCommunications.Remove(_ship);
+            ClearCommunication(_ship);
             _ship.IsRlPolicyControlled = false;
             for (int i = 0; i < _ship.Turrets.Count; i++)
             {
@@ -982,6 +980,53 @@ internal sealed class RlOneVsOneAgent : Agent
     private static bool HasSpecialAction(Ship ship)
     {
         return ship is YellowJacket || ship is Striker || ship is FireBarge || ship is Barge || ship is Scout;
+    }
+
+    internal static void CollectPolicyObservations(
+        RlCombatPerception perception,
+        Ship ship,
+        int side,
+        VectorSensor sensor,
+        int frameQuarterTurns)
+    {
+        if (perception == null || ship == null || sensor == null)
+        {
+            throw new ArgumentNullException();
+        }
+
+        perception.Collect(ship, side, sensor, frameQuarterTurns);
+        sensor.AddObservation(ship.Level != null ? ship.Level.GetNormalizedRlEpisodeProgress() : 0f);
+        AddZeroObservations(sensor, RlPolicySchema.ReservedObservationCount);
+    }
+
+    internal static void SetCommunicationActions(Ship ship, ActionSegment<float> continuous)
+    {
+        if (ship == null || continuous.Length < CommunicationContinuousActionStart + CommunicationContinuousActionCount)
+        {
+            return;
+        }
+
+        ShipCommunications[ship] = new Vector4(
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 1], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 2], -1f, 1f),
+            Mathf.Clamp(continuous[CommunicationContinuousActionStart + 3], -1f, 1f));
+    }
+
+    internal static void ResetCommunication(Ship ship)
+    {
+        if (ship != null)
+        {
+            ShipCommunications[ship] = Vector4.zero;
+        }
+    }
+
+    internal static void ClearCommunication(Ship ship)
+    {
+        if (ship != null)
+        {
+            ShipCommunications.Remove(ship);
+        }
     }
 
     internal static void AddCommunicationObservations(VectorSensor sensor, Ship ally)
