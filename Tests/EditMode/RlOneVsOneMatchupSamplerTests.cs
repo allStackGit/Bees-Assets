@@ -287,6 +287,55 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void MultiShipPriorityUsesSideCompositionHistoryBeforeExactMatchupHasEnoughSamples()
+        {
+            object options = Parse(
+                "--rl-matchup-mode=sampled",
+                "--rl-ships-per-side=2",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship,Frigate,Dreadnought,Cruiser,Flagship");
+            object selector = CreateSelector(options, 424242, 1000000000000d, 32, 4);
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            string targetBeeComposition = GetPreparedComposition(selector, _beeSide, 2);
+            Dictionary<string, int> exactTargetCounts = new Dictionary<string, int>();
+            int targetSamples = 0;
+
+            for (int episode = 0; episode < 200 && targetSamples < 4; episode++)
+            {
+                string beeComposition = GetPreparedComposition(selector, _beeSide, 2);
+                string humanComposition = GetPreparedComposition(selector, _humanSide, 2);
+
+                if (beeComposition == targetBeeComposition)
+                {
+                    string exactKey = beeComposition + "|" + humanComposition;
+                    exactTargetCounts.TryGetValue(exactKey, out int exactCount);
+                    exactTargetCounts[exactKey] = exactCount + 1;
+                    targetSamples++;
+                    RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, true);
+                }
+                else
+                {
+                    RuntimeAssembly.Invoke(selector, "RecordEpisodeOutcome", 0, false);
+                }
+
+                if (targetSamples < 4)
+                {
+                    RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+                }
+            }
+
+            Assert.That(targetSamples, Is.EqualTo(4));
+            Assert.That(exactTargetCounts.Values, Has.All.LessThan(4),
+                "The test requires side-composition evidence to become eligible before any exact matchup.");
+
+            RuntimeAssembly.Invoke(selector, "PrepareEpisode");
+            Assert.That(
+                GetPreparedComposition(selector, _beeSide, 2),
+                Is.EqualTo(targetBeeComposition));
+        }
+
+        [Test]
         public void TrainerUsesFixedExplorationAndBroaderHistoricalOpponentPool()
         {
             string yaml = ReadSource("Training", "rl_1v1_config.yaml");
@@ -369,6 +418,21 @@ namespace Bees.Tests.EditMode
             object bee = RuntimeAssembly.Invoke(selector, "GetShipType", _beeSide, shipIndex);
             object human = RuntimeAssembly.Invoke(selector, "GetShipType", _humanSide, shipIndex);
             return bee + "|" + human;
+        }
+
+        private static string GetPreparedComposition(object selector, int side, int shipsPerSide)
+        {
+            string[] ships = new string[shipsPerSide];
+            for (int shipIndex = 0; shipIndex < shipsPerSide; shipIndex++)
+            {
+                ships[shipIndex] = RuntimeAssembly.Invoke(
+                    selector,
+                    "GetShipType",
+                    side,
+                    shipIndex).ToString();
+            }
+            Array.Sort(ships, StringComparer.Ordinal);
+            return string.Join(",", ships);
         }
 
         private static object GetProperty(object instance, string propertyName)
