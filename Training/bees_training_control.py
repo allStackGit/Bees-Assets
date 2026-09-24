@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -188,6 +189,11 @@ class ManagedBuildStore:
         for key in required:
             if not isinstance(descriptor.get(key), str) or not descriptor[key]:
                 raise ValueError(f"build descriptor {key} is missing")
+        for key in ("platform", "build_id"):
+            if re.fullmatch(r"[A-Za-z0-9._-]+", descriptor[key]) is None:
+                raise ValueError(f"build descriptor {key} contains unsafe characters")
+        if not descriptor["artifact_url"].startswith("/v1/artifact/"):
+            raise ValueError("build descriptor artifact_url is outside the control service")
         sha = descriptor["archive_sha256"].lower()
         if len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha):
             raise ValueError("build descriptor archive_sha256 is invalid")
