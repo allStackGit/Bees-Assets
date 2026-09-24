@@ -32,3 +32,9 @@ test('bees.ps1 preserves environment_args as a JSON array', () => {
     assert.equal(matches.length, 2,
         'Both training-control state updates must wrap environment args in @() so empty and single-item values serialize as JSON arrays.');
 });
+
+test('bees.ps1 normalizes environment args before using Count', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /\$envArgs=@\(Get-EnvironmentArgs \$config\)/,
+        'Invoke-Start must normalize Get-EnvironmentArgs output to an array before reading .Count.');
+});
