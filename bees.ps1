@@ -42,6 +42,8 @@ $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
 $TailnetRoot=Join-Path $RuntimeRoot 'Tailnet'
 $TailnetBinRoot=Join-Path $TailnetRoot 'Bin'
+$TailnetBridgeManifestPath=Join-Path $TailnetBinRoot 'current.json'
+$TailnetBridgeDistributionRoot=Join-Path $TailnetBinRoot 'Distribution'
 $TailnetGatewayPidPath=Join-Path $TailnetRoot 'gateway.pid'
 $TailnetGatewayLogPath=Join-Path $LogsRoot 'Training\tailnet-gateway.out.log'
 $TailnetGatewayErrPath=Join-Path $LogsRoot 'Training\tailnet-gateway.err.log'
@@ -116,46 +118,94 @@ function Resolve-PortableGo {
 }
 
 function Build-TailnetBridge {
-    if(-not(Test-Path -LiteralPath (Join-Path $TailnetToolRoot 'main.go')) -or -not(Test-Path -LiteralPath (Join-Path $TailnetToolRoot 'go.mod'))){
+    $main=Join-Path $TailnetToolRoot 'main.go'
+    $module=Join-Path $TailnetToolRoot 'go.mod'
+    if(-not(Test-Path -LiteralPath $main) -or -not(Test-Path -LiteralPath $module)){
         throw "Embedded tailnet bridge source is missing: $TailnetToolRoot"
     }
 
-    $go=Resolve-PortableGo
-    Ensure-Directory $TailnetBinRoot
-    $source=Join-Path $TailnetRoot 'BuildSource'
-    if(Test-Path -LiteralPath $source){ Remove-Item -LiteralPath $source -Recurse -Force }
-    Copy-Item -LiteralPath $TailnetToolRoot -Destination $source -Recurse -Force
+    $sourceHash=Get-StringSha256 (
+        (Get-Content -LiteralPath $module -Raw) +
+        [Environment]::NewLine +
+        (Get-Content -LiteralPath $main -Raw)
+    )
+    $versionRoot=Join-Path (Join-Path $TailnetBinRoot 'Versions') $sourceHash
+    $versionWindows=Join-Path $versionRoot 'bees-tailnet-bridge.exe'
+    $versionLinux=Join-Path $versionRoot 'bees-tailnet-bridge'
+    Ensure-Directory $versionRoot
 
-    $oldGoos=$env:GOOS
-    $oldGoarch=$env:GOARCH
-    $oldCgo=$env:CGO_ENABLED
-    try {
-        $env:GOARCH='amd64'
-        $env:CGO_ENABLED='0'
+    if(-not(Test-Path -LiteralPath $versionWindows) -or -not(Test-Path -LiteralPath $versionLinux)){
+        $go=Resolve-PortableGo
+        $source=Join-Path $TailnetRoot 'BuildSource'
+        if(Test-Path -LiteralPath $source){ Remove-Item -LiteralPath $source -Recurse -Force }
+        Copy-Item -LiteralPath $TailnetToolRoot -Destination $source -Recurse -Force
 
-        $env:GOOS='windows'
-        Write-Host 'Building embedded Bees tailnet bridge for Windows...'
-        Invoke-Checked $go @('build','-mod=mod','-trimpath','-ldflags=-s -w','-o',(Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'),'.') $source
+        $oldGoos=$env:GOOS
+        $oldGoarch=$env:GOARCH
+        $oldCgo=$env:CGO_ENABLED
+        try {
+            $env:GOARCH='amd64'
+            $env:CGO_ENABLED='0'
 
-        $env:GOOS='linux'
-        Write-Host 'Building embedded Bees tailnet bridge for Linux...'
-        Invoke-Checked $go @('build','-mod=mod','-trimpath','-ldflags=-s -w','-o',(Join-Path $TailnetBinRoot 'bees-tailnet-bridge'),'.') $source
-    } finally {
-        $env:GOOS=$oldGoos
-        $env:GOARCH=$oldGoarch
-        $env:CGO_ENABLED=$oldCgo
-        Remove-Item -LiteralPath $source -Recurse -Force -ErrorAction SilentlyContinue
+            $env:GOOS='windows'
+            Write-Host "Building embedded Bees tailnet bridge $($sourceHash.Substring(0,12)) for Windows..."
+            Invoke-Checked $go @(
+                'build','-mod=mod','-trimpath','-ldflags=-s -w',
+                '-o',$versionWindows,'.'
+            ) $source
+
+            $env:GOOS='linux'
+            Write-Host "Building embedded Bees tailnet bridge $($sourceHash.Substring(0,12)) for Linux..."
+            Invoke-Checked $go @(
+                'build','-mod=mod','-trimpath','-ldflags=-s -w',
+                '-o',$versionLinux,'.'
+            ) $source
+        } finally {
+            $env:GOOS=$oldGoos
+            $env:GOARCH=$oldGoarch
+            $env:CGO_ENABLED=$oldCgo
+            Remove-Item -LiteralPath $source -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
+
+    Ensure-Directory $TailnetBridgeDistributionRoot
+    $distributionWindows=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge.exe'
+    $distributionLinux=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge'
+    Copy-Item -LiteralPath $versionWindows -Destination $distributionWindows -Force
+    Copy-Item -LiteralPath $versionLinux -Destination $distributionLinux -Force
+
+    [pscustomobject]@{
+        schema_version=1
+        source_hash=$sourceHash
+        gateway_windows=$versionWindows
+        distribution_windows=$distributionWindows
+        distribution_linux=$distributionLinux
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $TailnetBridgeManifestPath -Encoding UTF8
+}
+
+function Get-TailnetBridgePaths {
+    if(-not(Test-Path -LiteralPath $TailnetBridgeManifestPath)){
+        throw "Tailnet bridge manifest is missing. Run '.\Assets\bees.ps1 build' first."
+    }
+    $value=Get-Content -LiteralPath $TailnetBridgeManifestPath -Raw | ConvertFrom-Json
+    foreach($path in @(
+        [string]$value.gateway_windows,
+        [string]$value.distribution_windows,
+        [string]$value.distribution_linux
+    )){
+        if(-not $path -or -not(Test-Path -LiteralPath $path)){
+            throw "Tailnet bridge manifest references a missing binary: $path"
+        }
+    }
+    $value
 }
 
 function Ensure-TailnetIdentity($Config){
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
     if($transport -ne 'tailnet'){ return }
 
-    $bridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
-    if(-not(Test-Path -LiteralPath $bridge)){
-        throw "Embedded tailnet bridge is missing. Run '.\Assets\bees.ps1 build' first."
-    }
+    $bridges=Get-TailnetBridgePaths
+    $bridge=[string]$bridges.gateway_windows
 
     $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
     if($hostname -notmatch '^[A-Za-z0-9-]{1,63}$'){
@@ -182,7 +232,8 @@ function Start-TailnetGatewayIfNeeded($Config){
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
     if($transport -ne 'tailnet'){ return }
 
-    $bridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
+    $bridges=Get-TailnetBridgePaths
+    $bridge=[string]$bridges.gateway_windows
     $state=Join-Path $TailnetRoot 'LearnerState'
     $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
     $controlPort=[int]$Config.controlPort
@@ -196,7 +247,14 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
 
     $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-    foreach($path in @($runtimeZip,$WorkerTokenPath,$WanTokenPath,$BootstrapTokenPath)){
+    foreach($path in @(
+        $runtimeZip,
+        $WorkerTokenPath,
+        $WanTokenPath,
+        $BootstrapTokenPath,
+        [string]$bridges.distribution_windows,
+        [string]$bridges.distribution_linux
+    )){
         if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
     }
 
@@ -220,6 +278,8 @@ function Start-TailnetGatewayIfNeeded($Config){
         '--runtime',$runtimeZip,
         '--worker-token',$WorkerTokenPath,
         '--wan-token',$WanTokenPath,
+        '--windows-bridge',[string]$bridges.distribution_windows,
+        '--linux-bridge',[string]$bridges.distribution_linux,
         '--bootstrap-token',$BootstrapTokenPath
     )
     $startArgs=@{
@@ -604,11 +664,9 @@ function Prepare-RemoteBootstrap($Config){
     $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
     $bootstrapToken=Ensure-TokenFile $BootstrapTokenPath
 
-    $windowsBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge.exe'
-    $linuxBridge=Join-Path $TailnetBinRoot 'bees-tailnet-bridge'
-    if(-not(Test-Path -LiteralPath $windowsBridge) -or -not(Test-Path -LiteralPath $linuxBridge)){
-        throw "Embedded tailnet bridge binaries are missing. Run '.\Assets\bees.ps1 build' first."
-    }
+    $bridges=Get-TailnetBridgePaths
+    $windowsBridge=[string]$bridges.distribution_windows
+    $linuxBridge=[string]$bridges.distribution_linux
     $windowsBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($windowsBridge))
     $linuxBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($linuxBridge))
     $windowsBridgeSha=(Get-FileHash -LiteralPath $windowsBridge -Algorithm SHA256).Hash.ToLowerInvariant()
