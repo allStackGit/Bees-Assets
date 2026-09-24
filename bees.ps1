@@ -400,14 +400,26 @@ function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[strin
     $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$staging,'-logFile',$logPath)
     Write-Host "Unity: $Method -> $Output"
 
-    # Unity.exe is a Windows GUI executable. PowerShell's call operator can return before a GUI
-    # process actually exits, so use Start-Process -Wait here and do not inspect build output until
-    # Unity has completed its batch-mode shutdown.
+    # Unity.exe is a Windows GUI executable. Launch it as a Process and explicitly wait for
+    # completion so PowerShell cannot return early. While it runs, keep one in-place status line
+    # visible so long builds do not look hung.
     $unityArgumentString=($args | ForEach-Object {
         $value=[string]$_
         if($value -match '[\s"]'){ '"' + $value.Replace('"','\"') + '"' } else { $value }
     }) -join ' '
-    $unityProcess=Start-Process -FilePath $Unity -ArgumentList $unityArgumentString -WorkingDirectory $BeesRoot -Wait -PassThru
+    $unityProcess=Start-Process -FilePath $Unity -ArgumentList $unityArgumentString -WorkingDirectory $BeesRoot -PassThru
+    $unityStarted=[DateTime]::UtcNow
+    $progressActivity="Unity build: $Method"
+    try {
+        while(-not $unityProcess.WaitForExit(1000)){
+            $elapsed=[DateTime]::UtcNow-$unityStarted
+            Write-Progress -Activity $progressActivity -Status ("Running - elapsed " + $elapsed.ToString('hh\:mm\:ss'))
+        }
+        # Flush asynchronous process bookkeeping before reading ExitCode.
+        $unityProcess.WaitForExit()
+    } finally {
+        Write-Progress -Activity $progressActivity -Completed
+    }
     if($unityProcess.ExitCode -ne 0){
         $tail=''
         if(Test-Path -LiteralPath $logPath){
