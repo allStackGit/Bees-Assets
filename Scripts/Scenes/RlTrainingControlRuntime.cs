@@ -11,6 +11,7 @@ using Unity.MLAgents.Policies;
 internal static class RlTrainingControlRuntime
 {
     internal const string StateFileEnvironmentVariable = "BEES_TRAINING_CONTROL_STATE_FILE";
+    internal const int LocalStateSchemaVersion = 1;
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(500);
 
     private static string _path;
@@ -52,11 +53,14 @@ internal static class RlTrainingControlRuntime
             return false;
         }
 
+        JToken schemaToken = value["schema_version"];
         JToken onlineToken = value["online"];
         JToken modeToken = value["desired_mode"];
         JToken updatedToken = value["updated_unix_seconds"];
         JToken leaseToken = value["lease_seconds"];
-        if (onlineToken == null || onlineToken.Type != JTokenType.Boolean ||
+        if (schemaToken == null || schemaToken.Type != JTokenType.Integer ||
+            schemaToken.Value<int>() != LocalStateSchemaVersion ||
+            onlineToken == null || onlineToken.Type != JTokenType.Boolean ||
             modeToken == null || modeToken.Type != JTokenType.String ||
             !TryFiniteNumber(updatedToken, out double updatedUnixSeconds) ||
             !TryFiniteNumber(leaseToken, out double leaseSeconds) ||
@@ -74,8 +78,8 @@ internal static class RlTrainingControlRuntime
             return false;
         }
 
-        double ageSeconds = Math.Max(0d, nowUnixSeconds - updatedUnixSeconds);
-        bool leaseCurrent = ageSeconds <= leaseSeconds;
+        double ageSeconds = nowUnixSeconds - updatedUnixSeconds;
+        bool leaseCurrent = ageSeconds >= -leaseSeconds && ageSeconds <= leaseSeconds;
         forceInference = ShouldForceInference(online && leaseCurrent, desiredMode);
         return true;
     }
