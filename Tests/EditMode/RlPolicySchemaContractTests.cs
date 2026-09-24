@@ -37,6 +37,7 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;"));
             Assert.That(perception, Does.Contain("internal const int MaxObservedEnemyWeaponMounts = 0;"));
             Assert.That(perception, Does.Contain("internal const int ShipIdentityObservationSize = 1;"));
+            Assert.That(perception, Does.Contain("internal const int CommunicationObservationSize = 4;"));
             Assert.That(perception, Does.Contain("internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;"));
             Assert.That(perception, Does.Contain("AddShipIdentityObservation(sensor, ship);"));
             Assert.That(perception, Does.Contain("AddShipIdentityObservation(sensor, observed);"));
@@ -44,24 +45,29 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObservedWeaponObservationSize = 5;"));
             Assert.That(perception, Does.Contain("AddObservedWeaponObservation(ship.Weapons[slot], sensor);"));
             Assert.That(perception, Does.Contain("internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;"));
+            Assert.That(perception, Does.Contain("internal const int AllyObservationSize = EntityObservationSize + CommunicationObservationSize;"));
             Assert.That(perception, Does.Contain("AddEntityWeaponSlots(observed, sensor);"));
+            Assert.That(perception, Does.Contain("AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);"));
+            Assert.That(perception, Does.Contain("RlOneVsOneAgent.AddCommunicationObservations(sensor, ally);"));
             Assert.That(perception, Does.Contain("AddSelfWeaponObservation(ship, ship.Weapons[slot], sensor, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 17;"));
-            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 7065;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 18;"));
+            Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 7321;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
-            Assert.That(schema, Does.Contain("bees-rl-v17"));
-            Assert.That(schema, Does.Contain("obs=7086"));
+            Assert.That(schema, Does.Contain("bees-rl-v18"));
+            Assert.That(schema, Does.Contain("obs=7342"));
             Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
-            Assert.That(schema, Does.Contain("cont=12"));
+            Assert.That(schema, Does.Contain("cont=16"));
             Assert.That(schema, Does.Contain("disc=2x5,5"));
             Assert.That(schema, Does.Contain("weapon-aim=slotwise-xy"));
             Assert.That(schema, Does.Contain("weapon-fire=slotwise-cease-or-fire"));
             Assert.That(schema, Does.Contain("ship-id=episode-permuted-scalar23"));
+            Assert.That(schema, Does.Contain("ally=44-with-private-comm4"));
+            Assert.That(schema, Does.Contain("communication=4-continuous-private-allied"));
             Assert.That(perception, Does.Contain("internal const int ExplorationGridSize = RlTeamExplorationGrid.Size;"));
             Assert.That(perception, Does.Contain("internal const int ExplorationGridCellCount = RlTeamExplorationGrid.CellCount;"));
             Assert.That(schema, Does.Contain("exploration-grid=16x16-team-shared-sight-recency"));
@@ -103,7 +109,9 @@ namespace Bees.Tests.EditMode
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
-            Assert.That(agent, Does.Contain("internal const int ContinuousActionCount = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;"));
+            Assert.That(agent, Does.Contain("internal const int CommunicationContinuousActionCount = 4;"));
+            Assert.That(agent, Does.Contain("internal const int CommunicationContinuousActionStart = MovementContinuousActionCount + MaxWeaponSlots * WeaponAimContinuousActionsPerSlot;"));
+            Assert.That(agent, Does.Contain("internal const int ContinuousActionCount = CommunicationContinuousActionStart + CommunicationContinuousActionCount;"));
             Assert.That(agent, Does.Contain("internal const int WeaponFireBranchCount = MaxWeaponSlots;"));
             Assert.That(agent, Does.Contain("internal const int WeaponFireBranchSize = 2;"));
             Assert.That(agent, Does.Contain("int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;"));
@@ -113,8 +121,24 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("ApplyWeaponCommand(slot, _weaponAimDirections[slot], fire);"));
             Assert.That(agent, Does.Not.Contain("_lastAimDirection"),
                 "Independent weapon branches must not secretly share one retained aim vector.");
-            Assert.That(schema, Does.Contain("ExpectedContinuousActions = 12"));
+            Assert.That(schema, Does.Contain("ExpectedContinuousActions = 16"));
             Assert.That(schema, Does.Contain("ExpectedWeaponFireBranchCount = 5"));
+        }
+
+        [Test]
+        public void AlliedCommunicationIsStoredPerBoundShipAndRemainsPrivateToAllies()
+        {
+            string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
+            string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
+
+            Assert.That(agent, Does.Contain("private static readonly Dictionary<Ship, Vector4> ShipCommunications"));
+            Assert.That(agent, Does.Contain("ShipCommunications[_ship] = Vector4.zero;"));
+            Assert.That(agent, Does.Contain("ShipCommunications[_ship] = new Vector4("));
+            Assert.That(agent, Does.Contain("ShipCommunications.Remove(_ship);"));
+            Assert.That(agent, Does.Contain("ShipCommunications.TryGetValue(ally, out Vector4 communication)"));
+            Assert.That(perception, Does.Contain("AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);"));
+            Assert.That(perception, Does.Contain("AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);"),
+                "Enemy observations must not receive the private allied communication tail.");
         }
 
         [Test]
