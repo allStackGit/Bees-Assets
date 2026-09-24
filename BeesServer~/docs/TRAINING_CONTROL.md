@@ -6,7 +6,7 @@ BeesServer can act as the desired-state authority for distributed RL workers. Th
 
 Set separate `BEES_TRAINING_CONTROL_TOKEN` (worker access) and `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (operator changes) before starting BeesServer. When the worker token is present, BeesServer starts the training-control listener on `127.0.0.1:7150` by default. Keep the default loopback binding and use SSH/private-network forwarding when practical; set `BEES_TRAINING_CONTROL_HOST` only when the control port is intentionally exposed on a protected network. Other overrides are `BEES_TRAINING_CONTROL_PORT`, `BEES_TRAINING_CONTROL_STATE`, `BEES_TRAINING_ARTIFACT_ROOT`, and `BEES_TRAINING_CONTROL_LEASE_SECONDS`.
 
-Desired state is persisted under `logs/training-control-state.json` by default. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts.
+Desired state is persisted under `logs/training-control-state.json` by default. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts. On control-plane startup, active canonical artifacts are rechecked for exact size and SHA-256; tampered or truncated canonical bytes fail startup rather than being distributed.
 
 ## Canonical builds
 
@@ -18,7 +18,7 @@ Publish it from the BeesServer host. The CLI uses `BEES_TRAINING_CONTROL_ADMIN_T
 node trainingControlCli.js publish-build --platform WindowsPlayer --build-id 2026-09-24-a --archive C:\\Builds\\BeesWindows.zip --entrypoint Bees.exe
 ```
 
-Publish every required platform under the same logical `--build-id`. Publishing only stages immutable artifacts; it does not activate them. For example, `release-42` may have a Windows `Bees.exe` archive and a Linux `Bees.x86_64` archive. Activating `release-42` makes that one build identity authoritative across all trainer platforms. A trainer whose platform equivalent is missing fails closed instead of continuing on an older build.
+Publish every required platform under the same logical `--build-id`. Publishing only stages immutable artifacts; it does not activate them. For example, `release-42` may have a Windows `Bees.exe` archive and a Linux `Bees.x86_64` archive. Activating `release-42` makes that one build identity authoritative across all trainer platforms. Training start is rejected if any currently connected trainer platform lacks its `release-42` artifact; a platform that connects later without an equivalent is explicitly held stopped (dedicated) or inference-only (full game).
 
 ## Start, stop, arguments, and status
 
@@ -50,6 +50,6 @@ For a managed full game, use `--role full-game`. A server lease loss does not te
 
 Dedicated workers terminate their managed process after the BeesServer lease expires. If BeesServer is reachable but the active canonical build is missing, incompatible, or cannot be verified, they stop immediately rather than continuing with stale code. They restart only after the server is reachable, the platform-equivalent canonical build is available, and desired state says `training`.
 
-Full-game workers keep the game running during a lease outage. Their local control-state file is marked offline/inference. When BeesServer returns, heartbeats resume and the newest desired revision is reconciled.
+Full-game workers keep the game running during a lease outage. Their local control-state file is marked offline/inference. Unity also checks the timestamp and lease duration in that file, so a crashed local supervisor eventually forces inference even if it cannot rewrite the file. When BeesServer returns, heartbeats resume and the newest desired revision is reconciled.
 
 Build downloads are staged, checked against the server-advertised size and SHA-256, validated against ZIP path traversal, extracted into a temporary versioned directory, then atomically activated. A partial or invalid download never replaces the usable build.
