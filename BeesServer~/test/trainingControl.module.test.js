@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { TrainingControlStore } = require('../trainingControl');
+const { TrainingControlStore, createTrainingControlHandler } = require('../trainingControl');
 
 function withTempDir(work) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-training-control-'));
@@ -16,6 +16,49 @@ function withTempDir(work) {
         fs.rmSync(root, { recursive: true, force: true });
     }
 }
+
+
+function invokeGet(handler, url, token) {
+    return new Promise(resolve => {
+        const request = {
+            method: 'GET',
+            url,
+            headers: { authorization: 'Bearer ' + token },
+        };
+        const response = {
+            statusCode: null,
+            headers: null,
+            writeHead(statusCode, headers) {
+                this.statusCode = statusCode;
+                this.headers = headers;
+            },
+            end(body) {
+                resolve({
+                    statusCode: this.statusCode,
+                    body: body ? JSON.parse(Buffer.from(body).toString('utf8')) : null,
+                });
+            },
+        };
+        handler(request, response);
+    });
+}
+
+test('worker token cannot invoke admin endpoints and admin token can inspect status', async () => {
+    await withTempDir(async root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const handler = createTrainingControlHandler(store, 'worker-secret', 'admin-secret');
+
+        const rejected = await invokeGet(handler, '/v1/admin/state', 'worker-secret');
+        assert.equal(rejected.statusCode, 401);
+
+        const status = await invokeGet(handler, '/v1/status', 'admin-secret');
+        assert.equal(status.statusCode, 200);
+        assert.equal(status.body.desired.schema_version, 1);
+    });
+});
 
 test('desired state is persisted and maps stop to inference for full games only', () => {
     withTempDir(root => {
