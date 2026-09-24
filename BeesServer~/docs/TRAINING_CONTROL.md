@@ -4,7 +4,7 @@ BeesServer can act as the desired-state authority for distributed RL workers. Th
 
 ## Server setup
 
-Set `BEES_TRAINING_CONTROL_TOKEN` before starting BeesServer. When the token is present, BeesServer starts the training-control listener on port 7150 by default. Optional overrides are `BEES_TRAINING_CONTROL_HOST`, `BEES_TRAINING_CONTROL_PORT`, `BEES_TRAINING_CONTROL_STATE`, `BEES_TRAINING_ARTIFACT_ROOT`, and `BEES_TRAINING_CONTROL_LEASE_SECONDS`.
+Set separate `BEES_TRAINING_CONTROL_TOKEN` (worker access) and `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (operator changes) before starting BeesServer. When the worker token is present, BeesServer starts the training-control listener on `127.0.0.1:7150` by default. Keep the default loopback binding and use SSH/private-network forwarding when practical; set `BEES_TRAINING_CONTROL_HOST` only when the control port is intentionally exposed on a protected network. Other overrides are `BEES_TRAINING_CONTROL_PORT`, `BEES_TRAINING_CONTROL_STATE`, `BEES_TRAINING_ARTIFACT_ROOT`, and `BEES_TRAINING_CONTROL_LEASE_SECONDS`.
 
 Desired state is persisted under `logs/training-control-state.json` by default. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts.
 
@@ -12,7 +12,7 @@ Desired state is persisted under `logs/training-control-state.json` by default. 
 
 Package a compiled build with `Training/bees_package_training_build.py`. The package is a ZIP containing the complete compiled build and an entrypoint such as `Bees.exe` or `Bees.x86_64`.
 
-Publish it from the BeesServer directory:
+Publish it from the BeesServer host. The CLI uses `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (or its `_FILE` variant):
 
 ```text
 node trainingControlCli.js publish-build --platform WindowsPlayer --build-id 2026-09-24-a --archive C:\\Builds\\BeesWindows.zip --entrypoint Bees.exe
