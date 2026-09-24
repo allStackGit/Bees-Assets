@@ -13,7 +13,7 @@ const DEVELOPMENT_DATABASE = Object.freeze({
     host: '127.0.0.1',
     user: 'bees',
     password: '_#gg86gf-EVMuzS',
-    name: 'ram',
+    name: 'bees',
 });
 
 function parseLauncherOptions(argv = process.argv.slice(2)) {
