@@ -16,5 +16,9 @@
   "remoteSshPort": 22,
   "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
   "remoteTorchDevice": "cpu",
-  "remoteLinuxInstallRoot": ".local/share/bees-training"
+  "remoteLinuxInstallRoot": ".local/share/bees-training",
+  "remoteTransport": "tailnet",
+  "tailnetLearnerName": "bees-learner",
+  "tailnetSshPort": 2222,
+  "tailnetLocalSshPort": 2222
 }
