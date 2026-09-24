@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import bees_trainer_agent as agent
@@ -126,6 +127,24 @@ class TrainerAgentTests(unittest.TestCase):
             again = installer.ensure({"build_id": client.value["build_id"]})
             self.assertEqual(again, executable)
             self.assertEqual(client.downloads, 2)
+
+    def test_managed_process_isolates_and_terminates_posix_process_group(self):
+        fake = mock.Mock()
+        fake.pid = 4242
+        fake.poll.return_value = None
+        fake.wait.return_value = 0
+
+        with (
+            mock.patch.object(agent.os, "name", "posix"),
+            mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
+            mock.patch.object(agent.os, "killpg") as killpg,
+        ):
+            managed = agent.ManagedProcess()
+            managed.start(["python", "worker.py"], Path("."))
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            managed.stop()
+
+        killpg.assert_called_once_with(4242, agent.signal.SIGTERM)
 
     def test_actor_command_always_uses_server_synchronized_executable(self):
         with tempfile.TemporaryDirectory() as root:
