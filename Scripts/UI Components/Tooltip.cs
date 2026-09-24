@@ -42,6 +42,8 @@ public class Tooltip : MonoBehaviour
     private TMP_Text _nextLabel;
     private DialogueManager _dialogueManager;
 
+    public bool IsSequenceActive => _sequenceActive;
+
     private void Awake()
     {
         ConfigureVisuals();
@@ -97,14 +99,6 @@ public class Tooltip : MonoBehaviour
             return;
         }
 
-        if (_sequenceActive)
-        {
-            // Tutorial sequences are modal presentation. A completed dialogue can be reactivated
-            // by other UI lifecycle code, so enforce exclusivity for the entire sequence rather
-            // than only hiding it once when the sequence starts.
-            _dialogueManager.gameObject.SetActive(false);
-            return;
-        }
 
         Transform dialogueTransform = _dialogueManager.transform;
         if (dialogueTransform.parent != parent)
@@ -219,13 +213,12 @@ public class Tooltip : MonoBehaviour
                           $" ({_sequenceIndex + 1}/{_sequencePages.Count})";
         ApplyLayout();
 
-        // Keep the panel active while changing pages. Disabling the whole tooltip before changing
-        // TMP text can leave stale text geometry when a later page is substantially longer.
+        // Keep the sequence object active while replacing page content. The sequence layout is
+        // owned here; periodic presentation guards must not rewrite or re-measure the live TMP text.
         if (!TooltipObject.activeSelf)
         {
             TooltipObject.SetActive(true);
         }
-        TooltipText.ForceMeshUpdate(true);
         Canvas.ForceUpdateCanvases();
     }
 
