@@ -54,3 +54,10 @@ test('bees.ps1 suppresses lifecycle command stdout before returning parsed plan'
         'New-TrainingRunPlan must return only the parsed plan object, not Python stdout plus the plan.'
     );
 });
+
+test('bees.ps1 prefers resumable curl for portable Go downloads', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /Get-Command 'curl\.exe'/);
+    assert.match(source, /'--continue-at','-','--output',\$temporary,\$url/);
+    assert.match(source, /Invoke-WebRequest -UseBasicParsing -Uri \$url -OutFile \$temporary/);
+});
