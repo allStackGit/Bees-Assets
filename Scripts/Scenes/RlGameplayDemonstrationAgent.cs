@@ -560,7 +560,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
         // The historical squad flag can remain true even when Stage has disabled the Hive Mind.
         // Do not turn that stale ownership metadata into a training demonstration.
         if (expectedSource == DemonstrationSource.HiveMind &&
-            (stage == null || !stage.ActivateHiveMind || stage.ActivateBrains))
+            (stage == null || !stage.ActivateHiveMind || stage.ActivateRlPolicy))
         {
             return false;
         }
@@ -576,7 +576,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
     private static bool IsLiveRlControlled(Stage stage, Level level, Ship ship)
     {
         if (stage == null || level == null || ship == null || ConfigData.Configuration == null ||
-            !stage.ActivateHiveMind || !stage.ActivateBrains)
+            !stage.ActivateHiveMind || !stage.ActivateRlPolicy)
         {
             return false;
         }
