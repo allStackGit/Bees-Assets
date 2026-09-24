@@ -399,7 +399,18 @@ function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[strin
 
     $args=@('-batchmode','-quit','-projectPath',$BeesRoot,'-executeMethod',$Method,'-beesOutput',$staging,'-logFile',$logPath)
     Write-Host "Unity: $Method -> $Output"
-    Invoke-Checked $Unity $args $BeesRoot
+
+    # Unity.exe is a Windows GUI executable. PowerShell's call operator can return before a GUI
+    # process actually exits, so use Start-Process -Wait here and do not inspect build output until
+    # Unity has completed its batch-mode shutdown.
+    $unityArgumentString=($args | ForEach-Object {
+        $value=[string]$_
+        if($value -match '[\s"]'){ '"' + $value.Replace('"','\"') + '"' } else { $value }
+    }) -join ' '
+    $unityProcess=Start-Process -FilePath $Unity -ArgumentList $unityArgumentString -WorkingDirectory $BeesRoot -Wait -PassThru
+    if($unityProcess.ExitCode -ne 0){
+        throw "$Unity exited with code $($unityProcess.ExitCode). Check $logPath"
+    }
 
     $stagedEntrypoint=Join-Path $staging $Entrypoint
     $entrypointDeadline=[DateTime]::UtcNow.AddSeconds(30)
