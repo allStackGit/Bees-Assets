@@ -52,6 +52,20 @@ $GoVersion='1.27.1'
 $GoWindowsZipSha256='a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9be4caabd2edd95d'
 
 function Ensure-Directory([string]$Path){ $null=New-Item -ItemType Directory -Force -Path $Path }
+function Install-AtomicFile([string]$Source,[string]$Destination){
+    $sourcePath=[IO.Path]::GetFullPath($Source)
+    $destinationPath=[IO.Path]::GetFullPath($Destination)
+    Ensure-Directory (Split-Path -Parent $destinationPath)
+    if(Test-Path -LiteralPath $destinationPath){
+        $backup="$destinationPath.swap-backup"
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        [IO.File]::Replace($sourcePath,$destinationPath,$backup,$true)
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+    } else {
+        [IO.File]::Move($sourcePath,$destinationPath)
+    }
+}
+
 
 function Get-ClusterConfig {
     if(-not(Test-Path -LiteralPath $ConfigPath)){
@@ -171,8 +185,12 @@ function Build-TailnetBridge {
     Ensure-Directory $TailnetBridgeDistributionRoot
     $distributionWindows=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge.exe'
     $distributionLinux=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge'
-    Copy-Item -LiteralPath $versionWindows -Destination $distributionWindows -Force
-    Copy-Item -LiteralPath $versionLinux -Destination $distributionLinux -Force
+    $distributionWindowsTemp="$distributionWindows.new"
+    $distributionLinuxTemp="$distributionLinux.new"
+    Copy-Item -LiteralPath $versionWindows -Destination $distributionWindowsTemp -Force
+    Copy-Item -LiteralPath $versionLinux -Destination $distributionLinuxTemp -Force
+    Install-AtomicFile $distributionWindowsTemp $distributionWindows
+    Install-AtomicFile $distributionLinuxTemp $distributionLinux
 
     [pscustomobject]@{
         schema_version=1
@@ -508,7 +526,9 @@ function Invoke-Build {
         contract=$plan.contract
         artifacts=$artifacts
     }
-    $release | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $LatestReleasePath -Encoding UTF8
+    $releaseTemp="$LatestReleasePath.new"
+    $release | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $releaseTemp -Encoding UTF8
+    Install-AtomicFile $releaseTemp $LatestReleasePath
     Commit-TrainingRunPlan $python
 
     Write-Host ""
@@ -686,8 +706,10 @@ function Prepare-RemoteBootstrap($Config){
         Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-        if(Test-Path -LiteralPath $runtimeZip){Remove-Item -LiteralPath $runtimeZip -Force}
-        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZip -CompressionLevel Optimal
+        $runtimeZipTemp="$runtimeZip.new"
+        Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
+        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZipTemp -CompressionLevel Optimal
+        Install-AtomicFile $runtimeZipTemp $runtimeZip
     } finally {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
