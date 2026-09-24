@@ -51,10 +51,18 @@ class EpisodeLogMetrics:
         self._episodes = deque(maxlen=self.window)
         self._positions: dict[Path, int] = {}
         self._pending: dict[Path, str] = {}
+        self._run_id = ""
 
-    def refresh(self) -> dict[str, object]:
-        if self.root.is_dir():
-            for log_path in sorted(self.root.rglob("Player-*.log")):
+    def refresh(self, run_id: str = "") -> dict[str, object]:
+        run_id = str(run_id or "")
+        if run_id != self._run_id:
+            self._run_id = run_id
+            self._episodes.clear()
+            self._positions.clear()
+            self._pending.clear()
+        scan_root = self.root / run_id if run_id else self.root
+        if scan_root.is_dir():
+            for log_path in sorted(scan_root.rglob("Player-*.log")):
                 self._read_new(log_path)
         return self.snapshot()
 
@@ -237,16 +245,20 @@ class TrainingLogUploader:
         *,
         trainer_id: str,
         run_id: str,
-    ) -> None:
-        if not run_id or not self.root.is_dir():
-            return
+    ) -> int:
+        if not run_id:
+            return 0
+        run_root = self.root / run_id
+        if not run_root.is_dir():
+            return 0
         budget = self.CHUNK_BYTES
-        for log_path in sorted(self.root.rglob("*")):
+        uploaded = 0
+        for log_path in sorted(run_root.rglob("*")):
             if budget <= 0:
                 break
             if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
                 continue
-            relative = log_path.relative_to(self.root).as_posix()
+            relative = log_path.relative_to(run_root).as_posix()
             try:
                 size = log_path.stat().st_size
             except OSError:
@@ -288,6 +300,27 @@ class TrainingLogUploader:
                 continue
             self._positions[log_path] = next_offset
             budget -= len(data)
+            uploaded += len(data)
+        return uploaded
+
+    def flush_all(
+        self,
+        client: TrainingControlClient,
+        *,
+        trainer_id: str,
+        run_id: str,
+        maximum_passes: int = 10000,
+    ) -> None:
+        for _ in range(maximum_passes):
+            if self.flush_once(
+                client,
+                trainer_id=trainer_id,
+                run_id=run_id,
+            ) <= 0:
+                return
+        raise RuntimeError(
+            f"training log flush exceeded {maximum_passes} passes for run {run_id}"
+        )
 
 
 class ManagedProcess:
@@ -324,7 +357,9 @@ class ManagedProcess:
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
-        log_dir = state_file.parent / "logs"
+        if not run_id:
+            raise ValueError("managed training process requires a non-empty run_id")
+        log_dir = state_file.parent / "logs" / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
         self.process = subprocess.Popen(
@@ -523,7 +558,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 build=active_build,
                 prepared_build_id=prepared_build_id,
                 last_error=last_error or preparation_error,
-                metrics=metrics.refresh(),
+                metrics=metrics.refresh(
+                    str(desired.get("run_id", "")) if desired else managed.run_id
+                ),
             )
             try:
                 desired = client.heartbeat(heartbeat)
@@ -548,12 +585,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ):
                     managed.stop()
                     try:
-                        log_uploader.flush_once(
+                        log_uploader.flush_all(
                             client,
                             trainer_id=args.trainer_id,
                             run_id=run_id,
                         )
-                    except (ControlUnavailable, ControlRejected, OSError, ValueError):
+                    except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
                         pass
                     os.execv(
                         sys.executable,
@@ -562,6 +599,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
                 if mode == "stopped":
                     managed.stop()
+                    pending_release = desired.get("pending_release")
+                    if (
+                        isinstance(pending_release, Mapping)
+                        and bool(pending_release.get("incompatible"))
+                    ):
+                        log_uploader.flush_all(
+                            client,
+                            trainer_id=args.trainer_id,
+                            run_id=run_id,
+                        )
                     applied_revision = revision
                 elif mode == "inference" and args.role == "full-game":
                     # Stop/inference changes apply live through control-state.json. Never kill an
