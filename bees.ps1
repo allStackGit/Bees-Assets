@@ -228,8 +228,11 @@ function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -
 function Convert-ToScpPath([string]$Path){ ([IO.Path]::GetFullPath($Path)).Replace('\','/') }
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 function Escape-BashDoubleQuoted([string]$Value){
-    if($Value -match "[`r`n]"){ throw 'Remote launcher values may not contain newlines.' }
-    $Value.Replace('\','\\').Replace('"','\"').Replace('
+    if($Value -notmatch '^[A-Za-z0-9_@.:/%~+\-]+$'){
+        throw "Remote Linux launcher value contains unsupported shell characters: $Value"
+    }
+    $Value
+}
 
 function Get-RemoteSshTarget($Config){
     if($Config.remoteSshTarget -and ([string]$Config.remoteSshTarget).Trim()){ return ([string]$Config.remoteSshTarget).Trim() }
