@@ -22,7 +22,7 @@ internal static class RlPolicySchema
     internal const int ExpectedContinuousActions = 12;
     internal const int ExpectedWeaponFireBranchCount = 5;
     internal const int ExpectedWeaponFireBranchSize = 2;
-    internal const int ExpectedDiscreteBranchCount = 9;
+    internal const int ExpectedDiscreteBranchCount = 6;
     internal const int ExpectedSpecialActionBranchSize = 5;
 
     internal const string Signature =
