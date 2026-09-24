@@ -136,9 +136,21 @@ function Resolve-PortableGo {
     $archive=Join-Path $toolchains "go$GoVersion.windows-amd64.zip"
     if(-not(Test-Path -LiteralPath $archive)){
         $temporary="$archive.download"
-        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        $url="https://go.dev/dl/go$GoVersion.windows-amd64.zip"
         Write-Host "Downloading portable Go $GoVersion for the embedded Bees tailnet bridge..."
-        Invoke-WebRequest -Uri "https://go.dev/dl/go$GoVersion.windows-amd64.zip" -OutFile $temporary
+        $curl=Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+        if($null -ne $curl){
+            # Keep a partial download so an interrupted bootstrap can resume instead of starting over.
+            Invoke-Checked $curl.Source @(
+                '--fail','--location','--retry','3','--retry-delay','2',
+                '--continue-at','-','--output',$temporary,$url
+            ) $toolchains
+        } else {
+            # Windows PowerShell Invoke-WebRequest can be much slower for large binary downloads.
+            # Use it only as a compatibility fallback when curl.exe is unavailable.
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $temporary
+        }
         $actual=(Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash.ToLowerInvariant()
         if($actual -ne $GoWindowsZipSha256){
             Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
