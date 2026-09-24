@@ -257,13 +257,13 @@ function Show-Status($Config,[string]$AdminToken,[bool]$Single){
         Write-Host "Bees distributed learning status  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"; Write-Host ('='*78)
         try {
             $s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken; $d=$s.desired
-            Write-Host "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"; Write-Host "Build:  $($d.canonical_build_id)"
+            Write-Host "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"; Write-Host "Build:  $($d.canonical_build_id)"; Write-Host "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
             $ea=@($d.environment_args); Write-Host "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"; Write-Host ''
             $rows=@($s.trainers|ForEach-Object{
                 $m=$_.metrics
-                [pscustomobject]@{Trainer=$_.trainer_id;Role=$_.role;Platform=$_.platform;State=$_.process_state;Build=$_.build_id;Rev=$_.applied_revision;Age=('{0:N1}s'-f[double]$_.age_seconds);Timeout=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.timeout_pct}else{'-'};BeeHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_hit_pct}else{'-'};HumanHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_hit_pct}else{'-'};Error=$_.last_error}
+                [pscustomobject]@{Trainer=$_.trainer_id;Role=$_.role;Platform=$_.platform;State=if($_.stale){'STALE'}else{$_.process_state};Build=$_.build_id;Rev=$_.applied_revision;Age=('{0:N1}s'-f[double]$_.age_seconds);Timeout=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.timeout_pct}else{'-'};BWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_win_pct}else{'-'};HWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_win_pct}else{'-'};Draw=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.draw_pct}else{'-'};Dur=if($m -and $m.window_episodes){'{0:N1}s'-f[double]$m.avg_duration_s}else{'-'};BeeHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_hit_pct}else{'-'};HumanHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_hit_pct}else{'-'};Error=$_.last_error}
             })
-            if($rows.Count){$rows|Format-Table Trainer,Role,Platform,State,Build,Rev,Age,Timeout,BeeHit,HumanHit,Error -AutoSize}else{Write-Host 'No managed trainers/gameplay builds have checked in.'}
+            if($rows.Count){$rows|Format-Table Trainer,Role,Platform,State,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize}else{Write-Host 'No managed trainers/gameplay builds have checked in.'}
             $expected=@($Config.expectedTrainers)
             if($expected.Count){$present=@($s.trainers|ForEach-Object{[string]$_.trainer_id});$missing=@($expected|Where-Object{$present -notcontains [string]$_});if($missing.Count){Write-Warning "Expected trainers not connected: $($missing -join ', ')"}}
             $l=Get-LocalLearnerStats; Write-Host ''; Write-Host ("Learner logs: Step={0}  ELO={1}  MeanReward={2}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}))
