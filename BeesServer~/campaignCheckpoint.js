@@ -1,5 +1,7 @@
 'use strict';
 
+const { installRlTelemetryUploadSecurity } = require('./rlTelemetryUploadSecurity');
+const { installRlModelDistributionSecurity } = require('./rlModelDistributionSecurity');
 const { installRuntimeSecurity } = require('./security');
 const { installSafeCacheWriter } = require('./cachePersistence');
 
@@ -72,6 +74,10 @@ function installCampaignCheckpoint(runtime) {
         Object.defineProperty(prototype, '__beesCampaignCheckpointInstalled', { value: true });
     }
 
+    // Install auxiliary RL routes below the existing security layer. Security remains outermost so
+    // Steam authentication/claimed-user checks run before telemetry is accepted or model bytes served.
+    installRlTelemetryUploadSecurity(runtime);
+    installRlModelDistributionSecurity(runtime);
     installRuntimeSecurity(runtime);
     installSafeCacheWriter(runtime);
     installProductionCredentialGuard(runtime);
