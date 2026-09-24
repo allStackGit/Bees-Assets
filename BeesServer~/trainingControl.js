@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const CONTROL_SCHEMA_VERSION = 1;
+const CONTROL_SCHEMA_VERSION = 2;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 20;
