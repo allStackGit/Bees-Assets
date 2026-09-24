@@ -16,14 +16,15 @@ $ErrorActionPreference='Stop'
 $AssetsRoot=[IO.Path]::GetFullPath($PSScriptRoot)
 $BeesRoot=[IO.Path]::GetFullPath((Split-Path -Parent $AssetsRoot))
 $BuildsRoot=Join-Path $BeesRoot 'Builds'
-$ConfigRoot=Join-Path $BeesRoot 'Config'
 $SecretsRoot=Join-Path $BeesRoot 'Secrets'
 $RuntimeRoot=Join-Path $BeesRoot 'Runtime'
 $LogsRoot=Join-Path $BeesRoot 'Logs'
 $TrainingRoot=Join-Path $BeesRoot 'Training'
+$RemoteRoot=Join-Path $BeesRoot 'Remote'
 $ServerRoot=Join-Path $AssetsRoot 'BeesServer~'
-$ConfigPath=Join-Path $ConfigRoot 'training.json'
-$ConfigTemplate=Join-Path $AssetsRoot 'Training\bees.cluster.example.json'
+$ConfigPath=Join-Path $AssetsRoot 'Training\bees.cluster.json'
+$RemoteBootstrapTemplate=Join-Path $AssetsRoot 'Training\bees_remote_bootstrap.ps1'
+$RemoteRequirementsPath=Join-Path $AssetsRoot 'Training\bees_remote_requirements.txt'
 $LatestReleasePath=Join-Path $BuildsRoot 'latest-training-release.json'
 $WorkerTokenPath=Join-Path $SecretsRoot 'training-worker.token'
 $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
@@ -35,10 +36,8 @@ $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 function Ensure-Directory([string]$Path){ $null=New-Item -ItemType Directory -Force -Path $Path }
 
 function Get-ClusterConfig {
-    Ensure-Directory $ConfigRoot
     if(-not(Test-Path -LiteralPath $ConfigPath)){
-        Copy-Item -LiteralPath $ConfigTemplate -Destination $ConfigPath
-        Write-Host "Created training configuration: $ConfigPath"
+        throw "Tracked training configuration is missing: $ConfigPath"
     }
     Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 }
@@ -225,9 +224,72 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
 
+function Convert-ToScpPath([string]$Path){ ([IO.Path]::GetFullPath($Path)).Replace('\\','/') }
+function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
+
+function Get-RemoteSshTarget($Config){
+    if($Config.remoteSshTarget -and ([string]$Config.remoteSshTarget).Trim()){ return ([string]$Config.remoteSshTarget).Trim() }
+    "$env:USERNAME@$env:COMPUTERNAME"
+}
+
+function Prepare-RemoteBootstrap($Config){
+    if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote bootstrap template is missing: $RemoteBootstrapTemplate" }
+    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
+
+    $maxActors=[int]$Config.maxRemoteActors
+    if($maxActors -lt 1 -or $maxActors -gt 12){ throw 'maxRemoteActors must be in 1-12 for generated remote launchers.' }
+    $defaultEnvs=if($Config.remoteDefaultEnvs){[int]$Config.remoteDefaultEnvs}else{32}
+    if($defaultEnvs -lt 1 -or $defaultEnvs -gt 64){ throw 'remoteDefaultEnvs must be in 1-64.' }
+    $sshPort=if($Config.remoteSshPort){[int]$Config.remoteSshPort}else{22}
+    if($sshPort -lt 1 -or $sshPort -gt 65535){ throw 'remoteSshPort must be in 1-65535.' }
+    $installRoot=if($Config.remoteInstallRoot){[string]$Config.remoteInstallRoot}else{'%LOCALAPPDATA%\BeesTraining'}
+    $torchDevice=if($Config.remoteTorchDevice){[string]$Config.remoteTorchDevice}else{'cpu'}
+    $learner=Get-RemoteSshTarget $Config
+
+    Ensure-Directory $RemoteRoot
+    Ensure-Directory $RuntimeRoot
+    $staging=Join-Path $RuntimeRoot 'remote-runtime-staging'
+    if(Test-Path -LiteralPath $staging){Remove-Item -LiteralPath $staging -Recurse -Force}
+    Ensure-Directory $staging
+    try {
+        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | Copy-Item -Destination $staging
+        Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
+        $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
+        if(Test-Path -LiteralPath $runtimeZip){Remove-Item -LiteralPath $runtimeZip -Force}
+        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZip -CompressionLevel Optimal
+    } finally {
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $runtimeRemote=Convert-ToScpPath (Join-Path $RemoteRoot 'bees-remote-runtime.zip')
+    $workerTokenRemote=Convert-ToScpPath $WorkerTokenPath
+    $wanTokenRemote=Convert-ToScpPath $WanTokenPath
+    $template=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
+    for($actorId=0;$actorId -lt $maxActors;$actorId++){
+        $body=$template
+        $replacements=@{
+            '__BEES_LEARNER__'=(Escape-SingleQuoted $learner)
+            '__BEES_ACTOR_ID__'=[string]$actorId
+            '__BEES_ENVS__'=[string]$defaultEnvs
+            '__BEES_SSH_PORT__'=[string]$sshPort
+            '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
+            '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
+            '__BEES_RUNTIME_REMOTE_PATH__'=(Escape-SingleQuoted $runtimeRemote)
+            '__BEES_WORKER_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $workerTokenRemote)
+            '__BEES_WAN_TOKEN_REMOTE_PATH__'=(Escape-SingleQuoted $wanTokenRemote)
+        }
+        foreach($key in $replacements.Keys){$body=$body.Replace($key,[string]$replacements[$key])}
+        $output=Join-Path $RemoteRoot "bees-remote-worker-$actorId.ps1"
+        Set-Content -LiteralPath $output -Value $body -Encoding UTF8
+    }
+    Write-Host "Remote launchers prepared in $RemoteRoot (actor slots 0-$($maxActors-1), default $defaultEnvs envs each)."
+    Write-Host "Copy one bees-remote-worker-N.ps1 file to each remote Windows machine and run it."
+}
+
 function Invoke-Start {
     $config=Get-ClusterConfig; $python=Resolve-Python $config; $unity=Resolve-UnityEditor $config
     $worker=Ensure-TokenFile $WorkerTokenPath; $admin=Ensure-TokenFile $AdminTokenPath; $null=Ensure-TokenFile $WanTokenPath
+    Prepare-RemoteBootstrap $config
     $release=Get-LatestRelease
     Start-BeesServerIfNeeded $config $worker $admin; Publish-Release $config $admin $release; Start-CentralAgentIfNeeded $config $python $unity
     $envArgs=Get-EnvironmentArgs $config
