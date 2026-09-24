@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 
-CONTROL_SCHEMA_VERSION = 2
+CONTROL_SCHEMA_VERSION = 3
 DEFAULT_TIMEOUT_SECONDS = 15.0
 
 
@@ -196,10 +196,12 @@ class ManagedBuildStore:
 
     @staticmethod
     def _validated_descriptor(descriptor: Mapping[str, Any]) -> dict[str, Any]:
-        required = ("platform", "build_id", "archive_sha256", "artifact_url", "entrypoint")
+        required = ("role", "platform", "build_id", "archive_sha256", "artifact_url", "entrypoint")
         for key in required:
             if not isinstance(descriptor.get(key), str) or not descriptor[key]:
                 raise ValueError(f"build descriptor {key} is missing")
+        if descriptor["role"] not in ("dedicated", "full-game"):
+            raise ValueError("build descriptor role is invalid")
         for key in ("platform", "build_id"):
             if re.fullmatch(r"[A-Za-z0-9._-]+", descriptor[key]) is None:
                 raise ValueError(f"build descriptor {key} contains unsafe characters")
@@ -218,6 +220,7 @@ class ManagedBuildStore:
     def ensure(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
         descriptor = self._validated_descriptor(descriptor)
         identity = (
+            descriptor["role"] + "-" +
             descriptor["platform"] + "-" +
             descriptor["build_id"] + "-" +
             descriptor["archive_sha256"][:16]
@@ -233,6 +236,7 @@ class ManagedBuildStore:
                 installed = {}
             if (
                 installed.get("archive_sha256") == descriptor["archive_sha256"]
+                and installed.get("role") == descriptor["role"]
                 and installed.get("build_id") == descriptor["build_id"]
                 and installed.get("platform") == descriptor["platform"]
             ):
@@ -286,6 +290,7 @@ class ManagedBuildStore:
     def _set_current(self, descriptor: Mapping[str, Any], entrypoint: Path) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         value = {
+            "role": descriptor["role"],
             "platform": descriptor["platform"],
             "build_id": descriptor["build_id"],
             "archive_sha256": descriptor["archive_sha256"],
