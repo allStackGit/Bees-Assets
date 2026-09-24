@@ -235,6 +235,16 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
+        broker.register_actor(
+            {
+                "actor_id": actor_id,
+                "actor_key": "machine-a",
+                "actor_instance_id": "new-process",
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
         with self.assertRaisesRegex(ValueError, "another remote process"):
             broker.acknowledge_reset(
                 {
