@@ -67,6 +67,20 @@ def parse_elastic_service_options(argv: Sequence[str]) -> service.ServiceOptions
     return replace(options, num_envs=0) if zero_local else options
 
 
+def insert_wan_args_before_environment_args(
+    command: list[str],
+    wan_args: Sequence[str],
+) -> list[str]:
+    result = list(command)
+    try:
+        env_args_index = result.index("--env-args")
+    except ValueError:
+        result.extend(wan_args)
+    else:
+        result[env_args_index:env_args_index] = list(wan_args)
+    return result
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
     service_args, actor_options = elastic.extract_elastic_wan_options(raw_args)
@@ -109,13 +123,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ]
         # ML-Agents --env-args consumes the remainder of the command. Keep elastic WAN
         # trainer flags before it so only the server-owned Unity arguments reach the player.
-        try:
-            env_args_index = command.index("--env-args")
-        except ValueError:
-            command.extend(wan_args)
-        else:
-            command[env_args_index:env_args_index] = wan_args
-        return command
+        return insert_wan_args_before_environment_args(command, wan_args)
 
     service.training_command = elastic_training_command
     try:
