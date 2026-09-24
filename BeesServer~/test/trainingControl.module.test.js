@@ -162,7 +162,7 @@ test('training refuses to start while an active platform lacks the canonical bui
 
         assert.throws(
             () => store.setDesiredState({ training_enabled: true }),
-            /missing active role\/platform artifacts: dedicated:LinuxPlayer/);
+            /missing active dedicated role\/platform artifacts: dedicated:LinuxPlayer/);
         assert.equal(store.state.training_enabled, false);
     });
 });
@@ -426,5 +426,46 @@ test('schema 2 build catalogs migrate to both roles without breaking an existing
         assert.equal(store.stateFor({
             trainerId: 'game', role: 'full-game', platform: 'WindowsPlayer',
         }).build.role, 'full-game');
+    });
+});
+
+test('missing optional full-game artifact does not block dedicated training', () => {
+    withTempDir(root => {
+        const windows = path.join(root, 'windows.zip');
+        fs.writeFileSync(windows, Buffer.from('windows-training'));
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        store.publishArtifact({
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            buildId: 'release-optional-game',
+            archivePath: windows,
+            entrypoint: 'Bees RL Training.exe',
+        });
+        store.setDesiredState({ canonical_build_id: 'release-optional-game' });
+        store.heartbeat({
+            trainer_id: 'trainer',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'stopped',
+            applied_revision: 1,
+        });
+        store.heartbeat({
+            trainer_id: 'game',
+            role: 'full-game',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            applied_revision: 1,
+        });
+
+        store.setDesiredState({ training_enabled: true });
+        assert.equal(store.stateFor({
+            trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
+        }).desired_mode, 'training');
+        assert.equal(store.stateFor({
+            trainerId: 'game', role: 'full-game', platform: 'WindowsPlayer',
+        }).desired_mode, 'inference');
     });
 });
