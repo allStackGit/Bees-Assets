@@ -39,7 +39,7 @@ namespace Bees.Tests.EditMode
 
             object[] arguments =
             {
-                "{\"online\":true,\"desired_mode\":\"training\"," +
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"," +
                 "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
                 true
             };
@@ -56,7 +56,7 @@ namespace Bees.Tests.EditMode
 
             object[] unknown =
             {
-                "{\"online\":true,\"desired_mode\":\"unknown\"," +
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"unknown\"," +
                 "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
                 false
             };
@@ -77,7 +77,7 @@ namespace Bees.Tests.EditMode
 
             object[] current =
             {
-                "{\"online\":true,\"desired_mode\":\"training\"," +
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"," +
                 "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
                 1019d,
                 true
@@ -87,7 +87,7 @@ namespace Bees.Tests.EditMode
 
             object[] stale =
             {
-                "{\"online\":true,\"desired_mode\":\"training\"," +
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"," +
                 "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
                 1021d,
                 false
@@ -105,12 +105,41 @@ namespace Bees.Tests.EditMode
 
             object[] arguments =
             {
-                "{\"online\":true,\"desired_mode\":\"training\"}",
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"}",
                 1000d,
                 false
             };
             Assert.That((bool)parse.Invoke(null, arguments), Is.False);
             Assert.That((bool)arguments[2], Is.True);
+        }
+
+
+        [Test]
+        public void TryParseStateAtTimeFailsClosedForUnsupportedSchemaOrLargeFutureSkew()
+        {
+            Type runtime = RuntimeAssembly.GetType("RlTrainingControlRuntime");
+            MethodInfo parse = runtime.GetMethod("TryParseStateAtTime", StaticFlags);
+            Assert.That(parse, Is.Not.Null);
+
+            object[] wrongSchema =
+            {
+                "{\"schema_version\":2,\"online\":true,\"desired_mode\":\"training\"," +
+                "\"updated_unix_seconds\":1000,\"lease_seconds\":20}",
+                1000d,
+                false
+            };
+            Assert.That((bool)parse.Invoke(null, wrongSchema), Is.False);
+            Assert.That((bool)wrongSchema[2], Is.True);
+
+            object[] futureSkew =
+            {
+                "{\"schema_version\":1,\"online\":true,\"desired_mode\":\"training\"," +
+                "\"updated_unix_seconds\":1050,\"lease_seconds\":20}",
+                1000d,
+                false
+            };
+            Assert.That((bool)parse.Invoke(null, futureSkew), Is.True);
+            Assert.That((bool)futureSkew[2], Is.True);
         }
 
     }
