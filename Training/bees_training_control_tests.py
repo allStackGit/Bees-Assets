@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 from pathlib import Path
 
@@ -22,6 +24,88 @@ class FakeClient:
 
 
 class TrainingControlClientTests(unittest.TestCase):
+    def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
+        fake = mock.Mock()
+        fake.pid = 4242
+        fake.poll.return_value = None
+        fake.wait.return_value = 0
+
+        with (
+            mock.patch.object(agent.os, "name", "posix"),
+            mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
+            mock.patch.object(agent.os, "killpg") as killpg,
+        ):
+            managed = agent.ManagedProcess()
+            managed.start(
+                ["python", "worker.py"],
+                revision=1,
+                build_sha256="a" * 64,
+                state_file=Path("state.json"),
+                environment_args=(),
+            )
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            managed.stop()
+
+        killpg.assert_called_once_with(4242, signal.SIGTERM)
+
+    def test_managed_process_stops_windows_process_tree(self):
+        fake = mock.Mock()
+        fake.pid = 5252
+        fake.poll.return_value = None
+        fake.wait.return_value = 0
+
+        with (
+            mock.patch.object(agent.os, "name", "nt"),
+            mock.patch.object(agent.subprocess, "run") as run,
+        ):
+            managed = agent.ManagedProcess()
+            managed.process = fake
+            managed.stop()
+
+        run.assert_called_once()
+        self.assertEqual(
+            run.call_args.args[0],
+            ["taskkill", "/PID", "5252", "/T", "/F"],
+        )
+
+    def test_full_game_canonical_change_is_deferred_while_process_is_alive(self):
+        managed = agent.ManagedProcess()
+        fake = mock.Mock()
+        fake.poll.return_value = None
+        managed.process = fake
+        managed.build_sha256 = "a" * 64
+        managed.environment_args = ("--rl-map-size", "64")
+
+        self.assertTrue(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "b" * 64,
+                ("--rl-map-size", "64"),
+            )
+        )
+        self.assertTrue(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "a" * 64,
+                ("--rl-map-size", "128"),
+            )
+        )
+        self.assertFalse(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "a" * 64,
+                ("--rl-map-size", "64"),
+            )
+        )
+        fake.poll.return_value = 0
+        self.assertFalse(
+            agent.full_game_update_requires_deferred_restart(
+                managed,
+                "b" * 64,
+                ("--rl-map-size", "128"),
+            )
+        )
+
     def test_render_command_expands_build_and_environment_arguments(self):
         rendered = agent.render_command(
             ["python", "worker.py", "--env", "{env}", "--env-args", "{env_args}"],
