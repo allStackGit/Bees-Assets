@@ -203,6 +203,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         while not stop:
+            received_desired = False
             now = time.monotonic()
             offline = last_contact > 0 and now - last_contact > lease_seconds
             heartbeat = default_heartbeat(
@@ -216,6 +217,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             try:
                 desired = client.heartbeat(heartbeat)
+                received_desired = True
                 last_contact = time.monotonic()
                 lease_seconds = float(desired["lease_seconds"])
                 last_error = ""
@@ -294,7 +296,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     online=False,
                     last_error=last_error,
                 )
-                if args.role == "dedicated" and offline:
+                if args.role == "dedicated" and (offline or received_desired):
                     if managed.alive():
                         print(
                             "[Bees control] server lease expired; stopping dedicated trainer.",
