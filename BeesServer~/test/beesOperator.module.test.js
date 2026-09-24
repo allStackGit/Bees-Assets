@@ -45,3 +45,12 @@ test('bees.ps1 process helper does not shadow PowerShell automatic args', () => 
     assert.match(source, /function Invoke-Checked\(\[string\]\$Exe,\[string\[\]\]\$ArgumentList,/);
     assert.match(source, /& \$Exe @ArgumentList/);
 });
+
+test('bees.ps1 suppresses lifecycle command stdout before returning parsed plan', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(
+        source,
+        /function New-TrainingRunPlan[\s\S]*?\$null=Invoke-Checked \$Python @\([\s\S]*?\$RunLifecycleScript,'plan'[\s\S]*?Get-Content -LiteralPath \$RunPlanPath -Raw \| ConvertFrom-Json/,
+        'New-TrainingRunPlan must return only the parsed plan object, not Python stdout plus the plan.'
+    );
+});
