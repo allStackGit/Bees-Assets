@@ -492,8 +492,8 @@ namespace Bees.Tests.EditMode
             Assert.That(striker, Does.Contain("if (Stage.IsTrainingNueralNetwork)"));
             Assert.That(striker, Does.Contain("HasDroppedBomb = false;"),
                 "A policy-controlled Striker must be able to drop again after its proximity reload without BombingRun resetting a new run.");
-            Assert.That(barge, Does.Contain("if (Stage.IsTrainingNueralNetwork && HasBrain && !Squad.IsUserControlled)"));
-            Assert.That(barge, Does.Contain("Direction = NormalizeDirection(Rotation)"),
+            Assert.That(barge, Does.Contain("if (Stage.IsTrainingNueralNetwork && IsRlPolicyControlled && !Squad.IsUserControlled)"));
+            Assert.That(barge, Does.Contain("RlMovementDirection = NormalizeDirection(Rotation)"),
                 "A policy-controlled Barge must retain the heading established by the policy through charge wind-up.");
             Assert.That(barge, Does.Contain("else if (target != null && !target.IsDead)"),
                 "Scripted non-policy charges must retain their target-following behavior.");
