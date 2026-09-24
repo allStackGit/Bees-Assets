@@ -97,7 +97,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         }
 
         Stage stage = ship.Level.Stage;
-        bool liveRlControlled = stage.ActivateHiveMind && stage.ActivateBrains &&
+        bool liveRlControlled = stage.ActivateHiveMind && stage.ActivateRlPolicy &&
             RlLivePolicyAgent.ShouldControlSide(
                 ship.Level.HasPlayer,
                 ship.Side,
@@ -110,7 +110,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         {
             return CaptureSource.Human;
         }
-        if (ship.Squad.IsHiveMindControlled && stage.ActivateHiveMind && !stage.ActivateBrains)
+        if (ship.Squad.IsHiveMindControlled && stage.ActivateHiveMind && !stage.ActivateRlPolicy)
         {
             return CaptureSource.HiveMind;
         }
