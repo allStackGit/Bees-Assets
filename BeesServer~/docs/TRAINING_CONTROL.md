@@ -77,7 +77,7 @@ Run `Training/bees_training_worker_agent.py` persistently on each trainer machin
 Example dedicated worker:
 
 ```text
-python Training/bees_training_worker_agent.py --server-url http://server:7150 --token-file C:\\Bees\\training-control.token --trainer-id exeter-actor-0 --role dedicated --platform WindowsPlayer --install-root C:\\Bees\\ManagedBuilds -- python Training\\bees_elastic_wan_actor_worker.py --actor-id 0 --envs 32 --ssh user@learner --env {env} --auth-token-file C:\\Bees\\wan.token
+python Training/bees_training_worker_agent.py --server-url http://server:7150 --token-file C:\\Bees\\training-control.token --trainer-id remote-example --role dedicated --platform WindowsPlayer --install-root C:\\Bees\\ManagedBuilds -- python Training\\bees_elastic_wan_actor_worker.py --actor-key 0123456789abcdef0123456789abcdef --envs 32 --ssh user@learner --env {env} --auth-token-file C:\\Bees\\wan.token
 ```
 
 The worker agent also exports the current server argument list as `BEES_TRAINING_ENV_ARGS_JSON`. The legacy SSH remote-worker launcher honors that value when it is managed by the control plane. Elastic/WAN actors continue receiving their actual ML-Agents run/environment configuration from the current central learner session.
