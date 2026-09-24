@@ -30,10 +30,10 @@ namespace Bees.Tests.EditMode
                 unity,
                 "message.WriteInt32(ProtocolVersion);",
                 "message.WriteInt32(result.EpisodeNumber);",
-                "message.WriteInt32(result.BeeTeamId);",
-                "message.WriteInt32(result.HumanTeamId);",
+                "message.WriteInt32(beeTeamId);",
+                "message.WriteInt32(humanTeamId);",
                 "message.WriteInt32(result.WinningSide);",
-                "message.WriteInt32(GetWinningTeamId(result));",
+                "message.WriteInt32(GetWinningTeamId(result, beeTeamId, humanTeamId));",
                 "message.WriteBoolean(result.TimedOut);",
                 "message.WriteFloat32(result.DurationSeconds);",
                 "message.WriteInt32(result.BeeStartingTsv);",
@@ -122,9 +122,13 @@ namespace Bees.Tests.EditMode
             try
             {
                 Type channelType = RuntimeAssembly.GetType("RlOneVsOneEvaluationSideChannel");
+                Type episodeResultType = RuntimeAssembly.GetType("RlOneVsOneEpisodeCoordinator+EpisodeResult");
                 MethodInfo getWinningTeamId = channelType.GetMethod(
                     "GetWinningTeamId",
-                    BindingFlags.Static | BindingFlags.NonPublic);
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    null,
+                    new[] { episodeResultType },
+                    null);
                 Assert.That(getWinningTeamId, Is.Not.Null);
 
                 Assert.That(
