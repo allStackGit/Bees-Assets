@@ -386,7 +386,11 @@ class ManagedProcess:
     def start(self, command: Sequence[str], cwd: Path) -> None:
         if self.running():
             return
-        self.process = subprocess.Popen(list(command), cwd=str(cwd))
+        self.process = subprocess.Popen(
+            list(command),
+            cwd=str(cwd),
+            start_new_session=(os.name != "nt"),
+        )
         print(f"[Bees trainer agent] rollout process started pid={self.process.pid}.")
 
     def stop(self) -> None:
@@ -394,16 +398,36 @@ class ManagedProcess:
         self.process = None
         if process is None or process.poll() is not None:
             return
-        print(f"[Bees trainer agent] stopping rollout process pid={process.pid}.")
-        try:
-            process.terminate()
-            process.wait(timeout=10)
-        except Exception:
+        print(f"[Bees trainer agent] stopping rollout process tree pid={process.pid}.")
+        if os.name == "nt":
             try:
-                process.kill()
-                process.wait(timeout=5)
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                process.wait(timeout=10)
+                return
             except Exception:
                 pass
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=10)
+                return
+            except Exception:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+                    return
+                except Exception:
+                    pass
+        try:
+            process.kill()
+            process.wait(timeout=5)
+        except Exception:
+            pass
 
 
 class TrainerAgent:
