@@ -292,7 +292,6 @@ namespace Assets.Scripts.Entities.Ships
                 }
             }
             Move();
-            if (Stage.DebugLogger.IsDebugging || ShowDebug) UpdateDebugProperties();
         }
 
         public override void Deactivate()
