@@ -149,8 +149,13 @@ namespace Bees.Tests.EditMode
             Assert.That(source, Does.Contain("CurrentRequestType = \"rl-model-current\""));
             Assert.That(source, Does.Contain("ChunkRequestType = \"rl-model-chunk\""));
             Assert.That(source, Does.Contain("ConfigData.Test ? string.Empty : SteamWebApiAuth.TicketHex"));
-            Assert.That(source, Does.Contain("ConfigData.Hostname"));
-            Assert.That(source, Does.Contain("ConfigData.Port"));
+            Assert.That(source, Does.Contain("ConfigData.TestServerHostname"));
+            Assert.That(source, Does.Contain("ConfigData.DevelopmentServerHostname"));
+            Assert.That(source, Does.Contain("ConfigData.ProductionServerHostname"));
+            Assert.That(source, Does.Contain("ConfigData.TestPort"));
+            Assert.That(source, Does.Contain("ConfigData.DevelopmentPort"));
+            Assert.That(source, Does.Contain("ConfigData.ProductionPort"));
+            Assert.That(source, Does.Contain("string scheme = ConfigData.Production ? \"wss\" : \"ws\";"));
             Assert.That(source, Does.Contain("PolicyAbiVersion = RlPolicySchema.Version"));
             Assert.That(source, Does.Contain("PolicySignature = RlPolicySchema.Signature"));
             Assert.That(source, Does.Contain("chunk.BundleSha256 = descriptor.BundleSha256"));
