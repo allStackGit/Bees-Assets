@@ -24,8 +24,6 @@ namespace Assets.Scripts.Levels
     /// </summary>
     public partial class Level: MonoBehaviour
     {
-        //public float __RotationTest;
-        //public Vector2 __OriginalPosition;
         public GameState State;
         // If the Hive Mind is active, get commands from the server.
         // Dedicated ML-Agents training is owned by the RlOneVsOne policy adapters.
@@ -88,31 +86,6 @@ namespace Assets.Scripts.Levels
         public int MaxMinerals;
 
 
-        public List<string> __BeeHivemindShips, __HumanHivemindShips, __PastCommands, __PathfindingThreads, __CustomLevels, __Timers, __TimerIds;
-
-
-        public void UpdateDebugVariables()
-        {
-            __BeeHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.BeeSide).Select(s => s.ToString()).ToList();
-            __HumanHivemindShips = State.GetShipsVisibleToHiveMind(ConfigData.Configuration.HumanSide).Select(s => s.ToString()).ToList();
-            __PastCommands = State.PastCommands.Select((c) => $"Command #{c.OutcomeId} - {c.CommandType} for Squad {c.Squad} against [{c.Enemy}] with {c.Tsv} TSV").ToList();
-            __CustomLevels = ConfigData.GetLevelData().GetLevels().Select((level) => level.ToString()).ToList();
-            
-            if (Pathfinder != null)
-            {
-                __PathfindingThreads = Pathfinder.IsThreadActive.Select((s, i) => $"#{i} - {(s ? Pathfinder.Ships[i].Name : s)}").ToList();
-            }
-            __Timers = Timers.Select((t) => t.ToString()).ToList();
-            //__TimerIds = _currentTimerIDs.Select((t) => t.ToString()).ToList(); 
-
-            //string path = $"{ConfigData.GetBasePath()}/debug/minimap_{Utilities.Hash()}.png";
-            //Texture2D dest = new Texture2D( MiniMapTexture.width, MiniMapTexture.height, TextureFormat.RGB24, false);
-            //RenderTexture.active = MiniMapTexture;
-            //dest.ReadPixels(new Rect(0, 0, MiniMapTexture.width, MiniMapTexture.height), 0, 0);
-            //dest.Apply();
-            //File.WriteAllBytes(path, dest.EncodeToPNG());
-            State.UpdateDebugVariables();
-        }
         public void Setup(Stage stage, string name)
         {
             Stage = stage;
