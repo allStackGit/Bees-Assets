@@ -2,8 +2,6 @@
 set -euo pipefail
 
 DEFAULT_LEARNER="__BEES_LEARNER__"
-DEFAULT_ACTOR_ID="__BEES_ACTOR_ID__"
-DEFAULT_ENVS="__BEES_ENVS__"
 DEFAULT_SSH_PORT="__BEES_SSH_PORT__"
 DEFAULT_INSTALL_ROOT="__BEES_LINUX_INSTALL_ROOT__"
 DEFAULT_TORCH_DEVICE="__BEES_TORCH_DEVICE__"
@@ -12,19 +10,17 @@ REMOTE_WORKER_TOKEN_PATH="__BEES_WORKER_TOKEN_REMOTE_PATH__"
 REMOTE_WAN_TOKEN_PATH="__BEES_WAN_TOKEN_REMOTE_PATH__"
 
 LEARNER="$DEFAULT_LEARNER"
-ACTOR_ID="$DEFAULT_ACTOR_ID"
-ENVS="$DEFAULT_ENVS"
+ENVS=""
 SSH_PORT="$DEFAULT_SSH_PORT"
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
 
 usage() {
     cat <<'EOF'
-Usage: bees-remote-worker-N.sh [options]
+Usage: bees-remote-worker.sh [options]
 
 Options:
   --learner TARGET       SSH target for the central learner.
-  --actor-id N           Elastic actor slot (0-11).
   --envs N               Unity environments on this machine (1-64).
   --ssh-port N           SSH port for the learner.
   --install-root PATH    Local Linux worker installation directory.
@@ -36,7 +32,6 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --learner) LEARNER="$2"; shift 2 ;;
-        --actor-id) ACTOR_ID="$2"; shift 2 ;;
         --envs) ENVS="$2"; shift 2 ;;
         --ssh-port) SSH_PORT="$2"; shift 2 ;;
         --install-root) INSTALL_ROOT="$2"; shift 2 ;;
@@ -46,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for value in "$LEARNER" "$ACTOR_ID" "$ENVS" "$SSH_PORT" "$INSTALL_ROOT" "$TORCH_DEVICE" \
+for value in "$LEARNER" "$SSH_PORT" "$INSTALL_ROOT" "$TORCH_DEVICE" \
     "$REMOTE_RUNTIME_PATH" "$REMOTE_WORKER_TOKEN_PATH" "$REMOTE_WAN_TOKEN_PATH"; do
     if [[ "$value" == __BEES_* ]]; then
         echo "error: launcher is not configured. Copy a generated .sh file from the learner's B:\\Bees\\Remote directory after running bees.ps1 start." >&2
@@ -55,12 +50,8 @@ for value in "$LEARNER" "$ACTOR_ID" "$ENVS" "$SSH_PORT" "$INSTALL_ROOT" "$TORCH_
 done
 
 is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
-if ! is_uint "$ACTOR_ID" || (( ACTOR_ID < 0 || ACTOR_ID > 11 )); then
-    echo "error: --actor-id must be in 0-11" >&2
-    exit 2
-fi
-if ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); then
-    echo "error: --envs must be in 1-64" >&2
+if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; then
+    echo "error: --envs must be in 1-64 when specified" >&2
     exit 2
 fi
 if ! is_uint "$SSH_PORT" || (( SSH_PORT < 1 || SSH_PORT > 65535 )); then
@@ -204,15 +195,23 @@ if [[ "$CURRENT_STAMP" != "$REQUIREMENTS_HASH" ]]; then
 fi
 
 WORKER="$RUNTIME_ROOT/bees_managed_remote_worker.py"
-echo
-echo "[Bees remote] starting actor $ACTOR_ID with $ENVS environments via $LEARNER."
-echo "[Bees remote] leave this process running; Ctrl+C stops this worker."
-exec "$VENV_PYTHON" "$WORKER" \
-    --learner "$LEARNER" \
-    --ssh-port "$SSH_PORT" \
-    --actor-id "$ACTOR_ID" \
-    --envs "$ENVS" \
-    --install-root "$INSTALL_ROOT" \
-    --worker-token-file "$WORKER_TOKEN" \
-    --wan-token-file "$WAN_TOKEN" \
+WORKER_ARGS=(
+    "$WORKER"
+    --learner "$LEARNER"
+    --ssh-port "$SSH_PORT"
+    --install-root "$INSTALL_ROOT"
+    --worker-token-file "$WORKER_TOKEN"
+    --wan-token-file "$WAN_TOKEN"
     --torch-device "$TORCH_DEVICE"
+)
+if [[ -n "$ENVS" ]]; then
+    WORKER_ARGS+=(--envs "$ENVS")
+fi
+echo
+if [[ -n "$ENVS" ]]; then
+    echo "[Bees remote] starting worker with $ENVS environments via $LEARNER."
+else
+    echo "[Bees remote] starting worker via $LEARNER; environment count defaults to 4x available CPU threads (maximum 64)."
+fi
+echo "[Bees remote] the learner assigns the actor slot automatically. Leave this process running; Ctrl+C stops this worker."
+exec "$VENV_PYTHON" "${WORKER_ARGS[@]}"
