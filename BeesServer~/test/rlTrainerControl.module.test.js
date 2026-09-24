@@ -65,6 +65,7 @@ test('trainer build manifest is content-addressed and includes the complete dire
     const first = buildManifest('linux-x64', build.root, null, 'v1');
     assert.equal(first.manifest.file_count, 2);
     assert.equal(first.manifest.entrypoint, 'Bees.x86_64');
+    assert.notEqual(first.manifest.files.find(file => file.path === 'Bees.x86_64').mode & 0o111, 0);
     assert.match(first.manifest.build_id, /^build-[0-9a-f]{24}$/);
 
     const second = buildManifest('linux-x64', build.root, null, 'v1');
@@ -72,6 +73,17 @@ test('trainer build manifest is content-addressed and includes the complete dire
     fs.writeFileSync(path.join(build.root, 'Bees_Data', 'globalgamemanagers'), 'changed');
     const changed = buildManifest('linux-x64', build.root, null, 'v1');
     assert.notEqual(changed.manifest.build_id, first.manifest.build_id);
+});
+
+test('control configuration requires an explicit game build identity', t => {
+    const build = tempBuild(t);
+    const token = tokenFile(t);
+    assert.throws(() => buildTrainerControlConfig({
+        BEES_RL_TRAINER_CONTROL: '1',
+        BEES_RL_CONTROL_TOKEN_FILE: token,
+        BEES_RL_TRAINING_ENV: build.executable,
+        BEES_RL_TRAINER_PLATFORM: 'linux-x64',
+    }), /BEES_RL_GAME_BUILD_VERSION/);
 });
 
 test('control configuration requires a Linux equivalent when the central trainer is Windows', t => {
@@ -82,6 +94,7 @@ test('control configuration requires a Linux equivalent when the central trainer
         BEES_RL_CONTROL_TOKEN_FILE: token,
         BEES_RL_TRAINING_ENV: build.executable,
         BEES_RL_TRAINER_PLATFORM: 'windows-x64',
+        BEES_RL_GAME_BUILD_VERSION: 'test-build',
     }), /BEES_RL_LINUX_TRAINER_BUILD_DIR/);
 });
 
