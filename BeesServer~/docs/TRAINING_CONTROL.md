@@ -1,12 +1,38 @@
 # Distributed training control
 
+## Unified operator commands
+
+With the unified project layout, the Unity project root is `B:\\Bees` and the Git repository is `B:\\Bees\\Assets`. Day-to-day operation is through one PowerShell entry point:
+
+```powershell
+cd B:\Bees
+
+.\Assets\bees.ps1 build
+.\Assets\bees.ps1 start
+.\Assets\bees.ps1 stop
+.\Assets\bees.ps1 status
+```
+
+`build` always produces a Windows RL build and Linux RL build. Add `-FullGame` to also produce the managed Windows gameplay build:
+
+```powershell
+.\Assets\bees.ps1 build -FullGame
+```
+
+Build folders are siblings of `Assets`, for example `B:\\Bees\\Builds\\2026-09-24 RL Windows`, `... RL Linux`, and optionally `... Full Game Windows`. Because `Builds` is outside the Git root (`B:\\Bees\\Assets`) and outside Unity's `Assets` import tree, it is neither tracked by Git nor imported/compiled by Unity. Rebuilding the same type on the same day requires `-Force`, preventing stale files from being mixed into a new player.
+
+The build command also creates immutable upload ZIPs and `B:\\Bees\\Builds\\latest-training-release.json`. The release id combines the date and source Git commit. `start` publishes those archives, activates the release, starts/keeps the centrally managed learner, and writes the configured environment arguments as the authoritative desired state. `stop` disables training everywhere but leaves BeesServer online for gameplay/control; use `stop -Server` when the BeesServer process itself should also exit. `status` is a live dashboard; use `status -Once` for one snapshot.
+
+The first command invocation creates `B:\\Bees\\Config\\training.json` from the checked-in template. Machine-specific secrets are generated under `B:\\Bees\\Secrets`, outside Git/Unity. Remote machines still require a one-time persistent managed-worker installation (and their control/WAN token files); after that, normal build/start/stop/status operation is centralized.
+
+
 BeesServer can act as the desired-state authority for distributed RL workers. The control service is separate from the gameplay WebSocket so training operations do not alter the Unity request/response protocol.
 
 ## Server setup
 
 Set separate `BEES_TRAINING_CONTROL_TOKEN` (worker access) and `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (operator changes) before starting BeesServer. When the worker token is present, BeesServer starts the training-control listener on `127.0.0.1:7150` by default. Keep the default loopback binding and use SSH/private-network forwarding when practical; set `BEES_TRAINING_CONTROL_HOST` only when the control port is intentionally exposed on a protected network. Other overrides are `BEES_TRAINING_CONTROL_PORT`, `BEES_TRAINING_CONTROL_STATE`, `BEES_TRAINING_ARTIFACT_ROOT`, and `BEES_TRAINING_CONTROL_LEASE_SECONDS`.
 
-Desired state is persisted under `logs/training-control-state.json` by default. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts. On control-plane startup, active canonical artifacts are rechecked for exact size and SHA-256; tampered or truncated canonical bytes fail startup rather than being distributed.
+Desired state is persisted under `logs/training-control-state.json` by default. State schema 3 separates dedicated and full-game artifact catalogs; existing schema-2 deployments migrate their prior artifact to both roles to preserve pre-upgrade behavior. Canonical build archives are copied into the server-owned `training-artifacts/` directory and remain available after server restarts. On control-plane startup, active canonical artifacts are rechecked for exact size and SHA-256; tampered or truncated canonical bytes fail startup rather than being distributed.
 
 ## Canonical builds
 
@@ -15,10 +41,10 @@ Package a compiled build with `Training/bees_package_training_build.py`. The pac
 Publish it from the BeesServer host. The CLI uses `BEES_TRAINING_CONTROL_ADMIN_TOKEN` (or its `_FILE` variant):
 
 ```text
-node trainingControlCli.js publish-build --platform WindowsPlayer --build-id 2026-09-24-a --archive C:\\Builds\\BeesWindows.zip --entrypoint Bees.exe
+node trainingControlCli.js publish-build --role dedicated --platform WindowsPlayer --build-id 2026-09-24-a --archive C:\\Builds\\BeesWindows.zip --entrypoint "Bees RL Training.exe"
 ```
 
-Publish every required platform under the same logical `--build-id`. Publishing only stages immutable artifacts; it does not activate them. For example, `release-42` may have a Windows `Bees.exe` archive and a Linux `Bees.x86_64` archive. Activating `release-42` makes that one build identity authoritative across all trainer platforms. Training start is rejected if any currently connected trainer platform lacks its `release-42` artifact; a platform that connects later without an equivalent is explicitly held stopped (dedicated) or inference-only (full game).
+Publish every required role/platform artifact under the same logical `--build-id`. Dedicated Windows and Linux training builds use role `dedicated`; the optional Windows gameplay build uses role `full-game`. Publishing only stages immutable artifacts; it does not activate them. Activating `release-42` makes that one source release authoritative across all managed machines. A missing dedicated platform artifact blocks that dedicated trainer from starting (and prevents cluster start when the trainer is currently connected). A missing optional full-game artifact does not block PPO training; that gameplay client remains inference-only until a matching full-game artifact is published.
 
 ## Start, stop, arguments, and status
 
