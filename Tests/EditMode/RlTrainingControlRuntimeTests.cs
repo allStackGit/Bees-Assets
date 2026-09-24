@@ -1,45 +1,69 @@
+using System;
+using System.Reflection;
 using NUnit.Framework;
 
-public class RlTrainingControlRuntimeTests
+namespace Bees.Tests.EditMode
 {
-    [TestCase(true, "training", false)]
-    [TestCase(true, "inference", true)]
-    [TestCase(true, "stopped", true)]
-    [TestCase(false, "training", true)]
-    public void ShouldForceInferenceMatchesLeaseAndDesiredMode(
-        bool online,
-        string desiredMode,
-        bool expected)
+    [TestFixture]
+    [Category("BeesFoundation")]
+    public class RlTrainingControlRuntimeTests
     {
-        Assert.That(
-            RlTrainingControlRuntime.ShouldForceInference(online, desiredMode),
-            Is.EqualTo(expected));
-    }
+        private const BindingFlags StaticFlags =
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
-    [Test]
-    public void TryParseStateAcceptsManagedTrainingState()
-    {
-        bool parsed = RlTrainingControlRuntime.TryParseState(
-            "{\"online\":true,\"desired_mode\":\"training\"}",
-            out bool forceInference);
+        [TestCase(true, "training", false)]
+        [TestCase(true, "inference", true)]
+        [TestCase(true, "stopped", true)]
+        [TestCase(false, "training", true)]
+        public void ShouldForceInferenceMatchesLeaseAndDesiredMode(
+            bool online,
+            string desiredMode,
+            bool expected)
+        {
+            Type runtime = RuntimeAssembly.GetType("RlTrainingControlRuntime");
+            Assert.That(runtime, Is.Not.Null);
+            MethodInfo method = runtime.GetMethod("ShouldForceInference", StaticFlags);
+            Assert.That(method, Is.Not.Null);
 
-        Assert.That(parsed, Is.True);
-        Assert.That(forceInference, Is.False);
-    }
+            Assert.That(
+                (bool)method.Invoke(null, new object[] { online, desiredMode }),
+                Is.EqualTo(expected));
+        }
 
-    [Test]
-    public void TryParseStateFailsClosedForMalformedOrUnknownState()
-    {
-        Assert.That(
-            RlTrainingControlRuntime.TryParseState(
+        [Test]
+        public void TryParseStateAcceptsManagedTrainingState()
+        {
+            Type runtime = RuntimeAssembly.GetType("RlTrainingControlRuntime");
+            MethodInfo parse = runtime.GetMethod("TryParseState", StaticFlags);
+            Assert.That(parse, Is.Not.Null);
+
+            object[] arguments =
+            {
+                "{\"online\":true,\"desired_mode\":\"training\"}",
+                true
+            };
+            Assert.That((bool)parse.Invoke(null, arguments), Is.True);
+            Assert.That((bool)arguments[1], Is.False);
+        }
+
+        [Test]
+        public void TryParseStateFailsClosedForMalformedOrUnknownState()
+        {
+            Type runtime = RuntimeAssembly.GetType("RlTrainingControlRuntime");
+            MethodInfo parse = runtime.GetMethod("TryParseState", StaticFlags);
+            Assert.That(parse, Is.Not.Null);
+
+            object[] unknown =
+            {
                 "{\"online\":true,\"desired_mode\":\"unknown\"}",
-                out bool forceInference),
-            Is.False);
-        Assert.That(forceInference, Is.True);
+                false
+            };
+            Assert.That((bool)parse.Invoke(null, unknown), Is.False);
+            Assert.That((bool)unknown[1], Is.True);
 
-        Assert.That(
-            RlTrainingControlRuntime.TryParseState("not-json", out forceInference),
-            Is.False);
-        Assert.That(forceInference, Is.True);
+            object[] malformed = { "not-json", false };
+            Assert.That((bool)parse.Invoke(null, malformed), Is.False);
+            Assert.That((bool)malformed[1], Is.True);
+        }
     }
 }
