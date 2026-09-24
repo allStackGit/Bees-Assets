@@ -27,6 +27,7 @@ from bees_training_control import (
     ManagedBuildStore,
     TrainingControlClient,
     default_heartbeat,
+    file_sha256,
     load_token,
 )
 
