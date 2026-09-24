@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 import zipfile
@@ -8,6 +9,8 @@ from pathlib import Path
 
 import bees_training_control as control
 import bees_training_worker_agent as agent
+import bees_remote_worker as remote_worker
+from bees_package_training_build import package_build
 
 
 class FakeClient:
@@ -111,6 +114,41 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(value["desired_mode"], "inference")
             self.assertFalse(value["online"])
 
+
+    def test_legacy_remote_worker_honors_server_owned_environment_arguments(self):
+        original = os.environ.get(remote_worker.CONTROL_ENV_ARGS_VARIABLE)
+        try:
+            os.environ[remote_worker.CONTROL_ENV_ARGS_VARIABLE] = json.dumps(
+                ["--rl-map-size", "128"]
+            )
+            self.assertEqual(
+                remote_worker.controlled_environment_args(["--rl-map-size", "32"]),
+                ("--rl-map-size", "128"),
+            )
+        finally:
+            if original is None:
+                os.environ.pop(remote_worker.CONTROL_ENV_ARGS_VARIABLE, None)
+            else:
+                os.environ[remote_worker.CONTROL_ENV_ARGS_VARIABLE] = original
+
+    def test_build_packager_preserves_expected_relative_entrypoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            source.mkdir()
+            (source / "Bees.exe").write_bytes(b"exe")
+            data = source / "Bees_Data"
+            data.mkdir()
+            (data / "globalgamemanagers").write_bytes(b"data")
+            archive = root / "build.zip"
+
+            package_build(source, archive, "Bees.exe")
+
+            with zipfile.ZipFile(archive, "r") as bundle:
+                self.assertEqual(
+                    sorted(bundle.namelist()),
+                    ["Bees.exe", "Bees_Data/globalgamemanagers"],
+                )
 
 if __name__ == "__main__":
     unittest.main()
