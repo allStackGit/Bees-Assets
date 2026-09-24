@@ -297,9 +297,17 @@ test('one canonical build id selects equivalent platform artifacts and hides mis
         assert.equal(store.stateFor({
             trainerId: 'linux', role: 'dedicated', platform: 'LinuxPlayer',
         }).build.build_id, 'release-42');
-        assert.equal(store.stateFor({
+        const missingDedicated = store.stateFor({
             trainerId: 'mac', role: 'dedicated', platform: 'MacPlayer',
-        }).build, null);
+        });
+        assert.equal(missingDedicated.build, null);
+        assert.equal(missingDedicated.desired_mode, 'stopped');
+
+        const missingFullGame = store.stateFor({
+            trainerId: 'mac-game', role: 'full-game', platform: 'MacPlayer',
+        });
+        assert.equal(missingFullGame.build, null);
+        assert.equal(missingFullGame.desired_mode, 'inference');
     });
 });
 
