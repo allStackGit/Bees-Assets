@@ -27,7 +27,9 @@ The authoritative non-secret cluster configuration is checked into Git at `Asset
 
 `generationSteps` is the number of additional global learner steps in one continual-learning generation. With the default `1000000`, generation 0 trains to 1,000,000 total steps and evaluates/releases; generation 1 resumes the same optimizer/checkpoint lineage and trains to 2,000,000 total steps; generation 2 trains to 3,000,000, and so on. It is an evaluation/release cadence, not a reset interval.
 
-`start` also prepares `B:\\Bees\\Remote\\bees-remote-runtime.zip` and one self-contained launcher per configured actor slot: `bees-remote-worker-0.ps1`, `bees-remote-worker-1.ps1`, etc. Copy one launcher to a remote Windows machine and run it. The launcher uses SSH/SCP to fetch the current worker runtime and worker-only tokens, creates/updates a Python 3.10 virtual environment, starts the control tunnel, downloads the canonical Unity build through BeesServer, and joins the elastic rollout pool. It does not contain the admin token.
+`start` also prepares `B:\\Bees\\Remote\\bees-remote-runtime.zip` and two self-contained launchers per configured actor slot: `bees-remote-worker-N.ps1` for Windows and `bees-remote-worker-N.sh` for Linux. Copy the matching launcher to the remote machine and run it. Both launchers use SSH/SCP to fetch the current worker runtime and worker-only tokens, create/update an isolated Python 3.10 environment, start the control tunnel, download the canonical platform-specific Unity build through BeesServer, and join the elastic rollout pool. Neither launcher contains the admin token.
+
+On Windows, run the copied `.ps1` file normally. On Linux, run `bash bees-remote-worker-N.sh`; the launcher installs missing OpenSSH/download prerequisites through a supported package manager when necessary, installs a user-local `uv` runtime, provisions Python 3.10, and uses `remoteLinuxInstallRoot` (default `.local/share/bees-training`) under the user's home directory. The shared Python supervisor reports `WindowsPlayer` on Windows and `LinuxPlayer` on Linux, so BeesServer distributes the correct canonical build automatically.
 
 The learner must be reachable by SSH. When `remoteSshTarget` is blank, `start` generates launchers targeting `<current-user>@<current-computer-name>`, which is convenient on a LAN. Set `remoteSshTarget` in the tracked config to a resolvable LAN address, VPN address, or WAN SSH hostname when that automatic target is not appropriate. Key-based SSH is recommended for unattended reconnects.
 
@@ -66,7 +68,7 @@ Desired-state changes, including canonical build activation and environment argu
 
 ## Managed workers
 
-For the normal Windows rollout-worker path, prefer the generated one-file launcher described above. The lower-level managed-worker command remains available for debugging or nonstandard deployments.
+For normal Windows or Linux rollout workers, prefer the generated one-file launcher described above. The lower-level managed-worker command remains available for debugging or nonstandard deployments.
 
 Run `Training/bees_training_worker_agent.py` persistently on each trainer machine. The launch command after `--` must contain `{env}`. Use `{env_args}` where the server-owned environment argument list belongs.
 
