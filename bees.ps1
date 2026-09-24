@@ -208,6 +208,13 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
             Write-Host 'Central training configuration changed; restarting the managed central agent.'
             Stop-ProcessTree ([int]$existing.pid)
         }
+    } elseif(Test-Path -LiteralPath $CentralAgentPidPath) {
+        $legacyPid=0
+        [void][int]::TryParse((Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),[ref]$legacyPid)
+        if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+            Write-Host 'Restarting the existing central agent under unified command management.'
+            Stop-ProcessTree $legacyPid
+        }
     }
     Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
     $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
