@@ -109,7 +109,10 @@ def _atomic_write(path: Path, payload: bytes) -> None:
 
 
 def _service_root(options: ServiceOptions) -> Path:
-    return options.root / "metadata" / "continuous-service"
+    # Run-scoped service state prevents an incompatible policy/reward/scenario contract from
+    # resuming the previous optimizer lineage. Durable checkpoint/result directories are already
+    # keyed by run_id; keep the orchestration phase state equally isolated.
+    return options.root / "metadata" / "continuous-service" / options.run_id
 
 
 def generation_id(index: int) -> str:
