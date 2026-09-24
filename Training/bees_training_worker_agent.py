@@ -62,6 +62,7 @@ class ManagedProcess:
         self.command: tuple[str, ...] = ()
         self.revision = -1
         self.build_sha256 = ""
+        self.environment_args: tuple[str, ...] = ()
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -90,6 +91,7 @@ class ManagedProcess:
         self.command = tuple(command)
         self.revision = revision
         self.build_sha256 = build_sha256
+        self.environment_args = tuple(str(value) for value in environment_args)
 
     def stop(self) -> None:
         process = self.process
@@ -228,19 +230,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     managed.stop()
                     applied_revision = revision
                 elif mode == "inference" and args.role == "full-game":
-                    # Do not interrupt a running player session merely because central learning is
-                    # disabled. The game retains its deployed policy and local telemetry recorder.
+                    # A stop-state change alone is applied live through control-state.json and must
+                    # not restart a player's game. Build/env changes are different: reconcile them
+                    # while the server is online so every managed full game reaches canonical state.
                     applied_revision = revision
-                    if not managed.alive() and descriptor:
+                    if descriptor:
                         entrypoint, active_build = builds.ensure(client, descriptor)
+                        desired_sha = str(active_build["archive_sha256"])
                         command = render_command(command_template, entrypoint, environment_args)
-                        managed.start(
-                            command,
-                            revision=revision,
-                            build_sha256=str(active_build["archive_sha256"]),
-                            state_file=state_file,
-                            environment_args=environment_args,
+                        needs_restart = (
+                            not managed.alive()
+                            or managed.build_sha256 != desired_sha
+                            or managed.environment_args != environment_args
+                            or managed.command != tuple(command)
                         )
+                        if needs_restart:
+                            managed.start(
+                                command,
+                                revision=revision,
+                                build_sha256=desired_sha,
+                                state_file=state_file,
+                                environment_args=environment_args,
+                            )
                 elif mode == "training":
                     if not descriptor:
                         raise RuntimeError(
@@ -248,13 +259,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                     entrypoint, active_build = builds.ensure(client, descriptor)
                     desired_sha = str(active_build["archive_sha256"])
+                    command = render_command(command_template, entrypoint, environment_args)
                     needs_restart = (
                         not managed.alive()
-                        or managed.revision != revision
                         or managed.build_sha256 != desired_sha
+                        or managed.environment_args != environment_args
+                        or managed.command != tuple(command)
                     )
                     if needs_restart:
-                        command = render_command(command_template, entrypoint, environment_args)
                         managed.start(
                             command,
                             revision=revision,
