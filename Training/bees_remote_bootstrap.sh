@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_LEARNER="__BEES_LEARNER__"
-DEFAULT_SSH_PORT="__BEES_SSH_PORT__"
 DEFAULT_INSTALL_ROOT="__BEES_LINUX_INSTALL_ROOT__"
 DEFAULT_TORCH_DEVICE="__BEES_TORCH_DEVICE__"
 TAILNET_LEARNER="__BEES_TAILNET_LEARNER__"
-TAILNET_PORT="__BEES_TAILNET_PORT__"
-TAILNET_LOCAL_PORT="__BEES_TAILNET_LOCAL_PORT__"
+TAILNET_BOOTSTRAP_PORT="__BEES_TAILNET_BOOTSTRAP_PORT__"
+CONTROL_PORT="__BEES_CONTROL_PORT__"
+BROKER_PORT="__BEES_BROKER_PORT__"
 TAILNET_BRIDGE_B64="__BEES_TAILNET_BRIDGE_B64__"
 TAILNET_BRIDGE_SHA256="__BEES_TAILNET_BRIDGE_SHA256__"
-REMOTE_RUNTIME_PATH="__BEES_RUNTIME_REMOTE_PATH__"
-REMOTE_WORKER_TOKEN_PATH="__BEES_WORKER_TOKEN_REMOTE_PATH__"
-REMOTE_WAN_TOKEN_PATH="__BEES_WAN_TOKEN_REMOTE_PATH__"
+BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 
-LEARNER="$DEFAULT_LEARNER"
 ENVS=""
-SSH_PORT="$DEFAULT_SSH_PORT"
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
 
@@ -42,9 +37,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for value in "$LEARNER" "$SSH_PORT" "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER"     "$TAILNET_PORT" "$TAILNET_LOCAL_PORT" "$TAILNET_BRIDGE_B64" "$TAILNET_BRIDGE_SHA256"     "$REMOTE_RUNTIME_PATH" "$REMOTE_WORKER_TOKEN_PATH" "$REMOTE_WAN_TOKEN_PATH"; do
+for value in "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER" "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$TAILNET_BRIDGE_B64" "$TAILNET_BRIDGE_SHA256" "$BOOTSTRAP_TOKEN"; do
     if [[ "$value" == __BEES_* ]]; then
-        echo "error: launcher is not configured. Copy the generated .sh file from the learner's B:\\Bees\\Remote directory after running bees.ps1 start." >&2
+        echo "error: launcher is not configured. Copy the generated .sh file from B:\\Bees\\Remote after running bees.ps1 start." >&2
         exit 2
     fi
 done
@@ -54,9 +49,9 @@ if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; th
     echo "error: --envs must be in 1-64 when specified" >&2
     exit 2
 fi
-for port in "$SSH_PORT" "$TAILNET_PORT" "$TAILNET_LOCAL_PORT"; do
+for port in "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT"; do
     if ! is_uint "$port" || (( port < 1 || port > 65535 )); then
-        echo "error: configured SSH/tailnet ports must be in 1-65535" >&2
+        echo "error: configured Bees ports must be in 1-65535" >&2
         exit 2
     fi
 done
@@ -77,7 +72,7 @@ sudo_cmd() {
     elif have sudo; then
         sudo "$@"
     else
-        echo "error: root privileges are required to install a missing prerequisite, but sudo is unavailable." >&2
+        echo "error: root privileges are required to install a missing base utility, but sudo is unavailable." >&2
         return 1
     fi
 }
@@ -85,31 +80,27 @@ sudo_cmd() {
 install_system_tools() {
     if have apt-get; then
         sudo_cmd apt-get update
-        sudo_cmd apt-get install -y openssh-client curl ca-certificates coreutils
+        sudo_cmd apt-get install -y curl ca-certificates coreutils
     elif have dnf; then
-        sudo_cmd dnf install -y openssh-clients curl ca-certificates coreutils
+        sudo_cmd dnf install -y curl ca-certificates coreutils
     elif have yum; then
-        sudo_cmd yum install -y openssh-clients curl ca-certificates coreutils
+        sudo_cmd yum install -y curl ca-certificates coreutils
     elif have zypper; then
-        sudo_cmd zypper --non-interactive install openssh curl ca-certificates coreutils
+        sudo_cmd zypper --non-interactive install curl ca-certificates coreutils
     elif have pacman; then
-        sudo_cmd pacman -Sy --noconfirm openssh curl ca-certificates coreutils
+        sudo_cmd pacman -Sy --noconfirm curl ca-certificates coreutils
     else
         echo "error: required base utilities are missing and no supported package manager was found." >&2
         return 1
     fi
 }
 
-if ! have base64 || { ! have sha256sum && ! have shasum; } || ! have ssh || ! have scp || { ! have curl && ! have wget; }; then
+if ! have base64 || { ! have sha256sum && ! have shasum; } || { ! have curl && ! have wget; }; then
     echo "[Bees remote] installing missing base system prerequisites..."
     install_system_tools
 fi
 if ! have base64 || { ! have sha256sum && ! have shasum; }; then
     echo "error: base64 and SHA-256 utilities are required." >&2
-    exit 2
-fi
-if ! have ssh || ! have scp; then
-    echo "error: OpenSSH client is unavailable after prerequisite installation." >&2
     exit 2
 fi
 
@@ -136,7 +127,7 @@ if [[ -f "$TAILNET_BRIDGE" ]] && [[ "$(hash_file "$TAILNET_BRIDGE")" == "$TAILNE
     WRITE_BRIDGE=0
 fi
 if (( WRITE_BRIDGE )); then
-    echo "[Bees remote] extracting bundled tailnet runtime..."
+    echo "[Bees remote] extracting bundled private-network runtime..."
     printf '%s' "$TAILNET_BRIDGE_B64" | base64 -d > "$TAILNET_BRIDGE"
     chmod 700 "$TAILNET_BRIDGE"
 fi
@@ -145,66 +136,24 @@ if [[ "$(hash_file "$TAILNET_BRIDGE")" != "$TAILNET_BRIDGE_SHA256" ]]; then
     exit 2
 fi
 
+BOOTSTRAP_TOKEN_FILE="$TAILNET_ROOT/bootstrap.token"
+printf '%s' "$BOOTSTRAP_TOKEN" > "$BOOTSTRAP_TOKEN_FILE"
+chmod 600 "$BOOTSTRAP_TOKEN_FILE"
+
 HOST_PART="$(hostname 2>/dev/null || printf 'linux')"
 HOST_PART="${HOST_PART//[^A-Za-z0-9-]/-}"
 HOST_PART="${HOST_PART,,}"
 WORKER_HOSTNAME="bees-worker-$HOST_PART"
 
-echo "[Bees remote] checking embedded tailnet identity."
-echo "[Bees remote] on first use, open the Tailscale login URL printed below; no Tailscale installation is required."
+echo "[Bees remote] checking private-network identity."
+echo "[Bees remote] on first use, open the Tailscale login URL printed below; no VPN installation is required."
 "$TAILNET_BRIDGE" auth --state "$TAILNET_STATE" --hostname "$WORKER_HOSTNAME"
-
-TAILNET_OUT="$TAILNET_ROOT/bridge.out.log"
-TAILNET_ERR="$TAILNET_ROOT/bridge.err.log"
-"$TAILNET_BRIDGE" forward     --state "$TAILNET_STATE"     --hostname "$WORKER_HOSTNAME"     --listen "127.0.0.1:$TAILNET_LOCAL_PORT"     --target "$TAILNET_LEARNER:$TAILNET_PORT"     >"$TAILNET_OUT" 2>"$TAILNET_ERR" &
-TAILNET_PID=$!
-
-cleanup_tailnet() {
-    if kill -0 "$TAILNET_PID" >/dev/null 2>&1; then
-        kill "$TAILNET_PID" >/dev/null 2>&1 || true
-        wait "$TAILNET_PID" 2>/dev/null || true
-    fi
-}
-trap cleanup_tailnet EXIT INT TERM
-
-READY=0
-for _ in $(seq 1 120); do
-    if ! kill -0 "$TAILNET_PID" >/dev/null 2>&1; then
-        echo "error: embedded tailnet bridge exited during startup. See $TAILNET_ERR" >&2
-        exit 2
-    fi
-    if (exec 3<>"/dev/tcp/127.0.0.1/$TAILNET_LOCAL_PORT") 2>/dev/null; then
-        exec 3>&- 3<&-
-        READY=1
-        break
-    fi
-    sleep 0.25
-done
-if (( ! READY )); then
-    echo "error: embedded tailnet bridge did not open local port $TAILNET_LOCAL_PORT. See $TAILNET_ERR" >&2
-    exit 2
-fi
-echo "[Bees remote] private tailnet path ready: 127.0.0.1:$TAILNET_LOCAL_PORT -> $TAILNET_LEARNER:$TAILNET_PORT"
 
 RUNTIME_ZIP="$DOWNLOADS_ROOT/bees-remote-runtime.zip"
 WORKER_TOKEN="$SECRETS_ROOT/training-worker.token"
 WAN_TOKEN="$SECRETS_ROOT/wan.token"
-
-SCP_ARGS=(-o StrictHostKeyChecking=accept-new)
-if [[ "$SSH_PORT" != "22" ]]; then
-    SCP_ARGS+=(-P "$SSH_PORT")
-fi
-
-copy_remote() {
-    local remote_path="$1"
-    local local_path="$2"
-    echo "[Bees remote] fetching $remote_path"
-    scp "${SCP_ARGS[@]}" "$LEARNER:$remote_path" "$local_path"
-}
-
-copy_remote "$REMOTE_RUNTIME_PATH" "$RUNTIME_ZIP"
-copy_remote "$REMOTE_WORKER_TOKEN_PATH" "$WORKER_TOKEN"
-copy_remote "$REMOTE_WAN_TOKEN_PATH" "$WAN_TOKEN"
+echo "[Bees remote] fetching the current Bees worker runtime over the private tailnet..."
+"$TAILNET_BRIDGE" fetch     --state "$TAILNET_STATE"     --hostname "$WORKER_HOSTNAME"     --target "$TAILNET_LEARNER:$TAILNET_BOOTSTRAP_PORT"     --token-file "$BOOTSTRAP_TOKEN_FILE"     --runtime-out "$RUNTIME_ZIP"     --worker-token-out "$WORKER_TOKEN"     --wan-token-out "$WAN_TOKEN"
 chmod 600 "$WORKER_TOKEN" "$WAN_TOKEN"
 
 UV_BIN=""
@@ -265,8 +214,12 @@ fi
 WORKER="$RUNTIME_ROOT/bees_managed_remote_worker.py"
 WORKER_ARGS=(
     "$WORKER"
-    --learner "$LEARNER"
-    --ssh-port "$SSH_PORT"
+    --tailnet-bridge "$TAILNET_BRIDGE"
+    --tailnet-state "$TAILNET_STATE"
+    --tailnet-hostname "$WORKER_HOSTNAME"
+    --tailnet-target "$TAILNET_LEARNER"
+    --control-port "$CONTROL_PORT"
+    --broker-port "$BROKER_PORT"
     --install-root "$INSTALL_ROOT"
     --worker-token-file "$WORKER_TOKEN"
     --wan-token-file "$WAN_TOKEN"
@@ -282,7 +235,7 @@ if [[ -n "$ENVS" ]]; then
 else
     echo "[Bees remote] starting worker; environment count defaults to 4x available CPU threads (maximum 64)."
 fi
-echo "[Bees remote] the learner assigns the actor slot automatically. Ctrl+C stops this worker."
+echo "[Bees remote] private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker."
 set +e
 "$VENV_PYTHON" "${WORKER_ARGS[@]}"
 EXIT_CODE=$?
