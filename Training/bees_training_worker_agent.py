@@ -87,7 +87,11 @@ class ManagedProcess:
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
-        self.process = subprocess.Popen(list(command), env=environment)
+        self.process = subprocess.Popen(
+            list(command),
+            env=environment,
+            start_new_session=(os.name != "nt"),
+        )
         self.command = tuple(command)
         self.revision = revision
         self.build_sha256 = build_sha256
@@ -98,15 +102,40 @@ class ManagedProcess:
         self.process = None
         if process is None or process.poll() is not None:
             return
-        try:
-            process.terminate()
-            process.wait(timeout=15)
-        except Exception:
+
+        # Dedicated training wrappers spawn ML-Agents/Unity descendants. Stopping only the
+        # immediate Python process can leave those workers alive and still simulating after the
+        # BeesServer lease has expired, violating the fail-closed cluster contract.
+        if os.name == "nt":
             try:
-                process.kill()
-                process.wait(timeout=5)
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                process.wait(timeout=15)
+                return
             except Exception:
                 pass
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=15)
+                return
+            except Exception:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+                    return
+                except Exception:
+                    pass
+
+        try:
+            process.kill()
+            process.wait(timeout=5)
+        except Exception:
+            pass
 
 
 def write_local_state(
