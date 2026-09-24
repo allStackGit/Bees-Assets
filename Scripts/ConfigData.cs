@@ -18,6 +18,9 @@ namespace Assets.Scripts
         public const bool Development = true;
         public const bool Production = !Test && !Development;
 
+        // Remote development builds use the SoftEther route; the Editor talks to the
+        // server started locally by .\\Assets\\bees.ps1 server.
+        public const string EditorServerHostname = "127.0.0.1";
         public const string LocalServerHostname = "seagrams.softether.net";
         public const string GlobalServerHostname = "seagrams7.softether.net";
         public const string TestServerHostname = GlobalServerHostname;
@@ -77,6 +80,8 @@ namespace Assets.Scripts
                             DevelopmentPort,
                             DevelopmentServerHostname,
                             DevelopmentWebGlWebSocketURL);
+#if UNITY_EDITOR
+                        _socket = new Socket(DevelopmentPort, EditorServerHostname, UseWebSocketSharp);
 #else
                         _socket = new Socket(DevelopmentPort, DevelopmentServerHostname, UseWebSocketSharp);
 #endif
