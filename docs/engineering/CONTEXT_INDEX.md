@@ -4,7 +4,7 @@ Secondary router for ambiguous or cross-cutting work. This file is **not startup
 
 | Area / aliases | Detailed route | Start with current symbols / assets |
 |---|---|---|
-| RL, ML-Agents, training, continual learning, unified training, Hive Mind training | `context/RL.md` | `RlOneVsOne*`, `Training/`, `HiveMindTrainingBootstrap` |
+| RL, ML-Agents, training, continual learning, unified training, trainer control, build synchronization, Hive Mind training | `context/RL.md` | `RlOneVsOne*`, `Training/`, `BeesServer~/rlTrainerControl.js`, `HiveMindTrainingBootstrap` |
 | runtime, startup, identity, persistence, pooling, Level reset | `context/RUNTIME.md` | `ConfigData`, `Level`, `GameState`, `Ships`, `DataFile` |
 | pathfinding, movement, obstacles, worker ownership, performance | `context/PATHFINDING.md` | `Pathfinder*`, `Ship.Movement`, obstacle code |
 | combat, TSV, targeting, weapons, visibility | `context/COMBAT.md` | `Ship.Combat`, `Weapon`, `RangeCollider`, command/outcome code |
@@ -17,7 +17,7 @@ Secondary router for ambiguous or cross-cutting work. This file is **not startup
 
 - Search/fetch the exact symbol, asset, scene, prefab, configuration, test, or error term before broad scans when the owner is already obvious.
 - Read only the detailed route(s) needed for the unresolved area; a row is a pointer, not another required reading list.
-- For client/server wire, persistence, reconnect, learning-key, or identity contracts, inspect both repositories before changing the contract.
+- For client/server wire, persistence, reconnect, learning-key, trainer-control, or identity contracts, inspect both the Unity client paths and `BeesServer~/` before changing the contract.
 - For async/lifecycle bugs, trace both work ownership and publication ownership.
 - Stop once the affected contract, current owner/symbols, important dependency, and validation evidence are known.
 - Update stale routes when touched code/assets move. Maintained documentation is navigation, not authority; verify material behavior against current source/assets/tests.
