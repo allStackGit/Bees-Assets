@@ -409,7 +409,17 @@ function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[strin
     }) -join ' '
     $unityProcess=Start-Process -FilePath $Unity -ArgumentList $unityArgumentString -WorkingDirectory $BeesRoot -Wait -PassThru
     if($unityProcess.ExitCode -ne 0){
-        throw "$Unity exited with code $($unityProcess.ExitCode). Check $logPath"
+        $tail=''
+        if(Test-Path -LiteralPath $logPath){
+            $tail=(@(Get-Content -LiteralPath $logPath -Tail 60 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
+        }
+        $message="$Unity exited with code $($unityProcess.ExitCode)."
+        if($tail){
+            $message += [Environment]::NewLine + "Last Unity build log lines:" + [Environment]::NewLine + $tail
+        } else {
+            $message += " Check $logPath"
+        }
+        throw $message
     }
 
     $stagedEntrypoint=Join-Path $staging $Entrypoint
