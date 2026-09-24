@@ -103,7 +103,8 @@ function publicBuildDescriptor(record) {
         archive_sha256: record.archive_sha256,
         archive_size_bytes: record.archive_size_bytes,
         entrypoint: record.entrypoint,
-        artifact_url: '/v1/artifact/' + encodeURIComponent(record.platform),
+        artifact_url: '/v1/artifact/' + encodeURIComponent(record.platform) + '/' +
+            encodeURIComponent(record.build_id),
     };
 }
 
@@ -128,6 +129,7 @@ class TrainingControlStore {
             revision: 0,
             training_enabled: false,
             environment_args: [],
+            canonical_build_id: "",
             builds: {},
         };
     }
@@ -145,6 +147,9 @@ class TrainingControlStore {
             throw new Error('training-control state training_enabled is invalid');
         }
         parsed.environment_args = normalizeEnvironmentArgs(parsed.environment_args || []);
+        if (typeof parsed.canonical_build_id !== 'string') {
+            throw new Error('training-control state canonical_build_id is invalid');
+        }
         if (!parsed.builds || typeof parsed.builds !== 'object' || Array.isArray(parsed.builds)) {
             throw new Error('training-control state builds map is invalid');
         }
@@ -173,6 +178,20 @@ class TrainingControlStore {
             const args = normalizeEnvironmentArgs(patch.environment_args);
             if (JSON.stringify(args) !== JSON.stringify(this.state.environment_args)) {
                 this.state.environment_args = args;
+                changed = true;
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id')) {
+            const buildId = patch.canonical_build_id === ""
+                ? ""
+                : requireString(patch.canonical_build_id, 'canonical_build_id', 128);
+            if (buildId && !/^[A-Za-z0-9._-]+$/.test(buildId)) {
+                throw Object.assign(
+                    new Error('canonical_build_id may contain only letters, digits, dot, underscore, and dash'),
+                    { statusCode: 400 });
+            }
+            if (buildId !== this.state.canonical_build_id) {
+                this.state.canonical_build_id = buildId;
                 changed = true;
             }
         }
@@ -218,29 +237,41 @@ class TrainingControlStore {
             archive_size_bytes: stats.size,
             entrypoint,
         };
-        const previous = this.state.builds[platform];
-        if (!previous ||
-            previous.build_id !== record.build_id ||
-            previous.archive_sha256 !== record.archive_sha256 ||
-            previous.entrypoint !== record.entrypoint ||
-            previous.archive_path !== record.archive_path) {
-            this.state.builds[platform] = record;
-            this.state.revision++;
-            this._persist();
+        if (!this.state.builds[platform] ||
+            typeof this.state.builds[platform] !== 'object' ||
+            Array.isArray(this.state.builds[platform])) {
+            this.state.builds[platform] = {};
         }
-        return publicBuildDescriptor(this.state.builds[platform]);
+        const previous = this.state.builds[platform][buildId];
+        if (previous) {
+            if (previous.archive_sha256 !== record.archive_sha256 ||
+                previous.entrypoint !== record.entrypoint ||
+                previous.archive_size_bytes !== record.archive_size_bytes) {
+                throw Object.assign(
+                    new Error('published platform/build identity is immutable; use a new build_id'),
+                    { statusCode: 409 });
+            }
+            return publicBuildDescriptor(previous);
+        }
+        this.state.builds[platform][buildId] = record;
+        this._persist();
+        return publicBuildDescriptor(record);
     }
 
     desiredState() {
         const builds = {};
-        for (const [platform, record] of Object.entries(this.state.builds)) {
-            builds[platform] = publicBuildDescriptor(record);
+        if (this.state.canonical_build_id) {
+            for (const [platform, versions] of Object.entries(this.state.builds)) {
+                const record = versions && versions[this.state.canonical_build_id];
+                if (record) builds[platform] = publicBuildDescriptor(record);
+            }
         }
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             revision: this.state.revision,
             training_enabled: this.state.training_enabled,
             environment_args: [...this.state.environment_args],
+            canonical_build_id: this.state.canonical_build_id,
             lease_seconds: this.leaseSeconds,
             builds,
         };
@@ -262,8 +293,12 @@ class TrainingControlStore {
             training_enabled: this.state.training_enabled,
             desired_mode: desiredMode,
             environment_args: [...this.state.environment_args],
+            canonical_build_id: this.state.canonical_build_id,
             lease_seconds: this.leaseSeconds,
-            build: publicBuildDescriptor(this.state.builds[platform]),
+            build: publicBuildDescriptor(
+                this.state.canonical_build_id &&
+                this.state.builds[platform] &&
+                this.state.builds[platform][this.state.canonical_build_id]),
         };
     }
 
@@ -305,9 +340,10 @@ class TrainingControlStore {
         return { desired: this.desiredState(), trainers };
     }
 
-    artifact(platform) {
+    artifact(platform, buildId) {
         platform = requireString(platform, 'platform', 64);
-        return this.state.builds[platform] || null;
+        buildId = requireString(buildId, 'build_id', 128);
+        return this.state.builds[platform]?.[buildId] || null;
     }
 }
 
@@ -371,10 +407,11 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                 return;
             }
             const artifactMatch = request.method === 'GET' &&
-                url.pathname.match(/^\/v1\/artifact\/([^/]+)$/);
+                url.pathname.match(/^\/v1\/artifact\/([^/]+)\/([^/]+)$/);
             if (artifactMatch) {
                 const platform = decodeURIComponent(artifactMatch[1]);
-                const record = store.artifact(platform);
+                const buildId = decodeURIComponent(artifactMatch[2]);
+                const record = store.artifact(platform, buildId);
                 if (!record || !fs.existsSync(record.archive_path)) {
                     sendJson(response, 404, { error: 'artifact-not-found' });
                     return;
