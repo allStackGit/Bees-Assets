@@ -456,7 +456,6 @@ namespace Assets.Scripts.Server
             if (_resends > 0)
             {
                 Debug.LogWarning($"Resending {_resends} timed-out requests");
-                ConfigData.__TotalResends += _resends;
             }
         }
 
@@ -616,7 +615,7 @@ namespace Assets.Scripts.Server
             {
                 _waitableRequests.Add(request);
             }
-            ConfigData.__PastServerRequests.Add(request);
+            ConfigData.RequestHistory.Add(request);
             if (isResendRequest)
             {
                 request.StartTime = ConfigData.Stopwatch.ElapsedMilliseconds;
