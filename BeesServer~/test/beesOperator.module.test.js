@@ -38,3 +38,10 @@ test('bees.ps1 normalizes environment args before using Count', () => {
     assert.match(source, /\$envArgs=@\(Get-EnvironmentArgs \$config\)/,
         'Invoke-Start must normalize Get-EnvironmentArgs output to an array before reading .Count.');
 });
+
+test('bees.ps1 process helper does not shadow PowerShell automatic args', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.doesNotMatch(source, /function Invoke-Checked\(\[string\]\$Exe,\[string\[\]\]\$Args,/i);
+    assert.match(source, /function Invoke-Checked\(\[string\]\$Exe,\[string\[\]\]\$ArgumentList,/);
+    assert.match(source, /& \$Exe @ArgumentList/);
+});
