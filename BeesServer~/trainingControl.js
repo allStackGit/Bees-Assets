@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const CONTROL_SCHEMA_VERSION = 1;
 const DEFAULT_PORT = 7150;
-const DEFAULT_HOST = '0.0.0.0';
+const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 20;
 const VALID_ROLES = new Set(['dedicated', 'full-game']);
 
@@ -311,23 +311,35 @@ class TrainingControlStore {
     }
 }
 
-function authenticated(request, token) {
+function authenticated(request, tokens) {
     const header = request.headers && request.headers.authorization;
     if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false;
     const supplied = Buffer.from(header.slice('Bearer '.length), 'utf8');
-    const expected = Buffer.from(token, 'utf8');
-    return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+    return tokens.some(token => {
+        if (!token) return false;
+        const expected = Buffer.from(token, 'utf8');
+        return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+    });
 }
 
-function createTrainingControlHandler(store, token) {
+function createTrainingControlHandler(store, token, adminToken = null) {
     token = requireString(token, 'training-control token', 4096);
+    if (adminToken !== null && adminToken !== undefined) {
+        adminToken = requireString(adminToken, 'training-control admin token', 4096);
+    }
     return async (request, response) => {
         try {
-            if (!authenticated(request, token)) {
+            const url = new URL(request.url, 'http://training-control.local');
+            const adminPath = url.pathname.startsWith('/v1/admin/');
+            if (adminPath && !adminToken) {
+                sendJson(response, 503, { error: 'admin-token-not-configured' });
+                return;
+            }
+            const allowedTokens = adminPath ? [adminToken] : [token, adminToken];
+            if (!authenticated(request, allowedTokens)) {
                 sendJson(response, 401, { error: 'unauthorized' });
                 return;
             }
-            const url = new URL(request.url, 'http://training-control.local');
             if (request.method === 'GET' && url.pathname === '/v1/state') {
                 sendJson(response, 200, store.stateFor({
                     trainerId: url.searchParams.get('trainer_id'),
@@ -392,6 +404,7 @@ function createTrainingControlHandler(store, token) {
 
 function startTrainingControl(options = {}) {
     const token = options.token || process.env.BEES_TRAINING_CONTROL_TOKEN;
+    const adminToken = options.adminToken || process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN || null;
     if (!token) throw new Error('BEES_TRAINING_CONTROL_TOKEN is required for training control.');
     const port = Number(options.port || process.env.BEES_TRAINING_CONTROL_PORT || DEFAULT_PORT);
     const host = options.host || process.env.BEES_TRAINING_CONTROL_HOST || DEFAULT_HOST;
@@ -404,7 +417,7 @@ function startTrainingControl(options = {}) {
         leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
     });
     const httpModule = options.httpModule || http;
-    const server = httpModule.createServer(createTrainingControlHandler(store, token));
+    const server = httpModule.createServer(createTrainingControlHandler(store, token, adminToken));
     server.listen(port, host);
     console.log(
         '[Bees training control] listening on ' + host + ':' + port +
