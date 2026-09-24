@@ -428,6 +428,15 @@ class TrainingControlStore {
             this.state.pending_release === null) {
             return this.desiredState();
         }
+        const existingPending = this.state.pending_release;
+        if (existingPending &&
+            existingPending.build_id === buildId &&
+            existingPending.run_id === runId &&
+            existingPending.compatibility_key === compatibilityKey &&
+            existingPending.incompatible === incompatible) {
+            this._advanceRollout();
+            return this.desiredState();
+        }
 
         this.state.pending_release = {
             build_id: buildId,
