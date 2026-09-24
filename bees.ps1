@@ -224,7 +224,7 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
 
-function Convert-ToScpPath([string]$Path){ ([IO.Path]::GetFullPath($Path)).Replace('\\','/') }
+function Convert-ToScpPath([string]$Path){ ([IO.Path]::GetFullPath($Path)).Replace('\','/') }
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 
 function Get-RemoteSshTarget($Config){
