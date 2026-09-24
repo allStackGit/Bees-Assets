@@ -72,7 +72,7 @@ The service persists its phase/generation state. Training, evaluation, Unity bui
 
 ## One-time BeesServer autostart configuration
 
-On the machine that hosts the central training system, BeesServer branch `rl/unified-training-demo-upload` can supervise the autonomous service. Configure these environment variables once:
+On the machine that hosts the central training system, the co-located `BeesServer~/` project can supervise the autonomous service. Configure these environment variables once:
 
 ```text
 BEES_RL_CONTINUAL_AUTOSTART=1
@@ -102,7 +102,7 @@ BEES_RL_CONTINUAL_RETRY_SECONDS
 
 For ordinary non-WAN continual training, `BEES_RL_NUM_ENVS` remains a positive local Unity environment count. In elastic WAN mode, omitted `BEES_RL_NUM_ENVS` defaults to `0`; an explicit `0` also selects learner-only mode, while any positive value opts Exeter into hybrid local simulation.
 
-When autostart is enabled, `start-server.js` validates the required configuration before accepting a server-only launch. Normal foreground startup supervises the continual service directly. Background startup launches a detached continual-learning watchdog so the Python service still has process-level restart protection after the launcher exits.
+When autostart is enabled, `start-server.js` validates the required configuration before accepting a server-only launch. Normal foreground startup supervises the continual service directly. Background startup launches a detached continual-learning watchdog that is tethered to the BeesServer PID: it restarts the Python service while BeesServer is alive, but stops training when that BeesServer process exits.
 
 After those machine-specific paths are configured and a compatible initial champion/training build exists, the intended local operating procedure is simply:
 
@@ -212,7 +212,57 @@ A low gain **without** central queue pressure is reported separately as `no-meas
 
 The remote helper persists across central continual generations. During evaluation/release the training broker is absent, so the helper waits; when the next generation begins it automatically joins the new broker session with the same actor slot and environment count.
 
-Every rollout machine must still have the same compatible training build. Automatic distribution of an entire training-build directory to arbitrary remote machines is infrastructure work outside the learning loop.
+Every dedicated rollout machine should normally run `Training/bees_trainer_agent.py` rather than invoking the elastic actor helper directly. The agent is the BeesServer-controlled lifecycle/build layer described below; it launches the existing elastic actor helper only after the server lease and canonical build are current.
+
+## Server-controlled cluster lifecycle and trainer builds
+
+BeesServer can be the single desired-state authority for dedicated rollout machines. Enable the control plane on the central machine:
+
+```text
+BEES_RL_TRAINER_CONTROL=1
+BEES_RL_CONTROL_TOKEN_FILE=<32+ character trainer-control token; WAN token may also be reused>
+BEES_RL_CONTROL_PORT=7148
+BEES_RL_CONTROL_LEASE_SECONDS=30
+BEES_RL_TRAINING_ENABLED=1
+BEES_RL_TRAINER_BUILD_DIR=<directory containing the canonical training build>
+# optional when BEES_RL_TRAINING_ENV already identifies a file inside that directory
+BEES_RL_TRAINER_BUILD_EXECUTABLE=<relative executable path>
+# optional static environment arguments that should invalidate/restart the cluster as one revision
+BEES_RL_CLUSTER_ENV_ARGS_JSON=["--example=value"]
+```
+
+The control service defaults to loopback and should normally be reached through SSH forwarding. Its server epoch changes on every BeesServer process start. Dedicated nodes renew a short lease; if BeesServer disappears long enough for the lease to expire, the node terminates its rollout process. When BeesServer returns, the persistent node agent reconnects, observes the new epoch/current configuration, verifies the canonical build, and starts training again.
+
+The current training build is content-addressed across the complete build directory. BeesServer records each file path, size, mode, and SHA-256 and exposes the authenticated manifest/files to rollout agents. A node whose build ID differs downloads into a staging directory, verifies the exact file set and every hash, and switches to the completed build only after validation succeeds. It never partially overwrites the running build.
+
+When the central trainer is not Linux, Linux rollout nodes need an equivalent Linux Unity build. By default server startup requires:
+
+```text
+BEES_RL_LINUX_TRAINER_BUILD_DIR=<Linux x86_64 training build directory>
+# optional when exactly one *.x86_64 entrypoint is present
+BEES_RL_LINUX_TRAINER_EXECUTABLE=<relative Linux executable path>
+```
+
+This makes missing Linux build parity a startup error instead of allowing mixed game versions. The server distributes the already-compiled equivalent build; it does not silently invoke a cross-platform Unity build during startup.
+
+Each rollout machine needs the repository/trainer helper once, then can be left running under an OS service or startup task:
+
+```powershell
+python Training\bees_trainer_agent.py `
+  --actor-id=0 `
+  --envs=32 `
+  --ssh="trainer-user@central-host" `
+  --control-token-file="D:\BeesRL\control-token.txt" `
+  --wan-auth-token-file="D:\BeesRL\wan-token.txt" `
+  --install-root="D:\BeesRL\managed-builds" `
+  --torch-device=cpu
+```
+
+The trainer agent itself is intentionally persistent: BeesServer controls the child rollout process, not whether the remote computer is powered on. On server loss it stops the child after lease expiry and keeps waiting; on server return it reconciles and resumes automatically. Dynamic generation-specific Unity environment arguments remain authoritative in the existing WAN broker session/control epoch. Server-owned static cluster arguments and training settings are also hashed into a configuration revision, so changing them causes rollout agents to restart into a fresh central session.
+
+Ordinary full-game clients are deliberately outside this dedicated-trainer lease. Neural gameplay already runs its deployed model with `BehaviorType.InferenceOnly`; if BeesServer becomes unavailable, model polling simply retains the currently valid local champion (or the existing Hive Mind fallback if no compatible champion exists). Live gameplay telemetry remains in the local `Pending/` queue until BeesServer confirms archival. Existing socket/model/telemetry retry paths re-establish communication after the server returns, so active games keep playing and recording rather than being killed with dedicated rollout workers.
+
+The authenticated trainer-control status endpoint is `GET /v1/trainers/status`. It reports the current server epoch, training/configuration state, and recently heartbeating rollout nodes; richer operational log/status work belongs to the separate cluster-observability task.
 
 ## Operational boundaries
 
