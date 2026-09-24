@@ -42,6 +42,31 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("max_steps: 100", Path(command0[2]).read_text(encoding="utf-8"))
             self.assertIn("max_steps: 200", Path(command1[2]).read_text(encoding="utf-8"))
 
+    def test_training_command_appends_authoritative_environment_args_verbatim(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            options = service.ServiceOptions(
+                **{
+                    **options.__dict__,
+                    "environment_args": (
+                        "--rl-map-size=128",
+                        "--rl-bee-ship-types=Wasp,Hornet",
+                        "--rl-human-ship-types=Gunship,Frigate",
+                    ),
+                }
+            )
+            command = service.training_command(options, 0, resume=False)
+            marker = command.index("--env-args")
+            self.assertEqual(
+                command[marker + 1 :],
+                [
+                    "--rl-map-size=128",
+                    "--rl-bee-ship-types=Wasp,Hornet",
+                    "--rl-human-ship-types=Gunship,Frigate",
+                ],
+            )
+
     def test_state_rejects_run_id_change_and_preserves_phase(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -129,6 +154,7 @@ class ContinualServiceTests(unittest.TestCase):
             run_id="continuous-test",
             generation_steps=generation_steps,
             num_envs=2,
+            environment_args=(),
             platform="WindowsPlayer",
             retry_seconds=1.0,
             once=True,
