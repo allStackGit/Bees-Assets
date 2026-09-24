@@ -74,7 +74,6 @@ namespace Assets.Scripts
                     HasSeenPreLevelIntro = false;
                     HasSeenIntermission = false;
                     SceneManager.LoadSceneAsync("Space", LoadSceneMode.Single);
-                    Debug.Log("Loading level 0");
                     break;
 
                 case 1:
