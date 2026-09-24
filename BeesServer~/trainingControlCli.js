@@ -15,18 +15,25 @@ function usage() {
         '',
         'Environment:',
         '  BEES_TRAINING_CONTROL_URL   default http://127.0.0.1:7150',
-        '  BEES_TRAINING_CONTROL_TOKEN or BEES_TRAINING_CONTROL_TOKEN_FILE',
+        '  BEES_TRAINING_CONTROL_ADMIN_TOKEN or BEES_TRAINING_CONTROL_ADMIN_TOKEN_FILE',
+        '  (status also accepts the worker token variables as fallback)',
     ].join('\n');
 }
 
 function tokenFromEnvironment() {
+    if (process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN) {
+        return process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN;
+    }
+    if (process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN_FILE) {
+        return fs.readFileSync(process.env.BEES_TRAINING_CONTROL_ADMIN_TOKEN_FILE, 'utf8').trim();
+    }
     if (process.env.BEES_TRAINING_CONTROL_TOKEN) {
         return process.env.BEES_TRAINING_CONTROL_TOKEN;
     }
     if (process.env.BEES_TRAINING_CONTROL_TOKEN_FILE) {
         return fs.readFileSync(process.env.BEES_TRAINING_CONTROL_TOKEN_FILE, 'utf8').trim();
     }
-    throw new Error('BEES_TRAINING_CONTROL_TOKEN or BEES_TRAINING_CONTROL_TOKEN_FILE is required.');
+    throw new Error('training-control admin token is required.');
 }
 
 function parseOptions(argv) {
