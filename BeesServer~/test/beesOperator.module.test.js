@@ -78,3 +78,9 @@ test('bees.ps1 stages Unity builds before moving them into dated folders', () =>
     assert.match(source, /Move-Item -LiteralPath \$staging -Destination \$Output/);
     assert.match(source, /Matching executable\(s\) found elsewhere:/);
 });
+
+test('bees.ps1 waits for Unity entrypoint visibility after batch exit', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /entrypointDeadline=\[DateTime\]::UtcNow\.AddSeconds\(30\)/);
+    assert.match(source, /Start-Sleep -Milliseconds 250/);
+});
