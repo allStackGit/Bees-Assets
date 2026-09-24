@@ -191,7 +191,7 @@ function installRuntimeSecurity(runtime, options = {}) {
 
             this.__beesAuthenticationIdleTimer = null;
             this.__beesAuthenticationPromise = null;
-            if (!server.test) {
+            if (!server.test && !server.allowInsecureAuthentication) {
                 this.__beesAuthenticationIdleTimer = setTimeout(() => {
                     if (this.authenticatedUserId) return;
                     console.warn(`Closing unauthenticated idle WebSocket connection ${id}.`);
@@ -226,7 +226,7 @@ function installRuntimeSecurity(runtime, options = {}) {
 
             const legacyHandleMessage = this.handleMessage.bind(this);
             this.handleMessage = async request => {
-                const insecureAllowed = Boolean(server.test);
+                const insecureAllowed = Boolean(server.test || server.allowInsecureAuthentication);
                 const claimedUserId = request?.params?.UserId !== undefined ? String(request.params.UserId) : null;
                 if (!insecureAllowed && server.isRunningConsolidation) {
                     closeForConsolidation(connection);
