@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 
-CONTROL_SCHEMA_VERSION = 3
+CONTROL_SCHEMA_VERSION = 4
 DEFAULT_TIMEOUT_SECONDS = 15.0
 
 
@@ -137,6 +137,57 @@ class TrainingControlClient:
         _headers, body = self._request("POST", "/v1/heartbeat", payload=payload)
         return self._decode_state(body)
 
+    def upload_log_chunk(
+        self,
+        *,
+        trainer_id: str,
+        run_id: str,
+        relative_path: str,
+        offset: int,
+        data: bytes,
+        reset: bool = False,
+    ) -> int:
+        query = urllib.parse.urlencode({
+            "trainer_id": trainer_id,
+            "run_id": run_id,
+            "path": relative_path,
+            "offset": int(offset),
+            "reset": "1" if reset else "0",
+        })
+        request = urllib.request.Request(
+            self.base_url + "/v1/log?" + query,
+            data=data,
+            method="POST",
+            headers={
+                "Authorization": "Bearer " + self.token,
+                "Content-Type": "application/octet-stream",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=max(self.timeout, 30.0)) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 409:
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = {}
+                expected = value.get("expected_offset")
+                if isinstance(expected, int) and expected >= 0:
+                    return -expected - 1
+            raise ControlRejected(
+                f"training log upload failed: HTTP {exc.code}: {raw}"
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            raise ControlUnavailable(str(exc)) from exc
+        next_offset = value.get("next_offset") if isinstance(value, Mapping) else None
+        if not isinstance(next_offset, int) or next_offset < 0:
+            raise ControlRejected("training log upload returned invalid next_offset")
+        return next_offset
+
+
     def state(self, trainer_id: str, role: str, platform: str) -> Mapping[str, Any]:
         _headers, body = self._request(
             "GET",
@@ -218,6 +269,42 @@ class ManagedBuildStore:
         return result
 
     def ensure(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
+        return self._materialize(client, descriptor, activate=True)
+
+    def prepare(self, client: TrainingControlClient, descriptor: Mapping[str, Any]) -> tuple[Path, Mapping[str, Any]]:
+        return self._materialize(client, descriptor, activate=False)
+
+    def is_prepared(self, descriptor: Mapping[str, Any]) -> bool:
+        descriptor = self._validated_descriptor(descriptor)
+        identity = (
+            descriptor["role"] + "-" +
+            descriptor["platform"] + "-" +
+            descriptor["build_id"] + "-" +
+            descriptor["archive_sha256"][:16]
+        )
+        install = self.builds / identity
+        entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
+        manifest_path = install / ".bees-build.json"
+        if not manifest_path.is_file() or not entrypoint.is_file():
+            return False
+        try:
+            installed = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return False
+        return (
+            installed.get("archive_sha256") == descriptor["archive_sha256"]
+            and installed.get("role") == descriptor["role"]
+            and installed.get("build_id") == descriptor["build_id"]
+            and installed.get("platform") == descriptor["platform"]
+        )
+
+    def _materialize(
+        self,
+        client: TrainingControlClient,
+        descriptor: Mapping[str, Any],
+        *,
+        activate: bool,
+    ) -> tuple[Path, Mapping[str, Any]]:
         descriptor = self._validated_descriptor(descriptor)
         identity = (
             descriptor["role"] + "-" +
@@ -240,7 +327,8 @@ class ManagedBuildStore:
                 and installed.get("build_id") == descriptor["build_id"]
                 and installed.get("platform") == descriptor["platform"]
             ):
-                self._set_current(descriptor, entrypoint)
+                if activate:
+                    self._set_current(descriptor, entrypoint)
                 return entrypoint, descriptor
 
         temp_parent = Path(tempfile.mkdtemp(prefix=".bees-build-", dir=str(self.builds)))
@@ -284,7 +372,8 @@ class ManagedBuildStore:
             shutil.rmtree(temp_parent, ignore_errors=True)
 
         entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
-        self._set_current(descriptor, entrypoint)
+        if activate:
+            self._set_current(descriptor, entrypoint)
         return entrypoint, descriptor
 
     def _set_current(self, descriptor: Mapping[str, Any], entrypoint: Path) -> None:
