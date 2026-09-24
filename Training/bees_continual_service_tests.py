@@ -19,6 +19,16 @@ class ContinualServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.rewrite_max_steps("max_steps: 1\nmax_steps: 2\n", 10)
 
+    def test_environment_args_json_requires_string_list(self):
+        self.assertEqual(
+            service.parse_environment_args_json('["--rl-map-size=64","--rl-obstacles=1"]'),
+            ("--rl-map-size=64", "--rl-obstacles=1"),
+        )
+        with self.assertRaises(ValueError):
+            service.parse_environment_args_json('{"map":64}')
+        with self.assertRaises(ValueError):
+            service.parse_environment_args_json('[""]')
+
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir), generation_steps=250_000)
