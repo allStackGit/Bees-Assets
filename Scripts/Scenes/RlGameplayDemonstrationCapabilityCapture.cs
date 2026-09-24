@@ -187,7 +187,7 @@ internal static class RlGameplayDemonstrationCapabilityCapture
         float[] continuous = new float[RlOneVsOneAgent.ContinuousActionCount];
         int[] discrete = new int[RlOneVsOneAgent.DiscreteBranchCount];
 
-        Vector2 movement = RlGameplayDemonstrationAgent.EncodeMovementDirection(ship.Direction);
+        Vector2 movement = RlGameplayDemonstrationAgent.EncodeCurrentMovement(ship);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
 
