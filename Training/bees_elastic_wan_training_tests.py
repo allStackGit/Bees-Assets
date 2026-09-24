@@ -171,8 +171,8 @@ class ElasticBrokerTests(unittest.TestCase):
 
     def test_central_claims_first_available_actor_slots(self):
         broker, _specs = self._broker()
-        first = broker.claim_actor({"actor_key": "machine-a", "env_count": 8})
-        second = broker.claim_actor({"actor_key": "machine-b", "env_count": 12})
+        first = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
+        second = broker.claim_actor({"actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 12})
         self.assertEqual(first, 0)
         self.assertEqual(second, 1)
 
@@ -183,17 +183,18 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 "actor_id": actor_id,
                 "actor_key": "machine-a",
+                "actor_instance_id": "process-a",
                 "env_count": 8,
                 "control_epoch": 1,
                 "behavior_specs": specs,
             }
         )
         self.assertEqual(
-            broker.claim_actor({"actor_key": "machine-a", "env_count": 16}),
+            broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a2", "env_count": 16}),
             actor_id,
         )
         self.assertEqual(
-            broker.claim_actor({"actor_key": "machine-b", "env_count": 4}),
+            broker.claim_actor({"actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 4}),
             1,
         )
 
@@ -205,6 +206,7 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     "actor_id": actor_id,
                     "actor_key": "machine-b",
+                    "actor_instance_id": "process-b",
                     "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
