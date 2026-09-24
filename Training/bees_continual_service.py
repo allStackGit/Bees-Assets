@@ -60,6 +60,7 @@ class ServiceOptions:
     platform: str
     retry_seconds: float
     once: bool
+    environment_args: tuple[str, ...] = ()
 
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -201,6 +202,18 @@ def current_deployment_id(options: ServiceOptions) -> Optional[str]:
     return deployment_id
 
 
+def parse_environment_args_json(value: str) -> tuple[str, ...]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--environment-args-json must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise ValueError("--environment-args-json must be a JSON array of strings")
+    if any(item == "" for item in parsed):
+        raise ValueError("--environment-args-json may not contain empty strings")
+    return tuple(parsed)
+
+
 def training_command(options: ServiceOptions, index: int, *, resume: bool) -> list[str]:
     config = write_generation_config(options, index)
     command = [
@@ -220,6 +233,9 @@ def training_command(options: ServiceOptions, index: int, *, resume: bool) -> li
     ]
     if resume:
         command.append("--resume")
+    if options.environment_args:
+        command.append("--env-args")
+        command.extend(options.environment_args)
     return command
 
 
@@ -408,6 +424,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     parser.add_argument("--generation-steps", type=int, default=DEFAULT_GENERATION_STEPS)
     parser.add_argument("--num-envs", type=int, default=DEFAULT_NUM_ENVS)
+    parser.add_argument("--environment-args-json", default="[]")
     parser.add_argument("--platform", choices=tuple(PLATFORM_BUILD_TARGETS), default="WindowsPlayer")
     parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
     parser.add_argument("--once", action="store_true")
@@ -457,6 +474,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         platform=args.platform,
         retry_seconds=args.retry_seconds,
         once=args.once,
+        environment_args=parse_environment_args_json(args.environment_args_json),
     )
 
 
