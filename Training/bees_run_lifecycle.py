@@ -69,9 +69,22 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     assets_root = assets_root.resolve()
     continual_path = assets_root / "Training" / "continual_learning_config.json"
     trainer_path = assets_root / "Training" / "rl_1v1_config.yaml"
-    reward_path = assets_root / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
-    policy_path = assets_root / "Scripts" / "Scenes" / "RlPolicySchema.cs"
-    for path in (continual_path, trainer_path, reward_path, policy_path):
+    scenes_root = assets_root / "Scripts" / "Scenes"
+    reward_path = scenes_root / "RlOneVsOneReward.cs"
+    policy_path = scenes_root / "RlPolicySchema.cs"
+    semantic_sources = {
+        "combat_perception_source_sha256": scenes_root / "RlCombatPerception.cs",
+        "agent_action_source_sha256": scenes_root / "RlOneVsOneAgent.cs",
+        "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
+        "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
+    }
+    for path in (
+        continual_path,
+        trainer_path,
+        reward_path,
+        policy_path,
+        *semantic_sources.values(),
+    ):
         if not path.is_file():
             raise ValueError(f"training compatibility source is missing: {path}")
 
@@ -92,6 +105,8 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     # reuse an optimizer lineage before its mirrored JSON signature is corrected.
     payload["reward_source_sha256"] = _file_sha256(reward_path)
     payload["policy_schema_source_sha256"] = _file_sha256(policy_path)
+    for name, path in semantic_sources.items():
+        payload[name] = _file_sha256(path)
     return payload
 
 
