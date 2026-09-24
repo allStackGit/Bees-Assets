@@ -12,14 +12,10 @@
   "generationSteps": 1000000,
   "environmentArgs": [],
   "expectedTrainers": [],
-  "remoteSshTarget": "192.168.36.3",
-  "remoteSshPort": 22,
   "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
   "remoteTorchDevice": "cpu",
   "remoteLinuxInstallRoot": ".local/share/bees-training",
   "remoteTransport": "tailnet",
   "tailnetLearnerName": "bees-learner",
-  "tailnetSshPort": 2222,
-  "tailnetLocalSshPort": 2222,
-  "trainingSshUser": "beestraining"
+  "tailnetBootstrapPort": 7151
 }
