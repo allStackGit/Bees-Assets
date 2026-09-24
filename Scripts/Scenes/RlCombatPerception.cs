@@ -34,6 +34,7 @@ internal sealed class RlCombatPerception
     internal const int ExplorationGridCellCount = RlTeamExplorationGrid.CellCount;
 
     internal const int ShipIdentityObservationSize = 1;
+    internal const int CommunicationObservationSize = 4;
     internal const int SelfObservationSize = 24 + ShipIdentityObservationSize;
     internal const int CapabilityObservationSize = 12;
     internal const int EntityCoreObservationSize = 14;
@@ -41,6 +42,7 @@ internal sealed class RlCombatPerception
     internal const int ObservedWeaponObservationSize = 5;
     internal const int MaxObservedEntityWeaponSlots = MaxWeaponSlots;
     internal const int EntityObservationSize = EntityCoreObservationSize + ShipIdentityObservationSize + MaxObservedEntityWeaponSlots * ObservedWeaponObservationSize;
+    internal const int AllyObservationSize = EntityObservationSize + CommunicationObservationSize;
     internal const int ParentCarrierObservationSize = EntityObservationSize;
     internal const int EnemyWeaponMountObservationSize = 0;
     internal const float ProjectileSpeedObservationMax = 200f;
@@ -51,7 +53,8 @@ internal sealed class RlCombatPerception
     internal const int ObservationSize = SelfObservationSize +
         CapabilityObservationSize +
         ParentCarrierObservationSize +
-        (MaxObservedAllies + MaxObservedEnemies) * EntityObservationSize +
+        MaxObservedAllies * AllyObservationSize +
+        MaxObservedEnemies * EntityObservationSize +
         MaxWeaponSlots * SelfWeaponObservationSize +
         MaxObservedMiningAsteroids * MiningAsteroidObservationSize +
         MaxObservedMapObjects * MapObjectObservationSize +
@@ -151,7 +154,7 @@ internal sealed class RlCombatPerception
         AddCapabilityObservations(ship, sensor);
         AddParentCarrierObservations(ship, sensor, origin, frameQuarterTurns);
         CollectAllies(ship, side, origin);
-        AddEntitySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
+        AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);
         CollectVisibleEnemies(ship, side, origin);
         AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);
         AddWeaponSlots(ship, sensor, frameQuarterTurns);
@@ -311,6 +314,27 @@ internal sealed class RlCombatPerception
             compare = leftFleetId.CompareTo(rightFleetId);
             return compare != 0 ? compare : left.Id.CompareTo(right.Id);
         });
+    }
+
+    private static void AddAllySlots(
+        VectorSensor sensor,
+        List<Ship> ships,
+        int slots,
+        Vector2 origin,
+        int frameQuarterTurns)
+    {
+        for (int slot = 0; slot < slots; slot++)
+        {
+            if (slot >= ships.Count)
+            {
+                AddZeroObservations(sensor, AllyObservationSize);
+                continue;
+            }
+
+            Ship ally = ships[slot];
+            AddEntityObservation(sensor, ally, origin, frameQuarterTurns);
+            RlOneVsOneAgent.AddCommunicationObservations(sensor, ally);
+        }
     }
 
     private static void AddEntitySlots(
