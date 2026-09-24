@@ -150,19 +150,7 @@ namespace Assets.Scripts
         public static System.Diagnostics.Stopwatch Stopwatch;
         public static UIAudioController UIAudioController;
 
-        public static ServerRequestSet __PastServerRequests = new ServerRequestSet();
-        public static int __TotalResends;
-        public static int __TotalRequests;
-        public static double __AverageTimeOnQueue;
-        public static double __TotalLength;
-        public static double __AverageLength;
-        public static double __TotalC2C;
-        public static double __AverageC2C;
-        public static double __TotalWireTime;
-        public static double __AverageWireTime;
-        public static double __TotalProcessingTime;
-        public static double __AverageProcessingTime;
-        public static long __TotalTimeOnQueue;
+        public static ServerRequestSet RequestHistory = new ServerRequestSet();
 
         private static ulong _userId;
         public static UserProgressData UserProgressData;
