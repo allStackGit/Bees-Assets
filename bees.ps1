@@ -350,10 +350,10 @@ function Start-TailnetGatewayIfNeeded($Config){
 }
 
 
-function Invoke-Checked([string]$Exe,[string[]]$Args,[string]$WorkingDirectory=$AssetsRoot){
+function Invoke-Checked([string]$Exe,[string[]]$ArgumentList,[string]$WorkingDirectory=$AssetsRoot){
     Push-Location $WorkingDirectory
     try {
-        & $Exe @Args
+        & $Exe @ArgumentList
         if($LASTEXITCODE -ne 0){ throw "$Exe exited with code $LASTEXITCODE." }
     } finally { Pop-Location }
 }
