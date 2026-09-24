@@ -11,5 +11,10 @@
   "brokerPort": 55051,
   "generationSteps": 1000000,
   "environmentArgs": [],
-  "expectedTrainers": []
+  "expectedTrainers": [],
+  "remoteSshTarget": "",
+  "remoteSshPort": 22,
+  "remoteDefaultEnvs": 32,
+  "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
+  "remoteTorchDevice": "cpu"
 }
