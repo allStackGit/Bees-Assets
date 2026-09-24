@@ -100,8 +100,8 @@ namespace Bees.Tests.EditMode
             Assert.That(scenarioSeed, Does.Contain("return UnityEngine.Random.Range(0, int.MaxValue);"));
             Assert.That(scenarioSeed, Does.Contain("return Guid.NewGuid().GetHashCode();"),
                 "Ordinary training intentionally keeps a fresh process-local random root.");
-            Assert.That(matchups, Does.Contain(
-                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MatchupStreamSalt"));
+            Assert.That(matchups, Does.Contain("int seed = RlOneVsOneScenarioSeed.Create("));
+            Assert.That(matchups, Does.Contain("RlOneVsOneScenarioSeed.MatchupStreamSalt"));
             Assert.That(mapSizes, Does.Contain(
                 "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.MapSizeStreamSalt)"));
             Assert.That(matchups, Does.Not.Contain("Guid.NewGuid"));
