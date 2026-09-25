@@ -171,6 +171,7 @@ def read_throughput_metrics(
     env_count = value.get("env_count")
     accepted_steps = value.get("accepted_steps_total")
     accepted_trajectories = value.get("accepted_trajectories_total")
+    learner_consumed_steps = value.get("learner_consumed_steps_total")
     queue_depth = value.get("upload_queue_depth")
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
@@ -188,6 +189,9 @@ def read_throughput_metrics(
         or not isinstance(accepted_trajectories, int)
         or isinstance(accepted_trajectories, bool)
         or accepted_trajectories < 0
+        or not isinstance(learner_consumed_steps, int)
+        or isinstance(learner_consumed_steps, bool)
+        or learner_consumed_steps < 0
         or not isinstance(queue_depth, int)
         or isinstance(queue_depth, bool)
         or queue_depth < 0
@@ -218,6 +222,7 @@ def read_throughput_metrics(
         "env_count": env_count,
         "accepted_steps_total": accepted_steps,
         "accepted_trajectories_total": accepted_trajectories,
+        "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
     if traffic_present:
