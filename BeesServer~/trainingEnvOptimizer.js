@@ -33,11 +33,11 @@ function normalizeCapacity(value) {
     };
 }
 
-function acceptedSteps(metrics) {
+function learnerConsumedSteps(metrics) {
     if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
     const throughput = metrics.throughput;
     if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
-    const total = throughput.accepted_steps_total;
+    const total = throughput.learner_consumed_steps_total;
     if (!finiteInteger(total) || total < 0) return null;
     return total;
 }
@@ -259,7 +259,7 @@ class TrainingEnvOptimizer {
         const now = Number(context.now);
         const timestamp = Number.isFinite(now) ? now : Date.now();
         const capacity = normalizeCapacity(record && record.worker_capacity);
-        const totalSteps = acceptedSteps(record && record.metrics);
+        const totalSteps = learnerConsumedSteps(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -343,12 +343,12 @@ class TrainingEnvOptimizer {
                         state,
                         capacity,
                         timestamp,
-                        'probe produced no accepted-step metrics',
+                        'probe produced no learner-consumed-step metrics',
                     );
                     return this.snapshot(record.trainer_id);
                 }
             }
-            this._resetMeasurement(state, timestamp, null, 'waiting for accepted-step metrics');
+            this._resetMeasurement(state, timestamp, null, 'waiting for learner-consumed-step metrics');
             return this.snapshot(record.trainer_id);
         }
         state.metrics_missing_since_ms = null;
@@ -393,7 +393,7 @@ class TrainingEnvOptimizer {
             state.phase = 'measuring';
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
-            state.last_decision = 'measuring accepted steps';
+            state.last_decision = 'measuring learner-consumed steps';
             return this.snapshot(record.trainer_id);
         }
 
@@ -436,6 +436,6 @@ class TrainingEnvOptimizer {
 module.exports = {
     TrainingEnvOptimizer,
     normalizeCapacity,
-    acceptedSteps,
+    learnerConsumedSteps,
     initialStep,
 };
