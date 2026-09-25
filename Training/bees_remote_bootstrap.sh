@@ -20,7 +20,7 @@ usage() {
 Usage: bees-remote-worker.sh [options]
 
 Options:
-  --envs N               Unity environments on this machine (1-64).
+  --envs N               Pin a fixed Unity environment count (1-64); omission auto-tunes.
   --install-root PATH    Local Linux worker installation directory.
   --torch-device DEVICE  Local inference device, normally cpu or cuda.
   -h, --help             Show this help.
