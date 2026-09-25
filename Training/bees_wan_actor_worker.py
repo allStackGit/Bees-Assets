@@ -542,6 +542,7 @@ class ActorSession:
         self._throughput_lock = threading.Lock()
         self._accepted_steps_total = 0
         self._accepted_trajectories_total = 0
+        self._learner_consumed_steps_total = 0
         self._last_throughput_write = 0.0
 
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
@@ -557,6 +558,7 @@ class ActorSession:
                 "env_count": self.env_count,
                 "accepted_steps_total": self._accepted_steps_total,
                 "accepted_trajectories_total": self._accepted_trajectories_total,
+                "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
             payload.update(self.client.traffic_snapshot())
