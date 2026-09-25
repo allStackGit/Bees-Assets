@@ -8,10 +8,16 @@ const {
     acceptedSteps,
 } = require('../trainingEnvOptimizer');
 
-function record(trainerId, envs, accepted, { auto = true, min = 1, max = 64 } = {}) {
+function record(
+    trainerId,
+    envs,
+    accepted,
+    { auto = true, min = 1, max = 64, processState = 'running' } = {},
+) {
     return {
         trainer_id: trainerId,
         role: 'dedicated',
+        process_state: processState,
         worker_capacity: {
             auto,
             current_envs: envs,
@@ -110,6 +116,33 @@ test('optimizer backs off a slower probe before another worker may probe', () =>
 
     stateA = update(optimizer, 'remote-a', 8, 0, 3020, { max: 16 });
     assert.equal(stateA.probing, false);
+});
+
+test('optimizer backs off immediately when a probed worker process stops', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        0,
+        1010,
+        { max: 16, processState: 'stopped' },
+    );
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, true);
+    assert.match(state.decision, /not running/);
+
+    state = update(optimizer, 'remote-a', 8, 0, 1020, { max: 16 });
+    assert.equal(state.probing, false);
 });
 
 test('optimizer resets safely when a worker advertises new env bounds', () => {
