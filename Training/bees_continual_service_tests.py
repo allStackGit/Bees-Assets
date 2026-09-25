@@ -255,6 +255,18 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(any("bees_continual_unity_bundle.py" in item for item in stage))
             unity = service.unity_build_command(options, options.root / "hot")
             self.assertIn("RlLivePolicyHotBundleBuilder.BuildFromCommandLine", unity)
+            builder = (
+                Path(__file__).resolve().parent.parent
+                / "Editor"
+                / "RlLivePolicyHotBundleBuilder.cs"
+            )
+            self.assertTrue(builder.is_file())
+            builder_source = builder.read_text(encoding="utf-8")
+            self.assertIn("internal static class RlLivePolicyHotBundleBuilder", builder_source)
+            self.assertIn("public static void BuildFromCommandLine()", builder_source)
+            self.assertIn('assetBundleName = BundleFileName', builder_source)
+            self.assertIn('model_address = ModelAddress', builder_source)
+            self.assertIn('manifest_address = ManifestAddress', builder_source)
             publish = service.hot_publish_command(options, options.root / "metadata.json")
             self.assertTrue(any("bees_continual_hot_bundle.py" in item for item in publish))
             self.assertIn(f"--distribution-root={options.model_distribution_root}", publish)
