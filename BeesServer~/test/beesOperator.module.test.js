@@ -94,10 +94,19 @@ test('bees.ps1 explicitly waits for Unity GUI process completion', () => {
     assert.doesNotMatch(unityBuild, /Invoke-Checked \$Unity/);
 });
 
-test('bees.ps1 shows live elapsed status during Unity builds', () => {
+test('bees.ps1 shows live Unity-like build phase and elapsed status', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const unityBuild = source.match(/function Invoke-UnityBuild[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(unityBuild, /Write-Progress -Activity \$progressActivity -Status/);
+    assert.match(source, /function Get-UnityBuildProgressStatus/);
+    assert.match(source, /Processing scene:/);
+    assert.match(source, /Compiling shaders/);
+    assert.match(source, /Packing sprite atlases/);
+    assert.match(source, /Refreshing assets/);
+    assert.match(source, /Building player/);
+    assert.match(source, /Finalizing build/);
+    assert.match(unityBuild, /\$phase=Get-UnityBuildProgressStatus \$logPath/);
+    assert.match(unityBuild, /Write-Progress -Activity \$progressActivity/);
+    assert.match(unityBuild, /-CurrentOperation \$phase/);
     assert.match(unityBuild, /elapsed\.ToString\('hh\\:mm\\:ss'\)/);
     assert.match(unityBuild, /Write-Progress -Activity \$progressActivity -Completed/);
 });
