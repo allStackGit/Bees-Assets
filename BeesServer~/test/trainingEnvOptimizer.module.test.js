@@ -112,6 +112,23 @@ test('optimizer backs off a slower probe before another worker may probe', () =>
     assert.equal(stateA.probing, false);
 });
 
+test('optimizer resets safely when a worker advertises new env bounds', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+
+    state = update(optimizer, 'remote-a', 6, 0, 1010, { max: 6 });
+    assert.equal(state.desired_envs, 6);
+    assert.equal(state.baseline_envs, null);
+    assert.match(state.decision, /capacity changed/);
+});
+
 test('manual env counts and central learner are never auto-tuned', () => {
     const optimizer = new TrainingEnvOptimizer({ warmupMs: 0, measurementMs: 1 });
 
