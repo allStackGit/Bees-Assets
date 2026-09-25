@@ -385,6 +385,12 @@ class ManagedProcess:
         log_dir = state_file.parent / "logs" / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
+        environment["BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"] = str(
+            state_file.parent / "model-snapshot.request"
+        )
+        environment["BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"] = str(
+            state_file.parent / "model-snapshot.response.json"
+        )
         stop_request_file = state_file.parent / "managed-stop.request"
         try:
             stop_request_file.unlink()
