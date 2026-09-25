@@ -475,18 +475,18 @@ class ActorSession:
                 "accepted_trajectories_total": self._accepted_trajectories_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
-            self._last_throughput_write = now
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-            temporary.write_text(
-                json.dumps(payload, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            os.replace(temporary, path)
-        except OSError:
-            # Metrics are advisory. Never stop training because the status file is unavailable.
-            return
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+                temporary.write_text(
+                    json.dumps(payload, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                os.replace(temporary, path)
+                self._last_throughput_write = now
+            except OSError:
+                # Metrics are advisory. Never stop training because status publication failed.
+                return
 
     def _record_accepted_trajectories(self, trajectories: Sequence[Any]) -> None:
         step_count = _trajectory_step_count(trajectories)
