@@ -51,6 +51,14 @@ EPISODE_LOG_PATTERN = re.compile(
 )
 
 
+def _episode_numeric_field(line: str, key: str) -> Optional[float]:
+    match = re.search(
+        rf"\\b{re.escape(key)}=(-?[0-9]+(?:\\.[0-9]+)?)(?:deg|%)?",
+        line,
+    )
+    return float(match.group(1)) if match else None
+
+
 class EpisodeLogMetrics:
     def __init__(self, root: Path, window: int = 100) -> None:
         self.root = root
@@ -121,6 +129,30 @@ class EpisodeLogMetrics:
                 "bee_hits": int(values[9]),
                 "human_shots": int(values[12]),
                 "human_hits": int(values[13]),
+                "bee_aim_samples": int(
+                    _episode_numeric_field(line, "bee_aim_samples") or 0
+                ),
+                "bee_aim_error_deg": _episode_numeric_field(
+                    line, "bee_aim_error"
+                ),
+                "bee_aim_within_5_pct": _episode_numeric_field(
+                    line, "bee_aim_within_5deg"
+                ),
+                "bee_turret_aligned_pct": _episode_numeric_field(
+                    line, "bee_turret_aligned"
+                ),
+                "human_aim_samples": int(
+                    _episode_numeric_field(line, "human_aim_samples") or 0
+                ),
+                "human_aim_error_deg": _episode_numeric_field(
+                    line, "human_aim_error"
+                ),
+                "human_aim_within_5_pct": _episode_numeric_field(
+                    line, "human_aim_within_5deg"
+                ),
+                "human_turret_aligned_pct": _episode_numeric_field(
+                    line, "human_turret_aligned"
+                ),
             })
 
     def snapshot(self) -> dict[str, object]:
@@ -136,6 +168,27 @@ class EpisodeLogMetrics:
         bee_hits = sum(int(item["bee_hits"]) for item in episodes)
         human_shots = sum(int(item["human_shots"]) for item in episodes)
         human_hits = sum(int(item["human_hits"]) for item in episodes)
+
+        def weighted_metric(sample_key: str, value_key: str) -> Optional[float]:
+            weighted_total = 0.0
+            sample_total = 0
+            for item in episodes:
+                samples = int(item.get(sample_key, 0) or 0)
+                value = item.get(value_key)
+                if samples <= 0 or value is None:
+                    continue
+                weighted_total += samples * float(value)
+                sample_total += samples
+            return (
+                round(weighted_total / sample_total, 2)
+                if sample_total > 0
+                else None
+            )
+
+        bee_aim_samples = sum(int(item.get("bee_aim_samples", 0) or 0) for item in episodes)
+        human_aim_samples = sum(
+            int(item.get("human_aim_samples", 0) or 0) for item in episodes
+        )
         return {
             "window_episodes": count,
             "last_episode": max(int(item["episode"]) for item in episodes),
@@ -145,11 +198,37 @@ class EpisodeLogMetrics:
             "draw_pct": round(100.0 * draws / count, 2),
             "avg_duration_s": round(
                 sum(float(item["duration"]) for item in episodes) / count, 2),
+            # Retain the historical combat-effectiveness ratio for compatibility, but
+            # expose it as hits-per-shot as well because explosions/bombs can produce
+            # multiple damage events from one firing action.
             "bee_hit_pct": round(100.0 * bee_hits / bee_shots, 2) if bee_shots else 0.0,
             "human_hit_pct": round(
                 100.0 * human_hits / human_shots, 2) if human_shots else 0.0,
+            "bee_hits_per_shot": round(bee_hits / bee_shots, 3) if bee_shots else 0.0,
+            "human_hits_per_shot": round(
+                human_hits / human_shots, 3) if human_shots else 0.0,
             "bee_shots_per_episode": round(bee_shots / count, 2),
             "human_shots_per_episode": round(human_shots / count, 2),
+            "bee_aim_samples": bee_aim_samples,
+            "human_aim_samples": human_aim_samples,
+            "bee_aim_error_deg": weighted_metric(
+                "bee_aim_samples", "bee_aim_error_deg"
+            ),
+            "human_aim_error_deg": weighted_metric(
+                "human_aim_samples", "human_aim_error_deg"
+            ),
+            "bee_aim_within_5_pct": weighted_metric(
+                "bee_aim_samples", "bee_aim_within_5_pct"
+            ),
+            "human_aim_within_5_pct": weighted_metric(
+                "human_aim_samples", "human_aim_within_5_pct"
+            ),
+            "bee_turret_aligned_pct": weighted_metric(
+                "bee_aim_samples", "bee_turret_aligned_pct"
+            ),
+            "human_turret_aligned_pct": weighted_metric(
+                "human_aim_samples", "human_turret_aligned_pct"
+            ),
         }
 
 
