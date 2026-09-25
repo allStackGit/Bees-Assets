@@ -64,6 +64,28 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertEqual(second["run_id"], first["run_id"])
             self.assertEqual(second["compatibility_key"], first["compatibility_key"])
 
+    def test_force_new_creates_new_run_without_contract_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(
+                assets, state, datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+            )
+            lifecycle.commit_plan(state, first)
+            second = lifecycle.plan_run(
+                assets,
+                state,
+                datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc),
+                force_new=True,
+            )
+            self.assertTrue(second["incompatible"])
+            self.assertTrue(second["new_run"])
+            self.assertTrue(second["forced_new_run"])
+            self.assertNotEqual(second["run_id"], first["run_id"])
+            self.assertEqual(second["compatibility_key"], first["compatibility_key"])
+            self.assertEqual(second["contract"], first["contract"])
+
     def test_comment_only_rl_source_change_keeps_run_compatible(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
