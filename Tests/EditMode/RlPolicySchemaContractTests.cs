@@ -77,6 +77,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ContinualLearningConfigTracksFrozenPolicyAbi()
+        {
+            string config = Read("Training", "continual_learning_config.json");
+            string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
+
+            Assert.That(config, Does.Contain("\"policy_abi_version\": 19"));
+            Assert.That(config, Does.Contain("\"observation_schema_version\": 11"));
+            Assert.That(config, Does.Contain("\"telemetry_observation_size\": 7614"));
+            Assert.That(config, Does.Contain("bees-rl-v19"));
+            Assert.That(config, Does.Contain("obs=7614"));
+            Assert.That(config, Does.Contain("grid=21x21-cell6"));
+            Assert.That(schema, Does.Contain("internal const int Version = 19;"));
+            Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
+        }
+
+        [Test]
         public void CanonicalTrainerNetworkArchitectureIsFrozenAndFeedForward()
         {
             string trainer = Read("Training", "rl_1v1_config.yaml");
