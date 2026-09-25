@@ -419,7 +419,7 @@ test('schema 2 build catalogs migrate to both roles without breaking an existing
         }));
 
         const store = new TrainingControlStore({ statePath, artifactRoot });
-        assert.equal(store.state.schema_version, 4);
+        assert.equal(store.state.schema_version, 5);
         assert.equal(store.stateFor({
             trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
         }).build.role, 'dedicated');
@@ -491,6 +491,10 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
                 entrypoint: 'Bees.exe',
             });
         }
+        const oldSha = store.artifact(
+            'dedicated', 'WindowsPlayer', 'old').archive_sha256;
+        const newSha = store.artifact(
+            'dedicated', 'WindowsPlayer', 'new').archive_sha256;
 
         const key = 'a'.repeat(64);
         store.stageRelease({
@@ -507,8 +511,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: '',
-            applied_revision: 1,
+            applied_revision: store.state.revision,
         });
         store.heartbeat({
             trainer_id: 'central-learner',
@@ -516,8 +521,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: '',
-            applied_revision: 1,
+            applied_revision: store.state.revision,
         });
 
         let staged = store.stageRelease({
@@ -537,8 +543,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 2,
+            applied_revision: store.state.revision,
         });
         const centralPreparation = store.heartbeat({
             trainer_id: 'central-learner',
@@ -546,8 +553,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 2,
+            applied_revision: store.state.revision,
         });
         assert.equal(centralPreparation.pending_release.phase, 'rolling');
 
@@ -563,8 +571,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'new',
+            build_sha256: newSha,
             prepared_build_id: 'new',
-            applied_revision: 3,
+            applied_revision: store.state.pending_release.phase_revision,
         });
         assert.equal(afterRemote.desired_build_id, 'new');
         assert.equal(store.state.canonical_build_id, 'old');
@@ -580,8 +589,9 @@ test('compatible release prestages everywhere and rolls one dedicated trainer at
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'new',
+            build_sha256: newSha,
             prepared_build_id: 'new',
-            applied_revision: 4,
+            applied_revision: store.state.pending_release.phase_revision,
         });
         assert.equal(store.state.canonical_build_id, 'new');
         assert.equal(store.state.run_id, 'run-a');
