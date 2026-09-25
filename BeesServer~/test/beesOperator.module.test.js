@@ -276,8 +276,19 @@ test('Windows remote bootstrap ignores Microsoft Store Python aliases and soft-f
     const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
     const source = fs.readFileSync(windowsPath, 'utf8');
     const probe = source.match(/function Test-Python310[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(probe, /Microsoft\\\\WindowsApps\\\\python/);
+    assert.match(probe, /Microsoft\\WindowsApps/);
+    assert.match(probe, /StartsWith\(\$windowsApps,\[StringComparison\]::OrdinalIgnoreCase\)/);
     assert.match(probe, /\$ErrorActionPreference='SilentlyContinue'/);
     assert.match(probe, /catch \{\s*return \$false\s*\}/);
     assert.match(probe, /finally \{\s*\$ErrorActionPreference=\$previousErrorAction\s*\}/);
+});
+
+
+test('bees.ps1 parses the generated Windows bootstrap before packaging it', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(remoteBootstrap, /Language\.Parser\]::ParseFile/);
+    assert.match(remoteBootstrap, /\$generatedWindowsBootstrap/);
+    assert.match(remoteBootstrap, /Generated Windows remote bootstrap failed PowerShell parsing/);
+    assert.match(remoteBootstrap, /\$parseErrors\.Count -gt 0/);
 });
