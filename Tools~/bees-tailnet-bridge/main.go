@@ -191,6 +191,35 @@ func zipFile(z *zip.Writer, archiveName, path string, mode os.FileMode) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
+
+	// Snapshot the source to a private temporary file before writing to the HTTP response.
+	// On Windows, holding the mutable distribution file open while a slow WAN client reads
+	// the ZIP prevents the operator from atomically replacing that file during a build.
+	source, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	snapshot, err := os.CreateTemp("", "bees-bootstrap-snapshot-*")
+	if err != nil {
+		_ = source.Close()
+		return err
+	}
+	snapshotPath := snapshot.Name()
+	defer func() {
+		_ = snapshot.Close()
+		_ = os.Remove(snapshotPath)
+	}()
+	if _, err = io.Copy(snapshot, source); err != nil {
+		_ = source.Close()
+		return err
+	}
+	if err = source.Close(); err != nil {
+		return err
+	}
+	if _, err = snapshot.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
 	header := &zip.FileHeader{
 		Name:   archiveName,
 		Method: zip.Store,
@@ -201,12 +230,7 @@ func zipFile(z *zip.Writer, archiveName, path string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	source, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	_, err = io.Copy(writer, source)
+	_, err = io.Copy(writer, snapshot)
 	return err
 }
 
