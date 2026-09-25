@@ -568,8 +568,8 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
     args = _parser().parse_args(argv)
     if args.generation_steps <= 0:
         raise ValueError("--generation-steps must be greater than zero")
-    if args.num_envs <= 0:
-        raise ValueError("--num-envs must be greater than zero")
+    if args.num_envs < 0:
+        raise ValueError("--num-envs must be zero or greater")
     if args.retry_seconds <= 0:
         raise ValueError("--retry-seconds must be greater than zero")
     if not isinstance(args.run_id, str) or not args.run_id.strip():
