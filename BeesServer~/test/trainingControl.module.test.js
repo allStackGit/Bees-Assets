@@ -801,6 +801,83 @@ test('training control returns per-worker env targets from accepted-step optimiz
     });
 });
 
+test('training control pauses env optimization during a release cutover', () => {
+    withTempDir(root => {
+        let now = 0;
+        const firstArchive = path.join(root, 'linux-1.zip');
+        const secondArchive = path.join(root, 'linux-2.zip');
+        fs.writeFileSync(firstArchive, Buffer.from('linux-build-1'));
+        fs.writeFileSync(secondArchive, Buffer.from('linux-build-2'));
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            now: () => now,
+            envOptimizer: {
+                warmupMs: 0,
+                measurementMs: 1000,
+                cooldownMs: 0,
+            },
+        });
+        for (const [buildId, archivePath] of [
+            ['release-1', firstArchive],
+            ['release-2', secondArchive],
+        ]) {
+            store.publishArtifact({
+                role: 'dedicated',
+                platform: 'LinuxPlayer',
+                buildId,
+                archivePath,
+                entrypoint: 'Bees.x86_64',
+            });
+        }
+        store.setDesiredState({
+            canonical_build_id: 'release-1',
+            training_enabled: true,
+        });
+
+        const heartbeat = acceptedSteps => store.heartbeat({
+            trainer_id: 'remote-linux',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'running',
+            applied_revision: store.state.revision,
+            build_id: 'release-1',
+            build_sha256: store.artifact(
+                'dedicated', 'LinuxPlayer', 'release-1').archive_sha256,
+            worker_capacity: {
+                auto: true,
+                current_envs: 8,
+                min_envs: 1,
+                max_envs: 16,
+            },
+            metrics: {
+                throughput: {
+                    accepted_steps_total: acceptedSteps,
+                },
+            },
+        });
+
+        heartbeat(0);
+        now = 1000;
+        let desired = heartbeat(1000);
+        assert.equal(desired.worker_env_count, 9);
+        assert.equal(desired.env_optimizer.probing, true);
+
+        store.stageRelease({
+            buildId: 'release-2',
+            runId: 'run-2',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: false,
+        });
+
+        now = 1010;
+        desired = heartbeat(1010);
+        assert.equal(desired.worker_env_count, 8);
+        assert.equal(desired.env_optimizer.phase, 'paused');
+        assert.equal(desired.env_optimizer.enabled, false);
+    });
+});
+
 test('training control leaves explicit fixed worker env counts unchanged', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
