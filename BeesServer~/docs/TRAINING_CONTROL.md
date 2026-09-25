@@ -22,7 +22,7 @@ cd B:\Bees
 .\Assets\bees.ps1 status
 ```
 
-`server` starts or refreshes BeesServer in test mode on TCP `7146`. The Unity Editor connects to this endpoint at `seagrams.softether.net:7146`, and test mode does not require Steam authentication. No Unity build is required.
+`server` starts or refreshes BeesServer in test mode on TCP `7146`. The Unity Editor connects to this endpoint at `seagrams7.softether.net:7146`, and test mode does not require Steam authentication. No Unity build is required.
 
 `build` always creates Windows and Linux RL builds. Add `-FullGame` to also create the managed Windows gameplay build. Build folders remain outside both Git and Unity import, for example:
 
@@ -129,7 +129,7 @@ The learner gateway exposes only these private tailnet services:
 
 The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
 
-After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. The supervisor switches them only at that trainer's assigned build cutover.
+After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. Tailnet helper binaries are published from immutable source-hash version directories rather than by overwriting a live executable. When helper source changes, the learner gateway is restarted onto the new immutable version after the updated bootstrap payload is prepared. The supervisor switches remote runtime/helper releases only at that trainer's assigned build cutover.
 
 Machines that were already running a launcher from before this self-update mechanism existed need one final manual bootstrap with the newly generated launcher. After that transition, routine builds do not require recopying the launcher.
 
