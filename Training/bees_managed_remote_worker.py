@@ -144,7 +144,7 @@ def _parser() -> argparse.ArgumentParser:
         "--envs",
         type=int,
         default=None,
-        help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
+        help="Unity environment count (1-64). Default: min(4x CPU threads, RAM budget, 64).",
     )
     parser.add_argument(
         "--gameplay-port",
