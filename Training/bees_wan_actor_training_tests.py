@@ -104,6 +104,57 @@ class WanOptionTests(unittest.TestCase):
         value = {"a": [1, 2, 3], "nested": {"ok": True}}
         self.assertEqual(wan.decode_payload(wan.encode_payload(value)), value)
 
+    def test_broker_client_tracks_and_persists_wan_payload_traffic(self):
+        class FakeResponse:
+            status = 200
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"response-bytes"
+
+        with tempfile.TemporaryDirectory() as temp:
+            throughput_path = Path(temp) / "throughput.json"
+            request_payload = {"trajectories": [1, 2, 3]}
+            encoded_request = wan.encode_payload(request_payload)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    actor.THROUGHPUT_METRICS_ENV: str(throughput_path),
+                    actor.TRAINING_RUN_ID_ENV: "run-a",
+                },
+                clear=False,
+            ):
+                client = actor.BrokerClient("127.0.0.1", 56051, "a" * 32)
+                with mock.patch.object(actor.urllib.request, "urlopen", return_value=FakeResponse()):
+                    status, _headers, body = client._request(
+                        "POST",
+                        "/traffic-test",
+                        payload=request_payload,
+                    )
+                self.assertEqual(status, 200)
+                self.assertEqual(body, b"response-bytes")
+                snapshot = client.traffic_snapshot()
+                self.assertEqual(snapshot["network_sent_bytes_total"], len(encoded_request))
+                self.assertEqual(snapshot["network_received_bytes_total"], len(b"response-bytes"))
+                self.assertIn("network_mib_per_s", snapshot)
+
+                reloaded = actor.BrokerClient("127.0.0.1", 56051, "a" * 32)
+                persisted = reloaded.traffic_snapshot()
+                self.assertEqual(
+                    persisted["network_sent_bytes_total"],
+                    snapshot["network_sent_bytes_total"],
+                )
+                self.assertEqual(
+                    persisted["network_received_bytes_total"],
+                    snapshot["network_received_bytes_total"],
+                )
+
     def test_wan_service_replaces_local_num_envs_with_actor_total(self):
         self.assertEqual(
             wan_service._replace_num_envs(
@@ -181,6 +232,13 @@ class WanOptionTests(unittest.TestCase):
             session._last_throughput_write = 0.0
             session._upload_queue = queue.Queue()
             session.env_count = 7
+            session.client = SimpleNamespace(
+                traffic_snapshot=lambda: {
+                    "network_sent_bytes_total": 3 * 1024 * 1024,
+                    "network_received_bytes_total": 2 * 1024 * 1024,
+                    "network_mib_per_s": 1.25,
+                }
+            )
 
             session._record_accepted_trajectories(
                 [
@@ -196,6 +254,9 @@ class WanOptionTests(unittest.TestCase):
             self.assertEqual(payload["accepted_steps_total"], 5)
             self.assertEqual(payload["accepted_trajectories_total"], 2)
             self.assertEqual(payload["upload_queue_depth"], 0)
+            self.assertEqual(payload["network_sent_bytes_total"], 3 * 1024 * 1024)
+            self.assertEqual(payload["network_received_bytes_total"], 2 * 1024 * 1024)
+            self.assertEqual(payload["network_mib_per_s"], 1.25)
 
     def test_actor_player_log_tail_reports_missing_logs(self):
         with tempfile.TemporaryDirectory() as temp:
