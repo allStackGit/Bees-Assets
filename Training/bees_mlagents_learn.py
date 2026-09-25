@@ -576,6 +576,12 @@ def _handle_model_snapshot_request(trainer, request_path: Path, response_path: P
         request_id = str(request.get("request_id", "")).strip()
         if not request_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for ch in request_id):
             raise ValueError("snapshot request_id is invalid")
+        requested_run = str(request.get("run_id", "") or "").strip()
+        active_run = os.environ.get("BEES_TRAINING_RUN_ID", "").strip()
+        if requested_run and active_run and requested_run != active_run:
+            raise ValueError(
+                f"snapshot request belongs to run {requested_run}, active run is {active_run}"
+            )
 
         step = int(trainer.get_step)
         model_root = Path(str(trainer.model_saver.model_path)).expanduser().resolve()
