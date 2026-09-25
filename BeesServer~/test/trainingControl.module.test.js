@@ -219,7 +219,7 @@ test('reloading control state rejects a tampered canonical artifact', () => {
             archivePath: source,
             entrypoint: 'Bees.exe',
         });
-        store.setDesiredState({ canonical_build_id: 'release-1' });
+        activateTestRelease(store, 'release-1');
 
         const owned = store.artifact('dedicated', 'WindowsPlayer', 'release-1');
         fs.writeFileSync(owned.archive_path, Buffer.from('tampered-build'));
