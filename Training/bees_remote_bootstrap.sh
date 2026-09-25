@@ -259,7 +259,7 @@ echo "[Bees remote] Stage 5/5: starting managed training worker..."
 if [[ -n "$ENVS" ]]; then
     echo "[Bees remote] starting worker with $ENVS environments."
 else
-    echo "[Bees remote] starting worker; environment count defaults automatically from available CPU and RAM (maximum 64)."
+    echo "[Bees remote] starting worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64)."
 fi
 echo "[Bees remote] private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker."
 set +e
