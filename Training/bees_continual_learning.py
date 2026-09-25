@@ -614,6 +614,18 @@ class ContinualLearningStore:
         with self._connect() as db:
             return self._state(db, STATE_CHAMPION)
 
+    def current_compatible_champion_id(self) -> Optional[str]:
+        """Return the current champion only when it belongs to this store compatibility generation."""
+        self._require_initialized()
+        with self._connect() as db:
+            model_id = self._state(db, STATE_CHAMPION)
+            if model_id is None:
+                return None
+            row = self._model_row(db, model_id)
+            expected = self.compatibility.to_dict()
+            actual = {key: row[key] for key in expected}
+            return model_id if actual == expected else None
+
     def current_champion(self) -> Optional[Dict[str, Any]]:
         model_id = self.current_champion_id()
         return None if model_id is None else self.get_model(model_id)
