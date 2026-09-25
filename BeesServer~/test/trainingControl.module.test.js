@@ -618,6 +618,8 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
                 entrypoint: 'Bees.exe',
             });
         }
+        const oldSha = store.artifact(
+            'dedicated', 'WindowsPlayer', 'old').archive_sha256;
 
         store.stageRelease({
             buildId: 'old',
@@ -633,8 +635,9 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
                 platform: 'WindowsPlayer',
                 process_state: 'running',
                 build_id: 'old',
+                build_sha256: oldSha,
                 prepared_build_id: '',
-                applied_revision: 1,
+                applied_revision: store.state.revision,
             });
         }
 
@@ -650,8 +653,9 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 2,
+            applied_revision: store.state.revision,
         });
         assert.equal(store.state.pending_release.phase, 'preparing');
 
@@ -661,8 +665,9 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
             platform: 'WindowsPlayer',
             process_state: 'running',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 2,
+            applied_revision: store.state.revision,
         });
         assert.equal(store.state.pending_release.phase, 'stopping');
         assert.equal(store.state.run_id, 'run-old');
@@ -676,8 +681,9 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
             platform: 'WindowsPlayer',
             process_state: 'stopped',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 3,
+            applied_revision: store.state.pending_release.phase_revision,
         });
         assert.equal(store.state.run_id, 'run-old');
         store.heartbeat({
@@ -686,8 +692,9 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
             platform: 'WindowsPlayer',
             process_state: 'stopped',
             build_id: 'old',
+            build_sha256: oldSha,
             prepared_build_id: 'new',
-            applied_revision: 3,
+            applied_revision: store.state.pending_release.phase_revision,
         });
 
         assert.equal(store.state.canonical_build_id, 'new');
