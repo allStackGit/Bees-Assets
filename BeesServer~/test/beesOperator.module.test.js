@@ -298,3 +298,35 @@ test('bees.ps1 parses the generated Windows bootstrap before packaging it', () =
     assert.match(remoteBootstrap, /StartColumnNumber/);
     assert.match(remoteBootstrap, /\$parseErrors\.Count -gt 0/);
 });
+
+
+test('Windows remote bootstrap template ends exactly at the worker exit', () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const source = fs.readFileSync(windowsPath, 'utf8').trimEnd();
+    assert.ok(
+        source.endsWith('& $venvPython -u @workerArgs\nexit $LASTEXITCODE'),
+        'Windows bootstrap must not contain stale or generated text after its final worker exit.'
+    );
+    assert.equal(
+        (source.match(/exit \$LASTEXITCODE/g) || []).length,
+        1,
+        'Windows bootstrap must contain exactly one final worker exit marker.'
+    );
+});
+
+test('Windows remote bootstrap template remains valid PowerShell syntax', { skip: process.platform !== 'win32' }, () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const command =
+        '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile(' +
+        "'" + windowsPath.replace(/'/g, "''") + "'" +
+        ', [ref]$null, [ref]$errors) | Out-Null; ' +
+        'if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }';
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+        encoding: 'utf8',
+    });
+    assert.equal(
+        result.status,
+        0,
+        'Windows bootstrap template failed PowerShell parsing:\n' + (result.stderr || result.stdout || ''),
+    );
+});
