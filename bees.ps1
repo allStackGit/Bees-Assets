@@ -1276,6 +1276,7 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
     $trainingSourceHash=Get-TrainingRuntimeSourceHash
     $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
+    $existing=$null
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing){
@@ -1291,7 +1292,8 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
                 Remove-Item -LiteralPath $CentralAgentStatePath -Force -ErrorAction SilentlyContinue
             }
         }
-    } elseif(Test-Path -LiteralPath $CentralAgentPidPath) {
+    }
+    if(Test-Path -LiteralPath $CentralAgentPidPath) {
         $legacyPid=0
         [void][int]::TryParse((Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),[ref]$legacyPid)
         if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
