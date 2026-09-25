@@ -57,6 +57,9 @@ class _FakeStore:
     def current_champion_id(self):
         return self.champion
 
+    def current_compatible_champion_id(self):
+        return self.champion
+
     def historical_sampling_weights(self, current_model_id):
         self.weight_requests.append(current_model_id)
         return list(self.weighted)
@@ -212,7 +215,7 @@ class HistoricalSchedulerTests(unittest.TestCase):
         self.assertIsNot(second_b, created[1])
         self.assertEqual(len(created), 4)
 
-    def test_no_champion_or_history_falls_back_without_override(self):
+    def test_no_compatible_champion_or_history_falls_back_without_override(self):
         for store in (
             _FakeStore(self.artifact, champion=None),
             _FakeStore(self.artifact, weighted=[]),
