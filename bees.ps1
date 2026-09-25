@@ -1962,13 +1962,17 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 HWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_win_pct}else{'-'}
                 Draw=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.draw_pct}else{'-'}
                 Dur=if($m -and $m.window_episodes){'{0:N1}s'-f[double]$m.avg_duration_s}else{'-'}
-                BeeHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_hit_pct}else{'-'}
-                HumanHit=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_hit_pct}else{'-'}
+                'BHit/Sh'=if($m -and $m.window_episodes -and $null -ne $m.bee_hits_per_shot){'{0:N2}x'-f[double]$m.bee_hits_per_shot}else{'-'}
+                'HHit/Sh'=if($m -and $m.window_episodes -and $null -ne $m.human_hits_per_shot){'{0:N2}x'-f[double]$m.human_hits_per_shot}else{'-'}
+                BAim=if($m -and $m.bee_aim_samples -and $null -ne $m.bee_aim_error_deg){'{0:N1}deg'-f[double]$m.bee_aim_error_deg}else{'-'}
+                HAim=if($m -and $m.human_aim_samples -and $null -ne $m.human_aim_error_deg){'{0:N1}deg'-f[double]$m.human_aim_error_deg}else{'-'}
+                'B<5'=if($m -and $m.bee_aim_samples -and $null -ne $m.bee_aim_within_5_pct){'{0:N1}%'-f[double]$m.bee_aim_within_5_pct}else{'-'}
+                'H<5'=if($m -and $m.human_aim_samples -and $null -ne $m.human_aim_within_5_pct){'{0:N1}%'-f[double]$m.human_aim_within_5_pct}else{'-'}
                 Error=$_.last_error
             }
         })
         if($rows.Count){
-            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,SentGiB,RecvGiB,'MiB/s',Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize|Out-String -Width 300).TrimEnd()
+            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,SentGiB,RecvGiB,'MiB/s',Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,'BHit/Sh','HHit/Sh',BAim,HAim,'B<5','H<5',Error -AutoSize|Out-String -Width 340).TrimEnd()
             if($table){
                 $lines += @($table -split "\r?\n")
             }
