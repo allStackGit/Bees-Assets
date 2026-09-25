@@ -64,6 +64,23 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a JSON object"):
             managed._decode_release_metadata(b'["build-1"]')
 
+    def test_python_executable_path_preserves_venv_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            base_python = root / "python-base"
+            base_python.write_bytes(b"")
+            venv_python = root / "venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True)
+            try:
+                venv_python.symlink_to(base_python)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+
+            preserved = managed._python_executable_path(venv_python)
+
+            self.assertEqual(preserved, venv_python.absolute())
+            self.assertNotEqual(preserved, venv_python.resolve())
+
     def test_remote_dependency_health_check_requires_successful_imports(self):
         completed = mock.Mock(returncode=0)
         with mock.patch.object(managed.subprocess, "run", return_value=completed) as run:
