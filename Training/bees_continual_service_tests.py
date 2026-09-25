@@ -26,6 +26,41 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertEqual(service.generation_target_steps(options, 0), 250_000)
             self.assertEqual(service.generation_target_steps(options, 3), 1_000_000)
 
+    def test_failed_first_start_does_not_force_resume_without_run_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            self.assertFalse(
+                service.should_resume_training(
+                    options,
+                    generation_index=0,
+                    previously_started=True,
+                )
+            )
+
+    def test_first_generation_resumes_after_mlagents_created_run_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            run_dir = options.root / "trainer-results" / options.run_id
+            run_dir.mkdir(parents=True)
+            self.assertTrue(
+                service.should_resume_training(
+                    options,
+                    generation_index=0,
+                    previously_started=True,
+                )
+            )
+
+    def test_later_generations_preserve_persistent_resume_lineage(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            self.assertTrue(
+                service.should_resume_training(
+                    options,
+                    generation_index=1,
+                    previously_started=False,
+                )
+            )
+
     def test_training_command_reuses_run_id_and_changes_only_generation_target(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
