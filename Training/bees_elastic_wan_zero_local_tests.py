@@ -214,7 +214,7 @@ class ZeroLocalBrokerTests(unittest.TestCase):
             "control_epoch": 1,
             "behavior_specs": specs,
         }
-        payload["build_id"] = "stale-build"
+        payload["compatibility_key"] = "f" * 64
         with self.assertRaisesRegex(ValueError, "release identity"):
             broker.register_actor(payload)
         self.assertEqual(broker.active_actor_snapshot(), {})
