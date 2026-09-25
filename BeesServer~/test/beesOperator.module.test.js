@@ -26,6 +26,18 @@ test('bees.ps1 remains valid PowerShell syntax', { skip: process.platform !== 'w
     );
 });
 
+
+test('atomic file install retries transient Windows sharing locks without giving up atomic replace', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const atomic = source.match(/function Install-AtomicFile[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(atomic, /\$maxAttempts=50/);
+    assert.match(atomic, /catch \[IO\.IOException\]/);
+    assert.match(atomic, /Start-Sleep -Milliseconds 100/);
+    assert.match(atomic, /if\(\$attempt -ge \$maxAttempts\)\{ throw \}/);
+    assert.match(atomic, /\[IO\.File\]::Replace\(/);
+    assert.doesNotMatch(atomic, /Copy-Item[^\n]*-Destination \$destinationPath/);
+});
+
 test('bees.ps1 preserves environment_args as a JSON array', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const matches = source.match(/environment_args=@\(\$envArgs\)/g) || [];
