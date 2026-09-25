@@ -324,7 +324,9 @@ def _diagnose_status(
             issues.append(f"dedicated trainer state={state or 'unknown'}")
 
         freshness = log_freshness.get(trainer_id)
-        if freshness and freshness.get("age_seconds") is not None:
+        if raw.get("role") == "dedicated" and freshness is None:
+            issues.append("no uploaded logs for bundled run")
+        elif freshness and freshness.get("age_seconds") is not None:
             age = float(freshness["age_seconds"])
             if age > TRAINER_LOG_STALE_SECONDS:
                 issues.append(f"uploaded logs are {age:.1f}s old")
@@ -667,6 +669,18 @@ def create_bundle(
                         source.relative_to(staging).as_posix(),
                     )
         os.replace(temp_zip, final_zip)
+
+        # Live diagnostic exports are ephemeral. The ZIP now owns the captured copy;
+        # remove the source export so repeated bundle creation cannot consume disk space.
+        if (
+            model_source == "live-snapshot"
+            and model is not None
+            and model.name.startswith("diagnostic-")
+        ):
+            try:
+                model.unlink()
+            except OSError:
+                pass
 
     return final_zip
 
