@@ -162,12 +162,6 @@ echo "[Bees remote] Stage 2/5: checking private-network identity..."
 echo "[Bees remote] on first use, open the Tailscale login URL printed below; no VPN installation is required."
 "$TAILNET_BRIDGE" auth --state "$TAILNET_STATE" --hostname "$WORKER_HOSTNAME"
 
-echo "[Bees remote] verifying learner reachability over the private tailnet..."
-"$TAILNET_BRIDGE" probe --state "$TAILNET_STATE" --hostname "$WORKER_HOSTNAME" --target "$TAILNET_LEARNER:$TAILNET_BOOTSTRAP_PORT" --timeout 10s || {
-    echo "error: learner tailnet probe failed. Verify this worker and bees-learner are authorized in the same Tailscale tailnet, then rerun bees.ps1 start on the learner if needed." >&2
-    exit 1
-}
-
 RUNTIME_ZIP="$DOWNLOADS_ROOT/bees-remote-runtime.zip"
 WORKER_TOKEN="$SECRETS_ROOT/training-worker.token"
 WAN_TOKEN="$SECRETS_ROOT/wan.token"
