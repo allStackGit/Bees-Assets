@@ -53,6 +53,16 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertEqual(len(first), 32)
 
+    def test_shutdown_request_file_stops_supervisor_loop(self):
+        with tempfile.TemporaryDirectory() as temp:
+            request = Path(temp) / managed.REMOTE_STOP_REQUEST_FILE
+            request.write_text("stop", encoding="ascii")
+            stop = [False]
+
+            managed._watch_shutdown_request(request, stop, poll_seconds=0.0)
+
+            self.assertTrue(stop[0])
+
     def test_release_metadata_accepts_utf8_bom(self):
         payload = b"\xef\xbb\xbf" + b'{"build_id":"build-1"}'
         self.assertEqual(
