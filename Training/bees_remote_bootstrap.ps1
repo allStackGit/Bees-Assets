@@ -80,7 +80,22 @@ function Get-RecordedSupervisorPid {
 function Get-LiveSupervisorProcess {
     $pidValue=Get-RecordedSupervisorPid
     if($pidValue -le 0){return $null}
-    Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+    $process=Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+    if($null -eq $process){return $null}
+    try {
+        $record=Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
+        $commandLine=[string]$record.CommandLine
+        if(
+            [string]::IsNullOrWhiteSpace($commandLine) -or
+            $commandLine.IndexOf('bees_managed_remote_worker.py',[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+            $commandLine.IndexOf($InstallRoot,[StringComparison]::OrdinalIgnoreCase) -lt 0
+        ){
+            return $null
+        }
+    } catch {
+        return $null
+    }
+    $process
 }
 
 if($Command -eq 'stop'){
