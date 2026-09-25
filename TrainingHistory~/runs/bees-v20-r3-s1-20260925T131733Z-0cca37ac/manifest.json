@@ -1,0 +1,141 @@
+{
+  "durable_training_data_path": "B:\\Bees\\Training",
+  "files": [
+    {
+      "destination": "trainer-logs\\remote-warwick-a05b8f5b\\Player-0.log",
+      "parts": [
+        {
+          "bytes": 675893,
+          "file": "Player-0.log.part0001",
+          "sha256": "ea0fba26ec6093252779e2eeaa6cc3b93054886d17cad7a783466b5fdd4b4018"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\remote-warwick-a05b8f5b\\Player-0.log",
+      "source_bytes": 675893,
+      "source_sha256": "ea0fba26ec6093252779e2eeaa6cc3b93054886d17cad7a783466b5fdd4b4018"
+    },
+    {
+      "destination": "trainer-logs\\remote-warwick-a05b8f5b\\Player-1.log",
+      "parts": [
+        {
+          "bytes": 598658,
+          "file": "Player-1.log.part0001",
+          "sha256": "9c57ae7b705674090194c0f422d7ee51328841cbc30914aace88370bf307417b"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\remote-warwick-a05b8f5b\\Player-1.log",
+      "source_bytes": 598658,
+      "source_sha256": "9c57ae7b705674090194c0f422d7ee51328841cbc30914aace88370bf307417b"
+    },
+    {
+      "destination": "trainer-logs\\remote-warwick-a05b8f5b\\Player-2.log",
+      "parts": [
+        {
+          "bytes": 564206,
+          "file": "Player-2.log.part0001",
+          "sha256": "dc68cc1bd5da0624fde4c4c89aa48fd634c12916b20e99f0829937247e3ce370"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\remote-warwick-a05b8f5b\\Player-2.log",
+      "source_bytes": 564206,
+      "source_sha256": "dc68cc1bd5da0624fde4c4c89aa48fd634c12916b20e99f0829937247e3ce370"
+    },
+    {
+      "destination": "trainer-logs\\remote-warwick-a05b8f5b\\Player-3.log",
+      "parts": [
+        {
+          "bytes": 554588,
+          "file": "Player-3.log.part0001",
+          "sha256": "74977602048f0bcfdd1b1c4291967ac7b3f2d72c1264ff375988612915692c15"
+        }
+      ],
+      "source": "B:\\Bees\\Training\\TrainerLogs\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\remote-warwick-a05b8f5b\\Player-3.log",
+      "source_bytes": 554588,
+      "source_sha256": "74977602048f0bcfdd1b1c4291967ac7b3f2d72c1264ff375988612915692c15"
+    },
+    {
+      "destination": "central-training-logs\\central-agent.err.log",
+      "parts": [
+        {
+          "bytes": 5596,
+          "file": "central-agent.err.log.part0001",
+          "sha256": "ddb1c4b0aa407fd2ef255677e6c65f3eafe35faf7f7293acbbad8da04759ff78"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\central-agent.err.log",
+      "source_bytes": 5596,
+      "source_sha256": "ddb1c4b0aa407fd2ef255677e6c65f3eafe35faf7f7293acbbad8da04759ff78"
+    },
+    {
+      "destination": "central-training-logs\\central-agent.out.log",
+      "parts": [
+        {
+          "bytes": 70074,
+          "file": "central-agent.out.log.part0001",
+          "sha256": "c750f60e1dcffeaaec36006e3e0612639c2af31c1c6944298a5e5044fa90f0ec"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\central-agent.out.log",
+      "source_bytes": 70074,
+      "source_sha256": "c750f60e1dcffeaaec36006e3e0612639c2af31c1c6944298a5e5044fa90f0ec"
+    },
+    {
+      "destination": "central-training-logs\\tailnet-gateway.err.log",
+      "parts": [
+        {
+          "bytes": 12883,
+          "file": "tailnet-gateway.err.log.part0001",
+          "sha256": "0e235be92e840a189b17501a8a0019df49a1842cc7a69fc2e6db7f26be658212"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\tailnet-gateway.err.log",
+      "source_bytes": 12883,
+      "source_sha256": "0e235be92e840a189b17501a8a0019df49a1842cc7a69fc2e6db7f26be658212"
+    },
+    {
+      "destination": "central-training-logs\\tailnet-gateway.out.log",
+      "parts": [
+        {
+          "bytes": 253,
+          "file": "tailnet-gateway.out.log.part0001",
+          "sha256": "0a64ea3c5983df1662927fd684e357607b91d42d236cf4924e8dac2f3f49b171"
+        }
+      ],
+      "source": "B:\\Bees\\Logs\\Training\\tailnet-gateway.out.log",
+      "source_bytes": 253,
+      "source_sha256": "0a64ea3c5983df1662927fd684e357607b91d42d236cf4924e8dac2f3f49b171"
+    },
+    {
+      "bytes": 189,
+      "destination": "service-state\\state.json",
+      "file": "state.json",
+      "sha256": "d0c2f67aee6d0b18d3e35e085fd5585dd2c62278c10fda2eb94abd927693bb89",
+      "source": "B:\\Bees\\Training\\metadata\\continuous-service\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\state.json"
+    },
+    {
+      "bytes": 1053,
+      "destination": "service-state\\trainer-configs\\generation-00000000.yaml",
+      "file": "generation-00000000.yaml",
+      "sha256": "1a69c64f3dd4746bb3222f0ebca67cf9ba2040282fd22f56a912ff9c4d985d07",
+      "source": "B:\\Bees\\Training\\metadata\\continuous-service\\bees-v20-r3-s1-20260925T131733Z-0cca37ac\\trainer-configs\\generation-00000000.yaml"
+    },
+    {
+      "bytes": 2178,
+      "destination": "metadata\\run-lifecycle.json",
+      "file": "run-lifecycle.json",
+      "sha256": "3a501c30ba85048246664f5bd72ea48f26f6ce8d207223e2efa7c010c392fc5f",
+      "source": "B:\\Bees\\Training\\RunLifecycle\\current.json"
+    },
+    {
+      "bytes": 3487,
+      "destination": "metadata\\latest-training-release.json",
+      "file": "latest-training-release.json",
+      "sha256": "0725818d9b3f954e45b979138d2b57d900e3bdbf34d2f47a16ef3f644876dd32",
+      "source": "B:\\Bees\\Builds\\latest-training-release.json"
+    }
+  ],
+  "reason": "forced-new-precutover",
+  "run_id": "bees-v20-r3-s1-20260925T131733Z-0cca37ac",
+  "schema_version": 1,
+  "snapshot_utc": "2026-09-25T14:53:59.037295+00:00"
+}
