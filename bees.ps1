@@ -1379,18 +1379,59 @@ function Invoke-Stop {
 }
 
 function Get-LocalLearnerStats {
-    $elo=$null; $step=$null; $reward=$null
+    $elo=$null; $step=$null; $reward=$null; $averageStepsPerSecond=$null; $liveStepsPerSecond=$null
+    $files=@()
     foreach($root in @((Join-Path $LogsRoot 'Training'),(Join-Path $TrainingRoot 'trainer-results'))){
-        if(-not(Test-Path -LiteralPath $root)){continue}
-        foreach($file in @(Get-ChildItem -LiteralPath $root -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)){
-            foreach($line in @(Get-Content -LiteralPath $file.FullName -Tail 1000 -ErrorAction SilentlyContinue)){
-                if($line -match '(?i)\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)'){$elo=[double]$Matches[1]}
-                if($line -match '(?i)\bStep\s*[:=]\s*(\d+)'){$step=[long]$Matches[1]}
-                if($line -match '(?i)Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)'){$reward=[double]$Matches[1]}
-            }
+        if(Test-Path -LiteralPath $root){
+            $files += @(Get-ChildItem -LiteralPath $root -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)
         }
     }
-    [pscustomobject]@{ELO=$elo;Step=$step;MeanReward=$reward}
+    foreach($file in @($files | Sort-Object LastWriteTimeUtc,FullName)){
+        $firstStep=$null; $firstElapsed=$null; $previousStep=$null; $previousElapsed=$null
+        $fileAverageStepsPerSecond=$null; $fileLiveStepsPerSecond=$null
+        foreach($line in @(Get-Content -LiteralPath $file.FullName -Tail 1000 -ErrorAction SilentlyContinue)){
+            if($line -match '(?i)\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)'){$elo=[double]$Matches[1]}
+            $lineStep=$null
+            $lineElapsed=$null
+            if($line -match '(?i)\bStep\s*[:=]\s*(\d+)'){
+                $lineStep=[long]$Matches[1]
+                $step=$lineStep
+            }
+            if($line -match '(?i)Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)'){$reward=[double]$Matches[1]}
+            if($line -match '(?i)Time Elapsed\s*[:=]\s*(\d+(?:\.\d+)?)\s*s'){
+                $lineElapsed=[double]$Matches[1]
+            }
+            if($null -ne $lineStep -and $null -ne $lineElapsed){
+                if($null -eq $firstStep -or $null -eq $previousStep -or
+                   $lineStep -lt $previousStep -or $lineElapsed -le $previousElapsed){
+                    $firstStep=$lineStep
+                    $firstElapsed=$lineElapsed
+                    $fileAverageStepsPerSecond=$null
+                    $fileLiveStepsPerSecond=$null
+                }else{
+                    $elapsedDelta=$lineElapsed-$previousElapsed
+                    if($elapsedDelta -gt 0){
+                        $fileLiveStepsPerSecond=($lineStep-$previousStep)/$elapsedDelta
+                    }
+                    $averageElapsed=$lineElapsed-$firstElapsed
+                    if($averageElapsed -gt 0){
+                        $fileAverageStepsPerSecond=($lineStep-$firstStep)/$averageElapsed
+                    }
+                }
+                $previousStep=$lineStep
+                $previousElapsed=$lineElapsed
+            }
+        }
+        if($null -ne $fileAverageStepsPerSecond){$averageStepsPerSecond=$fileAverageStepsPerSecond}
+        if($null -ne $fileLiveStepsPerSecond){$liveStepsPerSecond=$fileLiveStepsPerSecond}
+    }
+    [pscustomobject]@{
+        ELO=$elo
+        Step=$step
+        MeanReward=$reward
+        AverageStepsPerSecond=$averageStepsPerSecond
+        LiveStepsPerSecond=$liveStepsPerSecond
+    }
 }
 
 function Get-StatusFrameLines($Config,[string]$AdminToken){
@@ -1451,7 +1492,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
 
         $l=Get-LocalLearnerStats
         $lines += ''
-        $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}))
+        $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  AvgSPS={3}  LiveSPS={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
     } catch {
         $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
     }
