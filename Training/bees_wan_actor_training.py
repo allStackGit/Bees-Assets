@@ -544,7 +544,7 @@ class WanActorBroker:
         self._server_thread.start()
         print(
             f"[Bees WAN] actor broker listening only on 127.0.0.1:{self.options.broker_port}; "
-            "remote machines must use authenticated SSH forwarding."
+            "remote machines must use the managed authenticated private forward."
         )
 
     def close(self) -> None:
