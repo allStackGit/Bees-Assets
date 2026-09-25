@@ -272,15 +272,19 @@ test('remote bootstrap templates no longer launch a separate probe process', () 
 });
 
 
-test('Windows remote bootstrap ignores Microsoft Store Python aliases and soft-fails version probes', () => {
+test('Windows remote bootstrap soft-fails unusable Python probes', () => {
     const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
     const source = fs.readFileSync(windowsPath, 'utf8');
-    const probe = source.match(/function Test-Python310[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(probe, /Microsoft\\WindowsApps/);
-    assert.match(probe, /StartsWith\(\$windowsApps,\[StringComparison\]::OrdinalIgnoreCase\)/);
+    const start = source.indexOf('function Test-Python310');
+    const end = source.indexOf('\nfunction Resolve-PythonLauncher', start);
+    const probe = start >= 0 && end > start ? source.slice(start, end) : '';
+    assert.match(probe, /param\(/);
     assert.match(probe, /\$ErrorActionPreference='SilentlyContinue'/);
+    assert.match(probe, /raise SystemExit\(0 if sys\.version_info\[:2\] == \(3,10\) else 1\)/);
     assert.match(probe, /catch \{\s*return \$false\s*\}/);
     assert.match(probe, /finally \{\s*\$ErrorActionPreference=\$previousErrorAction\s*\}/);
+    assert.doesNotMatch(probe, /StringComparison/);
+    assert.doesNotMatch(probe, /WindowsApps/);
 });
 
 
@@ -290,5 +294,7 @@ test('bees.ps1 parses the generated Windows bootstrap before packaging it', () =
     assert.match(remoteBootstrap, /Language\.Parser\]::ParseFile/);
     assert.match(remoteBootstrap, /\$generatedWindowsBootstrap/);
     assert.match(remoteBootstrap, /Generated Windows remote bootstrap failed PowerShell parsing/);
+    assert.match(remoteBootstrap, /StartLineNumber/);
+    assert.match(remoteBootstrap, /StartColumnNumber/);
     assert.match(remoteBootstrap, /\$parseErrors\.Count -gt 0/);
 });
