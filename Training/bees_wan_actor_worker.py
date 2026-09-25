@@ -1,7 +1,7 @@
 """Run one persistent Bees WAN rollout actor.
 
 A WAN actor owns several local Unity environments and performs policy inference locally. It connects
-to Exeter's loopback-only ``bees_wan_actor_training`` broker through one SSH forward, receives exact
+to Exeter's loopback-only ``bees_wan_actor_training`` broker through the managed private forward, receives exact
 policy snapshots, assembles native ML-Agents trajectories locally, and uploads complete batches.
 No optimizer, PPO update, checkpoint, candidate registration, promotion, or release work occurs here.
 
@@ -41,6 +41,34 @@ DEFAULT_RECONNECT_SECONDS = 5.0
 DEFAULT_LOCAL_UPLOAD_QUEUE = 8
 DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
+MAX_UNITY_SEED = (1 << 31) - 1
+
+
+def _resolve_actor_seed(
+    base_seed: int,
+    *,
+    session_id: str,
+    worker_offset: int,
+    env_count: int,
+) -> int:
+    """Resolve ML-Agents' -1 seed sentinel and keep all Unity worker seeds int32-safe."""
+    if env_count <= 0:
+        raise ValueError("WAN actor environment count must be positive")
+    if worker_offset < 0:
+        raise ValueError("WAN actor worker offset must not be negative")
+    if base_seed == -1:
+        # ML-Agents normally replaces -1 with a random 0..9999 run seed in run_cli().
+        # Remote actors receive the pre-resolution RunOptions instead, so derive a stable
+        # per-session equivalent that survives actor reconnects.
+        digest = hashlib.sha256(session_id.encode("utf-8")).digest()
+        base_seed = int.from_bytes(digest[:4], "big") % 10_000
+    elif base_seed < 0:
+        raise ValueError(f"WAN actor received invalid ML-Agents seed {base_seed}")
+
+    # create_environment_factory() adds each local worker_id to this value and serializes
+    # the result through an int32 protobuf field. Preserve headroom for every local worker.
+    max_actor_seed = MAX_UNITY_SEED - (env_count - 1)
+    return (int(base_seed) + int(worker_offset)) % (max_actor_seed + 1)
 
 
 class BrokerUnavailable(RuntimeError):
@@ -429,7 +457,12 @@ class ActorSession:
         options.env_settings.env_path = str(self.env_path)
         options.env_settings.base_port = self.local_base_port
         options.env_settings.num_envs = self.env_count
-        options.env_settings.seed = int(options.env_settings.seed) + self.worker_offset
+        options.env_settings.seed = _resolve_actor_seed(
+            int(options.env_settings.seed),
+            session_id=self.session_id,
+            worker_offset=self.worker_offset,
+            env_count=self.env_count,
+        )
         options.engine_settings.no_graphics = not self.graphics
         options.torch_settings.device = self.torch_device
         return options
@@ -503,7 +536,7 @@ class ActorSession:
                 behavior_id,
                 spec,
                 options,
-                seed=int(options.env_settings.seed) + parsed.team_id,
+                seed=(int(options.env_settings.seed) + parsed.team_id) & MAX_UNITY_SEED,
             )
             horizon = rollout_horizon(trainer_settings, self.total_envs)
             manager = AgentManager(
