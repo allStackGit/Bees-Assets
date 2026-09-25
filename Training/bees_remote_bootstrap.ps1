@@ -1,4 +1,6 @@
 param(
+    [ValidateSet('start','stop')]
+    [string]$Command='start',
     [int]$Envs=0,
     [string]$InstallRoot='',
     [string]$TorchDevice=''
@@ -51,7 +53,6 @@ function Resolve-Exe([string]$Name){
     $cmd.Source
 }
 
-Write-Host '[Bees remote] Stage 1/5: preparing local worker files...'
 $InstallRoot=[IO.Path]::GetFullPath($InstallRoot)
 $RuntimeRoot=Join-Path $InstallRoot 'Runtime'
 $SecretsRoot=Join-Path $InstallRoot 'Secrets'
@@ -59,9 +60,60 @@ $DownloadsRoot=Join-Path $InstallRoot 'Downloads'
 $VenvRoot=Join-Path $InstallRoot '.venv'
 $TailnetRoot=Join-Path $InstallRoot 'Tailnet'
 $TailnetState=Join-Path $TailnetRoot 'State'
-foreach($path in @($InstallRoot,$RuntimeRoot,$SecretsRoot,$DownloadsRoot,$TailnetRoot,$TailnetState)){
+$LogsRoot=Join-Path $InstallRoot 'Logs'
+$SupervisorPidFile=Join-Path $InstallRoot 'remote-worker.pid'
+$ShutdownRequestFile=Join-Path $InstallRoot 'remote-worker.stop'
+$SupervisorOutLog=Join-Path $LogsRoot 'remote-supervisor.out.log'
+$SupervisorErrLog=Join-Path $LogsRoot 'remote-supervisor.err.log'
+foreach($path in @($InstallRoot,$RuntimeRoot,$SecretsRoot,$DownloadsRoot,$TailnetRoot,$TailnetState,$LogsRoot)){
     $null=New-Item -ItemType Directory -Force -Path $path
 }
+
+function Get-RecordedSupervisorPid {
+    if(-not(Test-Path -LiteralPath $SupervisorPidFile)){return 0}
+    $value=(Get-Content -LiteralPath $SupervisorPidFile -Raw -ErrorAction SilentlyContinue).Trim()
+    $pidValue=0
+    if(-not [int]::TryParse($value,[ref]$pidValue)){return 0}
+    $pidValue
+}
+
+function Get-LiveSupervisorProcess {
+    $pidValue=Get-RecordedSupervisorPid
+    if($pidValue -le 0){return $null}
+    Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+}
+
+if($Command -eq 'stop'){
+    $process=Get-LiveSupervisorProcess
+    if($null -eq $process){
+        Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+        Write-Host '[Bees remote] worker is not running.'
+        exit 0
+    }
+
+    'stop' | Set-Content -LiteralPath $ShutdownRequestFile -NoNewline -Encoding ASCII
+    Write-Host "[Bees remote] stop requested for worker PID $($process.Id); waiting for managed cleanup..."
+    $deadline=[DateTime]::UtcNow.AddSeconds(45)
+    while([DateTime]::UtcNow -lt $deadline){
+        if($null -eq (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)){
+            Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+            Write-Host '[Bees remote] worker stopped.'
+            exit 0
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Remote worker PID $($process.Id) did not stop within 45 seconds. It was not force-killed."
+}
+
+$existingProcess=Get-LiveSupervisorProcess
+if($null -ne $existingProcess){
+    Write-Host "[Bees remote] worker is already running in the background (PID $($existingProcess.Id))."
+    Write-Host '[Bees remote] use bees-remote-worker.cmd stop to stop it.'
+    exit 0
+}
+Remove-Item -LiteralPath $SupervisorPidFile,$ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+
+Write-Host '[Bees remote] Stage 1/5: preparing local worker files...'
 
 $bundledBridgePath=Join-Path $PSScriptRoot $BundledTailnetBridge
 if(-not(Test-Path -LiteralPath $bundledBridgePath)){
@@ -225,13 +277,28 @@ $workerArgs=@(
 )
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
 
+function Quote-ProcessArgument([string]$Value){
+    if($Value -notmatch '[\s"]'){return $Value}
+    '"' + ($Value.Replace('"','\"')) + '"'
+}
+
 Write-Host ''
-Write-Host '[Bees remote] Stage 5/5: starting managed training worker...'
+Write-Host '[Bees remote] Stage 5/5: starting managed training worker in the background...'
 if($Envs -gt 0){
     Write-Host "Starting Bees remote worker with $Envs environments."
 }else{
     Write-Host 'Starting Bees remote worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64).'
 }
-Write-Host 'Private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker.'
-& $venvPython -u @workerArgs
-exit $LASTEXITCODE
+Remove-Item -LiteralPath $ShutdownRequestFile -Force -ErrorAction SilentlyContinue
+$argumentString=(@('-u') + $workerArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
+$process=Start-Process -FilePath $venvPython -ArgumentList $argumentString -WorkingDirectory $InstallRoot -WindowStyle Hidden -RedirectStandardOutput $SupervisorOutLog -RedirectStandardError $SupervisorErrLog -PassThru
+$process.Id | Set-Content -LiteralPath $SupervisorPidFile -NoNewline -Encoding ASCII
+Start-Sleep -Milliseconds 750
+if($process.HasExited){
+    Remove-Item -LiteralPath $SupervisorPidFile -Force -ErrorAction SilentlyContinue
+    throw "Remote worker exited during background startup with code $($process.ExitCode). Check $SupervisorOutLog and $SupervisorErrLog."
+}
+Write-Host "[Bees remote] worker started in the background (PID $($process.Id))."
+Write-Host "[Bees remote] logs: $SupervisorOutLog and $SupervisorErrLog"
+Write-Host '[Bees remote] close this shell freely; use bees-remote-worker.cmd stop to stop the worker.'
+exit 0
