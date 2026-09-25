@@ -72,6 +72,32 @@ class TrainingControlClientTests(unittest.TestCase):
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
 
+    def test_managed_process_retains_ownership_when_forced_stop_cannot_confirm_exit(self):
+        fake = mock.Mock()
+        fake.pid = 4342
+        fake.poll.return_value = None
+        fake.wait.side_effect = TimeoutError("still running")
+
+        with (
+            mock.patch.object(agent.os, "name", "posix"),
+            mock.patch.object(agent.os, "killpg") as killpg,
+        ):
+            managed = agent.ManagedProcess()
+            managed.process = fake
+
+            with self.assertRaisesRegex(RuntimeError, "did not stop"):
+                managed.stop()
+
+        self.assertIs(managed.process, fake)
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(4342, signal.SIGTERM),
+                mock.call(4342, signal.SIGKILL),
+            ],
+        )
+        fake.kill.assert_called_once()
+
     def test_central_managed_process_requests_checkpoint_finalization_before_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
