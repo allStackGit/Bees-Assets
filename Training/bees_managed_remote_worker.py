@@ -908,7 +908,7 @@ def _remote_status_summary(
         env_status += f"->{desired_envs}"
     optimizer_suffix = f" optimizer={phase}" if phase else ""
     if isinstance(sps, (int, float)):
-        optimizer_suffix += f" accepted_sps={float(sps):.1f}"
+        optimizer_suffix += f" learner_sps={float(sps):.1f}"
     runtime_suffix = ""
     if updater is not None:
         _sha, staged_root, _bridge, _python, _build, update_error = updater.staged()
