@@ -150,7 +150,21 @@ function Resolve-PythonLauncher {
     $winget=Resolve-Exe 'winget'
     if($winget){
         Write-Host 'Python 3.10 was not found. Installing it with winget...'
-        & $winget install --id Python.Python.3.10 -e --accept-package-agreements --accept-source-agreements --silent
+        $wingetArgs=@(
+            'install',
+            '--id','Python.Python.3.10',
+            '-e',
+            '--source','winget',
+            '--accept-package-agreements',
+            '--accept-source-agreements',
+            '--disable-interactivity',
+            '--silent'
+        )
+        $installProcess=Start-Process -FilePath $winget -ArgumentList $wingetArgs -Wait -PassThru -NoNewWindow
+        if($installProcess.ExitCode -ne 0){
+            throw "winget failed to install Python 3.10 (exit code $($installProcess.ExitCode))."
+        }
+
         foreach($candidate in @(
             (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
             'C:\Program Files\Python310\python.exe'
