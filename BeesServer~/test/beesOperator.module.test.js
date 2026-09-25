@@ -161,7 +161,7 @@ test('managed remote worker emits a recurring live status heartbeat', () => {
     const source = fs.readFileSync(workerPath, 'utf8');
     assert.match(source, /def _remote_status_summary\(/);
     assert.match(source, /next_status = now \+ 5\.0/);
-    assert.match(source, /print\(_remote_status_summary\(args, trainer_id\), flush=True\)/);
+    assert.match(source, /_remote_status_summary\(args, trainer_id, updater\)/);
     assert.match(source, /"state=\{state\} envs=\{args\.envs\} build=\{build_id\}/);
 });
 
@@ -416,4 +416,27 @@ test('training release metadata is BOM-free and old releases are normalized befo
     );
     const start = source.match(/function Invoke-Start[\s\S]*?\n\}/)?.[0] || '';
     assert.match(start, /Remove-Utf8BomIfPresent \$LatestReleasePath/);
+});
+
+
+test('private training transport carries gameplay settings alongside control and WAN traffic', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const bridgePath = path.resolve(__dirname, '..', '..', 'Tools~', 'bees-tailnet-bridge', 'main.go');
+    const bridge = fs.readFileSync(bridgePath, 'utf8');
+    const workerPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_managed_remote_worker.py');
+    const worker = fs.readFileSync(workerPath, 'utf8');
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const linuxPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.sh');
+    const windows = fs.readFileSync(windowsPath, 'utf8');
+    const linux = fs.readFileSync(linuxPath, 'utf8');
+
+    assert.match(source, /--gameplay-port',\[string\]\$gameplayPort/);
+    assert.match(source, /__BEES_GAMEPLAY_PORT__/);
+    assert.match(bridge, /gameplay-port/);
+    assert.match(bridge, /proxyListener\(ctx, gameplayLn/);
+    assert.match(worker, /BEES_TRAINING_GAMEPLAY_HOST/);
+    assert.match(worker, /BEES_TRAINING_GAMEPLAY_PORT/);
+    assert.match(worker, /127\.0\.0\.1:\{args\.gameplay_port\}=\{args\.tailnet_target\}:\{args\.gameplay_port\}/);
+    assert.match(windows, /__BEES_GAMEPLAY_PORT__/);
+    assert.match(linux, /__BEES_GAMEPLAY_PORT__/);
 });
