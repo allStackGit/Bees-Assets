@@ -767,7 +767,11 @@ class TrainingControlStore {
             }
         }
         const pending = this.state.pending_release
-            ? { ...this.state.pending_release }
+            ? {
+                ...this.state.pending_release,
+                required_trainers: this.state.pending_release.required_trainers.map(
+                    trainer => ({ ...trainer })),
+            }
             : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
@@ -828,7 +832,12 @@ class TrainingControlStore {
             desired_build_id: desiredBuildId,
             run_id: this.state.run_id,
             compatibility_key: this.state.compatibility_key,
-            pending_release: pending ? { ...pending } : null,
+            pending_release: pending
+                ? {
+                    ...pending,
+                    required_trainers: pending.required_trainers.map(trainer => ({ ...trainer })),
+                }
+                : null,
             lease_seconds: this.leaseSeconds,
             build: publicBuildDescriptor(buildRecord),
             prepare_build: publicBuildDescriptor(prepareRecord),
@@ -862,7 +871,15 @@ class TrainingControlStore {
                 : {},
             last_seen_ms: now,
         };
+        let persistentHeartbeatStateChanged = false;
+        if (role === 'dedicated') {
+            persistentHeartbeatStateChanged = this._ensurePendingTrainer(record) ||
+                persistentHeartbeatStateChanged;
+            persistentHeartbeatStateChanged = this._rememberDedicatedTrainer(record) ||
+                persistentHeartbeatStateChanged;
+        }
         this.trainers.set(trainerId, record);
+        if (persistentHeartbeatStateChanged) this._persist();
         this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
