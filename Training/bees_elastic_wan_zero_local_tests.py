@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 
+import bees_continual_elastic_wan_auto_train as elastic_auto
 import bees_continual_elastic_wan_service as elastic_service
 import bees_elastic_wan_actor_session as actor_session
 import bees_elastic_wan_actor_worker as actor_worker
@@ -46,6 +48,70 @@ class ZeroLocalArgumentTests(unittest.TestCase):
         self.assertTrue(zero_local_requested)
         self.assertIn("--num-envs=1", normalized)
         self.assertNotIn("--num-envs=0", normalized)
+
+    def test_mlagents_boundary_rewrites_zero_but_preserves_zero_local_intent(self):
+        normalized, zero_local_requested = (
+            elastic_auto._normalize_zero_local_num_envs_for_mlagents(
+                ["config.yaml", "--num-envs=0", "--resume"]
+            )
+        )
+        self.assertTrue(zero_local_requested)
+        self.assertEqual(
+            normalized,
+            ["config.yaml", "--num-envs=1", "--resume"],
+        )
+
+    def test_auto_trainer_passes_zero_local_intent_behind_mlagents_parser(self):
+        options = elastic.ElasticWanOptions(max_actors=12, auth_token_file="unused")
+        patch_token = object()
+        with (
+            mock.patch.object(
+                elastic_auto.elastic,
+                "extract_elastic_wan_options",
+                return_value=(["config.yaml", "--num-envs=0"], options),
+            ),
+            mock.patch.object(
+                elastic_auto.policy_transport,
+                "install_portable_policy_transport",
+                return_value="policy-original",
+            ),
+            mock.patch.object(
+                elastic_auto.slot_safety,
+                "install_slot_safety",
+                return_value="broker-original",
+            ),
+            mock.patch.object(
+                elastic_auto.zero_local,
+                "install_elastic_wan_env_manager",
+                return_value=patch_token,
+            ) as install_manager,
+            mock.patch.object(
+                elastic_auto.zero_local,
+                "restore_elastic_wan_env_manager",
+            ),
+            mock.patch.object(
+                elastic_auto.slot_safety,
+                "restore_slot_safety",
+            ),
+            mock.patch.object(
+                elastic_auto.policy_transport,
+                "restore_portable_policy_transport",
+            ),
+            mock.patch.object(
+                elastic_auto.continual_auto,
+                "main",
+                return_value=0,
+            ) as continual_main,
+        ):
+            self.assertEqual(elastic_auto.main([]), 0)
+
+        install_manager.assert_called_once_with(
+            options,
+            force_zero_local=True,
+        )
+        continual_main.assert_called_once_with(
+            ["config.yaml", "--num-envs=1"]
+        )
 
     def test_nonzero_num_envs_is_not_rewritten(self):
         normalized, zero_local_requested = elastic_service._normalize_zero_local_num_envs(
