@@ -476,6 +476,33 @@ class ActorSession:
             return str(log_dir)
         return str(options.checkpoint_settings.run_logs_dir)
 
+    @staticmethod
+    def _print_player_log_tails(run_logs_dir: str, *, lines: int = 80) -> None:
+        root = Path(run_logs_dir)
+        logs = sorted(root.glob("Player-*.log"))
+        if not logs:
+            print(
+                f"[Bees WAN actor] no Unity Player-*.log files found in {root}.",
+                file=sys.stderr,
+            )
+            return
+        for log_path in logs:
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                print(
+                    f"[Bees WAN actor] could not read {log_path}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
+            tail = text.splitlines()[-lines:]
+            print(
+                f"[Bees WAN actor] Unity log tail {log_path}:",
+                file=sys.stderr,
+            )
+            for line in tail:
+                print(line, file=sys.stderr)
+
     def _initial_control(self) -> Mapping[str, Any]:
         deadline = time.monotonic() + max(30.0, float(self.central_run_options.env_settings.timeout_wait))
         while not self.stop.is_set() and time.monotonic() < deadline:
@@ -523,7 +550,16 @@ class ActorSession:
         control = self._initial_control()
         self.control_epoch = int(control["epoch"])
         self._current_env_config = control.get("config")
-        self.manager.reset(config=self._current_env_config)
+        print(
+            f"[Bees WAN actor] launching {self.env_count} Unity environments "
+            f"base_port={options.env_settings.base_port} logs={run_logs_dir}.",
+            flush=True,
+        )
+        try:
+            self.manager.reset(config=self._current_env_config)
+        except Exception:
+            self._print_player_log_tails(run_logs_dir)
+            raise
         _remap_manager_initial_steps(self.manager, self.worker_offset)
 
         behavior_specs = self.manager.training_behaviors
