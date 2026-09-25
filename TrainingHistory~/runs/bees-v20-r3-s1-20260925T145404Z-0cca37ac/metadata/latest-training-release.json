@@ -1,12 +1,12 @@
 {
     "schema_version":  2,
-    "build_id":  "2026-09-25-091733-45e026076e03",
-    "source_commit":  "45e026076e03",
-    "created_utc":  "2026-09-25T13:26:58.8127021Z",
+    "build_id":  "2026-09-25-112424-7285efe9ff25",
+    "source_commit":  "7285efe9ff25",
+    "created_utc":  "2026-09-25T15:36:59.0661228Z",
     "run_id":  "bees-v20-r3-s1-20260925T145404Z-0cca37ac",
-    "previous_run_id":  "bees-v20-r3-s1-20260925T131733Z-0cca37ac",
+    "previous_run_id":  "bees-v20-r3-s1-20260925T145404Z-0cca37ac",
     "compatibility_key":  "0cca37ac41e120f374414937cb89317ff1491032cb80d0cfc5d513502dd5e135",
-    "incompatible":  true,
+    "incompatible":  false,
     "contract":  {
                      "action_schema_version":  9,
                      "agent_action_source_sha256":  "914b36f9d20018108ebb312e4e4cfc658e979a5c23c33b1f8cc76f40d0ecb696",
@@ -28,14 +28,14 @@
                           "role":  "dedicated",
                           "platform":  "WindowsPlayer",
                           "folder":  "B:\\Bees\\Builds\\2026-09-25 RL Windows",
-                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-091733-45e026076e03\\rl-windows.zip",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-112424-7285efe9ff25\\rl-windows.zip",
                           "entrypoint":  "Bees RL Training.exe"
                       },
                       {
                           "role":  "dedicated",
                           "platform":  "LinuxPlayer",
                           "folder":  "B:\\Bees\\Builds\\2026-09-25 RL Linux",
-                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-091733-45e026076e03\\rl-linux.zip",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-112424-7285efe9ff25\\rl-linux.zip",
                           "entrypoint":  "Bees RL Training.x86_64"
                       }
                   ]
