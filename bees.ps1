@@ -1925,6 +1925,10 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             $m=$_.metrics
             $cap=$_.worker_capacity
             $opt=$_.env_optimizer
+            $throughput=Get-ObjectPropertyValue $m 'throughput'
+            $sentBytes=Get-ObjectPropertyValue $throughput 'network_sent_bytes_total'
+            $receivedBytes=Get-ObjectPropertyValue $throughput 'network_received_bytes_total'
+            $networkMibPerS=Get-ObjectPropertyValue $throughput 'network_mib_per_s'
             $envDisplay='-'
             if($cap -and $null -ne $cap.current_envs){
                 $envDisplay=[string]$cap.current_envs
@@ -1946,6 +1950,9 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 State=if($_.stale){'STALE'}else{$_.process_state}
                 Envs=$envDisplay
                 SPS=$acceptedSps
+                SentGiB=if($null -ne $sentBytes){'{0:N2}'-f([double]$sentBytes/1GB)}else{'-'}
+                RecvGiB=if($null -ne $receivedBytes){'{0:N2}'-f([double]$receivedBytes/1GB)}else{'-'}
+                'MiB/s'=if($null -ne $networkMibPerS){'{0:N2}'-f[double]$networkMibPerS}else{'-'}
                 Opt=if($opt -and $opt.phase){[string]$opt.phase}else{'-'}
                 Build=$_.build_id
                 Rev=$_.applied_revision
@@ -1961,7 +1968,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             }
         })
         if($rows.Count){
-            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize|Out-String -Width 260).TrimEnd()
+            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,SentGiB,RecvGiB,'MiB/s',Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize|Out-String -Width 300).TrimEnd()
             if($table){
                 $lines += @($table -split "\r?\n")
             }
