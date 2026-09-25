@@ -501,7 +501,7 @@ class HistoricalOpponentScheduler:
             self._record_active_stat(trainer, False)
             return []
 
-        current_model_id = self.store.current_champion_id()
+        current_model_id = self.store.current_compatible_champion_id()
         if not current_model_id:
             self._record_active_stat(trainer, False)
             return []
