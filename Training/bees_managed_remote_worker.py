@@ -236,7 +236,22 @@ def _parser() -> argparse.ArgumentParser:
         "--envs",
         type=int,
         default=None,
-        help="Unity environment count (1-64). Default: min(4x CPU threads, RAM budget, 64).",
+        help=(
+            "Fixed Unity environment count (1-64). If omitted, BeesServer auto-tunes "
+            "the count for useful steps/sec."
+        ),
+    )
+    parser.add_argument(
+        "--min-envs",
+        type=int,
+        default=1,
+        help="Minimum environment count for automatic tuning (default 1).",
+    )
+    parser.add_argument(
+        "--max-envs",
+        type=int,
+        default=None,
+        help="Maximum environment count for automatic tuning (default RAM-derived cap, at most 64).",
     )
     parser.add_argument(
         "--gameplay-port",
@@ -817,6 +832,22 @@ def _remote_status_summary(
     revision = record.get("applied_revision", "-")
     error = str(record.get("last_error", "") or "")
     suffix = f" error={error}" if error else ""
+    capacity = record.get("worker_capacity")
+    capacity_map = capacity if isinstance(capacity, Mapping) else {}
+    current_envs = capacity_map.get("current_envs", args.envs)
+    optimizer = record.get("env_optimizer")
+    optimizer_map = optimizer if isinstance(optimizer, Mapping) else {}
+    desired_envs = optimizer_map.get("desired_envs", current_envs)
+    phase = str(optimizer_map.get("phase", "") or "")
+    measured_sps = optimizer_map.get("measured_sps")
+    baseline_sps = optimizer_map.get("baseline_sps")
+    sps = measured_sps if isinstance(measured_sps, (int, float)) else baseline_sps
+    env_status = str(current_envs)
+    if isinstance(desired_envs, int) and desired_envs != current_envs:
+        env_status += f"->{desired_envs}"
+    optimizer_suffix = f" optimizer={phase}" if phase else ""
+    if isinstance(sps, (int, float)):
+        optimizer_suffix += f" accepted_sps={float(sps):.1f}"
     runtime_suffix = ""
     if updater is not None:
         _sha, staged_root, _bridge, _python, _build, update_error = updater.staged()
@@ -826,7 +857,8 @@ def _remote_status_summary(
             runtime_suffix = f" runtime_update=staged:{staged_root.name[:12]}"
     return (
         f"[Bees remote] status: learner=connected trainer={trainer_id} "
-        f"state={state} envs={args.envs} build={build_id} rev={revision}{suffix}{runtime_suffix}"
+        f"state={state} envs={env_status} build={build_id} rev={revision}"
+        f"{optimizer_suffix}{suffix}{runtime_suffix}"
     )
 
 
@@ -869,7 +901,7 @@ def _runtime_cutover_selected(
 
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
-    return [
+    command = [
         sys.executable,
         "-u",
         str(root / "bees_training_worker_agent.py"),
@@ -887,13 +919,23 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         str(Path(args.install_root).expanduser().resolve() / "ManagedBuilds"),
         "--runtime-ready-file",
         str(Path(args.install_root).expanduser().resolve() / "runtime-ready-build.txt"),
+        "--worker-envs",
+        str(args.envs),
+        "--worker-envs-min",
+        str(args.min_envs),
+        "--worker-envs-max",
+        str(args.max_envs),
+    ]
+    if args.auto_envs:
+        command.append("--auto-worker-envs")
+    command.extend([
         "--",
         sys.executable,
         str(root / "bees_elastic_wan_actor_worker.py"),
         "--actor-key",
         actor_key,
         "--envs",
-        str(args.envs),
+        "{worker_envs}",
         "--broker-host",
         "127.0.0.1",
         "--broker-port",
@@ -904,22 +946,41 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         str(Path(args.wan_token_file).expanduser().resolve()),
         "--torch-device",
         args.torch_device,
-    ]
+    ])
+    return command
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
+    memory_cap = _memory_env_limit()
     if args.envs is None:
-        args.envs = _default_envs()
+        args.auto_envs = True
+        requested_max = MAX_ENVS_PER_ACTOR if args.max_envs is None else args.max_envs
+        if not 1 <= args.min_envs <= requested_max <= MAX_ENVS_PER_ACTOR:
+            print("error: automatic env bounds must satisfy 1 <= min <= max <= 64", file=sys.stderr)
+            return 2
+        args.max_envs = min(requested_max, memory_cap)
+        if args.min_envs > args.max_envs:
+            print(
+                f"error: --min-envs={args.min_envs} exceeds the RAM-derived cap "
+                f"of {args.max_envs}",
+                file=sys.stderr,
+            )
+            return 2
+        args.envs = max(args.min_envs, min(_default_envs(), args.max_envs))
         print(
-            f"[Bees remote] --envs omitted; using {args.envs} "
-            f"(cpu_target={4 * _available_cpu_threads()} "
-            f"memory_cap={_memory_env_limit()} hard_cap={MAX_ENVS_PER_ACTOR})."
+            f"[Bees remote] --envs omitted; auto optimizer enabled at {args.envs} envs "
+            f"(range={args.min_envs}-{args.max_envs} cpu_start={4 * _available_cpu_threads()} "
+            f"memory_cap={memory_cap} hard_cap={MAX_ENVS_PER_ACTOR})."
         )
-    if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
-        print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
-        return 2
+    else:
+        args.auto_envs = False
+        if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
+            print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
+            return 2
+        args.min_envs = args.envs
+        args.max_envs = args.envs
     if (
         not 1 <= args.control_port <= 65535
         or not 1 <= args.bootstrap_port <= 65535
