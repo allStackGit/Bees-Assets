@@ -816,6 +816,7 @@ function Invoke-Build {
         if($admin -and (Test-Control ([string]$config.controlUrl) $admin)){
             $worker=Ensure-TokenFile $WorkerTokenPath
             Start-BeesServerIfNeeded $config $worker $admin
+            Assert-CentralAgentCheckpointSafe
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
                 Prepare-RemoteBootstrap $config
@@ -883,6 +884,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
             throw 'BeesServer is online but is not owned by the Bees operator state. Stop the unmanaged server once, then rerun this command so future source updates can be automatic.'
         }
         Write-Host 'BeesServer source changed; restarting the managed server without changing desired training state.'
+        Assert-CentralAgentCheckpointSafe
         Stop-ProcessTree $managedPid
         Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
@@ -966,25 +968,49 @@ function Get-StringSha256([string]$Value){
     try{$bytes=[Text.Encoding]::UTF8.GetBytes($Value);([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
 }
 
-function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
-    if($Id -le 0 -or -not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){ return $true }
-
-    $supportsCheckpointShutdown=$false
+function Get-RunningCentralAgentPid {
+    $candidate=0
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{
             $state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json
-            $supportsCheckpointShutdown=(
+            if($state.pid){ $candidate=[int]$state.pid }
+        }catch{ $candidate=0 }
+    }
+    if($candidate -le 0 -and (Test-Path -LiteralPath $CentralAgentPidPath)){
+        [void][int]::TryParse(
+            (Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),
+            [ref]$candidate
+        )
+    }
+    if($candidate -gt 0 -and (Get-Process -Id $candidate -ErrorAction SilentlyContinue)){
+        return $candidate
+    }
+    return 0
+}
+
+function Assert-CentralAgentCheckpointSafe {
+    $id=Get-RunningCentralAgentPid
+    if($id -le 0){ return }
+    $safe=$false
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{
+            $state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json
+            $safe=(
                 $state.pid -and
-                ([int]$state.pid) -eq $Id -and
+                ([int]$state.pid) -eq $id -and
                 [bool]$state.graceful_checkpoint_shutdown
             )
-        }catch{
-            $supportsCheckpointShutdown=$false
-        }
+        }catch{ $safe=$false }
     }
-    if(-not $supportsCheckpointShutdown){
-        throw "Running central learner PID $Id predates checkpoint-safe shutdown. Refusing to force-kill it because that could lose optimizer progress."
+    if(-not $safe){
+        throw "Running central learner PID $id predates checkpoint-safe shutdown. Refusing an operation that could stop it and lose optimizer progress."
     }
+}
+
+function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
+    if($Id -le 0 -or -not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){ return $true }
+
+    Assert-CentralAgentCheckpointSafe
 
     Ensure-Directory $CentralAgentInstallRoot
     Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
@@ -1338,6 +1364,8 @@ function Invoke-Start {
         throw "Managed learner Python executable is missing: $python"
     }
 
+    Assert-CentralAgentCheckpointSafe
+
     $forcedPlan=$null
     $outgoingRun=$null
     if($NewRun){
@@ -1407,6 +1435,7 @@ function Stop-ProcessTree([int]$Id){ if($Id -gt 0 -and (Get-Process -Id $Id -Err
 
 function Invoke-Stop {
     $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath
+    Assert-CentralAgentCheckpointSafe
     if(Test-Control ([string]$config.controlUrl) $admin){
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$false}; Write-Host "Training stop requested at revision $($desired.revision)."
         $deadline=[DateTime]::UtcNow.AddSeconds(180)
