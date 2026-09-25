@@ -246,7 +246,10 @@ function Resolve-PythonLauncher {
 
 Write-Host '[Bees remote] Stage 4/5: preparing Python 3.10 worker environment...'
 if(-not(Test-Path -LiteralPath (Join-Path $VenvRoot 'Scripts\python.exe'))){
-    $launcher=Resolve-PythonLauncher
+    # PowerShell unrolls a single-item array returned by a function into a scalar.
+    # Normalize explicitly so StrictMode-safe .Count/indexing works for both
+    # python.exe-only launchers and py.exe + -3.10 launchers.
+    $launcher=@(Resolve-PythonLauncher)
     $launcherExe=$launcher[0]
     $launcherArgs=@()
     if($launcher.Count -gt 1){$launcherArgs=@($launcher[1..($launcher.Count-1)])}
