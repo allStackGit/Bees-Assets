@@ -166,37 +166,42 @@ test('managed remote worker emits a recurring live status heartbeat', () => {
 });
 
 
-test('bees.ps1 generates a Windows cmd wrapper that bypasses execution policy only for the worker process', () => {
+test('bees.ps1 generates a self-extracting Windows launcher with process-scoped execution-policy bypass', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
     assert.match(remoteBootstrap, /bees-remote-worker\.cmd/);
-    assert.match(remoteBootstrap, /powershell\.exe -NoProfile -ExecutionPolicy Bypass -File/);
-    assert.match(remoteBootstrap, /bees-remote-worker\.ps1/);
+    assert.match(remoteBootstrap, /::BEES_PAYLOAD_BEGIN/);
+    assert.match(remoteBootstrap, /__WINDOWS_PAYLOAD__/);
+    assert.match(remoteBootstrap, /powershell\.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File/);
     assert.match(remoteBootstrap, /%\*/);
     assert.doesNotMatch(remoteBootstrap, /Set-ExecutionPolicy/);
 });
 
 
-test('remote launchers keep tailnet binaries out of script text for fast startup', () => {
+test('remote launchers are single-file self-extracting bundles with delayed payload parsing', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
     const linuxPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.sh');
     const windows = fs.readFileSync(windowsPath, 'utf8');
     const linux = fs.readFileSync(linuxPath, 'utf8');
-    assert.doesNotMatch(source, /ToBase64String\(\[IO\.File\]::ReadAllBytes\(\$windowsBridge\)\)/);
-    assert.doesNotMatch(source, /ToBase64String\(\[IO\.File\]::ReadAllBytes\(\$linuxBridge\)\)/);
     assert.doesNotMatch(windows, /__BEES_TAILNET_BRIDGE_B64__/);
     assert.doesNotMatch(linux, /__BEES_TAILNET_BRIDGE_B64__/);
     assert.match(windows, /__BEES_TAILNET_BRIDGE_FILE__/);
     assert.match(linux, /__BEES_TAILNET_BRIDGE_FILE__/);
-    assert.match(source, /bees-tailnet-bridge-windows\.exe/);
-    assert.match(source, /bees-tailnet-bridge-linux/);
+    assert.match(source, /Format-Base64Payload/);
+    assert.match(source, /remote-windows-bootstrap-payload\.zip/);
+    assert.match(source, /::BEES_PAYLOAD_BEGIN/);
+    assert.match(source, /__BEES_BRIDGE_PAYLOAD__/);
+    assert.match(source, /Windows: copy only bees-remote-worker\.cmd/);
+    assert.match(source, /Linux:\s+copy only bees-remote-worker\.sh/);
 });
 
-test('Windows cmd launcher prints immediately before PowerShell bootstrap parsing', () => {
+test('Windows cmd launcher prints before decoding its embedded payload', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(remoteBootstrap, /echo \[Bees remote\] launching Windows training worker/);
-    assert.match(remoteBootstrap, /echo \[Bees remote\] loading PowerShell bootstrap/);
+    const launch = remoteBootstrap.indexOf('echo [Bees remote] launching Windows training worker');
+    const extract = remoteBootstrap.indexOf('echo [Bees remote] extracting bundled bootstrap');
+    const payload = remoteBootstrap.indexOf('::BEES_PAYLOAD_BEGIN');
+    assert.ok(launch >= 0 && extract > launch && payload > extract);
     assert.match(remoteBootstrap, /powershell\.exe -NoLogo -NoProfile -ExecutionPolicy Bypass/);
 });
