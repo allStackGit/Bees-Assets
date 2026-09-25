@@ -117,3 +117,13 @@ test('bees.ps1 includes Unity log tail on nonzero build exit', () => {
     assert.match(unityBuild, /Get-Content -LiteralPath \$logPath -Tail 60/);
     assert.match(unityBuild, /Last Unity build log lines:/);
 });
+
+
+test('bees.ps1 uses a .zip temporary path for remote runtime compression', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(remoteBootstrap, /bees-remote-runtime\.new\.zip/);
+    assert.match(remoteBootstrap, /Compress-Archive[\s\S]*?-DestinationPath \$runtimeZipTemp/);
+    assert.match(remoteBootstrap, /Install-AtomicFile \$runtimeZipTemp \$runtimeZip/);
+    assert.doesNotMatch(remoteBootstrap, /\$runtimeZipTemp="\$runtimeZip\.new"/);
+});
