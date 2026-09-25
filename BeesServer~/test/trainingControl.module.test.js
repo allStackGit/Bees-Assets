@@ -738,6 +738,122 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
     });
 });
 
+test('disabling training does not bypass an incompatible release stop barrier', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stop-barrier-old');
+        publishDedicatedBuild(store, root, 'stop-barrier-new');
+
+        store.stageRelease({
+            buildId: 'stop-barrier-old',
+            runId: 'stop-barrier-old-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stop-barrier-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'stop-barrier-new',
+            runId: 'stop-barrier-new-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stop-barrier-old',
+                oldSha,
+                { preparedBuildId: 'stop-barrier-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        store.setDesiredState({ training_enabled: false });
+        assert.equal(store.state.canonical_build_id, 'stop-barrier-old');
+        assert.equal(store.state.run_id, 'stop-barrier-old-run');
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'stop-barrier-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'stop-barrier-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'stop-barrier-old');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'stop-barrier-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'stop-barrier-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'stop-barrier-new');
+        assert.equal(store.state.run_id, 'stop-barrier-new-run');
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.training_enabled, false);
+    });
+});
+
+test('a different release cannot replace an active pending rollout', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'overlap-old');
+        publishDedicatedBuild(store, root, 'overlap-first');
+        publishDedicatedBuild(store, root, 'overlap-second');
+
+        store.stageRelease({
+            buildId: 'overlap-old',
+            runId: 'overlap-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'overlap-old', oldSha);
+
+        store.stageRelease({
+            buildId: 'overlap-first',
+            runId: 'overlap-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        assert.equal(store.state.pending_release.build_id, 'overlap-first');
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'overlap-second',
+                runId: 'overlap-run',
+                compatibilityKey: 'e'.repeat(64),
+                incompatible: false,
+            }),
+            error => error.statusCode === 409 && /already pending/.test(error.message),
+        );
+        assert.equal(store.state.pending_release.build_id, 'overlap-first');
+        assert.equal(store.state.canonical_build_id, 'overlap-old');
+    });
+});
+
 test('preparing rollout barrier survives training-control server restart', () => {
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
