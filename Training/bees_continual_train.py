@@ -612,54 +612,6 @@ def infer_training_step(path: Path) -> Optional[int]:
     return None
 
 
-def _configured_max_steps(path: Path) -> Optional[int]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    matches = re.findall(r"(?m)^\s*max_steps:\s*(\d+)\s*(?:#.*)?$", text)
-    if len(matches) != 1:
-        return None
-    value = int(matches[0])
-    return value if value > 0 else None
-
-
-def _max_status_step(value: object) -> Optional[int]:
-    latest: Optional[int] = None
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            if (
-                isinstance(key, str)
-                and key.lower() == "step"
-                and isinstance(child, int)
-                and not isinstance(child, bool)
-                and child >= 0
-            ):
-                latest = child if latest is None else max(latest, child)
-            nested = _max_status_step(child)
-            if nested is not None:
-                latest = nested if latest is None else max(latest, nested)
-    elif isinstance(value, list):
-        for child in value:
-            nested = _max_status_step(child)
-            if nested is not None:
-                latest = nested if latest is None else max(latest, nested)
-    return latest
-
-
-def _completed_training_step(results_run_dir: Path) -> Optional[int]:
-    latest: Optional[int] = None
-    for path in sorted(results_run_dir.rglob("training_status.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        step = _max_status_step(value)
-        if step is not None:
-            latest = step if latest is None else max(latest, step)
-    return latest
-
-
 class CandidateMonitor:
     def __init__(
         self,
@@ -681,7 +633,6 @@ class CandidateMonitor:
         self.interval_seconds = interval_seconds
         self._stats: Dict[str, Tuple[int, int, int]] = {}
         self._registered: Dict[str, Tuple[int, int]] = {}
-        self._new_candidate_steps: set[int] = set()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.errors: List[str] = []
@@ -726,7 +677,6 @@ class CandidateMonitor:
         # Two immediate scans let a final checkpoint become stable without an artificial delay.
         self.scan_once()
         self.scan_once()
-        self._register_completed_generation_boundary()
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_seconds):
@@ -778,66 +728,9 @@ class CandidateMonitor:
             metadata={"registration_source": "bees_continual_train"},
         )
         self._registered[key] = identity
-        self._new_candidate_steps.add(step)
         print(
             f"[Bees continual] registered candidate model_id={model['model_id']} step={step} "
             f"artifact={path}"
-        )
-
-    def _register_completed_generation_boundary(self) -> None:
-        # A continual generation may end before the normal optimizer checkpoint interval.
-        # ML-Agents still writes the final unversioned behavior ONNX at max_steps. Register
-        # that final export only when training_status.json proves this invocation reached
-        # its configured max_steps, so interrupted training can never be mislabeled.
-        if self._new_candidate_steps:
-            return
-
-        target_step = _configured_max_steps(self.training_config)
-        completed_step = _completed_training_step(self.results_run_dir)
-        if target_step is None or completed_step is None or completed_step < target_step:
-            return
-
-        changed_latest: list[tuple[Path, Tuple[int, int]]] = []
-        for path in sorted(self.results_run_dir.rglob("*.onnx")):
-            if infer_training_step(path) is not None:
-                continue
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            identity = (stat.st_size, stat.st_mtime_ns)
-            if stat.st_size <= 0 or self._registered.get(str(path.resolve())) == identity:
-                continue
-            changed_latest.append((path, identity))
-
-        if len(changed_latest) != 1:
-            message = (
-                f"completed generation reached step {completed_step} (target {target_step}) "
-                f"but found {len(changed_latest)} changed unversioned final ONNX exports; "
-                "refusing ambiguous candidate registration"
-            )
-            if message not in self.errors:
-                self.errors.append(message)
-                print(f"[Bees continual] candidate registration failed: {message}", file=sys.stderr)
-            return
-
-        path, identity = changed_latest[0]
-        model = self.store.register_model(
-            path,
-            training_run_id=self.run_id,
-            training_step=completed_step,
-            game_build_version=self.game_build,
-            parent_model_id=self.parent_model_id,
-            training_config_path=self.training_config,
-            source_checkpoint=str(path),
-            status="candidate",
-            metadata={"registration_source": "completed_generation_boundary"},
-        )
-        self._registered[str(path.resolve())] = identity
-        self._new_candidate_steps.add(completed_step)
-        print(
-            f"[Bees continual] registered generation-boundary candidate "
-            f"model_id={model['model_id']} step={completed_step} artifact={path}"
         )
 
 
