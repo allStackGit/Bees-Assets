@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import queue
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -115,6 +117,31 @@ class WanOptionTests(unittest.TestCase):
             ),
             ["config.yaml", "--resume", "--num-envs=384"],
         )
+
+    def test_actor_managed_log_directory_does_not_mutate_checkpoint_settings(self):
+        class ReadOnlyCheckpointSettings:
+            @property
+            def run_logs_dir(self):
+                return "default-run-logs"
+
+        options = SimpleNamespace(checkpoint_settings=ReadOnlyCheckpointSettings())
+        with tempfile.TemporaryDirectory() as temp:
+            managed = Path(temp) / "managed-logs"
+            with mock.patch.dict(os.environ, {"BEES_TRAINING_LOG_DIR": str(managed)}):
+                resolved = actor.ActorSession._run_logs_dir(options)
+            self.assertEqual(Path(resolved), managed.resolve())
+            self.assertTrue(managed.is_dir())
+            self.assertEqual(options.checkpoint_settings.run_logs_dir, "default-run-logs")
+
+    def test_actor_uses_checkpoint_log_directory_without_managed_override(self):
+        options = SimpleNamespace(
+            checkpoint_settings=SimpleNamespace(run_logs_dir="default-run-logs")
+        )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                actor.ActorSession._run_logs_dir(options),
+                "default-run-logs",
+            )
 
     def test_rollout_horizon_scales_to_ppo_buffer_and_env_count(self):
         settings = SimpleNamespace(
