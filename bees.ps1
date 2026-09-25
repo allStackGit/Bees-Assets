@@ -914,7 +914,9 @@ function Prepare-RemoteBootstrap($Config){
         Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-        $runtimeZipTemp="$runtimeZip.new"
+        # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
+        # archive beside the final file and atomically swap it into place after compression.
+        $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
         Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
         Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZipTemp -CompressionLevel Optimal
         Install-AtomicFile $runtimeZipTemp $runtimeZip
