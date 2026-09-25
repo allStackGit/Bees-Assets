@@ -132,6 +132,7 @@ def contract_payload(assets_root: Path) -> dict[str, Any]:
     semantic_sources = {
         "combat_perception_source_sha256": scenes_root / "RlCombatPerception.cs",
         "agent_action_source_sha256": scenes_root / "RlOneVsOneAgent.cs",
+        "episode_coordinator_source_sha256": scenes_root / "RlOneVsOneEpisodeCoordinator.cs",
         "team_exploration_source_sha256": scenes_root / "RlTeamExplorationGrid.cs",
         "episode_identity_source_sha256": scenes_root / "RlEpisodeShipIdentity.cs",
     }
