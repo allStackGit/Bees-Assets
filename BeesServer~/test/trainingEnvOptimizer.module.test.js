@@ -126,7 +126,7 @@ test('optimizer resets safely when a worker advertises new env bounds', () => {
     state = update(optimizer, 'remote-a', 6, 0, 1010, { max: 6 });
     assert.equal(state.desired_envs, 6);
     assert.equal(state.baseline_envs, null);
-    assert.match(state.decision, /capacity changed/);
+    assert.equal(state.phase, 'measuring');
 });
 
 test('manual env counts and central learner are never auto-tuned', () => {
