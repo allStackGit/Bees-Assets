@@ -125,10 +125,16 @@ def generation_target_steps(options: ServiceOptions, index: int) -> int:
     return (index + 1) * options.generation_steps
 
 
-def training_run_data_exists(options: ServiceOptions) -> bool:
-    """Return whether ML-Agents has created resumable state for this persistent run."""
-    run_dir = options.root / "trainer-results" / options.run_id
-    return run_dir.is_dir()
+def training_run_dir(options: ServiceOptions) -> Path:
+    return options.root / "trainer-results" / options.run_id
+
+
+def training_checkpoint_exists(options: ServiceOptions) -> bool:
+    """Return whether ML-Agents has written a resumable trainer checkpoint."""
+    run_dir = training_run_dir(options)
+    if not run_dir.is_dir():
+        return False
+    return any(path.is_file() for path in run_dir.glob("*/checkpoint.pt"))
 
 
 def should_resume_training(
@@ -137,15 +143,20 @@ def should_resume_training(
     generation_index: int,
     previously_started: bool,
 ) -> bool:
-    """Resume only when a prior trainer invocation actually created run state.
+    """Resume only when a prior trainer invocation actually wrote a checkpoint.
 
-    The training_started flag is persisted before spawning ML-Agents so a mid-run service
-    crash can recover. A failure before ML-Agents creates its run directory must not turn
-    every retry into an invalid --resume attempt.
+    ML-Agents creates the run directory before trainer initialization, so directory existence
+    alone is not evidence that --resume is safe. A failed startup before the first checkpoint
+    must retry generation zero fresh instead.
     """
     if generation_index > 0:
+        if not training_checkpoint_exists(options):
+            raise RuntimeError(
+                f"Cannot resume {generation_id(generation_index)} because the persistent "
+                "ML-Agents checkpoint is missing."
+            )
         return True
-    return previously_started and training_run_data_exists(options)
+    return previously_started and training_checkpoint_exists(options)
 
 
 def write_generation_config(options: ServiceOptions, index: int) -> Path:
@@ -240,7 +251,13 @@ def parse_environment_args_json(value: str) -> tuple[str, ...]:
     return tuple(parsed)
 
 
-def training_command(options: ServiceOptions, index: int, *, resume: bool) -> list[str]:
+def training_command(
+    options: ServiceOptions,
+    index: int,
+    *,
+    resume: bool,
+    force_fresh: bool = False,
+) -> list[str]:
     config = write_generation_config(options, index)
     command = [
         options.python_executable,
@@ -257,8 +274,12 @@ def training_command(options: ServiceOptions, index: int, *, resume: bool) -> li
         f"--continual-public-telemetry-quarantine={options.telemetry_quarantine}",
         f"--continual-public-generation-id={generation_id(index)}",
     ]
+    if resume and force_fresh:
+        raise ValueError("training command cannot both resume and force a fresh run")
     if resume:
         command.append("--resume")
+    elif force_fresh:
+        command.append("--force")
     if options.environment_args:
         command.append("--env-args")
         command.extend(options.environment_args)
@@ -390,11 +411,27 @@ def run_service(
                     generation_index=index,
                     previously_started=previously_started,
                 )
+                force_fresh = (
+                    index == 0
+                    and previously_started
+                    and not resume
+                    and training_run_dir(options).is_dir()
+                )
                 print(
                     f"[Bees continuous] training {generation_id(index)} "
-                    f"target_steps={generation_target_steps(options, index)} resume={resume}"
+                    f"target_steps={generation_target_steps(options, index)} "
+                    f"resume={resume} force_fresh={force_fresh}"
                 )
-                _run(training_command(options, index, resume=resume), options, runner)
+                _run(
+                    training_command(
+                        options,
+                        index,
+                        resume=resume,
+                        force_fresh=force_fresh,
+                    ),
+                    options,
+                    runner,
+                )
                 state["phase"] = "release"
                 save_state(options, state)
                 phase = "release"
