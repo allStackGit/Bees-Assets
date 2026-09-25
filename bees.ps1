@@ -66,6 +66,7 @@ $TailnetBinRoot=Join-Path $TailnetRoot 'Bin'
 $TailnetBridgeManifestPath=Join-Path $TailnetBinRoot 'current.json'
 $TailnetBridgeDistributionRoot=Join-Path $TailnetBinRoot 'Distribution'
 $TailnetGatewayPidPath=Join-Path $TailnetRoot 'gateway.pid'
+$TailnetGatewayStatePath=Join-Path $TailnetRoot 'gateway-state.json'
 $TailnetGatewayLogPath=Join-Path $LogsRoot 'Training\tailnet-gateway.out.log'
 $TailnetGatewayErrPath=Join-Path $LogsRoot 'Training\tailnet-gateway.err.log'
 $TailnetAddressPath=Join-Path $TailnetRoot 'learner-ipv4.txt'
@@ -1069,6 +1070,72 @@ function Quote-Arg([string]$Value){ if($Value -notmatch '[\s"]'){return $Value};
 function Get-StringSha256([string]$Value){
     $sha=[Security.Cryptography.SHA256]::Create()
     try{$bytes=[Text.Encoding]::UTF8.GetBytes($Value);([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+}
+
+
+function Get-ProcessIdentity([int]$Id){
+    if($Id -le 0){ return $null }
+    $process=Get-Process -Id $Id -ErrorAction SilentlyContinue
+    if($null -eq $process){ return $null }
+    try {
+        $executable=[IO.Path]::GetFullPath([string]$process.Path)
+        $processStartUtc=$process.StartTime.ToUniversalTime().ToString('o')
+    } catch {
+        return $null
+    }
+    if(-not $executable -or -not $processStartUtc){ return $null }
+    [pscustomobject]@{
+        pid=[int]$process.Id
+        process_start_utc=$processStartUtc
+        executable_path=$executable
+    }
+}
+
+function Test-ManagedProcessIdentity($State,[string]$ExpectedExecutable=''){
+    if($null -eq $State -or -not $State.pid -or -not $State.process_start_utc -or -not $State.executable_path){
+        return $false
+    }
+    $id=0
+    if(-not [int]::TryParse(([string]$State.pid),[ref]$id) -or $id -le 0){ return $false }
+    $current=Get-ProcessIdentity $id
+    if($null -eq $current){ return $false }
+    if(([string]$current.process_start_utc) -ne ([string]$State.process_start_utc)){ return $false }
+    $savedExecutable=[IO.Path]::GetFullPath([string]$State.executable_path)
+    if(-not [string]::Equals(
+        [string]$current.executable_path,
+        $savedExecutable,
+        [StringComparison]::OrdinalIgnoreCase
+    )){ return $false }
+    if($ExpectedExecutable){
+        $expected=[IO.Path]::GetFullPath($ExpectedExecutable)
+        if(-not [string]::Equals(
+            [string]$current.executable_path,
+            $expected,
+            [StringComparison]::OrdinalIgnoreCase
+        )){ return $false }
+    }
+    return $true
+}
+
+function Get-StateReferencedLivePid($State){
+    if($null -eq $State -or -not $State.pid){ return 0 }
+    $id=0
+    if(-not [int]::TryParse(([string]$State.pid),[ref]$id) -or $id -le 0){ return 0 }
+    if(Get-Process -Id $id -ErrorAction SilentlyContinue){ return $id }
+    return 0
+}
+
+function Stop-ManagedProcessTree($State,[string]$ExpectedExecutable,[string]$Label){
+    if(-not(Test-ManagedProcessIdentity $State $ExpectedExecutable)){
+        $id=Get-StateReferencedLivePid $State
+        if($id -gt 0){
+            throw "Refusing to stop $Label PID $id because its persisted process identity does not match the live process. The PID may have been reused."
+        }
+        return $false
+    }
+    $id=[int]$State.pid
+    & taskkill /PID $id /T /F *> $null
+    return $true
 }
 
 function Get-RunningCentralAgentPid {
