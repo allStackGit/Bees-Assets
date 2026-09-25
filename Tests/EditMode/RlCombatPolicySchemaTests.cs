@@ -22,8 +22,9 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedMapObjects"), Is.EqualTo(64));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedCollisionAsteroids"), Is.EqualTo(48));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxObservedEnemyWeaponMounts"), Is.Zero);
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridSize"), Is.EqualTo(13));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridCellCount"), Is.EqualTo(169));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridSize"), Is.EqualTo(21));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "NavigationGridCellCount"), Is.EqualTo(441));
+            Assert.That(RuntimeAssembly.GetStaticField(RuntimeAssembly.GetType("RlCombatPerception"), "NavigationGridCellSize"), Is.EqualTo(6f));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MaxWeaponSlots"), Is.EqualTo(5));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "SelfObservationSize"), Is.EqualTo(25));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CapabilityObservationSize"), Is.EqualTo(12));
@@ -33,7 +34,7 @@ namespace Bees.Tests.EditMode
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MiningAsteroidObservationSize"), Is.EqualTo(7));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "MapObjectObservationSize"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CollisionAsteroidObservationSize"), Is.EqualTo(11));
-            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7342));
+            Assert.That(RuntimeAssembly.GetStaticField(agentType, "ObservationSize"), Is.EqualTo(7614));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionCount"), Is.EqualTo(4));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "CommunicationContinuousActionStart"), Is.EqualTo(12));
             Assert.That(RuntimeAssembly.GetStaticField(agentType, "ContinuousActionCount"), Is.EqualTo(16));
@@ -355,7 +356,7 @@ namespace Bees.Tests.EditMode
                 occupancy,
                 Vector2.zero,
                 Vector2.zero,
-                new Vector2(4f, 4f));
+                new Vector2(2f, 2f));
 
             int center = (gridSize / 2) * gridSize + gridSize / 2;
             int blocked = 0;
@@ -369,7 +370,7 @@ namespace Bees.Tests.EditMode
 
             Assert.That(occupancy[center], Is.EqualTo(1f));
             Assert.That(blocked, Is.EqualTo(1),
-                "A small obstacle centered on the ship should occupy only the center 10x10 navigation cell.");
+                "A small obstacle centered on the ship should occupy only the center 6x6 navigation cell.");
 
             string agent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             Assert.That(agent, Does.Not.Contain("MaxObservedObstacles"));
