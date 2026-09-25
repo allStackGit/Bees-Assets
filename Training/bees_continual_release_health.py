@@ -380,6 +380,22 @@ def inspect_release_health(
     }
 
 
+def check_release_health(store: ContinualLearningStore) -> Dict[str, Any]:
+    """Return the compact release-cycle health contract from the full inspector snapshot."""
+    snapshot = inspect_release_health(store)
+    deployment = snapshot.get("current_deployment")
+    deployment_id = (
+        deployment.get("deployment_id")
+        if isinstance(deployment, Mapping)
+        else None
+    )
+    return {
+        **snapshot,
+        "status": "healthy" if bool(snapshot.get("healthy")) else "unhealthy",
+        "deployment_id": deployment_id,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Verify Bees continual champion/deployment/hot-bundle release health without mutation."
