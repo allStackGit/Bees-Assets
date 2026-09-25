@@ -392,6 +392,50 @@ class TrainingBundleTests(unittest.TestCase):
                 self.assertEqual(manifest["model_step"], 500)
                 self.assertEqual(manifest["model_lag_steps"], 100)
 
+    def test_deterministic_benchmark_result_is_archived_and_manifested(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-benchmark"
+            bees_root, assets_root = self._layout(root, run_id)
+            benchmark_json = root / "benchmark.json"
+            benchmark_json.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "succeeded",
+                        "benchmark": "deterministic-wasp-vs-gunship-v1",
+                        "deterministic_actions": True,
+                        "summary": {"matches": 20},
+                        "aim_metrics": {
+                            "bee_aim_error_deg": 22.5,
+                            "human_aim_error_deg": 24.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                benchmark_json=benchmark_json,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertIn(
+                    "status/deterministic-benchmark.json",
+                    zipped.namelist(),
+                )
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertEqual(
+                    manifest["deterministic_benchmark"]["status"],
+                    "succeeded",
+                )
+                self.assertTrue(
+                    manifest["deterministic_benchmark"]["deterministic_actions"]
+                )
+
     def test_unified_operator_exposes_bundle_command(self) -> None:
         operator = (
             Path(__file__).resolve().parents[1] / "bees.ps1"
@@ -401,9 +445,12 @@ class TrainingBundleTests(unittest.TestCase):
             operator,
         )
         self.assertIn("$DiagnosticBundleScript=", operator)
+        self.assertIn("$DiagnosticBenchmarkScript=", operator)
         self.assertIn("$CentralModelSnapshotRequestPath=", operator)
         self.assertIn("Request-CentralDiagnosticModelSnapshot", operator)
+        self.assertIn("Invoke-CentralDiagnosticBenchmark", operator)
         self.assertIn("--snapshot-json", operator)
+        self.assertIn("--benchmark-json", operator)
         self.assertIn("'bundle'{Invoke-Bundle}", operator)
 
     def test_missing_onnx_is_a_warning_not_a_bundle_failure(self) -> None:
