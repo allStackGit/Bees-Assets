@@ -193,12 +193,16 @@ $requirements=Join-Path $RuntimeRoot 'bees_remote_requirements.txt'
 $requirementsHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $requirements).Hash.ToLowerInvariant()
 $requirementsStamp=Join-Path $VenvRoot 'bees-requirements.sha256'
 $currentStamp=if(Test-Path -LiteralPath $requirementsStamp){(Get-Content -LiteralPath $requirementsStamp -Raw).Trim()}else{''}
-if($currentStamp -ne $requirementsHash){
+& $venvPython -c "import pkg_resources, mlagents, torch, numpy" *> $null
+$dependenciesOk=($LASTEXITCODE -eq 0)
+if($currentStamp -ne $requirementsHash -or -not $dependenciesOk){
     Write-Host 'Installing/updating remote worker Python dependencies...'
     & $venvPython -m pip install --upgrade pip
     if($LASTEXITCODE -ne 0){throw 'pip upgrade failed.'}
     & $venvPython -m pip install -r $requirements
     if($LASTEXITCODE -ne 0){throw 'Remote worker dependency installation failed.'}
+    & $venvPython -c "import pkg_resources, mlagents, torch, numpy" *> $null
+    if($LASTEXITCODE -ne 0){throw 'Remote Python dependency validation failed after installation.'}
     $requirementsHash | Set-Content -LiteralPath $requirementsStamp -NoNewline -Encoding ASCII
 }
 
