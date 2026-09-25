@@ -11,13 +11,18 @@ BUNDLED_TAILNET_BRIDGE="__BEES_TAILNET_BRIDGE_FILE__"
 TAILNET_BRIDGE_SHA256="__BEES_TAILNET_BRIDGE_SHA256__"
 BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 
+COMMAND="start"
 ENVS=""
 INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
 TORCH_DEVICE="$DEFAULT_TORCH_DEVICE"
 
 usage() {
     cat <<'EOF'
-Usage: bees-remote-worker.sh [options]
+Usage: bees-remote-worker.sh [start|stop] [options]
+
+Commands:
+  start                  Start the worker in the background (default).
+  stop                   Gracefully stop the background worker.
 
 Options:
   --envs N               Pin a fixed Unity environment count (1-64); omission auto-tunes.
@@ -26,6 +31,11 @@ Options:
   -h, --help             Show this help.
 EOF
 }
+
+if [[ $# -gt 0 && ( "$1" == "start" || "$1" == "stop" ) ]]; then
+    COMMAND="$1"
+    shift
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -66,6 +76,56 @@ fi
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+mkdir -p "$INSTALL_ROOT"
+SUPERVISOR_PID_FILE="$INSTALL_ROOT/remote-worker.pid"
+SHUTDOWN_REQUEST_FILE="$INSTALL_ROOT/remote-worker.stop"
+LOGS_ROOT="$INSTALL_ROOT/Logs"
+SUPERVISOR_LOG="$LOGS_ROOT/remote-supervisor.log"
+
+recorded_pid() {
+    if [[ ! -f "$SUPERVISOR_PID_FILE" ]]; then
+        return 1
+    fi
+    local value
+    value="$(tr -d '\r\n' < "$SUPERVISOR_PID_FILE" 2>/dev/null || true)"
+    if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value <= 0 )); then
+        return 1
+    fi
+    printf '%s' "$value"
+}
+
+if [[ "$COMMAND" == "stop" ]]; then
+    PID="$(recorded_pid || true)"
+    if [[ -z "$PID" ]] || ! kill -0 "$PID" 2>/dev/null; then
+        rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+        echo "[Bees remote] worker is not running."
+        exit 0
+    fi
+
+    printf 'stop' > "$SHUTDOWN_REQUEST_FILE"
+    echo "[Bees remote] stop requested for worker PID $PID; waiting for managed cleanup..."
+    ATTEMPTS=0
+    while kill -0 "$PID" 2>/dev/null && (( ATTEMPTS < 180 )); do
+        sleep 0.25
+        ATTEMPTS=$((ATTEMPTS + 1))
+    done
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "error: remote worker PID $PID did not stop within 45 seconds; it was not force-killed." >&2
+        exit 1
+    fi
+    rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+    echo "[Bees remote] worker stopped."
+    exit 0
+fi
+
+PID="$(recorded_pid || true)"
+if [[ -n "$PID" ]] && kill -0 "$PID" 2>/dev/null; then
+    echo "[Bees remote] worker is already running in the background (PID $PID)."
+    echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
+    exit 0
+fi
+rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
+
 sudo_cmd() {
     if [[ "$(id -u)" -eq 0 ]]; then
         "$@"
@@ -105,14 +165,13 @@ if ! have base64 || { ! have sha256sum && ! have shasum; }; then
 fi
 
 echo "[Bees remote] Stage 1/5: preparing local worker files..."
-mkdir -p "$INSTALL_ROOT"
 RUNTIME_ROOT="$INSTALL_ROOT/Runtime"
 SECRETS_ROOT="$INSTALL_ROOT/Secrets"
 DOWNLOADS_ROOT="$INSTALL_ROOT/Downloads"
 VENV_ROOT="$INSTALL_ROOT/.venv"
 TAILNET_ROOT="$INSTALL_ROOT/Tailnet"
 TAILNET_STATE="$TAILNET_ROOT/State"
-mkdir -p "$RUNTIME_ROOT" "$SECRETS_ROOT" "$DOWNLOADS_ROOT" "$TAILNET_ROOT" "$TAILNET_STATE"
+mkdir -p "$RUNTIME_ROOT" "$SECRETS_ROOT" "$DOWNLOADS_ROOT" "$TAILNET_ROOT" "$TAILNET_STATE" "$LOGS_ROOT"
 
 hash_file() {
     if have sha256sum; then
@@ -255,15 +314,23 @@ if [[ -n "$ENVS" ]]; then
 fi
 
 echo
-echo "[Bees remote] Stage 5/5: starting managed training worker..."
+echo "[Bees remote] Stage 5/5: starting managed training worker in the background..."
 if [[ -n "$ENVS" ]]; then
     echo "[Bees remote] starting worker with $ENVS environments."
 else
     echo "[Bees remote] starting worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64)."
 fi
-echo "[Bees remote] private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker."
-set +e
-"$VENV_PYTHON" -u "${WORKER_ARGS[@]}"
-EXIT_CODE=$?
-set -e
-exit "$EXIT_CODE"
+rm -f "$SHUTDOWN_REQUEST_FILE"
+nohup "$VENV_PYTHON" -u "${WORKER_ARGS[@]}" >>"$SUPERVISOR_LOG" 2>&1 </dev/null &
+WORKER_PID=$!
+printf '%s' "$WORKER_PID" > "$SUPERVISOR_PID_FILE"
+sleep 0.75
+if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+    rm -f "$SUPERVISOR_PID_FILE"
+    echo "error: remote worker exited during background startup. Check $SUPERVISOR_LOG." >&2
+    exit 1
+fi
+echo "[Bees remote] worker started in the background (PID $WORKER_PID)."
+echo "[Bees remote] log: $SUPERVISOR_LOG"
+echo "[Bees remote] close this shell freely; use 'bash bees-remote-worker.sh stop' to stop the worker."
+exit 0
