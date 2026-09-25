@@ -116,6 +116,17 @@ class TrainingBundleTests(unittest.TestCase):
                     manifest["latest_onnx"]["archive_path"],
                 )
 
+    def test_unified_operator_exposes_bundle_command(self) -> None:
+        operator = (
+            Path(__file__).resolve().parents[1] / "bees.ps1"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "ValidateSet('build','server','start','stop','status','bundle')",
+            operator,
+        )
+        self.assertIn("$DiagnosticBundleScript=", operator)
+        self.assertIn("'bundle'{Invoke-Bundle}", operator)
+
     def test_missing_onnx_is_a_warning_not_a_bundle_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
