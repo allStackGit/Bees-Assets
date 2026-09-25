@@ -968,6 +968,24 @@ function Get-StringSha256([string]$Value){
 
 function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     if($Id -le 0 -or -not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){ return $true }
+
+    $supportsCheckpointShutdown=$false
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{
+            $state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json
+            $supportsCheckpointShutdown=(
+                $state.pid -and
+                ([int]$state.pid) -eq $Id -and
+                [bool]$state.graceful_checkpoint_shutdown
+            )
+        }catch{
+            $supportsCheckpointShutdown=$false
+        }
+    }
+    if(-not $supportsCheckpointShutdown){
+        throw "Running central learner PID $Id predates checkpoint-safe shutdown. Refusing to force-kill it because that could lose optimizer progress."
+    }
+
     Ensure-Directory $CentralAgentInstallRoot
     Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
     [IO.File]::WriteAllText(
@@ -983,10 +1001,7 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
         }
         Start-Sleep -Milliseconds 250
     }
-    Write-Warning "Central learner did not finish graceful checkpoint finalization within $TimeoutSeconds seconds; forcing process-tree termination."
-    Stop-ProcessTree $Id
-    Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
-    return $false
+    throw "Central learner PID $Id is still finalizing its checkpoint after $TimeoutSeconds seconds. Refusing forced termination; the existing learner remains authoritative."
 }
 
 function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
