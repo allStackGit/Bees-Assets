@@ -929,6 +929,7 @@ function Prepare-RemoteBootstrap($Config){
     $utf8NoBom=New-Object Text.UTF8Encoding($false)
 
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
     $windowsBody=$windowsTemplate
@@ -945,6 +946,17 @@ function Prepare-RemoteBootstrap($Config){
     }
     foreach($key in $windowsReplacements.Keys){ $windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key]) }
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
+
+    # Windows commonly blocks unsigned .ps1 files under the default execution policy. The .cmd
+    # wrapper applies Bypass only to this child PowerShell process; it does not modify machine or
+    # user execution-policy settings.
+    $windowsCmd=@'
+@echo off
+setlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0bees-remote-worker.ps1" %*
+exit /b %ERRORLEVEL%
+'@
+    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
     $linuxReplacements=@{
@@ -964,7 +976,7 @@ function Prepare-RemoteBootstrap($Config){
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
-    Write-Host 'Windows: copy bees-remote-worker.ps1 and run it; optionally pass -Envs N.'
+    Write-Host 'Windows: copy bees-remote-worker.cmd and bees-remote-worker.ps1 together; run the .cmd file, optionally with -Envs N.'
     Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
 }
 
@@ -1137,22 +1149,26 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
     $lines
 }
 
-function Write-LiveStatusFrame([string[]]$Lines,[ref]$Top,[ref]$Height){
-    $width=[Math]::Max(40,[Console]::BufferWidth-1)
-    if($Top.Value -lt 0){
-        $Top.Value=[Console]::CursorTop
+function Initialize-LiveStatusRegion([int]$MinimumHeight){
+    $height=[Math]::Max(32,$MinimumHeight)
+    $height=[Math]::Min($height,[Math]::Max(1,[Console]::BufferHeight-1))
+    for($i=0;$i -lt $height;$i++){
+        [Console]::WriteLine()
     }
-    [Console]::SetCursorPosition(0,[int]$Top.Value)
-    $rowCount=[Math]::Max($Lines.Count,[int]$Height.Value)
-    for($i=0;$i -lt $rowCount;$i++){
-        $line=if($i -lt $Lines.Count){[string]$Lines[$i]}else{''}
+    $top=[Math]::Max(0,[Console]::CursorTop-$height)
+    [pscustomobject]@{Top=$top;Height=$height}
+}
+
+function Write-LiveStatusFrame([string[]]$Lines,[int]$Top,[int]$Height){
+    $width=[Math]::Max(40,[Console]::BufferWidth-1)
+    $rows=[Math]::Min($Height,$Lines.Count)
+    for($i=0;$i -lt $Height;$i++){
+        [Console]::SetCursorPosition(0,$Top+$i)
+        $line=if($i -lt $rows){[string]$Lines[$i]}else{''}
         if($line.Length -gt $width){$line=$line.Substring(0,$width)}
         [Console]::Write($line.PadRight($width))
-        if($i -lt $rowCount-1){[Console]::WriteLine()}
     }
-    $Height.Value=$Lines.Count
-    $endRow=[Math]::Min([Console]::BufferHeight-1,[int]$Top.Value+$rowCount)
-    [Console]::SetCursorPosition(0,$endRow)
+    [Console]::SetCursorPosition(0,[Math]::Min([Console]::BufferHeight-1,$Top+$Height))
 }
 
 function Show-Status($Config,[string]$AdminToken,[bool]$Single){
@@ -1161,37 +1177,36 @@ function Show-Status($Config,[string]$AdminToken,[bool]$Single){
         return
     }
 
-    $frameTop=-1
-    $frameHeight=0
-    $inPlace=$true
+    # A live dashboard only makes sense on an interactive console. When output is redirected,
+    # emit one stable snapshot instead of creating an unbounded log every refresh interval.
     try {
+        if([Console]::IsOutputRedirected){
+            @(Get-StatusFrameLines $Config $AdminToken)|ForEach-Object{Write-Host $_}
+            return
+        }
         $null=[Console]::BufferWidth
-        $inPlace=-not [Console]::IsOutputRedirected
+        $null=[Console]::CursorTop
     } catch {
-        $inPlace=$false
+        @(Get-StatusFrameLines $Config $AdminToken)|ForEach-Object{Write-Host $_}
+        return
     }
 
+    $first=@(Get-StatusFrameLines $Config $AdminToken)
+    $first += ''
+    $first += "Refreshing every $RefreshSeconds s. Ctrl+C to stop."
+    $region=Initialize-LiveStatusRegion ([Math]::Max(32,$first.Count+2))
     try {
+        Write-LiveStatusFrame $first $region.Top $region.Height
         do {
+            Start-Sleep -Seconds $RefreshSeconds
             $lines=@(Get-StatusFrameLines $Config $AdminToken)
             $lines += ''
             $lines += "Refreshing every $RefreshSeconds s. Ctrl+C to stop."
-            if($inPlace){
-                try {
-                    Write-LiveStatusFrame $lines ([ref]$frameTop) ([ref]$frameHeight)
-                } catch {
-                    $inPlace=$false
-                    $lines|ForEach-Object{Write-Host $_}
-                }
-            } else {
-                $lines|ForEach-Object{Write-Host $_}
-            }
-            Start-Sleep -Seconds $RefreshSeconds
+            Write-LiveStatusFrame $lines $region.Top $region.Height
         } while($true)
     } finally {
-        if($inPlace -and $frameTop -ge 0){
-            [Console]::WriteLine()
-        }
+        [Console]::SetCursorPosition(0,[Math]::Min([Console]::BufferHeight-1,$region.Top+$region.Height))
+        [Console]::WriteLine()
     }
 }
 
