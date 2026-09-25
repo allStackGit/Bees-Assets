@@ -68,10 +68,10 @@ function completeRequest(uploadId) {
     return { Type: 'rl-demo-complete', UploadId: uploadId };
 }
 
-test('public upload policy matches current Unity ABI v19 capture contract', () => {
+test('public upload policy matches current Unity ABI v20 capture contract', () => {
     assert.equal(RL_DEMO_POLICY.schemaVersion, 1);
     assert.equal(RL_DEMO_POLICY.behaviorName, 'BeesRL1v1');
-    assert.equal(RL_DEMO_POLICY.policyAbiVersion, 19);
+    assert.equal(RL_DEMO_POLICY.policyAbiVersion, 20);
     assert.equal(RL_DEMO_POLICY.observationSize, 7614);
     assert.equal(RL_DEMO_POLICY.continuousActionCount, 16);
     assert.deepEqual(RL_DEMO_POLICY.discreteBranchSizes, [
@@ -80,7 +80,7 @@ test('public upload policy matches current Unity ABI v19 capture contract', () =
     ]);
     assert.equal(
         RL_DEMO_POLICY.policySignature,
-        'bees-rl-v19|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id',
+        'bees-rl-v20|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id',
     );
 });
 
