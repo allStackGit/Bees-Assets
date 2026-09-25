@@ -351,6 +351,18 @@ class ElasticBrokerTests(unittest.TestCase):
 
 
 class CapacityDiagnosticTests(unittest.TestCase):
+    def test_backpressure_reports_total_and_recent_window(self):
+        diagnostics = elastic.CapacityDiagnostics(local_envs=2)
+        diagnostics.observe_backpressure(now=100.0)
+        diagnostics.observe_backpressure(now=130.0)
+        diagnostics.observe_backpressure(now=165.0)
+
+        recent, per_minute = diagnostics.backpressure_recent(now=170.0)
+
+        self.assertEqual(diagnostics._backpressure_total, 3)
+        self.assertEqual(recent, 2)
+        self.assertAlmostEqual(per_minute, 2.0)
+
     def test_meaningful_gain_reports_beneficial(self):
         status, gain = elastic.classify_capacity(
             100.0,
