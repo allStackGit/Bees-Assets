@@ -992,6 +992,8 @@ function Prepare-RemoteBootstrap($Config){
     try {
         Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
+        $runtimeVersion=Get-GitTreeSha 'Training'
+        $runtimeVersion | Set-Content -LiteralPath (Join-Path $staging 'bees-runtime-version.txt') -NoNewline -Encoding ASCII
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
         # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
         # archive beside the final file and atomically swap it into place after compression.
