@@ -18,12 +18,12 @@ namespace Assets.Scripts
         public const bool Development = true;
         public const bool Production = !Test && !Development;
 
-        public const string LocalServerHostname = "seagrams.softether.net";
+        public const string LocalServerHostname = "seagrams7.softether.net";
         public const string GlobalServerHostname = "seagrams7.softether.net";
         public const string TestServerHostname = LocalServerHostname;
         public const string DevelopmentServerHostname = LocalServerHostname;
         public const string ProductionServerHostname = GlobalServerHostname;
-        public const string DevelopmentWebGlWebSocketURL = "wss://seagrams.softether.net/bees-ws/";
+        public const string DevelopmentWebGlWebSocketURL = "wss://seagrams7.softether.net/bees-ws/";
         public const int DevelopmentPort = 7146;
         public const int TestPort = 7146;
         public const int ProductionPort = 7144;

@@ -10,6 +10,18 @@ namespace Bees.Tests.EditMode
     public class RlServerIndependenceTests
     {
         [Test]
+        public void DevelopmentAndTrainingUseVerifiedPublicServerEndpoint()
+        {
+            string config = ReadSource("Scripts", "ConfigData.cs");
+            Assert.That(config, Does.Contain("LocalServerHostname = \"seagrams7.softether.net\""));
+            Assert.That(config, Does.Contain("DevelopmentServerHostname = LocalServerHostname"));
+            Assert.That(config, Does.Contain("TestServerHostname = LocalServerHostname"));
+            Assert.That(config, Does.Contain("wss://seagrams7.softether.net/bees-ws/"));
+            Assert.That(config, Does.Not.Contain("BEES_TRAINING_GAMEPLAY_HOST"));
+            Assert.That(config, Does.Not.Contain("BEES_TRAINING_GAMEPLAY_PORT"));
+        }
+
+        [Test]
         public void DedicatedTrainingDetachesFromServerAfterSettingsWithoutWaitingForUserData()
         {
             string scene = ReadSource("Scripts", "Scenes", "Scene.cs");

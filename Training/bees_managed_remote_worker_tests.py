@@ -66,6 +66,23 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             bundle.writestr("bees-runtime-version.txt", "not-a-sha")
         self.assertEqual(managed._runtime_version_from_zip(buffer.getvalue()), "")
 
+    def test_legacy_gameplay_port_argument_is_accepted_but_not_forwarded(self):
+        args = managed._parser().parse_args([
+            "--tailnet-bridge", "bridge",
+            "--tailnet-state", "state",
+            "--tailnet-hostname", "worker",
+            "--tailnet-target", "100.64.0.10",
+            "--gameplay-port", "7146",
+            "--install-root", "install",
+            "--runtime-archive", "runtime.zip",
+            "--bootstrap-token-file", "bootstrap.token",
+            "--worker-token-file", "worker.token",
+            "--wan-token-file", "wan.token",
+        ])
+        self.assertEqual(args.gameplay_port, 7146)
+        command = managed._tailnet_forward_command(args)
+        self.assertNotIn("127.0.0.1:7146=100.64.0.10:7146", command)
+
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
             control_port=7150,

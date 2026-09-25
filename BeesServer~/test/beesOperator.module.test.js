@@ -161,7 +161,7 @@ test('managed remote worker emits a recurring live status heartbeat', () => {
     const source = fs.readFileSync(workerPath, 'utf8');
     assert.match(source, /def _remote_status_summary\(/);
     assert.match(source, /next_status = now \+ 5\.0/);
-    assert.match(source, /print\(_remote_status_summary\(args, trainer_id\), flush=True\)/);
+    assert.match(source, /_remote_status_summary\(args, trainer_id, updater\)/);
     assert.match(source, /"state=\{state\} envs=\{args\.envs\} build=\{build_id\}/);
 });
 
@@ -417,3 +417,4 @@ test('training release metadata is BOM-free and old releases are normalized befo
     const start = source.match(/function Invoke-Start[\s\S]*?\n\}/)?.[0] || '';
     assert.match(start, /Remove-Utf8BomIfPresent \$LatestReleasePath/);
 });
+

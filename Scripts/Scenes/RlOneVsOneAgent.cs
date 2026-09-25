@@ -905,15 +905,22 @@ internal sealed class RlOneVsOneAgent : Agent
         return leftRuntime.CompareTo(rightRuntime);
     }
 
+    internal static bool DoesShipExtentFitArena(Level level, float extent)
+    {
+        float mapSize = RlOneVsOneArenaMapSizeState.GetMapSize(level);
+        return mapSize > Mathf.Max(0f, extent) * 2f;
+    }
+
     private bool ValidateShipFitsArena(Ship ship)
     {
         float extent = Mathf.Max(ship.GetHalfWidth(), ship.GetHalfHeight());
-        if (RlOneVsOneTrainingBootstrap.CurrentMapSize > extent * 2f)
+        float mapSize = RlOneVsOneArenaMapSizeState.GetMapSize(ship.Level);
+        if (DoesShipExtentFitArena(ship.Level, extent))
         {
             return true;
         }
 
-        ReportInvalidEnvironment($"RL arena size {RlOneVsOneTrainingBootstrap.CurrentMapSize:0.###} cannot contain " +
+        ReportInvalidEnvironment($"RL arena size {mapSize:0.###} cannot contain " +
                                  $"{ship.ShipType} (diameter {extent * 2f:0.###}).");
         return false;
     }

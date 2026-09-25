@@ -88,6 +88,12 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
     )
+    parser.add_argument(
+        "--gameplay-port",
+        type=int,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--control-port", type=int, default=7150)
     parser.add_argument("--bootstrap-port", type=int, default=7151)
     parser.add_argument("--broker-port", type=int, default=55051)

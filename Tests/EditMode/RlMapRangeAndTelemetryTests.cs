@@ -50,6 +50,44 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ShipFitValidationUsesTheSampledArenaSize()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+            Type levelType = RuntimeAssembly.GetType("Assets.Scripts.Levels.Level");
+            Type mapStateType = RuntimeAssembly.GetType("RlOneVsOneArenaMapSizeState");
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            MethodInfo setMapSize = mapStateType.GetMethod("SetMapSizeForTests", flags);
+            MethodInfo resetMapSizes = mapStateType.GetMethod("ResetForTests", flags);
+            MethodInfo fits = agentType.GetMethod("DoesShipExtentFitArena", flags);
+
+            Assert.That(setMapSize, Is.Not.Null);
+            Assert.That(resetMapSizes, Is.Not.Null);
+            Assert.That(fits, Is.Not.Null);
+
+            GameObject smallArenaObject = new GameObject("RL small sampled arena");
+            GameObject largeArenaObject = new GameObject("RL large sampled arena");
+            Component smallArena = smallArenaObject.AddComponent(levelType);
+            Component largeArena = largeArenaObject.AddComponent(levelType);
+            try
+            {
+                resetMapSizes.Invoke(null, null);
+                setMapSize.Invoke(null, new object[] { smallArena, 32f });
+                setMapSize.Invoke(null, new object[] { largeArena, 64f });
+
+                Assert.That((bool)fits.Invoke(null, new object[] { smallArena, 20f }), Is.False,
+                    "A 40-unit-diameter ship must not be accepted into a 32-unit sampled arena.");
+                Assert.That((bool)fits.Invoke(null, new object[] { largeArena, 20f }), Is.True,
+                    "The same ship should be accepted when that specific arena sampled 64 units.");
+            }
+            finally
+            {
+                resetMapSizes.Invoke(null, null);
+                UnityEngine.Object.DestroyImmediate(smallArenaObject);
+                UnityEngine.Object.DestroyImmediate(largeArenaObject);
+            }
+        }
+
+        [Test]
         public void MapSizeRangeRejectsPartialOrAmbiguousConfiguration()
         {
             AssertParseFails("--rl-map-size-min", "64");
