@@ -30,7 +30,7 @@ test('bees.ps1 remains valid PowerShell syntax', { skip: process.platform !== 'w
 test('atomic file install retries transient Windows sharing locks without giving up atomic replace', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const atomic = source.match(/function Install-AtomicFile[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(atomic, /\$maxAttempts=50/);
+    assert.match(atomic, /\$maxAttempts=300/);
     assert.match(atomic, /catch \[IO\.IOException\]/);
     assert.match(atomic, /Start-Sleep -Milliseconds 100/);
     assert.match(atomic, /if\(\$attempt -ge \$maxAttempts\)\{ throw \}/);
@@ -260,6 +260,22 @@ test('Windows launcher here-string is structurally complete', () => {
     assert.match(block, /^\s*\$windowsCmd=@'[\s\S]*::BEES_PAYLOAD_BEGIN[\s\S]*::BEES_PAYLOAD_END/m);
 });
 
+
+test('bootstrap packaging releases mutable source handles before WAN streaming', () => {
+    const bridgePath = path.resolve(__dirname, '..', '..', 'Tools~', 'bees-tailnet-bridge', 'main.go');
+    const source = fs.readFileSync(bridgePath, 'utf8');
+    const zipBlock = source.match(/func zipFile\([\s\S]*?\n\}/)?.[0] || '';
+    const copyToSnapshot = zipBlock.indexOf('io.Copy(snapshot, source)');
+    const closeSource = zipBlock.indexOf('source.Close()');
+    const createHeader = zipBlock.indexOf('z.CreateHeader(header)');
+    assert.match(zipBlock, /os\.CreateTemp\("", "bees-bootstrap-snapshot-\*"/);
+    assert.ok(copyToSnapshot >= 0);
+    assert.ok(closeSource > copyToSnapshot);
+    assert.ok(createHeader > closeSource,
+        'The mutable bootstrap source must be closed before response streaming begins.');
+    assert.match(zipBlock, /snapshot\.Seek\(0, io\.SeekStart\)/);
+    assert.match(zipBlock, /os\.Remove\(snapshotPath\)/);
+});
 
 test('remote bootstrap fetch reuses one tsnet session for reachability and HTTP', () => {
     const bridgePath = path.resolve(__dirname, '..', '..', 'Tools~', 'bees-tailnet-bridge', 'main.go');
