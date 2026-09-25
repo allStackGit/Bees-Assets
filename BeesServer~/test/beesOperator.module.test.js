@@ -266,7 +266,7 @@ test('bootstrap packaging releases mutable source handles before WAN streaming',
     const source = fs.readFileSync(bridgePath, 'utf8');
     const zipBlock = source.match(/func zipFile\([\s\S]*?\n\}/)?.[0] || '';
     const copyToSnapshot = zipBlock.indexOf('io.Copy(snapshot, source)');
-    const closeSource = zipBlock.indexOf('source.Close()');
+    const closeSource = zipBlock.indexOf('if err = source.Close(); err != nil {');
     const createHeader = zipBlock.indexOf('z.CreateHeader(header)');
     assert.match(zipBlock, /os\.CreateTemp\("", "bees-bootstrap-snapshot-\*"/);
     assert.ok(copyToSnapshot >= 0);
