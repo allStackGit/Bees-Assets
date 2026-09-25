@@ -115,8 +115,109 @@ Expand-Archive -LiteralPath $runtimeZip -DestinationPath $RuntimeRoot -Force
 
 function Test-Python310([string]$Exe,[string[]]$Prefix=@()){
     if(-not $Exe -or -not(Test-Path -LiteralPath $Exe)){return $false}
-    & $Exe @Prefix -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
-    $LASTEXITCODE -eq 0
+
+    # Windows can expose python.exe through the Microsoft Store App Execution Alias even when
+    # Python is not installed. Treat that placeholder as absent instead of executing it.
+    $fullExe=[IO.Path]::GetFullPath($Exe)
+    if($fullExe -match '(?i)\\Microsoft\\WindowsApps\\python(?:3)?\.exe
+
+function Resolve-PythonLauncher {
+    $py=Resolve-Exe 'py'
+    if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
+    $python=Resolve-Exe 'python'
+    if($python -and (Test-Python310 $python)){return @($python)}
+    foreach($candidate in @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+        'C:\Program Files\Python310\python.exe'
+    )){
+        if(Test-Python310 $candidate){return @($candidate)}
+    }
+    $winget=Resolve-Exe 'winget'
+    if($winget){
+        Write-Host 'Python 3.10 was not found. Installing it with winget...'
+        & $winget install --id Python.Python.3.10 -e --accept-package-agreements --accept-source-agreements --silent
+        foreach($candidate in @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+            'C:\Program Files\Python310\python.exe'
+        )){
+            if(Test-Python310 $candidate){return @($candidate)}
+        }
+        $py=Resolve-Exe 'py'
+        if($py -and (Test-Python310 $py @('-3.10'))){return @($py,'-3.10')}
+    }
+    throw 'Python 3.10 is required and could not be installed automatically.'
+}
+
+Write-Host '[Bees remote] Stage 4/5: preparing Python 3.10 worker environment...'
+if(-not(Test-Path -LiteralPath (Join-Path $VenvRoot 'Scripts\python.exe'))){
+    $launcher=Resolve-PythonLauncher
+    $launcherExe=$launcher[0]
+    $launcherArgs=@()
+    if($launcher.Count -gt 1){$launcherArgs=@($launcher[1..($launcher.Count-1)])}
+    Write-Host "Creating remote worker Python environment at $VenvRoot"
+    & $launcherExe @launcherArgs -m venv $VenvRoot
+    if($LASTEXITCODE -ne 0){throw 'Failed to create the Python virtual environment.'}
+}
+
+$venvPython=Join-Path $VenvRoot 'Scripts\python.exe'
+$requirements=Join-Path $RuntimeRoot 'bees_remote_requirements.txt'
+$requirementsHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $requirements).Hash.ToLowerInvariant()
+$requirementsStamp=Join-Path $VenvRoot 'bees-requirements.sha256'
+$currentStamp=if(Test-Path -LiteralPath $requirementsStamp){(Get-Content -LiteralPath $requirementsStamp -Raw).Trim()}else{''}
+if($currentStamp -ne $requirementsHash){
+    Write-Host 'Installing/updating remote worker Python dependencies...'
+    & $venvPython -m pip install --upgrade pip
+    if($LASTEXITCODE -ne 0){throw 'pip upgrade failed.'}
+    & $venvPython -m pip install -r $requirements
+    if($LASTEXITCODE -ne 0){throw 'Remote worker dependency installation failed.'}
+    $requirementsHash | Set-Content -LiteralPath $requirementsStamp -NoNewline -Encoding ASCII
+}
+
+$worker=Join-Path $RuntimeRoot 'bees_managed_remote_worker.py'
+$workerArgs=@(
+    $worker,
+    '--tailnet-bridge',$tailnetBridge,
+    '--tailnet-state',$TailnetState,
+    '--tailnet-hostname',$workerHostname,
+    '--tailnet-target',$TailnetLearner,
+    '--control-port',[string]$ControlPort,
+    '--bootstrap-port',[string]$TailnetBootstrapPort,
+    '--broker-port',[string]$BrokerPort,
+    '--install-root',$InstallRoot,
+    '--runtime-archive',$runtimeZip,
+    '--bootstrap-token-file',$bootstrapTokenPath,
+    '--worker-token-file',$workerToken,
+    '--wan-token-file',$wanToken,
+    '--torch-device',$TorchDevice
+)
+if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
+
+Write-Host ''
+Write-Host '[Bees remote] Stage 5/5: starting managed training worker...'
+if($Envs -gt 0){
+    Write-Host "Starting Bees remote worker with $Envs environments."
+}else{
+    Write-Host 'Starting Bees remote worker; environment count defaults to 4x available CPU threads (maximum 64).'
+}
+Write-Host 'Private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker.'
+& $venvPython -u @workerArgs
+exit $LASTEXITCODE
+){
+        return $false
+    }
+
+    $previousErrorAction=$ErrorActionPreference
+    try {
+        # Version probing is intentionally best-effort. A broken launcher, stale PATH entry,
+        # Store alias, or wrong Python version must fall through to automatic installation.
+        $ErrorActionPreference='SilentlyContinue'
+        & $fullExe @Prefix -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference=$previousErrorAction
+    }
 }
 
 function Resolve-PythonLauncher {
