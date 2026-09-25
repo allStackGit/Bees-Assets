@@ -192,6 +192,125 @@ class CandidateMonitorTests(unittest.TestCase):
             self.assertEqual(metadata["training_step"], 20000)
             self.assertEqual(metadata["parent_model_id"], "champion-1")
 
+    def test_completed_generation_registers_changed_unversioned_final_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            behavior = root / "BeesRL1v1"
+            behavior.mkdir()
+            final_model = behavior / "BeesRL1v1.onnx"
+            final_model.write_bytes(b"before")
+            run_logs = behavior / "run_logs"
+            run_logs.mkdir()
+            config = root / "generation.yaml"
+            config.write_text(
+                "behaviors:\n  BeesRL1v1:\n    max_steps: 1000000\n",
+                encoding="utf-8",
+            )
+            store = _FakeStore()
+            monitor = wrapper.CandidateMonitor(
+                store,
+                results_run_dir=root,
+                run_id="resume-run",
+                game_build="build-7",
+                training_config=config,
+                parent_model_id="champion-1",
+                interval_seconds=1.0,
+            )
+            monitor.prime_existing()
+
+            final_model.write_bytes(b"after-generation")
+            (run_logs / "training_status.json").write_text(
+                '{"step": 1000000}\n',
+                encoding="utf-8",
+            )
+            monitor.stop()
+
+            self.assertEqual(len(store.registrations), 1)
+            registered_path, metadata = store.registrations[0]
+            self.assertEqual(registered_path, final_model)
+            self.assertEqual(metadata["training_step"], 1000000)
+            self.assertEqual(
+                metadata["metadata"]["registration_source"],
+                "completed_generation_boundary",
+            )
+            self.assertEqual(monitor.errors, [])
+
+    def test_interrupted_generation_does_not_register_unversioned_final_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            behavior = root / "BeesRL1v1"
+            behavior.mkdir()
+            final_model = behavior / "BeesRL1v1.onnx"
+            final_model.write_bytes(b"before")
+            run_logs = behavior / "run_logs"
+            run_logs.mkdir()
+            config = root / "generation.yaml"
+            config.write_text(
+                "behaviors:\n  BeesRL1v1:\n    max_steps: 1000000\n",
+                encoding="utf-8",
+            )
+            store = _FakeStore()
+            monitor = wrapper.CandidateMonitor(
+                store,
+                results_run_dir=root,
+                run_id="resume-run",
+                game_build="build-7",
+                training_config=config,
+                parent_model_id="champion-1",
+                interval_seconds=1.0,
+            )
+            monitor.prime_existing()
+
+            final_model.write_bytes(b"interrupted")
+            (run_logs / "training_status.json").write_text(
+                '{"step": 750000}\n',
+                encoding="utf-8",
+            )
+            monitor.stop()
+
+            self.assertEqual(store.registrations, [])
+            self.assertEqual(monitor.errors, [])
+
+    def test_versioned_candidate_suppresses_boundary_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            behavior = root / "BeesRL1v1"
+            behavior.mkdir()
+            final_model = behavior / "BeesRL1v1.onnx"
+            final_model.write_bytes(b"before")
+            run_logs = behavior / "run_logs"
+            run_logs.mkdir()
+            config = root / "generation.yaml"
+            config.write_text(
+                "behaviors:\n  BeesRL1v1:\n    max_steps: 1000000\n",
+                encoding="utf-8",
+            )
+            store = _FakeStore()
+            monitor = wrapper.CandidateMonitor(
+                store,
+                results_run_dir=root,
+                run_id="resume-run",
+                game_build="build-7",
+                training_config=config,
+                parent_model_id="champion-1",
+                interval_seconds=1.0,
+            )
+            monitor.prime_existing()
+
+            checkpoint = behavior / "BeesRL1v1-1000000.onnx"
+            checkpoint.write_bytes(b"checkpoint")
+            monitor.scan_once()
+            monitor.scan_once()
+            final_model.write_bytes(b"final")
+            (run_logs / "training_status.json").write_text(
+                '{"step": 1000000}\n',
+                encoding="utf-8",
+            )
+            monitor.stop()
+
+            self.assertEqual(len(store.registrations), 1)
+            self.assertEqual(store.registrations[0][0], checkpoint)
+
     def test_changed_preexisting_checkpoint_becomes_eligible_again(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
