@@ -171,7 +171,7 @@ After a worker is bootstrapped with the current launcher, future runtime/helper 
 
 Machines that were already running a launcher from before this self-update mechanism existed need one final manual bootstrap with the newly generated launcher. After that transition, routine builds do not require recopying the launcher.
 
-The normal per-machine tuning argument is environment count:
+Environment count is automatically optimized per remote machine by default:
 
 ```cmd
 bees-remote-worker.cmd
@@ -183,7 +183,9 @@ bash bees-remote-worker.sh
 bash bees-remote-worker.sh --envs 24
 ```
 
-If omitted, the worker uses four times the logical CPU threads available to the process, capped at 64. Linux affinity/cgroups and Windows process affinity are respected. Actor slots are assigned centrally; each installation keeps a persistent actor key for safe reconnects.
+With no explicit environment count, the worker starts near four times its available logical CPU threads, capped by its RAM budget and the 64-env actor limit. BeesServer then measures learner-accepted rollout steps/sec, probes nearby environment counts one worker at a time, keeps changes that improve sustained throughput, and backs off changes that do not. Measurements include warm-up/cooldown periods and hysteresis so normal training noise does not continuously restart workers. Stable workers are periodically retested because the optimum can change with workload or machine load. Optimization pauses during release cutovers and when training is disabled.
+
+Passing `-Envs N` / `--envs N` is an explicit fixed override and disables auto tuning for that worker. Auto-tuned workers never exceed their startup RAM-derived cap. Linux affinity/cgroups and Windows process affinity are respected. Actor slots are assigned centrally; each installation keeps a persistent actor key for safe reconnects. The live `status` table shows current/desired env count, accepted SPS, and optimizer phase.
 
 Windows bootstraps Python 3.10 when necessary. Linux uses a user-local `uv`/Python 3.10 environment.
 
@@ -199,7 +201,7 @@ The operator normally sets these automatically:
 - `BEES_TRAINING_ARTIFACT_ROOT`
 - `BEES_TRAINING_LOG_ROOT`
 
-State schema 4 persists:
+State schema 5 persists:
 
 - desired training state and environment arguments
 - current canonical build
@@ -207,7 +209,7 @@ State schema 4 persists:
 - pending release/rollout phase
 - dedicated and full-game immutable artifact catalogs
 
-Schema-2 and schema-3 state migrate forward. Canonical artifacts are server-owned copies and are rechecked for exact size/SHA-256 when state is loaded.
+Schema-2, schema-3, and schema-4 state migrate forward. Canonical artifacts are server-owned copies and are rechecked for exact size/SHA-256 when state is loaded.
 
 Dedicated workers fail closed when the control lease expires. Full-game clients fall back to inference and are not killed merely because control is unavailable.
 
