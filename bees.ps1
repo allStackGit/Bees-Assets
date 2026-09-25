@@ -432,11 +432,26 @@ function Start-TailnetGatewayIfNeeded($Config){
         if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
     }
 
-    if(Test-Path -LiteralPath $TailnetGatewayPidPath){
-        $oldPid=0
-        [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$oldPid)
-        if($oldPid -gt 0 -and (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)){
-            Stop-ProcessTree $oldPid
+    $gatewayState=$null
+    if(Test-Path -LiteralPath $TailnetGatewayStatePath){
+        try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
+    }
+    if($null -ne $gatewayState){
+        if(Test-ManagedProcessIdentity $gatewayState $bridge){
+            $null=Stop-ManagedProcessTree $gatewayState $bridge 'embedded tailnet gateway'
+        } else {
+            $livePid=Get-StateReferencedLivePid $gatewayState
+            if($livePid -gt 0){
+                throw "Embedded tailnet gateway state references live PID $livePid but the persisted process identity does not match. Refusing to kill a possibly reused PID."
+            }
+        }
+        Remove-Item -LiteralPath $TailnetGatewayStatePath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+    } elseif(Test-Path -LiteralPath $TailnetGatewayPidPath){
+        $legacyPid=0
+        [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$legacyPid)
+        if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+            throw "Embedded tailnet gateway PID $legacyPid is from legacy PID-only state and cannot be proven safe to kill automatically. Stop that legacy gateway once, then rerun the command."
         }
         Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
     }
@@ -471,7 +486,23 @@ function Start-TailnetGatewayIfNeeded($Config){
     if($p.HasExited){
         throw "Embedded tailnet gateway exited during startup. Check $TailnetGatewayErrPath"
     }
+    $gatewayIdentity=Get-ProcessIdentity $p.Id
+    if($null -eq $gatewayIdentity -or -not [string]::Equals(
+        [string]$gatewayIdentity.executable_path,
+        [IO.Path]::GetFullPath($bridge),
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        try{$p.Kill()}catch{}
+        throw 'Could not establish the embedded tailnet gateway process identity after launch.'
+    }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
+    [pscustomobject]@{
+        schema_version=1
+        pid=[int]$gatewayIdentity.pid
+        process_start_utc=[string]$gatewayIdentity.process_start_utc
+        executable_path=[string]$gatewayIdentity.executable_path
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    }|ConvertTo-Json|Set-Content -LiteralPath $TailnetGatewayStatePath -Encoding UTF8
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
     Write-Host ("Embedded tailnet gateway online at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,$p.Id)
 }
