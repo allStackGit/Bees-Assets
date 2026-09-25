@@ -53,6 +53,7 @@ $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
+$ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
@@ -617,13 +618,66 @@ function Get-GitShortSha {
     } finally { Pop-Location }
 }
 
-function Get-GitTreeSha([string]$RelativePath){
-    $git=Resolve-Git; Push-Location $AssetsRoot
-    try {
-        $sha=(& $git rev-parse ("HEAD:" + $RelativePath)).Trim()
-        if($LASTEXITCODE -ne 0 -or -not $sha){ throw "git rev-parse failed for $RelativePath." }
-        $sha
-    } finally { Pop-Location }
+function Get-NamedFileSetSha256([object[]]$Entries){
+    $manifest=@()
+    $seen=@{}
+    foreach($entry in @($Entries)){
+        $name=([string]$entry.name).Replace('\','/')
+        $filePath=[string]$entry.path
+        if(-not $name){ throw 'Content-hash entry name must be non-empty.' }
+        if($seen.ContainsKey($name)){ throw "Content-hash entry is duplicated: $name" }
+        if(-not(Test-Path -LiteralPath $filePath -PathType Leaf)){ throw "Content-hash source file is missing: $filePath" }
+        $seen[$name]=$true
+        $info=Get-Item -LiteralPath $filePath
+        $manifest += [pscustomobject]@{
+            name=$name
+            length=[int64]$info.Length
+            sha256=(Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    }
+    if($manifest.Count -eq 0){ throw 'Content-hash file set must not be empty.' }
+    $ordered=@($manifest|Sort-Object name)
+    Get-StringSha256 ($ordered|ConvertTo-Json -Compress -Depth 3)
+}
+
+function Get-DirectoryContentSha256([string]$Root,[string[]]$ExcludeDirectoryNames=@()){
+    if(-not(Test-Path -LiteralPath $Root -PathType Container)){ throw "Content-hash root is missing: $Root" }
+    $resolved=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Root).Path).TrimEnd([char[]]"\/")
+    $pending=New-Object 'Collections.Generic.Stack[string]'
+    $pending.Push($resolved)
+    $entries=@()
+    while($pending.Count -gt 0){
+        $current=$pending.Pop()
+        foreach($item in @(Get-ChildItem -LiteralPath $current -Force)){
+            if($item.PSIsContainer){
+                if($ExcludeDirectoryNames -notcontains $item.Name){ $pending.Push($item.FullName) }
+                continue
+            }
+            $relative=$item.FullName.Substring($resolved.Length).TrimStart([char[]]"\/").Replace('\','/')
+            $entries += [pscustomobject]@{name=$relative;path=$item.FullName}
+        }
+    }
+    Get-NamedFileSetSha256 $entries
+}
+
+function Get-TrainingRuntimeSourceHash {
+    $sourceRoot=Join-Path $AssetsRoot 'Training'
+    $entries=@(
+        Get-ChildItem -LiteralPath $sourceRoot -Filter '*.py' -File |
+            ForEach-Object { [pscustomobject]@{name=$_.Name;path=$_.FullName} }
+    )
+    $entries += [pscustomobject]@{
+        name='bees_remote_requirements.txt'
+        path=$RemoteRequirementsPath
+    }
+    Get-NamedFileSetSha256 $entries
+}
+
+function Get-BeesServerDependencyHash {
+    Get-NamedFileSetSha256 @(
+        [pscustomobject]@{name='package.json';path=(Join-Path $ServerRoot 'package.json')},
+        [pscustomobject]@{name='package-lock.json';path=(Join-Path $ServerRoot 'package-lock.json')}
+    )
 }
 
 function Get-ActiveRunId($Config){
@@ -860,7 +914,7 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
-    $serverSourceHash=Get-GitTreeSha 'BeesServer~'
+    $serverSourceHash=Get-DirectoryContentSha256 $ServerRoot @('node_modules')
     $online=Test-Control $base $AdminToken
 
     if($online){
@@ -904,8 +958,20 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
     if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
     $node=Resolve-Node $Config; $npm=Resolve-Npm
-    if(-not(Test-Path -LiteralPath (Join-Path $ServerRoot 'node_modules'))){ Write-Host 'Installing BeesServer dependencies...'; Invoke-Checked $npm @('ci') $ServerRoot }
-    Ensure-Directory (Join-Path $LogsRoot 'Server'); Ensure-Directory (Join-Path $TrainingRoot 'Control'); Ensure-Directory $RuntimeRoot
+    Ensure-Directory $RuntimeRoot
+    $dependencyHash=Get-BeesServerDependencyHash
+    $installedDependencyHash=''
+    if(Test-Path -LiteralPath $ServerDependencyStampPath){
+        try{$installedDependencyHash=(Get-Content -LiteralPath $ServerDependencyStampPath -Raw).Trim().ToLowerInvariant()}catch{$installedDependencyHash=''}
+    }
+    $nodeModulesPath=Join-Path $ServerRoot 'node_modules'
+    if(-not(Test-Path -LiteralPath $nodeModulesPath -PathType Container) -or $installedDependencyHash -ne $dependencyHash){
+        Write-Host 'Installing BeesServer dependencies for the current package lock...'
+        Remove-Item -LiteralPath $ServerDependencyStampPath -Force -ErrorAction SilentlyContinue
+        Invoke-Checked $npm @('ci') $ServerRoot
+        $dependencyHash | Set-Content -LiteralPath $ServerDependencyStampPath -NoNewline -Encoding ASCII
+    }
+    Ensure-Directory (Join-Path $LogsRoot 'Server'); Ensure-Directory (Join-Path $TrainingRoot 'Control')
     $serverLog=Join-Path $LogsRoot 'Server\bees-server.log'
     $env:BEES_TRAINING_CONTROL_ENABLED='1'; $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken; $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
     $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
@@ -1039,7 +1105,7 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
     $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
     $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-    $trainingSourceHash=Get-GitTreeSha 'Training'
+    $trainingSourceHash=Get-TrainingRuntimeSourceHash
     $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
@@ -1118,7 +1184,7 @@ function Prepare-RemoteBootstrap($Config){
     try {
         Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
-        $runtimeVersion=Get-GitTreeSha 'Training'
+        $runtimeVersion=Get-TrainingRuntimeSourceHash
         $runtimeVersion | Set-Content -LiteralPath (Join-Path $staging 'bees-runtime-version.txt') -NoNewline -Encoding ASCII
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
         # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
