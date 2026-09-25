@@ -409,48 +409,51 @@ class ManagedProcess:
 
     def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
         process = self.process
-        self.process = None
-        if process is None or process.poll() is not None:
+        if process is None:
+            return
+        if process.poll() is not None:
+            self.process = None
             return
 
         # The central learner owns optimizer/checkpoint state. Ask its continual-service child
-        # to interrupt ML-Agents cleanly first so TrainerController finally saves checkpoint/ONNX
-        # and learn.py writes timers/status. Forced process-tree termination is only a fallback.
+        # to interrupt ML-Agents cleanly so TrainerController saves checkpoint/ONNX and learn.py
+        # writes timers/status. Planned central shutdown is fail-closed: never force-kill unsaved
+        # optimizer state merely because finalization is slow.
         if self.graceful_checkpoint and self.stop_request_file is not None:
             try:
                 self.stop_request_file.parent.mkdir(parents=True, exist_ok=True)
                 self.stop_request_file.write_text("stop\n", encoding="ascii")
-                deadline = time.monotonic() + GRACEFUL_CHECKPOINT_STOP_SECONDS
-                next_progress = 0.0
-                while process.poll() is None and time.monotonic() < deadline:
-                    now = time.monotonic()
-                    if progress_callback is not None and now >= next_progress:
-                        try:
-                            progress_callback()
-                        except Exception:
-                            pass
-                        next_progress = now + 2.0
-                    time.sleep(0.25)
-                if process.poll() is not None:
-                    try:
-                        self.stop_request_file.unlink()
-                    except FileNotFoundError:
-                        pass
-                    return
-                print(
-                    "[Bees control] central learner did not finish checkpoint finalization "
-                    "within the graceful stop window; forcing termination.",
-                    file=sys.stderr,
-                )
             except OSError as exc:
-                print(
-                    f"[Bees control] could not request graceful learner shutdown: {exc}",
-                    file=sys.stderr,
-                )
+                raise RuntimeError(
+                    f"could not request graceful learner checkpoint shutdown: {exc}"
+                ) from exc
 
-        # Dedicated wrappers may spawn Unity descendants. If graceful finalization failed or this
-        # is a non-checkpoint-owning worker, terminate the whole process tree to preserve fail-closed
+            deadline = time.monotonic() + GRACEFUL_CHECKPOINT_STOP_SECONDS
+            next_progress = 0.0
+            while process.poll() is None and time.monotonic() < deadline:
+                now = time.monotonic()
+                if progress_callback is not None and now >= next_progress:
+                    try:
+                        progress_callback()
+                    except Exception:
+                        pass
+                    next_progress = now + 2.0
+                time.sleep(0.25)
+            if process.poll() is not None:
+                self.process = None
+                try:
+                    self.stop_request_file.unlink()
+                except FileNotFoundError:
+                    pass
+                return
+            raise RuntimeError(
+                "central learner checkpoint finalization is still running; "
+                "refusing forced termination to preserve optimizer progress"
+            )
+
+        # Non-checkpoint-owning workers may still be force-stopped to preserve fail-closed
         # cluster behavior.
+        self.process = None
         if os.name == "nt":
             try:
                 subprocess.run(
@@ -641,6 +644,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "[Bees control] supervisor shutdown requested; finalizing managed learner.",
                     flush=True,
                 )
+                try:
+                    managed.stop(progress_callback=stopping_keepalive)
+                except RuntimeError as exc:
+                    last_error = f"{type(exc).__name__}: {exc}"
+                    print(f"[Bees control] {last_error}", file=sys.stderr)
+                    continue
                 break
             received_desired = False
             now = time.monotonic()
@@ -883,7 +892,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
         return 0
     finally:
-        managed.stop(progress_callback=stopping_keepalive)
+        while managed.alive():
+            try:
+                managed.stop(progress_callback=stopping_keepalive)
+            except RuntimeError as exc:
+                print(f"[Bees control] {type(exc).__name__}: {exc}", file=sys.stderr)
+                continue
         if shutdown_request_file is not None:
             try:
                 shutdown_request_file.unlink()
