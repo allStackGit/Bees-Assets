@@ -38,6 +38,21 @@ Rebuilding the same type on the same day requires `-Force`.
 
 The authoritative non-secret cluster configuration is `Assets\\Training\\bees.cluster.json`. Machine-specific credentials remain under `B:\\Bees\\Secrets` and are never checked in.
 
+Environment/scenario arguments may be supplied for one start with repeated `-EnvArg` values. For example, a fresh 1v1 Wasp-versus-Gunship run on a 32-unit map with a 30-second timeout is:
+
+```powershell
+.\Assets\bees.ps1 start -NewRun -EnvArg @(
+    "--rl-ships-per-side=1",
+    "--rl-bee-ship-types=Wasp",
+    "--rl-human-ship-types=Gunship",
+    "--rl-map-size=32",
+    "--rl-episode-timeout=30",
+    "--rl-matchup-mode=fixed"
+)
+```
+
+Omit `-NewRun` to apply the arguments while resuming the existing run. A forced new run reuses the current compiled build, archives the outgoing run before and after the coordinated stop, preserves its checkpoints, and starts the new run with a separate run id/checkpoint namespace.
+
 ## Builds, run identity, and compatibility
 
 Every compiled training release contains:
@@ -49,7 +64,7 @@ Every compiled training release contains:
 - compatibility contract
 - Windows/Linux dedicated artifacts and optional full-game artifact
 
-Run identity is calculated automatically by `Training/bees_run_lifecycle.py`. A compatible build keeps the existing run id and optimizer/checkpoint lineage. An incompatible training contract creates a new run id automatically.
+Run identity is calculated automatically by `Training/bees_run_lifecycle.py`. A compatible build keeps the existing run id and optimizer/checkpoint lineage. An incompatible training contract creates a new run id automatically. Ordinary `start` also resumes the current run by default. Use `start -NewRun` only when a fresh optimizer/checkpoint lineage is explicitly desired without rebuilding the Unity executable.
 
 The compatibility fingerprint currently includes the continual-learning behavior/schema identity, frozen policy signature, network architecture settings, reward implementation, policy-schema implementation, combat perception, action implementation, exploration-grid implementation, and episode ship identity. This makes policy/reward/observation/action changes fail safe even if a developer forgets to increment a manual schema version. Ordinary non-architectural PPO tuning and other compatible operational changes do not by themselves force a new run.
 
