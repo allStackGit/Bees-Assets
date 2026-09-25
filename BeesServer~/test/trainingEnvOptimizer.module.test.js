@@ -145,6 +145,32 @@ test('optimizer backs off immediately when a probed worker process stops', () =>
     assert.equal(state.probing, false);
 });
 
+test('optimizer backs off a probe that never produces accepted-step metrics', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        metricsTimeoutMs: 100,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+    assert.equal(state.probing, true);
+
+    state = update(optimizer, 'remote-a', 9, null, 1010, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+    assert.equal(state.probing, true);
+
+    state = update(optimizer, 'remote-a', 9, null, 1111, { max: 16 });
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, true);
+    assert.match(state.decision, /no accepted-step metrics/);
+
+    state = update(optimizer, 'remote-a', 8, 0, 1120, { max: 16 });
+    assert.equal(state.probing, false);
+});
+
 test('optimizer resets safely when a worker advertises new env bounds', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
