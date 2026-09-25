@@ -36,6 +36,7 @@ DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
+REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -449,6 +450,19 @@ def _watch_shutdown_request(
             stop[0] = True
             return
         time.sleep(poll_seconds)
+
+
+def _clear_pid_file_if_owned(path: Path, pid: int) -> None:
+    try:
+        recorded = path.read_text(encoding="ascii").strip()
+    except OSError:
+        return
+    if recorded != str(pid):
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
@@ -1081,7 +1095,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
         return 2
 
+    pid_file = install_root / REMOTE_PID_FILE
     shutdown_request_file = install_root / REMOTE_STOP_REQUEST_FILE
+    try:
+        _atomic_bytes(pid_file, f"{os.getpid()}\n".encode("ascii"), 0o600)
+    except OSError as exc:
+        print(f"error: could not record remote supervisor PID: {exc}", file=sys.stderr)
+        return 2
+
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     log_sink = _RunScopedLogSink(install_root / "ManagedBuilds" / "logs")
     original_stdout = sys.stdout
@@ -1235,6 +1256,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             shutdown_request_file.unlink()
         except FileNotFoundError:
             pass
+        _clear_pid_file_if_owned(pid_file, os.getpid())
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
         sys.stdout = original_stdout
