@@ -443,6 +443,7 @@ def create_bundle(
     status_json: Optional[Path] = None,
     status_text: Optional[Path] = None,
     snapshot_json: Optional[Path] = None,
+    benchmark_json: Optional[Path] = None,
     output_root: Optional[Path] = None,
 ) -> Path:
     bees_root = bees_root.expanduser().resolve()
@@ -463,6 +464,7 @@ def create_bundle(
     timestamp = generated_utc.strftime("%Y%m%dT%H%M%SZ")
     status_value = _json(status_json) if status_json else None
     snapshot_value = _json(snapshot_json) if snapshot_json else None
+    benchmark_value = _json(benchmark_json) if benchmark_json else None
     cluster_value = _json(assets_root / "Training" / "bees.cluster.json")
     log_freshness = _trainer_log_freshness(trainer_logs_root, generated_utc)
     status_diagnostics, status_warnings = _diagnose_status(
@@ -525,6 +527,7 @@ def create_bundle(
             ("status/status.json", status_json),
             ("status/status.txt", status_text),
             ("status/model-snapshot.json", snapshot_json),
+            ("status/deterministic-benchmark.json", benchmark_json),
             (
                 "config/bees.cluster.json",
                 assets_root / "Training" / "bees.cluster.json",
@@ -695,6 +698,7 @@ def create_bundle(
             "model_step": model_step,
             "model_lag_steps": model_lag_steps,
             "model_snapshot": snapshot_value,
+            "deterministic_benchmark": benchmark_value,
             "latest_onnx": model_info,
             "trainer_log_freshness": log_freshness,
             "diagnostics": diagnostics,
@@ -749,6 +753,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--status-json")
     parser.add_argument("--status-text")
     parser.add_argument("--snapshot-json")
+    parser.add_argument("--benchmark-json")
     parser.add_argument("--output-root")
     return parser.parse_args(argv)
 
@@ -763,6 +768,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         status_json=Path(args.status_json) if args.status_json else None,
         status_text=Path(args.status_text) if args.status_text else None,
         snapshot_json=Path(args.snapshot_json) if args.snapshot_json else None,
+        benchmark_json=Path(args.benchmark_json) if args.benchmark_json else None,
         output_root=Path(args.output_root) if args.output_root else None,
     )
     print(f"Created diagnostic bundle: {archive}")
