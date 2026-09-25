@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import signal
 import sys
@@ -32,6 +33,9 @@ class ElasticBrokerClient(worker.BrokerClient):
         actor_id: Optional[int],
         actor_key: Optional[str],
         env_count: int,
+        build_id: str,
+        run_id: str,
+        compatibility_key: str,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
@@ -39,6 +43,11 @@ class ElasticBrokerClient(worker.BrokerClient):
         self.actor_id = actor_id
         self.actor_key = actor_key
         self.env_count = env_count
+        self.release_identity = {
+            "build_id": str(build_id),
+            "run_id": str(run_id),
+            "compatibility_key": str(compatibility_key).lower(),
+        }
         self.actor_instance_id = secrets.token_hex(16)
 
     def claim(self, session_id: str) -> int:
@@ -55,6 +64,7 @@ class ElasticBrokerClient(worker.BrokerClient):
                 "actor_key": self.actor_key,
                 "actor_instance_id": self.actor_instance_id,
                 "env_count": self.env_count,
+                **self.release_identity,
             },
         )
         if status != 200:
@@ -72,6 +82,7 @@ class ElasticBrokerClient(worker.BrokerClient):
         enriched = dict(payload)
         enriched["actor_id"] = self.actor_id
         enriched["actor_instance_id"] = self.actor_instance_id
+        enriched.update(self.release_identity)
         if self.actor_key:
             enriched["actor_key"] = self.actor_key
         return enriched
@@ -123,6 +134,41 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--reconnect-seconds", type=float, default=worker.DEFAULT_RECONNECT_SECONDS)
     parser.add_argument("--upload-queue", type=int, default=worker.DEFAULT_LOCAL_UPLOAD_QUEUE)
     return parser
+
+
+def _managed_release_identity() -> dict[str, str]:
+    build_id = os.environ.get(elastic.BUILD_ID_ENV, "").strip()
+    run_id = os.environ.get(elastic.RUN_ID_ENV, "").strip()
+    compatibility_key = os.environ.get(elastic.COMPATIBILITY_KEY_ENV, "").strip().lower()
+    if not build_id or not run_id:
+        raise RuntimeError("managed WAN actor is missing build/run identity")
+    if len(compatibility_key) != 64 or any(
+        ch not in "0123456789abcdef" for ch in compatibility_key
+    ):
+        raise RuntimeError("managed WAN actor is missing a valid compatibility identity")
+    return {
+        "build_id": build_id,
+        "run_id": run_id,
+        "compatibility_key": compatibility_key,
+    }
+
+
+def _validate_session_release_identity(
+    session: Mapping[str, Any],
+    expected: Mapping[str, str],
+) -> None:
+    actual = session.get("release_identity")
+    if not isinstance(actual, Mapping):
+        raise RuntimeError("Elastic WAN session is missing release identity")
+    normalized = {
+        "build_id": str(actual.get("build_id", "")).strip(),
+        "run_id": str(actual.get("run_id", "")).strip(),
+        "compatibility_key": str(actual.get("compatibility_key", "")).strip().lower(),
+    }
+    if normalized != dict(expected):
+        raise RuntimeError(
+            "Elastic WAN learner release identity does not match this managed actor"
+        )
 
 
 def _elastic_session(
@@ -188,7 +234,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     try:
         token = wan.load_auth_token(args.auth_token_file)
-    except ValueError as exc:
+        release_identity = _managed_release_identity()
+    except (ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -207,6 +254,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             actor_id=args.actor_id,
             actor_key=args.actor_key,
             env_count=args.envs,
+            build_id=release_identity["build_id"],
+            run_id=release_identity["run_id"],
+            compatibility_key=release_identity["compatibility_key"],
         )
         while not stop.is_set():
             try:
@@ -214,6 +264,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 session_id = raw_session.get("session_id")
                 if not isinstance(session_id, str) or not session_id:
                     raise RuntimeError("Elastic WAN session is missing session_id")
+                _validate_session_release_identity(raw_session, release_identity)
                 actor_id = client.claim(session_id)
                 print(f"[Bees WAN actor] learner assigned actor slot {actor_id}.")
                 session, worker_offset, _capacity_envs = _elastic_session(
