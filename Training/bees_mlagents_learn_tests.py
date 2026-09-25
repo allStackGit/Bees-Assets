@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -99,6 +100,30 @@ class BeesOptionParsingTests(unittest.TestCase):
             equals_value,
             ["Training/rl_1v1_config.yaml", "--results-dir=custom-results"],
         )
+
+
+class ManagedStopWatcherTests(unittest.TestCase):
+    def test_stop_file_interrupts_trainer_main_thread_once(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stop_file = Path(temp) / "managed-stop.request"
+            stop_file.write_text("stop\n", encoding="ascii")
+            with (
+                mock.patch.dict(
+                    launcher.os.environ,
+                    {launcher.MANAGED_STOP_FILE_ENV: str(stop_file)},
+                    clear=False,
+                ),
+                mock.patch.object(launcher, "MANAGED_STOP_POLL_SECONDS", 0.001),
+                mock.patch.object(launcher._thread, "interrupt_main") as interrupt_main,
+            ):
+                stop_event, watcher = launcher._start_managed_stop_watcher()
+                self.assertIsNotNone(stop_event)
+                self.assertIsNotNone(watcher)
+                watcher.join(timeout=1.0)
+                stop_event.set()
+
+            self.assertFalse(watcher.is_alive())
+            interrupt_main.assert_called_once_with()
 
 
 class GracefulShutdownSignalTests(unittest.TestCase):
