@@ -249,6 +249,8 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
 
 def install_elastic_wan_env_manager(
     options: elastic.ElasticWanOptions,
+    *,
+    force_zero_local: bool = False,
 ) -> Optional[elastic.ElasticWanPatch]:
     """Install the elastic EnvManager with optional zero local Unity processes."""
     if not options.enabled:
@@ -271,10 +273,11 @@ def install_elastic_wan_env_manager(
 
     class ZeroLocalElasticWanEnvManager(ZeroLocalElasticWanEnvManagerMixin, EnvManager):
         def __init__(self, env_factory: Any, run_options: Any, n_env: int = 1):
+            effective_n_env = 0 if force_zero_local else n_env
             self._bees_elastic_initialize(
                 options,
                 run_options,
-                n_env,
+                effective_n_env,
                 env_factory,
                 original_manager,
             )
