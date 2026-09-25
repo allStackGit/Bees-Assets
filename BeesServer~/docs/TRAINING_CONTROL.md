@@ -20,6 +20,7 @@ cd B:\Bees
 .\Assets\bees.ps1 start
 .\Assets\bees.ps1 stop
 .\Assets\bees.ps1 status
+.\Assets\bees.ps1 bundle -LogPercent 10
 ```
 
 `server` starts or refreshes BeesServer in test mode on TCP `7146`. The Unity Editor connects to this endpoint at `seagrams7.softether.net:7146`, and test mode does not require Steam authentication. No Unity build is required.
@@ -37,6 +38,26 @@ Rebuilding the same type on the same day requires `-Force`.
 `start` always starts/keeps the test-mode BeesServer and training-control plane. Before the first RL build exists, it remains idle with zero managed trainers so the Unity Editor can connect immediately. Once a compiled release exists, `start` also brings up the private tailnet gateway, central managed learner, publishes the release, and enables distributed training. `stop` disables training everywhere but leaves BeesServer available for gameplay; `stop -Server` also stops the managed BeesServer and tailnet gateway. `status` is a live dashboard; `status -Once` prints one snapshot.
 
 The authoritative non-secret cluster configuration is `Assets\\Training\\bees.cluster.json`. Machine-specific credentials remain under `B:\\Bees\\Secrets` and are never checked in.
+
+### Diagnostic upload bundle
+
+`bundle` creates one upload-ready ZIP under `B:\\Bees\\Diagnostics` for the current training run. It is intended for external diagnosis of training health, speed, ship behavior, and policy learning without manually collecting files from each trainer.
+
+By default it includes the newest ONNX file, the newest 10% of each text log, complete small JSON log metadata, current BeesServer/trainer status, cluster and PPO configuration, run/continual-service state, ML-Agents timer/training-status JSON, and a combined text log. Remote trainer logs are read from the learner-owned `B:\\Bees\\Training\\TrainerLogs\\<run-id>` mirror populated by the existing verified log-upload protocol; the bundle command does not SSH into trainer machines.
+
+Use a different percentage when needed:
+
+```powershell
+.\Assets\bees.ps1 bundle -LogPercent 25
+```
+
+To package a retained older run explicitly:
+
+```powershell
+.\Assets\bees.ps1 bundle -RunId bees-v19-r3-s1-... -LogPercent 10
+```
+
+The ZIP contains `manifest.json` with the selected run, source paths, byte ranges, hashes, and any missing-data warnings. A missing ONNX or unavailable live status is recorded as a warning rather than preventing collection, so the command remains useful for diagnosing failed or newly started runs.
 
 Environment/scenario arguments may be supplied for one start with repeated `-EnvArg` values. For example, a fresh 1v1 Wasp-versus-Gunship run on a 32-unit map with a 30-second timeout is:
 
