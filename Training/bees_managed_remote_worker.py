@@ -394,13 +394,20 @@ def _decode_release_metadata(data: bytes) -> Mapping[str, object]:
     return value
 
 
+def _valid_runtime_version(value: str) -> bool:
+    return (
+        len(value) in (40, 64)
+        and all(ch in "0123456789abcdef" for ch in value)
+    )
+
+
 def _runtime_version_from_root(root: Path) -> str:
     path = root / "bees-runtime-version.txt"
     try:
         value = path.read_text(encoding="ascii").strip().lower()
     except OSError:
         return ""
-    return value if len(value) == 40 and all(ch in "0123456789abcdef" for ch in value) else ""
+    return value if _valid_runtime_version(value) else ""
 
 
 def _runtime_version_from_zip(runtime_zip: bytes) -> str:
@@ -409,7 +416,7 @@ def _runtime_version_from_zip(runtime_zip: bytes) -> str:
             value = bundle.read("bees-runtime-version.txt").decode("ascii").strip().lower()
     except (KeyError, UnicodeDecodeError, zipfile.BadZipFile):
         return ""
-    return value if len(value) == 40 and all(ch in "0123456789abcdef" for ch in value) else ""
+    return value if _valid_runtime_version(value) else ""
 
 
 def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
