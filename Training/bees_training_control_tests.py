@@ -49,6 +49,11 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
             self.assertTrue(
+                Path(environment[agent.THROUGHPUT_METRICS_ENV]).as_posix().endswith(
+                    "worker-throughput.json"
+                )
+            )
+            self.assertTrue(
                 Path(environment["BEES_TRAINING_LOG_DIR"]).as_posix().endswith(
                     "logs/run-a"
                 )
@@ -291,6 +296,57 @@ class TrainingControlClientTests(unittest.TestCase):
                 "64",
             ],
         )
+
+    def test_render_command_expands_server_tuned_worker_env_count(self):
+        rendered = agent.render_command(
+            [
+                "python",
+                "worker.py",
+                "--env",
+                "{env}",
+                "--envs",
+                "{worker_envs}",
+            ],
+            Path("/tmp/Bees.x86_64"),
+            (),
+            worker_env_count=17,
+        )
+        self.assertEqual(rendered[-2:], ["--envs", "17"])
+
+    def test_throughput_metrics_require_current_process_and_env_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "worker-throughput.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "pid": 123,
+                        "env_count": 17,
+                        "accepted_steps_total": 4567,
+                        "accepted_trajectories_total": 89,
+                        "upload_queue_depth": 2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                agent.read_throughput_metrics(
+                    path,
+                    expected_pid=123,
+                    expected_env_count=17,
+                )["accepted_steps_total"],
+                4567,
+            )
+            self.assertEqual(
+                agent.read_throughput_metrics(path, expected_pid=999),
+                {},
+            )
+            self.assertEqual(
+                agent.read_throughput_metrics(path, expected_env_count=18),
+                {},
+            )
+
+    def test_training_control_protocol_schema_matches_server_generation(self):
+        self.assertEqual(control.CONTROL_SCHEMA_VERSION, 5)
 
     def test_episode_log_metrics_reports_recent_training_statistics(self):
         with tempfile.TemporaryDirectory() as temp:
