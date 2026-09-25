@@ -92,6 +92,12 @@ Write-Host '[Bees remote] on first use, open the Tailscale login URL printed bel
 & $tailnetBridge auth --state $TailnetState --hostname $workerHostname
 if($LASTEXITCODE -ne 0){ throw "Embedded tailnet authentication failed with exit code $LASTEXITCODE." }
 
+Write-Host '[Bees remote] verifying learner reachability over the private tailnet...'
+& $tailnetBridge probe --state $TailnetState --hostname $workerHostname --target ($TailnetLearner + ':' + $TailnetBootstrapPort) --timeout 10s
+if($LASTEXITCODE -ne 0){
+    throw 'Learner tailnet probe failed. Verify this worker and bees-learner are authorized in the same Tailscale tailnet, then rerun bees.ps1 start on the learner if needed.'
+}
+
 $runtimeZip=Join-Path $DownloadsRoot 'bees-remote-runtime.zip'
 $workerToken=Join-Path $SecretsRoot 'training-worker.token'
 $wanToken=Join-Path $SecretsRoot 'wan.token'
