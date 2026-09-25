@@ -605,7 +605,8 @@ class DiagnosticModelSnapshotTests(unittest.TestCase):
 
     def test_snapshot_failure_is_reported_without_raising(self):
         class FakeSaver:
-            model_path = "unused"
+            def __init__(self, root: Path):
+                self.model_path = str(root)
 
             def export(self, _output_path: str, _behavior_name: str) -> None:
                 raise RuntimeError("export failed")
@@ -613,7 +614,9 @@ class DiagnosticModelSnapshotTests(unittest.TestCase):
         class FakeTrainer:
             brain_name = "BeesRL1v1"
             get_step = 12
-            model_saver = FakeSaver()
+
+            def __init__(self, root: Path):
+                self.model_saver = FakeSaver(root)
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -623,7 +626,7 @@ class DiagnosticModelSnapshotTests(unittest.TestCase):
 
             self.assertTrue(
                 launcher._handle_model_snapshot_request(
-                    FakeTrainer(),
+                    FakeTrainer(root / "results"),
                     request,
                     response,
                 )
@@ -631,6 +634,44 @@ class DiagnosticModelSnapshotTests(unittest.TestCase):
             payload = json.loads(response.read_text(encoding="utf-8"))
             self.assertEqual(payload["status"], "failed")
             self.assertIn("export failed", payload["error"])
+            self.assertFalse(request.exists())
+
+    def test_snapshot_rejects_request_for_different_run(self):
+        class FakeSaver:
+            def __init__(self, root: Path):
+                self.model_path = str(root)
+                self.called = False
+
+            def export(self, _output_path: str, _behavior_name: str) -> None:
+                self.called = True
+
+        class FakeTrainer:
+            brain_name = "BeesRL1v1"
+            get_step = 20
+
+            def __init__(self, root: Path):
+                self.model_saver = FakeSaver(root)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = root / "model-snapshot.request"
+            response = root / "model-snapshot.response.json"
+            request.write_text(
+                json.dumps({"request_id": "wrong-run", "run_id": "run-old"}),
+                encoding="utf-8",
+            )
+            trainer = FakeTrainer(root / "results")
+            with mock.patch.dict(os.environ, {"BEES_TRAINING_RUN_ID": "run-current"}):
+                launcher._handle_model_snapshot_request(
+                    trainer,
+                    request,
+                    response,
+                )
+
+            payload = json.loads(response.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertIn("active run is run-current", payload["error"])
+            self.assertFalse(trainer.model_saver.called)
             self.assertFalse(request.exists())
 
 
