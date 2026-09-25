@@ -373,6 +373,7 @@ class ManagedProcess:
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
+        environment["PYTHONUNBUFFERED"] = "1"
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
         log_dir = state_file.parent / "logs" / run_id
