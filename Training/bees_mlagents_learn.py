@@ -19,6 +19,8 @@ All other arguments are passed unchanged to mlagents-learn.
 from __future__ import annotations
 
 import copy
+import os
+import signal
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -536,6 +538,13 @@ def _install_fast_env_manager():
     return original_step, original_process_step_infos
 
 
+def _install_windows_break_interrupt():
+    """Map a targeted Windows CTRL_BREAK to the same graceful path as Ctrl+C."""
+    if os.name != "nt" or not hasattr(signal, "SIGBREAK"):
+        return None
+    return signal.signal(signal.SIGBREAK, signal.default_int_handler)
+
+
 def main() -> None:
     (
         trainer_args,
@@ -608,12 +617,15 @@ def main() -> None:
         return original_torch_load(*args, **kwargs)
 
     previous_argv = sys.argv
+    previous_sigbreak_handler = _install_windows_break_interrupt()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:
         learn.main()
     finally:
         sys.argv = previous_argv
+        if previous_sigbreak_handler is not None:
+            signal.signal(signal.SIGBREAK, previous_sigbreak_handler)
         torch_utils.torch.load = original_torch_load
         restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
