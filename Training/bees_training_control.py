@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 
-CONTROL_SCHEMA_VERSION = 4
+CONTROL_SCHEMA_VERSION = 5
 DEFAULT_TIMEOUT_SECONDS = 15.0
 
 
