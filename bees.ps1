@@ -1439,12 +1439,22 @@ function Invoke-Stop {
     if(Test-Control ([string]$config.controlUrl) $admin){
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$false}; Write-Host "Training stop requested at revision $($desired.revision)."
         $deadline=[DateTime]::UtcNow.AddSeconds(180)
+        $running=@()
         while([DateTime]::UtcNow -lt $deadline){
             $s=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
             $running=@($s.trainers|Where-Object{-not $_.stale -and $_.role -eq 'dedicated' -and $_.process_state -ne 'stopped'})
             if($running.Count -eq 0){break}; Start-Sleep -Milliseconds 500
         }
-    } else { Write-Warning 'Training control is offline; dedicated workers should fail closed after lease expiry.' }
+        if($running.Count -gt 0){
+            $names=($running|ForEach-Object{"$($_.trainer_id):$($_.process_state)"}) -join ', '
+            throw "Dedicated trainers are still finalizing after 180 seconds ($names). Refusing to stop BeesServer while checkpoint/log preservation is incomplete."
+        }
+    } else {
+        if($Server -and (Get-RunningCentralAgentPid) -gt 0){
+            throw 'Training control is offline while the central learner is still running. Refusing to stop BeesServer because checkpoint completion cannot be coordinated.'
+        }
+        Write-Warning 'Training control is offline; dedicated workers should fail closed after lease expiry.'
+    }
     if($Server -and (Test-Path -LiteralPath $ServerPidPath)){
         $id=0
         [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id)
