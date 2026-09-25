@@ -89,7 +89,7 @@ Every compiled training release contains:
 
 Run identity is calculated automatically by `Training/bees_run_lifecycle.py`. A compatible build keeps the existing run id and optimizer/checkpoint lineage. An incompatible training contract creates a new run id automatically. Ordinary `start` also resumes the current run by default. Use `start -NewRun` only when a fresh optimizer/checkpoint lineage is explicitly desired without rebuilding the Unity executable.
 
-The compatibility fingerprint currently includes the continual-learning behavior/schema identity, frozen policy signature, network architecture settings, reward implementation, policy-schema implementation, combat perception, action implementation, exploration-grid implementation, and episode ship identity. This makes policy/reward/observation/action changes fail safe even if a developer forgets to increment a manual schema version. Ordinary non-architectural PPO tuning and other compatible operational changes do not by themselves force a new run.
+The compatibility fingerprint currently includes the continual-learning behavior/schema identity, frozen policy signature, network architecture settings, reward implementation, episode coordinator/reward dispatch implementation, policy-schema implementation, combat perception, action implementation, exploration-grid implementation, and episode ship identity. This makes policy/reward/observation/action changes fail safe even if a developer forgets to increment a manual schema version. Ordinary non-architectural PPO tuning and other compatible operational changes do not by themselves force a new run.
 
 Durable continual-service phase state is run-scoped. Checkpoints/results remain under the run id in `B:\\Bees\\Training`; a build never deletes the outgoing run's optimizer state, checkpoints, telemetry, or other durable training data.
 
@@ -203,9 +203,9 @@ bash bees-remote-worker.sh
 bash bees-remote-worker.sh --envs 24
 ```
 
-With no explicit environment count, the worker starts near four times its available logical CPU threads, capped by its RAM budget and the 64-env actor limit. BeesServer then measures learner-accepted rollout steps/sec, probes nearby environment counts one worker at a time, keeps changes that improve sustained throughput, and backs off changes that do not. Measurements include warm-up/cooldown periods and hysteresis so normal training noise does not continuously restart workers. Stable workers are periodically retested because the optimum can change with workload or machine load. Optimization pauses during release cutovers and when training is disabled.
+With no explicit environment count, the worker starts near four times its available logical CPU threads, capped by its RAM budget and the 64-env actor limit. BeesServer then measures rollout steps/sec only after the central learner drains current-policy batches for training, probes nearby environment counts one worker at a time, keeps changes that improve sustained throughput, and backs off changes that do not. Queue admission alone does not count as useful throughput. Measurements include warm-up/cooldown periods and hysteresis so normal training noise does not continuously restart workers. Stable workers are periodically retested because the optimum can change with workload or machine load. Optimization pauses during release cutovers and when training is disabled.
 
-Passing `-Envs N` / `--envs N` is an explicit fixed override and disables auto tuning for that worker. Auto-tuned workers never exceed their startup RAM-derived cap. Linux affinity/cgroups and Windows process affinity are respected. Actor slots are assigned centrally; each installation keeps a persistent actor key for safe reconnects. The live `status` table shows current/desired env count, accepted SPS, and optimizer phase.
+Passing `-Envs N` / `--envs N` is an explicit fixed override and disables auto tuning for that worker. Auto-tuned workers never exceed their startup RAM-derived cap. Linux affinity/cgroups and Windows process affinity are respected. Actor slots are assigned centrally; each installation keeps a persistent actor key for safe reconnects. The live `status` table shows current/desired env count, learner-consumed SPS, and optimizer phase.
 
 Windows bootstraps Python 3.10 when necessary. Linux uses a user-local `uv`/Python 3.10 environment.
 
@@ -259,7 +259,7 @@ node trainingControlCli.js set-args --env-arg --rl-map-size --env-arg 128
 node trainingControlCli.js stop
 ```
 
-Direct canonical-build mutation is no longer used by the CLI because it would bypass run identity and staged rollout.
+Direct canonical-build mutation is rejected by the generic desired-state API because it would bypass run identity and staged rollout; canonical build changes must use the run-aware release endpoint.
 
 ## Failure semantics
 
