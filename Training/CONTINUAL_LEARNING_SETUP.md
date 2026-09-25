@@ -156,7 +156,7 @@ python Training\bees_continual_adversarial_suggest.py `
   demo-<batch-a>
 ```
 
-The miner and geometry suggester decode the frozen ABI v18 compact-field indices directly, including scrambled scalar ship identities, current map/position fields, and the first visible enemy slot. They require the exact current observation size and fail closed on another ABI.
+The miner and geometry suggester decode the frozen ABI v19 compact-field indices directly, including scrambled scalar ship identities, current map/position fields, and the first visible enemy slot. They require the exact current observation size and fail closed on another ABI.
 
 ### Register reviewed scenario pressure
 
@@ -189,7 +189,7 @@ python Training\bees_continual_adversarial_replay.py `
   --record-count=1200
 ```
 
-The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. ABI v18 no longer contains the old ally/enemy/map target-selection branches. Separately captured one-event capability demonstrations are not automatically stitched into a tactical replay prefix. The scripted side is excluded from PPO learner action/reward ownership and becomes neutral after the recorded prefix.
+The source must already belong to the scenario. Replay compilation revalidates the approved archive, exact current policy behavior, first-episode bounds, ship identities, and action contract. ABI v19 no longer contains the old ally/enemy/map target-selection branches. Separately captured one-event capability demonstrations are not automatically stitched into a tactical replay prefix. The scripted side is excluded from PPO learner action/reward ownership and becomes neutral after the recorded prefix.
 
 You can compile/check one attachment explicitly:
 
