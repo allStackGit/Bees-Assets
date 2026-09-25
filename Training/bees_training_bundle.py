@@ -19,8 +19,8 @@ MAX_METADATA_BYTES = 16 * 1024 * 1024
 MAX_STEP_SCAN_BYTES = 4 * 1024 * 1024
 MODEL_LAG_WARNING_STEPS = 5000
 TRAINER_LOG_STALE_SECONDS = 30.0
-STEP_RE = re.compile(r"\\bStep\\s*[:=]\\s*(\\d+)", re.IGNORECASE)
-MODEL_STEP_RE = re.compile(r"-(\\d+)\\.onnx$", re.IGNORECASE)
+STEP_RE = re.compile(r"\bStep\s*[:=]\s*(\d+)", re.IGNORECASE)
+MODEL_STEP_RE = re.compile(r"-(\d+)(?:-[^.]+)?\.onnx$", re.IGNORECASE)
 
 
 def _json(path: Path) -> Optional[dict[str, Any]]:
