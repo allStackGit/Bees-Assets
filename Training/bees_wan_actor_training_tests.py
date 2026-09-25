@@ -163,6 +163,40 @@ class WanOptionTests(unittest.TestCase):
                 env_count=4,
             )
 
+    def test_actor_counts_only_steps_in_accepted_trajectories(self):
+        trajectories = [
+            FakeTrajectory("Behavior?team=0", "agent-1", count=3),
+            FakeTrajectory("Behavior?team=0", "agent-2", count=2),
+        ]
+        self.assertEqual(actor._trajectory_step_count(trajectories), 5)
+
+    def test_actor_publishes_accepted_step_metrics_atomically(self):
+        with tempfile.TemporaryDirectory() as temp:
+            metrics_path = Path(temp) / "throughput.json"
+            session = object.__new__(actor.ActorSession)
+            session._throughput_metrics_path = metrics_path
+            session._throughput_lock = actor.threading.Lock()
+            session._accepted_steps_total = 0
+            session._accepted_trajectories_total = 0
+            session._last_throughput_write = 0.0
+            session._upload_queue = queue.Queue()
+            session.env_count = 7
+
+            session._record_accepted_trajectories(
+                [
+                    FakeTrajectory("Behavior?team=0", "agent-1", count=3),
+                    FakeTrajectory("Behavior?team=0", "agent-2", count=2),
+                ]
+            )
+            session._write_throughput_metrics(force=True)
+
+            payload = actor.json.loads(metrics_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["pid"], os.getpid())
+            self.assertEqual(payload["env_count"], 7)
+            self.assertEqual(payload["accepted_steps_total"], 5)
+            self.assertEqual(payload["accepted_trajectories_total"], 2)
+            self.assertEqual(payload["upload_queue_depth"], 0)
+
     def test_actor_player_log_tail_reports_missing_logs(self):
         with tempfile.TemporaryDirectory() as temp:
             with mock.patch("builtins.print") as printer:
