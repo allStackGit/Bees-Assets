@@ -457,6 +457,50 @@ func extractBootstrap(path, runtimeOut, workerTokenOut, wanTokenOut string) erro
 	return nil
 }
 
+func runProbe(args []string) error {
+	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
+	c := addCommon(fs)
+	target := fs.String("target", "", "tailnet target host:port")
+	timeout := fs.Duration("timeout", 10*time.Second, "probe timeout")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*target) == "" {
+		return errors.New("--target is required")
+	}
+	if *timeout <= 0 {
+		return errors.New("--timeout must be positive")
+	}
+
+	s, err := server(c)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	ctx, timeoutCancel := context.WithTimeout(ctx, *timeout)
+	defer timeoutCancel()
+
+	ip4, err := up(ctx, s)
+	if err != nil {
+		return err
+	}
+	conn, err := s.Dial(ctx, "tcp", *target)
+	if err != nil {
+		return fmt.Errorf(
+			"tailnet probe from %s to %s failed: %w; verify both Bees nodes were authorized into the same Tailscale tailnet and that the learner gateway is running",
+			ip4,
+			*target,
+			err,
+		)
+	}
+	_ = conn.Close()
+	fmt.Printf("[Bees tailnet] probe succeeded source=%s target=%s\n", ip4, *target)
+	return nil
+}
+
 func runFetch(args []string) error {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	c := addCommon(fs)
@@ -585,7 +629,7 @@ func runForwardMulti(args []string) error {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: bees-tailnet-bridge <auth|gateway|fetch|forward-multi> [options]")
+	fmt.Fprintln(os.Stderr, "Usage: bees-tailnet-bridge <auth|probe|gateway|fetch|forward-multi> [options]")
 }
 
 func main() {
@@ -597,6 +641,8 @@ func main() {
 	switch os.Args[1] {
 	case "auth":
 		err = runAuth(os.Args[2:])
+	case "probe":
+		err = runProbe(os.Args[2:])
 	case "gateway":
 		err = runGateway(os.Args[2:])
 	case "fetch":
