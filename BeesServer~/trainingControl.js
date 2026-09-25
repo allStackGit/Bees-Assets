@@ -360,12 +360,10 @@ class TrainingControlStore {
     }
 
     _missingActiveTargets(buildId) {
-        const cutoff = this.now() - this.leaseSeconds * 1000;
         const activeTargets = new Map();
-        for (const record of this.trainers.values()) {
-            if (record.last_seen_ms < cutoff || record.role !== 'dedicated') continue;
-            activeTargets.set(record.role + '|' + record.platform, {
-                role: record.role,
+        for (const record of this._releaseBarrierTrainers()) {
+            activeTargets.set('dedicated|' + record.platform, {
+                role: 'dedicated',
                 platform: record.platform,
             });
         }
@@ -375,16 +373,98 @@ class TrainingControlStore {
             .sort();
     }
 
+    _dedicatedBarrierSort(left, right) {
+        const leftCentral = left.trainer_id === 'central-learner' ? 1 : 0;
+        const rightCentral = right.trainer_id === 'central-learner' ? 1 : 0;
+        return leftCentral - rightCentral ||
+            left.trainer_id.localeCompare(right.trainer_id);
+    }
+
     _activeDedicatedTrainers() {
         const cutoff = this.now() - this.leaseSeconds * 1000;
         return [...this.trainers.values()]
             .filter(record => record.role === 'dedicated' && record.last_seen_ms >= cutoff)
-            .sort((left, right) => {
-                const leftCentral = left.trainer_id === 'central-learner' ? 1 : 0;
-                const rightCentral = right.trainer_id === 'central-learner' ? 1 : 0;
-                return leftCentral - rightCentral ||
-                    left.trainer_id.localeCompare(right.trainer_id);
+            .sort((left, right) => this._dedicatedBarrierSort(left, right));
+    }
+
+    _releaseBarrierTrainers() {
+        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const trainers = new Map();
+        for (const record of this.state.known_dedicated_trainers) {
+            if (record.last_seen_ms < cutoff) continue;
+            trainers.set(record.trainer_id, {
+                trainer_id: record.trainer_id,
+                platform: record.platform,
             });
+        }
+        for (const record of this._activeDedicatedTrainers()) {
+            trainers.set(record.trainer_id, {
+                trainer_id: record.trainer_id,
+                platform: record.platform,
+            });
+        }
+        return [...trainers.values()]
+            .sort((left, right) => this._dedicatedBarrierSort(left, right));
+    }
+
+    _rememberDedicatedTrainer(record) {
+        if (record.role !== 'dedicated') return false;
+        const refreshAfterMs = Math.max(1000, this.leaseSeconds * 500);
+        const existing = this.state.known_dedicated_trainers.find(
+            item => item.trainer_id === record.trainer_id);
+        if (!existing) {
+            this.state.known_dedicated_trainers.push({
+                trainer_id: record.trainer_id,
+                platform: record.platform,
+                last_seen_ms: record.last_seen_ms,
+            });
+            this.state.known_dedicated_trainers.sort(
+                (left, right) => this._dedicatedBarrierSort(left, right));
+            return true;
+        }
+        if (existing.platform !== record.platform) {
+            existing.platform = record.platform;
+            existing.last_seen_ms = record.last_seen_ms;
+            return true;
+        }
+        if (record.last_seen_ms - existing.last_seen_ms >= refreshAfterMs) {
+            existing.last_seen_ms = record.last_seen_ms;
+            return true;
+        }
+        return false;
+    }
+
+    _ensurePendingTrainer(record) {
+        const pending = this.state.pending_release;
+        if (!pending || record.role !== 'dedicated') return false;
+        const existing = pending.required_trainers.find(
+            item => item.trainer_id === record.trainer_id);
+        if (existing) {
+            if (existing.platform !== record.platform) {
+                throw Object.assign(
+                    new Error(
+                        'trainer ' + record.trainer_id +
+                        ' changed platform during an active release barrier'),
+                    { statusCode: 409 });
+            }
+            return false;
+        }
+        pending.required_trainers.push({
+            trainer_id: record.trainer_id,
+            platform: record.platform,
+        });
+        return true;
+    }
+
+    _requiredTrainerRecord(spec) {
+        const record = this.trainers.get(spec.trainer_id);
+        if (!record ||
+            record.role !== 'dedicated' ||
+            record.platform !== spec.platform ||
+            record.last_seen_ms < this.now() - this.leaseSeconds * 1000) {
+            return null;
+        }
+        return record;
     }
 
     _pendingRecordFor(role, platform) {
@@ -394,18 +474,37 @@ class TrainingControlStore {
     }
 
     _allDedicatedPrepared(pending) {
-        const trainers = this._activeDedicatedTrainers();
-        if (trainers.length === 0) return true;
-        return trainers.every(record =>
-            record.build_id === pending.build_id ||
-            record.prepared_build_id === pending.build_id);
+        return pending.required_trainers.every(spec => {
+            const record = this._requiredTrainerRecord(spec);
+            return Boolean(record) && (
+                record.build_id === pending.build_id ||
+                record.prepared_build_id === pending.build_id);
+        });
+    }
+
+    _trainerHealthyOnPending(spec, pending) {
+        const record = this._requiredTrainerRecord(spec);
+        if (!record) return false;
+        const artifact = this._catalogForRole('dedicated')[spec.platform]?.[pending.build_id];
+        return Boolean(artifact) &&
+            record.process_state === 'running' &&
+            record.build_id === pending.build_id &&
+            record.build_sha256 === artifact.archive_sha256 &&
+            record.applied_revision >= pending.phase_revision;
+    }
+
+    _trainerStoppedForPending(spec, pending) {
+        const record = this._requiredTrainerRecord(spec);
+        return Boolean(record) &&
+            record.process_state === 'stopped' &&
+            record.applied_revision >= pending.phase_revision;
     }
 
     _rollingTargetId() {
         const pending = this.state.pending_release;
         if (!pending || pending.phase !== 'rolling') return null;
-        const remaining = this._activeDedicatedTrainers()
-            .filter(record => record.build_id !== pending.build_id);
+        const remaining = pending.required_trainers
+            .filter(spec => !this._trainerHealthyOnPending(spec, pending));
         return remaining.length ? remaining[0].trainer_id : null;
     }
 
@@ -424,28 +523,31 @@ class TrainingControlStore {
     _advanceRollout() {
         const pending = this.state.pending_release;
         if (!pending) return false;
-        const trainers = this._activeDedicatedTrainers();
+        if (pending.collect_until_ms > this.now()) return false;
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
-            if (!this.state.training_enabled || trainers.length === 0) {
+            if (!this.state.training_enabled || pending.required_trainers.length === 0) {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
             this.state.revision++;
+            pending.phase_revision = this.state.revision;
             this._persist();
             return true;
         }
 
         if (pending.phase === 'rolling') {
-            if (trainers.every(record => record.build_id === pending.build_id)) {
+            if (pending.required_trainers.every(
+                spec => this._trainerHealthyOnPending(spec, pending))) {
                 return this._promotePendingRelease();
             }
             return false;
         }
 
         if (pending.phase === 'stopping') {
-            if (trainers.every(record => record.process_state === 'stopped')) {
+            if (pending.required_trainers.every(
+                spec => this._trainerStoppedForPending(spec, pending))) {
                 return this._promotePendingRelease();
             }
         }
@@ -493,12 +595,20 @@ class TrainingControlStore {
             return this.desiredState();
         }
 
+        const requiredTrainers = this._releaseBarrierTrainers();
         this.state.pending_release = {
             build_id: buildId,
             run_id: runId,
             compatibility_key: compatibilityKey,
             incompatible,
             phase: 'preparing',
+            required_trainers: requiredTrainers,
+            phase_revision: this.state.revision + 1,
+            collect_until_ms: (
+                this.state.training_enabled && requiredTrainers.length === 0
+                    ? this.now() + this.leaseSeconds * 1000
+                    : 0
+            ),
         };
         this.state.revision++;
         this._persist();
