@@ -1550,11 +1550,30 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
 
         $rows=@($s.trainers|ForEach-Object{
             $m=$_.metrics
+            $cap=$_.worker_capacity
+            $opt=$_.env_optimizer
+            $envDisplay='-'
+            if($cap -and $null -ne $cap.current_envs){
+                $envDisplay=[string]$cap.current_envs
+                if($opt -and $null -ne $opt.desired_envs -and
+                   [int]$opt.desired_envs -ne [int]$cap.current_envs){
+                    $envDisplay="$($cap.current_envs)->$($opt.desired_envs)"
+                }
+            }
+            $acceptedSps='-'
+            if($opt -and $null -ne $opt.measured_sps){
+                $acceptedSps=('{0:N0}'-f[double]$opt.measured_sps)
+            }elseif($opt -and $null -ne $opt.baseline_sps){
+                $acceptedSps=('{0:N0}'-f[double]$opt.baseline_sps)
+            }
             [pscustomobject]@{
                 Trainer=$_.trainer_id
                 Role=$_.role
                 Platform=$_.platform
                 State=if($_.stale){'STALE'}else{$_.process_state}
+                Envs=$envDisplay
+                SPS=$acceptedSps
+                Opt=if($opt -and $opt.phase){[string]$opt.phase}else{'-'}
                 Build=$_.build_id
                 Rev=$_.applied_revision
                 Age=('{0:N1}s'-f[double]$_.age_seconds)
@@ -1569,7 +1588,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             }
         })
         if($rows.Count){
-            $table=($rows|Format-Table Trainer,Role,Platform,State,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize|Out-String -Width 240).TrimEnd()
+            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,BeeHit,HumanHit,Error -AutoSize|Out-String -Width 260).TrimEnd()
             if($table){
                 $lines += @($table -split "\r?\n")
             }
