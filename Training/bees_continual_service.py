@@ -352,13 +352,6 @@ def _managed_stop_requested() -> bool:
     return path is not None and path.is_file()
 
 
-def _signal_managed_child(process: subprocess.Popen) -> None:
-    if os.name == "nt":
-        process.send_signal(signal.CTRL_BREAK_EVENT)
-    else:
-        os.killpg(process.pid, signal.SIGINT)
-
-
 def _force_stop_managed_child(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
@@ -394,21 +387,17 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
 
     process = subprocess.Popen(list(command), **kwargs)
     stop_deadline: Optional[float] = None
-    stop_sent = False
+    stop_requested = False
     try:
         while process.poll() is None:
             if _managed_stop_requested():
-                if not stop_sent:
+                if not stop_requested:
                     print(
                         "[Bees continuous] managed shutdown requested; "
-                        "asking the active phase to finalize.",
+                        "waiting for the active phase to finalize checkpoint/model output.",
                         flush=True,
                     )
-                    try:
-                        _signal_managed_child(process)
-                    except (OSError, ValueError):
-                        pass
-                    stop_sent = True
+                    stop_requested = True
                     stop_deadline = time.monotonic() + MANAGED_CHILD_GRACE_SECONDS
                 elif stop_deadline is not None and time.monotonic() >= stop_deadline:
                     print(
@@ -425,7 +414,7 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
             _force_stop_managed_child(process)
 
     return_code = int(process.wait())
-    if stop_sent:
+    if stop_requested:
         raise KeyboardInterrupt
     return return_code
 
