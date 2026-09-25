@@ -168,12 +168,12 @@ install_system_tools() {
     fi
 }
 
-if ! have base64 || { ! have sha256sum && ! have shasum; } || { ! have curl && ! have wget; }; then
+if ! have base64 || ! have nohup || { ! have sha256sum && ! have shasum; } || { ! have curl && ! have wget; }; then
     echo "[Bees remote] installing missing base system prerequisites..."
     install_system_tools
 fi
-if ! have base64 || { ! have sha256sum && ! have shasum; }; then
-    echo "error: base64 and SHA-256 utilities are required." >&2
+if ! have base64 || ! have nohup || { ! have sha256sum && ! have shasum; }; then
+    echo "error: base64, nohup, and SHA-256 utilities are required." >&2
     exit 2
 fi
 
