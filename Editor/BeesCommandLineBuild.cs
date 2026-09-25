@@ -32,7 +32,8 @@ internal static class BeesCommandLineBuild
         Build(
             BuildTarget.StandaloneLinux64,
             new[] { RlScene },
-            "Bees RL Training.x86_64");
+            "Bees RL Training.x86_64",
+            StandaloneBuildSubtarget.Server);
     }
 
     public static void BuildWindowsFullGame()
@@ -53,7 +54,11 @@ internal static class BeesCommandLineBuild
         Build(BuildTarget.StandaloneWindows64, scenes, "Bees.exe");
     }
 
-    private static void Build(BuildTarget target, string[] scenes, string executableName)
+    private static void Build(
+        BuildTarget target,
+        string[] scenes,
+        string executableName,
+        StandaloneBuildSubtarget subtarget = StandaloneBuildSubtarget.Player)
     {
         string outputDirectory = ReadRequiredArgument(OutputArgument);
         outputDirectory = Path.GetFullPath(outputDirectory);
@@ -61,13 +66,15 @@ internal static class BeesCommandLineBuild
 
         string locationPath = Path.Combine(outputDirectory, executableName);
         Debug.Log(
-            $"[Bees build] target={target} scenes={scenes.Length} output={locationPath}");
+            $"[Bees build] target={target} subtarget={subtarget} " +
+            $"scenes={scenes.Length} output={locationPath}");
 
         BuildPlayerOptions options = new BuildPlayerOptions
         {
             scenes = scenes,
             locationPathName = locationPath,
             target = target,
+            subtarget = (int)subtarget,
             options = BuildOptions.None,
         };
 
