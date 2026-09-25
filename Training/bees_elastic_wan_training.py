@@ -417,14 +417,14 @@ class ElasticWanBroker(base.WanActorBroker):
         }
 
     def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:
-        actual = {
-            "build_id": str(payload.get("build_id", "")).strip(),
-            "run_id": str(payload.get("run_id", "")).strip(),
-            "compatibility_key": str(payload.get("compatibility_key", "")).strip().lower(),
-        }
-        if actual != self.release_identity:
+        actual_run_id = str(payload.get("run_id", "")).strip()
+        actual_compatibility_key = str(payload.get("compatibility_key", "")).strip().lower()
+        if (
+            actual_run_id != self.release_identity["run_id"]
+            or actual_compatibility_key != self.release_identity["compatibility_key"]
+        ):
             raise ValueError(
-                "actor release identity does not match the authoritative learner session"
+                "actor semantic release identity does not match the authoritative learner session"
             )
 
     def _validate_actor_id(self, value: Any) -> int:
