@@ -173,7 +173,6 @@ def read_throughput_metrics(
     accepted_trajectories = value.get("accepted_trajectories_total")
     learner_consumed_steps = value.get("learner_consumed_steps_total")
     queue_depth = value.get("upload_queue_depth")
-    learner_consumed_steps = value.get("learner_consumed_steps_total")
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
     network_rate = value.get("network_mib_per_s")
@@ -196,12 +195,6 @@ def read_throughput_metrics(
         or not isinstance(queue_depth, int)
         or isinstance(queue_depth, bool)
         or queue_depth < 0
-    ):
-        return {}
-    if learner_consumed_steps is not None and (
-        not isinstance(learner_consumed_steps, int)
-        or isinstance(learner_consumed_steps, bool)
-        or learner_consumed_steps < 0
     ):
         return {}
     traffic_present = any(
@@ -232,8 +225,6 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
-    if learner_consumed_steps is not None:
-        result["learner_consumed_steps_total"] = learner_consumed_steps
     if traffic_present:
         result.update(
             {
@@ -1044,7 +1035,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 command,
                                 revision=revision,
                                 build_sha256=desired_sha,
+                                build_id=str(active_build["build_id"]),
                                 run_id=run_id,
+                                compatibility_key=compatibility_key,
                                 state_file=state_file,
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
