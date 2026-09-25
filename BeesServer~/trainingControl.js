@@ -806,8 +806,10 @@ class TrainingControlStore {
         if (role === 'dedicated' && pending) {
             if (pending.phase === 'rolling') {
                 const current = this.trainers.get(trainerId);
-                if ((current && current.build_id === pending.build_id) ||
-                    this._rollingTargetId() === trainerId) {
+                const alreadyRolled = current && current.build_id === pending.build_id;
+                const recollecting = pending.collect_until_ms > this.now();
+                if (alreadyRolled ||
+                    (!recollecting && this._rollingTargetId() === trainerId)) {
                     desiredBuildId = pending.build_id;
                 }
             } else if (pending.phase === 'stopping') {
