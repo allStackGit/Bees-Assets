@@ -493,10 +493,12 @@ class RuntimeUpdater:
             # Backward compatibility for runtimes produced before explicit version markers.
             runtime_changed = runtime_sha != self.current_sha256
         bridge_changed = bridge_sha != current_bridge_sha
+        active_dependencies_ok = _python_remote_dependencies_ok(Path(sys.executable))
         with self._lock:
             if (
                 not runtime_changed
                 and not bridge_changed
+                and active_dependencies_ok
             ):
                 self.staged_sha256 = ""
                 self.staged_root = None
@@ -545,10 +547,10 @@ class RuntimeUpdater:
             (staged_build_id + "\n").encode("ascii"),
             0o600,
         )
-        print(
-            f"[Bees remote] staged worker update runtime={runtime_sha[:12]} "
-            f"bridge={bridge_sha[:12]}."
-        )
+        update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
+        if not active_dependencies_ok:
+            update_parts.append("python-dependencies=repair")
+        print("[Bees remote] staged worker update " + " ".join(update_parts) + ".")
 
     def _run(self) -> None:
         while not self._stop.is_set():
