@@ -30,6 +30,17 @@ class ElasticActorSession(worker.ActorSession):
             }
         )
 
+    def _apply_central_throughput(self, state: Mapping[str, Any]) -> None:
+        consumed = state.get("consumed_steps_by_actor")
+        if not isinstance(consumed, Mapping):
+            raise RuntimeError("Elastic WAN central state is missing consumed-step metrics")
+        value = consumed.get(str(self.actor_id), consumed.get(self.actor_id, 0))
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise RuntimeError("Elastic WAN central state has malformed consumed-step metrics")
+        with self._throughput_lock:
+            self._learner_consumed_steps_total = value
+        self._write_throughput_metrics()
+
     def _apply_live_rollout_horizons(self, state: Mapping[str, Any]) -> None:
         if self.manager is None:
             return
@@ -83,6 +94,7 @@ class ElasticActorSession(worker.ActorSession):
             0.0,
         )
         self._apply_live_rollout_horizons(state)
+        self._apply_central_throughput(state)
         self._heartbeat()
         self._state_changed.clear()
 
@@ -96,6 +108,7 @@ class ElasticActorSession(worker.ActorSession):
                     worker.DEFAULT_STATE_WAIT_SECONDS,
                 )
                 remote_control_epoch = int(state.get("control_epoch", -1))
+                self._apply_central_throughput(state)
                 changed = (
                     int(state.get("policy_epoch", -1)) != self.policy_epoch
                     or remote_control_epoch != self.control_epoch
