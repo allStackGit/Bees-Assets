@@ -127,3 +127,36 @@ test('bees.ps1 uses a .zip temporary path for remote runtime compression', () =>
     assert.match(remoteBootstrap, /Install-AtomicFile \$runtimeZipTemp \$runtimeZip/);
     assert.doesNotMatch(remoteBootstrap, /\$runtimeZipTemp="\$runtimeZip\.new"/);
 });
+
+
+test('bees.ps1 live status updates in place instead of clearing the host', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const statusBlock = source.match(/function Get-StatusFrameLines[\s\S]*?function Invoke-Status/)?.[0] || '';
+    assert.doesNotMatch(statusBlock, /Clear-Host/);
+    assert.match(statusBlock, /function Write-LiveStatusFrame/);
+    assert.match(statusBlock, /\[Console\]::SetCursorPosition/);
+    assert.match(statusBlock, /PadRight\(\$width\)/);
+    assert.match(statusBlock, /Get-StatusFrameLines \$Config \$AdminToken/);
+});
+
+test('remote launchers show staged startup progress and unbuffered worker output', () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const linuxPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.sh');
+    const windows = fs.readFileSync(windowsPath, 'utf8');
+    const linux = fs.readFileSync(linuxPath, 'utf8');
+    for (const stage of ['Stage 1/5', 'Stage 2/5', 'Stage 3/5', 'Stage 4/5', 'Stage 5/5']) {
+        assert.match(windows, new RegExp(stage.replace('/', '\\/')));
+        assert.match(linux, new RegExp(stage.replace('/', '\\/')));
+    }
+    assert.match(windows, /& \$venvPython -u @workerArgs/);
+    assert.match(linux, /"\$VENV_PYTHON" -u "\$\{WORKER_ARGS\[@\]\}"/);
+});
+
+test('managed remote worker emits a recurring live status heartbeat', () => {
+    const workerPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_managed_remote_worker.py');
+    const source = fs.readFileSync(workerPath, 'utf8');
+    assert.match(source, /def _remote_status_summary\(/);
+    assert.match(source, /next_status = now \+ 5\.0/);
+    assert.match(source, /print\(_remote_status_summary\(args, trainer_id\), flush=True\)/);
+    assert.match(source, /"state=\{state\} envs=\{args\.envs\} build=\{build_id\}/);
+});
