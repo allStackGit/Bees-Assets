@@ -393,6 +393,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._reference_behavior_specs: Optional[Dict[str, Any]] = None
         self._reference_signatures: Optional[Dict[str, Any]] = None
         self._claims: Dict[str, Dict[str, Any]] = {}
+        self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
         self._topology_epoch = 0
         self.diagnostics = CapacityDiagnostics(self.local_envs)
 
@@ -664,6 +665,12 @@ class ElasticWanBroker(base.WanActorBroker):
                 "registered_actors": sorted(active),
                 "remote_envs": sum(active.values()),
                 "local_envs": self.local_envs,
+                "consumed_steps_by_actor": {
+                    str(actor_id): int(self._consumed_steps_by_actor.get(actor_id, 0))
+                    for actor_id in active
+                },
+                "trajectory_queue_depth": self._trajectory_batches.qsize(),
+                "trajectory_queue_capacity": self.options.max_queued_batches,
             }
 
     def _validate_dynamic_owner_locked(self, actor_id: int, payload: Mapping[str, Any]) -> None:
@@ -753,6 +760,10 @@ class ElasticWanBroker(base.WanActorBroker):
                 break
             if self._batch_is_current(batch):
                 selected.append(batch)
+                actor_id = int(batch["actor_id"])
+                step_count = int(batch["step_count"])
+                with self._condition:
+                    self._consumed_steps_by_actor[actor_id] += step_count
         return tuple(selected)
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
