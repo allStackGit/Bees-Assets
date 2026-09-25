@@ -622,6 +622,8 @@ class ContinualLearningStore:
             if model_id is None:
                 return None
             row = self._model_row(db, model_id)
+            if row["status"] != "champion":
+                return None
             expected = self.compatibility.to_dict()
             actual = {key: row[key] for key in expected}
             return model_id if actual == expected else None
