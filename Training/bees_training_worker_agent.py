@@ -36,6 +36,8 @@ ENV_PLACEHOLDER = "{env}"
 ENV_ARGS_PLACEHOLDER = "{env_args}"
 BUILD_ID_PLACEHOLDER = "{build_id}"
 RUN_ID_PLACEHOLDER = "{run_id}"
+MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -347,6 +349,8 @@ class ManagedProcess:
         self.build_sha256 = ""
         self.run_id = ""
         self.environment_args: tuple[str, ...] = ()
+        self.graceful_checkpoint = False
+        self.stop_request_file: Optional[Path] = None
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -367,6 +371,7 @@ class ManagedProcess:
         run_id: str,
         state_file: Path,
         environment_args: Sequence[str],
+        graceful_checkpoint: bool = False,
     ) -> None:
         self.stop()
         environment = os.environ.copy()
@@ -379,6 +384,15 @@ class ManagedProcess:
         log_dir = state_file.parent / "logs" / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
+        stop_request_file = state_file.parent / "managed-stop.request"
+        try:
+            stop_request_file.unlink()
+        except FileNotFoundError:
+            pass
+        if graceful_checkpoint:
+            environment[MANAGED_STOP_FILE_ENV] = str(stop_request_file)
+        else:
+            environment.pop(MANAGED_STOP_FILE_ENV, None)
         self.process = subprocess.Popen(
             list(command),
             env=environment,
@@ -389,6 +403,8 @@ class ManagedProcess:
         self.build_sha256 = build_sha256
         self.run_id = str(run_id)
         self.environment_args = tuple(str(value) for value in environment_args)
+        self.graceful_checkpoint = bool(graceful_checkpoint)
+        self.stop_request_file = stop_request_file if graceful_checkpoint else None
 
     def stop(self) -> None:
         process = self.process
@@ -396,9 +412,36 @@ class ManagedProcess:
         if process is None or process.poll() is not None:
             return
 
-        # Dedicated training wrappers spawn ML-Agents/Unity descendants. Stopping only the
-        # immediate Python process can leave those workers alive and still simulating after the
-        # BeesServer lease has expired, violating the fail-closed cluster contract.
+        # The central learner owns optimizer/checkpoint state. Ask its continual-service child
+        # to interrupt ML-Agents cleanly first so TrainerController finally saves checkpoint/ONNX
+        # and learn.py writes timers/status. Forced process-tree termination is only a fallback.
+        if self.graceful_checkpoint and self.stop_request_file is not None:
+            try:
+                self.stop_request_file.parent.mkdir(parents=True, exist_ok=True)
+                self.stop_request_file.write_text("stop\n", encoding="ascii")
+                deadline = time.monotonic() + GRACEFUL_CHECKPOINT_STOP_SECONDS
+                while process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.25)
+                if process.poll() is not None:
+                    try:
+                        self.stop_request_file.unlink()
+                    except FileNotFoundError:
+                        pass
+                    return
+                print(
+                    "[Bees control] central learner did not finish checkpoint finalization "
+                    "within the graceful stop window; forcing termination.",
+                    file=sys.stderr,
+                )
+            except OSError as exc:
+                print(
+                    f"[Bees control] could not request graceful learner shutdown: {exc}",
+                    file=sys.stderr,
+                )
+
+        # Dedicated wrappers may spawn Unity descendants. If graceful finalization failed or this
+        # is a non-checkpoint-owning worker, terminate the whole process tree to preserve fail-closed
+        # cluster behavior.
         if os.name == "nt":
             try:
                 subprocess.run(
@@ -489,6 +532,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-ready-file", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=15.0)
+    parser.add_argument("--shutdown-request-file", default="")
     parser.add_argument(
         "launch_command",
         nargs=argparse.REMAINDER,
@@ -526,6 +570,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     install_root = Path(args.install_root).expanduser().resolve()
+    shutdown_request_file = (
+        Path(args.shutdown_request_file).expanduser().resolve()
+        if str(args.shutdown_request_file).strip()
+        else None
+    )
+    if shutdown_request_file is not None:
+        try:
+            shutdown_request_file.unlink()
+        except FileNotFoundError:
+            pass
     builds = ManagedBuildStore(install_root)
     state_file = install_root / "control-state.json"
     metrics = EpisodeLogMetrics(install_root / "logs")
@@ -553,6 +607,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         while not stop:
+            if shutdown_request_file is not None and shutdown_request_file.is_file():
+                print(
+                    "[Bees control] supervisor shutdown requested; finalizing managed learner.",
+                    flush=True,
+                )
+                break
             received_desired = False
             now = time.monotonic()
             offline = last_contact > 0 and now - last_contact > lease_seconds
@@ -648,6 +708,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id=run_id,
                             state_file=state_file,
                             environment_args=environment_args,
+                            graceful_checkpoint=(
+                                args.role == "dedicated"
+                                and args.trainer_id == "central-learner"
+                            ),
                         )
                         applied_revision = revision
                     elif descriptor and full_game_update_requires_deferred_restart(
@@ -711,6 +775,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 run_id=run_id,
                                 state_file=state_file,
                                 environment_args=environment_args,
+                                graceful_checkpoint=(
+                                    args.role == "dedicated"
+                                    and args.trainer_id == "central-learner"
+                                ),
                             )
                         applied_revision = revision
                 else:
@@ -772,6 +840,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             deadline = time.monotonic() + args.heartbeat_seconds
             while not stop and time.monotonic() < deadline:
+                if shutdown_request_file is not None and shutdown_request_file.is_file():
+                    stop = True
+                    break
                 if managed.process is not None and managed.process.poll() is not None:
                     code = managed.process.returncode
                     managed.process = None
@@ -782,6 +853,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     finally:
         managed.stop()
+        if shutdown_request_file is not None:
+            try:
+                shutdown_request_file.unlink()
+            except FileNotFoundError:
+                pass
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
 
