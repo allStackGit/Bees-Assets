@@ -117,7 +117,7 @@ B:\Bees\Remote\bees-remote-worker.sh
 
 Each launcher is self-extracting and contains its platform bootstrap plus embedded tailnet helper. The server still keeps `bees-remote-runtime.zip` for private bootstrap delivery; it is not copied manually to remote machines.
 
-The transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or router port forwarding is required.
+The private training transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or additional router port forwarding is required for control, WAN rollouts, or bootstrap. Remote Unity players still use the normal public Bees gameplay/settings endpoint, just like other game clients.
 
 On first use, the learner and each remote worker print a Tailscale authorization URL. Their identities are persisted. The generated launcher contains the learner's private tailnet address and bootstrap credential.
 
