@@ -122,6 +122,19 @@ function Resolve-UnityEditor($Config){
 
 function Resolve-Python($Config){ if($Config.python){ Resolve-CommandPath ([string]$Config.python) } else { Resolve-CommandPath 'python' } }
 
+function Test-PythonCode([string]$Exe,[string]$Code){
+    $previousErrorAction=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='SilentlyContinue'
+        & $Exe -c $Code *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference=$previousErrorAction
+    }
+}
+
 function Ensure-LearnerPython($Config){
     if(-not(Test-Path -LiteralPath $LearnerRequirementsPath)){
         throw "Learner Python requirements are missing: $LearnerRequirementsPath"
@@ -131,9 +144,8 @@ function Ensure-LearnerPython($Config){
     }
 
     $basePython=Resolve-Python $Config
-    $versionCheck=& $basePython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-    if($LASTEXITCODE -ne 0 -or ([string]$versionCheck).Trim() -ne '3.10'){
-        throw "Bees learner requires Python 3.10. Configured python resolved to '$basePython' with version '$(([string]$versionCheck).Trim())'."
+    if(-not(Test-PythonCode $basePython 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')){
+        throw "Bees learner requires Python 3.10. Configured python resolved to '$basePython'."
     }
 
     $venvRoot=Join-Path $RuntimeRoot 'LearnerPython'
@@ -150,19 +162,14 @@ function Ensure-LearnerPython($Config){
     )
     $stampPath=Join-Path $venvRoot 'bees-requirements.sha256'
     $currentStamp=if(Test-Path -LiteralPath $stampPath){(Get-Content -LiteralPath $stampPath -Raw).Trim()}else{''}
-
-    $importsOk=$false
-    if($currentStamp -eq $requirementsHash){
-        & $venvPython -c "import mlagents, torch, numpy, onnxruntime; import sys; assert sys.version_info[:2] == (3,10)" *> $null
-        $importsOk=($LASTEXITCODE -eq 0)
-    }
+    $preflight='import sys, mlagents, torch, numpy, onnxruntime; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)'
+    $importsOk=($currentStamp -eq $requirementsHash) -and (Test-PythonCode $venvPython $preflight)
 
     if(-not $importsOk){
         Write-Host 'Installing/updating central learner Python dependencies...'
         Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot
         Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot
-        & $venvPython -c "import mlagents, torch, numpy, onnxruntime; import sys; assert sys.version_info[:2] == (3,10)" *> $null
-        if($LASTEXITCODE -ne 0){
+        if(-not(Test-PythonCode $venvPython $preflight)){
             throw 'Central learner Python dependency preflight failed after installation.'
         }
         $requirementsHash | Set-Content -LiteralPath $stampPath -NoNewline -Encoding ASCII
@@ -170,6 +177,7 @@ function Ensure-LearnerPython($Config){
 
     [IO.Path]::GetFullPath($venvPython)
 }
+
 function Resolve-Node($Config){ if($Config.node){ Resolve-CommandPath ([string]$Config.node) } else { Resolve-CommandPath 'node' } }
 function Resolve-Npm { Resolve-CommandPath 'npm' }
 
