@@ -310,19 +310,33 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
+        except Exception:
+            pass
+        try:
             process.wait(timeout=10)
             return
         except Exception:
             pass
     try:
         process.terminate()
-        process.wait(timeout=10)
     except Exception:
-        try:
-            process.kill()
-            process.wait(timeout=5)
-        except Exception:
-            pass
+        pass
+    try:
+        process.wait(timeout=10)
+        return
+    except Exception:
+        pass
+    try:
+        process.kill()
+    except Exception:
+        pass
+    try:
+        process.wait(timeout=5)
+        return
+    except Exception as exc:
+        raise RuntimeError(
+            f"remote supervisor child process {process.pid} did not stop"
+        ) from exc
 
 
 def _wait_for_ports(
@@ -1219,10 +1233,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except KeyboardInterrupt:
                 stop[0] = True
             finally:
-                _terminate(worker)
-                _terminate(tailnet)
+                termination_errors = []
+                for label, process in (("worker", worker), ("tailnet", tailnet)):
+                    try:
+                        _terminate(process)
+                    except RuntimeError as exc:
+                        termination_errors.append(f"{label}: {exc}")
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
+                if termination_errors:
+                    raise RuntimeError(
+                        "remote supervisor cleanup could not confirm child shutdown: " +
+                        "; ".join(termination_errors)
+                    )
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
