@@ -7,7 +7,7 @@ TAILNET_LEARNER="__BEES_TAILNET_LEARNER__"
 TAILNET_BOOTSTRAP_PORT="__BEES_TAILNET_BOOTSTRAP_PORT__"
 CONTROL_PORT="__BEES_CONTROL_PORT__"
 BROKER_PORT="__BEES_BROKER_PORT__"
-TAILNET_BRIDGE_B64="__BEES_TAILNET_BRIDGE_B64__"
+BUNDLED_TAILNET_BRIDGE="__BEES_TAILNET_BRIDGE_FILE__"
 TAILNET_BRIDGE_SHA256="__BEES_TAILNET_BRIDGE_SHA256__"
 BOOTSTRAP_TOKEN="__BEES_BOOTSTRAP_TOKEN__"
 
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for value in "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER" "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$TAILNET_BRIDGE_B64" "$TAILNET_BRIDGE_SHA256" "$BOOTSTRAP_TOKEN"; do
+for value in "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER" "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$BUNDLED_TAILNET_BRIDGE" "$TAILNET_BRIDGE_SHA256" "$BOOTSTRAP_TOKEN"; do
     if [[ "$value" == __BEES_* ]]; then
         echo "error: launcher is not configured. Copy the generated .sh file from B:\\Bees\\Remote after running bees.ps1 start." >&2
         exit 2
@@ -122,18 +122,30 @@ hash_file() {
     fi
 }
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BUNDLED_BRIDGE_PATH="$SCRIPT_DIR/$BUNDLED_TAILNET_BRIDGE"
+if [[ ! -f "$BUNDLED_BRIDGE_PATH" ]]; then
+    echo "error: bundled tailnet runtime is missing: $BUNDLED_BRIDGE_PATH" >&2
+    echo "Copy the generated Linux remote bundle files together." >&2
+    exit 2
+fi
+if [[ "$(hash_file "$BUNDLED_BRIDGE_PATH")" != "$TAILNET_BRIDGE_SHA256" ]]; then
+    echo "error: bundled tailnet runtime failed SHA-256 verification." >&2
+    exit 2
+fi
+
 TAILNET_BRIDGE="$TAILNET_ROOT/bees-tailnet-bridge"
 WRITE_BRIDGE=1
 if [[ -f "$TAILNET_BRIDGE" ]] && [[ "$(hash_file "$TAILNET_BRIDGE")" == "$TAILNET_BRIDGE_SHA256" ]]; then
     WRITE_BRIDGE=0
 fi
 if (( WRITE_BRIDGE )); then
-    echo "[Bees remote] extracting bundled private-network runtime..."
-    printf '%s' "$TAILNET_BRIDGE_B64" | base64 -d > "$TAILNET_BRIDGE"
+    echo "[Bees remote] installing bundled private-network runtime..."
+    cp "$BUNDLED_BRIDGE_PATH" "$TAILNET_BRIDGE"
     chmod 700 "$TAILNET_BRIDGE"
 fi
 if [[ "$(hash_file "$TAILNET_BRIDGE")" != "$TAILNET_BRIDGE_SHA256" ]]; then
-    echo "error: bundled tailnet runtime failed SHA-256 verification." >&2
+    echo "error: installed tailnet runtime failed SHA-256 verification." >&2
     exit 2
 fi
 
