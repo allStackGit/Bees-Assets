@@ -92,6 +92,36 @@ class TrainingControlClientTests(unittest.TestCase):
             progress.assert_called()
             killpg.assert_not_called()
 
+    def test_central_checkpoint_timeout_refuses_force_kill(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = mock.Mock()
+            fake.pid = 4444
+            fake.poll.return_value = None
+
+            with (
+                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent.subprocess, "Popen", return_value=fake),
+                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent, "GRACEFUL_CHECKPOINT_STOP_SECONDS", 0.0),
+            ):
+                managed = agent.ManagedProcess()
+                managed.start(
+                    ["python", "service.py"],
+                    revision=1,
+                    build_sha256="a" * 64,
+                    run_id="run-a",
+                    state_file=root / "control-state.json",
+                    environment_args=(),
+                    graceful_checkpoint=True,
+                )
+
+                with self.assertRaisesRegex(RuntimeError, "refusing forced termination"):
+                    managed.stop()
+
+            self.assertIs(managed.process, fake)
+            killpg.assert_not_called()
+
     def test_managed_process_stops_windows_process_tree(self):
         fake = mock.Mock()
         fake.pid = 5252
