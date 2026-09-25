@@ -6,6 +6,10 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const WebSocketServer = require('websocket').server;
 const { invalidateStrategyCache } = require('./gamePersistence');
 const { patchOutcomeDurability } = require('./outcomeReservations');
+const {
+    RL_DEMO_REQUEST_TYPES,
+    RlDemonstrationUploadManager,
+} = require('./rlDemonstrationUploads');
 
 const USER_DATA_TYPES = new Set(['get-user-data', 'store-user-data']);
 const SHARED_READ_ONLY_FILES = new Set(['campaign_levels_data', 'challenge_levels_data']);
@@ -20,6 +24,24 @@ function sendResponse(request, status, extra = {}) {
 function closeForConsolidation(connection) {
     if (typeof connection?.close === 'function') connection.close(1013, 'Server maintenance');
     else if (typeof connection?.drop === 'function') connection.drop(1013, 'Server maintenance');
+}
+
+function getRlDemonstrationUploadManager(server, options) {
+    if (options.rlDemonstrationUploadManager) return options.rlDemonstrationUploadManager;
+    if (Object.prototype.hasOwnProperty.call(server, '__beesRlDemonstrationUploadManager')) {
+        return server.__beesRlDemonstrationUploadManager;
+    }
+    const root = options.rlDemonstrationUploadRoot || process.env.BEES_RL_DEMO_UPLOAD_DIR;
+    const manager = root
+        ? new RlDemonstrationUploadManager(root, options.rlDemonstrationUploadOptions)
+        : null;
+    Object.defineProperty(server, '__beesRlDemonstrationUploadManager', {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: manager,
+    });
+    return manager;
 }
 
 function beginOutcomeWrite(server) {
@@ -269,6 +291,34 @@ function installRuntimeSecurity(runtime, options = {}) {
                     }
                 }
                 if (!insecureAllowed && claimedUserId && claimedUserId !== String(this.authenticatedUserId)) { sendResponse(request, 403); return false; }
+
+                if (RL_DEMO_REQUEST_TYPES.has(request.params.Type)) {
+                    if (!this.authenticatedUserId) {
+                        sendResponse(request, 401, { ErrorCode: 'authentication-required' });
+                        return false;
+                    }
+                    const uploadManager = getRlDemonstrationUploadManager(server, options);
+                    if (!uploadManager) {
+                        sendResponse(request, 503, { ErrorCode: 'upload-disabled' });
+                        return true;
+                    }
+                    try {
+                        const result = await uploadManager.handle(request.params, {
+                            userId: String(this.authenticatedUserId),
+                            connectionId: String(id),
+                        });
+                        sendResponse(request, 200, result);
+                    } catch (error) {
+                        const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+                        const errorCode = typeof error?.code === 'string' && error.code
+                            ? error.code
+                            : 'upload-failed';
+                        if (status >= 500) runtime.common.handleError(error, 'RL demonstration upload');
+                        sendResponse(request, status, { ErrorCode: errorCode });
+                    }
+                    return true;
+                }
+
                 if (request.params.Type === 'store-user-data' && SHARED_READ_ONLY_FILES.has(request.params.DataFile)) { sendResponse(request, 403); return false; }
 
                 if (this.game) {
