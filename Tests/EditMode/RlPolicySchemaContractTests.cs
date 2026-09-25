@@ -53,11 +53,11 @@ namespace Bees.Tests.EditMode
             Assert.That(perception, Does.Contain("internal const int ObjectiveObservationSize = 16;"));
             Assert.That(perception, Does.Contain("internal const int ObservationSize = SelfObservationSize +"));
 
-            Assert.That(schema, Does.Contain("internal const int Version = 19;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 20;"));
             Assert.That(schema, Does.Contain("internal const int PerceptionObservationSize = 7593;"));
             Assert.That(schema, Does.Contain("internal const int ReservedObservationCount = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
-            Assert.That(schema, Does.Contain("bees-rl-v19"));
+            Assert.That(schema, Does.Contain("bees-rl-v20"));
             Assert.That(schema, Does.Contain("obs=7614"));
             Assert.That(schema, Does.Contain("tail=episode-progress+20-reserved"));
             Assert.That(schema, Does.Contain("coord-frame=team-episode-distinct-quarter-turn"));
@@ -85,10 +85,10 @@ namespace Bees.Tests.EditMode
             Assert.That(config, Does.Contain("\"policy_abi_version\": 19"));
             Assert.That(config, Does.Contain("\"observation_schema_version\": 11"));
             Assert.That(config, Does.Contain("\"telemetry_observation_size\": 7614"));
-            Assert.That(config, Does.Contain("bees-rl-v19"));
+            Assert.That(config, Does.Contain("bees-rl-v20"));
             Assert.That(config, Does.Contain("obs=7614"));
             Assert.That(config, Does.Contain("grid=21x21-cell6"));
-            Assert.That(schema, Does.Contain("internal const int Version = 19;"));
+            Assert.That(schema, Does.Contain("internal const int Version = 20;"));
             Assert.That(schema, Does.Contain("internal const int ExpectedObservationSize = ReservedObservationEndExclusive;"));
         }
 
