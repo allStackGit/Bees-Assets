@@ -527,8 +527,42 @@ func runFetch(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if _, err := up(ctx, s); err != nil {
+	ip4, err := up(ctx, s)
+	if err != nil {
 		return err
+	}
+
+	// Keep reachability validation and the HTTP bootstrap request on the same tsnet.Server.
+	// Repeatedly tearing down and recreating the same tsnet identity can briefly leave the
+	// replacement endpoint unable to dial even though the preceding instance was reachable.
+	var lastDialErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
+		conn, dialErr := s.Dial(dialCtx, "tcp", *target)
+		dialCancel()
+		if dialErr == nil {
+			_ = conn.Close()
+			fmt.Printf("[Bees tailnet] bootstrap reachability ready source=%s target=%s\n", ip4, *target)
+			lastDialErr = nil
+			break
+		}
+		lastDialErr = dialErr
+		fmt.Printf("[Bees tailnet] bootstrap reachability attempt %d/3 failed: %v\n", attempt, dialErr)
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	if lastDialErr != nil {
+		return fmt.Errorf(
+			"bootstrap target %s is unreachable from %s after retries: %w",
+			*target,
+			ip4,
+			lastDialErr,
+		)
 	}
 
 	transport := &http.Transport{
@@ -538,14 +572,30 @@ func runFetch(args []string) error {
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Minute}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+*target+"/bootstrap", nil)
-	if err != nil {
-		return err
+
+	var resp *http.Response
+	var requestErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+*target+"/bootstrap", nil)
+		if reqErr != nil {
+			return reqErr
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, requestErr = client.Do(req)
+		if requestErr == nil {
+			break
+		}
+		fmt.Printf("[Bees tailnet] bootstrap request attempt %d/3 failed: %v\n", attempt, requestErr)
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+	if requestErr != nil {
+		return fmt.Errorf("bootstrap request failed after retries: %w", requestErr)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
