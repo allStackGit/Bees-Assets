@@ -18,7 +18,6 @@ import argparse
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import tempfile
@@ -365,17 +364,15 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
 
     process = subprocess.Popen(list(command), **kwargs)
     stop_requested = False
-    try:
-        while process.poll() is None:
-            if _managed_stop_requested():
-                if not stop_requested:
-                    print(
-                        "[Bees continuous] managed shutdown requested; "
-                        "waiting for the active phase to finalize checkpoint/model output.",
-                        flush=True,
-                    )
-                    stop_requested = True
-            time.sleep(MANAGED_CHILD_POLL_SECONDS)
+    while process.poll() is None:
+        if _managed_stop_requested() and not stop_requested:
+            print(
+                "[Bees continuous] managed shutdown requested; "
+                "waiting for the active phase to finalize checkpoint/model output.",
+                flush=True,
+            )
+            stop_requested = True
+        time.sleep(MANAGED_CHILD_POLL_SECONDS)
 
     return_code = int(process.wait())
     if stop_requested or _managed_stop_requested():
