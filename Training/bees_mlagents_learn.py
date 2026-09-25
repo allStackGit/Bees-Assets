@@ -18,10 +18,12 @@ All other arguments are passed unchanged to mlagents-learn.
 
 from __future__ import annotations
 
+import _thread
 import copy
 import os
 import signal
 import sys
+import threading
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
@@ -32,6 +34,8 @@ CPU_INFERENCE_FLAG = "--bees-cpu-inference"
 RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
+MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+MANAGED_STOP_POLL_SECONDS = 0.25
 _ORIGINAL_MLAGENTS_WORKER = None
 
 
@@ -545,6 +549,28 @@ def _install_windows_break_interrupt():
     return signal.signal(signal.SIGBREAK, signal.default_int_handler)
 
 
+def _start_managed_stop_watcher():
+    """Interrupt the trainer main thread when its supervisor requests a final checkpoint."""
+    path = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
+    if not path:
+        return None, None
+    stop_event = threading.Event()
+
+    def watch() -> None:
+        while not stop_event.wait(MANAGED_STOP_POLL_SECONDS):
+            if os.path.isfile(path):
+                _thread.interrupt_main()
+                return
+
+    watcher = threading.Thread(
+        target=watch,
+        name="bees-managed-stop-watcher",
+        daemon=True,
+    )
+    watcher.start()
+    return stop_event, watcher
+
+
 def main() -> None:
     (
         trainer_args,
@@ -618,12 +644,17 @@ def main() -> None:
 
     previous_argv = sys.argv
     previous_sigbreak_handler = _install_windows_break_interrupt()
+    managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:
         learn.main()
     finally:
         sys.argv = previous_argv
+        if managed_stop_event is not None:
+            managed_stop_event.set()
+        if managed_stop_watcher is not None:
+            managed_stop_watcher.join(timeout=1.0)
         if previous_sigbreak_handler is not None:
             signal.signal(signal.SIGBREAK, previous_sigbreak_handler)
         torch_utils.torch.load = original_torch_load
