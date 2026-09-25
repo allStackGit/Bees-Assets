@@ -41,6 +41,19 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a JSON object"):
             managed._decode_release_metadata(b'["build-1"]')
 
+    def test_remote_dependency_health_check_requires_successful_imports(self):
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(managed.subprocess, "run", return_value=completed) as run:
+            self.assertTrue(managed._python_remote_dependencies_ok(Path("/tmp/python")))
+        self.assertIn(
+            "import pkg_resources, mlagents, torch, numpy",
+            run.call_args.args[0],
+        )
+
+        completed.returncode = 1
+        with mock.patch.object(managed.subprocess, "run", return_value=completed):
+            self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
+
     def test_runtime_version_is_read_from_executing_root_not_mutable_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
