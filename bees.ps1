@@ -386,6 +386,32 @@ function Assert-UnityProjectAvailableForBatchBuild {
     }
 }
 
+function Get-UnityBuildProgressStatus([string]$LogPath){
+    if(-not(Test-Path -LiteralPath $LogPath)){ return 'Starting Unity' }
+
+    $lines=@(Get-Content -LiteralPath $LogPath -Tail 120 -ErrorAction SilentlyContinue)
+    for($i=$lines.Count-1;$i -ge 0;$i--){
+        $line=([string]$lines[$i]).Trim()
+        if(-not $line){ continue }
+
+        if($line -match "^Opening scene '(.+)'$"){
+            return "Processing scene: $([IO.Path]::GetFileName($Matches[1]))"
+        }
+        if($line -match "^Importing '[^']+ - Path: (.+)'"){
+            return "Importing: $($Matches[1])"
+        }
+        if($line -match '(?i)shader.*compil|compil.*shader'){ return 'Compiling shaders' }
+        if($line -match '(?i)script.*compil|compil.*script'){ return 'Compiling scripts' }
+        if($line -match '(?i)SpriteAtlasPacking'){ return 'Packing sprite atlases' }
+        if($line -match '(?i)Asset Pipeline Refresh'){ return 'Refreshing assets' }
+        if($line -match '(?i)building player|buildpipeline|player build'){ return 'Building player' }
+        if($line -match '(?i)copying|copy file|copy files'){ return 'Copying build files' }
+        if($line -match '(?i)Build Finished|result=Succeeded|Batchmode quit'){ return 'Finalizing build' }
+    }
+
+    return 'Building player'
+}
+
 function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[string]$Entrypoint,[string]$LogName){
     $logRoot=Join-Path $LogsRoot 'Build'; Ensure-Directory $logRoot
     $logPath=Join-Path $logRoot $LogName
@@ -413,7 +439,8 @@ function Invoke-UnityBuild([string]$Unity,[string]$Method,[string]$Output,[strin
     try {
         while(-not $unityProcess.WaitForExit(1000)){
             $elapsed=[DateTime]::UtcNow-$unityStarted
-            Write-Progress -Activity $progressActivity -Status ("Running - elapsed " + $elapsed.ToString('hh\:mm\:ss'))
+            $phase=Get-UnityBuildProgressStatus $logPath
+            Write-Progress -Activity $progressActivity -Status ($phase + " - elapsed " + $elapsed.ToString('hh\:mm\:ss')) -CurrentOperation $phase
         }
         # Flush asynchronous process bookkeeping before reading ExitCode.
         $unityProcess.WaitForExit()
