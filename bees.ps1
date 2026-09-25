@@ -990,9 +990,10 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         if(Test-Path -LiteralPath $ServerStatePath){
             try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
         }
+        $managedSourceHash=Get-ObjectPropertyValue $managedState 'source_hash'
         if(
             $null -ne $managedState -and
-            ([string]$managedState.source_hash) -eq $serverSourceHash
+            ([string]$managedSourceHash) -eq $serverSourceHash
         ){
             if(-not(Test-ManagedProcessIdentity $managedState $node)){
                 Write-Warning 'BeesServer is healthy and current, but its persisted process identity cannot be verified. Leaving it running; a future automatic restart/stop will refuse to kill it until it is relaunched under identity-safe state.'
@@ -1136,16 +1137,34 @@ function Get-ProcessIdentity([int]$Id){
     }
 }
 
+function Get-ObjectPropertyValue($Object,[string]$Name){
+    if($null -eq $Object){ return $null }
+    $property=$Object.PSObject.Properties[$Name]
+    if($null -eq $property){ return $null }
+    return $property.Value
+}
+
 function Test-ManagedProcessIdentity($State,[string]$ExpectedExecutable=''){
-    if($null -eq $State -or -not $State.pid -or -not $State.process_start_utc -or -not $State.executable_path){
+    $pidValue=Get-ObjectPropertyValue $State 'pid'
+    $processStartUtc=Get-ObjectPropertyValue $State 'process_start_utc'
+    $executablePath=Get-ObjectPropertyValue $State 'executable_path'
+    if(
+        $null -eq $pidValue -or
+        [string]::IsNullOrWhiteSpace([string]$processStartUtc) -or
+        [string]::IsNullOrWhiteSpace([string]$executablePath)
+    ){
         return $false
     }
     $id=0
-    if(-not [int]::TryParse(([string]$State.pid),[ref]$id) -or $id -le 0){ return $false }
+    if(-not [int]::TryParse(([string]$pidValue),[ref]$id) -or $id -le 0){ return $false }
     $current=Get-ProcessIdentity $id
     if($null -eq $current){ return $false }
-    if(([string]$current.process_start_utc) -ne ([string]$State.process_start_utc)){ return $false }
-    $savedExecutable=[IO.Path]::GetFullPath([string]$State.executable_path)
+    if(([string]$current.process_start_utc) -ne ([string]$processStartUtc)){ return $false }
+    try {
+        $savedExecutable=[IO.Path]::GetFullPath([string]$executablePath)
+    } catch {
+        return $false
+    }
     if(-not [string]::Equals(
         [string]$current.executable_path,
         $savedExecutable,
@@ -1163,9 +1182,10 @@ function Test-ManagedProcessIdentity($State,[string]$ExpectedExecutable=''){
 }
 
 function Get-StateReferencedLivePid($State){
-    if($null -eq $State -or -not $State.pid){ return 0 }
+    $pidValue=Get-ObjectPropertyValue $State 'pid'
+    if($null -eq $pidValue){ return 0 }
     $id=0
-    if(-not [int]::TryParse(([string]$State.pid),[ref]$id) -or $id -le 0){ return 0 }
+    if(-not [int]::TryParse(([string]$pidValue),[ref]$id) -or $id -le 0){ return 0 }
     if(Get-Process -Id $id -ErrorAction SilentlyContinue){ return $id }
     return 0
 }
@@ -1217,11 +1237,13 @@ function Assert-CentralAgentCheckpointSafe {
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{
             $state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json
+            $statePid=Get-ObjectPropertyValue $state 'pid'
+            $gracefulCheckpointShutdown=Get-ObjectPropertyValue $state 'graceful_checkpoint_shutdown'
             $safe=(
-                $state.pid -and
-                ([int]$state.pid) -eq $id -and
+                $null -ne $statePid -and
+                ([int]$statePid) -eq $id -and
                 (Test-ManagedProcessIdentity $state) -and
-                [bool]$state.graceful_checkpoint_shutdown
+                [bool]$gracefulCheckpointShutdown
             )
         }catch{ $safe=$false }
     }
@@ -1236,7 +1258,8 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$state=$null}
     }
-    if($null -eq $state -or -not $state.pid -or ([int]$state.pid) -ne $Id){
+    $statePid=Get-ObjectPropertyValue $state 'pid'
+    if($null -eq $state -or $null -eq $statePid -or ([int]$statePid) -ne $Id){
         throw "Refusing graceful-stop request for central learner PID $Id because no matching managed process identity is recorded."
     }
     if(-not(Test-ManagedProcessIdentity $state)){
@@ -1281,7 +1304,7 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing){
             if(Test-ManagedProcessIdentity $existing $Python){
-                if(([string]$existing.command_hash) -eq $commandHash){ return }
+                if(([string](Get-ObjectPropertyValue $existing 'command_hash')) -eq $commandHash){ return }
                 Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
                 $null=Stop-CentralAgentGracefully ([int]$existing.pid)
             } else {
