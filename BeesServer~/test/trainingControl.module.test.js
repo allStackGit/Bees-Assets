@@ -1423,6 +1423,37 @@ test('trainer logs append by verified offset under their run and trainer namespa
             fs.readFileSync(path.join(logRoot, 'run-a', 'trainer-a', 'Player-0.log'), 'utf8'),
             'abcdef',
         );
+
+        assert.throws(
+            () => store.appendTrainerLog({
+                trainerId: 'trainer-a',
+                runId: 'run-a',
+                relativePath: 'Player-0.log',
+                offset: 3,
+                reset: true,
+                data: Buffer.alloc(0),
+            }),
+            error => error.statusCode === 409 && error.expectedOffset === 6,
+        );
+        assert.equal(
+            fs.readFileSync(path.join(logRoot, 'run-a', 'trainer-a', 'Player-0.log'), 'utf8'),
+            'abcdef',
+        );
+
+        result = store.appendTrainerLog({
+            trainerId: 'trainer-a',
+            runId: 'run-a',
+            relativePath: 'Player-0.log',
+            offset: 0,
+            reset: true,
+            data: Buffer.from('xy'),
+        });
+        assert.equal(result.next_offset, 2);
+        assert.equal(
+            fs.readFileSync(path.join(logRoot, 'run-a', 'trainer-a', 'Player-0.log'), 'utf8'),
+            'xy',
+        );
+
         assert.throws(() => store.appendTrainerLog({
             trainerId: 'trainer-a',
             runId: 'run-a',
@@ -1435,7 +1466,7 @@ test('trainer logs append by verified offset under their run and trainer namespa
 });
 
 
-test('training control returns per-worker env targets from accepted-step optimization', () => {
+test('training control returns per-worker env targets from learner-consumed optimization', () => {
     withTempDir(root => {
         let now = 0;
         const archive = path.join(root, 'linux.zip');
