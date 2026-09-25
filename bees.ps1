@@ -982,6 +982,7 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
     $serverSourceHash=Get-WorkingTreeContentSha256 'BeesServer~'
+    $node=Resolve-Node $Config
     $online=Test-Control $base $AdminToken
 
     if($online){
@@ -993,22 +994,25 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
             $null -ne $managedState -and
             ([string]$managedState.source_hash) -eq $serverSourceHash
         ){
+            if(-not(Test-ManagedProcessIdentity $managedState $node)){
+                Write-Warning 'BeesServer is healthy and current, but its persisted process identity cannot be verified. Leaving it running; a future automatic restart/stop will refuse to kill it until it is relaunched under identity-safe state.'
+            }
             return
         }
 
-        $managedPid=0
-        if(Test-Path -LiteralPath $ServerPidPath){
-            [void][int]::TryParse(
-                (Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),
-                [ref]$managedPid
-            )
+        if($null -eq $managedState){
+            throw 'BeesServer is online but has no managed process identity. Refusing an automatic restart because an unrelated process could now own the recorded PID.'
         }
-        if($managedPid -le 0 -or -not(Get-Process -Id $managedPid -ErrorAction SilentlyContinue)){
-            throw 'BeesServer is online but is not owned by the Bees operator state. Stop the unmanaged server once, then rerun this command so future source updates can be automatic.'
+        if(-not(Test-ManagedProcessIdentity $managedState $node)){
+            $managedPid=Get-StateReferencedLivePid $managedState
+            if($managedPid -gt 0){
+                throw "BeesServer state references live PID $managedPid but its PID/start-time/executable identity does not match. Refusing to kill a possibly reused PID."
+            }
+            throw 'BeesServer is online but its persisted managed process is no longer present. Refusing to guess which process owns the live server.'
         }
         Write-Host 'BeesServer source changed; restarting the managed server without changing desired training state.'
         Assert-CentralAgentCheckpointSafe
-        Stop-ProcessTree $managedPid
+        $null=Stop-ManagedProcessTree $managedState $node 'BeesServer'
         Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
 
@@ -1024,7 +1028,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
     if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
-    $node=Resolve-Node $Config; $npm=Resolve-Npm
+    $npm=Resolve-Npm
     Ensure-Directory $RuntimeRoot
     $dependencyHash=Get-BeesServerDependencyHash
     $installedDependencyHash=''
@@ -1059,9 +1063,19 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
     while([DateTime]::UtcNow -lt $deadline){
         if(Test-Control $base $AdminToken){
+            $serverIdentity=Get-ProcessIdentity $launchedPid
+            if($null -eq $serverIdentity -or -not [string]::Equals(
+                [string]$serverIdentity.executable_path,
+                [IO.Path]::GetFullPath($node),
+                [StringComparison]::OrdinalIgnoreCase
+            )){
+                throw 'BeesServer became reachable but its launched process identity could not be verified. Refusing to record unsafe PID-only ownership.'
+            }
             [pscustomobject]@{
-                schema_version=1
-                pid=$launchedPid
+                schema_version=2
+                pid=[int]$serverIdentity.pid
+                process_start_utc=[string]$serverIdentity.process_start_utc
+                executable_path=[string]$serverIdentity.executable_path
                 source_hash=$serverSourceHash
                 started_utc=[DateTime]::UtcNow.ToString('o')
             } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
