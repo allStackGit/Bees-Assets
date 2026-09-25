@@ -330,3 +330,17 @@ test('Windows remote bootstrap template remains valid PowerShell syntax', { skip
         'Windows bootstrap template failed PowerShell parsing:\n' + (result.stderr || result.stdout || ''),
     );
 });
+
+
+test('Windows Python installation cannot pollute launcher resolution with winget output', () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const source = fs.readFileSync(windowsPath, 'utf8');
+    const start = source.indexOf('function Resolve-PythonLauncher');
+    const end = source.indexOf("\nWrite-Host '[Bees remote] Stage 4/5", start);
+    const resolver = start >= 0 && end > start ? source.slice(start, end) : '';
+    assert.match(resolver, /Start-Process -FilePath \$winget -ArgumentList \$wingetArgs -Wait -PassThru -NoNewWindow/);
+    assert.match(resolver, /'--source','winget'/);
+    assert.match(resolver, /'--disable-interactivity'/);
+    assert.match(resolver, /\$installProcess\.ExitCode -ne 0/);
+    assert.doesNotMatch(resolver, /& \$winget install/);
+});
