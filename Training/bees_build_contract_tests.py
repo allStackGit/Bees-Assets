@@ -113,9 +113,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("function Test-ManagedProcessIdentity", source)
         self.assertIn("process_start_utc", source)
         self.assertIn("executable_path", source)
+        self.assertIn("function Get-ObjectPropertyValue", source)
+        self.assertIn(
+            "$processStartUtc=Get-ObjectPropertyValue $State 'process_start_utc'",
+            source,
+        )
+        self.assertIn(
+            "$executablePath=Get-ObjectPropertyValue $State 'executable_path'",
+            source,
+        )
         self.assertIn(
             "([string]$current.process_start_utc) -ne "
-            "([string]$State.process_start_utc)",
+            "([string]$processStartUtc)",
             source,
         )
         self.assertIn("[StringComparison]::OrdinalIgnoreCase", source)
@@ -153,6 +162,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
     def test_legacy_pid_only_state_fails_closed_instead_of_being_killed(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        identity = re.search(
+            r"function Test-ManagedProcessIdentity.*?\n\}",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(identity)
+        self.assertNotIn("$State.process_start_utc", identity.group(0))
+        self.assertNotIn("$State.executable_path", identity.group(0))
+        self.assertIn(
+            "Get-ObjectPropertyValue $State 'process_start_utc'",
+            identity.group(0),
+        )
         self.assertIn(
             "legacy PID-only state and cannot be proven safe to kill automatically",
             source,
