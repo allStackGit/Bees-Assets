@@ -4,6 +4,7 @@ param(
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
+    [switch]$NewRun,
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
@@ -12,6 +13,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+
+if($NewRun -and $Command -ne 'start'){
+    throw '-NewRun is only valid with the start command.'
+}
 
 $AssetsRoot=[IO.Path]::GetFullPath($PSScriptRoot)
 $BeesRoot=[IO.Path]::GetFullPath((Split-Path -Parent $AssetsRoot))
@@ -646,19 +651,21 @@ function Archive-TrainingRun([string]$Python,[string]$RunId,[string]$Reason){
     ) $AssetsRoot
 }
 
-function New-TrainingRunPlan([string]$Python){
+function New-TrainingRunPlan([string]$Python,[switch]$ForceNew){
     if(-not(Test-Path -LiteralPath $RunLifecycleScript)){
         throw "Training run lifecycle helper is missing: $RunLifecycleScript"
     }
     Ensure-Directory $RunLifecycleRoot
     Ensure-Directory $RuntimeRoot
     Remove-Item -LiteralPath $RunPlanPath -Force -ErrorAction SilentlyContinue
-    $null=Invoke-Checked $Python @(
+    $planArgs=@(
         $RunLifecycleScript,'plan',
         '--assets-root',$AssetsRoot,
         '--state',$RunStatePath,
         '--out',$RunPlanPath
-    ) $AssetsRoot
+    )
+    if($ForceNew){ $planArgs+='--force-new' }
+    $null=Invoke-Checked $Python $planArgs $AssetsRoot
     Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
 }
 
@@ -786,14 +793,7 @@ function Invoke-Build {
         contract=$plan.contract
         artifacts=$artifacts
     }
-    $releaseTemp="$LatestReleasePath.new"
-    $releaseJson=$release | ConvertTo-Json -Depth 12
-    [IO.File]::WriteAllText(
-        $releaseTemp,
-        $releaseJson,
-        (New-Object Text.UTF8Encoding($false))
-    )
-    Install-AtomicFile $releaseTemp $LatestReleasePath
+    Save-LatestRelease $release
     Commit-TrainingRunPlan $python
 
     Write-Host ""
@@ -927,6 +927,17 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
 function Get-LatestRelease {
     if(-not(Test-Path -LiteralPath $LatestReleasePath)){ throw "No release exists. Run '.\Assets\bees.ps1 build' first." }
     Get-Content -LiteralPath $LatestReleasePath -Raw | ConvertFrom-Json
+}
+
+function Save-LatestRelease($Release){
+    $releaseTemp="$LatestReleasePath.new"
+    $releaseJson=$Release | ConvertTo-Json -Depth 12
+    [IO.File]::WriteAllText(
+        $releaseTemp,
+        $releaseJson,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $releaseTemp $LatestReleasePath
 }
 
 function Publish-Release($Config,[string]$AdminToken,$Release){
@@ -1239,6 +1250,9 @@ function Invoke-Start {
 
     $envArgs=@(Get-EnvironmentArgs $config)
     if(-not(Test-Path -LiteralPath $LatestReleasePath)){
+        if($NewRun){
+            throw "Cannot force a new training run before the first RL build exists. Run '.\Assets\bees.ps1 build' first."
+        }
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$false
             environment_args=@($envArgs)
@@ -1268,6 +1282,39 @@ function Invoke-Start {
     if(-not(Test-Path -LiteralPath $python)){
         throw "Managed learner Python executable is missing: $python"
     }
+
+    $forcedPlan=$null
+    $outgoingRun=$null
+    if($NewRun){
+        $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+        if($status.desired.pending_release){
+            throw 'Cannot force a new training run while another release rollout is pending.'
+        }
+        $outgoingRun=([string]$status.desired.run_id).Trim()
+        if(-not $outgoingRun){ $outgoingRun=([string]$release.run_id).Trim() }
+        Archive-TrainingRun $python $outgoingRun 'forced-new-precutover'
+
+        $forcedPlan=New-TrainingRunPlan $python -ForceNew
+        if($forcedPlan.previous_run_id -and
+            $outgoingRun -and
+            ([string]$forcedPlan.previous_run_id) -ne $outgoingRun){
+            throw "Run lifecycle state disagrees with active training run. lifecycle=$($forcedPlan.previous_run_id) active=$outgoingRun"
+        }
+        $release=[pscustomobject]@{
+            schema_version=$release.schema_version
+            build_id=[string]$release.build_id
+            source_commit=[string]$release.source_commit
+            created_utc=[string]$release.created_utc
+            run_id=[string]$forcedPlan.run_id
+            previous_run_id=$outgoingRun
+            compatibility_key=[string]$forcedPlan.compatibility_key
+            incompatible=$true
+            contract=$forcedPlan.contract
+            artifacts=$release.artifacts
+        }
+        Write-Host "Forcing fresh training run: $($release.run_id) (same build $($release.build_id))."
+    }
+
     $unity=Resolve-UnityEditor $config
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
@@ -1280,6 +1327,17 @@ function Invoke-Start {
         environment_args=@($envArgs)
     }
     Start-CentralAgentIfNeeded $config $python $unity
+
+    if($NewRun){
+        $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id)
+        Save-LatestRelease $release
+        Commit-TrainingRunPlan $python
+        if($outgoingRun){
+            Start-Sleep -Seconds 2
+            Archive-TrainingRun $python $outgoingRun 'forced-new-final'
+        }
+        Write-Host "Forced new-run cutover complete. Active run: $($release.run_id)"
+    }
 
     Write-Host "Training requested: build=$($release.build_id) run=$($release.run_id) revision=$($desired.revision)"
     if($staged.pending_release){
