@@ -350,24 +350,40 @@ class TrainingControlClientTests(unittest.TestCase):
                         "accepted_steps_total": 4567,
                         "accepted_trajectories_total": 89,
                         "upload_queue_depth": 2,
+                        "network_sent_bytes_total": 3 * 1024 * 1024,
+                        "network_received_bytes_total": 5 * 1024 * 1024,
+                        "network_mib_per_s": 1.75,
                     }
                 ),
                 encoding="utf-8",
             )
-            self.assertEqual(
-                agent.read_throughput_metrics(
-                    path,
-                    expected_pid=123,
-                    expected_env_count=17,
-                )["accepted_steps_total"],
-                4567,
+            metrics = agent.read_throughput_metrics(
+                path,
+                expected_pid=123,
+                expected_env_count=17,
             )
+            self.assertEqual(metrics["accepted_steps_total"], 4567)
+            self.assertEqual(metrics["network_sent_bytes_total"], 3 * 1024 * 1024)
+            self.assertEqual(metrics["network_received_bytes_total"], 5 * 1024 * 1024)
+            self.assertEqual(metrics["network_mib_per_s"], 1.75)
             self.assertEqual(
                 agent.read_throughput_metrics(path, expected_pid=999),
                 {},
             )
             self.assertEqual(
                 agent.read_throughput_metrics(path, expected_env_count=18),
+                {},
+            )
+
+            invalid = json.loads(path.read_text(encoding="utf-8"))
+            invalid["network_mib_per_s"] = -1
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            self.assertEqual(
+                agent.read_throughput_metrics(
+                    path,
+                    expected_pid=123,
+                    expected_env_count=17,
+                ),
                 {},
             )
 
