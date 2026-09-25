@@ -47,6 +47,7 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             environment = popen.call_args.kwargs["env"]
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
+            self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
             self.assertTrue(
                 Path(environment["BEES_TRAINING_LOG_DIR"]).as_posix().endswith(
                     "logs/run-a"
