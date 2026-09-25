@@ -62,11 +62,12 @@ env_settings:
   - --rl-episode-timeout
   - '30'
   - --rl-ships-per-side
-  - '1'
+  - '2'
   - --rl-bee-ship-types
-  - Wasp,Hornet,Yellow Jacket,Leafcutter,Bumblebee
+  - Honeybee,Wasp,Hornet,Yellow Jacket,Leafcutter,Bumblebee,Beehive
   - --rl-human-ship-types
-  - Gunship,Barge,Fire Barge, Carrier,Dreadnought,Flagship,Frigate,Cruiser
+  - Gunship,Barge,Fire Barge, Carrier,Dreadnought,Flagship,Frigate,Cruiser,Scout,Warp
+    Gate
   - --rl-matchup-mode
   - sampled
   base_port: 12000
