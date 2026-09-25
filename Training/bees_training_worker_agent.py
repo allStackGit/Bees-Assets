@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -171,6 +172,9 @@ def read_throughput_metrics(
     accepted_steps = value.get("accepted_steps_total")
     accepted_trajectories = value.get("accepted_trajectories_total")
     queue_depth = value.get("upload_queue_depth")
+    network_sent = value.get("network_sent_bytes_total")
+    network_received = value.get("network_received_bytes_total")
+    network_rate = value.get("network_mib_per_s")
     if (
         not isinstance(pid, int)
         or isinstance(pid, bool)
@@ -189,17 +193,42 @@ def read_throughput_metrics(
         or queue_depth < 0
     ):
         return {}
+    traffic_present = any(
+        item is not None for item in (network_sent, network_received, network_rate)
+    )
+    if traffic_present and (
+        not isinstance(network_sent, int)
+        or isinstance(network_sent, bool)
+        or network_sent < 0
+        or not isinstance(network_received, int)
+        or isinstance(network_received, bool)
+        or network_received < 0
+        or not isinstance(network_rate, (int, float))
+        or isinstance(network_rate, bool)
+        or not math.isfinite(float(network_rate))
+        or float(network_rate) < 0.0
+    ):
+        return {}
     if expected_pid is not None and pid != expected_pid:
         return {}
     if expected_env_count is not None and env_count != expected_env_count:
         return {}
-    return {
+    result = {
         "pid": pid,
         "env_count": env_count,
         "accepted_steps_total": accepted_steps,
         "accepted_trajectories_total": accepted_trajectories,
         "upload_queue_depth": queue_depth,
     }
+    if traffic_present:
+        result.update(
+            {
+                "network_sent_bytes_total": network_sent,
+                "network_received_bytes_total": network_received,
+                "network_mib_per_s": float(network_rate),
+            }
+        )
+    return result
 
 
 def render_command(
