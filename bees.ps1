@@ -1184,21 +1184,28 @@ function Stop-ManagedProcessTree($State,[string]$ExpectedExecutable,[string]$Lab
 }
 
 function Get-RunningCentralAgentPid {
-    $candidate=0
     if(Test-Path -LiteralPath $CentralAgentStatePath){
-        try{
-            $state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json
-            if($state.pid){ $candidate=[int]$state.pid }
-        }catch{ $candidate=0 }
+        $state=$null
+        try{$state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$state=$null}
+        if($null -ne $state){
+            if(Test-ManagedProcessIdentity $state){
+                return [int]$state.pid
+            }
+            $livePid=Get-StateReferencedLivePid $state
+            if($livePid -gt 0){
+                throw "Central learner state references live PID $livePid but its PID/start-time/executable identity does not match. Refusing to treat a possibly reused PID as the learner."
+            }
+        }
     }
-    if($candidate -le 0 -and (Test-Path -LiteralPath $CentralAgentPidPath)){
+    if(Test-Path -LiteralPath $CentralAgentPidPath){
+        $legacyPid=0
         [void][int]::TryParse(
             (Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),
-            [ref]$candidate
+            [ref]$legacyPid
         )
-    }
-    if($candidate -gt 0 -and (Get-Process -Id $candidate -ErrorAction SilentlyContinue)){
-        return $candidate
+        if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+            throw "Central learner PID $legacyPid is recorded only in legacy PID-only state and cannot be proven to be the managed learner."
+        }
     }
     return 0
 }
@@ -1213,17 +1220,32 @@ function Assert-CentralAgentCheckpointSafe {
             $safe=(
                 $state.pid -and
                 ([int]$state.pid) -eq $id -and
+                (Test-ManagedProcessIdentity $state) -and
                 [bool]$state.graceful_checkpoint_shutdown
             )
         }catch{ $safe=$false }
     }
     if(-not $safe){
-        throw "Running central learner PID $id predates checkpoint-safe shutdown. Refusing an operation that could stop it and lose optimizer progress."
+        throw "Running central learner PID $id is not backed by checkpoint-safe verified process identity. Refusing an operation that could stop the wrong process or lose optimizer progress."
     }
 }
 
 function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
-    if($Id -le 0 -or -not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){ return $true }
+    if($Id -le 0){ return $true }
+    $state=$null
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{$state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$state=$null}
+    }
+    if($null -eq $state -or -not $state.pid -or ([int]$state.pid) -ne $Id){
+        throw "Refusing graceful-stop request for central learner PID $Id because no matching managed process identity is recorded."
+    }
+    if(-not(Test-ManagedProcessIdentity $state)){
+        $livePid=Get-StateReferencedLivePid $state
+        if($livePid -gt 0){
+            throw "Refusing graceful-stop request for central learner PID $Id because the PID now belongs to a different process identity."
+        }
+        return $true
+    }
 
     Assert-CentralAgentCheckpointSafe
 
@@ -1236,7 +1258,7 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     )
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while([DateTime]::UtcNow -lt $deadline){
-        if(-not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){
+        if(-not(Test-ManagedProcessIdentity $state)){
             Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
             return $true
         }
@@ -1256,23 +1278,47 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
     $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
-        if($null -ne $existing -and $existing.pid -and (Get-Process -Id ([int]$existing.pid) -ErrorAction SilentlyContinue)){
-            if(([string]$existing.command_hash) -eq $commandHash){ return }
-            Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
-            $null=Stop-CentralAgentGracefully ([int]$existing.pid)
+        if($null -ne $existing){
+            if(Test-ManagedProcessIdentity $existing $Python){
+                if(([string]$existing.command_hash) -eq $commandHash){ return }
+                Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
+                $null=Stop-CentralAgentGracefully ([int]$existing.pid)
+            } else {
+                $livePid=Get-StateReferencedLivePid $existing
+                if($livePid -gt 0){
+                    throw "Central learner state references live PID $livePid but its managed process identity does not match. Refusing to stop or replace a possibly reused PID."
+                }
+                Remove-Item -LiteralPath $CentralAgentStatePath -Force -ErrorAction SilentlyContinue
+            }
         }
     } elseif(Test-Path -LiteralPath $CentralAgentPidPath) {
         $legacyPid=0
         [void][int]::TryParse((Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),[ref]$legacyPid)
         if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
-            Write-Host 'Restarting the existing central agent under unified command management after a graceful checkpoint request.'
-            $null=Stop-CentralAgentGracefully $legacyPid
+            throw "Central learner PID $legacyPid is from legacy PID-only state. Refusing to stop it automatically because the PID may have been reused."
         }
     }
     Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
     $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+    $identity=Get-ProcessIdentity $p.Id
+    if($null -eq $identity -or -not [string]::Equals(
+        [string]$identity.executable_path,
+        [IO.Path]::GetFullPath($Python),
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        try{$p.Kill()}catch{}
+        throw 'Could not establish the central learner process identity after launch.'
+    }
     $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
-    [pscustomobject]@{pid=$p.Id;command_hash=$commandHash;graceful_checkpoint_shutdown=$true;started_utc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
+    [pscustomobject]@{
+        schema_version=2
+        pid=[int]$identity.pid
+        process_start_utc=[string]$identity.process_start_utc
+        executable_path=[string]$identity.executable_path
+        command_hash=$commandHash
+        graceful_checkpoint_shutdown=$true
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
     Write-Host "Central training agent started with PID $($p.Id)."
 }
 
