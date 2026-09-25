@@ -1,0 +1,266 @@
+[Bees continuous] no validated deployment exists yet; starting training before the first publish.
+[Bees continuous] training generation-00000000 target_steps=1000000 resume=False force_fresh=True
+[Bees continual] automatic gameplay learning generation=generation-00000000 selected=0 scenarios=0 selection_record=none
+[Bees continual] persistent historical opponent share=20.0% provider=CPUExecutionProvider policy_cache=4
+[Bees continual] root=B:\Bees\Training run_id=bees-v18-r3-s1-20260924T234539Z-9b30b3f5 parent_model_id=none results=B:\Bees\Training\trainer-results\bees-v18-r3-s1-20260924T234539Z-9b30b3f5
+[Bees RL] PPO value-estimate/return buffer key separation: enabled
+
+
+	Unity Technologies
+
+ Version information:
+  ml-agents: 1.1.0,
+  ml-agents-envs: 1.1.0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.1.1+cpu
+[Bees WAN] actor broker listening only on 127.0.0.1:55051; remote machines must use the managed authenticated private forward.
+[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; waiting for remote rollout actors.
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0
+[Bees WAN] learner-only mode waiting for remote actors: 0/1 connected.
+[Bees WAN capacity] remote_actors=0 remote_envs=0 trainer_steps_per_sec=warming remote_rollout_steps_per_sec=0.0 queue=0/32 backpressure=0.
+[Bees continual] automatic gameplay telemetry refresh selected=0 scenarios=0 rejected=0

@@ -1,0 +1,23 @@
+{
+  "compatibility_key": "9b30b3f574495f09697fb5c165614e79147f42bf8a87a1b597d58144c591fb4f",
+  "contract": {
+    "action_schema_version": 8,
+    "agent_action_source_sha256": "dfcc9b8f999259584c6ef4b2a97a6878bb5096cdca9b50d6ca0a632f41921a3a",
+    "behavior_name": "BeesRL1v1",
+    "combat_perception_source_sha256": "3b9729f7e1c376ab78102b56af50ecbb6f395607b69b0eb5ca5072168070fd9a",
+    "episode_identity_source_sha256": "e526a01196e8f30de12a3dc116d851cf3ed121d88672814646a9c2472df6da00",
+    "network_settings": "network_settings:\nnormalize: true\nhidden_units: 128\nnum_layers: 3\n",
+    "observation_schema_version": 10,
+    "policy_abi_version": 18,
+    "policy_schema_source_sha256": "6f06bf567957fa783e97eb9f9be3f5639fca7b024b9dba96e453fe00010462b9",
+    "policy_signature": "bees-rl-v18|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7342|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+    "reward_schema_version": 3,
+    "reward_source_sha256": "356983c2c69d4b201ca52e23982f114122be7c2e1e508f95f1bf72714078890b",
+    "scenario_schema_version": 1,
+    "team_exploration_source_sha256": "9630c6ad4c8ea40dcf2239e58cbdb4ef02d3e9ea0f795e2e2cf1ea626bfe9b2a"
+  },
+  "created_utc": "2026-09-25T00:00:09.514232+00:00",
+  "last_build_utc": "2026-09-25T00:00:09.514232+00:00",
+  "run_id": "bees-v18-r3-s1-20260924T234539Z-9b30b3f5",
+  "schema_version": 1
+}
