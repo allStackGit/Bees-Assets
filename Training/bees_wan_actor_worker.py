@@ -42,6 +42,7 @@ DEFAULT_LOCAL_UPLOAD_QUEUE = 8
 DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
+THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 
 
 def _resolve_actor_seed(
@@ -69,6 +70,19 @@ def _resolve_actor_seed(
     # the result through an int32 protobuf field. Preserve headroom for every local worker.
     max_actor_seed = MAX_UNITY_SEED - (env_count - 1)
     return (int(base_seed) + int(worker_offset)) % (max_actor_seed + 1)
+
+
+def _trajectory_step_count(trajectories: Sequence[Any]) -> int:
+    total = 0
+    for trajectory in trajectories:
+        steps = getattr(trajectory, "steps", None)
+        if steps is None:
+            continue
+        try:
+            total += len(steps)
+        except TypeError:
+            continue
+    return total
 
 
 class BrokerUnavailable(RuntimeError):
@@ -437,6 +451,49 @@ class ActorSession:
         self._onnx_temp = tempfile.TemporaryDirectory(prefix=f"bees-wan-actor-{actor_id}-")
         self._current_env_config = None
         self._rollout_horizons: Dict[str, int] = {}
+        throughput_path = os.environ.get(THROUGHPUT_METRICS_ENV, "").strip()
+        self._throughput_metrics_path = (
+            Path(throughput_path).expanduser().resolve() if throughput_path else None
+        )
+        self._throughput_lock = threading.Lock()
+        self._accepted_steps_total = 0
+        self._accepted_trajectories_total = 0
+        self._last_throughput_write = 0.0
+
+    def _write_throughput_metrics(self, *, force: bool = False) -> None:
+        path = self._throughput_metrics_path
+        if path is None:
+            return
+        now = time.monotonic()
+        with self._throughput_lock:
+            if not force and now - self._last_throughput_write < 1.0:
+                return
+            payload = {
+                "pid": os.getpid(),
+                "env_count": self.env_count,
+                "accepted_steps_total": self._accepted_steps_total,
+                "accepted_trajectories_total": self._accepted_trajectories_total,
+                "upload_queue_depth": self._upload_queue.qsize(),
+            }
+            self._last_throughput_write = now
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+            temporary.write_text(
+                json.dumps(payload, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        except OSError:
+            # Metrics are advisory. Never stop training because the status file is unavailable.
+            return
+
+    def _record_accepted_trajectories(self, trajectories: Sequence[Any]) -> None:
+        step_count = _trajectory_step_count(trajectories)
+        with self._throughput_lock:
+            self._accepted_steps_total += step_count
+            self._accepted_trajectories_total += len(trajectories)
+        self._write_throughput_metrics()
 
     def close(self) -> None:
         self._upload_stop.set()
@@ -450,6 +507,7 @@ class ActorSession:
             self._watcher.join(timeout=2.0)
         if self._uploader is not None:
             self._uploader.join(timeout=2.0)
+        self._write_throughput_metrics(force=True)
         self._onnx_temp.cleanup()
 
     def _remote_run_options(self) -> Any:
@@ -614,6 +672,7 @@ class ActorSession:
             f"local_envs={self.env_count} total_envs={self.total_envs} "
             f"rollout_horizons={self._rollout_horizons} device={self.torch_device}."
         )
+        self._write_throughput_metrics(force=True)
 
     def _write_onnx(self, behavior: str, payload: Mapping[str, Any]) -> Path:
         model_bytes = payload.get("model_bytes")
@@ -791,6 +850,9 @@ class ActorSession:
             while not self._upload_stop.is_set() and not self.stop.is_set():
                 try:
                     self.client.trajectories(payload)
+                    trajectories = payload.get("trajectories", ())
+                    if isinstance(trajectories, Sequence):
+                        self._record_accepted_trajectories(trajectories)
                     break
                 except BrokerBackpressure:
                     time.sleep(0.25)
