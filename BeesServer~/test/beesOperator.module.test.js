@@ -344,3 +344,17 @@ test('Windows Python installation cannot pollute launcher resolution with winget
     assert.match(resolver, /\$installProcess\.ExitCode -ne 0/);
     assert.doesNotMatch(resolver, /& \$winget install/);
 });
+
+
+test('fresh continual learner may train before first deployment exists', () => {
+    const servicePath = path.resolve(__dirname, '..', '..', 'Training', 'bees_continual_service.py');
+    const source = fs.readFileSync(servicePath, 'utf8');
+    assert.ok(source.includes('if published is None:'));
+    assert.ok(source.includes('starting training before the first publish.'));
+});
+
+test('central learner restart hash includes Training source', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.ok(source.includes("$trainingSourceHash=Get-GitTreeSha 'Training'"));
+    assert.ok(source.includes('$trainingSourceHash)'));
+});
