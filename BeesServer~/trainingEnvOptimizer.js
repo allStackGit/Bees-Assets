@@ -77,6 +77,8 @@ class TrainingEnvOptimizer {
             trainer_id: trainerId,
             context_key: contextKey,
             desired_envs: capacity.current_envs,
+            min_envs: capacity.min_envs,
+            max_envs: capacity.max_envs,
             baseline_envs: null,
             baseline_sps: null,
             direction: capacity.current_envs >= capacity.max_envs ? -1 : 1,
@@ -252,9 +254,16 @@ class TrainingEnvOptimizer {
         }
 
         let state = this.states.get(record.trainer_id);
-        if (!state || state.context_key !== contextKey) {
+        const capacityChanged = state && (
+            state.min_envs !== capacity.min_envs ||
+            state.max_envs !== capacity.max_envs
+        );
+        if (!state || state.context_key !== contextKey || capacityChanged) {
             this._releaseProbe(record.trainer_id);
             state = this._newState(record.trainer_id, contextKey, capacity, timestamp);
+            if (capacityChanged) {
+                state.last_decision = 'worker capacity changed; collecting new baseline';
+            }
             this.states.set(record.trainer_id, state);
         }
         state.last_update_ms = timestamp;
