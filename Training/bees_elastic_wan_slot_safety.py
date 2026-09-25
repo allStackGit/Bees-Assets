@@ -58,10 +58,24 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
             previous = self._registrations.get(actor_id)
             if previous is not None:
                 previous_instance = previous.get("actor_instance_id")
-                if previous_instance is not None and previous_instance != instance_id:
+                replacement_claim = None
+                actor_key = payload.get("actor_key")
+                if isinstance(actor_key, str) and actor_key:
+                    replacement_claim = self._claims.get(actor_key)
+                claimed_replacement = (
+                    replacement_claim is not None
+                    and int(replacement_claim.get("actor_id", -1)) == actor_id
+                    and replacement_claim.get("actor_instance_id") == instance_id
+                    and previous.get("actor_key") == actor_key
+                )
+                if (
+                    previous_instance is not None
+                    and previous_instance != instance_id
+                    and not claimed_replacement
+                ):
                     raise ValueError(
                         f"actor slot {actor_id} is already owned by another live remote process; "
-                        "use a different --actor-id or wait for its lease to expire"
+                        "use a different --actor-id or obtain a replacement claim"
                     )
             super().register_actor(payload)
             self._registrations[actor_id]["actor_instance_id"] = instance_id
