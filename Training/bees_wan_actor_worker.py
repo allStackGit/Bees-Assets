@@ -43,6 +43,9 @@ DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
+TRAINING_RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
+NETWORK_TRAFFIC_STATE_FILE = "worker-network-traffic.json"
+MIB_BYTES = 1024 * 1024
 
 
 def _resolve_actor_seed(
@@ -106,6 +109,83 @@ class BrokerClient:
         self.base = f"http://{host}:{port}"
         self.token = token
         self.timeout = timeout
+        self._traffic_lock = threading.Lock()
+        self._traffic_run_id = os.environ.get(TRAINING_RUN_ID_ENV, "").strip()
+        throughput_path = os.environ.get(THROUGHPUT_METRICS_ENV, "").strip()
+        self._traffic_state_path = (
+            Path(throughput_path).expanduser().resolve().with_name(NETWORK_TRAFFIC_STATE_FILE)
+            if throughput_path and self._traffic_run_id
+            else None
+        )
+        self._traffic_sent_bytes = 0
+        self._traffic_received_bytes = 0
+        self._traffic_last_sample_time = time.monotonic()
+        self._traffic_last_sample_bytes = 0
+        self._traffic_mib_per_s = 0.0
+        self._load_traffic_state()
+
+    def _load_traffic_state(self) -> None:
+        path = self._traffic_state_path
+        if path is None or not path.is_file():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, Mapping) or payload.get("run_id") != self._traffic_run_id:
+                return
+            sent = int(payload.get("sent_bytes_total", 0))
+            received = int(payload.get("received_bytes_total", 0))
+            if sent < 0 or received < 0:
+                return
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return
+        self._traffic_sent_bytes = sent
+        self._traffic_received_bytes = received
+        self._traffic_last_sample_bytes = sent + received
+
+    def _persist_traffic_state_locked(self) -> None:
+        path = self._traffic_state_path
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+            temporary.write_text(
+                json.dumps(
+                    {
+                        "run_id": self._traffic_run_id,
+                        "sent_bytes_total": self._traffic_sent_bytes,
+                        "received_bytes_total": self._traffic_received_bytes,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        except OSError:
+            return
+
+    def _record_traffic(self, *, sent: int = 0, received: int = 0) -> None:
+        with self._traffic_lock:
+            self._traffic_sent_bytes += max(0, int(sent))
+            self._traffic_received_bytes += max(0, int(received))
+
+    def traffic_snapshot(self) -> Mapping[str, object]:
+        now = time.monotonic()
+        with self._traffic_lock:
+            total = self._traffic_sent_bytes + self._traffic_received_bytes
+            elapsed = now - self._traffic_last_sample_time
+            if elapsed >= 0.5:
+                delta = max(0, total - self._traffic_last_sample_bytes)
+                self._traffic_mib_per_s = delta / elapsed / MIB_BYTES
+                self._traffic_last_sample_time = now
+                self._traffic_last_sample_bytes = total
+            self._persist_traffic_state_locked()
+            return {
+                "network_sent_bytes_total": self._traffic_sent_bytes,
+                "network_received_bytes_total": self._traffic_received_bytes,
+                "network_mib_per_s": self._traffic_mib_per_s,
+            }
 
     def _request(
         self,
@@ -128,11 +208,15 @@ class BrokerClient:
                 "Content-Type": "application/octet-stream",
             },
         )
+        self._record_traffic(sent=len(body) if body is not None else 0)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return int(response.status), dict(response.headers.items()), response.read()
+                raw = response.read()
+                self._record_traffic(received=len(raw))
+                return int(response.status), dict(response.headers.items()), raw
         except urllib.error.HTTPError as exc:
             raw = exc.read()
+            self._record_traffic(received=len(raw))
             code = "http-error"
             message = raw.decode("utf-8", errors="replace")
             try:
@@ -475,6 +559,7 @@ class ActorSession:
                 "accepted_trajectories_total": self._accepted_trajectories_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
+            payload.update(self.client.traffic_snapshot())
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
