@@ -131,7 +131,7 @@ test('desired state is persisted and maps stop to inference for full games only'
             training_enabled: true,
             environment_args: ['--rl-map-size', '64'],
         });
-        assert.equal(updated.revision, 2);
+        assert.equal(updated.revision, 3);
         assert.equal(updated.training_enabled, true);
         assert.equal(updated.canonical_build_id, 'build-1');
 
@@ -144,7 +144,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         });
         assert.equal(desired.desired_mode, 'training');
         assert.deepEqual(desired.environment_args, ['--rl-map-size', '64']);
-        assert.equal(desired.revision, 2);
+        assert.equal(desired.revision, 3);
         assert.equal(desired.canonical_build_id, 'build-1');
     });
 });
@@ -285,7 +285,7 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
         });
         assert.equal(active.build.build_id, 'build-123');
         assert.equal(active.canonical_build_id, 'build-123');
-        assert.equal(store.state.revision, 1);
+        assert.equal(store.state.revision, 2);
     });
 });
 
