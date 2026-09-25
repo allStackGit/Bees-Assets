@@ -144,7 +144,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         });
         assert.equal(desired.desired_mode, 'training');
         assert.deepEqual(desired.environment_args, ['--rl-map-size', '64']);
-        assert.equal(desired.revision, 1);
+        assert.equal(desired.revision, 2);
         assert.equal(desired.canonical_build_id, 'build-1');
     });
 });
