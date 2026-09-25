@@ -61,9 +61,21 @@ function Install-AtomicFile([string]$Source,[string]$Destination){
     Ensure-Directory (Split-Path -Parent $destinationPath)
     if(Test-Path -LiteralPath $destinationPath){
         $backup="$destinationPath.swap-backup"
-        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
-        [IO.File]::Replace($sourcePath,$destinationPath,$backup,$true)
-        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        $maxAttempts=50
+        for($attempt=1;$attempt -le $maxAttempts;$attempt++){
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            try {
+                [IO.File]::Replace($sourcePath,$destinationPath,$backup,$true)
+                Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+                return
+            } catch [IO.IOException] {
+                if($attempt -ge $maxAttempts){ throw }
+                # The bootstrap service may briefly have a distribution artifact open while
+                # serving a remote worker. Preserve the atomic replacement contract and retry
+                # the transient Windows sharing violation instead of stopping the whole build.
+                Start-Sleep -Milliseconds 100
+            }
+        }
     } else {
         [IO.File]::Move($sourcePath,$destinationPath)
     }
