@@ -169,9 +169,15 @@ def sync_run_history(assets_root: Path, bees_root: Path, run_id: str, reason: st
     return destination_root
 
 
-def _run_git(assets_root: Path, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess:
+def _run_git(
+    assets_root: Path,
+    args: Sequence[str],
+    *,
+    git_executable: str = "git",
+    check: bool = True,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["git", *args],
+        [git_executable, *args],
         cwd=str(assets_root),
         check=check,
         text=True,
@@ -180,20 +186,42 @@ def _run_git(assets_root: Path, args: Sequence[str], *, check: bool = True) -> s
     )
 
 
-def commit_and_push(assets_root: Path, history_root: Path, run_id: str, reason: str) -> None:
+def commit_and_push(
+    assets_root: Path,
+    history_root: Path,
+    run_id: str,
+    reason: str,
+    *,
+    git_executable: str = "git",
+) -> None:
     relative = history_root.relative_to(assets_root)
-    _run_git(assets_root, ["add", "--", str(relative)])
-    status = _run_git(assets_root, ["diff", "--cached", "--quiet", "--", str(relative)], check=False)
+    _run_git(assets_root, ["add", "--", str(relative)], git_executable=git_executable)
+    status = _run_git(
+        assets_root,
+        ["diff", "--cached", "--quiet", "--", str(relative)],
+        git_executable=git_executable,
+        check=False,
+    )
     if status.returncode == 0:
         return
     if status.returncode != 1:
         raise RuntimeError("git diff failed: " + status.stdout.strip())
 
     message = f"Archive training logs for {run_id} ({reason})"
-    commit = _run_git(assets_root, ["commit", "--only", "-m", message, "--", str(relative)], check=False)
+    commit = _run_git(
+        assets_root,
+        ["commit", "--only", "-m", message, "--", str(relative)],
+        git_executable=git_executable,
+        check=False,
+    )
     if commit.returncode != 0:
         raise RuntimeError("training log git commit failed: " + commit.stdout.strip())
-    push = _run_git(assets_root, ["push", "origin", "HEAD"], check=False)
+    push = _run_git(
+        assets_root,
+        ["push", "origin", "HEAD"],
+        git_executable=git_executable,
+        check=False,
+    )
     if push.returncode != 0:
         raise RuntimeError(
             "training log commit was created locally but push to GitHub failed; "
@@ -207,6 +235,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--bees-root", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--reason", default="pre-build")
+    parser.add_argument(
+        "--git-executable",
+        default="git",
+        help="Git executable to use for archive commit/push. Defaults to git on PATH.",
+    )
     parser.add_argument("--no-push", action="store_true")
     return parser
 
@@ -217,7 +250,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     bees = Path(args.bees_root).resolve()
     history = sync_run_history(assets, bees, args.run_id, args.reason)
     if not args.no_push:
-        commit_and_push(assets, history, args.run_id, args.reason)
+        commit_and_push(
+            assets,
+            history,
+            args.run_id,
+            args.reason,
+            git_executable=args.git_executable,
+        )
     print(history)
     return 0
 
