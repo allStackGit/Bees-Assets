@@ -88,7 +88,6 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Unity environment count (1-64). Default: 4x available CPU threads, capped at 64.",
     )
-    parser.add_argument("--gameplay-port", type=int, default=7146)
     parser.add_argument("--control-port", type=int, default=7150)
     parser.add_argument("--bootstrap-port", type=int, default=7151)
     parser.add_argument("--broker-port", type=int, default=55051)
@@ -183,8 +182,6 @@ def _tailnet_forward_command(args: argparse.Namespace) -> list[str]:
         str(Path(args.tailnet_state).expanduser().resolve()),
         "--hostname",
         args.tailnet_hostname,
-        "--map",
-        f"127.0.0.1:{args.gameplay_port}={args.tailnet_target}:{args.gameplay_port}",
         "--map",
         f"127.0.0.1:{args.control_port}={args.tailnet_target}:{args.control_port}",
         "--map",
@@ -654,13 +651,6 @@ def _runtime_cutover_selected(
     return None
 
 
-def _worker_environment(args: argparse.Namespace) -> dict[str, str]:
-    environment = os.environ.copy()
-    environment["BEES_TRAINING_GAMEPLAY_HOST"] = "127.0.0.1"
-    environment["BEES_TRAINING_GAMEPLAY_PORT"] = str(args.gameplay_port)
-    return environment
-
-
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     return [
@@ -714,15 +704,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
         return 2
     if (
-        not 1 <= args.gameplay_port <= 65535
-        or not 1 <= args.control_port <= 65535
+        not 1 <= args.control_port <= 65535
         or not 1 <= args.bootstrap_port <= 65535
         or not 1 <= args.broker_port <= 65535
     ):
-        print("error: gameplay/control/bootstrap/broker ports must be in 1-65535", file=sys.stderr)
+        print("error: control/bootstrap/broker ports must be in 1-65535", file=sys.stderr)
         return 2
-    if len({args.gameplay_port, args.control_port, args.bootstrap_port, args.broker_port}) != 4:
-        print("error: gameplay/control/bootstrap/broker ports must be distinct", file=sys.stderr)
+    if len({args.control_port, args.bootstrap_port, args.broker_port}) != 3:
+        print("error: control/bootstrap/broker ports must be distinct", file=sys.stderr)
         return 2
     if args.reconnect_seconds <= 0 or args.runtime_poll_seconds <= 0:
         print("error: reconnect/runtime-poll seconds must be positive", file=sys.stderr)
@@ -767,7 +756,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             try:
                 tailnet = subprocess.Popen(_tailnet_forward_command(args))
                 if not _wait_for_ports(
-                    (args.gameplay_port, args.control_port, args.broker_port, args.bootstrap_port),
+                    (args.control_port, args.broker_port, args.bootstrap_port),
                     tailnet,
                     stop,
                 ):
@@ -788,10 +777,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         f"and assigned build. trainer={trainer_id}",
                         flush=True,
                     )
-                    worker = subprocess.Popen(
-                        _worker_command(args, root, actor_key),
-                        env=_worker_environment(args),
-                    )
+                    worker = subprocess.Popen(_worker_command(args, root, actor_key))
                     next_status = 0.0
                     while not stop[0] and tailnet.poll() is None and worker.poll() is None:
                         now = time.monotonic()
