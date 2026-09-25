@@ -374,5 +374,18 @@ test('learner requirements include ML-Agents stack and ONNX Runtime', () => {
     const requirementsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_learner_requirements.txt');
     const source = fs.readFileSync(requirementsPath, 'utf8');
     assert.match(source, /-r bees_remote_requirements\.txt/);
-    assert.match(source, /onnxruntime==1\.17\.1/);
+    assert.match(source, /onnxruntime==1\.15\.1/);
+});
+
+
+test('learner Python setup cannot leak installer output into executable resolution', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const start = source.indexOf('function Ensure-LearnerPython($Config)');
+    const end = source.indexOf('\nfunction Resolve-Node', start);
+    const learner = start >= 0 && end > start ? source.slice(start, end) : '';
+    assert.match(learner, /Invoke-Checked \$basePython[^\n]+\| Out-Host/);
+    assert.match(learner, /Invoke-Checked \$venvPython[^\n]+pip[^\n]+\| Out-Host/g);
+    assert.ok(source.includes('$pythonResult=@(Ensure-LearnerPython $config)'));
+    assert.ok(source.includes('$pythonResult.Count -ne 1'));
+    assert.ok(source.includes('Managed learner Python executable is missing: $python'));
 });
