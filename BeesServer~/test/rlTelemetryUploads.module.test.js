@@ -82,13 +82,13 @@ async function complete(manager, context, bytes) {
     return manager.handle({ Type: 'rl-telemetry-complete', UploadId: begin.UploadId }, context);
 }
 
-test('telemetry quarantine policy stays pinned to the accepted Unity v19 policy', () => {
+test('telemetry quarantine policy stays pinned to the accepted Unity v20 policy', () => {
     assert.equal(RL_TELEMETRY_POLICY.schemaVersion, 1);
     assert.equal(RL_TELEMETRY_POLICY.behaviorName, RL_DEMO_POLICY.behaviorName);
     assert.equal(RL_TELEMETRY_POLICY.policyAbiVersion, RL_DEMO_POLICY.policyAbiVersion);
     assert.equal(RL_TELEMETRY_POLICY.policySignature, RL_DEMO_POLICY.policySignature);
     assert.equal(RL_TELEMETRY_POLICY.observationSchemaVersion, 11);
-    assert.equal(RL_TELEMETRY_POLICY.actionSchemaVersion, 8);
+    assert.equal(RL_TELEMETRY_POLICY.actionSchemaVersion, 9);
     assert.equal(RL_TELEMETRY_POLICY.rewardSchemaVersion, 3);
     assert.equal(RL_TELEMETRY_POLICY.scenarioSchemaVersion, 1);
 });
