@@ -387,16 +387,14 @@ function Start-TailnetGatewayIfNeeded($Config){
     $bridge=[string]$bridges.gateway_windows
     $state=Join-Path $TailnetRoot 'LearnerState'
     $hostname=if($Config.tailnetLearnerName){([string]$Config.tailnetLearnerName).Trim()}else{'bees-learner'}
-    $gameplayPort=$GameplayServerPort
     $controlPort=[int]$Config.controlPort
     $brokerPort=[int]$Config.brokerPort
     $bootstrapPort=if($Config.tailnetBootstrapPort){[int]$Config.tailnetBootstrapPort}else{7151}
-    $gatewayPorts=@($gameplayPort,$controlPort,$brokerPort,$bootstrapPort)
-    foreach($port in $gatewayPorts){
+    foreach($port in @($controlPort,$brokerPort,$bootstrapPort)){
         if($port -lt 1 -or $port -gt 65535){ throw 'Tailnet gateway ports must be in 1-65535.' }
     }
-    if(@($gatewayPorts | Select-Object -Unique).Count -ne $gatewayPorts.Count){
-        throw 'Gameplay, control, broker, and tailnet bootstrap ports must be distinct.'
+    if($controlPort -eq $brokerPort -or $controlPort -eq $bootstrapPort -or $brokerPort -eq $bootstrapPort){
+        throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
     }
 
     $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
@@ -426,7 +424,6 @@ function Start-TailnetGatewayIfNeeded($Config){
         'gateway',
         '--state',$state,
         '--hostname',$hostname,
-        '--gameplay-port',[string]$gameplayPort,
         '--control-port',[string]$controlPort,
         '--broker-port',[string]$brokerPort,
         '--bootstrap-port',[string]$bootstrapPort,
@@ -454,7 +451,7 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-    Write-Host ("Embedded tailnet gateway online at {0}: gameplay={1} control={2} broker={3} bootstrap={4} (PID {5})." -f $tailnetIp,$gameplayPort,$controlPort,$brokerPort,$bootstrapPort,$p.Id)
+    Write-Host ("Embedded tailnet gateway online at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,$p.Id)
 }
 
 
@@ -980,16 +977,14 @@ function Prepare-RemoteBootstrap($Config){
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
     if($transport -ne 'tailnet'){ throw "Generated remote launchers require remoteTransport=tailnet; got '$transport'." }
 
-    $gameplayPort=$GameplayServerPort
     $controlPort=[int]$Config.controlPort
     $brokerPort=[int]$Config.brokerPort
     $bootstrapPort=if($Config.tailnetBootstrapPort){[int]$Config.tailnetBootstrapPort}else{7151}
-    $remotePorts=@($gameplayPort,$controlPort,$brokerPort,$bootstrapPort)
-    foreach($port in $remotePorts){
+    foreach($port in @($controlPort,$brokerPort,$bootstrapPort)){
         if($port -lt 1 -or $port -gt 65535){ throw 'Configured Bees ports must be in 1-65535.' }
     }
-    if(@($remotePorts | Select-Object -Unique).Count -ne $remotePorts.Count){
-        throw 'Gameplay, control, broker, and tailnet bootstrap ports must be distinct.'
+    if($controlPort -eq $brokerPort -or $controlPort -eq $bootstrapPort -or $brokerPort -eq $bootstrapPort){
+        throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
     }
 
     if(-not(Test-Path -LiteralPath $TailnetAddressPath)){ throw 'Learner tailnet address is missing. Authenticate the embedded tailnet first.' }
@@ -1054,7 +1049,6 @@ function Prepare-RemoteBootstrap($Config){
     $windowsReplacements=@{
         '__BEES_TAILNET_LEARNER__'=(Escape-SingleQuoted $tailnetTarget)
         '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
-        '__BEES_GAMEPLAY_PORT__'=[string]$gameplayPort
         '__BEES_CONTROL_PORT__'=[string]$controlPort
         '__BEES_BROKER_PORT__'=[string]$brokerPort
         '__BEES_TAILNET_BRIDGE_FILE__'=$windowsBridgeName
