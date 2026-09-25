@@ -25,7 +25,7 @@ function withTempDir(work) {
 }
 
 
-function invokeGet(handler, url, token) {
+function publishDedicatedBuild(store, root, buildId) {\n    const archive = path.join(root, buildId + '.zip');\n    fs.writeFileSync(archive, Buffer.from(buildId + '-build'));\n    store.publishArtifact({\n        role: 'dedicated',\n        platform: 'WindowsPlayer',\n        buildId,\n        archivePath: archive,\n        entrypoint: 'Bees.exe',\n    });\n    return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;\n}\n\nfunction heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}) {\n    return store.heartbeat({\n        trainer_id: trainerId,\n        role: 'dedicated',\n        platform: 'WindowsPlayer',\n        process_state: options.processState || 'running',\n        build_id: buildId,\n        build_sha256: buildSha256,\n        prepared_build_id: options.preparedBuildId || '',\n        applied_revision: options.appliedRevision === undefined\n            ? store.state.revision\n            : options.appliedRevision,\n        last_error: options.lastError || '',\n    });\n}\n\nfunction invokeGet(handler, url, token) {
     return new Promise(resolve => {
         const request = {
             method: 'GET',
