@@ -34,7 +34,6 @@ DEFAULT_GENERATION_STEPS = 1_000_000
 DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
-MANAGED_CHILD_GRACE_SECONDS = 90.0
 MANAGED_CHILD_POLL_SECONDS = 0.25
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
@@ -352,27 +351,6 @@ def _managed_stop_requested() -> bool:
     return path is not None and path.is_file()
 
 
-def _force_stop_managed_child(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=10)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-
-
 def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> int:
     if _managed_stop_requested():
         raise KeyboardInterrupt
@@ -386,7 +364,6 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
         kwargs["start_new_session"] = True
 
     process = subprocess.Popen(list(command), **kwargs)
-    stop_deadline: Optional[float] = None
     stop_requested = False
     try:
         while process.poll() is None:
@@ -398,20 +375,7 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
                         flush=True,
                     )
                     stop_requested = True
-                    stop_deadline = time.monotonic() + MANAGED_CHILD_GRACE_SECONDS
-                elif stop_deadline is not None and time.monotonic() >= stop_deadline:
-                    print(
-                        "[Bees continuous] managed child did not finish within the graceful "
-                        "checkpoint window; forcing termination.",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    _force_stop_managed_child(process)
-                    break
             time.sleep(MANAGED_CHILD_POLL_SECONDS)
-    finally:
-        if process.poll() is None and _managed_stop_requested():
-            _force_stop_managed_child(process)
 
     return_code = int(process.wait())
     if stop_requested or _managed_stop_requested():
