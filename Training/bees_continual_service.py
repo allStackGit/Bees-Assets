@@ -226,6 +226,15 @@ def save_state(options: ServiceOptions, state: Mapping[str, object]) -> None:
     _atomic_write(_service_root(options) / "state.json", payload)
 
 
+def current_compatible_champion_id(options: ServiceOptions) -> Optional[str]:
+    """Return the registry champion only when it matches this service's compatibility contract."""
+    from bees_continual_learning import ContinualLearningStore, load_config
+
+    store = ContinualLearningStore(options.root, config=load_config(options.continual_config))
+    store.initialize()
+    return store.current_compatible_champion_id()
+
+
 def current_deployment_id(options: ServiceOptions) -> Optional[str]:
     path = options.root / "deployment" / "current-deployment.json"
     if not path.is_file():
@@ -293,8 +302,8 @@ def release_command(options: ServiceOptions) -> list[str]:
         options.python_executable,
         str(options.assets_root / "Training" / "bees_continual_release.py"),
         f"--root={options.root}",
-        f"--training-env={options.training_env}",
-        f"--game-build-version={options.game_build_version}",
+        f"--env={options.training_env}",
+        f"--training-run-id={options.run_id}",
         f"--config={options.continual_config}",
         "--no-graphics",
         "--once",
@@ -427,19 +436,20 @@ def run_service(
     while True:
         try:
             # Ensure the current validated champion is server-visible immediately after supervisor
-            # startup, even before the next training generation finishes.
+            # startup, even before the next training generation finishes. An old deployment pointer
+            # may legitimately belong to a previous incompatible ABI; do not try to restage it under
+            # the new contract before generation zero has produced a compatible champion.
+            compatible_champion = current_compatible_champion_id(options)
             published = current_deployment_id(options)
-            if published is None:
-                # A brand-new run has no validated champion yet. Training must create the first
-                # candidate before there is anything legitimate to stage/publish.
+            if compatible_champion is None:
                 if state.get("last_hot_deployment_id") is not None:
                     state["last_hot_deployment_id"] = None
                     save_state(options, state)
                 print(
-                    "[Bees continuous] no validated deployment exists yet; "
-                    "starting training before the first publish."
+                    "[Bees continuous] no compatible validated champion exists yet; "
+                    "starting training before generation-zero bootstrap/publish."
                 )
-            elif published != state.get("last_hot_deployment_id"):
+            elif published is None or published != state.get("last_hot_deployment_id"):
                 published = publish_current_hot_bundle(options, runner)
                 state["last_hot_deployment_id"] = published
                 save_state(options, state)
