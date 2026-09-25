@@ -105,7 +105,7 @@ The trailing `~` keeps the history outside Unity import while allowing Git to tr
 
 The archive command then creates a Git commit containing only that run-history path and pushes the current branch to `origin`. If the Git commit or push fails, `build` stops before compilation rather than silently proceeding with unprotected logs.
 
-During an incompatible cutover, dedicated trainers stop only after the replacement is fully staged. Each trainer fully flushes its outgoing run-scoped logs to the learner before reporting `stopped`. After the new run is promoted, the old run is snapshotted again so the terminal log tail is committed as well.
+During an incompatible cutover, dedicated trainers stop only after the replacement is fully staged. The central learner first requests a graceful ML-Agents interruption and remains leased as `stopping` while ML-Agents writes its final checkpoint, ONNX export, `timers.json`, and training status. Each trainer fully flushes its outgoing run-scoped logs to the learner before reporting `stopped`. After the new run is promoted, the old run is snapshotted again so the terminal log tail is committed as well.
 
 Checkpoint/model data is intentionally not copied into GitHub. It remains in the durable `B:\\Bees\\Training` run directories, which are not removed by build or rollout.
 
@@ -128,8 +128,8 @@ For an incompatible release:
 
 1. All active trainers continue the old run while the replacement is downloaded and verified.
 2. When every active dedicated trainer is prepared, the server requests a coordinated stop.
-3. Trainers terminate their managed Unity/process trees and completely flush outgoing run logs.
-4. Only after all trainers report `stopped` does the server promote the new build, compatibility key, and run id.
+3. Remote trainers terminate their managed Unity/process trees and flush outgoing run logs; the central learner remains heartbeating as `stopping` until ML-Agents has finalized the current optimizer checkpoint, ONNX model, timers, and status files.
+4. Only after the central save is complete and all trainers report `stopped` does the server promote the new build, compatibility key, and run id.
 5. Trainers restart under the new run. The old run's checkpoint/results tree remains intact.
 
 This keeps update interruption limited to the actual process restart/cutover rather than download, extraction, dependency installation, or artifact verification.
