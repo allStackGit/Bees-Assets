@@ -1184,7 +1184,9 @@ function Prepare-RemoteBootstrap($Config){
     try {
         Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
         Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
-        $runtimeVersion=Get-TrainingRuntimeSourceHash
+        # Version the exact staged payload bytes, not the committed Git tree or live source
+        # directory, so dirty/uncommitted changes and mid-packaging edits cannot be mislabeled.
+        $runtimeVersion=Get-DirectoryContentSha256 $staging
         $runtimeVersion | Set-Content -LiteralPath (Join-Path $staging 'bees-runtime-version.txt') -NoNewline -Encoding ASCII
         $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
         # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
