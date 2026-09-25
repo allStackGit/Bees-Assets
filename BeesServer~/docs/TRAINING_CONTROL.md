@@ -148,6 +148,8 @@ BeesServer dependency installation has its own SHA-256 stamp derived from both `
 
 If the control port is occupied by a server that was not launched/recorded by the Bees operator, the script refuses to kill it automatically. Stop that unmanaged server once and rerun the command; subsequent source refreshes can then be automatic.
 
+Managed-process ownership is never inferred from PID existence alone. BeesServer, the central learner, and the embedded tailnet gateway persist the process PID, exact process start time, and executable path. Automatic restart/stop re-reads the live process and requires all three values to match before terminating a process tree. A stale PID that has been reused by another process therefore fails closed instead of being killed. Legacy PID-only records are also fail-closed: if their recorded PID is still live, the operator refuses to terminate it automatically and requires that one legacy process to be stopped once before it is relaunched under identity-safe state.
+
 ## Private remote workers
 
 `start` prepares one copy-and-run launcher per remote platform:
