@@ -1,0 +1,2 @@
+-r bees_remote_requirements.txt
+onnxruntime==1.17.1
