@@ -1694,8 +1694,6 @@ function Invoke-Start {
     Show-Status $config $admin $true
 }
 
-function Stop-ProcessTree([int]$Id){ if($Id -gt 0 -and (Get-Process -Id $Id -ErrorAction SilentlyContinue)){ & taskkill /PID $Id /T /F *> $null } }
-
 function Invoke-Stop {
     $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath
     Assert-CentralAgentCheckpointSafe
@@ -1718,20 +1716,59 @@ function Invoke-Stop {
         }
         Write-Warning 'Training control is offline; dedicated workers should fail closed after lease expiry.'
     }
-    if($Server -and (Test-Path -LiteralPath $ServerPidPath)){
-        $id=0
-        [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$id)
-        Stop-ProcessTree $id
-        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
-        Write-Host 'BeesServer stopped.'
-    }
-    if($Server -and (Test-Path -LiteralPath $TailnetGatewayPidPath)){
-        $tailnetPid=0
-        [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$tailnetPid)
-        Stop-ProcessTree $tailnetPid
-        Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
-        Write-Host 'Embedded Bees tailnet gateway stopped.'
+    if($Server){
+        $node=Resolve-Node $config
+        $serverState=$null
+        if(Test-Path -LiteralPath $ServerStatePath){
+            try{$serverState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$serverState=$null}
+        }
+        if($null -ne $serverState){
+            if(Test-ManagedProcessIdentity $serverState $node){
+                $null=Stop-ManagedProcessTree $serverState $node 'BeesServer'
+                Write-Host 'BeesServer stopped.'
+            } else {
+                $livePid=Get-StateReferencedLivePid $serverState
+                if($livePid -gt 0){
+                    throw "Refusing to stop BeesServer PID $livePid because its persisted process identity does not match the live process."
+                }
+            }
+            Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
+        } elseif(Test-Path -LiteralPath $ServerPidPath){
+            $legacyPid=0
+            [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$legacyPid)
+            if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+                throw "Refusing to stop legacy BeesServer PID $legacyPid because PID-only ownership cannot exclude PID reuse."
+            }
+            Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+        }
+
+        $bridges=Get-TailnetBridgePaths
+        $gatewayExecutable=[string]$bridges.gateway_windows
+        $gatewayState=$null
+        if(Test-Path -LiteralPath $TailnetGatewayStatePath){
+            try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
+        }
+        if($null -ne $gatewayState){
+            if(Test-ManagedProcessIdentity $gatewayState $gatewayExecutable){
+                $null=Stop-ManagedProcessTree $gatewayState $gatewayExecutable 'embedded tailnet gateway'
+                Write-Host 'Embedded Bees tailnet gateway stopped.'
+            } else {
+                $livePid=Get-StateReferencedLivePid $gatewayState
+                if($livePid -gt 0){
+                    throw "Refusing to stop embedded tailnet gateway PID $livePid because its persisted process identity does not match the live process."
+                }
+            }
+            Remove-Item -LiteralPath $TailnetGatewayStatePath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+        } elseif(Test-Path -LiteralPath $TailnetGatewayPidPath){
+            $legacyPid=0
+            [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$legacyPid)
+            if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+                throw "Refusing to stop legacy tailnet gateway PID $legacyPid because PID-only ownership cannot exclude PID reuse."
+            }
+            Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
