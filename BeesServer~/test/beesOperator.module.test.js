@@ -247,3 +247,26 @@ test('Windows launcher here-string is structurally complete', () => {
     const block = source.slice(start, end);
     assert.match(block, /^\s*\$windowsCmd=@'[\s\S]*::BEES_PAYLOAD_BEGIN[\s\S]*::BEES_PAYLOAD_END/m);
 });
+
+
+test('remote bootstrap fetch reuses one tsnet session for reachability and HTTP', () => {
+    const bridgePath = path.resolve(__dirname, '..', '..', 'Tools~', 'bees-tailnet-bridge', 'main.go');
+    const source = fs.readFileSync(bridgePath, 'utf8');
+    const fetchBlock = source.match(/func runFetch\([\s\S]*?\n\}/)?.[0] || '';
+    assert.match(fetchBlock, /bootstrap reachability ready source=/);
+    assert.match(fetchBlock, /for attempt := 1; attempt <= 3; attempt\+\+/);
+    assert.match(fetchBlock, /s\.Dial\(dialCtx, "tcp", \*target\)/);
+    assert.match(fetchBlock, /client\.Do\(req\)/);
+    assert.match(fetchBlock, /bootstrap request failed after retries/);
+});
+
+test('remote bootstrap templates no longer launch a separate probe process', () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const linuxPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.sh');
+    const windows = fs.readFileSync(windowsPath, 'utf8');
+    const linux = fs.readFileSync(linuxPath, 'utf8');
+    assert.doesNotMatch(windows, /\$tailnetBridge probe/);
+    assert.doesNotMatch(linux, /"\$TAILNET_BRIDGE" probe/);
+    assert.match(windows, /'fetch'/);
+    assert.match(linux, /"\$TAILNET_BRIDGE" fetch/);
+});
