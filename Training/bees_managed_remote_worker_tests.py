@@ -468,7 +468,7 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertIn("state=running", summary)
             self.assertIn("envs=8->10", summary)
             self.assertIn("optimizer=measuring", summary)
-            self.assertIn("accepted_sps=1234.5", summary)
+            self.assertIn("learner_sps=1234.5", summary)
             sink.write("captured\n")
             self.assertTrue(
                 (root / "logs" / "bees-v20-active" / "remote-supervisor.log").is_file()
