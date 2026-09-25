@@ -134,9 +134,9 @@ Machines that were already running a launcher from before this self-update mecha
 
 The normal per-machine tuning argument is environment count:
 
-```powershell
-.\bees-remote-worker.ps1
-.\bees-remote-worker.ps1 -Envs 24
+```cmd
+bees-remote-worker.cmd
+bees-remote-worker.cmd -Envs 24
 ```
 
 ```bash
