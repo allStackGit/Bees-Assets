@@ -207,8 +207,8 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertIn("--training-run-id=continuous-test", release)
             self.assertNotIn(f"--training-env={options.training_env}", release)
             self.assertFalse(any(item.startswith("--game-build-version=") for item in release))
-            self.assertIn("--once", release)
-            self.assertIn("--no-graphics", release)
+            self.assertNotIn("--once", release)
+            self.assertNotIn("--no-graphics", release)
 
             stage = service.stage_command(options)
             self.assertTrue(any("bees_continual_unity_bundle.py" in item for item in stage))
