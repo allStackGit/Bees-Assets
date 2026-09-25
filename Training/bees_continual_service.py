@@ -305,8 +305,6 @@ def release_command(options: ServiceOptions) -> list[str]:
         f"--env={options.training_env}",
         f"--training-run-id={options.run_id}",
         f"--config={options.continual_config}",
-        "--no-graphics",
-        "--once",
     ]
     if options.competency_suite is not None:
         command.append(f"--competency-suite={options.competency_suite}")
