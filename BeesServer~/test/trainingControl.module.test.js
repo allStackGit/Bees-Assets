@@ -732,3 +732,96 @@ test('trainer logs append by verified offset under their run and trainer namespa
         }), /unsafe/);
     });
 });
+
+
+test('training control returns per-worker env targets from accepted-step optimization', () => {
+    withTempDir(root => {
+        let now = 0;
+        const archive = path.join(root, 'linux.zip');
+        fs.writeFileSync(archive, Buffer.from('linux-build'));
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            now: () => now,
+            envOptimizer: {
+                warmupMs: 0,
+                measurementMs: 1000,
+                cooldownMs: 0,
+                retestMs: 60000,
+            },
+        });
+        store.publishArtifact({
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            buildId: 'release-opt',
+            archivePath: archive,
+            entrypoint: 'Bees.x86_64',
+        });
+        store.setDesiredState({
+            canonical_build_id: 'release-opt',
+            training_enabled: true,
+        });
+
+        const heartbeat = acceptedSteps => store.heartbeat({
+            trainer_id: 'remote-linux',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'running',
+            applied_revision: store.state.revision,
+            build_id: 'release-opt',
+            build_sha256: store.artifact(
+                'dedicated', 'LinuxPlayer', 'release-opt').archive_sha256,
+            worker_capacity: {
+                auto: true,
+                current_envs: 8,
+                min_envs: 1,
+                max_envs: 16,
+            },
+            metrics: {
+                throughput: {
+                    accepted_steps_total: acceptedSteps,
+                },
+            },
+        });
+
+        let desired = heartbeat(0);
+        assert.equal(desired.worker_env_count, 8);
+        assert.equal(desired.env_optimizer.phase, 'measuring');
+
+        now = 1000;
+        desired = heartbeat(1000);
+        assert.equal(desired.worker_env_count, 9);
+        assert.equal(desired.env_optimizer.baseline_sps, 1000);
+        assert.equal(desired.env_optimizer.probing, true);
+
+        const trainer = store.status().trainers.find(
+            record => record.trainer_id === 'remote-linux');
+        assert.equal(trainer.worker_capacity.current_envs, 8);
+        assert.equal(trainer.env_optimizer.desired_envs, 9);
+    });
+});
+
+test('training control leaves explicit fixed worker env counts unchanged', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const state = store.heartbeat({
+            trainer_id: 'remote-fixed',
+            role: 'dedicated',
+            platform: 'LinuxPlayer',
+            process_state: 'stopped',
+            applied_revision: 0,
+            worker_capacity: {
+                auto: false,
+                current_envs: 12,
+                min_envs: 12,
+                max_envs: 12,
+            },
+        });
+        assert.equal(state.worker_env_count, 12);
+        assert.equal(state.env_optimizer.phase, 'manual');
+        assert.equal(state.env_optimizer.enabled, false);
+    });
+});
