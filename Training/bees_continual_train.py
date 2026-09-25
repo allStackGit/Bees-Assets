@@ -783,7 +783,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"batch_size={imitation_batch_size}"
         )
 
-    parent_model_id = options.parent_model_id or store.current_champion_id()
+    parent_model_id = options.parent_model_id or store.current_compatible_champion_id()
     if parent_model_id:
         store.get_model(parent_model_id)  # Fail before training if lineage metadata is invalid.
 
