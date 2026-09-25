@@ -205,6 +205,20 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _python_remote_dependencies_ok(python_path: Path) -> bool:
+    completed = subprocess.run(
+        [
+            str(python_path),
+            "-c",
+            "import pkg_resources, mlagents, torch, numpy",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
 def _decode_release_metadata(data: bytes) -> Mapping[str, object]:
     try:
         value = json.loads(data.decode("utf-8-sig"))
@@ -359,7 +373,7 @@ class RuntimeUpdater:
         active_requirements = Path(__file__).resolve().parent / "bees_remote_requirements.txt"
         new_hash = _sha256_file(requirements)
         active_hash = _sha256_file(active_requirements) if active_requirements.is_file() else ""
-        if new_hash == active_hash:
+        if new_hash == active_hash and _python_remote_dependencies_ok(Path(sys.executable)):
             return Path(sys.executable).resolve()
 
         venv_root = self.install_root / "VenvVersions" / new_hash
@@ -369,7 +383,9 @@ class RuntimeUpdater:
             else venv_root / "bin" / "python"
         )
         if python_path.is_file():
-            return python_path.resolve()
+            if _python_remote_dependencies_ok(python_path):
+                return python_path.resolve()
+            shutil.rmtree(venv_root, ignore_errors=True)
 
         venv_root.parent.mkdir(parents=True, exist_ok=True)
         temporary = venv_root.with_name(venv_root.name + ".tmp")
@@ -436,6 +452,12 @@ class RuntimeUpdater:
             raise RuntimeError(
                 "staged remote dependency installation failed "
                 f"(exit {completed.returncode})"
+            )
+        if not _python_remote_dependencies_ok(staged_python):
+            shutil.rmtree(temporary, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency validation failed; "
+                "pkg_resources/ML-Agents runtime is incomplete"
             )
         if venv_root.exists():
             shutil.rmtree(venv_root)
