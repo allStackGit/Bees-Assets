@@ -61,3 +61,6 @@ Traceback (most recent call last):
     self._sock.sendall(b)
 ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
 ----------------------------------------
+[Bees control] server lease expired; stopping dedicated trainer.
+B:\Bees\Runtime\LearnerPython\lib\site-packages\torch\onnx\utils.py:631: UserWarning: ONNX Preprocess - Removing mutation from node aten::clamp_ on block input: 'action_model._continuous_distribution.log_sigma'. This changes graph semantics. (Triggered internally at ..\torch\csrc\jit\passes\onnx\remove_inplace_ops_for_onnx.cpp:355.)
+  _C._jit_pass_onnx_remove_inplace_ops_for_onnx(graph, module)

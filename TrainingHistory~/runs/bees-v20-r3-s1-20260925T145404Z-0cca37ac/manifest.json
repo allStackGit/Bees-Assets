@@ -187,40 +187,40 @@
       "destination": "central-training-logs\\central-agent.err.log",
       "parts": [
         {
-          "bytes": 4197,
+          "bytes": 4663,
           "file": "central-agent.err.log.part0001",
-          "sha256": "2d5ea4235fc80c2dfd4cedb503ad61f3cc354287510a0109187a93cdcd2c37eb"
+          "sha256": "f7d985ef320cd8dbfbb9c562ea6b7f19ceb82fc06d3554be135bef5933f5229b"
         }
       ],
       "source": "B:\\Bees\\Logs\\Training\\central-agent.err.log",
-      "source_bytes": 4197,
-      "source_sha256": "2d5ea4235fc80c2dfd4cedb503ad61f3cc354287510a0109187a93cdcd2c37eb"
+      "source_bytes": 4663,
+      "source_sha256": "f7d985ef320cd8dbfbb9c562ea6b7f19ceb82fc06d3554be135bef5933f5229b"
     },
     {
       "destination": "central-training-logs\\central-agent.out.log",
       "parts": [
         {
-          "bytes": 18917,
+          "bytes": 37941,
           "file": "central-agent.out.log.part0001",
-          "sha256": "8f3cb9e679f3346f4d0d823dd747feb1ad449f6f8ff17dd9fb33866c25276fb5"
+          "sha256": "9576de3db2b16fcc5c9a6ce2d6b6c5f9e80095f40f3d0fe836e96db6ec810d54"
         }
       ],
       "source": "B:\\Bees\\Logs\\Training\\central-agent.out.log",
-      "source_bytes": 18917,
-      "source_sha256": "8f3cb9e679f3346f4d0d823dd747feb1ad449f6f8ff17dd9fb33866c25276fb5"
+      "source_bytes": 37941,
+      "source_sha256": "9576de3db2b16fcc5c9a6ce2d6b6c5f9e80095f40f3d0fe836e96db6ec810d54"
     },
     {
       "destination": "central-training-logs\\tailnet-gateway.err.log",
       "parts": [
         {
-          "bytes": 283,
+          "bytes": 518,
           "file": "tailnet-gateway.err.log.part0001",
-          "sha256": "cbd4c55610f92937de4ba1d67b1611c5d69ae107bede09fbb915d3086a61e6df"
+          "sha256": "4071e907db473ce9462b56f27f325590b1898c9fdfe826b6ec466f7fb0e6de25"
         }
       ],
       "source": "B:\\Bees\\Logs\\Training\\tailnet-gateway.err.log",
-      "source_bytes": 283,
-      "source_sha256": "cbd4c55610f92937de4ba1d67b1611c5d69ae107bede09fbb915d3086a61e6df"
+      "source_bytes": 518,
+      "source_sha256": "4071e907db473ce9462b56f27f325590b1898c9fdfe826b6ec466f7fb0e6de25"
     },
     {
       "destination": "central-training-logs\\tailnet-gateway.out.log",
@@ -260,19 +260,19 @@
       "bytes": 2178,
       "destination": "metadata\\run-lifecycle.json",
       "file": "run-lifecycle.json",
-      "sha256": "f3d90137c417cba65519ed17147746e4f252ee6c71be3a131a76ef0d37bfce27",
+      "sha256": "9724a7d7b0d5f39011b24baa45fece632ca534ed477e45bac482ee3eb6585270",
       "source": "B:\\Bees\\Training\\RunLifecycle\\current.json"
     },
     {
       "bytes": 3488,
       "destination": "metadata\\latest-training-release.json",
       "file": "latest-training-release.json",
-      "sha256": "b660a29dd926a5e124906676518b204d9c63ca750739e5e0fc445ceb26631432",
+      "sha256": "73704920048025d924df821fa29ce64daa088ec6b159ac1bd363a7c1daa5b1ed",
       "source": "B:\\Bees\\Builds\\latest-training-release.json"
     }
   ],
-  "reason": "pre-build",
+  "reason": "forced-new-precutover",
   "run_id": "bees-v20-r3-s1-20260925T145404Z-0cca37ac",
   "schema_version": 1,
-  "snapshot_utc": "2026-09-25T21:35:55.958585+00:00"
+  "snapshot_utc": "2026-09-25T22:13:55.930058+00:00"
 }
