@@ -1,3 +1,4 @@
+setuptools>=41,<82
 mlagents==1.1.0
 torch==2.1.1
 numpy<2
