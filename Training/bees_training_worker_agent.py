@@ -532,9 +532,8 @@ class ManagedProcess:
                 "refusing forced termination to preserve optimizer progress"
             )
 
-        # Non-checkpoint-owning workers may still be force-stopped to preserve fail-closed
-        # cluster behavior.
-        self.process = None
+        # Non-checkpoint-owning workers may be force-stopped, but never report them stopped
+        # until wait() has confirmed that the owned process actually exited.
         if os.name == "nt":
             try:
                 subprocess.run(
@@ -543,28 +542,49 @@ class ManagedProcess:
                     stderr=subprocess.DEVNULL,
                     check=False,
                 )
+            except Exception:
+                pass
+            try:
                 process.wait(timeout=15)
+                self.process = None
                 return
             except Exception:
                 pass
         else:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
+            except Exception:
+                pass
+            try:
                 process.wait(timeout=15)
+                self.process = None
                 return
             except Exception:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=5)
-                    return
-                except Exception:
-                    pass
+                pass
+
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=5)
+                self.process = None
+                return
+            except Exception:
+                pass
 
         try:
             process.kill()
-            process.wait(timeout=5)
         except Exception:
             pass
+        try:
+            process.wait(timeout=5)
+            self.process = None
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"managed process {process.pid} did not stop after forced termination attempts"
+            ) from exc
 
 
 def full_game_update_requires_deferred_restart(
