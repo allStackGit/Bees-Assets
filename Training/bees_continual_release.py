@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
+from bees_continual_bootstrap import bootstrap_champion
 from bees_continual_deployment import publish_current_champion
 from bees_continual_evaluate import (
     DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
@@ -56,6 +57,35 @@ def _compatible_candidates(
         for model in candidates
         if all(model.get(key) == value for key, value in expected.items())
     ]
+
+
+def _generation_zero_candidate(
+    store: ContinualLearningStore,
+    training_run_id: str,
+) -> Dict[str, Any]:
+    run_id = str(training_run_id).strip()
+    if not run_id:
+        raise ReleaseError(
+            "Automatic generation-zero bootstrap requires a non-empty training_run_id."
+        )
+    candidates = [
+        candidate
+        for candidate in _compatible_candidates(store, store.list_models(status="candidate"))
+        if candidate.get("training_run_id") == run_id
+    ]
+    if not candidates:
+        raise ReleaseError(
+            f"No compatible candidate from training run {run_id!r} is available for "
+            "generation-zero bootstrap."
+        )
+    return max(
+        candidates,
+        key=lambda candidate: (
+            int(candidate.get("training_step", -1)),
+            str(candidate.get("created_at", "")),
+            str(candidate.get("model_id", "")),
+        ),
+    )
 
 
 def _normalized_competency_contract(cases: Sequence[CompetencyCase]) -> Dict[str, Any]:
@@ -175,6 +205,7 @@ def run_release_cycle(
     no_graphics: bool = True,
     max_environment_steps_per_match: int = DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH,
     max_candidates: int = 1,
+    training_run_id: Optional[str] = None,
     evaluator: Evaluator = evaluate_and_record,
     publisher: Publisher = publish_current_champion,
     health_checker: HealthChecker = check_release_health,
@@ -196,11 +227,58 @@ def run_release_cycle(
         raise ValidationError("max_environment_steps_per_match must be a positive integer.")
 
     store.initialize()
-    champion_id = store.current_champion_id()
+    champion_id = store.current_compatible_champion_id()
     if not champion_id:
-        raise ReleaseError(
-            "Automatic release requires an established champion; bootstrap generation zero first."
+        if training_run_id is None or not str(training_run_id).strip():
+            raise ReleaseError(
+                "Automatic release found no champion for the current compatibility generation and "
+                "requires training_run_id to bootstrap generation zero."
+            )
+        all_candidates = store.list_models(status="candidate")
+        compatible_candidates = _compatible_candidates(store, all_candidates)
+        candidate = _generation_zero_candidate(store, str(training_run_id))
+        candidate_id = str(candidate["model_id"])
+        bootstrapped = bootstrap_champion(
+            store,
+            candidate_id,
+            reason=(
+                "Automatic generation-zero bootstrap after successful bounded training run "
+                f"{str(training_run_id).strip()}."
+            ),
         )
+        deployment = dict(publisher(store))
+        if deployment.get("model_id") != candidate_id:
+            raise ReleaseError(
+                "Generation-zero deployment publisher did not reconcile to the bootstrapped champion."
+            )
+        health = _require_healthy_release(
+            store,
+            expected_model_id=candidate_id,
+            expected_deployment_id=deployment.get("deployment_id"),
+            health_checker=health_checker,
+        )
+        return {
+            "status": "bootstrapped",
+            "starting_champion_model_id": None,
+            "current_champion_model_id": candidate_id,
+            "initial_deployment_id": deployment.get("deployment_id"),
+            "initial_deployment_pointer_changed": bool(deployment.get("pointer_changed", False)),
+            "initial_release_health_status": health["status"],
+            "candidate_count": len(all_candidates),
+            "compatible_candidate_count": len(compatible_candidates),
+            "skipped_incompatible_candidate_count": len(all_candidates) - len(compatible_candidates),
+            "processed": [
+                {
+                    "candidate_model_id": candidate_id,
+                    "decision": "bootstrapped",
+                    "final_status": bootstrapped["status"],
+                    "deployment_id": deployment.get("deployment_id"),
+                    "deployment_pointer_changed": bool(deployment.get("pointer_changed", False)),
+                    "release_health_status": health["status"],
+                }
+            ],
+        }
+
     _validate_competency_source(
         store,
         competency_suite,
@@ -354,6 +432,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", required=True, help="Initialized continual-learning store root.")
     parser.add_argument("--env", required=True, help="Dedicated RL Unity evaluation executable.")
     parser.add_argument(
+        "--training-run-id",
+        help=(
+            "Current bounded training run id. Required only when automatic release must establish "
+            "generation zero for a fresh or newly incompatible compatibility generation."
+        ),
+    )
+    parser.add_argument(
         "--config",
         default=str(Path(__file__).with_name("continual_learning_config.json")),
         help="Continual-learning configuration JSON.",
@@ -422,6 +507,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             no_graphics=not args.graphics,
             max_environment_steps_per_match=args.max_environment_steps_per_match,
             max_candidates=args.max_candidates,
+            training_run_id=args.training_run_id,
         )
         print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
         return 0
