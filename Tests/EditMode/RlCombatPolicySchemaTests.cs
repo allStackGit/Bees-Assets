@@ -311,8 +311,10 @@ namespace Bees.Tests.EditMode
 
                 Type shipListType = typeof(List<>).MakeGenericType(ship.GetType());
                 object ships = Activator.CreateInstance(shipListType);
+                RuntimeAssembly.AddToCollection(ships, null);
                 RuntimeAssembly.AddToCollection(ships, ship);
-                RuntimeAssembly.Invoke(grid, "Update", level, ships, 0.25f);
+                Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(grid, "Update", level, ships, 0.25f),
+                    "Sparse ship collections may contain null entries during lifecycle transitions.");
 
                 int cellCount = (int)RuntimeAssembly.GetStaticField(gridType, "CellCount");
                 int freshCells = 0;
