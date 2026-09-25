@@ -219,9 +219,17 @@ CURRENT_STAMP=""
 if [[ -f "$REQUIREMENTS_STAMP" ]]; then
     CURRENT_STAMP="$(tr -d '\r\n' < "$REQUIREMENTS_STAMP")"
 fi
-if [[ "$CURRENT_STAMP" != "$REQUIREMENTS_HASH" ]]; then
+DEPENDENCIES_OK=0
+if "$VENV_PYTHON" -c 'import pkg_resources, mlagents, torch, numpy' >/dev/null 2>&1; then
+    DEPENDENCIES_OK=1
+fi
+if [[ "$CURRENT_STAMP" != "$REQUIREMENTS_HASH" || "$DEPENDENCIES_OK" -ne 1 ]]; then
     echo "[Bees remote] installing/updating Python dependencies..."
     "$UV_BIN" pip install --python "$VENV_PYTHON" -r "$REQUIREMENTS"
+    if ! "$VENV_PYTHON" -c 'import pkg_resources, mlagents, torch, numpy' >/dev/null 2>&1; then
+        echo "error: remote Python dependency validation failed after installation." >&2
+        exit 2
+    fi
     printf '%s' "$REQUIREMENTS_HASH" > "$REQUIREMENTS_STAMP"
 fi
 
