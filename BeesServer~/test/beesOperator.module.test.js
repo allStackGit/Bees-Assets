@@ -27,6 +27,35 @@ test('bees.ps1 remains valid PowerShell syntax', { skip: process.platform !== 'w
 });
 
 
+test('managed process identity safely rejects legacy state missing identity fields', { skip: process.platform !== 'win32' }, () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const getProperty = source.match(/function Get-ObjectPropertyValue[\s\S]*?\n\}/)?.[0] || '';
+    const testIdentity = source.match(/function Test-ManagedProcessIdentity[\s\S]*?\n\}/)?.[0] || '';
+    const getLivePid = source.match(/function Get-StateReferencedLivePid[\s\S]*?\n\}/)?.[0] || '';
+    assert.ok(getProperty && testIdentity && getLivePid, 'Managed-process helper functions must be present.');
+
+    const command = [
+        'Set-StrictMode -Version Latest',
+        getProperty,
+        testIdentity,
+        getLivePid,
+        '$legacy = [pscustomobject]@{ pid = $PID; source_hash = "legacy" }',
+        'if (Test-ManagedProcessIdentity $legacy) { throw "Legacy state unexpectedly verified." }',
+        'if ((Get-StateReferencedLivePid $legacy) -ne $PID) { throw "Legacy live PID was not preserved for fail-closed handling." }',
+    ].join('\n');
+    const encoded = Buffer.from(command, 'utf16le').toString('base64');
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+        encoding: 'utf8',
+    });
+
+    assert.equal(
+        result.status,
+        0,
+        'Legacy managed-process state raised under StrictMode:\n' + (result.stderr || result.stdout || ''),
+    );
+});
+
+
 test('atomic file install retries transient Windows sharing locks without giving up atomic replace', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const atomic = source.match(/function Install-AtomicFile[\s\S]*?\n\}/)?.[0] || '';
