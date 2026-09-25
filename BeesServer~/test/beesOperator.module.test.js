@@ -175,3 +175,28 @@ test('bees.ps1 generates a Windows cmd wrapper that bypasses execution policy on
     assert.match(remoteBootstrap, /%\*/);
     assert.doesNotMatch(remoteBootstrap, /Set-ExecutionPolicy/);
 });
+
+
+test('remote launchers keep tailnet binaries out of script text for fast startup', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const linuxPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.sh');
+    const windows = fs.readFileSync(windowsPath, 'utf8');
+    const linux = fs.readFileSync(linuxPath, 'utf8');
+    assert.doesNotMatch(source, /ToBase64String\(\[IO\.File\]::ReadAllBytes\(\$windowsBridge\)\)/);
+    assert.doesNotMatch(source, /ToBase64String\(\[IO\.File\]::ReadAllBytes\(\$linuxBridge\)\)/);
+    assert.doesNotMatch(windows, /__BEES_TAILNET_BRIDGE_B64__/);
+    assert.doesNotMatch(linux, /__BEES_TAILNET_BRIDGE_B64__/);
+    assert.match(windows, /__BEES_TAILNET_BRIDGE_FILE__/);
+    assert.match(linux, /__BEES_TAILNET_BRIDGE_FILE__/);
+    assert.match(source, /bees-tailnet-bridge-windows\.exe/);
+    assert.match(source, /bees-tailnet-bridge-linux/);
+});
+
+test('Windows cmd launcher prints immediately before PowerShell bootstrap parsing', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(remoteBootstrap, /echo \[Bees remote\] launching Windows training worker/);
+    assert.match(remoteBootstrap, /echo \[Bees remote\] loading PowerShell bootstrap/);
+    assert.match(remoteBootstrap, /powershell\.exe -NoLogo -NoProfile -ExecutionPolicy Bypass/);
+});
