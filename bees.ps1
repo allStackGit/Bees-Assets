@@ -171,6 +171,19 @@ function Resolve-PortableGo {
     $exe
 }
 
+function Get-TailnetBridgeSourceHash {
+    $main=Join-Path $TailnetToolRoot 'main.go'
+    $module=Join-Path $TailnetToolRoot 'go.mod'
+    if(-not(Test-Path -LiteralPath $main) -or -not(Test-Path -LiteralPath $module)){
+        throw "Embedded tailnet bridge source is missing: $TailnetToolRoot"
+    }
+    Get-StringSha256 (
+        (Get-Content -LiteralPath $module -Raw) +
+        [Environment]::NewLine +
+        (Get-Content -LiteralPath $main -Raw)
+    )
+}
+
 function Build-TailnetBridge {
     $main=Join-Path $TailnetToolRoot 'main.go'
     $module=Join-Path $TailnetToolRoot 'go.mod'
@@ -178,11 +191,7 @@ function Build-TailnetBridge {
         throw "Embedded tailnet bridge source is missing: $TailnetToolRoot"
     }
 
-    $sourceHash=Get-StringSha256 (
-        (Get-Content -LiteralPath $module -Raw) +
-        [Environment]::NewLine +
-        (Get-Content -LiteralPath $main -Raw)
-    )
+    $sourceHash=Get-TailnetBridgeSourceHash
     $versionRoot=Join-Path (Join-Path $TailnetBinRoot 'Versions') $sourceHash
     $versionWindows=Join-Path $versionRoot 'bees-tailnet-bridge.exe'
     $versionLinux=Join-Path $versionRoot 'bees-tailnet-bridge'
@@ -242,8 +251,19 @@ function Build-TailnetBridge {
 }
 
 function Get-TailnetBridgePaths {
-    if(-not(Test-Path -LiteralPath $TailnetBridgeManifestPath)){
-        throw "Tailnet bridge manifest is missing. Run '.\Assets\bees.ps1 build' first."
+    $sourceHash=Get-TailnetBridgeSourceHash
+    $needsBuild=-not(Test-Path -LiteralPath $TailnetBridgeManifestPath)
+    if(-not $needsBuild){
+        try {
+            $current=Get-Content -LiteralPath $TailnetBridgeManifestPath -Raw | ConvertFrom-Json
+            $needsBuild=([string]$current.source_hash -ne $sourceHash)
+        } catch {
+            $needsBuild=$true
+        }
+    }
+    if($needsBuild){
+        Write-Host "Embedded Bees tailnet helper source changed; rebuilding helper only..."
+        Build-TailnetBridge
     }
     $value=Get-Content -LiteralPath $TailnetBridgeManifestPath -Raw | ConvertFrom-Json
     foreach($path in @(
