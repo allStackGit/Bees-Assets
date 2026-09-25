@@ -430,6 +430,24 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void HealingActionSuppressesWeaponFire()
+        {
+            Type agentType = RuntimeAssembly.GetType("RlOneVsOneAgent");
+            int healingAction = (int)RuntimeAssembly.GetStaticField(agentType, "HealingAction");
+            int noSpecialAction = (int)RuntimeAssembly.GetStaticField(agentType, "NoSpecialAction");
+
+            Assert.That((bool)RuntimeAssembly.InvokeStatic(
+                agentType,
+                "SpecialActionAllowsWeaponFire",
+                healingAction), Is.False,
+                "Choosing the healing action must suppress every weapon fire branch for that decision.");
+            Assert.That((bool)RuntimeAssembly.InvokeStatic(
+                agentType,
+                "SpecialActionAllowsWeaponFire",
+                noSpecialAction), Is.True);
+        }
+
+        [Test]
         public void PrimitiveCapabilityActionsAreMaskedByCapabilityNotCurrentSituation()
         {
             string source = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
