@@ -199,6 +199,16 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _decode_release_metadata(data: bytes) -> Mapping[str, object]:
+    try:
+        value = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"bootstrap release metadata is invalid JSON: {exc}") from exc
+    if not isinstance(value, Mapping):
+        raise ValueError("bootstrap release metadata must be a JSON object")
+    return value
+
+
 def _runtime_version_from_root(root: Path) -> str:
     path = root / "bees-runtime-version.txt"
     try:
@@ -437,8 +447,8 @@ class RuntimeUpdater:
         runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
         runtime_version = _runtime_version_from_zip(runtime_zip)
-        release = json.loads(release_bytes.decode("utf-8"))
-        staged_build_id = str(release.get("build_id", "")) if isinstance(release, Mapping) else ""
+        release = _decode_release_metadata(release_bytes)
+        staged_build_id = str(release.get("build_id", ""))
         if not staged_build_id:
             raise ValueError("bootstrap release metadata has no build_id")
         bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
