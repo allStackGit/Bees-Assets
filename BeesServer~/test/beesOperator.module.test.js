@@ -88,9 +88,18 @@ test('bees.ps1 waits for Unity entrypoint visibility after batch exit', () => {
 test('bees.ps1 explicitly waits for Unity GUI process completion', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const unityBuild = source.match(/function Invoke-UnityBuild[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(unityBuild, /Start-Process -FilePath \$Unity[\s\S]*?-Wait -PassThru/);
+    assert.match(unityBuild, /Start-Process -FilePath \$Unity[\s\S]*?-PassThru/);
+    assert.match(unityBuild, /while\(-not \$unityProcess\.WaitForExit\(1000\)\)/);
     assert.match(unityBuild, /\$unityProcess\.ExitCode -ne 0/);
     assert.doesNotMatch(unityBuild, /Invoke-Checked \$Unity/);
+});
+
+test('bees.ps1 shows live elapsed status during Unity builds', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const unityBuild = source.match(/function Invoke-UnityBuild[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(unityBuild, /Write-Progress -Activity \$progressActivity -Status/);
+    assert.match(unityBuild, /elapsed\.ToString\('hh\\:mm\\:ss'\)/);
+    assert.match(unityBuild, /Write-Progress -Activity \$progressActivity -Completed/);
 });
 
 test('bees.ps1 includes Unity log tail on nonzero build exit', () => {
