@@ -17,6 +17,7 @@ RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TEXT_LOG_SUFFIXES = {".log", ".txt"}
 MAX_METADATA_BYTES = 16 * 1024 * 1024
 MAX_STEP_SCAN_BYTES = 4 * 1024 * 1024
+MIN_TEXT_LOG_TAIL_BYTES = 128 * 1024
 MODEL_LAG_WARNING_STEPS = 5000
 TRAINER_LOG_STALE_SECONDS = 30.0
 STEP_RE = re.compile(r"\bStep\s*[:=]\s*(\d+)", re.IGNORECASE)
@@ -94,10 +95,18 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def tail_offset(size: int, percent: float) -> int:
+def tail_offset(
+    size: int,
+    percent: float,
+    minimum_bytes: int = MIN_TEXT_LOG_TAIL_BYTES,
+) -> int:
     if size <= 0 or percent >= 100.0:
         return 0
-    wanted = max(1, int(math.ceil(size * percent / 100.0)))
+    wanted = max(
+        1,
+        int(math.ceil(size * percent / 100.0)),
+        max(0, int(minimum_bytes)),
+    )
     return max(0, size - wanted)
 
 
