@@ -204,6 +204,41 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         self.assertEqual(session["remote_worker_base"], 0)
         self.assertEqual(session["capacity_envs"], 12 * 64)
 
+    def test_blocking_zero_local_batch_counts_as_learner_consumed(self):
+        broker = self._broker()
+        specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        broker._trajectory_batches.put_nowait(
+            {
+                "actor_id": 0,
+                "policy_versions": {},
+                "control_epoch": broker.control_epoch,
+                "trajectories": [object()],
+                "step_count": 19,
+            }
+        )
+        manager = zero_local.ZeroLocalElasticWanEnvManagerMixin.__new__(
+            zero_local.ZeroLocalElasticWanEnvManagerMixin
+        )
+        manager._bees_wan_broker = broker
+
+        batch = manager._wait_for_current_remote_batch()
+        self.assertEqual(batch["step_count"], 19)
+        state = broker.wait_state(
+            broker._policy_epoch,
+            broker.control_epoch,
+            0.0,
+        )
+        self.assertEqual(state["consumed_steps_by_actor"]["0"], 19)
+
     def test_stale_release_cannot_seed_zero_local_behavior_specs(self):
         broker = self._broker()
         specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
