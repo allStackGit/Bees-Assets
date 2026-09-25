@@ -438,6 +438,7 @@ internal sealed class RlOneVsOneAgent : Agent
         SetCommunicationActions(_ship, continuous);
 
         var discrete = actions.DiscreteActions;
+        bool allowWeaponFire = SpecialActionAllowsWeaponFire(discrete[SpecialActionBranch]);
         for (int slot = 0; slot < MaxWeaponSlots; slot++)
         {
             int aimStart = WeaponAimContinuousActionStart + slot * WeaponAimContinuousActionsPerSlot;
@@ -449,7 +450,8 @@ internal sealed class RlOneVsOneAgent : Agent
                     frameQuarterTurns);
             }
 
-            bool fire = discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
+            bool fire = allowWeaponFire &&
+                        discrete[WeaponFireBranchStart + slot] == FireWeaponAction;
             ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
@@ -530,6 +532,11 @@ internal sealed class RlOneVsOneAgent : Agent
     {
         return _ship != null && _ship.Weapons != null && slot >= 0 && slot < MaxWeaponSlots &&
                slot < _ship.Weapons.Count && _ship.Weapons[slot] is Turret;
+    }
+
+    internal static bool SpecialActionAllowsWeaponFire(int specialAction)
+    {
+        return specialAction != HealingAction;
     }
 
     private void ApplySpecialAction()
