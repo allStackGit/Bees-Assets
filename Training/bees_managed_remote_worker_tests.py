@@ -214,5 +214,60 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertNotIn("ssh", " ".join(command).lower())
 
 
+    def test_run_scoped_log_sink_writes_into_worker_uploaded_log_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sink = managed._RunScopedLogSink(root / "ManagedBuilds" / "logs")
+            sink.write("before-run\n")
+            self.assertFalse(any(root.rglob("remote-supervisor.log")))
+
+            sink.set_run_id("bees-v20-test")
+            sink.write("[Bees WAN actor] session failed: example\n")
+
+            log = (
+                root
+                / "ManagedBuilds"
+                / "logs"
+                / "bees-v20-test"
+                / "remote-supervisor.log"
+            )
+            self.assertTrue(log.is_file())
+            self.assertIn("session failed", log.read_text(encoding="utf-8"))
+
+    def test_status_summary_assigns_supervisor_log_to_active_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sink = managed._RunScopedLogSink(root / "logs")
+            args = Namespace(envs=8)
+            status = {
+                "desired": {
+                    "run_id": "bees-v20-active",
+                    "canonical_build_id": "build-a",
+                },
+                "trainers": [
+                    {
+                        "trainer_id": "remote-test",
+                        "process_state": "running",
+                        "stale": False,
+                        "build_id": "build-a",
+                        "applied_revision": 4,
+                        "last_error": "",
+                    }
+                ],
+            }
+            with mock.patch.object(managed, "_control_status", return_value=status):
+                summary = managed._remote_status_summary(
+                    args,
+                    "remote-test",
+                    log_sink=sink,
+                )
+
+            self.assertIn("state=running", summary)
+            sink.write("captured\n")
+            self.assertTrue(
+                (root / "logs" / "bees-v20-active" / "remote-supervisor.log").is_file()
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
