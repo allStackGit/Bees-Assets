@@ -57,6 +57,8 @@ $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
 $CentralAgentShutdownRequestPath=Join-Path $CentralAgentInstallRoot 'worker-shutdown.request'
+$CentralModelSnapshotRequestPath=Join-Path $CentralAgentInstallRoot 'model-snapshot.request'
+$CentralModelSnapshotResponsePath=Join-Path $CentralAgentInstallRoot 'model-snapshot.response.json'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
 $TailnetRoot=Join-Path $RuntimeRoot 'Tailnet'
 $TailnetBinRoot=Join-Path $TailnetRoot 'Bin'
@@ -1654,6 +1656,95 @@ function Show-Status($Config,[string]$AdminToken,[bool]$Single){
     }
 }
 
+function Write-DiagnosticJson([string]$Path,$Value){
+    $json=$Value | ConvertTo-Json -Depth 24
+    [IO.File]::WriteAllText(
+        $Path,
+        $json + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+}
+
+function Request-CentralDiagnosticModelSnapshot($Status,[string]$TargetRunId,[string]$OutputPath){
+    $result=[ordered]@{
+        schema_version=1
+        status='skipped'
+        run_id=$TargetRunId
+        requested_utc=[DateTime]::UtcNow.ToString('o')
+        reason=''
+    }
+    try {
+        if($null -eq $Status){
+            $result.reason='training control is unavailable'
+            return
+        }
+        $activeRun=if($Status.desired -and $Status.desired.run_id){([string]$Status.desired.run_id).Trim()}else{''}
+        if(-not $TargetRunId){
+            $result.reason='no active run could be determined'
+            return
+        }
+        if($activeRun -ne $TargetRunId){
+            $result.reason="requested run $TargetRunId is not the active run $activeRun"
+            return
+        }
+
+        $central=@($Status.trainers | Where-Object { $_.trainer_id -eq 'central-learner' } | Select-Object -First 1)
+        if($central.Count -eq 0){
+            $result.reason='central learner is not registered'
+            return
+        }
+        $centralRecord=$central[0]
+        if($centralRecord.stale -or ([string]$centralRecord.process_state) -ne 'running'){
+            $result.reason="central learner is not actively training (state=$($centralRecord.process_state) stale=$($centralRecord.stale))"
+            return
+        }
+        if((Get-RunningCentralAgentPid) -le 0){
+            $result.reason='managed central learner process is not running'
+            return
+        }
+
+        Ensure-Directory $CentralAgentInstallRoot
+        $requestId=[Guid]::NewGuid().ToString('N')
+        $request=[ordered]@{
+            schema_version=1
+            request_id=$requestId
+            run_id=$TargetRunId
+            requested_utc=[DateTime]::UtcNow.ToString('o')
+        }
+        Remove-Item -LiteralPath $CentralModelSnapshotResponsePath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $CentralModelSnapshotRequestPath -Force -ErrorAction SilentlyContinue
+        $requestTemp="$CentralModelSnapshotRequestPath.new-$requestId"
+        Write-DiagnosticJson $requestTemp $request
+        Install-AtomicFile $requestTemp $CentralModelSnapshotRequestPath
+
+        Write-Host 'Requesting current learner ONNX snapshot...'
+        $deadline=[DateTime]::UtcNow.AddSeconds(60)
+        while([DateTime]::UtcNow -lt $deadline){
+            if(Test-Path -LiteralPath $CentralModelSnapshotResponsePath){
+                try {
+                    $response=Get-Content -LiteralPath $CentralModelSnapshotResponsePath -Raw | ConvertFrom-Json
+                    if(([string]$response.request_id) -eq $requestId){
+                        $result=[ordered]@{}
+                        foreach($property in $response.PSObject.Properties){
+                            $result[$property.Name]=$property.Value
+                        }
+                        return
+                    }
+                } catch {}
+            }
+            Start-Sleep -Milliseconds 200
+        }
+        $result.status='timeout'
+        $result.reason='live learner did not complete the diagnostic model snapshot within 60 seconds'
+    } catch {
+        $result.status='failed'
+        $result.reason="$($_.Exception.GetType().Name): $($_.Exception.Message)"
+    } finally {
+        Remove-Item -LiteralPath $CentralModelSnapshotRequestPath -Force -ErrorAction SilentlyContinue
+        Write-DiagnosticJson $OutputPath $result
+    }
+}
+
 function Invoke-Bundle {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
@@ -1663,20 +1754,30 @@ function Invoke-Bundle {
 
     Ensure-Directory $RuntimeRoot
     $admin=Ensure-TokenFile $AdminTokenPath
-    $snapshotId=[Guid]::NewGuid().ToString('N')
-    $statusJson=Join-Path $RuntimeRoot "diagnostic-status-$snapshotId.json"
-    $statusText=Join-Path $RuntimeRoot "diagnostic-status-$snapshotId.txt"
+    $bundleId=[Guid]::NewGuid().ToString('N')
+    $statusJson=Join-Path $RuntimeRoot "diagnostic-status-$bundleId.json"
+    $statusText=Join-Path $RuntimeRoot "diagnostic-status-$bundleId.txt"
+    $snapshotJson=Join-Path $RuntimeRoot "diagnostic-model-snapshot-$bundleId.json"
+    $status=$null
 
     try {
         try {
             if(Test-Control ([string]$config.controlUrl) $admin){
                 $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
-                $statusPayload=$status | ConvertTo-Json -Depth 24
-                [IO.File]::WriteAllText(
-                    $statusJson,
-                    $statusPayload + [Environment]::NewLine,
-                    (New-Object Text.UTF8Encoding($false))
-                )
+            }
+        } catch {
+            Write-Warning "Could not query live training-control state: $($_.Exception.Message)"
+        }
+
+        $targetRun=if($RunId){$RunId}else{Get-ActiveRunId $config}
+        Request-CentralDiagnosticModelSnapshot $status $targetRun $snapshotJson
+
+        # Refresh status after the snapshot so learner-step/model-lag diagnostics compare
+        # against the same moment rather than the pre-export state.
+        try {
+            if(Test-Control ([string]$config.controlUrl) $admin){
+                $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+                Write-DiagnosticJson $statusJson $status
             }
         } catch {
             Write-Warning "Could not capture live training-control JSON: $($_.Exception.Message)"
@@ -1710,11 +1811,15 @@ function Invoke-Bundle {
         if(Test-Path -LiteralPath $statusText){
             $arguments+=@('--status-text',$statusText)
         }
+        if(Test-Path -LiteralPath $snapshotJson){
+            $arguments+=@('--snapshot-json',$snapshotJson)
+        }
 
         Invoke-Checked $python $arguments $AssetsRoot | Out-Host
     } finally {
         Remove-Item -LiteralPath $statusJson -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $statusText -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $snapshotJson -Force -ErrorAction SilentlyContinue
     }
 }
 
