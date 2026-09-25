@@ -134,10 +134,70 @@ class ReleaseCycleTests(unittest.TestCase):
         return run_release_cycle(
             self.store,
             environment_path="unused-test-environment",
+            training_run_id=kwargs.pop("training_run_id", "release-test"),
             evaluator=kwargs.pop("evaluator", self.passing_evaluator),
             publisher=kwargs.pop("publisher", self.publisher),
             health_checker=kwargs.pop("health_checker", self.health_checker),
             **kwargs,
+        )
+
+    def test_fresh_store_automatically_bootstraps_newest_generation_zero_candidate(self):
+        older = self.register("generation-zero-older.onnx", b"generation-zero-older", 100)
+        newer = self.register("generation-zero-newer.onnx", b"generation-zero-newer", 200)
+        evaluator_calls = []
+
+        def evaluator(*args, **kwargs):
+            evaluator_calls.append((args, kwargs))
+            return self.passing_evaluator(*args, **kwargs)
+
+        result = self.run_cycle(evaluator=evaluator)
+
+        self.assertEqual(result["status"], "bootstrapped")
+        self.assertEqual(result["processed"][0]["decision"], "bootstrapped")
+        self.assertEqual(result["processed"][0]["candidate_model_id"], newer["model_id"])
+        self.assertEqual(self.store.current_champion_id(), newer["model_id"])
+        self.assertEqual(self.store.current_compatible_champion_id(), newer["model_id"])
+        self.assertEqual(self.store.get_model(older["model_id"])["status"], "candidate")
+        self.assertEqual(evaluator_calls, [])
+        self.assertEqual(self.published_model_ids, [newer["model_id"]])
+        self.assertEqual(self.health_checked_model_ids, [newer["model_id"]])
+
+    def test_incompatible_old_champion_is_rebased_automatically(self):
+        old_config = copy.deepcopy(TEST_CONFIG)
+        old_config["policy_abi_version"] = TEST_CONFIG["policy_abi_version"] - 1
+        old_config["policy_signature"] = "obsolete-release-test-policy"
+        old_store = ContinualLearningStore(self.root, old_config)
+        old_store.initialize()
+        old_path = self.artifact_dir / "old-generation.onnx"
+        old_path.write_bytes(b"old-generation")
+        old_candidate = old_store.register_model(
+            old_path,
+            training_run_id="old-run",
+            training_step=100,
+            game_build_version="old-build",
+            status="candidate",
+        )
+        old_champion = bootstrap_champion(
+            old_store,
+            old_candidate["model_id"],
+            reason="Old compatibility baseline",
+        )
+
+        self.assertEqual(self.store.current_champion_id(), old_champion["model_id"])
+        self.assertIsNone(self.store.current_compatible_champion_id())
+        candidate = self.register("new-generation.onnx", b"new-generation", 300)
+
+        result = self.run_cycle()
+
+        self.assertEqual(result["status"], "bootstrapped")
+        self.assertEqual(self.store.current_champion_id(), candidate["model_id"])
+        self.assertEqual(self.store.current_compatible_champion_id(), candidate["model_id"])
+        self.assertEqual(self.store.get_model(old_champion["model_id"])["status"], "retired")
+        self.assertEqual(
+            self.store.get_model(candidate["model_id"])["metadata"]["champion_bootstrap"][
+                "replaced_incompatible_champion_model_id"
+            ],
+            old_champion["model_id"],
         )
 
     def test_default_cycle_processes_only_newest_compatible_candidate(self):
