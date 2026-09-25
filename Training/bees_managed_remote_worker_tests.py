@@ -77,6 +77,67 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_unhealthy_python_waits_for_repair_cutover(self):
+        args = Namespace()
+        process = mock.Mock()
+        process.poll.return_value = None
+        updater = mock.Mock()
+        expected = Path("/tmp/repaired-runtime")
+        with (
+            mock.patch.object(
+                managed,
+                "_python_remote_dependencies_ok",
+                return_value=False,
+            ),
+            mock.patch.object(
+                managed,
+                "_runtime_cutover_selected",
+                side_effect=[None, expected],
+            ) as selected,
+            mock.patch.object(
+                managed,
+                "_remote_status_summary",
+                return_value="[status]",
+            ),
+            mock.patch.object(managed.time, "sleep"),
+        ):
+            result = managed._wait_for_dependency_repair_cutover(
+                args,
+                "trainer-1",
+                updater,
+                process,
+                [False],
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(selected.call_count, 2)
+
+    def test_healthy_python_does_not_wait_for_repair_cutover(self):
+        args = Namespace()
+        process = mock.Mock()
+        updater = mock.Mock()
+        with (
+            mock.patch.object(
+                managed,
+                "_python_remote_dependencies_ok",
+                return_value=True,
+            ),
+            mock.patch.object(
+                managed,
+                "_runtime_cutover_selected",
+            ) as selected,
+        ):
+            result = managed._wait_for_dependency_repair_cutover(
+                args,
+                "trainer-1",
+                updater,
+                process,
+                [False],
+            )
+
+        self.assertIsNone(result)
+        selected.assert_not_called()
+
     def test_runtime_version_is_read_from_executing_root_not_mutable_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
