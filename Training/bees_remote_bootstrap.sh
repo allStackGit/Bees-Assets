@@ -86,17 +86,30 @@ recorded_pid() {
     if [[ ! -f "$SUPERVISOR_PID_FILE" ]]; then
         return 1
     fi
-    local value
-    value="$(tr -d '\r\n' < "$SUPERVISOR_PID_FILE" 2>/dev/null || true)"
+    local value=""
+    IFS= read -r value < "$SUPERVISOR_PID_FILE" || true
     if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value <= 0 )); then
         return 1
     fi
     printf '%s' "$value"
 }
 
+pid_is_supervisor() {
+    local pid="$1"
+    local part=""
+    local command_line=""
+    if ! kill -0 "$pid" 2>/dev/null || [[ ! -r "/proc/$pid/cmdline" ]]; then
+        return 1
+    fi
+    while IFS= read -r -d '' part; do
+        command_line+="$part "
+    done < "/proc/$pid/cmdline"
+    [[ "$command_line" == *"bees_managed_remote_worker.py"* && "$command_line" == *"$INSTALL_ROOT"* ]]
+}
+
 if [[ "$COMMAND" == "stop" ]]; then
     PID="$(recorded_pid || true)"
-    if [[ -z "$PID" ]] || ! kill -0 "$PID" 2>/dev/null; then
+    if [[ -z "$PID" ]] || ! pid_is_supervisor "$PID"; then
         rm -f "$SUPERVISOR_PID_FILE" "$SHUTDOWN_REQUEST_FILE"
         echo "[Bees remote] worker is not running."
         exit 0
@@ -119,7 +132,7 @@ if [[ "$COMMAND" == "stop" ]]; then
 fi
 
 PID="$(recorded_pid || true)"
-if [[ -n "$PID" ]] && kill -0 "$PID" 2>/dev/null; then
+if [[ -n "$PID" ]] && pid_is_supervisor "$PID"; then
     echo "[Bees remote] worker is already running in the background (PID $PID)."
     echo "[Bees remote] use 'bash bees-remote-worker.sh stop' to stop it."
     exit 0
