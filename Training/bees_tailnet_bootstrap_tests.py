@@ -15,6 +15,7 @@ LINUX_TEMPLATE = ROOT / "Training" / "bees_remote_bootstrap.sh"
 MANAGED_WORKER = ROOT / "Training" / "bees_managed_remote_worker.py"
 ELASTIC_WORKER = ROOT / "Training" / "bees_elastic_wan_actor_worker.py"
 CLUSTER = ROOT / "Training" / "bees.cluster.json"
+REMOTE_REQUIREMENTS = ROOT / "Training" / "bees_remote_requirements.txt"
 TAILNET_MAIN = ROOT / "Tools~" / "bees-tailnet-bridge" / "main.go"
 PLACEHOLDER = re.compile(r"__BEES_[A-Z0-9_]+__")
 
@@ -65,6 +66,19 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("AddSeconds(180)", operator)
         self.assertIn("Refusing to stop BeesServer while checkpoint/log preservation is incomplete.", operator)
         self.assertIn("Refusing to stop BeesServer because checkpoint completion cannot be coordinated.", operator)
+
+    def test_remote_runtime_pins_pkg_resources_provider_and_validates_imports(self):
+        requirements = REMOTE_REQUIREMENTS.read_text(encoding="utf-8")
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+        managed = MANAGED_WORKER.read_text(encoding="utf-8")
+
+        self.assertIn("setuptools>=41,<82", requirements)
+        for source in (windows, linux, managed):
+            self.assertIn("pkg_resources", source)
+        self.assertIn("Remote Python dependency validation failed", windows)
+        self.assertIn("remote Python dependency validation failed", linux)
+        self.assertIn("_python_remote_dependencies_ok", managed)
 
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
