@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +77,56 @@ class ContinualBootstrapTests(unittest.TestCase):
             self.assertEqual(store.current_champion_id(), first["model_id"])
             self.assertEqual(store.get_model(second["model_id"])["status"], "candidate")
             self.assertTrue(second_path.is_file())
+
+    def test_bootstrap_retires_incompatible_current_champion_and_starts_new_generation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            current_config = load_config()
+            old_config = copy.deepcopy(current_config)
+            old_config["policy_abi_version"] = int(current_config["policy_abi_version"]) - 1
+            old_config["policy_signature"] = "obsolete-test-policy-signature"
+
+            old_store = ContinualLearningStore(temp, config=old_config)
+            old_store.initialize()
+            old_candidate = self.register_candidate(
+                old_store, temp, "old-seed", b"old-seed-policy"
+            )
+            old_champion = bootstrap_champion(
+                old_store,
+                old_candidate["model_id"],
+                reason="Previous compatibility baseline",
+            )
+
+            store = ContinualLearningStore(temp, config=current_config)
+            store.initialize()
+            self.assertEqual(store.current_champion_id(), old_champion["model_id"])
+            self.assertIsNone(store.current_compatible_champion_id())
+
+            candidate = self.register_candidate(
+                store, temp, "new-seed", b"new-seed-policy"
+            )
+            champion = bootstrap_champion(
+                store,
+                candidate["model_id"],
+                reason="New compatibility generation baseline",
+            )
+
+            self.assertEqual(store.current_champion_id(), candidate["model_id"])
+            self.assertEqual(store.current_compatible_champion_id(), candidate["model_id"])
+            self.assertEqual(store.get_model(old_champion["model_id"])["status"], "retired")
+            self.assertEqual(
+                champion["metadata"]["champion_bootstrap"][
+                    "replaced_incompatible_champion_model_id"
+                ],
+                old_champion["model_id"],
+            )
+            with self.assertRaises(PromotionError):
+                bootstrap_champion(
+                    store,
+                    self.register_candidate(
+                        store, temp, "replacement", b"replacement-policy"
+                    )["model_id"],
+                    reason="Unsafe second bootstrap in the same compatibility generation",
+                )
 
     def test_bootstrap_refuses_hidden_prior_history_even_if_state_is_corrupted(self):
         with tempfile.TemporaryDirectory() as temp:
