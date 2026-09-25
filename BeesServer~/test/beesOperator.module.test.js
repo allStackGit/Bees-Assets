@@ -219,3 +219,31 @@ test('Windows self-extractor matches only the terminal payload marker lines', ()
     assert.match(remoteBootstrap, /\$bytes\[0\] -ne 0x50/);
     assert.match(remoteBootstrap, /\$bytes\[1\] -ne 0x4B/);
 });
+
+
+test('bees.ps1 ends cleanly after the operator command switch', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8').trimEnd();
+    const expectedEnding = [
+        'switch($Command){',
+        "    'build'{Invoke-Build}",
+        "    'server'{Invoke-Server}",
+        "    'start'{Invoke-Start}",
+        "    'stop'{Invoke-Stop}",
+        "    'status'{Invoke-Status}",
+        '}',
+    ].join('\n');
+    assert.ok(
+        source.endsWith(expectedEnding),
+        'bees.ps1 must not contain generated launcher fragments or other text after the final command switch.'
+    );
+});
+
+test('Windows launcher here-string is structurally complete', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const start = source.indexOf("$windowsCmd=@'");
+    const end = source.indexOf("\n'@\n", start);
+    assert.ok(start >= 0, 'Windows launcher here-string start is missing.');
+    assert.ok(end > start, 'Windows launcher here-string terminator is missing.');
+    const block = source.slice(start, end);
+    assert.match(block, /^\s*\$windowsCmd=@'[\s\S]*::BEES_PAYLOAD_BEGIN[\s\S]*::BEES_PAYLOAD_END/m);
+});
