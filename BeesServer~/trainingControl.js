@@ -456,6 +456,8 @@ class TrainingControlStore {
             trainer_id: record.trainer_id,
             platform: record.platform,
         });
+        pending.required_trainers.sort(
+            (left, right) => this._dedicatedBarrierSort(left, right));
         return true;
     }
 
