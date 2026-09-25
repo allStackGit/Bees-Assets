@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import bees_continual_release as release_module
 import bees_continual_service as service
 
 
@@ -209,6 +210,10 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertFalse(any(item.startswith("--game-build-version=") for item in release))
             self.assertNotIn("--once", release)
             self.assertNotIn("--no-graphics", release)
+            parsed_release = release_module.build_parser().parse_args(release[2:])
+            self.assertEqual(parsed_release.root, str(options.root))
+            self.assertEqual(parsed_release.env, str(options.training_env))
+            self.assertEqual(parsed_release.training_run_id, options.run_id)
 
             stage = service.stage_command(options)
             self.assertTrue(any("bees_continual_unity_bundle.py" in item for item in stage))
