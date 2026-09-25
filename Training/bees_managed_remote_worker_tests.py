@@ -119,6 +119,60 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         ready = command[command.index("--runtime-ready-file") + 1]
         self.assertTrue(ready.endswith("runtime-ready-build.txt"))
 
+    def test_unhealthy_active_python_stages_repair_without_runtime_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime_archive = root / "runtime.zip"
+            runtime_archive.write_bytes(b"same-runtime")
+            bridge = root / "bridge"
+            bridge.write_bytes(b"same-bridge")
+            args = Namespace(
+                runtime_archive=str(runtime_archive),
+                tailnet_bridge=str(bridge),
+                worker_token_file=str(root / "worker.token"),
+                wan_token_file=str(root / "wan.token"),
+                bootstrap_token_file=str(root / "bootstrap.token"),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            release = b'{"build_id":"build-1"}'
+            with (
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap",
+                    return_value=(
+                        b"same-runtime",
+                        b"worker-token",
+                        b"wan-token",
+                        b"same-bridge",
+                        release,
+                    ),
+                ),
+                mock.patch.object(
+                    managed,
+                    "_runtime_version_from_zip",
+                    return_value="",
+                ),
+                mock.patch.object(
+                    managed,
+                    "_python_remote_dependencies_ok",
+                    return_value=False,
+                ),
+                mock.patch.object(
+                    updater,
+                    "_prepare_python_for_requirements",
+                    return_value=root / "healthy-python",
+                ) as prepare,
+            ):
+                updater._stage_once()
+
+            prepare.assert_called_once()
+            _, staged_root, _, staged_python, staged_build_id, error = updater.staged()
+            self.assertEqual(staged_root, Path(managed.__file__).resolve().parent)
+            self.assertEqual(staged_python, root / "healthy-python")
+            self.assertEqual(staged_build_id, "build-1")
+            self.assertEqual(error, "")
+
     def test_tailnet_forward_command_maps_control_and_broker(self):
         args = Namespace(
             tailnet_bridge="bridge",
