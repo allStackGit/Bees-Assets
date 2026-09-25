@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true,Position=0)]
-    [ValidateSet('build','server','start','stop','status')]
+    [ValidateSet('build','server','start','stop','status','bundle')]
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
@@ -8,7 +8,9 @@ param(
     [string[]]$EnvArg,
     [switch]$Once,
     [ValidateRange(1,60)][int]$RefreshSeconds=2,
-    [switch]$Server
+    [switch]$Server,
+    [ValidateRange(0.1,100.0)][double]$LogPercent=10.0,
+    [string]$RunId
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +18,12 @@ $ErrorActionPreference='Stop'
 
 if($NewRun -and $Command -ne 'start'){
     throw '-NewRun is only valid with the start command.'
+}
+if($Command -ne 'bundle' -and $PSBoundParameters.ContainsKey('LogPercent')){
+    throw '-LogPercent is only valid with the bundle command.'
+}
+if($Command -ne 'bundle' -and $RunId){
+    throw '-RunId is only valid with the bundle command.'
 }
 
 $AssetsRoot=[IO.Path]::GetFullPath($PSScriptRoot)
@@ -42,6 +50,7 @@ $RunStatePath=Join-Path $RunLifecycleRoot 'current.json'
 $RunPlanPath=Join-Path $RuntimeRoot 'pending-training-run.json'
 $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
+$DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
@@ -1566,6 +1575,70 @@ function Show-Status($Config,[string]$AdminToken,[bool]$Single){
     }
 }
 
+function Invoke-Bundle {
+    $config=Get-ClusterConfig
+    $python=Resolve-Python $config
+    if(-not(Test-Path -LiteralPath $DiagnosticBundleScript)){
+        throw "Training diagnostic bundle helper is missing: $DiagnosticBundleScript"
+    }
+
+    Ensure-Directory $RuntimeRoot
+    $admin=Ensure-TokenFile $AdminTokenPath
+    $snapshotId=[Guid]::NewGuid().ToString('N')
+    $statusJson=Join-Path $RuntimeRoot "diagnostic-status-$snapshotId.json"
+    $statusText=Join-Path $RuntimeRoot "diagnostic-status-$snapshotId.txt"
+
+    try {
+        try {
+            if(Test-Control ([string]$config.controlUrl) $admin){
+                $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+                $statusPayload=$status | ConvertTo-Json -Depth 24
+                [IO.File]::WriteAllText(
+                    $statusJson,
+                    $statusPayload + [Environment]::NewLine,
+                    (New-Object Text.UTF8Encoding($false))
+                )
+            }
+        } catch {
+            Write-Warning "Could not capture live training-control JSON: $($_.Exception.Message)"
+        }
+
+        try {
+            $statusLines=@(Get-StatusFrameLines $config $admin)
+            [IO.File]::WriteAllLines(
+                $statusText,
+                $statusLines,
+                (New-Object Text.UTF8Encoding($false))
+            )
+        } catch {
+            Write-Warning "Could not capture readable training status: $($_.Exception.Message)"
+        }
+
+        $percentText=$LogPercent.ToString('G',[Globalization.CultureInfo]::InvariantCulture)
+        $arguments=@(
+            $DiagnosticBundleScript,
+            '--bees-root',$BeesRoot,
+            '--assets-root',$AssetsRoot,
+            '--log-percent',$percentText,
+            '--output-root',(Join-Path $BeesRoot 'Diagnostics')
+        )
+        if($RunId){
+            $arguments+=@('--run-id',$RunId)
+        }
+        if(Test-Path -LiteralPath $statusJson){
+            $arguments+=@('--status-json',$statusJson)
+        }
+        if(Test-Path -LiteralPath $statusText){
+            $arguments+=@('--status-text',$statusText)
+        }
+
+        Invoke-Checked $python $arguments $AssetsRoot | Out-Host
+    } finally {
+        Remove-Item -LiteralPath $statusJson -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $statusText -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath; Show-Status $config $admin ([bool]$Once) }
 
 switch($Command){
@@ -1574,4 +1647,5 @@ switch($Command){
     'start'{Invoke-Start}
     'stop'{Invoke-Stop}
     'status'{Invoke-Status}
+    'bundle'{Invoke-Bundle}
 }
