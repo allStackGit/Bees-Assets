@@ -3,6 +3,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Server;
 using Assets.Scripts.Settings;
 using Assets.Scripts.UI_Components;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -28,6 +29,8 @@ namespace Assets.Scripts
         public const int TestPort = 7146;
         public const int ProductionPort = 7144;
         public const int RLPort = 7242;
+        internal const string ManagedTrainingServerHostEnvironmentVariable = "BEES_TRAINING_GAMEPLAY_HOST";
+        internal const string ManagedTrainingServerPortEnvironmentVariable = "BEES_TRAINING_GAMEPLAY_PORT";
         public const int StandardMaxTimeOnQueue = 10;
 
         public static Configuration Configuration;
@@ -71,7 +74,14 @@ namespace Assets.Scripts
                     // does not require Steam authentication and shares the normal development port.
                     _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
 #else
-                    if (Test)
+                    if (TryGetManagedTrainingServerEndpoint(out string managedHost, out int managedPort))
+                    {
+                        // Managed remote RL workers receive a loopback endpoint backed by the
+                        // private tailnet tunnel. Ordinary standalone gameplay keeps the normal
+                        // development/production endpoint below.
+                        _socket = new Socket(managedPort, managedHost, UseWebSocketSharp);
+                    }
+                    else if (Test)
                     {
                         _socket = new Socket(TestPort, TestServerHostname, UseWebSocketSharp);
                     }
@@ -98,6 +108,29 @@ namespace Assets.Scripts
                 }
                 return _socket;
             }
+        }
+
+        internal static bool TryGetManagedTrainingServerEndpoint(out string hostname, out int port)
+        {
+            hostname = Environment.GetEnvironmentVariable(ManagedTrainingServerHostEnvironmentVariable);
+            port = DevelopmentPort;
+            if (string.IsNullOrWhiteSpace(hostname))
+            {
+                hostname = null;
+                return false;
+            }
+
+            hostname = hostname.Trim();
+            string portValue = Environment.GetEnvironmentVariable(ManagedTrainingServerPortEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(portValue) &&
+                (!int.TryParse(portValue, out port) || port < 1 || port > 65535))
+            {
+                Debug.LogWarning(
+                    $"Ignoring invalid {ManagedTrainingServerPortEnvironmentVariable}='{portValue}'; " +
+                    $"using {DevelopmentPort}.");
+                port = DevelopmentPort;
+            }
+            return true;
         }
 
         public static bool FirstTimePlaying;
