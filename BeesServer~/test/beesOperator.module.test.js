@@ -395,3 +395,11 @@ test('central training wrapper is launched with unbuffered Python output', () =>
     const source = fs.readFileSync(operatorPath, 'utf8');
     assert.ok(source.includes("$args=@('-u',$agent,'--server-url'"));
 });
+
+
+test('remote runtime package includes an explicit Training source version marker', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(remoteBootstrap, /\$runtimeVersion=Get-GitTreeSha 'Training'/);
+    assert.match(remoteBootstrap, /bees-runtime-version\.txt/);
+});
