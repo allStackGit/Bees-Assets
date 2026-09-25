@@ -70,6 +70,7 @@ internal static partial class RlPolicySchema
         Check(errors, RlCombatPerception.ParentCarrierObservationSize, 40, "parent-carrier observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
         Check(errors, RlCombatPerception.NavigationGridSize, 21, "navigation grid width");
+        Check(errors, RlCombatPerception.NavigationGridCellSize, 6f, "navigation grid cell size");
         Check(errors, RlCombatPerception.ExplorationGridSize, 16, "exploration grid width");
         Check(errors, RlCombatPerception.ExplorationGridCellCount, 256, "exploration grid cells");
 
@@ -194,6 +195,14 @@ internal static partial class RlPolicySchema
     }
 
     private static void Check(List<string> errors, int actual, int expected, string label)
+    {
+        if (actual != expected)
+        {
+            errors.Add($"{label} expected {expected} but was {actual}");
+        }
+    }
+
+    private static void Check(List<string> errors, float actual, float expected, string label)
     {
         if (actual != expected)
         {
