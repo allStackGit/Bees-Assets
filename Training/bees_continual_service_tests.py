@@ -42,6 +42,20 @@ class ContinualServiceTests(unittest.TestCase):
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             killpg.assert_not_called()
 
+    def test_fast_child_exit_still_treats_stop_file_as_interrupted_generation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            fake = mock.Mock()
+            fake.poll.side_effect = [0, 0]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
+                mock.patch.object(service.subprocess, "Popen", return_value=fake),
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    service._run_managed_subprocess(["python", "trainer.py"], options)
+
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir), generation_steps=250_000)
