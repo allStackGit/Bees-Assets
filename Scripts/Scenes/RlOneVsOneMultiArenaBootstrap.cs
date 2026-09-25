@@ -200,6 +200,39 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
         return worldPosition;
     }
 
+    internal static Vector2 ClampProjectedVelocityToArena(
+        Vector2 position,
+        Vector2 velocity,
+        float minX,
+        float maxX,
+        float minY,
+        float maxY,
+        float fixedDeltaTime)
+    {
+        float deltaTime = Mathf.Max(fixedDeltaTime, 0.0001f);
+        Vector2 projectedPosition = position + velocity * deltaTime;
+
+        if (projectedPosition.x < minX && velocity.x < 0f)
+        {
+            velocity.x = (minX - position.x) / deltaTime;
+        }
+        else if (projectedPosition.x > maxX && velocity.x > 0f)
+        {
+            velocity.x = (maxX - position.x) / deltaTime;
+        }
+
+        if (projectedPosition.y < minY && velocity.y < 0f)
+        {
+            velocity.y = (minY - position.y) / deltaTime;
+        }
+        else if (projectedPosition.y > maxY && velocity.y > 0f)
+        {
+            velocity.y = (maxY - position.y) / deltaTime;
+        }
+
+        return velocity;
+    }
+
     private static void ConstrainShipToArena(Level level, Ship ship)
     {
         if (ship == null || ship.IsDead || ship.CanOverrideBounds || ship.Body == null)
@@ -222,29 +255,25 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
         Vector2 clampedPosition = new Vector2(
             Mathf.Clamp(position.x, minX, maxX),
             Mathf.Clamp(position.y, minY, maxY));
-        if (position == clampedPosition)
+
+        if (position != clampedPosition)
         {
-            return;
+            Vector3 localPosition = ship.transform.localPosition;
+            localPosition.x = clampedPosition.x;
+            localPosition.y = clampedPosition.y;
+            Vector2 worldPosition = GetWorldPositionForLocalShipPosition(ship.transform, localPosition);
+            ship.transform.localPosition = localPosition;
+            ship.Body.position = worldPosition;
+            position = clampedPosition;
         }
 
-        Vector3 localPosition = ship.transform.localPosition;
-        localPosition.x = clampedPosition.x;
-        localPosition.y = clampedPosition.y;
-        Vector2 worldPosition = GetWorldPositionForLocalShipPosition(ship.transform, localPosition);
-        ship.transform.localPosition = localPosition;
-        ship.Body.position = worldPosition;
-
-        Vector2 velocity = ship.Body.linearVelocity;
-        if ((Mathf.Approximately(clampedPosition.x, minX) && velocity.x < 0f) ||
-            (Mathf.Approximately(clampedPosition.x, maxX) && velocity.x > 0f))
-        {
-            velocity.x = 0f;
-        }
-        if ((Mathf.Approximately(clampedPosition.y, minY) && velocity.y < 0f) ||
-            (Mathf.Approximately(clampedPosition.y, maxY) && velocity.y > 0f))
-        {
-            velocity.y = 0f;
-        }
-        ship.Body.linearVelocity = velocity;
+        ship.Body.linearVelocity = ClampProjectedVelocityToArena(
+            position,
+            ship.Body.linearVelocity,
+            minX,
+            maxX,
+            minY,
+            maxY,
+            Time.fixedDeltaTime);
     }
 }
