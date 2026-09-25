@@ -163,6 +163,29 @@ class WanOptionTests(unittest.TestCase):
                 env_count=4,
             )
 
+    def test_actor_player_log_tail_reports_missing_logs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch("builtins.print") as printer:
+                actor.ActorSession._print_player_log_tails(temp, lines=10)
+        self.assertTrue(
+            any(
+                "no Unity Player-*.log files found" in str(call)
+                for call in printer.call_args_list
+            )
+        )
+
+    def test_actor_player_log_tail_prints_recent_lines(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "Player-0.log"
+            path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            with mock.patch("builtins.print") as printer:
+                actor.ActorSession._print_player_log_tails(temp, lines=2)
+        rendered = "\n".join(str(call) for call in printer.call_args_list)
+        self.assertIn("Unity log tail", rendered)
+        self.assertNotIn("one", rendered)
+        self.assertIn("two", rendered)
+        self.assertIn("three", rendered)
+
     def test_actor_managed_log_directory_does_not_mutate_checkpoint_settings(self):
         class ReadOnlyCheckpointSettings:
             @property
