@@ -975,7 +975,7 @@ function Prepare-RemoteBootstrap($Config){
         Remove-Item -LiteralPath $windowsPayloadZip -Force -ErrorAction SilentlyContinue
     }
 
-    $windowsCmd=@"
+    $windowsCmd=@'
 @echo off
 setlocal EnableExtensions
 echo [Bees remote] launching Windows training worker...
@@ -985,7 +985,7 @@ set "BEES_PAYLOAD_ZIP=%BEES_BOOTSTRAP_DIR%\payload.zip"
 if exist "%BEES_BOOTSTRAP_DIR%" rd /s /q "%BEES_BOOTSTRAP_DIR%"
 mkdir "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
 echo [Bees remote] extracting bundled bootstrap...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "\$t=[IO.File]::ReadAllText(\$env:BEES_SELF);\$s='::BEES_PAYLOAD_BEGIN';\$e='::BEES_PAYLOAD_END';\$i=\$t.IndexOf(\$s);\$j=\$t.IndexOf(\$e,\$i+\$s.Length);if(\$i -lt 0 -or \$j -lt 0){throw 'Embedded Bees payload not found.'};\$b=\$t.Substring(\$i+\$s.Length,\$j-(\$i+\$s.Length)) -replace '\\s','';[IO.File]::WriteAllBytes(\$env:BEES_PAYLOAD_ZIP,[Convert]::FromBase64String(\$b));Expand-Archive -LiteralPath \$env:BEES_PAYLOAD_ZIP -DestinationPath \$env:BEES_BOOTSTRAP_DIR -Force"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$t=[IO.File]::ReadAllText($env:BEES_SELF);$s='::BEES_PAYLOAD_BEGIN';$e='::BEES_PAYLOAD_END';$i=$t.IndexOf($s);$j=$t.IndexOf($e,$i+$s.Length);if($i -lt 0 -or $j -lt 0){throw 'Embedded Bees payload not found.'};$b=$t.Substring($i+$s.Length,$j-($i+$s.Length)) -replace '\s','';[IO.File]::WriteAllBytes($env:BEES_PAYLOAD_ZIP,[Convert]::FromBase64String($b));Expand-Archive -LiteralPath $env:BEES_PAYLOAD_ZIP -DestinationPath $env:BEES_BOOTSTRAP_DIR -Force"
 if errorlevel 1 (
   echo [Bees remote] failed to extract the bundled bootstrap.
   exit /b 1
@@ -997,9 +997,10 @@ if not "%BEES_EXIT%"=="0" echo [Bees remote] worker exited with code %BEES_EXIT%
 rd /s /q "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
 exit /b %BEES_EXIT%
 ::BEES_PAYLOAD_BEGIN
-$windowsPayload
+__WINDOWS_PAYLOAD__
 ::BEES_PAYLOAD_END
-"@
+'@
+    $windowsCmd=$windowsCmd.Replace('__WINDOWS_PAYLOAD__',$windowsPayload)
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
@@ -1020,18 +1021,18 @@ $windowsPayload
 
     # Linux likewise gets a single self-extracting script. The binary is a here-document reached
     # only after the launcher has already printed its startup status.
-    $linuxWrapper=@"
+    $linuxWrapper=@'
 #!/usr/bin/env bash
 set -euo pipefail
 
 echo "[Bees remote] launching Linux training worker..."
 
-have() { command -v "\$1" >/dev/null 2>&1; }
+have() { command -v "$1" >/dev/null 2>&1; }
 sudo_cmd() {
-    if [[ "\$(id -u)" -eq 0 ]]; then
-        "\$@"
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
     elif have sudo; then
-        sudo "\$@"
+        sudo "$@"
     else
         echo "error: root privileges are required to install base64/coreutils, but sudo is unavailable." >&2
         return 1
@@ -1048,29 +1049,31 @@ if ! have base64; then
     fi
 fi
 
-BOOTSTRAP_DIR="__TMPDIR_EXPR__/bees-training-bootstrap-\$\$"
-rm -rf "\$BOOTSTRAP_DIR"
-mkdir -p "\$BOOTSTRAP_DIR"
-trap 'rm -rf "\$BOOTSTRAP_DIR"' EXIT
+BOOTSTRAP_DIR="${TMPDIR:-/tmp}/bees-training-bootstrap-$$"
+rm -rf "$BOOTSTRAP_DIR"
+mkdir -p "$BOOTSTRAP_DIR"
+trap 'rm -rf "$BOOTSTRAP_DIR"' EXIT
 
 echo "[Bees remote] extracting bundled bootstrap..."
-cat > "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" <<'__BEES_INNER_SCRIPT__'
-$linuxBody
+cat > "$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" <<'__BEES_INNER_SCRIPT__'
+__LINUX_INNER_SCRIPT__
 __BEES_INNER_SCRIPT__
 
-base64 -d > "\$BOOTSTRAP_DIR/$linuxBridgeName" <<'__BEES_BRIDGE_PAYLOAD__'
-$linuxBridgePayload
+base64 -d > "$BOOTSTRAP_DIR/__LINUX_BRIDGE_NAME__" <<'__BEES_BRIDGE_PAYLOAD__'
+__LINUX_BRIDGE_PAYLOAD__
 __BEES_BRIDGE_PAYLOAD__
 
-chmod 700 "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "\$BOOTSTRAP_DIR/$linuxBridgeName"
+chmod 700 "$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "$BOOTSTRAP_DIR/__LINUX_BRIDGE_NAME__"
 echo "[Bees remote] starting shell bootstrap..."
 set +e
-bash "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "\$@"
-BEES_EXIT=\$?
+bash "$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "$@"
+BEES_EXIT=$?
 set -e
-exit "\$BEES_EXIT"
-"@
-    $linuxWrapper=$linuxWrapper.Replace('__TMPDIR_EXPR__','${TMPDIR:-/tmp}')
+exit "$BEES_EXIT"
+'@
+    $linuxWrapper=$linuxWrapper.Replace('__LINUX_INNER_SCRIPT__',$linuxBody)
+    $linuxWrapper=$linuxWrapper.Replace('__LINUX_BRIDGE_PAYLOAD__',$linuxBridgePayload)
+    $linuxWrapper=$linuxWrapper.Replace('__LINUX_BRIDGE_NAME__',$linuxBridgeName)
     $linuxWrapper=[regex]::Replace($linuxWrapper,"\r\n","\n")
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxWrapper,$utf8NoBom)
 
