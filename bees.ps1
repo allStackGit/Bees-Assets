@@ -1937,11 +1937,11 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                     $envDisplay="$($cap.current_envs)->$($opt.desired_envs)"
                 }
             }
-            $acceptedSps='-'
+            $learnerSps='-'
             if($opt -and $null -ne $opt.measured_sps){
-                $acceptedSps=('{0:N0}'-f[double]$opt.measured_sps)
+                $learnerSps=('{0:N0}'-f[double]$opt.measured_sps)
             }elseif($opt -and $null -ne $opt.baseline_sps){
-                $acceptedSps=('{0:N0}'-f[double]$opt.baseline_sps)
+                $learnerSps=('{0:N0}'-f[double]$opt.baseline_sps)
             }
             [pscustomobject]@{
                 Trainer=$_.trainer_id
@@ -1949,7 +1949,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 Platform=$_.platform
                 State=if($_.stale){'STALE'}else{$_.process_state}
                 Envs=$envDisplay
-                SPS=$acceptedSps
+                SPS=$learnerSps
                 SentGiB=if($null -ne $sentBytes){'{0:N2}'-f([double]$sentBytes/1GB)}else{'-'}
                 RecvGiB=if($null -ne $receivedBytes){'{0:N2}'-f([double]$receivedBytes/1GB)}else{'-'}
                 'MiB/s'=if($null -ne $networkMibPerS){'{0:N2}'-f[double]$networkMibPerS}else{'-'}
