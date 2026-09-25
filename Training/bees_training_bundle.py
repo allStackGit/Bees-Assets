@@ -16,6 +16,11 @@ from typing import Any, Iterable, Optional
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 TEXT_LOG_SUFFIXES = {".log", ".txt"}
 MAX_METADATA_BYTES = 16 * 1024 * 1024
+MAX_STEP_SCAN_BYTES = 4 * 1024 * 1024
+MODEL_LAG_WARNING_STEPS = 5000
+TRAINER_LOG_STALE_SECONDS = 30.0
+STEP_RE = re.compile(r"\\bStep\\s*[:=]\\s*(\\d+)", re.IGNORECASE)
+MODEL_STEP_RE = re.compile(r"-(\\d+)\\.onnx$", re.IGNORECASE)
 
 
 def _json(path: Path) -> Optional[dict[str, Any]]:
@@ -204,6 +209,182 @@ def _collect_log_group(
                 )
 
 
+def _tail_text(path: Path, maximum_bytes: int = MAX_STEP_SCAN_BYTES) -> str:
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            if size > maximum_bytes:
+                handle.seek(size - maximum_bytes)
+            return handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _learner_step(status_text: Optional[Path], learner_log_root: Path) -> Optional[int]:
+    if status_text and status_text.is_file():
+        text = _tail_text(status_text)
+        match = re.search(r"Learner logs:\s*Step=(\d+)", text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+    latest: Optional[int] = None
+    if learner_log_root.is_dir():
+        for path in learner_log_root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in TEXT_LOG_SUFFIXES:
+                continue
+            for match in STEP_RE.finditer(_tail_text(path)):
+                value = int(match.group(1))
+                latest = value if latest is None else max(latest, value)
+    return latest
+
+
+def _model_step(path: Optional[Path], snapshot: Optional[dict[str, Any]]) -> Optional[int]:
+    if snapshot and snapshot.get("status") == "succeeded":
+        try:
+            return int(snapshot.get("step"))
+        except (TypeError, ValueError):
+            pass
+    if path:
+        match = MODEL_STEP_RE.search(path.name)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _trainer_log_freshness(root: Path, now_utc: datetime) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    if not root.is_dir():
+        return result
+    for trainer_root in sorted(path for path in root.iterdir() if path.is_dir()):
+        files = [path for path in trainer_root.rglob("*") if path.is_file()]
+        if not files:
+            result[trainer_root.name] = {
+                "file_count": 0,
+                "newest_modified_utc": None,
+                "age_seconds": None,
+            }
+            continue
+        newest = max(files, key=lambda path: path.stat().st_mtime_ns)
+        modified = datetime.fromtimestamp(newest.stat().st_mtime, tz=timezone.utc)
+        result[trainer_root.name] = {
+            "file_count": len(files),
+            "newest_file": _safe_rel(newest, trainer_root),
+            "newest_modified_utc": modified.isoformat(),
+            "age_seconds": max(0.0, (now_utc - modified).total_seconds()),
+        }
+    return result
+
+
+def _diagnose_status(
+    status: Optional[dict[str, Any]],
+    cluster: Optional[dict[str, Any]],
+    resolved_run: str,
+    log_freshness: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    diagnostics: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    if not status:
+        return diagnostics, warnings
+
+    desired = status.get("desired")
+    desired = desired if isinstance(desired, dict) else {}
+    desired_build = str(desired.get("canonical_build_id", "") or "")
+    desired_revision = desired.get("revision")
+    training_enabled = bool(desired.get("training_enabled", False))
+    status_run = str(desired.get("run_id", "") or "")
+    if status_run and status_run != resolved_run:
+        warnings.append(
+            f"live control run {status_run} differs from bundled run {resolved_run}"
+        )
+
+    trainers = status.get("trainers")
+    trainer_records = trainers if isinstance(trainers, list) else []
+    present_ids: set[str] = set()
+    for raw in trainer_records:
+        if not isinstance(raw, dict):
+            continue
+        trainer_id = str(raw.get("trainer_id", "") or "")
+        if not trainer_id:
+            continue
+        present_ids.add(trainer_id)
+        issues: list[str] = []
+        if bool(raw.get("stale", False)):
+            issues.append(f"stale ({raw.get('age_seconds', '?')}s since heartbeat)")
+        error = str(raw.get("last_error", "") or "").strip()
+        if error:
+            issues.append(f"last_error={error}")
+        build_id = str(raw.get("build_id", "") or "")
+        if desired_build and build_id and build_id != desired_build:
+            issues.append(f"build mismatch {build_id} != {desired_build}")
+        revision = raw.get("applied_revision")
+        if desired_revision is not None and revision is not None and revision != desired_revision:
+            issues.append(f"revision mismatch {revision} != {desired_revision}")
+        state = str(raw.get("process_state", "") or "")
+        if training_enabled and raw.get("role") == "dedicated" and state != "running":
+            issues.append(f"dedicated trainer state={state or 'unknown'}")
+
+        freshness = log_freshness.get(trainer_id)
+        if freshness and freshness.get("age_seconds") is not None:
+            age = float(freshness["age_seconds"])
+            if age > TRAINER_LOG_STALE_SECONDS:
+                issues.append(f"uploaded logs are {age:.1f}s old")
+
+        if issues:
+            diagnostics.append(
+                {
+                    "kind": "trainer-health",
+                    "trainer_id": trainer_id,
+                    "issues": issues,
+                }
+            )
+            warnings.append(f"trainer {trainer_id}: " + "; ".join(issues))
+
+    if cluster:
+        expected = cluster.get("expectedTrainers")
+        if isinstance(expected, list):
+            for value in expected:
+                trainer_id = str(value)
+                if trainer_id and trainer_id not in present_ids:
+                    diagnostics.append(
+                        {
+                            "kind": "missing-trainer",
+                            "trainer_id": trainer_id,
+                        }
+                    )
+                    warnings.append(f"expected trainer is missing: {trainer_id}")
+
+    return diagnostics, warnings
+
+
+def _snapshot_model(
+    snapshot: Optional[dict[str, Any]],
+    results_root: Path,
+    warnings: list[str],
+) -> Optional[Path]:
+    if not snapshot:
+        return None
+    status = str(snapshot.get("status", "") or "")
+    if status != "succeeded":
+        if status:
+            reason = str(snapshot.get("error", "") or snapshot.get("reason", "") or status)
+            warnings.append(f"live model snapshot {status}: {reason}")
+        return None
+    raw_path = str(snapshot.get("model_path", "") or "")
+    if not raw_path:
+        warnings.append("live model snapshot succeeded without a model_path")
+        return None
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        path.relative_to(results_root.resolve())
+    except ValueError:
+        warnings.append(f"live model snapshot path is outside run results: {path}")
+        return None
+    if not path.is_file():
+        warnings.append(f"live model snapshot file is missing: {path}")
+        return None
+    return path
+
+
 def create_bundle(
     *,
     bees_root: Path,
@@ -212,6 +393,7 @@ def create_bundle(
     run_id: str = "",
     status_json: Optional[Path] = None,
     status_text: Optional[Path] = None,
+    snapshot_json: Optional[Path] = None,
     output_root: Optional[Path] = None,
 ) -> Path:
     bees_root = bees_root.expanduser().resolve()
@@ -226,8 +408,22 @@ def create_bundle(
     output_root.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    generated_utc = datetime.now(timezone.utc)
+    timestamp = generated_utc.strftime("%Y%m%dT%H%M%SZ")
+    status_value = _json(status_json) if status_json else None
+    snapshot_value = _json(snapshot_json) if snapshot_json else None
+    cluster_value = _json(assets_root / "Training" / "bees.cluster.json")
+    log_freshness = _trainer_log_freshness(trainer_logs_root, generated_utc)
+    status_diagnostics, status_warnings = _diagnose_status(
+        status_value,
+        cluster_value,
+        resolved_run,
+        log_freshness,
+    )
+    diagnostics.extend(status_diagnostics)
+    warnings.extend(status_warnings)
     final_zip = (
         output_root
         / f"bees-training-diagnostic-{resolved_run}-{timestamp}.zip"
@@ -279,6 +475,7 @@ def create_bundle(
         metadata_sources = [
             ("status/status.json", status_json),
             ("status/status.txt", status_text),
+            ("status/model-snapshot.json", snapshot_json),
             (
                 "config/bees.cluster.json",
                 assets_root / "Training" / "bees.cluster.json",
@@ -373,7 +570,32 @@ def create_bundle(
                         }
                     )
 
-        model = latest_file(results_root, "*.onnx")
+        model = _snapshot_model(snapshot_value, results_root, warnings)
+        model_source = "live-snapshot" if model is not None else "latest-on-disk"
+        if model is None:
+            model = latest_file(results_root, "*.onnx")
+
+        learner_step = _learner_step(status_text, bees_root / "Logs" / "Training")
+        model_step = _model_step(model, snapshot_value if model_source == "live-snapshot" else None)
+        model_lag_steps = (
+            learner_step - model_step
+            if learner_step is not None and model_step is not None
+            else None
+        )
+        if model_lag_steps is not None and model_lag_steps > MODEL_LAG_WARNING_STEPS:
+            warnings.append(
+                f"bundled model is {model_lag_steps} learner steps behind "
+                f"(learner={learner_step}, model={model_step})"
+            )
+            diagnostics.append(
+                {
+                    "kind": "model-lag",
+                    "learner_step": learner_step,
+                    "model_step": model_step,
+                    "lag_steps": model_lag_steps,
+                }
+            )
+
         model_info = None
         if model:
             archive_path = f"model/{model.name}"
@@ -384,6 +606,8 @@ def create_bundle(
             model_info = {
                 "archive_path": archive_path,
                 "source": str(model),
+                "selection": model_source,
+                "step": model_step,
                 "size_bytes": stat.st_size,
                 "sha256": sha256_file(model),
                 "modified_utc": datetime.fromtimestamp(
@@ -395,12 +619,30 @@ def create_bundle(
         else:
             warnings.append(f"no ONNX file found under {results_root}")
 
+        for trainer_id, freshness in log_freshness.items():
+            if freshness.get("age_seconds") is None:
+                warnings.append(f"trainer {trainer_id} has no uploaded run logs")
+            elif float(freshness["age_seconds"]) > TRAINER_LOG_STALE_SECONDS:
+                diagnostics.append(
+                    {
+                        "kind": "trainer-log-freshness",
+                        "trainer_id": trainer_id,
+                        **freshness,
+                    }
+                )
+
         manifest = {
-            "schema_version": 1,
-            "generated_utc": datetime.now(timezone.utc).isoformat(),
+            "schema_version": 2,
+            "generated_utc": generated_utc.isoformat(),
             "run_id": resolved_run,
             "log_percent": log_percent,
+            "learner_step": learner_step,
+            "model_step": model_step,
+            "model_lag_steps": model_lag_steps,
+            "model_snapshot": snapshot_value,
             "latest_onnx": model_info,
+            "trainer_log_freshness": log_freshness,
+            "diagnostics": diagnostics,
             "warnings": warnings,
             "files": records,
         }
@@ -439,6 +681,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--log-percent", type=float, default=10.0)
     parser.add_argument("--status-json")
     parser.add_argument("--status-text")
+    parser.add_argument("--snapshot-json")
     parser.add_argument("--output-root")
     return parser.parse_args(argv)
 
@@ -452,6 +695,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_id=args.run_id,
         status_json=Path(args.status_json) if args.status_json else None,
         status_text=Path(args.status_text) if args.status_text else None,
+        snapshot_json=Path(args.snapshot_json) if args.snapshot_json else None,
         output_root=Path(args.output_root) if args.output_root else None,
     )
     print(f"Created diagnostic bundle: {archive}")
