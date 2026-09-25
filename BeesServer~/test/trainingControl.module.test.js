@@ -38,6 +38,15 @@ function publishDedicatedBuild(store, root, buildId) {
     return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;
 }
 
+function activateTestRelease(store, buildId, runId = 'run-' + buildId, key = 'a'.repeat(64)) {
+    return store.stageRelease({
+        buildId,
+        runId,
+        compatibilityKey: key,
+        incompatible: false,
+    });
+}
+
 function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}) {
     return store.heartbeat({
         trainer_id: trainerId,
@@ -117,12 +126,12 @@ test('desired state is persisted and maps stop to inference for full games only'
             trainerId: 'game-1', role: 'full-game', platform: 'WindowsPlayer',
         }).desired_mode, 'inference');
 
+        activateTestRelease(store, 'build-1');
         const updated = store.setDesiredState({
             training_enabled: true,
             environment_args: ['--rl-map-size', '64'],
-            canonical_build_id: 'build-1',
         });
-        assert.equal(updated.revision, 1);
+        assert.equal(updated.revision, 2);
         assert.equal(updated.training_enabled, true);
         assert.equal(updated.canonical_build_id, 'build-1');
 
@@ -180,7 +189,7 @@ test('training refuses to start while an active platform lacks the canonical bui
             archivePath: windows,
             entrypoint: 'Bees.exe',
         });
-        store.setDesiredState({ canonical_build_id: 'release-1' });
+        activateTestRelease(store, 'release-1');
         store.heartbeat({
             trainer_id: 'linux-1',
             role: 'dedicated',
@@ -221,7 +230,7 @@ test('reloading control state rejects a tampered canonical artifact', () => {
     });
 });
 
-test('canonical build activation requires at least one published artifact', () => {
+test('canonical build activation is release-owned and requires a published artifact', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
             statePath: path.join(root, 'state.json'),
@@ -229,7 +238,17 @@ test('canonical build activation requires at least one published artifact', () =
         });
         assert.throws(
             () => store.setDesiredState({ canonical_build_id: 'missing-build' }),
-            /no published platform artifact/);
+            error => error.statusCode === 409 && /release-owned/.test(error.message),
+        );
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'missing-build',
+                runId: 'missing-run',
+                compatibilityKey: 'a'.repeat(64),
+                incompatible: false,
+            }),
+            /no published platform artifact/,
+        );
         assert.equal(store.state.canonical_build_id, '');
     });
 });
@@ -260,7 +279,7 @@ test('publishing a build copies and hashes a server-owned canonical artifact', (
         assert.equal(fs.readFileSync(owned.archive_path).toString('utf8'), bytes.toString('utf8'));
         assert.equal(store.state.revision, 0);
 
-        store.setDesiredState({ canonical_build_id: 'build-123' });
+        activateTestRelease(store, 'build-123');
         const active = store.stateFor({
             trainerId: 'linux-1', role: 'dedicated', platform: 'LinuxPlayer',
         });
@@ -326,7 +345,8 @@ test('one canonical build id selects equivalent platform artifacts and hides mis
             entrypoint: 'Bees.exe',
         });
 
-        store.setDesiredState({ canonical_build_id: 'release-42', training_enabled: true });
+        activateTestRelease(store, 'release-42');
+        store.setDesiredState({ training_enabled: true });
 
         assert.equal(store.stateFor({
             trainerId: 'win', role: 'dedicated', platform: 'WindowsPlayer',
@@ -400,10 +420,8 @@ test('role-specific Windows builds can share one canonical build id', () => {
             archivePath: game,
             entrypoint: 'Bees.exe',
         });
-        store.setDesiredState({
-            canonical_build_id: 'release-role-aware',
-            training_enabled: true,
-        });
+        activateTestRelease(store, 'release-role-aware');
+        store.setDesiredState({ training_enabled: true });
 
         const dedicated = store.stateFor({
             trainerId: 'trainer', role: 'dedicated', platform: 'WindowsPlayer',
@@ -473,7 +491,7 @@ test('missing optional full-game artifact does not block dedicated training', ()
             archivePath: windows,
             entrypoint: 'Bees RL Training.exe',
         });
-        store.setDesiredState({ canonical_build_id: 'release-optional-game' });
+        activateTestRelease(store, 'release-optional-game');
         store.heartbeat({
             trainer_id: 'trainer',
             role: 'dedicated',
@@ -1440,10 +1458,8 @@ test('training control returns per-worker env targets from accepted-step optimiz
             archivePath: archive,
             entrypoint: 'Bees.x86_64',
         });
-        store.setDesiredState({
-            canonical_build_id: 'release-opt',
-            training_enabled: true,
-        });
+        activateTestRelease(store, 'release-opt');
+        store.setDesiredState({ training_enabled: true });
 
         const heartbeat = acceptedSteps => store.heartbeat({
             trainer_id: 'remote-linux',
@@ -1513,10 +1529,8 @@ test('training control pauses env optimization during a release cutover', () => 
                 entrypoint: 'Bees.x86_64',
             });
         }
-        store.setDesiredState({
-            canonical_build_id: 'release-1',
-            training_enabled: true,
-        });
+        activateTestRelease(store, 'release-1');
+        store.setDesiredState({ training_enabled: true });
 
         const heartbeat = acceptedSteps => store.heartbeat({
             trainer_id: 'remote-linux',
