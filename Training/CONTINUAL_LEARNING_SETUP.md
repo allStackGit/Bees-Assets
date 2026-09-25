@@ -269,16 +269,9 @@ A current-ABI suite uses model IDs from the same v20 registry, for example:
 }
 ```
 
-Normal candidates must pass the authoritative evaluator before `promote`. The one exception is the explicitly audited generation-zero bootstrap for an empty registry:
+Normal candidates must pass the authoritative evaluator before `promote`. The one exception is generation zero for a compatibility generation. The autonomous continual service now bootstraps the newest compatible candidate from its own completed training run automatically when no compatible champion exists. This applies both to a brand-new registry and to an incompatible ABI/schema transition in an existing registry. An incompatible prior current champion is retained for audit as `retired`, is not used as the new model's parent/historical opponent/rollback target, and does not block the new generation-zero baseline.
 
-```powershell
-python Training\bees_continual_bootstrap.py `
-  --store="F:\RLDemo\BeesContinualV20" `
-  --candidate="bees-rl-v20-<candidate-id>" `
-  --reason="Trusted generation-zero baseline"
-```
-
-Generation-zero bootstrap is one-time only; later champion changes must use normal evaluation/promotion.
+`bees_continual_bootstrap.py` remains available as an explicit administrative/repair operation when running the lower-level components manually. It is still limited to the first champion of the current compatibility generation; later compatible champion changes must use normal evaluation/promotion.
 
 ### Promotion runtime gate
 
@@ -298,6 +291,7 @@ Stable ONNX exports registered by `bees_continual_train.py` can be consumed by t
 python Training\bees_continual_release.py `
   --root="F:\RLDemo\BeesContinualV20" `
   --env="F:\RLDemo\Bees RL Training" `
+  --training-run-id="bees-v20-r3-s1-..." `
   --competency-suite="F:\RLDemo\bees-rl-v20-competency.json" `
   --seed=36
 ```
@@ -339,7 +333,7 @@ At runtime, `RlLivePolicyModelBootstrap` validates the bundled deployment manife
 
 After every promotion or rollback, rerun `bees_continual_unity_bundle.py` before the next player build so the build-staged fallback matches the registry champion. A rollback changes the authoritative current champion and therefore restages the prior champion package.
 
-ABI compatibility is strict. A v17 champion cannot be deployed into the current v18 player build. A compatible v18 champion must first be registered/evaluated/promoted (or explicitly bootstrapped as generation zero in a new v18 store).
+ABI compatibility is strict. A v17 champion cannot be deployed into the current v18 player build. On an intentional incompatible transition, the autonomous service trains without inheriting the v17 champion, automatically bootstraps the newest v18 candidate as the v18 generation-zero champion, retires the incompatible prior current champion for audit, and only then publishes a v18 deployment.
 
 ### Authenticated desktop hot distribution
 
