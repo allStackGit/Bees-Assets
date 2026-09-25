@@ -247,7 +247,7 @@ Direct canonical-build mutation is no longer used by the CLI because it would by
 
 Build and runtime downloads are versioned, SHA-256 verified, path-traversal checked, and atomically installed. The learner publishes live bootstrap ZIPs/helper binaries/release metadata by atomic replacement so a worker polling during compilation cannot consume a partially written file.
 
-A dedicated trainer never switches to an unverified artifact. A compatible rollout keeps other trainers running while one trainer restarts. An incompatible rollout does not promote the new run until every active dedicated trainer has staged the replacement and confirmed the old managed process stopped.
+A dedicated trainer never switches to an unverified artifact. A compatible rollout keeps other trainers running while one trainer restarts and does not count that trainer complete until the pending build/hash is running at the rollout revision without a reported error. An incompatible rollout does not promote the new run until every trainer in the persisted release barrier has staged the replacement, re-registered after any server restart, and confirmed the old managed process stopped.
 
 Trainer logs are uploaded by verified append offsets into:
 
