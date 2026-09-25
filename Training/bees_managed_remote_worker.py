@@ -15,6 +15,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import shutil
 import socket
@@ -35,6 +36,97 @@ DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class _RunScopedLogSink:
+    """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._run_id = ""
+        self._lock = threading.Lock()
+
+    def set_run_id(self, run_id: str) -> None:
+        normalized = str(run_id or "").strip()
+        if normalized and not RUN_ID_PATTERN.fullmatch(normalized):
+            return
+        with self._lock:
+            self._run_id = normalized
+
+    def write(self, value: str) -> None:
+        if not value:
+            return
+        with self._lock:
+            run_id = self._run_id
+            if not run_id:
+                return
+            path = self.root / run_id / "remote-supervisor.log"
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8", errors="replace") as handle:
+                    handle.write(value)
+            except OSError:
+                pass
+
+
+class _RunScopedTee:
+    def __init__(self, primary, sink: _RunScopedLogSink) -> None:
+        self.primary = primary
+        self.sink = sink
+
+    def write(self, value):
+        result = self.primary.write(value)
+        self.sink.write(str(value))
+        return result
+
+    def flush(self):
+        self.primary.flush()
+
+    def isatty(self):
+        return bool(getattr(self.primary, "isatty", lambda: False)())
+
+    def fileno(self):
+        return self.primary.fileno()
+
+    @property
+    def encoding(self):
+        return getattr(self.primary, "encoding", "utf-8")
+
+
+def _forward_process_output(process: subprocess.Popen) -> None:
+    stream = process.stdout
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _start_logged_process(command: Sequence[str]) -> tuple[subprocess.Popen, threading.Thread]:
+    process = subprocess.Popen(
+        list(command),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    thread = threading.Thread(
+        target=_forward_process_output,
+        args=(process,),
+        name="bees-remote-console-forwarder",
+        daemon=True,
+    )
+    thread.start()
+    return process, thread
 
 
 def _available_cpu_threads() -> int:
@@ -657,6 +749,7 @@ def _remote_status_summary(
     args: argparse.Namespace,
     trainer_id: str,
     updater: Optional[RuntimeUpdater] = None,
+    log_sink: Optional[_RunScopedLogSink] = None,
 ) -> str:
     status = _control_status(args)
     if not isinstance(status, Mapping):
@@ -667,6 +760,8 @@ def _remote_status_summary(
 
     desired = status.get("desired")
     desired_map = desired if isinstance(desired, Mapping) else {}
+    if log_sink is not None:
+        log_sink.set_run_id(str(desired_map.get("run_id", "") or ""))
     trainers = status.get("trainers")
     record: Optional[Mapping[str, object]] = None
     if isinstance(trainers, list):
@@ -828,6 +923,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
+    log_sink = _RunScopedLogSink(install_root / "ManagedBuilds" / "logs")
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = _RunScopedTee(original_stdout, log_sink)
+    sys.stderr = _RunScopedTee(original_stderr, log_sink)
     updater = RuntimeUpdater(args, install_root)
     updater.start()
     stop = [False]
@@ -841,9 +941,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
+            tailnet_log_thread: Optional[threading.Thread] = None
+            worker_log_thread: Optional[threading.Thread] = None
             runtime_cutover: Optional[Path] = None
             try:
-                tailnet = subprocess.Popen(_tailnet_forward_command(args))
+                tailnet, tailnet_log_thread = _start_logged_process(_tailnet_forward_command(args))
                 if not _wait_for_ports(
                     (args.control_port, args.broker_port, args.bootstrap_port),
                     tailnet,
@@ -866,13 +968,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         f"and assigned build. trainer={trainer_id}",
                         flush=True,
                     )
-                    worker = subprocess.Popen(_worker_command(args, root, actor_key))
+                    current_status = _control_status(args)
+                    if isinstance(current_status, Mapping):
+                        current_desired = current_status.get("desired")
+                        if isinstance(current_desired, Mapping):
+                            log_sink.set_run_id(str(current_desired.get("run_id", "") or ""))
+                    worker, worker_log_thread = _start_logged_process(
+                        _worker_command(args, root, actor_key)
+                    )
                     next_status = 0.0
                     while not stop[0] and tailnet.poll() is None and worker.poll() is None:
                         now = time.monotonic()
                         if now >= next_status:
                             print(
-                                _remote_status_summary(args, trainer_id, updater),
+                                _remote_status_summary(args, trainer_id, updater, log_sink),
                                 flush=True,
                             )
                             next_status = now + 5.0
@@ -904,6 +1013,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             finally:
                 _terminate(worker)
                 _terminate(tailnet)
+                if worker_log_thread is not None:
+                    worker_log_thread.join(timeout=1.0)
+                if tailnet_log_thread is not None:
+                    tailnet_log_thread.join(timeout=1.0)
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
@@ -933,6 +1046,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         updater.stop()
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
 
 
 if __name__ == "__main__":
