@@ -229,6 +229,7 @@ class WanOptionTests(unittest.TestCase):
             session._throughput_lock = actor.threading.Lock()
             session._accepted_steps_total = 0
             session._accepted_trajectories_total = 0
+            session._learner_consumed_steps_total = 4
             session._last_throughput_write = 0.0
             session._upload_queue = queue.Queue()
             session.env_count = 7
@@ -253,6 +254,7 @@ class WanOptionTests(unittest.TestCase):
             self.assertEqual(payload["env_count"], 7)
             self.assertEqual(payload["accepted_steps_total"], 5)
             self.assertEqual(payload["accepted_trajectories_total"], 2)
+            self.assertEqual(payload["learner_consumed_steps_total"], 4)
             self.assertEqual(payload["upload_queue_depth"], 0)
             self.assertEqual(payload["network_sent_bytes_total"], 3 * 1024 * 1024)
             self.assertEqual(payload["network_received_bytes_total"], 2 * 1024 * 1024)
