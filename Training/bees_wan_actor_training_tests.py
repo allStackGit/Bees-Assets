@@ -118,6 +118,51 @@ class WanOptionTests(unittest.TestCase):
             ["config.yaml", "--resume", "--num-envs=384"],
         )
 
+    def test_actor_resolves_mlagents_random_seed_sentinel_stably(self):
+        first = actor._resolve_actor_seed(
+            -1,
+            session_id="session-a",
+            worker_offset=0,
+            env_count=4,
+        )
+        second = actor._resolve_actor_seed(
+            -1,
+            session_id="session-a",
+            worker_offset=0,
+            env_count=4,
+        )
+        self.assertEqual(first, second)
+        self.assertGreaterEqual(first, 0)
+        self.assertLessEqual(first + 3, actor.MAX_UNITY_SEED)
+
+    def test_actor_explicit_seed_includes_worker_offset_without_overflow(self):
+        self.assertEqual(
+            actor._resolve_actor_seed(
+                123,
+                session_id="session-a",
+                worker_offset=8,
+                env_count=4,
+            ),
+            131,
+        )
+        wrapped = actor._resolve_actor_seed(
+            actor.MAX_UNITY_SEED,
+            session_id="session-a",
+            worker_offset=64,
+            env_count=64,
+        )
+        self.assertGreaterEqual(wrapped, 0)
+        self.assertLessEqual(wrapped + 63, actor.MAX_UNITY_SEED)
+
+    def test_actor_rejects_invalid_negative_seed(self):
+        with self.assertRaisesRegex(ValueError, "invalid ML-Agents seed"):
+            actor._resolve_actor_seed(
+                -2,
+                session_id="session-a",
+                worker_offset=0,
+                env_count=4,
+            )
+
     def test_actor_managed_log_directory_does_not_mutate_checkpoint_settings(self):
         class ReadOnlyCheckpointSettings:
             @property
