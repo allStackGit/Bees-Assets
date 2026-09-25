@@ -13,7 +13,7 @@ NullGfxDevice:
     Renderer: Null Device
     Vendor:   Unity Technologies
 Begin MonoManager ReloadAssembly
-- Finished resetting the current domain, in  0.095 seconds
+- Finished resetting the current domain, in  0.091 seconds
 [Physics::Module] Selected backend.
 [Physics::Module] Name: PhysX
 [Physics::Module] Id: 0xf2b8ea05
@@ -26,18 +26,18 @@ The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
 Texture with ID 210 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 221 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
 Texture with ID 238 and with size 13376x6920 was too large for graphics device maximum supported texture size (8192x8192). Falling back to a dummy texture. Generate mip maps to provide lower size fallback.
-UnloadTime: 2.421400 ms
+UnloadTime: 2.180100 ms
 UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
 Trying to automatically reconnect to the server with Level (attempt 1)
 Trying to automatically reconnect to the server with Level (attempt 2)
-9/25/2026 7:26:50 AM|Fatal|WebSocket.connect|System.Net.Sockets.SocketException (0x80004005): A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+9/25/2026 7:41:57 AM|Fatal|WebSocket.connect|System.Net.Sockets.SocketException (0x80004005): A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
                            
 Connection closed!
 Network Error:An exception has occurred while connecting.
 Trying to automatically reconnect to the server with Level (attempt 3)
 Trying to automatically reconnect to the server with Level (attempt 4)
 Trying to automatically reconnect to the server with Level (attempt 5)
-9/25/2026 7:27:18 AM|Fatal|WebSocket.connect|System.Net.Sockets.SocketException (0x80004005): A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+9/25/2026 7:42:25 AM|Fatal|WebSocket.connect|System.Net.Sockets.SocketException (0x80004005): A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
                            
 Connection closed!
 Network Error:An exception has occurred while connecting.
