@@ -112,7 +112,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             tailnet_state="state",
             tailnet_hostname="bees-worker-test",
             tailnet_target="100.64.0.10",
-            gameplay_port=7146,
             control_port=7150,
             bootstrap_port=7151,
             broker_port=55051,
