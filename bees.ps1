@@ -26,6 +26,7 @@ $ConfigPath=Join-Path $AssetsRoot 'Training\bees.cluster.json'
 $RemoteBootstrapTemplate=Join-Path $AssetsRoot 'Training\bees_remote_bootstrap.ps1'
 $RemoteLinuxBootstrapTemplate=Join-Path $AssetsRoot 'Training\bees_remote_bootstrap.sh'
 $RemoteRequirementsPath=Join-Path $AssetsRoot 'Training\bees_remote_requirements.txt'
+$LearnerRequirementsPath=Join-Path $AssetsRoot 'Training\bees_learner_requirements.txt'
 $LatestReleasePath=Join-Path $BuildsRoot 'latest-training-release.json'
 $WorkerTokenPath=Join-Path $SecretsRoot 'training-worker.token'
 $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
@@ -120,6 +121,55 @@ function Resolve-UnityEditor($Config){
 }
 
 function Resolve-Python($Config){ if($Config.python){ Resolve-CommandPath ([string]$Config.python) } else { Resolve-CommandPath 'python' } }
+
+function Ensure-LearnerPython($Config){
+    if(-not(Test-Path -LiteralPath $LearnerRequirementsPath)){
+        throw "Learner Python requirements are missing: $LearnerRequirementsPath"
+    }
+    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){
+        throw "Shared Python requirements are missing: $RemoteRequirementsPath"
+    }
+
+    $basePython=Resolve-Python $Config
+    $versionCheck=& $basePython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+    if($LASTEXITCODE -ne 0 -or ([string]$versionCheck).Trim() -ne '3.10'){
+        throw "Bees learner requires Python 3.10. Configured python resolved to '$basePython' with version '$(([string]$versionCheck).Trim())'."
+    }
+
+    $venvRoot=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
+    if(-not(Test-Path -LiteralPath $venvPython)){
+        Write-Host "Creating managed learner Python environment at $venvRoot..."
+        Invoke-Checked $basePython @('-m','venv',$venvRoot) $AssetsRoot
+    }
+
+    $requirementsHash=Get-StringSha256 (
+        (Get-Content -LiteralPath $LearnerRequirementsPath -Raw) +
+        [Environment]::NewLine +
+        (Get-Content -LiteralPath $RemoteRequirementsPath -Raw)
+    )
+    $stampPath=Join-Path $venvRoot 'bees-requirements.sha256'
+    $currentStamp=if(Test-Path -LiteralPath $stampPath){(Get-Content -LiteralPath $stampPath -Raw).Trim()}else{''}
+
+    $importsOk=$false
+    if($currentStamp -eq $requirementsHash){
+        & $venvPython -c "import mlagents, torch, numpy, onnxruntime; import sys; assert sys.version_info[:2] == (3,10)" *> $null
+        $importsOk=($LASTEXITCODE -eq 0)
+    }
+
+    if(-not $importsOk){
+        Write-Host 'Installing/updating central learner Python dependencies...'
+        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot
+        Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot
+        & $venvPython -c "import mlagents, torch, numpy, onnxruntime; import sys; assert sys.version_info[:2] == (3,10)" *> $null
+        if($LASTEXITCODE -ne 0){
+            throw 'Central learner Python dependency preflight failed after installation.'
+        }
+        $requirementsHash | Set-Content -LiteralPath $stampPath -NoNewline -Encoding ASCII
+    }
+
+    [IO.Path]::GetFullPath($venvPython)
+}
 function Resolve-Node($Config){ if($Config.node){ Resolve-CommandPath ([string]$Config.node) } else { Resolve-CommandPath 'node' } }
 function Resolve-Npm { Resolve-CommandPath 'npm' }
 
@@ -1158,7 +1208,7 @@ function Invoke-Start {
         throw "Latest release predates automatic run lifecycle metadata. Run '.\Assets\bees.ps1 build' first."
     }
 
-    $python=Resolve-Python $config
+    $python=Ensure-LearnerPython $config
     $unity=Resolve-UnityEditor $config
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
