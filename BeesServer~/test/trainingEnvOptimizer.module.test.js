@@ -47,7 +47,19 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
         { auto: true, current_envs: 8, min_envs: 2, max_envs: 32 },
     );
     assert.equal(learnerConsumedSteps({ throughput: { learner_consumed_steps_total: -1 } }), null);
-    assert.equal(learnerConsumedSteps({ throughput: { learner_consumed_steps_total: 42 } }), 42);
+    assert.equal(
+        learnerConsumedSteps({
+            throughput: {
+                learner_consumed_steps_total: 42,
+                accepted_steps_total: 999999,
+            },
+        }),
+        42,
+    );
+    assert.equal(
+        learnerConsumedSteps({ throughput: { accepted_steps_total: 999999 } }),
+        null,
+    );
 });
 
 test('optimizer measures learner-consumed steps, increases envs, and keeps an improvement', () => {
@@ -69,7 +81,7 @@ test('optimizer measures learner-consumed steps, increases envs, and keeps an im
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
 
-    // The process restarts at the requested count, resetting its accepted-step counter.
+    // The process restarts at the requested count, resetting its learner-consumed counter.
     state = update(optimizer, 'remote-a', 9, 0, 1010, { max: 16 });
     assert.equal(state.phase, 'warmup');
     state = update(optimizer, 'remote-a', 9, 0, 1011, { max: 16 });
