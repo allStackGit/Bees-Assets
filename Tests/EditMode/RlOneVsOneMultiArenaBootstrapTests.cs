@@ -46,6 +46,27 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void SecondaryArenaConfinementCapsVelocityBeforeTheNextPhysicsStep()
+        {
+            Type bootstrapType = RuntimeAssembly.GetType("RlOneVsOneMultiArenaBootstrap");
+            MethodInfo clamp = bootstrapType.GetMethod(
+                "ClampProjectedVelocityToArena",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            Assert.That(clamp, Is.Not.Null);
+
+            Vector2 position = new Vector2(9.5f, 0f);
+            Vector2 velocity = new Vector2(10f, 0f);
+            Vector2 constrained = (Vector2)clamp.Invoke(
+                null,
+                new object[] { position, velocity, -10f, 10f, -10f, 10f, 0.1f });
+
+            Assert.That(constrained.x, Is.EqualTo(5f).Within(0.0001f),
+                "Secondary arenas must stop at the boundary instead of overshooting and snapping back next tick.");
+            Assert.That(constrained.y, Is.Zero);
+            Assert.That(position.x + constrained.x * 0.1f, Is.EqualTo(10f).Within(0.0001f));
+        }
+
+        [Test]
         public void MultiArenaBootstrapStaysEnabledAfterApplyingSoFixedUpdateCanConstrainShips()
         {
             string source = ReadSource("Scripts", "Scenes", "RlOneVsOneMultiArenaBootstrap.cs");
