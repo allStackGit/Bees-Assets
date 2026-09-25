@@ -118,6 +118,150 @@ class TrainingBundleTests(unittest.TestCase):
                     manifest["latest_onnx"]["archive_path"],
                 )
 
+    def test_live_snapshot_is_preferred_and_manifest_flags_trainer_health(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-health"
+            bees_root, assets_root = self._layout(root, run_id)
+            (assets_root / "Training" / "bees.cluster.json").write_text(
+                json.dumps({"expectedTrainers": ["central-learner", "remote-warwick"]}),
+                encoding="utf-8",
+            )
+
+            results = bees_root / "Training" / "trainer-results" / run_id / "BeesRL1v1"
+            results.mkdir(parents=True)
+            fallback = results / "BeesRL1v1-100.onnx"
+            fallback.write_bytes(b"fallback")
+            live = results / "diagnostic-BeesRL1v1-9950-abc.onnx"
+            live.write_bytes(b"live")
+
+            trainer_log = (
+                bees_root
+                / "Training"
+                / "TrainerLogs"
+                / run_id
+                / "remote-warwick"
+                / "remote-supervisor.log"
+            )
+            trainer_log.parent.mkdir(parents=True)
+            trainer_log.write_text("worker output\n", encoding="utf-8")
+
+            status_json = root / "status.json"
+            status_json.write_text(
+                json.dumps(
+                    {
+                        "desired": {
+                            "run_id": run_id,
+                            "canonical_build_id": "build-current",
+                            "revision": 9,
+                            "training_enabled": True,
+                        },
+                        "trainers": [
+                            {
+                                "trainer_id": "central-learner",
+                                "role": "dedicated",
+                                "process_state": "running",
+                                "stale": False,
+                                "build_id": "build-current",
+                                "applied_revision": 9,
+                                "age_seconds": 1.0,
+                                "last_error": "",
+                            },
+                            {
+                                "trainer_id": "remote-warwick",
+                                "role": "dedicated",
+                                "process_state": "running",
+                                "stale": True,
+                                "build_id": "build-old",
+                                "applied_revision": 8,
+                                "age_seconds": 45.0,
+                                "last_error": "No space left on device",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            status_text = root / "status.txt"
+            status_text.write_text(
+                "Learner logs: Step=10000  ELO=1000\n",
+                encoding="utf-8",
+            )
+            snapshot_json = root / "snapshot.json"
+            snapshot_json.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "succeeded",
+                        "request_id": "abc",
+                        "run_id": run_id,
+                        "step": 9950,
+                        "model_path": str(live),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                status_json=status_json,
+                status_text=status_text,
+                snapshot_json=snapshot_json,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertEqual(manifest["learner_step"], 10000)
+                self.assertEqual(manifest["model_step"], 9950)
+                self.assertEqual(manifest["model_lag_steps"], 50)
+                self.assertEqual(
+                    manifest["latest_onnx"]["selection"],
+                    "live-snapshot",
+                )
+                self.assertEqual(
+                    zipped.read("model/" + live.name),
+                    b"live",
+                )
+                warnings = "\n".join(manifest["warnings"])
+                self.assertIn("stale", warnings)
+                self.assertIn("No space left on device", warnings)
+                self.assertIn("build mismatch", warnings)
+                self.assertIn("revision mismatch", warnings)
+                self.assertIn(
+                    "remote-supervisor.log",
+                    zipped.namelist(),
+                )
+
+    def test_stale_fallback_model_produces_model_lag_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-lag"
+            bees_root, assets_root = self._layout(root, run_id)
+            results = bees_root / "Training" / "trainer-results" / run_id / "BeesRL1v1"
+            results.mkdir(parents=True)
+            (results / "BeesRL1v1-100.onnx").write_bytes(b"old")
+            status_text = root / "status.txt"
+            status_text.write_text("Learner logs: Step=10000\n", encoding="utf-8")
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                status_text=status_text,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertEqual(manifest["model_lag_steps"], 9900)
+                self.assertTrue(
+                    any(
+                        "9900 learner steps behind" in warning
+                        for warning in manifest["warnings"]
+                    )
+                )
+
     def test_unified_operator_exposes_bundle_command(self) -> None:
         operator = (
             Path(__file__).resolve().parents[1] / "bees.ps1"
@@ -127,6 +271,9 @@ class TrainingBundleTests(unittest.TestCase):
             operator,
         )
         self.assertIn("$DiagnosticBundleScript=", operator)
+        self.assertIn("$CentralModelSnapshotRequestPath=", operator)
+        self.assertIn("Request-CentralDiagnosticModelSnapshot", operator)
+        self.assertIn("--snapshot-json", operator)
         self.assertIn("'bundle'{Invoke-Bundle}", operator)
 
     def test_missing_onnx_is_a_warning_not_a_bundle_failure(self) -> None:
