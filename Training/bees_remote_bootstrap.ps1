@@ -11,6 +11,7 @@ $DefaultInstallRoot='__BEES_INSTALL_ROOT__'
 $DefaultTorchDevice='__BEES_TORCH_DEVICE__'
 $TailnetLearner='__BEES_TAILNET_LEARNER__'
 $TailnetBootstrapPort='__BEES_TAILNET_BOOTSTRAP_PORT__'
+$GameplayPort='__BEES_GAMEPLAY_PORT__'
 $ControlPort='__BEES_CONTROL_PORT__'
 $BrokerPort='__BEES_BROKER_PORT__'
 $BundledTailnetBridge='__BEES_TAILNET_BRIDGE_FILE__'
@@ -28,6 +29,7 @@ foreach($item in @(
     @($DefaultTorchDevice,'TorchDevice'),
     @($TailnetLearner,'TailnetLearner'),
     @($TailnetBootstrapPort,'TailnetBootstrapPort'),
+    @($GameplayPort,'GameplayPort'),
     @($ControlPort,'ControlPort'),
     @($BrokerPort,'BrokerPort'),
     @($BundledTailnetBridge,'TailnetBridgeFile'),
@@ -36,12 +38,13 @@ foreach($item in @(
 )){ Require-GeneratedValue ([string]$item[0]) ([string]$item[1]) }
 
 $TailnetBootstrapPort=[int]$TailnetBootstrapPort
+$GameplayPort=[int]$GameplayPort
 $ControlPort=[int]$ControlPort
 $BrokerPort=[int]$BrokerPort
 if(-not $InstallRoot){$InstallRoot=[Environment]::ExpandEnvironmentVariables($DefaultInstallRoot)}
 if(-not $TorchDevice){$TorchDevice=$DefaultTorchDevice}
 if($Envs -lt 0 -or $Envs -gt 64){throw 'Envs must be in 1-64 when specified.'}
-foreach($port in @($TailnetBootstrapPort,$ControlPort,$BrokerPort)){
+foreach($port in @($TailnetBootstrapPort,$GameplayPort,$ControlPort,$BrokerPort)){
     if($port -lt 1 -or $port -gt 65535){throw 'Configured Bees ports must be in 1-65535.'}
 }
 
@@ -209,6 +212,7 @@ $workerArgs=@(
     '--tailnet-state',$TailnetState,
     '--tailnet-hostname',$workerHostname,
     '--tailnet-target',$TailnetLearner,
+    '--gameplay-port',[string]$GameplayPort,
     '--control-port',[string]$ControlPort,
     '--bootstrap-port',[string]$TailnetBootstrapPort,
     '--broker-port',[string]$BrokerPort,
