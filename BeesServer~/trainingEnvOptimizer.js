@@ -252,9 +252,10 @@ class TrainingEnvOptimizer {
         if (!enabled) {
             this._releaseProbe(record.trainer_id);
             state.desired_envs = capacity.current_envs;
-            state.phase = capacity.auto ? 'paused' : 'manual';
-            state.last_decision = capacity.auto ? 'optimizer paused' : 'manual env count';
-            this._resetMeasurement(state, timestamp, totalSteps, state.last_decision);
+            const pausedPhase = capacity.auto ? 'paused' : 'manual';
+            const pausedDecision = capacity.auto ? 'optimizer paused' : 'manual env count';
+            this._resetMeasurement(state, timestamp, totalSteps, pausedDecision);
+            state.phase = pausedPhase;
             return this.snapshot(record.trainer_id);
         }
 
@@ -326,7 +327,7 @@ class TrainingEnvOptimizer {
         const state = this.states.get(trainerId);
         if (!state) return null;
         return {
-            enabled: state.phase !== 'manual',
+            enabled: !['manual', 'paused'].includes(state.phase),
             phase: state.phase,
             desired_envs: state.desired_envs,
             baseline_envs: state.baseline_envs,
