@@ -68,7 +68,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
-            gameplay_port=7146,
             control_port=7150,
             bootstrap_port=7151,
             broker_port=55051,
@@ -90,14 +89,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         ready = command[command.index("--runtime-ready-file") + 1]
         self.assertTrue(ready.endswith("runtime-ready-build.txt"))
 
-    def test_worker_environment_routes_managed_unity_to_private_gameplay_tunnel(self):
-        args = Namespace(gameplay_port=7146)
-        with mock.patch.dict(managed.os.environ, {"EXISTING": "kept"}, clear=True):
-            environment = managed._worker_environment(args)
-        self.assertEqual(environment["BEES_TRAINING_GAMEPLAY_HOST"], "127.0.0.1")
-        self.assertEqual(environment["BEES_TRAINING_GAMEPLAY_PORT"], "7146")
-        self.assertEqual(environment["EXISTING"], "kept")
-
     def test_tailnet_forward_command_maps_control_and_broker(self):
         args = Namespace(
             tailnet_bridge="bridge",
@@ -111,7 +102,6 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         )
         command = managed._tailnet_forward_command(args)
         self.assertIn("forward-multi", command)
-        self.assertIn("127.0.0.1:7146=100.64.0.10:7146", command)
         self.assertIn("127.0.0.1:7150=100.64.0.10:7150", command)
         self.assertIn("127.0.0.1:55051=100.64.0.10:55051", command)
         self.assertIn("127.0.0.1:7151=100.64.0.10:7151", command)
