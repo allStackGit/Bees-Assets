@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const CONTROL_SCHEMA_VERSION = 4;
+const CONTROL_SCHEMA_VERSION = 5;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_LEASE_SECONDS = 20;
@@ -154,6 +154,7 @@ class TrainingControlStore {
             run_id: "",
             compatibility_key: "",
             pending_release: null,
+            known_dedicated_trainers: [],
             builds: {},
             full_game_builds: {},
         };
@@ -165,6 +166,7 @@ class TrainingControlStore {
         if (!parsed || !Number.isInteger(parsed.schema_version)) {
             throw new Error('training-control state schema is incompatible');
         }
+        let migrated = false;
         if (parsed.schema_version === 2) {
             const fullGameBuilds = {};
             for (const [platform, versions] of Object.entries(parsed.builds || {})) {
@@ -175,19 +177,40 @@ class TrainingControlStore {
                 }
             }
             parsed = { ...parsed, schema_version: 3, full_game_builds: fullGameBuilds };
+            migrated = true;
         }
         if (parsed.schema_version === 3) {
             parsed = {
                 ...parsed,
-                schema_version: CONTROL_SCHEMA_VERSION,
+                schema_version: 4,
                 run_id: "",
                 compatibility_key: "",
                 pending_release: null,
             };
-            atomicWriteJson(this.statePath, parsed);
-        } else if (parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
+            migrated = true;
+        }
+        if (parsed.schema_version === 4) {
+            const pending = parsed.pending_release && typeof parsed.pending_release === 'object' &&
+                !Array.isArray(parsed.pending_release)
+                ? {
+                    ...parsed.pending_release,
+                    required_trainers: [],
+                    phase_revision: parsed.revision,
+                    collect_until_ms: this.now() + this.leaseSeconds * 1000,
+                }
+                : parsed.pending_release;
+            parsed = {
+                ...parsed,
+                schema_version: CONTROL_SCHEMA_VERSION,
+                pending_release: pending,
+                known_dedicated_trainers: [],
+            };
+            migrated = true;
+        }
+        if (parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
             throw new Error('training-control state schema is incompatible');
         }
+        if (migrated) atomicWriteJson(this.statePath, parsed);
         if (!Number.isInteger(parsed.revision) || parsed.revision < 0) {
             throw new Error('training-control state revision is invalid');
         }
@@ -210,9 +233,41 @@ class TrainingControlStore {
                 typeof pending.run_id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(pending.run_id) ||
                 typeof pending.compatibility_key !== 'string' || !/^[0-9a-f]{64}$/.test(pending.compatibility_key) ||
                 typeof pending.incompatible !== 'boolean' ||
-                !['preparing', 'rolling', 'stopping'].includes(pending.phase)) {
+                !['preparing', 'rolling', 'stopping'].includes(pending.phase) ||
+                !Array.isArray(pending.required_trainers) ||
+                !Number.isInteger(pending.phase_revision) || pending.phase_revision < 0 ||
+                pending.phase_revision > parsed.revision ||
+                !Number.isFinite(pending.collect_until_ms) || pending.collect_until_ms < 0) {
                 throw new Error('training-control pending release is invalid');
             }
+            const trainerIds = new Set();
+            for (const trainer of pending.required_trainers) {
+                if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
+                    typeof trainer.trainer_id !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainer.trainer_id) ||
+                    typeof trainer.platform !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainer.platform) ||
+                    trainerIds.has(trainer.trainer_id)) {
+                    throw new Error('training-control pending release trainer barrier is invalid');
+                }
+                trainerIds.add(trainer.trainer_id);
+            }
+        }
+        if (!Array.isArray(parsed.known_dedicated_trainers)) {
+            throw new Error('training-control known trainer registry is invalid');
+        }
+        const knownTrainerIds = new Set();
+        for (const trainer of parsed.known_dedicated_trainers) {
+            if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
+                typeof trainer.trainer_id !== 'string' ||
+                !/^[A-Za-z0-9._-]+$/.test(trainer.trainer_id) ||
+                typeof trainer.platform !== 'string' ||
+                !/^[A-Za-z0-9._-]+$/.test(trainer.platform) ||
+                !Number.isFinite(trainer.last_seen_ms) || trainer.last_seen_ms < 0 ||
+                knownTrainerIds.has(trainer.trainer_id)) {
+                throw new Error('training-control known trainer registry is invalid');
+            }
+            knownTrainerIds.add(trainer.trainer_id);
         }
         if (typeof parsed.canonical_build_id !== 'string' ||
             (parsed.canonical_build_id && !/^[A-Za-z0-9._-]+$/.test(parsed.canonical_build_id))) {
