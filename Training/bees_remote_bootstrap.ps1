@@ -51,6 +51,7 @@ function Resolve-Exe([string]$Name){
     $cmd.Source
 }
 
+Write-Host '[Bees remote] Stage 1/5: preparing local worker files...'
 $InstallRoot=[IO.Path]::GetFullPath($InstallRoot)
 $RuntimeRoot=Join-Path $InstallRoot 'Runtime'
 $SecretsRoot=Join-Path $InstallRoot 'Secrets'
@@ -79,7 +80,7 @@ $bootstrapTokenPath=Join-Path $TailnetRoot 'bootstrap.token'
 $BootstrapToken | Set-Content -LiteralPath $bootstrapTokenPath -NoNewline -Encoding ASCII
 $workerHostname=("bees-worker-" + $env:COMPUTERNAME.ToLowerInvariant())
 
-Write-Host '[Bees remote] checking private-network identity.'
+Write-Host '[Bees remote] Stage 2/5: checking private-network identity...'
 Write-Host '[Bees remote] on first use, open the Tailscale login URL printed below; no VPN installation is required.'
 & $tailnetBridge auth --state $TailnetState --hostname $workerHostname
 if($LASTEXITCODE -ne 0){ throw "Embedded tailnet authentication failed with exit code $LASTEXITCODE." }
@@ -87,7 +88,7 @@ if($LASTEXITCODE -ne 0){ throw "Embedded tailnet authentication failed with exit
 $runtimeZip=Join-Path $DownloadsRoot 'bees-remote-runtime.zip'
 $workerToken=Join-Path $SecretsRoot 'training-worker.token'
 $wanToken=Join-Path $SecretsRoot 'wan.token'
-Write-Host '[Bees remote] fetching the current Bees worker runtime over the private tailnet...'
+Write-Host '[Bees remote] Stage 3/5: fetching the current Bees worker runtime over the private tailnet...'
 $fetchArgs=@(
     'fetch',
     '--state',$TailnetState,
@@ -138,6 +139,7 @@ function Resolve-PythonLauncher {
     throw 'Python 3.10 is required and could not be installed automatically.'
 }
 
+Write-Host '[Bees remote] Stage 4/5: preparing Python 3.10 worker environment...'
 if(-not(Test-Path -LiteralPath (Join-Path $VenvRoot 'Scripts\python.exe'))){
     $launcher=Resolve-PythonLauncher
     $launcherExe=$launcher[0]
@@ -182,11 +184,12 @@ $workerArgs=@(
 if($Envs -gt 0){$workerArgs+=@('--envs',[string]$Envs)}
 
 Write-Host ''
+Write-Host '[Bees remote] Stage 5/5: starting managed training worker...'
 if($Envs -gt 0){
     Write-Host "Starting Bees remote worker with $Envs environments."
 }else{
     Write-Host 'Starting Bees remote worker; environment count defaults to 4x available CPU threads (maximum 64).'
 }
 Write-Host 'Private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker.'
-& $venvPython @workerArgs
+& $venvPython -u @workerArgs
 exit $LASTEXITCODE
