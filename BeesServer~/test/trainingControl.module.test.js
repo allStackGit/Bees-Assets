@@ -1161,6 +1161,104 @@ test('schema 4 pending rollout migration waits for trainer recollection instead 
     });
 });
 
+test('schema 4 rolling migration recollects remotes before assigning a new rolling target', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        let store = new TrainingControlStore({
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'migration-rolling-old');
+        publishDedicatedBuild(store, root, 'migration-rolling-new');
+
+        store.stageRelease({
+            buildId: 'migration-rolling-old',
+            runId: 'migration-rolling-run',
+            compatibilityKey: '8'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'migration-rolling-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'migration-rolling-new',
+            runId: 'migration-rolling-run',
+            compatibilityKey: '8'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'migration-rolling-old',
+            oldSha,
+            { preparedBuildId: 'migration-rolling-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'migration-rolling-old',
+            oldSha,
+            { preparedBuildId: 'migration-rolling-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        const legacy = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        legacy.schema_version = 4;
+        delete legacy.known_dedicated_trainers;
+        delete legacy.pending_release.required_trainers;
+        delete legacy.pending_release.phase_revision;
+        delete legacy.pending_release.collect_until_ms;
+        fs.writeFileSync(statePath, JSON.stringify(legacy));
+
+        store = new TrainingControlStore({
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const centralDuringCollection = heartbeatDedicated(
+            store,
+            'central-learner',
+            'migration-rolling-old',
+            oldSha,
+            { preparedBuildId: 'migration-rolling-new' },
+        );
+        assert.equal(
+            centralDuringCollection.desired_build_id,
+            'migration-rolling-old',
+        );
+
+        const remoteDuringCollection = heartbeatDedicated(
+            store,
+            'remote-a',
+            'migration-rolling-old',
+            oldSha,
+            { preparedBuildId: 'migration-rolling-new' },
+        );
+        assert.equal(
+            remoteDuringCollection.desired_build_id,
+            'migration-rolling-old',
+        );
+
+        now = 11000;
+        assert.equal(store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        }).desired_build_id, 'migration-rolling-new');
+        assert.equal(store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        }).desired_build_id, 'migration-rolling-old');
+    });
+});
+
 test('trainer logs append by verified offset under their run and trainer namespace', () => {
     withTempDir(root => {
         const logRoot = path.join(root, 'logs');
