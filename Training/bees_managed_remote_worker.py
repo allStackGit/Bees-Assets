@@ -33,6 +33,8 @@ import zipfile
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
+REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
+REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
 
 
 def _available_cpu_threads() -> int:
@@ -64,8 +66,64 @@ def _available_cpu_threads() -> int:
     return max(1, int(os.cpu_count() or 1))
 
 
+def _available_memory_bytes() -> Optional[int]:
+    if os.name == "nt":
+        class MemoryStatusEx(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        try:
+            status = MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                available = int(status.ullAvailPhys)
+                if available > 0:
+                    return available
+        except (AttributeError, OSError, ValueError):
+            pass
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        try:
+            for line in meminfo.read_text(encoding="ascii").splitlines():
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        available = int(parts[1]) * 1024
+                        if available > 0:
+                            return available
+        except (OSError, UnicodeError, ValueError):
+            pass
+
+    try:
+        pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        available = pages * page_size
+        return available if available > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _memory_env_limit() -> int:
+    available = _available_memory_bytes()
+    if available is None:
+        return MAX_ENVS_PER_ACTOR
+    usable = max(0, available - REMOTE_MEMORY_RESERVE_BYTES)
+    return max(1, min(MAX_ENVS_PER_ACTOR, usable // REMOTE_MEMORY_PER_ENV_BYTES))
+
+
 def _default_envs() -> int:
-    return min(MAX_ENVS_PER_ACTOR, 4 * _available_cpu_threads())
+    cpu_limit = 4 * _available_cpu_threads()
+    return min(MAX_ENVS_PER_ACTOR, cpu_limit, _memory_env_limit())
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -728,7 +786,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.envs = _default_envs()
         print(
             f"[Bees remote] --envs omitted; using {args.envs} "
-            f"(4 x {_available_cpu_threads()} available CPU threads, cap {MAX_ENVS_PER_ACTOR})."
+            f"(cpu_target={4 * _available_cpu_threads()} "
+            f"memory_cap={_memory_env_limit()} hard_cap={MAX_ENVS_PER_ACTOR})."
         )
     if not 1 <= args.envs <= MAX_ENVS_PER_ACTOR:
         print(f"error: --envs must be in 1-{MAX_ENVS_PER_ACTOR}", file=sys.stderr)
