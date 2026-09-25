@@ -40,13 +40,17 @@ class TrainingControlClientTests(unittest.TestCase):
                 ["python", "worker.py"],
                 revision=1,
                 build_sha256="a" * 64,
+                build_id="build-a",
                 run_id="run-a",
+                compatibility_key="b" * 64,
                 state_file=Path("state.json"),
                 environment_args=(),
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             environment = popen.call_args.kwargs["env"]
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
+            self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
+            self.assertEqual(environment[agent.COMPATIBILITY_KEY_ENV], "b" * 64)
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
             self.assertTrue(
                 Path(environment[agent.THROUGHPUT_METRICS_ENV]).as_posix().endswith(
