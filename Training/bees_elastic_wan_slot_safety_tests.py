@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import bees_elastic_wan_slot_safety as slot_safety
 import bees_elastic_wan_training as elastic
@@ -45,12 +47,21 @@ class SlotSafetyTests(unittest.TestCase):
         run_options = SimpleNamespace(
             checkpoint_settings=SimpleNamespace(run_id="slot-test")
         )
-        broker = slot_safety.SlotSafeElasticWanBroker(
-            options,
-            run_options,
-            "0123456789abcdef0123456789abcdef",
-            local_envs=32,
-        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                elastic.BUILD_ID_ENV: "slot-build",
+                elastic.RUN_ID_ENV: "slot-test",
+                elastic.COMPATIBILITY_KEY_ENV: "f" * 64,
+            },
+            clear=False,
+        ):
+            broker = slot_safety.SlotSafeElasticWanBroker(
+                options,
+                run_options,
+                "0123456789abcdef0123456789abcdef",
+                local_envs=32,
+            )
         broker.initialize_control({})
         return broker
 
@@ -63,6 +74,7 @@ class SlotSafetyTests(unittest.TestCase):
     def test_same_process_can_refresh_its_slot(self):
         broker, specs = self._broker()
         payload = {
+            **broker.release_identity,
             "actor_id": 2,
             "actor_instance_id": "a" * 32,
             "env_count": 16,
@@ -77,6 +89,7 @@ class SlotSafetyTests(unittest.TestCase):
         broker, specs = self._broker()
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 2,
                 "actor_instance_id": "a" * 32,
                 "env_count": 16,
@@ -87,6 +100,7 @@ class SlotSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already owned"):
             broker.register_actor(
                 {
+                    **broker.release_identity,
                     "actor_id": 2,
                     "actor_instance_id": "b" * 32,
                     "env_count": 16,
@@ -99,6 +113,7 @@ class SlotSafetyTests(unittest.TestCase):
         broker, specs = self._broker()
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 1,
                 "actor_instance_id": "a" * 32,
                 "env_count": 8,
@@ -109,6 +124,7 @@ class SlotSafetyTests(unittest.TestCase):
         before = broker._registrations[1]["last_seen"]
         broker.acknowledge_reset(
             {
+                **broker.release_identity,
                 "actor_id": 1,
                 "actor_instance_id": "a" * 32,
                 "control_epoch": 1,
@@ -120,6 +136,7 @@ class SlotSafetyTests(unittest.TestCase):
         broker, specs = self._broker()
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 1,
                 "actor_instance_id": "a" * 32,
                 "env_count": 8,
@@ -130,6 +147,7 @@ class SlotSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "owned by another"):
             broker.acknowledge_reset(
                 {
+                    **broker.release_identity,
                     "actor_id": 1,
                     "actor_instance_id": "b" * 32,
                     "control_epoch": 1,
@@ -141,6 +159,7 @@ class SlotSafetyTests(unittest.TestCase):
         remote_specs = {"BeesRL1v1?team=0": MismatchedBehaviorSpec()}
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 0,
                 "actor_instance_id": "a" * 32,
                 "env_count": 4,
