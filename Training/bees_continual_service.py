@@ -340,7 +340,17 @@ def run_service(
             # Ensure the current validated champion is server-visible immediately after supervisor
             # startup, even before the next training generation finishes.
             published = current_deployment_id(options)
-            if published is None or published != state.get("last_hot_deployment_id"):
+            if published is None:
+                # A brand-new run has no validated champion yet. Training must create the first
+                # candidate before there is anything legitimate to stage/publish.
+                if state.get("last_hot_deployment_id") is not None:
+                    state["last_hot_deployment_id"] = None
+                    save_state(options, state)
+                print(
+                    "[Bees continuous] no validated deployment exists yet; "
+                    "starting training before the first publish."
+                )
+            elif published != state.get("last_hot_deployment_id"):
                 published = publish_current_hot_bundle(options, runner)
                 state["last_hot_deployment_id"] = published
                 save_state(options, state)
