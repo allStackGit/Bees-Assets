@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -69,8 +70,9 @@ class TrainingBundleTests(unittest.TestCase):
             new_model = behavior / "new.onnx"
             old_model.write_bytes(b"old-model")
             new_model.write_bytes(b"new-model")
-            os.utime(old_model, (100, 100))
-            os.utime(new_model, (200, 200))
+            now = time.time()
+            os.utime(old_model, (now - 2, now - 2))
+            os.utime(new_model, (now - 1, now - 1))
             run_logs = results / "run_logs"
             run_logs.mkdir()
             (run_logs / "timers.json").write_text(
