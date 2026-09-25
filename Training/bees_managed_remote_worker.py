@@ -745,6 +745,39 @@ def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
         return None
 
 
+def _wait_for_private_transport(
+    args: argparse.Namespace,
+    process: subprocess.Popen,
+    stop: list[bool],
+    timeout: float = 30.0,
+    required_successes: int = 2,
+) -> bool:
+    if required_successes < 1:
+        raise ValueError("required_successes must be positive")
+
+    if not _wait_for_ports(
+        (args.control_port, args.broker_port, args.bootstrap_port),
+        process,
+        stop,
+        timeout=min(timeout, 20.0),
+    ):
+        return False
+
+    consecutive = 0
+    deadline = time.monotonic() + timeout
+    while not stop[0] and time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        if isinstance(_control_status(args), Mapping):
+            consecutive += 1
+            if consecutive >= required_successes:
+                return True
+        else:
+            consecutive = 0
+        time.sleep(0.5)
+    return False
+
+
 def _remote_status_summary(
     args: argparse.Namespace,
     trainer_id: str,
@@ -945,14 +978,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             runtime_cutover: Optional[Path] = None
             try:
                 tailnet = subprocess.Popen(_tailnet_forward_command(args))
-                if not _wait_for_ports(
-                    (args.control_port, args.broker_port, args.bootstrap_port),
+                if not _wait_for_private_transport(
+                    args,
                     tailnet,
                     stop,
                 ):
                     code = tailnet.poll()
                     print(
-                        "[Bees remote] tailnet forwarding failed to become ready"
+                        "[Bees remote] private transport failed to reach learner control"
                         + ("" if code is None else f" (exit {code})")
                         + ".",
                         file=sys.stderr,
