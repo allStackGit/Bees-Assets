@@ -282,6 +282,7 @@ func parsePort(value string) (int, error) {
 func runGateway(args []string) error {
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	c := addCommon(fs)
+	gameplayPort := fs.Int("gameplay-port", 7146, "tailnet port proxying Bees gameplay/settings server")
 	controlPort := fs.Int("control-port", 7150, "tailnet port proxying learner control")
 	brokerPort := fs.Int("broker-port", 55051, "tailnet port proxying WAN broker")
 	bootstrapPort := fs.Int("bootstrap-port", 7151, "tailnet bootstrap port")
@@ -295,13 +296,18 @@ func runGateway(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	for _, port := range []int{*controlPort, *brokerPort, *bootstrapPort} {
+	ports := []int{*gameplayPort, *controlPort, *brokerPort, *bootstrapPort}
+	for _, port := range ports {
 		if port < 1 || port > 65535 {
 			return errors.New("gateway ports must be in 1-65535")
 		}
 	}
-	if *controlPort == *brokerPort || *controlPort == *bootstrapPort || *brokerPort == *bootstrapPort {
-		return errors.New("control, broker, and bootstrap ports must be distinct")
+	seenPorts := map[int]bool{}
+	for _, port := range ports {
+		if seenPorts[port] {
+			return errors.New("gameplay, control, broker, and bootstrap ports must be distinct")
+		}
+		seenPorts[port] = true
 	}
 	token, err := loadSecret(*bootstrapTokenPath)
 	if err != nil {
@@ -321,6 +327,11 @@ func runGateway(args []string) error {
 		return err
 	}
 
+	gameplayLn, err := s.Listen("tcp", fmt.Sprintf(":%d", *gameplayPort))
+	if err != nil {
+		return fmt.Errorf("listen gameplay: %w", err)
+	}
+	defer gameplayLn.Close()
 	controlLn, err := s.Listen("tcp", fmt.Sprintf(":%d", *controlPort))
 	if err != nil {
 		return fmt.Errorf("listen control: %w", err)
@@ -337,6 +348,7 @@ func runGateway(args []string) error {
 	}
 	defer bootstrapLn.Close()
 
+	go proxyListener(ctx, gameplayLn, localDial(fmt.Sprintf("127.0.0.1:%d", *gameplayPort)), "gameplay")
 	go proxyListener(ctx, controlLn, localDial(fmt.Sprintf("127.0.0.1:%d", *controlPort)), "control")
 	go proxyListener(ctx, brokerLn, localDial(fmt.Sprintf("127.0.0.1:%d", *brokerPort)), "broker")
 	httpServer := &http.Server{Handler: bootstrapHandler(
@@ -359,14 +371,15 @@ func runGateway(args []string) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer shutdownCancel()
 		_ = httpServer.Shutdown(shutdownCtx)
+		_ = gameplayLn.Close()
 		_ = controlLn.Close()
 		_ = brokerLn.Close()
 		_ = bootstrapLn.Close()
 	}()
 
 	log.Printf(
-		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d",
-		ip4, *controlPort, *brokerPort, *bootstrapPort,
+		"[Bees tailnet] gateway online ip=%s gameplay=%d control=%d broker=%d bootstrap=%d",
+		ip4, *gameplayPort, *controlPort, *brokerPort, *bootstrapPort,
 	)
 	<-ctx.Done()
 	return nil
