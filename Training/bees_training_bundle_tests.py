@@ -51,15 +51,15 @@ class TrainingBundleTests(unittest.TestCase):
             learner_logs.mkdir(parents=True)
             remote_logs.mkdir(parents=True)
             (server_logs / "bees-server.log").write_text(
-                "\n".join(f"server-{index:03d}" for index in range(100)),
+                "\n".join(f"server-{index:05d}" for index in range(20000)),
                 encoding="utf-8",
             )
             (learner_logs / "central-agent.out.log").write_text(
-                "\n".join(f"central-{index:03d}" for index in range(100)),
+                "\n".join(f"central-{index:05d}" for index in range(20000)),
                 encoding="utf-8",
             )
             (remote_logs / "Player-0.log").write_text(
-                "\n".join(f"remote-{index:03d}" for index in range(100)),
+                "\n".join(f"remote-{index:05d}" for index in range(20000)),
                 encoding="utf-8",
             )
 
@@ -106,16 +106,55 @@ class TrainingBundleTests(unittest.TestCase):
                     names,
                 )
                 combined = zipped.read("combined-logs.txt").decode("utf-8")
-                self.assertIn("server-099", combined)
-                self.assertIn("central-099", combined)
-                self.assertIn("remote-099", combined)
-                self.assertNotIn("server-000", combined)
+                self.assertIn("server-19999", combined)
+                self.assertIn("central-19999", combined)
+                self.assertIn("remote-19999", combined)
+                self.assertNotIn("server-00000", combined)
                 manifest = json.loads(zipped.read("manifest.json"))
                 self.assertEqual(run_id, manifest["run_id"])
                 self.assertEqual(10.0, manifest["log_percent"])
                 self.assertEqual(
                     "model/new.onnx",
                     manifest["latest_onnx"]["archive_path"],
+                )
+
+    def test_small_error_logs_are_included_in_full(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-small-error-log"
+            bees_root, assets_root = self._layout(root, run_id)
+            server_logs = bees_root / "Logs" / "Server"
+            server_logs.mkdir(parents=True)
+            error_text = (
+                "Error: original failure line\n"
+                + "stack frame\n" * 50
+                + "Node.js v24.15.0\n"
+            )
+            (server_logs / "bees-server.err.log").write_text(
+                error_text,
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                captured = zipped.read(
+                    "logs/server/bees-server.err.log"
+                ).decode("utf-8")
+                self.assertEqual(captured, error_text)
+                manifest = json.loads(zipped.read("manifest.json"))
+                record = next(
+                    item
+                    for item in manifest["files"]
+                    if item["archive_path"] == "logs/server/bees-server.err.log"
+                )
+                self.assertEqual(
+                    record["included_size_bytes"],
+                    record["original_size_bytes"],
                 )
 
     def test_live_snapshot_is_preferred_and_manifest_flags_trainer_health(self) -> None:
