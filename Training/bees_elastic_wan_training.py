@@ -243,6 +243,7 @@ class CapacityDiagnostics:
         self._remote_actors = 0
         self._remote_envs = 0
         self._backpressure_total = 0
+        self._backpressure_samples: Deque[float] = collections.deque()
         self._backpressure_at_topology = 0
         self._pending: Optional[Dict[str, Any]] = None
 
@@ -289,8 +290,26 @@ class CapacityDiagnostics:
         self._remote_samples.append((now, int(step_count)))
         self._prune(self._remote_samples, now, REMOTE_RATE_WINDOW_SECONDS)
 
-    def observe_backpressure(self) -> None:
+    def observe_backpressure(self, now: Optional[float] = None) -> None:
+        current = time.monotonic() if now is None else float(now)
         self._backpressure_total += 1
+        self._backpressure_samples.append(current)
+        self._prune_backpressure(current)
+
+    def _prune_backpressure(self, now: float) -> None:
+        cutoff = now - REMOTE_RATE_WINDOW_SECONDS
+        while self._backpressure_samples and self._backpressure_samples[0] < cutoff:
+            self._backpressure_samples.popleft()
+
+    def backpressure_recent(
+        self,
+        now: Optional[float] = None,
+    ) -> Tuple[int, float]:
+        current = time.monotonic() if now is None else float(now)
+        self._prune_backpressure(current)
+        count = len(self._backpressure_samples)
+        per_minute = count * 60.0 / max(1.0, REMOTE_RATE_WINDOW_SECONDS)
+        return count, per_minute
 
     def topology_changed(self, actor_count: int, remote_envs: int) -> None:
         now = time.monotonic()
@@ -323,12 +342,16 @@ class CapacityDiagnostics:
         trainer_rate = self.trainer_rate(now)
         remote_rate = self.remote_rate(now)
         queue_ratio = queue_size / max(1, queue_capacity)
+        backpressure_recent, backpressure_per_minute = self.backpressure_recent(now)
         print(
             "[Bees WAN capacity] "
             f"remote_actors={self._remote_actors} remote_envs={self._remote_envs} "
             f"trainer_steps_per_sec={(f'{trainer_rate:.1f}' if trainer_rate is not None else 'warming')} "
             f"remote_rollout_steps_per_sec={remote_rate:.1f} "
-            f"queue={queue_size}/{queue_capacity} backpressure={self._backpressure_total}."
+            f"queue={queue_size}/{queue_capacity} "
+            f"backpressure_total={self._backpressure_total} "
+            f"backpressure_60s={backpressure_recent} "
+            f"backpressure_per_min={backpressure_per_minute:.1f}."
         )
 
         pending = self._pending
