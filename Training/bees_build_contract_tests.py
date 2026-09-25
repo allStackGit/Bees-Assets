@@ -105,5 +105,67 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(npm_ci, write_stamp)
 
 
+    def test_operator_never_kills_a_managed_process_by_pid_alone(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("function Stop-ProcessTree([int]$Id)", source)
+        self.assertEqual(source.count("& taskkill /PID"), 1)
+        self.assertIn("function Stop-ManagedProcessTree", source)
+        self.assertIn("function Test-ManagedProcessIdentity", source)
+        self.assertIn("process_start_utc", source)
+        self.assertIn("executable_path", source)
+        self.assertIn(
+            "([string]$current.process_start_utc) -ne "
+            "([string]$State.process_start_utc)",
+            source,
+        )
+        self.assertIn("[StringComparison]::OrdinalIgnoreCase", source)
+        self.assertIn(
+            "The PID may have been reused.",
+            source,
+        )
+
+        stop_helper = source.index("function Stop-ManagedProcessTree")
+        taskkill = source.index("& taskkill /PID")
+        self.assertLess(stop_helper, taskkill)
+
+    def test_operator_persists_identity_for_every_managed_process_owner(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "$TailnetGatewayStatePath=Join-Path $TailnetRoot "
+            "'gateway-state.json'",
+            source,
+        )
+        self.assertGreaterEqual(source.count("process_start_utc=[string]"), 3)
+        self.assertGreaterEqual(source.count("executable_path=[string]"), 3)
+        self.assertIn(
+            "Stop-ManagedProcessTree $gatewayState $bridge "
+            "'embedded tailnet gateway'",
+            source,
+        )
+        self.assertIn(
+            "Stop-ManagedProcessTree $managedState $node 'BeesServer'",
+            source,
+        )
+        self.assertIn(
+            "Test-ManagedProcessIdentity $existing $Python",
+            source,
+        )
+
+    def test_legacy_pid_only_state_fails_closed_instead_of_being_killed(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "legacy PID-only state and cannot be proven safe to kill automatically",
+            source,
+        )
+        self.assertIn(
+            "PID-only ownership cannot exclude PID reuse",
+            source,
+        )
+        self.assertIn(
+            "Central learner PID $legacyPid is from legacy PID-only state",
+            source,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
