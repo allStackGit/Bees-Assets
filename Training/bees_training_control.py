@@ -114,6 +114,8 @@ class TrainingControlClient:
         desired_build_id = value.get("desired_build_id", canonical_build_id)
         run_id = value.get("run_id", "")
         compatibility_key = value.get("compatibility_key", "")
+        worker_env_count = value.get("worker_env_count")
+        env_optimizer = value.get("env_optimizer")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
             raise ControlRejected("training-control revision is invalid")
         if not isinstance(lease_seconds, (int, float)) or isinstance(lease_seconds, bool) or lease_seconds <= 0:
@@ -126,6 +128,14 @@ class TrainingControlClient:
             raise ControlRejected("training-control build identity is invalid")
         if not isinstance(run_id, str) or not isinstance(compatibility_key, str):
             raise ControlRejected("training-control run identity is invalid")
+        if worker_env_count is not None and (
+            not isinstance(worker_env_count, int)
+            or isinstance(worker_env_count, bool)
+            or not 1 <= worker_env_count <= 64
+        ):
+            raise ControlRejected("training-control worker_env_count is invalid")
+        if env_optimizer is not None and not isinstance(env_optimizer, Mapping):
+            raise ControlRejected("training-control env_optimizer is malformed")
         if value.get("desired_mode") not in ("training", "stopped", "inference"):
             raise ControlRejected("training-control desired_mode is invalid")
         build = value.get("build")
@@ -412,6 +422,7 @@ def default_heartbeat(
     prepared_build_id: str = "",
     last_error: str = "",
     metrics: Optional[Mapping[str, object]] = None,
+    worker_capacity: Optional[Mapping[str, object]] = None,
 ) -> dict[str, object]:
     return {
         "trainer_id": trainer_id,
@@ -426,4 +437,5 @@ def default_heartbeat(
         "prepared_build_id": str(prepared_build_id or ""),
         "last_error": last_error,
         "metrics": dict(metrics or {}),
+        "worker_capacity": dict(worker_capacity or {}),
     }
