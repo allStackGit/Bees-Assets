@@ -220,7 +220,34 @@ def _tail_text(path: Path, maximum_bytes: int = MAX_STEP_SCAN_BYTES) -> str:
         return ""
 
 
-def _learner_step(status_text: Optional[Path], learner_log_root: Path) -> Optional[int]:
+def _max_step_in_json(value: Any) -> Optional[int]:
+    latest: Optional[int] = None
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if (
+                str(key).lower() in {"step", "steps", "global_step"}
+                and isinstance(child, (int, float))
+                and not isinstance(child, bool)
+                and child >= 0
+            ):
+                candidate = int(child)
+                latest = candidate if latest is None else max(latest, candidate)
+            nested = _max_step_in_json(child)
+            if nested is not None:
+                latest = nested if latest is None else max(latest, nested)
+    elif isinstance(value, list):
+        for child in value:
+            nested = _max_step_in_json(child)
+            if nested is not None:
+                latest = nested if latest is None else max(latest, nested)
+    return latest
+
+
+def _learner_step(
+    status_text: Optional[Path],
+    learner_log_root: Optional[Path],
+    results_root: Optional[Path] = None,
+) -> Optional[int]:
     if status_text and status_text.is_file():
         text = _tail_text(status_text)
         match = re.search(r"Learner logs:\s*Step=(\d+)", text, re.IGNORECASE)
@@ -228,13 +255,20 @@ def _learner_step(status_text: Optional[Path], learner_log_root: Path) -> Option
             return int(match.group(1))
 
     latest: Optional[int] = None
-    if learner_log_root.is_dir():
+    if learner_log_root and learner_log_root.is_dir():
         for path in learner_log_root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in TEXT_LOG_SUFFIXES:
                 continue
             for match in STEP_RE.finditer(_tail_text(path)):
                 value = int(match.group(1))
                 latest = value if latest is None else max(latest, value)
+
+    if results_root and results_root.is_dir():
+        for path in results_root.rglob("training_status.json"):
+            value = _json(path)
+            candidate = _max_step_in_json(value) if value is not None else None
+            if candidate is not None:
+                latest = candidate if latest is None else max(latest, candidate)
     return latest
 
 
@@ -577,7 +611,13 @@ def create_bundle(
         if model is None:
             model = latest_file(results_root, "*.onnx")
 
-        learner_step = _learner_step(status_text, bees_root / "Logs" / "Training")
+        status_run = _run_from_status(status_json)
+        same_live_run = not status_run or status_run == resolved_run
+        learner_step = _learner_step(
+            status_text if same_live_run else None,
+            (bees_root / "Logs" / "Training") if same_live_run else None,
+            results_root,
+        )
         model_step = _model_step(model, snapshot_value if model_source == "live-snapshot" else None)
         model_lag_steps = (
             learner_step - model_step
