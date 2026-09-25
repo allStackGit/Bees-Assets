@@ -127,6 +127,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             worker_token_file="worker.token",
             install_root="install",
             envs=24,
+            min_envs=2,
+            max_envs=40,
+            auto_envs=True,
             wan_token_file="wan.token",
             torch_device="cpu",
         )
@@ -137,10 +140,33 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertNotIn("--ssh", command)
         self.assertEqual(command[command.index("--broker-host") + 1], "127.0.0.1")
         self.assertEqual(command[command.index("--broker-port") + 1], "55051")
-        self.assertEqual(command[command.index("--envs") + 1], "24")
+        self.assertEqual(command[command.index("--worker-envs") + 1], "24")
+        self.assertEqual(command[command.index("--worker-envs-min") + 1], "2")
+        self.assertEqual(command[command.index("--worker-envs-max") + 1], "40")
+        self.assertIn("--auto-worker-envs", command)
+        self.assertEqual(command[command.index("--envs") + 1], "{worker_envs}")
         self.assertIn("--runtime-ready-file", command)
         ready = command[command.index("--runtime-ready-file") + 1]
         self.assertTrue(ready.endswith("runtime-ready-build.txt"))
+
+    def test_fixed_env_override_disables_auto_optimizer(self):
+        args = Namespace(
+            control_port=7150,
+            broker_port=55051,
+            worker_token_file="worker.token",
+            install_root="install",
+            envs=12,
+            min_envs=12,
+            max_envs=12,
+            auto_envs=False,
+            wan_token_file="wan.token",
+            torch_device="cpu",
+        )
+        command = managed._worker_command(args, Path("/runtime"), "b" * 32)
+        self.assertNotIn("--auto-worker-envs", command)
+        self.assertEqual(command[command.index("--worker-envs") + 1], "12")
+        self.assertEqual(command[command.index("--worker-envs-min") + 1], "12")
+        self.assertEqual(command[command.index("--worker-envs-max") + 1], "12")
 
     def test_unhealthy_active_python_stages_repair_without_runtime_change(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -307,6 +333,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                         "build_id": "build-a",
                         "applied_revision": 4,
                         "last_error": "",
+                        "worker_capacity": {
+                            "auto": True,
+                            "current_envs": 8,
+                            "min_envs": 1,
+                            "max_envs": 16,
+                        },
+                        "env_optimizer": {
+                            "phase": "measuring",
+                            "desired_envs": 10,
+                            "measured_sps": 1234.5,
+                        },
                     }
                 ],
             }
@@ -318,6 +355,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
                 )
 
             self.assertIn("state=running", summary)
+            self.assertIn("envs=8->10", summary)
+            self.assertIn("optimizer=measuring", summary)
+            self.assertIn("accepted_sps=1234.5", summary)
             sink.write("captured\n")
             self.assertTrue(
                 (root / "logs" / "bees-v20-active" / "remote-supervisor.log").is_file()
