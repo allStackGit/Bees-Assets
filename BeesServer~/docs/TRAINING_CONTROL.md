@@ -108,13 +108,14 @@ If the control port is occupied by a server that was not launched/recorded by th
 
 ## Private remote workers
 
-`start` prepares:
+`start` prepares one copy-and-run launcher per remote platform:
 
 ```text
-B:\Bees\Remote\bees-remote-worker.ps1
+B:\Bees\Remote\bees-remote-worker.cmd
 B:\Bees\Remote\bees-remote-worker.sh
-B:\Bees\Remote\bees-remote-runtime.zip
 ```
+
+Each launcher is self-extracting and contains its platform bootstrap plus embedded tailnet helper. The server still keeps `bees-remote-runtime.zip` for private bootstrap delivery; it is not copied manually to remote machines.
 
 The transport uses the embedded Tailscale userspace library. No separate Tailscale installation, VPN driver, SSH server/client, Windows training account, SSH key, password, SCP step, or router port forwarding is required.
 
