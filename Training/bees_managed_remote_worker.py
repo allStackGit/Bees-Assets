@@ -36,6 +36,7 @@ DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
 REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
+REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -435,6 +436,19 @@ def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
     except OSError:
         pass
     os.replace(temporary, path)
+
+
+def _watch_shutdown_request(
+    path: Path,
+    stop: list[bool],
+    poll_seconds: float = 0.25,
+) -> None:
+    """Turn a launcher stop request into the supervisor's normal cleanup path."""
+    while not stop[0]:
+        if path.is_file():
+            stop[0] = True
+            return
+        time.sleep(poll_seconds)
 
 
 def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
@@ -1067,6 +1081,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: could not establish remote actor identity: {exc}", file=sys.stderr)
         return 2
 
+    shutdown_request_file = install_root / REMOTE_STOP_REQUEST_FILE
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     log_sink = _RunScopedLogSink(install_root / "ManagedBuilds" / "logs")
     original_stdout = sys.stdout
@@ -1076,6 +1091,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     updater = RuntimeUpdater(args, install_root)
     updater.start()
     stop = [False]
+    shutdown_watcher = threading.Thread(
+        target=_watch_shutdown_request,
+        args=(shutdown_request_file, stop),
+        name="bees-remote-shutdown-watcher",
+        daemon=True,
+    )
+    shutdown_watcher.start()
 
     def request_stop(_signum: int, _frame: object) -> None:
         stop[0] = True
@@ -1206,7 +1228,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.sleep(args.reconnect_seconds)
         return 0
     finally:
+        stop[0] = True
+        shutdown_watcher.join(timeout=1.0)
         updater.stop()
+        try:
+            shutdown_request_file.unlink()
+        except FileNotFoundError:
+            pass
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
         sys.stdout = original_stdout
