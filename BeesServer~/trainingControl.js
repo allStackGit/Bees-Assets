@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
+const { TrainingEnvOptimizer, normalizeCapacity } = require('./trainingEnvOptimizer');
+
 const CONTROL_SCHEMA_VERSION = 5;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
@@ -140,6 +142,7 @@ class TrainingControlStore {
             throw new Error('training-control leaseSeconds must be positive');
         }
         this.now = typeof options.now === 'function' ? options.now : () => Date.now();
+        this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
         this.state = this._loadState();
     }
@@ -819,6 +822,12 @@ class TrainingControlStore {
         const prepareRecord = pending
             ? this._pendingRecordFor(role, platform)
             : null;
+        const envOptimizer = role === 'dedicated'
+            ? this.envOptimizer.snapshot(trainerId)
+            : null;
+        const workerEnvCount = envOptimizer && Number.isInteger(envOptimizer.desired_envs)
+            ? envOptimizer.desired_envs
+            : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             trainer_id: trainerId,
@@ -828,6 +837,8 @@ class TrainingControlStore {
             training_enabled: this.state.training_enabled,
             desired_mode: desiredMode,
             environment_args: [...this.state.environment_args],
+            worker_env_count: workerEnvCount,
+            env_optimizer: envOptimizer,
             canonical_build_id: this.state.canonical_build_id,
             desired_build_id: desiredBuildId,
             run_id: this.state.run_id,
@@ -869,6 +880,7 @@ class TrainingControlStore {
             metrics: payload.metrics && typeof payload.metrics === 'object' && !Array.isArray(payload.metrics)
                 ? payload.metrics
                 : {},
+            worker_capacity: normalizeCapacity(payload.worker_capacity),
             last_seen_ms: now,
         };
         let persistentHeartbeatStateChanged = false;
@@ -878,6 +890,19 @@ class TrainingControlStore {
             persistentHeartbeatStateChanged = this._rememberDedicatedTrainer(record) ||
                 persistentHeartbeatStateChanged;
         }
+        const canonicalBuild = this._catalogForRole(role)[platform]?.[this.state.canonical_build_id];
+        const optimizerContextKey = [
+            this.state.run_id,
+            this.state.canonical_build_id,
+            JSON.stringify(this.state.environment_args),
+        ].join('|');
+        record.env_optimizer = this.envOptimizer.update(record, {
+            now,
+            contextKey: optimizerContextKey,
+            enabled: this.state.training_enabled &&
+                !this.state.pending_release &&
+                Boolean(canonicalBuild),
+        });
         this.trainers.set(trainerId, record);
         if (persistentHeartbeatStateChanged) this._persist();
         this._advanceRollout();
