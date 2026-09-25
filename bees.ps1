@@ -1126,7 +1126,6 @@ __WINDOWS_PAYLOAD__
     $linuxReplacements=@{
         '__BEES_TAILNET_LEARNER__'=(Escape-BashDoubleQuoted $tailnetTarget)
         '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
-        '__BEES_GAMEPLAY_PORT__'=[string]$gameplayPort
         '__BEES_CONTROL_PORT__'=[string]$controlPort
         '__BEES_BROKER_PORT__'=[string]$brokerPort
         '__BEES_TAILNET_BRIDGE_FILE__'=$linuxBridgeName
