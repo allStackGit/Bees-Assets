@@ -491,6 +491,7 @@ class TrainingControlStore {
         const artifact = this._catalogForRole('dedicated')[spec.platform]?.[pending.build_id];
         return Boolean(artifact) &&
             record.process_state === 'running' &&
+            !record.last_error &&
             record.build_id === pending.build_id &&
             record.build_sha256 === artifact.archive_sha256 &&
             record.applied_revision >= pending.phase_revision;
