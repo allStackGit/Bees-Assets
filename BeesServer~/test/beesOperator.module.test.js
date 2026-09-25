@@ -270,3 +270,14 @@ test('remote bootstrap templates no longer launch a separate probe process', () 
     assert.match(windows, /'fetch'/);
     assert.match(linux, /"\$TAILNET_BRIDGE" fetch/);
 });
+
+
+test('Windows remote bootstrap ignores Microsoft Store Python aliases and soft-fails version probes', () => {
+    const windowsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_remote_bootstrap.ps1');
+    const source = fs.readFileSync(windowsPath, 'utf8');
+    const probe = source.match(/function Test-Python310[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(probe, /Microsoft\\\\WindowsApps\\\\python/);
+    assert.match(probe, /\$ErrorActionPreference='SilentlyContinue'/);
+    assert.match(probe, /catch \{\s*return \$false\s*\}/);
+    assert.match(probe, /finally \{\s*\$ErrorActionPreference=\$previousErrorAction\s*\}/);
+});
