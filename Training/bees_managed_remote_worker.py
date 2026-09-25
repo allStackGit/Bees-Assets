@@ -941,11 +941,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
-            tailnet_log_thread: Optional[threading.Thread] = None
             worker_log_thread: Optional[threading.Thread] = None
             runtime_cutover: Optional[Path] = None
             try:
-                tailnet, tailnet_log_thread = _start_logged_process(_tailnet_forward_command(args))
+                tailnet = subprocess.Popen(_tailnet_forward_command(args))
                 if not _wait_for_ports(
                     (args.control_port, args.broker_port, args.bootstrap_port),
                     tailnet,
@@ -1015,8 +1014,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _terminate(tailnet)
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
-                if tailnet_log_thread is not None:
-                    tailnet_log_thread.join(timeout=1.0)
 
             if runtime_cutover is not None and not stop[0]:
                 updater.stop()
