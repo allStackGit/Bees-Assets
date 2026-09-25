@@ -358,3 +358,21 @@ test('central learner restart hash includes Training source', () => {
     assert.ok(source.includes("$trainingSourceHash=Get-GitTreeSha 'Training'"));
     assert.ok(source.includes('$trainingSourceHash)'));
 });
+
+
+test('central learner uses a managed Python environment with required training imports', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.ok(source.includes("$LearnerRequirementsPath=Join-Path $AssetsRoot 'Training\\bees_learner_requirements.txt'"));
+    assert.ok(source.includes("function Ensure-LearnerPython($Config)"));
+    assert.ok(source.includes("$python=Ensure-LearnerPython $config"));
+    assert.ok(source.includes("import sys, mlagents, torch, numpy, onnxruntime"));
+    assert.ok(source.includes("Join-Path $RuntimeRoot 'LearnerPython'"));
+    assert.ok(source.includes("bees-requirements.sha256"));
+});
+
+test('learner requirements include ML-Agents stack and ONNX Runtime', () => {
+    const requirementsPath = path.resolve(__dirname, '..', '..', 'Training', 'bees_learner_requirements.txt');
+    const source = fs.readFileSync(requirementsPath, 'utf8');
+    assert.match(source, /-r bees_remote_requirements\.txt/);
+    assert.match(source, /onnxruntime==1\.17\.1/);
+});
