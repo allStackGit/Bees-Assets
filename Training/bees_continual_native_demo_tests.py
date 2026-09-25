@@ -19,7 +19,7 @@ from bees_continual_learning import (
 from bees_continual_native_demo import ingest_native_demonstration
 
 
-OBSERVATION_SIZE = 7342
+OBSERVATION_SIZE = 7614
 CONTINUOUS_ACTIONS = 16
 DISCRETE_BRANCHES = [2] * 5 + [5]
 

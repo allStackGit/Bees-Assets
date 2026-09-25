@@ -403,3 +403,17 @@ test('remote runtime package includes an explicit Training source version marker
     assert.match(remoteBootstrap, /\$runtimeVersion=Get-GitTreeSha 'Training'/);
     assert.match(remoteBootstrap, /bees-runtime-version\.txt/);
 });
+
+
+test('training release metadata is BOM-free and old releases are normalized before bootstrap', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.ok(source.includes('function Remove-Utf8BomIfPresent([string]$Path)'));
+    assert.match(source, /\$bytes\[0\] -ne 0xEF/);
+    assert.match(source, /New-Object Text\.UTF8Encoding\(\$false\)/);
+    assert.doesNotMatch(
+        source,
+        /\$release \| ConvertTo-Json -Depth 12 \| Set-Content -LiteralPath \$releaseTemp -Encoding UTF8/,
+    );
+    const start = source.match(/function Invoke-Start[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(start, /Remove-Utf8BomIfPresent \$LatestReleasePath/);
+});

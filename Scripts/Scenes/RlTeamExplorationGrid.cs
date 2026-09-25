@@ -43,8 +43,13 @@ internal sealed class RlTeamExplorationGrid
         for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
         {
             Ship ship = ships[shipIndex];
+            if (ship == null || ship.IsDead)
+            {
+                continue;
+            }
+
             int visionRange = HiveMindVision.GetEffectiveRange(ship);
-            if (ship == null || ship.IsDead || visionRange <= 0)
+            if (visionRange <= 0)
             {
                 continue;
             }

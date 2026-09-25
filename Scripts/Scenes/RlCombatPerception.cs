@@ -27,9 +27,9 @@ internal sealed class RlCombatPerception
     internal const int MaxWeaponSlots = 5;
     internal const int MaxObservedEnemyWeaponMounts = 0;
 
-    internal const int NavigationGridSize = 13;
+    internal const int NavigationGridSize = 21;
     internal const int NavigationGridCellCount = NavigationGridSize * NavigationGridSize;
-    internal const float NavigationGridCellSize = 10f;
+    internal const float NavigationGridCellSize = 6f;
     internal const int ExplorationGridSize = RlTeamExplorationGrid.Size;
     internal const int ExplorationGridCellCount = RlTeamExplorationGrid.CellCount;
 

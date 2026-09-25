@@ -69,6 +69,21 @@ function Install-AtomicFile([string]$Source,[string]$Destination){
     }
 }
 
+function Remove-Utf8BomIfPresent([string]$Path){
+    if(-not(Test-Path -LiteralPath $Path)){ return }
+    $bytes=[IO.File]::ReadAllBytes($Path)
+    if($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF){
+        return
+    }
+    $payload=New-Object byte[] ($bytes.Length-3)
+    if($payload.Length -gt 0){
+        [Array]::Copy($bytes,3,$payload,0,$payload.Length)
+    }
+    $temp="$Path.nobom"
+    [IO.File]::WriteAllBytes($temp,$payload)
+    Install-AtomicFile $temp $Path
+}
+
 
 function Get-ClusterConfig {
     if(-not(Test-Path -LiteralPath $ConfigPath)){
@@ -758,7 +773,12 @@ function Invoke-Build {
         artifacts=$artifacts
     }
     $releaseTemp="$LatestReleasePath.new"
-    $release | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $releaseTemp -Encoding UTF8
+    $releaseJson=$release | ConvertTo-Json -Depth 12
+    [IO.File]::WriteAllText(
+        $releaseTemp,
+        $releaseJson,
+        (New-Object Text.UTF8Encoding($false))
+    )
     Install-AtomicFile $releaseTemp $LatestReleasePath
     Commit-TrainingRunPlan $python
 
@@ -1217,6 +1237,10 @@ function Invoke-Start {
     if(-not $release.run_id -or -not $release.compatibility_key){
         throw "Latest release predates automatic run lifecycle metadata. Run '.\Assets\bees.ps1 build' first."
     }
+    # Windows PowerShell 5.1's historical UTF8 writer emits a BOM. Older remote
+    # supervisors parse this bootstrap metadata as strict UTF-8 JSON, so repair any
+    # pre-fix release in place before the gateway serves it.
+    Remove-Utf8BomIfPresent $LatestReleasePath
 
     $pythonResult=@(Ensure-LearnerPython $config)
     if($pythonResult.Count -ne 1){
