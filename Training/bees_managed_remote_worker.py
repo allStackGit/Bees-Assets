@@ -199,6 +199,24 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _runtime_version_from_root(root: Path) -> str:
+    path = root / "bees-runtime-version.txt"
+    try:
+        value = path.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        return ""
+    return value if len(value) == 40 and all(ch in "0123456789abcdef" for ch in value) else ""
+
+
+def _runtime_version_from_zip(runtime_zip: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
+            value = bundle.read("bees-runtime-version.txt").decode("ascii").strip().lower()
+    except (KeyError, UnicodeDecodeError, zipfile.BadZipFile):
+        return ""
+    return value if len(value) == 40 and all(ch in "0123456789abcdef" for ch in value) else ""
+
+
 def _atomic_bytes(path: Path, data: bytes, mode: int = 0o600) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -258,6 +276,7 @@ class RuntimeUpdater:
         self._thread = threading.Thread(target=self._run, name="bees-runtime-updater", daemon=True)
         archive = Path(args.runtime_archive).expanduser().resolve()
         self.current_sha256 = _sha256_file(archive) if archive.is_file() else ""
+        self.current_version = _runtime_version_from_root(Path(__file__).resolve().parent)
         self.staged_sha256 = ""
         self.staged_root: Optional[Path] = None
         self.staged_bridge: Optional[Path] = None
@@ -417,6 +436,7 @@ class RuntimeUpdater:
     def _stage_once(self) -> None:
         runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
         runtime_sha = hashlib.sha256(runtime_zip).hexdigest()
+        runtime_version = _runtime_version_from_zip(runtime_zip)
         release = json.loads(release_bytes.decode("utf-8"))
         staged_build_id = str(release.get("build_id", "")) if isinstance(release, Mapping) else ""
         if not staged_build_id:
@@ -427,7 +447,13 @@ class RuntimeUpdater:
         _atomic_bytes(Path(self.args.worker_token_file).expanduser().resolve(), worker_token)
         _atomic_bytes(Path(self.args.wan_token_file).expanduser().resolve(), wan_token)
 
-        runtime_changed = runtime_sha != self.current_sha256
+        if runtime_version:
+            # Compare against the code this process is actually executing. The downloaded
+            # archive may already contain a newer runtime that has not been activated yet.
+            runtime_changed = runtime_version != self.current_version
+        else:
+            # Backward compatibility for runtimes produced before explicit version markers.
+            runtime_changed = runtime_sha != self.current_sha256
         bridge_changed = bridge_sha != current_bridge_sha
         with self._lock:
             if (
@@ -532,6 +558,7 @@ def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
 def _remote_status_summary(
     args: argparse.Namespace,
     trainer_id: str,
+    updater: Optional[RuntimeUpdater] = None,
 ) -> str:
     status = _control_status(args)
     if not isinstance(status, Mapping):
@@ -564,9 +591,16 @@ def _remote_status_summary(
     revision = record.get("applied_revision", "-")
     error = str(record.get("last_error", "") or "")
     suffix = f" error={error}" if error else ""
+    runtime_suffix = ""
+    if updater is not None:
+        _sha, staged_root, _bridge, _python, _build, update_error = updater.staged()
+        if update_error:
+            runtime_suffix = f" runtime_update_error={update_error}"
+        elif staged_root is not None:
+            runtime_suffix = f" runtime_update=staged:{staged_root.name[:12]}"
     return (
         f"[Bees remote] status: learner=connected trainer={trainer_id} "
-        f"state={state} envs={args.envs} build={build_id} rev={revision}{suffix}"
+        f"state={state} envs={args.envs} build={build_id} rev={revision}{suffix}{runtime_suffix}"
     )
 
 
@@ -738,7 +772,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     while not stop[0] and tailnet.poll() is None and worker.poll() is None:
                         now = time.monotonic()
                         if now >= next_status:
-                            print(_remote_status_summary(args, trainer_id), flush=True)
+                            print(
+                                _remote_status_summary(args, trainer_id, updater),
+                                flush=True,
+                            )
                             next_status = now + 5.0
                         runtime_cutover = _runtime_cutover_selected(
                             args,
