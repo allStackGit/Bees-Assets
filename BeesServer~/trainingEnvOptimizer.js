@@ -92,6 +92,7 @@ class TrainingEnvOptimizer {
             last_decision: 'collecting baseline',
             cooldown_until_ms: 0,
             retest_after_ms: 0,
+            last_update_ms: now,
         };
     }
 
@@ -223,7 +224,8 @@ class TrainingEnvOptimizer {
         state.last_decision = (materiallyWorse ? 'backing off' : 'no material gain') +
             ' from ' + capacity.current_envs + ' envs (' + sps.toFixed(1) + ' vs ' +
             state.baseline_sps.toFixed(1) + ' steps/s)';
-        this._releaseProbe(state.trainer_id);
+        // Keep the cluster-wide probe lock until this worker has actually returned to the
+        // accepted baseline. Otherwise another worker could begin a probe during restart/backoff.
     }
 
     update(record, context = {}) {
@@ -232,6 +234,13 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = acceptedSteps(record && record.metrics);
         const contextKey = String(context.contextKey || '');
+        if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
+            const active = this.states.get(this.activeProbeTrainerId);
+            const staleAfter = this.warmupMs + this.measurementMs + this.cooldownMs + 60_000;
+            if (!active || timestamp - active.last_update_ms > staleAfter) {
+                this.activeProbeTrainerId = null;
+            }
+        }
         const enabled = context.enabled === true &&
             record && record.role === 'dedicated' &&
             record.trainer_id !== 'central-learner' &&
@@ -248,6 +257,7 @@ class TrainingEnvOptimizer {
             state = this._newState(record.trainer_id, contextKey, capacity, timestamp);
             this.states.set(record.trainer_id, state);
         }
+        state.last_update_ms = timestamp;
 
         if (!enabled) {
             this._releaseProbe(record.trainer_id);
@@ -295,6 +305,13 @@ class TrainingEnvOptimizer {
         }
 
         if (state.phase === 'awaiting-restart' || state.phase === 'cooldown') {
+            if (
+                state.baseline_envs !== null &&
+                state.desired_envs === state.baseline_envs &&
+                capacity.current_envs === state.baseline_envs
+            ) {
+                this._releaseProbe(state.trainer_id);
+            }
             this._resetMeasurement(state, timestamp, totalSteps, 'warming after env change');
             return this.snapshot(record.trainer_id);
         }
