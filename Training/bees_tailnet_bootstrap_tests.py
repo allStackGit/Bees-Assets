@@ -89,6 +89,26 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
             self.assertIn(expected, source)
             self.assertNotIn(stale, source)
 
+    def test_remote_launchers_detach_supervisor_and_expose_graceful_stop(self):
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+        managed = MANAGED_WORKER.read_text(encoding="utf-8")
+
+        self.assertIn("[ValidateSet('start','stop')]", windows)
+        self.assertIn("Start-Process -FilePath $venvPython", windows)
+        self.assertIn("remote-worker.pid", windows)
+        self.assertIn("remote-worker.stop", windows)
+        self.assertNotIn("Ctrl+C stops this worker.", windows)
+
+        self.assertIn('COMMAND="start"', linux)
+        self.assertIn('nohup "$VENV_PYTHON" -u', linux)
+        self.assertIn("remote-worker.pid", linux)
+        self.assertIn("remote-worker.stop", linux)
+        self.assertNotIn("Ctrl+C stops this worker.", linux)
+
+        self.assertIn('REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"', managed)
+        self.assertIn("_watch_shutdown_request", managed)
+
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
         self.assertEqual(config["remoteTransport"], "tailnet")
