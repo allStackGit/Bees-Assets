@@ -175,7 +175,21 @@ The bootstrap endpoint requires its own bearer token. It serves the current remo
 
 After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. The remote Python runtime version is a SHA-256 content identity of the exact staged `.py` files and requirements bytes that are placed in `bees-remote-runtime.zip`, so dirty/uncommitted changes cannot reuse an older runtime version. Tailnet helper binaries are published from immutable source-hash version directories rather than by overwriting a live executable. When helper source changes, the learner gateway is restarted onto the new immutable version after the updated bootstrap payload is prepared. The supervisor switches remote runtime/helper releases only at that trainer's assigned build cutover.
 
-Machines that were already running a launcher from before this self-update mechanism existed need one final manual bootstrap with the newly generated launcher. After that transition, routine builds do not require recopying the launcher.
+The launcher starts the long-running supervisor as a detached background process after bootstrap completes. Closing the terminal or logging out does not intentionally stop training. Re-running the start command is idempotent while that supervisor is still running. Stop it through the same launcher so the supervisor follows its managed cleanup path:
+
+```cmd
+bees-remote-worker.cmd
+bees-remote-worker.cmd stop
+```
+
+```bash
+bash bees-remote-worker.sh
+bash bees-remote-worker.sh stop
+```
+
+The launcher records the supervisor PID under the worker install root only for local running/stopped detection; the stop command does not blindly kill that PID. It writes a local shutdown request, waits up to 45 seconds for the supervisor to stop its managed worker and private transport, and fails without force-killing if cleanup does not complete. Bootstrap/supervisor console output is redirected to local worker logs while the existing run-scoped supervisor log continues to be mirrored through the training-log upload path.
+
+Machines using an older launcher need one final copy of the newly generated launcher to gain background start/stop behavior. After that transition, routine runtime/helper releases remain self-updating and do not require recopying the launcher.
 
 Environment count is automatically optimized per remote machine by default:
 
