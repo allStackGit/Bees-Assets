@@ -205,3 +205,17 @@ test('Windows cmd launcher prints before decoding its embedded payload', () => {
     assert.ok(launch >= 0 && extract > launch && payload > extract);
     assert.match(remoteBootstrap, /powershell\.exe -NoLogo -NoProfile -ExecutionPolicy Bypass/);
 });
+
+
+test('Windows self-extractor matches only the terminal payload marker lines', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(
+        remoteBootstrap,
+        /\[regex\]::Match\(\$t,'\(\?ms\)\^::BEES_PAYLOAD_BEGIN\\r\?\\n\(\?<payload>\.\*\?\)\\r\?\\n::BEES_PAYLOAD_END\\s\*\$'\)/
+    );
+    assert.doesNotMatch(remoteBootstrap, /\.IndexOf\(\$s\)/);
+    assert.match(remoteBootstrap, /\$m\.Groups\['payload'\]\.Value/);
+    assert.match(remoteBootstrap, /\$bytes\[0\] -ne 0x50/);
+    assert.match(remoteBootstrap, /\$bytes\[1\] -ne 0x4B/);
+});
