@@ -38,6 +38,54 @@ class ArchiveTrainingRunTests(unittest.TestCase):
             )
             self.assertEqual(rebuilt, payload)
 
+    def test_run_git_uses_explicit_git_executable(self):
+        assets = Path("C:/Bees/Assets")
+        with mock.patch.object(archive.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            archive._run_git(
+                assets,
+                ["status"],
+                git_executable="C:/Tools/Git/cmd/git.exe",
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "C:/Tools/Git/cmd/git.exe")
+        self.assertEqual(command[1:], ["status"])
+
+    def test_main_forwards_git_executable_to_archive_commit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = root / "Assets"
+            assets.mkdir()
+            history = assets / "TrainingHistory~" / "runs" / "run-1"
+            history.mkdir(parents=True)
+
+            with (
+                mock.patch.object(archive, "sync_run_history", return_value=history),
+                mock.patch.object(archive, "commit_and_push") as commit,
+            ):
+                result = archive.main([
+                    "--assets-root", str(assets),
+                    "--bees-root", str(root),
+                    "--run-id", "run-1",
+                    "--git-executable", "C:/Tools/Git/cmd/git.exe",
+                ])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            commit.call_args.kwargs["git_executable"],
+            "C:/Tools/Git/cmd/git.exe",
+        )
+
+    def test_operator_passes_resolved_git_to_archive_helper(self):
+        operator = Path(__file__).resolve().parents[1] / "bees.ps1"
+        source = operator.read_text(encoding="utf-8")
+        start = source.index("function Archive-TrainingRun")
+        end = source.index("\n}", start)
+        block = source[start:end]
+        self.assertIn("$git=Resolve-Git", block)
+        self.assertIn("'--git-executable',$git", block)
+
     def test_archive_does_not_touch_durable_checkpoint_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
