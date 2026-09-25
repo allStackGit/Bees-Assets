@@ -1,0 +1,5 @@
+2026/09/25 07:54:33 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151
+2026/09/25 07:55:38 [Bees tailnet] bootstrap Linux bridge write failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/25 07:55:38 [Bees tailnet] bootstrap zip close failed: write tcp 100.80.169.87:7151: connection reset by peer
+2026/09/25 07:55:39 [Bees tailnet] broker target unavailable: dial tcp 127.0.0.1:55051: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 08:16:19 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.

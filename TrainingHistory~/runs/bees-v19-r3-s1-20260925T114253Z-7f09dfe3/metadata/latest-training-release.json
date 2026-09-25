@@ -1,0 +1,42 @@
+{
+    "schema_version":  2,
+    "build_id":  "2026-09-25-074254-900097c63d0c",
+    "source_commit":  "900097c63d0c",
+    "created_utc":  "2026-09-25T11:54:01.7290370Z",
+    "run_id":  "bees-v19-r3-s1-20260925T114253Z-7f09dfe3",
+    "previous_run_id":  "bees-v18-r3-s1-20260924T234539Z-9b30b3f5",
+    "compatibility_key":  "7f09dfe3497381d9c12940c06bad76a6fd14ab971c091799e3dfa02b573dfb8a",
+    "incompatible":  true,
+    "contract":  {
+                     "action_schema_version":  8,
+                     "agent_action_source_sha256":  "fa09edc37812bda60e1c67d603cb5d8d50a6397915c702766eb9b79cd8532fd9",
+                     "behavior_name":  "BeesRL1v1",
+                     "combat_perception_source_sha256":  "4e9d693140221fdaa7edb9a3460b338388ce7920a33abea1bdaf63f3e2d40d1b",
+                     "episode_identity_source_sha256":  "e526a01196e8f30de12a3dc116d851cf3ed121d88672814646a9c2472df6da00",
+                     "network_settings":  "network_settings:\nnormalize: true\nhidden_units: 128\nnum_layers: 3\n",
+                     "observation_schema_version":  11,
+                     "policy_abi_version":  19,
+                     "policy_schema_source_sha256":  "db6717bf374a2ca59e224af80583b4dbfc047691ececa7199b59ca813474af33",
+                     "policy_signature":  "bees-rl-v19|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id",
+                     "reward_schema_version":  3,
+                     "reward_source_sha256":  "356983c2c69d4b201ca52e23982f114122be7c2e1e508f95f1bf72714078890b",
+                     "scenario_schema_version":  1,
+                     "team_exploration_source_sha256":  "c41203e4bc98e018b377017a548127efd8e45a35b5390cb0a8c089f2c43f1361"
+                 },
+    "artifacts":  [
+                      {
+                          "role":  "dedicated",
+                          "platform":  "WindowsPlayer",
+                          "folder":  "B:\\Bees\\Builds\\2026-09-25 RL Windows",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-074254-900097c63d0c\\rl-windows.zip",
+                          "entrypoint":  "Bees RL Training.exe"
+                      },
+                      {
+                          "role":  "dedicated",
+                          "platform":  "LinuxPlayer",
+                          "folder":  "B:\\Bees\\Builds\\2026-09-25 RL Linux",
+                          "archive":  "B:\\Bees\\Builds\\Packages\\2026-09-25-074254-900097c63d0c\\rl-linux.zip",
+                          "entrypoint":  "Bees RL Training.x86_64"
+                      }
+                  ]
+}
