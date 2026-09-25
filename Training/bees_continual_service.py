@@ -125,6 +125,29 @@ def generation_target_steps(options: ServiceOptions, index: int) -> int:
     return (index + 1) * options.generation_steps
 
 
+def training_run_data_exists(options: ServiceOptions) -> bool:
+    """Return whether ML-Agents has created resumable state for this persistent run."""
+    run_dir = options.root / "trainer-results" / options.run_id
+    return run_dir.is_dir()
+
+
+def should_resume_training(
+    options: ServiceOptions,
+    *,
+    generation_index: int,
+    previously_started: bool,
+) -> bool:
+    """Resume only when a prior trainer invocation actually created run state.
+
+    The training_started flag is persisted before spawning ML-Agents so a mid-run service
+    crash can recover. A failure before ML-Agents creates its run directory must not turn
+    every retry into an invalid --resume attempt.
+    """
+    if generation_index > 0:
+        return True
+    return previously_started and training_run_data_exists(options)
+
+
 def write_generation_config(options: ServiceOptions, index: int) -> Path:
     source = options.trainer_config.read_text(encoding="utf-8")
     target_steps = generation_target_steps(options, index)
@@ -362,7 +385,11 @@ def run_service(
                 previously_started = bool(state["training_started"])
                 state["training_started"] = True
                 save_state(options, state)
-                resume = index > 0 or previously_started
+                resume = should_resume_training(
+                    options,
+                    generation_index=index,
+                    previously_started=previously_started,
+                )
                 print(
                     f"[Bees continuous] training {generation_id(index)} "
                     f"target_steps={generation_target_steps(options, index)} resume={resume}"
