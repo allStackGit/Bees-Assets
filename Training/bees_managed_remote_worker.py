@@ -370,6 +370,13 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _python_executable_path(path: str | Path) -> Path:
+    # Do not resolve symlinks here. On Linux, a venv's bin/python is commonly a
+    # symlink to the base interpreter; resolving it discards the venv context and
+    # makes installed packages appear to be missing.
+    return Path(os.path.abspath(os.fspath(path)))
+
+
 def _python_remote_dependencies_ok(python_path: Path) -> bool:
     completed = subprocess.run(
         [
@@ -540,13 +547,13 @@ class RuntimeUpdater:
     ) -> Path:
         requirements = runtime_root / "bees_remote_requirements.txt"
         if not requirements.is_file():
-            return Path(sys.executable).resolve()
+            return _python_executable_path(sys.executable)
 
         active_requirements = Path(__file__).resolve().parent / "bees_remote_requirements.txt"
         new_hash = _sha256_file(requirements)
         active_hash = _sha256_file(active_requirements) if active_requirements.is_file() else ""
         if new_hash == active_hash and _python_remote_dependencies_ok(Path(sys.executable)):
-            return Path(sys.executable).resolve()
+            return _python_executable_path(sys.executable)
 
         venv_root = self.install_root / "VenvVersions" / new_hash
         python_path = (
@@ -556,7 +563,7 @@ class RuntimeUpdater:
         )
         if python_path.is_file():
             if _python_remote_dependencies_ok(python_path):
-                return python_path.resolve()
+                return _python_executable_path(python_path)
             shutil.rmtree(venv_root, ignore_errors=True)
 
         venv_root.parent.mkdir(parents=True, exist_ok=True)
@@ -646,7 +653,7 @@ class RuntimeUpdater:
             raise RuntimeError(
                 "staged remote dependency validation failed after activation path move"
             )
-        return python_path.resolve()
+        return _python_executable_path(python_path)
 
     def _stage_once(self) -> None:
         runtime_zip, worker_token, wan_token, bridge_bytes, release_bytes = self._fetch_bootstrap()
@@ -1189,7 +1196,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 next_script = next_root / "bees_managed_remote_worker.py"
                 if not next_script.is_file():
                     raise RuntimeError(f"staged runtime is missing {next_script}")
-                next_python = str(staged_python or Path(sys.executable).resolve())
+                next_python = str(staged_python or _python_executable_path(sys.executable))
                 os.execv(
                     next_python,
                     [next_python, str(next_script), *raw_argv],
