@@ -183,6 +183,45 @@ class ElasticBrokerTests(unittest.TestCase):
                 }
             )
 
+    def test_learner_consumption_counter_advances_only_when_batch_is_drained(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        broker._trajectory_batches.put_nowait(
+            {
+                "actor_id": 0,
+                "policy_versions": {},
+                "control_epoch": broker.control_epoch,
+                "trajectories": [object()],
+                "step_count": 37,
+            }
+        )
+
+        before = broker.wait_state(
+            broker.policy_epoch,
+            broker.control_epoch,
+            0.0,
+        )
+        self.assertEqual(before["consumed_steps_by_actor"]["0"], 0)
+        self.assertEqual(before["trajectory_queue_depth"], 1)
+
+        drained = broker.drain_current_batches(1)
+        self.assertEqual(len(drained), 1)
+        after = broker.wait_state(
+            broker.policy_epoch,
+            broker.control_epoch,
+            0.0,
+        )
+        self.assertEqual(after["consumed_steps_by_actor"]["0"], 37)
+        self.assertEqual(after["trajectory_queue_depth"], 0)
+
     def test_claim_rejects_actor_from_a_different_release(self):
         broker, _specs = self._broker()
         payload = {
@@ -204,7 +243,13 @@ class ElasticBrokerTests(unittest.TestCase):
         }
         session = {"release_identity": dict(expected)}
         actor_worker._validate_session_release_identity(session, expected)
+
+        # Compatible rolling releases may use a different executable build while preserving
+        # the same semantic run lineage.
         session["release_identity"]["build_id"] = "build-b"
+        actor_worker._validate_session_release_identity(session, expected)
+
+        session["release_identity"]["compatibility_key"] = "b" * 64
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             actor_worker._validate_session_release_identity(session, expected)
 
@@ -258,7 +303,12 @@ class ElasticBrokerTests(unittest.TestCase):
     def test_reclaim_transfers_slot_to_new_process_instance(self):
         broker, specs = self._broker()
         actor_id = broker.claim_actor(
-            {"actor_key": "machine-a", "actor_instance_id": "old-process", "env_count": 8}
+            {
+                **broker.release_identity,
+                "actor_key": "machine-a",
+                "actor_instance_id": "old-process",
+                "env_count": 8,
+            }
         )
         broker.register_actor(
             {
