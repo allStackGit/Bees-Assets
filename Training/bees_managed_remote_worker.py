@@ -529,6 +529,47 @@ def _control_status(args: argparse.Namespace) -> Optional[Mapping[str, object]]:
         return None
 
 
+def _remote_status_summary(
+    args: argparse.Namespace,
+    trainer_id: str,
+) -> str:
+    status = _control_status(args)
+    if not isinstance(status, Mapping):
+        return (
+            f"[Bees remote] status: connecting to learner; trainer={trainer_id} "
+            f"envs={args.envs}"
+        )
+
+    desired = status.get("desired")
+    desired_map = desired if isinstance(desired, Mapping) else {}
+    trainers = status.get("trainers")
+    record: Optional[Mapping[str, object]] = None
+    if isinstance(trainers, list):
+        for candidate in trainers:
+            if isinstance(candidate, Mapping) and candidate.get("trainer_id") == trainer_id:
+                record = candidate
+                break
+
+    if record is None:
+        build_id = str(desired_map.get("canonical_build_id", "") or "-")
+        return (
+            f"[Bees remote] status: learner connected; waiting for trainer registration; "
+            f"trainer={trainer_id} envs={args.envs} build={build_id}"
+        )
+
+    state = str(record.get("process_state", "") or "unknown")
+    if bool(record.get("stale", False)):
+        state = "STALE"
+    build_id = str(record.get("build_id", "") or desired_map.get("canonical_build_id", "") or "-")
+    revision = record.get("applied_revision", "-")
+    error = str(record.get("last_error", "") or "")
+    suffix = f" error={error}" if error else ""
+    return (
+        f"[Bees remote] status: learner=connected trainer={trainer_id} "
+        f"state={state} envs={args.envs} build={build_id} rev={revision}{suffix}"
+    )
+
+
 def _runtime_cutover_selected(
     args: argparse.Namespace,
     trainer_id: str,
@@ -570,6 +611,7 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     return [
         sys.executable,
+        "-u",
         str(root / "bees_training_worker_agent.py"),
         "--server-url",
         f"http://127.0.0.1:{args.control_port}",
@@ -686,8 +728,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         f"[Bees remote] private transport ready; identity={actor_key[:8]} "
                         f"envs={args.envs}; actor slot will be assigned by the learner."
                     )
+                    print(
+                        f"[Bees remote] managed worker launched; waiting for trainer registration "
+                        f"and assigned build. trainer={trainer_id}",
+                        flush=True,
+                    )
                     worker = subprocess.Popen(_worker_command(args, root, actor_key))
+                    next_status = 0.0
                     while not stop[0] and tailnet.poll() is None and worker.poll() is None:
+                        now = time.monotonic()
+                        if now >= next_status:
+                            print(_remote_status_summary(args, trainer_id), flush=True)
+                            next_status = now + 5.0
                         runtime_cutover = _runtime_cutover_selected(
                             args,
                             trainer_id,
