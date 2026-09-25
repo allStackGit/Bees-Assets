@@ -952,11 +952,18 @@ class TrainingControlStore {
             throw Object.assign(new Error('trainer log path escapes its run root'), { statusCode: 400 });
         }
         fs.mkdirSync(path.dirname(destination), { recursive: true });
+        let current = fs.existsSync(destination) ? fs.statSync(destination).size : 0;
         if (reset) {
+            if (offset !== 0) {
+                const error = Object.assign(
+                    new Error('trainer log reset requires offset 0'),
+                    { statusCode: 409 });
+                error.expectedOffset = current;
+                throw error;
+            }
             fs.writeFileSync(destination, Buffer.alloc(0), { mode: 0o600 });
-        }
-        const current = fs.existsSync(destination) ? fs.statSync(destination).size : 0;
-        if (current !== offset) {
+            current = 0;
+        } else if (current !== offset) {
             const error = Object.assign(new Error('trainer log offset mismatch'), { statusCode: 409 });
             error.expectedOffset = current;
             throw error;
