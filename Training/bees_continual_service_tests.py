@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import bees_continual_service as service
 
@@ -18,6 +19,28 @@ class ContinualServiceTests(unittest.TestCase):
             service.rewrite_max_steps("behaviors: {}\n", 10)
         with self.assertRaises(ValueError):
             service.rewrite_max_steps("max_steps: 1\nmax_steps: 2\n", 10)
+
+    def test_managed_stop_interrupts_training_child_group_for_final_save(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            fake = mock.Mock()
+            fake.pid = 6161
+            fake.poll.side_effect = [None, 0, 0]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(service.os, "name", "posix"),
+                mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
+                mock.patch.object(service.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(service.os, "killpg") as killpg,
+                mock.patch.object(service.time, "sleep"),
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    service._run_managed_subprocess(["python", "trainer.py"], options)
+
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            killpg.assert_called_once_with(6161, service.signal.SIGINT)
 
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
