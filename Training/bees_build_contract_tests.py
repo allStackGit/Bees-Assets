@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "Editor" / "BeesCommandLineBuild.cs"
 OPERATOR_SCRIPT = ROOT / "bees.ps1"
+REMOTE_BOOTSTRAP_SCRIPT = ROOT / "Training" / "bees_remote_bootstrap.ps1"
 
 
 class BeesCommandLineBuildSourceTests(unittest.TestCase):
@@ -40,6 +41,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
 
+
+    def test_windows_remote_bootstrap_normalizes_single_python_launcher_result(self):
+        source = REMOTE_BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("Set-StrictMode -Version Latest", source)
+        self.assertIn("$launcher=@(Resolve-PythonLauncher)", source)
+        self.assertIn("$launcherExe=$launcher[0]", source)
+        self.assertIn("if($launcher.Count -gt 1)", source)
+        self.assertNotIn("$launcher=Resolve-PythonLauncher\n", source)
 
     def test_operator_hashes_actual_server_and_training_runtime_bytes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
