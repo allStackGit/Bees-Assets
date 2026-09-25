@@ -358,7 +358,11 @@ def _diagnose_status(
             issues.append(f"dedicated trainer state={state or 'unknown'}")
 
         freshness = log_freshness.get(trainer_id)
-        if raw.get("role") == "dedicated" and freshness is None:
+        expects_uploaded_logs = (
+            raw.get("role") == "dedicated"
+            and trainer_id != "central-learner"
+        )
+        if expects_uploaded_logs and freshness is None:
             issues.append("no uploaded logs for bundled run")
         elif freshness and freshness.get("age_seconds") is not None:
             age = float(freshness["age_seconds"])
@@ -620,7 +624,7 @@ def create_bundle(
         )
         model_step = _model_step(model, snapshot_value if model_source == "live-snapshot" else None)
         model_lag_steps = (
-            learner_step - model_step
+            max(0, learner_step - model_step)
             if learner_step is not None and model_step is not None
             else None
         )
