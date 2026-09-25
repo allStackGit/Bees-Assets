@@ -634,6 +634,11 @@ class RuntimeUpdater:
         )
         if not python_path.is_file():
             raise RuntimeError("staged Python environment is missing its interpreter")
+        if not _python_remote_dependencies_ok(python_path):
+            shutil.rmtree(venv_root, ignore_errors=True)
+            raise RuntimeError(
+                "staged remote dependency validation failed after activation path move"
+            )
         return python_path.resolve()
 
     def _stage_once(self) -> None:
@@ -899,6 +904,38 @@ def _runtime_cutover_selected(
     return None
 
 
+def _wait_for_dependency_repair_cutover(
+    args: argparse.Namespace,
+    trainer_id: str,
+    updater: RuntimeUpdater,
+    tailnet: subprocess.Popen,
+    stop: list[bool],
+) -> Optional[Path]:
+    if _python_remote_dependencies_ok(Path(sys.executable)):
+        return None
+
+    print(
+        "[Bees remote] active Python dependencies are incomplete; "
+        "waiting for the staged dependency repair before launching the WAN actor.",
+        file=sys.stderr,
+        flush=True,
+    )
+    next_status = 0.0
+    while not stop[0] and tailnet.poll() is None:
+        runtime_cutover = _runtime_cutover_selected(args, trainer_id, updater)
+        if runtime_cutover is not None:
+            return runtime_cutover
+        now = time.monotonic()
+        if now >= next_status:
+            print(
+                _remote_status_summary(args, trainer_id, updater),
+                flush=True,
+            )
+            next_status = now + 5.0
+        time.sleep(0.5)
+    return None
+
+
 def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> list[str]:
     trainer_id = f"remote-{socket.gethostname().lower()}-{actor_key[:8]}"
     command = [
@@ -1066,11 +1103,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         current_desired = current_status.get("desired")
                         if isinstance(current_desired, Mapping):
                             log_sink.set_run_id(str(current_desired.get("run_id", "") or ""))
-                    worker, worker_log_thread = _start_logged_process(
-                        _worker_command(args, root, actor_key)
+
+                    runtime_cutover = _wait_for_dependency_repair_cutover(
+                        args,
+                        trainer_id,
+                        updater,
+                        tailnet,
+                        stop,
                     )
+                    if runtime_cutover is not None:
+                        print(
+                            f"[Bees remote] activating staged worker runtime "
+                            f"{runtime_cutover.name[:12]} after dependency repair."
+                        )
+                    elif not stop[0] and tailnet.poll() is None:
+                        worker, worker_log_thread = _start_logged_process(
+                            _worker_command(args, root, actor_key)
+                        )
+
                     next_status = 0.0
-                    while not stop[0] and tailnet.poll() is None and worker.poll() is None:
+                    while (
+                        runtime_cutover is None
+                        and worker is not None
+                        and not stop[0]
+                        and tailnet.poll() is None
+                        and worker.poll() is None
+                    ):
                         now = time.monotonic()
                         if now >= next_status:
                             print(
@@ -1096,7 +1154,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 f"[Bees remote] tailnet transport exited ({tailnet.returncode}); restarting.",
                                 file=sys.stderr,
                             )
-                        elif worker.poll() is not None:
+                        elif worker is not None and worker.poll() is not None:
                             print(
                                 f"[Bees remote] worker exited ({worker.returncode}); restarting.",
                                 file=sys.stderr,
