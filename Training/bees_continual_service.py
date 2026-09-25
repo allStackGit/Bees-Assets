@@ -414,7 +414,7 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
             _force_stop_managed_child(process)
 
     return_code = int(process.wait())
-    if stop_requested:
+    if stop_requested or _managed_stop_requested():
         raise KeyboardInterrupt
     return return_code
 
