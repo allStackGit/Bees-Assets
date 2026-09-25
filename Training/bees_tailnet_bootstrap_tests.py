@@ -55,6 +55,15 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertNotIn('[regex]::Replace($linuxWrapper,"\\r\\n","\\n")', operator)
         self.assertNotIn('[regex]::Replace($linuxBody,"\\r\\n","\\n")', operator)
 
+    def test_central_agent_restart_requests_checkpoint_before_force_kill(self):
+        operator = OPERATOR.read_text(encoding="utf-8")
+        self.assertIn("function Stop-CentralAgentGracefully", operator)
+        self.assertIn("'--shutdown-request-file',$CentralAgentShutdownRequestPath", operator)
+        self.assertIn("graceful_checkpoint_shutdown=$true", operator)
+        self.assertIn("checkpointing before restarting the managed central agent", operator)
+        self.assertNotIn("Stop-ProcessTree ([int]$existing.pid)", operator)
+        self.assertIn("AddSeconds(180)", operator)
+
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
         self.assertEqual(config["remoteTransport"], "tailnet")
