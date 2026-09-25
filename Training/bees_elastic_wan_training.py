@@ -751,6 +751,14 @@ class ElasticWanBroker(base.WanActorBroker):
         self.diagnostics.observe_remote_batch(step_count)
         return len(trajectories)
 
+    def record_consumed_batch(self, batch: Mapping[str, Any]) -> None:
+        actor_id = self._validate_actor_id(batch.get("actor_id"))
+        step_count = batch.get("step_count")
+        if not isinstance(step_count, int) or isinstance(step_count, bool) or step_count < 0:
+            raise ValueError("consumed WAN batch has invalid step_count")
+        with self._condition:
+            self._consumed_steps_by_actor[actor_id] += step_count
+
     def drain_current_batches(self, limit: int) -> Tuple[Mapping[str, Any], ...]:
         selected: List[Mapping[str, Any]] = []
         for _ in range(max(0, int(limit))):
@@ -760,10 +768,7 @@ class ElasticWanBroker(base.WanActorBroker):
                 break
             if self._batch_is_current(batch):
                 selected.append(batch)
-                actor_id = int(batch["actor_id"])
-                step_count = int(batch["step_count"])
-                with self._condition:
-                    self._consumed_steps_by_actor[actor_id] += step_count
+                self.record_consumed_batch(batch)
         return tuple(selected)
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
