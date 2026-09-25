@@ -205,7 +205,7 @@ class ElasticBrokerTests(unittest.TestCase):
         )
 
         before = broker.wait_state(
-            broker.policy_epoch,
+            broker._policy_epoch,
             broker.control_epoch,
             0.0,
         )
@@ -215,7 +215,7 @@ class ElasticBrokerTests(unittest.TestCase):
         drained = broker.drain_current_batches(1)
         self.assertEqual(len(drained), 1)
         after = broker.wait_state(
-            broker.policy_epoch,
+            broker._policy_epoch,
             broker.control_epoch,
             0.0,
         )
