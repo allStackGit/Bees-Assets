@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -98,6 +99,28 @@ class BeesOptionParsingTests(unittest.TestCase):
             equals_value,
             ["Training/rl_1v1_config.yaml", "--results-dir=custom-results"],
         )
+
+
+class GracefulShutdownSignalTests(unittest.TestCase):
+    def test_windows_break_maps_to_keyboard_interrupt_handler(self):
+        with (
+            mock.patch.object(launcher.os, "name", "nt"),
+            mock.patch.object(launcher.signal, "signal", return_value="old-handler") as install,
+            mock.patch.object(launcher.signal, "SIGBREAK", 21, create=True),
+        ):
+            previous = launcher._install_windows_break_interrupt()
+
+        self.assertEqual(previous, "old-handler")
+        install.assert_called_once_with(21, launcher.signal.default_int_handler)
+
+    def test_non_windows_does_not_install_break_handler(self):
+        with (
+            mock.patch.object(launcher.os, "name", "posix"),
+            mock.patch.object(launcher.signal, "signal") as install,
+        ):
+            self.assertIsNone(launcher._install_windows_break_interrupt())
+
+        install.assert_not_called()
 
 
 class CpuInferenceActorCacheTests(unittest.TestCase):
