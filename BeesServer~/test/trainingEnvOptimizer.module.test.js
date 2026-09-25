@@ -5,13 +5,13 @@ const assert = require('node:assert/strict');
 const {
     TrainingEnvOptimizer,
     normalizeCapacity,
-    acceptedSteps,
+    learnerConsumedSteps,
 } = require('../trainingEnvOptimizer');
 
 function record(
     trainerId,
     envs,
-    accepted,
+    consumed,
     { auto = true, min = 1, max = 64, processState = 'running' } = {},
 ) {
     return {
@@ -26,31 +26,31 @@ function record(
         },
         metrics: {
             throughput: {
-                accepted_steps_total: accepted,
+                learner_consumed_steps_total: consumed,
             },
         },
     };
 }
 
-function update(optimizer, trainerId, envs, accepted, now, options = {}) {
+function update(optimizer, trainerId, envs, consumed, now, options = {}) {
     return optimizer.update(
-        record(trainerId, envs, accepted, options),
+        record(trainerId, envs, consumed, options),
         { now, contextKey: 'run|build|args', enabled: true },
     );
 }
 
-test('capacity and accepted-step metrics reject malformed values', () => {
+test('capacity and learner-consumed-step metrics reject malformed values', () => {
     assert.equal(normalizeCapacity({ auto: true, current_envs: 0, min_envs: 1, max_envs: 64 }), null);
     assert.equal(normalizeCapacity({ auto: true, current_envs: 8, min_envs: 9, max_envs: 64 }), null);
     assert.deepEqual(
         normalizeCapacity({ auto: true, current_envs: 8, min_envs: 2, max_envs: 32 }),
         { auto: true, current_envs: 8, min_envs: 2, max_envs: 32 },
     );
-    assert.equal(acceptedSteps({ throughput: { accepted_steps_total: -1 } }), null);
-    assert.equal(acceptedSteps({ throughput: { accepted_steps_total: 42 } }), 42);
+    assert.equal(learnerConsumedSteps({ throughput: { learner_consumed_steps_total: -1 } }), null);
+    assert.equal(learnerConsumedSteps({ throughput: { learner_consumed_steps_total: 42 } }), 42);
 });
 
-test('optimizer measures accepted steps, increases envs, and keeps an improvement', () => {
+test('optimizer measures learner-consumed steps, increases envs, and keeps an improvement', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
         measurementMs: 1000,
@@ -145,7 +145,7 @@ test('optimizer backs off immediately when a probed worker process stops', () =>
     assert.equal(state.probing, false);
 });
 
-test('optimizer backs off a probe that never produces accepted-step metrics', () => {
+test('optimizer backs off a probe that never produces learner-consumed-step metrics', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
         measurementMs: 1000,
@@ -165,7 +165,7 @@ test('optimizer backs off a probe that never produces accepted-step metrics', ()
     state = update(optimizer, 'remote-a', 9, null, 1111, { max: 16 });
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, true);
-    assert.match(state.decision, /no accepted-step metrics/);
+    assert.match(state.decision, /no learner-consumed-step metrics/);
 
     state = update(optimizer, 'remote-a', 8, 0, 1120, { max: 16 });
     assert.equal(state.probing, false);
