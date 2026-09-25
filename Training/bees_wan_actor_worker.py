@@ -432,12 +432,16 @@ class ActorSession:
         options.env_settings.seed = int(options.env_settings.seed) + self.worker_offset
         options.engine_settings.no_graphics = not self.graphics
         options.torch_settings.device = self.torch_device
+        return options
+
+    @staticmethod
+    def _run_logs_dir(options: Any) -> str:
         managed_log_dir = os.environ.get("BEES_TRAINING_LOG_DIR", "").strip()
         if managed_log_dir:
             log_dir = Path(managed_log_dir).expanduser().resolve()
             log_dir.mkdir(parents=True, exist_ok=True)
-            options.checkpoint_settings.run_logs_dir = str(log_dir)
-        return options
+            return str(log_dir)
+        return str(options.checkpoint_settings.run_logs_dir)
 
     def _initial_control(self) -> Mapping[str, Any]:
         deadline = time.monotonic() + max(30.0, float(self.central_run_options.env_settings.timeout_wait))
@@ -465,6 +469,7 @@ class ActorSession:
                 f"installed={mlagents.trainers.__version__}."
             )
         options = self._remote_run_options()
+        run_logs_dir = self._run_logs_dir(options)
         set_torch_config(options.torch_settings)
         np.random.seed(int(options.env_settings.seed))
         torch.manual_seed(int(options.env_settings.seed))
@@ -478,7 +483,7 @@ class ActorSession:
             options.env_settings.timeout_wait,
             options.env_settings.base_port,
             options.env_settings.env_args,
-            options.checkpoint_settings.run_logs_dir,
+            run_logs_dir,
         )
         self.manager = SubprocessEnvManager(factory, options, self.env_count)
 
