@@ -113,26 +113,22 @@ if(Test-Path -LiteralPath $RuntimeRoot){Remove-Item -LiteralPath $RuntimeRoot -R
 $null=New-Item -ItemType Directory -Force -Path $RuntimeRoot
 Expand-Archive -LiteralPath $runtimeZip -DestinationPath $RuntimeRoot -Force
 
-function Test-Python310([string]$Exe,[string[]]$Prefix=@()){
-    if(-not $Exe -or -not(Test-Path -LiteralPath $Exe)){return $false}
+function Test-Python310 {
+    param(
+        [string]$Exe,
+        [string[]]$Prefix=@()
+    )
 
-    # Windows can expose python.exe through the Microsoft Store App Execution Alias even when
-    # Python is not installed. Reject anything under the WindowsApps alias directory.
-    $fullExe=[IO.Path]::GetFullPath($Exe)
-    $windowsApps=if($env:LOCALAPPDATA){
-        [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'))
-    }else{''}
-    if($windowsApps -and $fullExe.StartsWith($windowsApps,[StringComparison]::OrdinalIgnoreCase)){
-        return $false
-    }
+    if([string]::IsNullOrWhiteSpace($Exe)){return $false}
+    if(-not(Test-Path -LiteralPath $Exe)){return $false}
 
     $previousErrorAction=$ErrorActionPreference
     try {
-        # Version probing is best-effort. Broken launchers, stale PATH entries, and wrong Python
-        # versions should fall through to automatic installation rather than aborting bootstrap.
+        # A failed executable, Microsoft Store alias, or wrong Python version is simply not a
+        # usable Python 3.10 installation. Suppress probe errors and fall through to installation.
         $ErrorActionPreference='SilentlyContinue'
-        & $fullExe @Prefix -c "import sys; assert sys.version_info[:2] == (3,10)" *> $null
-        return $LASTEXITCODE -eq 0
+        & $Exe @Prefix -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)' *> $null
+        return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
     } finally {
