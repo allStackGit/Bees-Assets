@@ -104,6 +104,7 @@ if ! have base64 || { ! have sha256sum && ! have shasum; }; then
     exit 2
 fi
 
+echo "[Bees remote] Stage 1/5: preparing local worker files..."
 mkdir -p "$INSTALL_ROOT"
 RUNTIME_ROOT="$INSTALL_ROOT/Runtime"
 SECRETS_ROOT="$INSTALL_ROOT/Secrets"
@@ -145,17 +146,18 @@ HOST_PART="${HOST_PART//[^A-Za-z0-9-]/-}"
 HOST_PART="${HOST_PART,,}"
 WORKER_HOSTNAME="bees-worker-$HOST_PART"
 
-echo "[Bees remote] checking private-network identity."
+echo "[Bees remote] Stage 2/5: checking private-network identity..."
 echo "[Bees remote] on first use, open the Tailscale login URL printed below; no VPN installation is required."
 "$TAILNET_BRIDGE" auth --state "$TAILNET_STATE" --hostname "$WORKER_HOSTNAME"
 
 RUNTIME_ZIP="$DOWNLOADS_ROOT/bees-remote-runtime.zip"
 WORKER_TOKEN="$SECRETS_ROOT/training-worker.token"
 WAN_TOKEN="$SECRETS_ROOT/wan.token"
-echo "[Bees remote] fetching the current Bees worker runtime over the private tailnet..."
+echo "[Bees remote] Stage 3/5: fetching the current Bees worker runtime over the private tailnet..."
 "$TAILNET_BRIDGE" fetch     --state "$TAILNET_STATE"     --hostname "$WORKER_HOSTNAME"     --target "$TAILNET_LEARNER:$TAILNET_BOOTSTRAP_PORT"     --token-file "$BOOTSTRAP_TOKEN_FILE"     --runtime-out "$RUNTIME_ZIP"     --worker-token-out "$WORKER_TOKEN"     --wan-token-out "$WAN_TOKEN"
 chmod 600 "$WORKER_TOKEN" "$WAN_TOKEN"
 
+echo "[Bees remote] Stage 4/5: preparing Python 3.10 worker environment..."
 UV_BIN=""
 if have uv; then
     UV_BIN="$(command -v uv)"
@@ -233,6 +235,7 @@ if [[ -n "$ENVS" ]]; then
 fi
 
 echo
+echo "[Bees remote] Stage 5/5: starting managed training worker..."
 if [[ -n "$ENVS" ]]; then
     echo "[Bees remote] starting worker with $ENVS environments."
 else
@@ -240,7 +243,7 @@ else
 fi
 echo "[Bees remote] private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker."
 set +e
-"$VENV_PYTHON" "${WORKER_ARGS[@]}"
+"$VENV_PYTHON" -u "${WORKER_ARGS[@]}"
 EXIT_CODE=$?
 set -e
 exit "$EXIT_CODE"
