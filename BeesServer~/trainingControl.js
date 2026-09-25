@@ -533,7 +533,8 @@ class TrainingControlStore {
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
-            if (!this.state.training_enabled || pending.required_trainers.length === 0) {
+            if (pending.required_trainers.length === 0 ||
+                (!this.state.training_enabled && !pending.incompatible)) {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
@@ -599,6 +600,13 @@ class TrainingControlStore {
             existingPending.incompatible === incompatible) {
             this._advanceRollout();
             return this.desiredState();
+        }
+        if (existingPending) {
+            throw Object.assign(
+                new Error(
+                    'another release rollout is already pending: ' +
+                    existingPending.build_id + ' (' + existingPending.phase + ')'),
+                { statusCode: 409 });
         }
 
         const requiredTrainers = this._releaseBarrierTrainers();
