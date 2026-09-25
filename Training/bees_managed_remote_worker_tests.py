@@ -115,6 +115,18 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_terminate_raises_when_child_exit_cannot_be_confirmed(self):
+        process = mock.Mock()
+        process.pid = 7331
+        process.poll.return_value = None
+        process.wait.side_effect = TimeoutError("still running")
+
+        with self.assertRaisesRegex(RuntimeError, "did not stop"):
+            managed._terminate(process)
+
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+
     def test_unhealthy_python_waits_for_repair_cutover(self):
         args = Namespace()
         process = mock.Mock()
