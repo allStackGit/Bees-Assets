@@ -152,7 +152,7 @@ function Ensure-LearnerPython($Config){
     $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
     if(-not(Test-Path -LiteralPath $venvPython)){
         Write-Host "Creating managed learner Python environment at $venvRoot..."
-        Invoke-Checked $basePython @('-m','venv',$venvRoot) $AssetsRoot
+        Invoke-Checked $basePython @('-m','venv',$venvRoot) $AssetsRoot | Out-Host
     }
 
     $requirementsHash=Get-StringSha256 (
@@ -167,8 +167,8 @@ function Ensure-LearnerPython($Config){
 
     if(-not $importsOk){
         Write-Host 'Installing/updating central learner Python dependencies...'
-        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot
-        Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot
+        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot | Out-Host
+        Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot | Out-Host
         if(-not(Test-PythonCode $venvPython $preflight)){
             throw 'Central learner Python dependency preflight failed after installation.'
         }
@@ -1216,7 +1216,14 @@ function Invoke-Start {
         throw "Latest release predates automatic run lifecycle metadata. Run '.\Assets\bees.ps1 build' first."
     }
 
-    $python=Ensure-LearnerPython $config
+    $pythonResult=@(Ensure-LearnerPython $config)
+    if($pythonResult.Count -ne 1){
+        throw "Learner Python resolver returned $($pythonResult.Count) values; expected exactly one executable path."
+    }
+    $python=[string]$pythonResult[0]
+    if(-not(Test-Path -LiteralPath $python)){
+        throw "Managed learner Python executable is missing: $python"
+    }
     $unity=Resolve-UnityEditor $config
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config
