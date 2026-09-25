@@ -188,5 +188,50 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+    def test_forced_new_run_intent_is_persisted_before_server_cutover(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+
+        forced_plan = invoke_start.index("$forcedPlan=New-TrainingRunPlan")
+        save_release = invoke_start.index("Save-LatestRelease $release", forced_plan)
+        commit_plan = invoke_start.index("Commit-TrainingRunPlan $python", save_release)
+        stage_release = invoke_start.index("$staged=Stage-Release", commit_plan)
+
+        self.assertLess(forced_plan, save_release)
+        self.assertLess(save_release, commit_plan)
+        self.assertLess(commit_plan, stage_release)
+        self.assertIn(
+            "Ensure-RunLifecycleMatchesRelease $python $release",
+            invoke_start,
+        )
+
+    def test_release_wait_requires_build_run_and_compatibility_identity(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Wait-ReleaseRollout")
+        end = source.index("function Invoke-Build", start)
+        wait = source[start:end]
+
+        self.assertIn("desired.canonical_build_id", wait)
+        self.assertIn("desired.run_id", wait)
+        self.assertIn("desired.compatibility_key", wait)
+        self.assertIn("[string]$RunId", wait)
+        self.assertIn("[string]$CompatibilityKey", wait)
+
+    def test_start_can_recover_a_persisted_release_from_its_pending_run_plan(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Ensure-RunLifecycleMatchesRelease")
+        end = source.index("function Stage-Release", start)
+        recovery = source[start:end]
+
+        self.assertIn("Test-Path -LiteralPath $RunPlanPath", recovery)
+        self.assertIn("([string]$plan.run_id).Trim() -eq $releaseRun", recovery)
+        self.assertIn(
+            "([string]$plan.compatibility_key).Trim().ToLowerInvariant() -eq $releaseKey",
+            recovery,
+        )
+        self.assertIn("Commit-TrainingRunPlan $Python", recovery)
+
+
 if __name__ == "__main__":
     unittest.main()
