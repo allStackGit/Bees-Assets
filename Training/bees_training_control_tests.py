@@ -57,6 +57,39 @@ class TrainingControlClientTests(unittest.TestCase):
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
 
+    def test_central_managed_process_requests_checkpoint_finalization_before_force_kill(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = mock.Mock()
+            fake.pid = 4343
+            fake.poll.side_effect = [None, None, 0, 0]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent.time, "sleep"),
+            ):
+                managed = agent.ManagedProcess()
+                managed.start(
+                    ["python", "service.py"],
+                    revision=1,
+                    build_sha256="a" * 64,
+                    run_id="run-a",
+                    state_file=root / "control-state.json",
+                    environment_args=(),
+                    graceful_checkpoint=True,
+                )
+                environment = popen.call_args.kwargs["env"]
+                stop_file = Path(environment[agent.MANAGED_STOP_FILE_ENV])
+                self.assertFalse(stop_file.exists())
+
+                managed.stop()
+
+            self.assertFalse(stop_file.exists())
+            killpg.assert_not_called()
+
     def test_managed_process_stops_windows_process_tree(self):
         fake = mock.Mock()
         fake.pid = 5252
