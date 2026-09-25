@@ -51,6 +51,7 @@ $RunPlanPath=Join-Path $RuntimeRoot 'pending-training-run.json'
 $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
+$DiagnosticBenchmarkScript=Join-Path $AssetsRoot 'Training\bees_training_diagnostic_benchmark.py'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
@@ -2148,6 +2149,135 @@ function Request-CentralDiagnosticModelSnapshot($Status,[string]$TargetRunId,[st
     }
 }
 
+function Invoke-CentralDiagnosticBenchmark(
+    [string]$TargetRunId,
+    [string]$SnapshotJson,
+    [string]$OutputJson
+){
+    $result=[ordered]@{
+        schema_version=1
+        status='skipped'
+        benchmark='deterministic-wasp-vs-gunship-v1'
+        run_id=$TargetRunId
+        requested_utc=[DateTime]::UtcNow.ToString('o')
+        reason=''
+    }
+    $stdout=$null
+    $stderr=$null
+
+    try {
+        if(-not(Test-Path -LiteralPath $DiagnosticBenchmarkScript)){
+            $result.reason="diagnostic benchmark helper is missing: $DiagnosticBenchmarkScript"
+            return
+        }
+        if(-not(Test-Path -LiteralPath $SnapshotJson)){
+            $result.reason='live model snapshot metadata is unavailable'
+            return
+        }
+
+        $snapshot=Get-Content -LiteralPath $SnapshotJson -Raw | ConvertFrom-Json
+        if(([string]$snapshot.status) -ne 'succeeded'){
+            $result.reason="live model snapshot status is $([string]$snapshot.status)"
+            return
+        }
+        if(([string]$snapshot.run_id) -ne $TargetRunId){
+            $result.reason="live model snapshot belongs to run $([string]$snapshot.run_id)"
+            return
+        }
+
+        $modelPath=[string]$snapshot.model_path
+        if(-not $modelPath -or -not(Test-Path -LiteralPath $modelPath)){
+            $result.reason="live model snapshot file is unavailable: $modelPath"
+            return
+        }
+
+        $currentBuildPath=Join-Path $CentralAgentInstallRoot 'current.json'
+        if(-not(Test-Path -LiteralPath $currentBuildPath)){
+            $result.reason='central learner has no installed current build manifest'
+            return
+        }
+        $currentBuild=Get-Content -LiteralPath $currentBuildPath -Raw | ConvertFrom-Json
+        $environmentPath=[string]$currentBuild.entrypoint
+        if(-not $environmentPath -or -not(Test-Path -LiteralPath $environmentPath)){
+            $result.reason="central learner training executable is unavailable: $environmentPath"
+            return
+        }
+
+        $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
+        if(-not(Test-Path -LiteralPath $learnerPython)){
+            $result.reason="managed learner Python is unavailable: $learnerPython"
+            return
+        }
+
+        $benchmarkId=[Guid]::NewGuid().ToString('N')
+        $stdout=Join-Path $RuntimeRoot "diagnostic-benchmark-$benchmarkId.out.log"
+        $stderr=Join-Path $RuntimeRoot "diagnostic-benchmark-$benchmarkId.err.log"
+        $args=@(
+            $DiagnosticBenchmarkScript,
+            '--env',$environmentPath,
+            '--model',$modelPath,
+            '--output',$OutputJson
+        )
+        $argumentString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+
+        Write-Host 'Running deterministic diagnostic benchmark (20 fixed 1v1 matches)...'
+        $process=Start-Process -FilePath $learnerPython -ArgumentList $argumentString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru
+
+        $finished=$process.WaitForExit(180000)
+        if(-not $finished){
+            try {
+                & taskkill.exe /PID $process.Id /T /F *> $null
+            } catch {
+                try{$process.Kill()}catch{}
+            }
+            $result.status='timeout'
+            $result.reason='deterministic benchmark exceeded 180 seconds'
+            Write-DiagnosticJson $OutputJson $result
+            Write-Warning $result.reason
+            return
+        }
+        $process.WaitForExit()
+
+        if($process.ExitCode -ne 0){
+            if(Test-Path -LiteralPath $OutputJson){
+                try{
+                    $failure=Get-Content -LiteralPath $OutputJson -Raw|ConvertFrom-Json
+                    Write-Warning "Deterministic benchmark failed: $([string]$failure.error)"
+                    return
+                }catch{}
+            }
+            $tail=''
+            if(Test-Path -LiteralPath $stderr){
+                $tail=(@(Get-Content -LiteralPath $stderr -Tail 20 -ErrorAction SilentlyContinue)-join ' ')
+            }
+            $result.status='failed'
+            $suffix=if($tail){': '+$tail}else{''}
+            $result.reason="benchmark process exited with code $($process.ExitCode)$suffix"
+            Write-DiagnosticJson $OutputJson $result
+            Write-Warning $result.reason
+            return
+        }
+
+        if(-not(Test-Path -LiteralPath $OutputJson)){
+            $result.status='failed'
+            $result.reason='benchmark process succeeded without writing its result JSON'
+            Write-DiagnosticJson $OutputJson $result
+            Write-Warning $result.reason
+        }
+    } catch {
+        $result.status='failed'
+        $result.reason="$($_.Exception.GetType().Name): $($_.Exception.Message)"
+        Write-DiagnosticJson $OutputJson $result
+        Write-Warning "Deterministic benchmark failed: $($result.reason)"
+    } finally {
+        if($stdout){Remove-Item -LiteralPath $stdout -Force -ErrorAction SilentlyContinue}
+        if($stderr){Remove-Item -LiteralPath $stderr -Force -ErrorAction SilentlyContinue}
+        if(-not(Test-Path -LiteralPath $OutputJson)){
+            Write-DiagnosticJson $OutputJson $result
+        }
+    }
+}
+
 function Invoke-Bundle {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
@@ -2161,6 +2291,7 @@ function Invoke-Bundle {
     $statusJson=Join-Path $RuntimeRoot "diagnostic-status-$bundleId.json"
     $statusText=Join-Path $RuntimeRoot "diagnostic-status-$bundleId.txt"
     $snapshotJson=Join-Path $RuntimeRoot "diagnostic-model-snapshot-$bundleId.json"
+    $benchmarkJson=Join-Path $RuntimeRoot "diagnostic-deterministic-benchmark-$bundleId.json"
     $status=$null
 
     try {
@@ -2174,8 +2305,9 @@ function Invoke-Bundle {
 
         $targetRun=if($RunId){$RunId}else{Get-ActiveRunId $config}
         Request-CentralDiagnosticModelSnapshot $status $targetRun $snapshotJson
+        Invoke-CentralDiagnosticBenchmark $targetRun $snapshotJson $benchmarkJson
 
-        # Refresh status after the snapshot so learner-step/model-lag diagnostics compare
+        # Refresh status after the snapshot/benchmark so learner-step/model-lag diagnostics compare
         # against the same moment rather than the pre-export state.
         try {
             if(Test-Control ([string]$config.controlUrl) $admin){
@@ -2217,12 +2349,16 @@ function Invoke-Bundle {
         if(Test-Path -LiteralPath $snapshotJson){
             $arguments+=@('--snapshot-json',$snapshotJson)
         }
+        if(Test-Path -LiteralPath $benchmarkJson){
+            $arguments+=@('--benchmark-json',$benchmarkJson)
+        }
 
         Invoke-Checked $python $arguments $AssetsRoot | Out-Host
     } finally {
         Remove-Item -LiteralPath $statusJson -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $statusText -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $snapshotJson -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $benchmarkJson -Force -ErrorAction SilentlyContinue
     }
 }
 
