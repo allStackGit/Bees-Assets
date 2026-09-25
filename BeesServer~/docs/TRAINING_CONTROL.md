@@ -123,9 +123,12 @@ On first use, the learner and each remote worker print a Tailscale authorization
 
 The learner gateway exposes only these private tailnet services:
 
+- gameplay/settings bootstrap for managed remote RL Unity players, normally 7146
 - control, normally 7150
 - WAN rollout broker, normally 55051
 - bootstrap service, normally 7151
+
+Managed remote RL Unity players connect to `127.0.0.1:7146`; the remote supervisor forwards that loopback socket through the authenticated tailnet gateway to the learner's local test-mode BeesServer. This keeps settings bootstrap private without changing the normal Editor or ordinary gameplay endpoint.
 
 The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
 
