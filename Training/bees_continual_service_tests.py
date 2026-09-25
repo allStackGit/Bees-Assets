@@ -20,7 +20,7 @@ class ContinualServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.rewrite_max_steps("max_steps: 1\nmax_steps: 2\n", 10)
 
-    def test_managed_stop_interrupts_training_child_group_for_final_save(self):
+    def test_managed_stop_waits_for_training_child_to_finalize_itself(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             options = self._options(root)
@@ -40,7 +40,7 @@ class ContinualServiceTests(unittest.TestCase):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
 
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
-            killpg.assert_called_once_with(6161, service.signal.SIGINT)
+            killpg.assert_not_called()
 
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
