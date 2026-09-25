@@ -633,12 +633,14 @@ function Archive-TrainingRun([string]$Python,[string]$RunId,[string]$Reason){
         throw "Training log archive helper is missing: $ArchiveRunScript"
     }
     Write-Host "Archiving and pushing training logs for run $RunId ($Reason)..."
+    $git=Resolve-Git
     Invoke-Checked $Python @(
         $ArchiveRunScript,
         '--assets-root',$AssetsRoot,
         '--bees-root',$BeesRoot,
         '--run-id',$RunId,
-        '--reason',$Reason
+        '--reason',$Reason,
+        '--git-executable',$git
     ) $AssetsRoot
 }
 
