@@ -1310,8 +1310,8 @@ exit "$BEES_EXIT"
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
-    Write-Host 'Windows: copy only bees-remote-worker.cmd and run it; optionally pass -Envs N.'
-    Write-Host "Linux:   copy only bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
+    Write-Host 'Windows: copy only bees-remote-worker.cmd and run it; pass -Envs N only to pin a fixed count.'
+    Write-Host "Linux:   copy only bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; pass --envs N only to pin a fixed count."
 }
 
 function Invoke-Server {
