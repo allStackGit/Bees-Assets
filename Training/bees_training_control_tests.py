@@ -53,6 +53,16 @@ class TrainingControlClientTests(unittest.TestCase):
                     "logs/run-a"
                 )
             )
+            self.assertTrue(
+                Path(
+                    environment["BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"]
+                ).as_posix().endswith("model-snapshot.request")
+            )
+            self.assertTrue(
+                Path(
+                    environment["BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"]
+                ).as_posix().endswith("model-snapshot.response.json")
+            )
             managed.stop()
 
         killpg.assert_called_once_with(4242, signal.SIGTERM)
