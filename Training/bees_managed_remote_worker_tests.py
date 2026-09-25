@@ -145,9 +145,9 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             (root / "bees-runtime-version.txt").write_text(active, encoding="ascii")
             self.assertEqual(managed._runtime_version_from_root(root), active)
 
-    def test_runtime_version_is_read_from_packaged_zip(self):
+    def test_sha256_runtime_version_is_read_from_packaged_zip(self):
         buffer = io.BytesIO()
-        expected = "b" * 40
+        expected = "b" * 64
         with zipfile.ZipFile(buffer, "w") as bundle:
             bundle.writestr("bees-runtime-version.txt", expected)
         self.assertEqual(
