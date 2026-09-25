@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,9 @@ DEFAULT_RUN_ID = "bees-continuous-v8"
 DEFAULT_GENERATION_STEPS = 1_000_000
 DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
+MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+MANAGED_CHILD_GRACE_SECONDS = 90.0
+MANAGED_CHILD_POLL_SECONDS = 0.25
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
     "OSXPlayer": "StandaloneOSX",
@@ -338,13 +342,104 @@ def hot_publish_command(options: ServiceOptions, metadata: Path) -> list[str]:
     ]
 
 
+def _managed_stop_file() -> Optional[Path]:
+    value = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
+    return Path(value).expanduser().resolve() if value else None
+
+
+def _managed_stop_requested() -> bool:
+    path = _managed_stop_file()
+    return path is not None and path.is_file()
+
+
+def _signal_managed_child(process: subprocess.Popen) -> None:
+    if os.name == "nt":
+        process.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        os.killpg(process.pid, signal.SIGINT)
+
+
+def _force_stop_managed_child(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=10)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> int:
+    if _managed_stop_requested():
+        raise KeyboardInterrupt
+
+    kwargs: dict[str, object] = {
+        "cwd": str(options.assets_root),
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+
+    process = subprocess.Popen(list(command), **kwargs)
+    stop_deadline: Optional[float] = None
+    stop_sent = False
+    try:
+        while process.poll() is None:
+            if _managed_stop_requested():
+                if not stop_sent:
+                    print(
+                        "[Bees continuous] managed shutdown requested; "
+                        "asking the active phase to finalize.",
+                        flush=True,
+                    )
+                    try:
+                        _signal_managed_child(process)
+                    except (OSError, ValueError):
+                        pass
+                    stop_sent = True
+                    stop_deadline = time.monotonic() + MANAGED_CHILD_GRACE_SECONDS
+                elif stop_deadline is not None and time.monotonic() >= stop_deadline:
+                    print(
+                        "[Bees continuous] managed child did not finish within the graceful "
+                        "checkpoint window; forcing termination.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    _force_stop_managed_child(process)
+                    break
+            time.sleep(MANAGED_CHILD_POLL_SECONDS)
+    finally:
+        if process.poll() is None and _managed_stop_requested():
+            _force_stop_managed_child(process)
+
+    return_code = int(process.wait())
+    if stop_sent:
+        raise KeyboardInterrupt
+    return return_code
+
+
 def _run(command: Sequence[str], options: ServiceOptions, runner: Runner) -> None:
-    completed = runner(
-        list(command),
-        cwd=str(options.assets_root),
-        check=False,
-    )
-    return_code = int(getattr(completed, "returncode", 0))
+    if runner is subprocess.run and _managed_stop_file() is not None:
+        return_code = _run_managed_subprocess(command, options)
+    else:
+        completed = runner(
+            list(command),
+            cwd=str(options.assets_root),
+            check=False,
+        )
+        return_code = int(getattr(completed, "returncode", 0))
     if return_code != 0:
         raise RuntimeError(f"Command exited with status {return_code}: {command[0]} {command[1] if len(command) > 1 else ''}")
 
