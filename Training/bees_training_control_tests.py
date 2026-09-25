@@ -85,9 +85,11 @@ class TrainingControlClientTests(unittest.TestCase):
                 stop_file = Path(environment[agent.MANAGED_STOP_FILE_ENV])
                 self.assertFalse(stop_file.exists())
 
-                managed.stop()
+                progress = mock.Mock()
+                managed.stop(progress_callback=progress)
 
             self.assertFalse(stop_file.exists())
+            progress.assert_called()
             killpg.assert_not_called()
 
     def test_managed_process_stops_windows_process_tree(self):
