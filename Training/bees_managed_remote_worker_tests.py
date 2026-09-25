@@ -30,6 +30,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertEqual(len(first), 32)
 
+    def test_release_metadata_accepts_utf8_bom(self):
+        payload = b"\xef\xbb\xbf" + b'{"build_id":"build-1"}'
+        self.assertEqual(
+            managed._decode_release_metadata(payload)["build_id"],
+            "build-1",
+        )
+
+    def test_release_metadata_requires_json_object(self):
+        with self.assertRaisesRegex(ValueError, "must be a JSON object"):
+            managed._decode_release_metadata(b'["build-1"]')
+
     def test_runtime_version_is_read_from_executing_root_not_mutable_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
