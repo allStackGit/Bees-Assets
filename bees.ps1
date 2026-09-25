@@ -998,7 +998,10 @@ function Prepare-RemoteBootstrap($Config){
             [ref]$parseErrors
         ) | Out-Null
         if($parseErrors.Count -gt 0){
-            $details=($parseErrors | ForEach-Object { $_.Message }) -join '; '
+            $details=($parseErrors | ForEach-Object {
+                $extent=$_.Extent
+                "line $($extent.StartLineNumber), column $($extent.StartColumnNumber): $($_.Message) near '$($extent.Text)'"
+            }) -join '; '
             throw "Generated Windows remote bootstrap failed PowerShell parsing: $details"
         }
 
