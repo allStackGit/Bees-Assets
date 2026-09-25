@@ -408,11 +408,19 @@ class TrainingControlClientTests(unittest.TestCase):
                 "RL 1v1 episode=1 timeout=False duration=10.0s "
                 "bee_tsv=100->50 human_tsv=100->0 "
                 "bee_fire_requests=4 bee_shots=3 bee_hits=2 bee_damage=10 "
-                "human_fire_requests=2 human_shots=2 human_hits=1 human_damage=5\n"
+                "human_fire_requests=2 human_shots=2 human_hits=1 human_damage=5 "
+                "bee_aim_samples=2 bee_aim_error=10.00deg bee_aim_within_5deg=50.00% "
+                "bee_turret_aligned=100.00% "
+                "human_aim_samples=1 human_aim_error=20.00deg human_aim_within_5deg=0.00% "
+                "human_turret_aligned=100.00%\n"
                 "RL 1v1 episode=2 timeout=True duration=20.0s "
                 "bee_tsv=100->25 human_tsv=100->25 "
                 "bee_fire_requests=4 bee_shots=4 bee_hits=1 bee_damage=5 "
-                "human_fire_requests=4 human_shots=4 human_hits=2 human_damage=10\n",
+                "human_fire_requests=4 human_shots=4 human_hits=2 human_damage=10 "
+                "bee_aim_samples=1 bee_aim_error=40.00deg bee_aim_within_5deg=0.00% "
+                "bee_turret_aligned=0.00% "
+                "human_aim_samples=3 human_aim_error=50.00deg human_aim_within_5deg=33.33% "
+                "human_turret_aligned=66.67%\n",
                 encoding="utf-8",
             )
             metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
@@ -422,6 +430,32 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(metrics["bee_win_pct"], 50.0)
             self.assertAlmostEqual(metrics["bee_hit_pct"], 100.0 * 3 / 7, places=2)
             self.assertAlmostEqual(metrics["human_hit_pct"], 50.0, places=2)
+            self.assertAlmostEqual(metrics["bee_hits_per_shot"], 3 / 7, places=3)
+            self.assertAlmostEqual(metrics["human_hits_per_shot"], 0.5, places=3)
+            self.assertEqual(metrics["bee_aim_samples"], 3)
+            self.assertEqual(metrics["human_aim_samples"], 4)
+            self.assertAlmostEqual(metrics["bee_aim_error_deg"], 20.0, places=2)
+            self.assertAlmostEqual(metrics["human_aim_error_deg"], 42.5, places=2)
+            self.assertAlmostEqual(
+                metrics["bee_aim_within_5_pct"],
+                100.0 / 3.0,
+                places=2,
+            )
+            self.assertAlmostEqual(
+                metrics["human_aim_within_5_pct"],
+                24.9975,
+                places=2,
+            )
+            self.assertAlmostEqual(
+                metrics["bee_turret_aligned_pct"],
+                200.0 / 3.0,
+                places=2,
+            )
+            self.assertAlmostEqual(
+                metrics["human_turret_aligned_pct"],
+                75.0025,
+                places=2,
+            )
 
     def test_managed_build_is_hash_verified_and_installed_versioned(self):
         with tempfile.TemporaryDirectory() as temp:
