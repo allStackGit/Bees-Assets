@@ -25,7 +25,7 @@ from bees_continual_learning import (
     sha256_bytes,
     sha256_file,
 )
-from bees_continual_release_health import inspect_release_health
+from bees_continual_release_health import check_release_health, inspect_release_health
 
 
 TEST_CONFIG = {
@@ -153,6 +153,19 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(health["current_champion_model_id"], self.champion["model_id"])
         self.assertEqual(health["current_deployment"]["deployment_id"], deployment["deployment_id"])
         self.assertEqual(health["hot_platforms"][0]["bundle_path"], published["bundle_path"])
+
+    def test_release_cycle_health_adapter_matches_expected_contract(self):
+        deployment = self.publish_deployment()
+
+        health = check_release_health(self.store)
+
+        self.assertEqual(health["status"], "healthy")
+        self.assertEqual(health["deployment_id"], deployment["deployment_id"])
+        self.assertTrue(health["healthy"])
+        self.assertEqual(
+            health["current_champion_model_id"],
+            self.champion["model_id"],
+        )
 
     def test_semantically_drifted_deployment_pointer_is_detected_even_with_valid_identity_hash(self):
         deployment = self.publish_deployment()
