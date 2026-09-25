@@ -73,7 +73,7 @@ test('optimizer measures accepted steps, increases envs, and keeps an improvemen
     assert.equal(state.baseline_envs, 9);
     assert.equal(state.baseline_sps, 1100);
     assert.equal(state.desired_envs, 10);
-    assert.match(state.decision, /accepted 9 envs/);
+    assert.match(state.decision, /probing 9->10/);
 });
 
 test('optimizer backs off a slower probe before another worker may probe', () => {
