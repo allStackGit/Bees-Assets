@@ -203,6 +203,10 @@ class ContinualServiceTests(unittest.TestCase):
             options = self._options(Path(temp_dir))
             release = service.release_command(options)
             self.assertTrue(any("bees_continual_release.py" in item for item in release))
+            self.assertIn(f"--env={options.training_env}", release)
+            self.assertIn("--training-run-id=continuous-test", release)
+            self.assertNotIn(f"--training-env={options.training_env}", release)
+            self.assertFalse(any(item.startswith("--game-build-version=") for item in release))
             self.assertIn("--once", release)
             self.assertIn("--no-graphics", release)
 
@@ -213,6 +217,41 @@ class ContinualServiceTests(unittest.TestCase):
             publish = service.hot_publish_command(options, options.root / "metadata.json")
             self.assertTrue(any("bees_continual_hot_bundle.py" in item for item in publish))
             self.assertIn(f"--distribution-root={options.model_distribution_root}", publish)
+
+    def test_incompatible_old_deployment_does_not_block_new_generation_training(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            calls = []
+
+            def failing_training_runner(command, **_kwargs):
+                calls.append(list(command))
+                return mock.Mock(returncode=7)
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value=None,
+                ),
+                mock.patch.object(
+                    service,
+                    "current_deployment_id",
+                    return_value="deploy-" + "a" * 24,
+                ),
+                mock.patch.object(service, "publish_current_hot_bundle") as publish,
+            ):
+                result = service.run_service(
+                    options,
+                    runner=failing_training_runner,
+                    sleeper=lambda _seconds: None,
+                )
+
+            self.assertEqual(result, 2)
+            publish.assert_not_called()
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(
+                any("bees_continual_auto_train.py" in item for item in calls[0])
+            )
 
     def test_current_deployment_reader_requires_canonical_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
