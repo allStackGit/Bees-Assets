@@ -196,6 +196,61 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertEqual(staged_build_id, "build-1")
             self.assertEqual(error, "")
 
+    def test_private_transport_requires_consecutive_authenticated_control_successes(self):
+        args = Namespace(
+            control_port=7150,
+            broker_port=55051,
+            bootstrap_port=7151,
+        )
+        process = mock.Mock()
+        process.poll.return_value = None
+        stop = [False]
+
+        with (
+            mock.patch.object(managed, "_wait_for_ports", return_value=True),
+            mock.patch.object(
+                managed,
+                "_control_status",
+                side_effect=[{"desired": {}}, None, {"desired": {}}, {"desired": {}}],
+            ) as status,
+            mock.patch.object(managed.time, "sleep"),
+        ):
+            self.assertTrue(
+                managed._wait_for_private_transport(
+                    args,
+                    process,
+                    stop,
+                    timeout=5.0,
+                    required_successes=2,
+                )
+            )
+
+        self.assertEqual(status.call_count, 4)
+
+    def test_private_transport_does_not_probe_control_until_local_forwarders_exist(self):
+        args = Namespace(
+            control_port=7150,
+            broker_port=55051,
+            bootstrap_port=7151,
+        )
+        process = mock.Mock()
+        stop = [False]
+
+        with (
+            mock.patch.object(managed, "_wait_for_ports", return_value=False),
+            mock.patch.object(managed, "_control_status") as status,
+        ):
+            self.assertFalse(
+                managed._wait_for_private_transport(
+                    args,
+                    process,
+                    stop,
+                    timeout=5.0,
+                )
+            )
+
+        status.assert_not_called()
+
     def test_tailnet_forward_command_maps_control_and_broker(self):
         args = Namespace(
             tailnet_bridge="bridge",
