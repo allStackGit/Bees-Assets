@@ -811,6 +811,41 @@ function Commit-TrainingRunPlan([string]$Python){
     ) $AssetsRoot
 }
 
+function Ensure-RunLifecycleMatchesRelease([string]$Python,$Release){
+    $releaseRun=([string]$Release.run_id).Trim()
+    $releaseKey=([string]$Release.compatibility_key).Trim().ToLowerInvariant()
+    if(-not $releaseRun -or -not $releaseKey){
+        throw 'Release is missing run lifecycle identity.'
+    }
+
+    $state=$null
+    if(Test-Path -LiteralPath $RunStatePath){
+        try { $state=Get-Content -LiteralPath $RunStatePath -Raw | ConvertFrom-Json }
+        catch { throw "Training run lifecycle state is unreadable: $RunStatePath" }
+    }
+    if($null -ne $state -and
+        ([string]$state.run_id).Trim() -eq $releaseRun -and
+        ([string]$state.compatibility_key).Trim().ToLowerInvariant() -eq $releaseKey){
+        return
+    }
+
+    if(Test-Path -LiteralPath $RunPlanPath){
+        $plan=$null
+        try { $plan=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
+        catch { throw "Pending training run plan is unreadable: $RunPlanPath" }
+        if($null -ne $plan -and
+            ([string]$plan.run_id).Trim() -eq $releaseRun -and
+            ([string]$plan.compatibility_key).Trim().ToLowerInvariant() -eq $releaseKey){
+            Commit-TrainingRunPlan $Python
+            Write-Host "Recovered pending training run lifecycle commit for $releaseRun."
+            return
+        }
+    }
+
+    $stateRun=if($null -ne $state){([string]$state.run_id).Trim()}else{'(missing)'}
+    throw "Run lifecycle state disagrees with latest release. lifecycle=$stateRun release=$releaseRun"
+}
+
 function Stage-Release($Config,[string]$AdminToken,$Release){
     $body=@{
         build_id=[string]$Release.build_id
@@ -821,17 +856,27 @@ function Stage-Release($Config,[string]$AdminToken,$Release){
     Invoke-ControlPost "$($Config.controlUrl)/v1/admin/release" $AdminToken $body
 }
 
-function Wait-ReleaseRollout($Config,[string]$AdminToken,[string]$BuildId,[int]$TimeoutSeconds=600){
+function Wait-ReleaseRollout(
+    $Config,
+    [string]$AdminToken,
+    [string]$BuildId,
+    [string]$RunId,
+    [string]$CompatibilityKey,
+    [int]$TimeoutSeconds=600
+){
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while([DateTime]::UtcNow -lt $deadline){
         $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
         $pending=$status.desired.pending_release
-        if($null -eq $pending -and ([string]$status.desired.canonical_build_id) -eq $BuildId){
+        if($null -eq $pending -and
+            ([string]$status.desired.canonical_build_id) -eq $BuildId -and
+            ([string]$status.desired.run_id) -eq $RunId -and
+            ([string]$status.desired.compatibility_key) -eq $CompatibilityKey){
             return $status
         }
         Start-Sleep -Seconds 1
     }
-    throw "Timed out waiting for release $BuildId to finish coordinated rollout."
+    throw "Timed out waiting for release $BuildId run=$RunId to finish coordinated rollout."
 }
 
 function Invoke-Build {
@@ -952,7 +997,7 @@ function Invoke-Build {
             $staged=Stage-Release $config $admin $release
             Write-Host "Release staged: build=$buildId phase=$(if($staged.pending_release){$staged.pending_release.phase}else{'active'})"
             if([bool]$release.incompatible){
-                $null=Wait-ReleaseRollout $config $admin $buildId
+                $null=Wait-ReleaseRollout $config $admin $buildId ([string]$release.run_id) ([string]$release.compatibility_key)
                 if($release.previous_run_id){
                     Start-Sleep -Seconds 2
                     Archive-TrainingRun $python ([string]$release.previous_run_id) 'incompatible-run-final'
@@ -1653,6 +1698,7 @@ function Invoke-Start {
         throw "Managed learner Python executable is missing: $python"
     }
 
+    Ensure-RunLifecycleMatchesRelease $python $release
     Assert-CentralAgentCheckpointSafe
 
     $forcedPlan=$null
@@ -1684,6 +1730,11 @@ function Invoke-Start {
             contract=$forcedPlan.contract
             artifacts=$release.artifacts
         }
+        # Persist the forced-run intent before the server can begin the incompatible cutover.
+        # If the shell dies after the release write but before the lifecycle commit, the retained
+        # run plan lets the next ordinary start complete that commit before staging anything.
+        Save-LatestRelease $release
+        Commit-TrainingRunPlan $python
         Write-Host "Forcing fresh training run: $($release.run_id) (same build $($release.build_id))."
     }
 
@@ -1701,9 +1752,7 @@ function Invoke-Start {
     Start-CentralAgentIfNeeded $config $python $unity
 
     if($NewRun){
-        $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id)
-        Save-LatestRelease $release
-        Commit-TrainingRunPlan $python
+        $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
         if($outgoingRun){
             Start-Sleep -Seconds 2
             Archive-TrainingRun $python $outgoingRun 'forced-new-final'
