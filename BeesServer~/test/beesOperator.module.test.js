@@ -38,6 +38,35 @@ test('atomic file install retries transient Windows sharing locks without giving
     assert.doesNotMatch(atomic, /Copy-Item[^\n]*-Destination \$destinationPath/);
 });
 
+test('start resumes by default and only -NewRun forces a fresh lineage', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.match(source, /\[switch\]\$NewRun/);
+    assert.match(source, /if\(\$NewRun -and \$Command -ne 'start'\)/);
+
+    const planStart = source.indexOf('function New-TrainingRunPlan');
+    const planEnd = source.indexOf('\nfunction Commit-TrainingRunPlan', planStart);
+    const plan = planStart >= 0 && planEnd > planStart ? source.slice(planStart, planEnd) : '';
+    assert.match(plan, /\[switch\]\$ForceNew/);
+    assert.match(plan, /if\(\$ForceNew\)\{ \$planArgs\+='--force-new' \}/);
+
+    const start = source.indexOf('function Invoke-Start');
+    const end = source.indexOf('\nfunction Stop-ProcessTree', start);
+    const invokeStart = start >= 0 && end > start ? source.slice(start, end) : '';
+    assert.match(invokeStart, /if\(\$NewRun\)/);
+    assert.match(invokeStart, /Archive-TrainingRun \$python \$outgoingRun 'forced-new-precutover'/);
+    assert.match(invokeStart, /New-TrainingRunPlan \$python -ForceNew/);
+    assert.match(invokeStart, /incompatible=\$true/);
+    assert.match(invokeStart, /Wait-ReleaseRollout \$config \$admin \(\[string\]\$release\.build_id\)/);
+    assert.match(invokeStart, /Save-LatestRelease \$release/);
+    assert.match(invokeStart, /Commit-TrainingRunPlan \$python/);
+    assert.match(invokeStart, /Archive-TrainingRun \$python \$outgoingRun 'forced-new-final'/);
+    assert.doesNotMatch(
+        invokeStart.slice(0, invokeStart.indexOf('if($NewRun){')),
+        /New-TrainingRunPlan \$python -ForceNew/,
+        'Ordinary start must not force a new run.'
+    );
+});
+
 test('bees.ps1 preserves environment_args as a JSON array', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const matches = source.match(/environment_args=@\(\$envArgs\)/g) || [];
