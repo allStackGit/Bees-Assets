@@ -639,23 +639,14 @@ class TrainingControlStore {
             throw Object.assign(new Error('desired-state patch must be an object'), { statusCode: 400 });
         }
 
-        let requestedBuildId = this.state.canonical_build_id;
         if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id')) {
-            requestedBuildId = patch.canonical_build_id === ""
-                ? ""
-                : requireString(patch.canonical_build_id, 'canonical_build_id', 128);
-            if (requestedBuildId && !/^[A-Za-z0-9._-]+$/.test(requestedBuildId)) {
-                throw Object.assign(
-                    new Error('canonical_build_id may contain only letters, digits, dot, underscore, and dash'),
-                    { statusCode: 400 });
-            }
-            if (requestedBuildId && !this._hasBuild(requestedBuildId)) {
-                throw Object.assign(
-                    new Error('canonical_build_id has no published platform artifact'),
-                    { statusCode: 409 });
-            }
+            throw Object.assign(
+                new Error(
+                    'canonical_build_id is release-owned; activate builds through the staged release endpoint'),
+                { statusCode: 409 });
         }
 
+        const requestedBuildId = this.state.canonical_build_id;
         const requestedTraining = Object.prototype.hasOwnProperty.call(patch, 'training_enabled')
             ? patch.training_enabled
             : this.state.training_enabled;
@@ -694,11 +685,6 @@ class TrainingControlStore {
                 this.state.environment_args = args;
                 changed = true;
             }
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'canonical_build_id') &&
-            requestedBuildId !== this.state.canonical_build_id) {
-            this.state.canonical_build_id = requestedBuildId;
-            changed = true;
         }
         if (changed) {
             this.state.revision++;
