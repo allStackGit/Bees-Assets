@@ -6,6 +6,7 @@ const DEFAULT_WARMUP_MS = 20_000;
 const DEFAULT_MEASUREMENT_MS = 60_000;
 const DEFAULT_COOLDOWN_MS = 20_000;
 const DEFAULT_RETEST_MS = 5 * 60_000;
+const DEFAULT_METRICS_TIMEOUT_MS = 3 * 60_000;
 const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
 const DEFAULT_REGRESSION_RATIO = 0.05;
 
@@ -51,6 +52,7 @@ class TrainingEnvOptimizer {
         this.measurementMs = Number(options.measurementMs ?? DEFAULT_MEASUREMENT_MS);
         this.cooldownMs = Number(options.cooldownMs ?? DEFAULT_COOLDOWN_MS);
         this.retestMs = Number(options.retestMs ?? DEFAULT_RETEST_MS);
+        this.metricsTimeoutMs = Number(options.metricsTimeoutMs ?? DEFAULT_METRICS_TIMEOUT_MS);
         this.minImprovementRatio = Number(
             options.minImprovementRatio ?? DEFAULT_MIN_IMPROVEMENT_RATIO);
         this.regressionRatio = Number(options.regressionRatio ?? DEFAULT_REGRESSION_RATIO);
@@ -59,6 +61,7 @@ class TrainingEnvOptimizer {
             measurementMs: this.measurementMs,
             cooldownMs: this.cooldownMs,
             retestMs: this.retestMs,
+            metricsTimeoutMs: this.metricsTimeoutMs,
         })) {
             if (!Number.isFinite(value) || value < 0) {
                 throw new Error('training env optimizer ' + label + ' must be non-negative');
@@ -95,6 +98,7 @@ class TrainingEnvOptimizer {
             cooldown_until_ms: 0,
             retest_after_ms: 0,
             last_update_ms: now,
+            metrics_missing_since_ms: null,
         };
     }
 
@@ -167,6 +171,27 @@ class TrainingEnvOptimizer {
         state.phase = 'stable';
         state.retest_after_ms = now + this.retestMs;
         state.last_decision = 'stable near measured optimum';
+    }
+
+    _abortProbe(state, capacity, now, reason) {
+        if (state.baseline_envs === null || capacity.current_envs === state.baseline_envs) {
+            this._releaseProbe(state.trainer_id);
+            this._resetMeasurement(state, now, null, reason);
+            return;
+        }
+        const direction = capacity.current_envs > state.baseline_envs ? 1 : -1;
+        this._blockDirection(state, direction);
+        state.direction = -direction;
+        state.desired_envs = state.baseline_envs;
+        state.phase = 'awaiting-restart';
+        state.phase_started_ms = now;
+        state.cooldown_until_ms = now + this.cooldownMs;
+        state.measurement_started_ms = null;
+        state.measurement_start_steps = null;
+        state.source_steps = null;
+        state.metrics_missing_since_ms = null;
+        state.last_decision = reason + '; backing off to ' + state.baseline_envs + ' envs';
+        // Keep the cluster-wide probe lock until the worker reports the accepted baseline again.
     }
 
     _finishMeasurement(state, capacity, now, sps) {
@@ -279,6 +304,7 @@ class TrainingEnvOptimizer {
         }
 
         if (capacity.current_envs !== state.desired_envs) {
+            state.metrics_missing_since_ms = null;
             state.phase = 'awaiting-restart';
             state.phase_started_ms = timestamp;
             state.measurement_started_ms = null;
@@ -287,10 +313,40 @@ class TrainingEnvOptimizer {
             return this.snapshot(record.trainer_id);
         }
 
+        const probingAwayFromBaseline =
+            state.baseline_envs !== null &&
+            state.desired_envs !== state.baseline_envs &&
+            capacity.current_envs !== state.baseline_envs;
+        if (probingAwayFromBaseline && record.process_state !== 'running') {
+            this._abortProbe(
+                state,
+                capacity,
+                timestamp,
+                'probe process is not running',
+            );
+            return this.snapshot(record.trainer_id);
+        }
+
         if (totalSteps === null) {
+            if (probingAwayFromBaseline) {
+                if (state.metrics_missing_since_ms === null) {
+                    state.metrics_missing_since_ms = timestamp;
+                } else if (
+                    timestamp - state.metrics_missing_since_ms >= this.metricsTimeoutMs
+                ) {
+                    this._abortProbe(
+                        state,
+                        capacity,
+                        timestamp,
+                        'probe produced no accepted-step metrics',
+                    );
+                    return this.snapshot(record.trainer_id);
+                }
+            }
             this._resetMeasurement(state, timestamp, null, 'waiting for accepted-step metrics');
             return this.snapshot(record.trainer_id);
         }
+        state.metrics_missing_since_ms = null;
 
         if (state.source_steps !== null && totalSteps < state.source_steps) {
             this._resetMeasurement(state, timestamp, totalSteps, 'throughput counter restarted');
