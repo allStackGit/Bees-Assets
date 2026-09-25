@@ -142,7 +142,9 @@ The build command automatically stages a successful build into a control server 
 
 ## Managed BeesServer updates
 
-The operator records the Git tree identity of `BeesServer~` when it launches the managed server. `server`, `start`, and live-cluster `build` detect a changed server tree and restart the managed BeesServer automatically while preserving the persisted training desired state, artifact catalog, recently active dedicated trainer registry, and any active rollout barrier.
+The operator records a deterministic SHA-256 content identity of the actual `BeesServer~` working-copy files when it launches the managed server; `node_modules` is deliberately excluded because installed dependencies are tracked separately. `server`, `start`, and live-cluster `build` therefore detect committed, dirty, and untracked source changes and restart the managed BeesServer automatically while preserving the persisted training desired state, artifact catalog, recently active dedicated trainer registry, and any active rollout barrier.
+
+BeesServer dependency installation has its own SHA-256 stamp derived from both `package.json` and `package-lock.json`. `npm ci` runs when `node_modules` is missing or that dependency identity changes, and the stamp is removed before installation and written only after a successful install. A failed install therefore cannot make the next launch incorrectly treat partial dependencies as current.
 
 If the control port is occupied by a server that was not launched/recorded by the Bees operator, the script refuses to kill it automatically. Stop that unmanaged server once and rerun the command; subsequent source refreshes can then be automatic.
 
@@ -169,7 +171,7 @@ The learner gateway exposes only these private tailnet services:
 
 The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
 
-After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. Tailnet helper binaries are published from immutable source-hash version directories rather than by overwriting a live executable. When helper source changes, the learner gateway is restarted onto the new immutable version after the updated bootstrap payload is prepared. The supervisor switches remote runtime/helper releases only at that trainer's assigned build cutover.
+After a worker is bootstrapped with the current launcher, future runtime/helper releases are fetched and staged automatically. The remote Python runtime version is a SHA-256 content identity of the exact staged `.py` files and requirements bytes that are placed in `bees-remote-runtime.zip`, so dirty/uncommitted changes cannot reuse an older runtime version. Tailnet helper binaries are published from immutable source-hash version directories rather than by overwriting a live executable. When helper source changes, the learner gateway is restarted onto the new immutable version after the updated bootstrap payload is prepared. The supervisor switches remote runtime/helper releases only at that trainer's assigned build cutover.
 
 Machines that were already running a launcher from before this self-update mechanism existed need one final manual bootstrap with the newly generated launcher. After that transition, routine builds do not require recopying the launcher.
 
