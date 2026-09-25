@@ -133,7 +133,9 @@ test('bees.ps1 includes Unity log tail on nonzero build exit', () => {
 
 test('tailnet helper publication uses immutable versioned binaries instead of replacing a live executable', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
-    const build = source.match(/function Build-TailnetBridge[\s\S]*?\n\}/)?.[0] || '';
+    const start = source.indexOf('function Build-TailnetBridge');
+    const end = source.indexOf('\nfunction Get-TailnetBridgePaths', start);
+    const build = start >= 0 && end > start ? source.slice(start, end) : '';
     assert.match(build, /schema_version=2/);
     assert.match(build, /distribution_windows=\$versionWindows/);
     assert.match(build, /distribution_linux=\$versionLinux/);
@@ -143,7 +145,9 @@ test('tailnet helper publication uses immutable versioned binaries instead of re
 
 test('build restarts the live tailnet gateway only when helper source changed', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
-    const build = source.match(/function Invoke-Build[\s\S]*?\n\}/)?.[0] || '';
+    const start = source.indexOf('function Invoke-Build');
+    const end = source.indexOf('\nfunction New-SecureToken', start);
+    const build = start >= 0 && end > start ? source.slice(start, end) : '';
     assert.match(build, /\$previousBridgeHash/);
     assert.match(build, /\$tailnetBridgeChanged=\(\$previousBridgeHash -ne \$currentBridgeHash\)/);
     assert.match(build, /Prepare-RemoteBootstrap \$config[\s\S]*?if\(\$tailnetBridgeChanged\)[\s\S]*?Start-TailnetGatewayIfNeeded \$config[\s\S]*?Publish-Release/);
