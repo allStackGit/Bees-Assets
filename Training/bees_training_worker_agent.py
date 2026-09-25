@@ -36,7 +36,9 @@ ENV_PLACEHOLDER = "{env}"
 ENV_ARGS_PLACEHOLDER = "{env_args}"
 BUILD_ID_PLACEHOLDER = "{build_id}"
 RUN_ID_PLACEHOLDER = "{run_id}"
+WORKER_ENVS_PLACEHOLDER = "{worker_envs}"
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
@@ -148,12 +150,63 @@ class EpisodeLogMetrics:
         }
 
 
+def read_throughput_metrics(
+    path: Optional[Path],
+    *,
+    expected_pid: Optional[int] = None,
+    expected_env_count: Optional[int] = None,
+) -> dict[str, object]:
+    if path is None:
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(value, Mapping):
+        return {}
+    pid = value.get("pid")
+    env_count = value.get("env_count")
+    accepted_steps = value.get("accepted_steps_total")
+    accepted_trajectories = value.get("accepted_trajectories_total")
+    queue_depth = value.get("upload_queue_depth")
+    if (
+        not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or pid <= 0
+        or not isinstance(env_count, int)
+        or isinstance(env_count, bool)
+        or not 1 <= env_count <= 64
+        or not isinstance(accepted_steps, int)
+        or isinstance(accepted_steps, bool)
+        or accepted_steps < 0
+        or not isinstance(accepted_trajectories, int)
+        or isinstance(accepted_trajectories, bool)
+        or accepted_trajectories < 0
+        or not isinstance(queue_depth, int)
+        or isinstance(queue_depth, bool)
+        or queue_depth < 0
+    ):
+        return {}
+    if expected_pid is not None and pid != expected_pid:
+        return {}
+    if expected_env_count is not None and env_count != expected_env_count:
+        return {}
+    return {
+        "pid": pid,
+        "env_count": env_count,
+        "accepted_steps_total": accepted_steps,
+        "accepted_trajectories_total": accepted_trajectories,
+        "upload_queue_depth": queue_depth,
+    }
+
+
 def render_command(
     template: Sequence[str],
     entrypoint: Path,
     environment_args: Sequence[str],
     build_id: str = "",
     run_id: str = "",
+    worker_env_count: Optional[int] = None,
 ) -> list[str]:
     if not template:
         raise ValueError("managed worker launch command is empty")
@@ -165,12 +218,23 @@ def render_command(
             saw_env = True
         elif token == ENV_ARGS_PLACEHOLDER:
             rendered.extend(str(value) for value in environment_args)
+        elif token == WORKER_ENVS_PLACEHOLDER:
+            if worker_env_count is None:
+                raise ValueError("managed worker command requires worker env count")
+            rendered.append(str(worker_env_count))
         else:
-            rendered.append(
+            replacement = (
                 token.replace(ENV_PLACEHOLDER, str(entrypoint))
                 .replace(BUILD_ID_PLACEHOLDER, str(build_id))
                 .replace(RUN_ID_PLACEHOLDER, str(run_id))
             )
+            if WORKER_ENVS_PLACEHOLDER in replacement:
+                if worker_env_count is None:
+                    raise ValueError("managed worker command requires worker env count")
+                replacement = replacement.replace(
+                    WORKER_ENVS_PLACEHOLDER, str(worker_env_count)
+                )
+            rendered.append(replacement)
             if ENV_PLACEHOLDER in token:
                 saw_env = True
     if not saw_env:
@@ -349,6 +413,8 @@ class ManagedProcess:
         self.build_sha256 = ""
         self.run_id = ""
         self.environment_args: tuple[str, ...] = ()
+        self.worker_env_count: Optional[int] = None
+        self.throughput_metrics_file: Optional[Path] = None
         self.graceful_checkpoint = False
         self.stop_request_file: Optional[Path] = None
 
@@ -371,6 +437,7 @@ class ManagedProcess:
         run_id: str,
         state_file: Path,
         environment_args: Sequence[str],
+        worker_env_count: Optional[int] = None,
         graceful_checkpoint: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
@@ -380,6 +447,12 @@ class ManagedProcess:
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         environment["PYTHONUNBUFFERED"] = "1"
+        throughput_metrics_file = state_file.parent / "worker-throughput.json"
+        try:
+            throughput_metrics_file.unlink()
+        except FileNotFoundError:
+            pass
+        environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
         log_dir = state_file.parent / "logs" / run_id
@@ -410,6 +483,8 @@ class ManagedProcess:
         self.build_sha256 = build_sha256
         self.run_id = str(run_id)
         self.environment_args = tuple(str(value) for value in environment_args)
+        self.worker_env_count = worker_env_count
+        self.throughput_metrics_file = throughput_metrics_file
         self.graceful_checkpoint = bool(graceful_checkpoint)
         self.stop_request_file = stop_request_file if graceful_checkpoint else None
 
@@ -551,12 +626,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=15.0)
     parser.add_argument("--shutdown-request-file", default="")
+    parser.add_argument("--worker-envs", type=int, default=None)
+    parser.add_argument("--worker-envs-min", type=int, default=1)
+    parser.add_argument("--worker-envs-max", type=int, default=64)
+    parser.add_argument("--auto-worker-envs", action="store_true")
     parser.add_argument(
         "launch_command",
         nargs=argparse.REMAINDER,
         help=(
-            "Command after '--'. Use {env} for the canonical executable and {env_args} where "
-            "server-owned environment arguments should be expanded."
+            "Command after '--'. Use {env} for the canonical executable, {env_args} where "
+            "server-owned environment arguments should be expanded, and {worker_envs} for "
+            "server-tuned remote environment count."
         ),
     )
     return parser
@@ -578,10 +658,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.heartbeat_seconds <= 0 or args.request_timeout_seconds <= 0:
         print("error: heartbeat and request timeout must be positive", file=sys.stderr)
         return 2
+    if args.worker_envs is not None:
+        if (
+            not 1 <= args.worker_envs_min <= args.worker_envs <= args.worker_envs_max <= 64
+        ):
+            print("error: worker env bounds must satisfy 1 <= min <= current <= max <= 64", file=sys.stderr)
+            return 2
+    elif args.auto_worker_envs:
+        print("error: --auto-worker-envs requires --worker-envs", file=sys.stderr)
+        return 2
     try:
         command_template = _normalized_launch_command(args.launch_command)
         if not any(ENV_PLACEHOLDER in token for token in command_template):
             raise ValueError(f"launch command must contain {ENV_PLACEHOLDER}")
+        if args.worker_envs is not None and not any(
+            WORKER_ENVS_PLACEHOLDER in token for token in command_template
+        ):
+            raise ValueError(
+                f"worker-managed launch command must contain {WORKER_ENVS_PLACEHOLDER}"
+            )
         token = load_token(args.token_file)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -600,7 +695,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             pass
     builds = ManagedBuildStore(install_root)
     state_file = install_root / "control-state.json"
-    metrics = EpisodeLogMetrics(install_root / "logs")
+    episode_metrics = EpisodeLogMetrics(install_root / "logs")
     client = TrainingControlClient(
         args.server_url,
         token,
@@ -616,6 +711,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     active_build: Optional[Mapping[str, Any]] = builds.current()
     applied_revision = -1
     last_error = ""
+
+    def worker_capacity() -> dict[str, object]:
+        if args.worker_envs is None:
+            return {}
+        current = (
+            managed.worker_env_count
+            if managed.worker_env_count is not None
+            else args.worker_envs
+        )
+        return {
+            "auto": bool(args.auto_worker_envs),
+            "current_envs": int(current),
+            "min_envs": int(args.worker_envs_min),
+            "max_envs": int(args.worker_envs_max),
+        }
+
+    def current_metrics(run_id: str) -> dict[str, object]:
+        snapshot = episode_metrics.refresh(run_id)
+        process = managed.process
+        if managed.alive() and process is not None:
+            throughput = read_throughput_metrics(
+                managed.throughput_metrics_file,
+                expected_pid=process.pid,
+                expected_env_count=managed.worker_env_count,
+            )
+            if throughput:
+                snapshot["throughput"] = throughput
+        return snapshot
 
     def request_stop(_signum: int, _frame: object) -> None:
         nonlocal stop
@@ -634,6 +757,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build=active_build,
             prepared_build_id="",
             last_error=last_error,
+            worker_capacity=worker_capacity(),
         )
         try:
             client.heartbeat(heartbeat)
@@ -679,9 +803,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 build=active_build,
                 prepared_build_id=prepared_build_id,
                 last_error=last_error or preparation_error,
-                metrics=metrics.refresh(
+                metrics=current_metrics(
                     str(desired.get("run_id", "")) if desired else managed.run_id
                 ),
+                worker_capacity=worker_capacity(),
             )
             try:
                 desired = client.heartbeat(heartbeat)
@@ -694,6 +819,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 revision = int(desired["revision"])
                 run_id = str(desired.get("run_id", ""))
                 environment_args = tuple(str(value) for value in desired["environment_args"])
+                worker_env_count = args.worker_envs
+                if args.auto_worker_envs:
+                    requested_worker_envs = desired.get("worker_env_count")
+                    if requested_worker_envs is not None:
+                        if (
+                            not isinstance(requested_worker_envs, int)
+                            or isinstance(requested_worker_envs, bool)
+                            or not args.worker_envs_min <= requested_worker_envs <= args.worker_envs_max
+                        ):
+                            raise RuntimeError(
+                                "server requested worker env count outside advertised capacity"
+                            )
+                        worker_env_count = requested_worker_envs
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
 
@@ -744,6 +882,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             environment_args,
                             str(active_build["build_id"]),
                             run_id,
+                            worker_env_count,
                         )
                         managed.start(
                             command,
@@ -752,6 +891,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id=run_id,
                             state_file=state_file,
                             environment_args=environment_args,
+
+                            worker_env_count=worker_env_count,
                             graceful_checkpoint=(
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
@@ -804,6 +945,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             environment_args,
                             str(active_build["build_id"]),
                             run_id,
+                            worker_env_count,
                         )
                         needs_restart = (
                             not managed.alive()
@@ -820,6 +962,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 run_id=run_id,
                                 state_file=state_file,
                                 environment_args=environment_args,
+
+                                worker_env_count=worker_env_count,
                                 graceful_checkpoint=(
                                     args.role == "dedicated"
                                     and args.trainer_id == "central-learner"
