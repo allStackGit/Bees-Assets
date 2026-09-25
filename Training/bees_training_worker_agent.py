@@ -19,7 +19,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 from bees_training_control import (
     ControlRejected,
@@ -372,8 +372,9 @@ class ManagedProcess:
         state_file: Path,
         environment_args: Sequence[str],
         graceful_checkpoint: bool = False,
+        stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
-        self.stop()
+        self.stop(progress_callback=stop_progress)
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
@@ -406,7 +407,7 @@ class ManagedProcess:
         self.graceful_checkpoint = bool(graceful_checkpoint)
         self.stop_request_file = stop_request_file if graceful_checkpoint else None
 
-    def stop(self) -> None:
+    def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
         process = self.process
         self.process = None
         if process is None or process.poll() is not None:
@@ -420,7 +421,15 @@ class ManagedProcess:
                 self.stop_request_file.parent.mkdir(parents=True, exist_ok=True)
                 self.stop_request_file.write_text("stop\n", encoding="ascii")
                 deadline = time.monotonic() + GRACEFUL_CHECKPOINT_STOP_SECONDS
+                next_progress = 0.0
                 while process.poll() is None and time.monotonic() < deadline:
+                    now = time.monotonic()
+                    if progress_callback is not None and now >= next_progress:
+                        try:
+                            progress_callback()
+                        except Exception:
+                            pass
+                        next_progress = now + 2.0
                     time.sleep(0.25)
                 if process.poll() is not None:
                     try:
@@ -603,6 +612,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         nonlocal stop
         stop = True
 
+    def stopping_keepalive() -> None:
+        nonlocal last_contact
+        if args.role != "dedicated":
+            return
+        heartbeat = default_heartbeat(
+            trainer_id=args.trainer_id,
+            role=args.role,
+            platform=args.platform,
+            process_state="stopping",
+            applied_revision=applied_revision,
+            build=active_build,
+            prepared_build_id="",
+            last_error=last_error,
+        )
+        try:
+            client.heartbeat(heartbeat)
+            last_contact = time.monotonic()
+        except (ControlUnavailable, ControlRejected, OSError, ValueError):
+            pass
+
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
@@ -660,7 +689,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     mode == "stopped"
                     or (desired_build_id and desired_build_id != active_build_id)
                 ):
-                    managed.stop()
+                    managed.stop(progress_callback=stopping_keepalive)
                     try:
                         log_uploader.flush_all(
                             client,
@@ -675,7 +704,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
 
                 if mode == "stopped":
-                    managed.stop()
+                    managed.stop(progress_callback=stopping_keepalive)
                     pending_release = desired.get("pending_release")
                     if (
                         isinstance(pending_release, Mapping)
@@ -712,6 +741,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
                             ),
+                            stop_progress=stopping_keepalive,
                         )
                         applied_revision = revision
                     elif descriptor and full_game_update_requires_deferred_restart(
@@ -830,7 +860,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             "[Bees control] server lease expired; stopping dedicated trainer.",
                             file=sys.stderr,
                         )
-                    managed.stop()
+                    managed.stop(progress_callback=stopping_keepalive)
                 elif args.role == "full-game" and offline and managed.alive():
                     print(
                         "[Bees control] server lease expired; full game remains running in "
@@ -852,7 +882,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
         return 0
     finally:
-        managed.stop()
+        managed.stop(progress_callback=stopping_keepalive)
         if shutdown_request_file is not None:
             try:
                 shutdown_request_file.unlink()
