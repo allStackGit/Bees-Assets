@@ -230,7 +230,7 @@ class TrainingBundleTests(unittest.TestCase):
                 self.assertIn("build mismatch", warnings)
                 self.assertIn("revision mismatch", warnings)
                 self.assertIn(
-                    "remote-supervisor.log",
+                    "logs/trainers/remote-warwick/remote-supervisor.log",
                     zipped.namelist(),
                 )
 
