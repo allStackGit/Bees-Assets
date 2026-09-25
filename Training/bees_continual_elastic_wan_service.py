@@ -107,8 +107,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         index: int,
         *,
         resume: bool,
+        force_fresh: bool = False,
     ):
-        command = original_training_command(options, index, resume=resume)
+        command = original_training_command(
+            options,
+            index,
+            resume=resume,
+            force_fresh=force_fresh,
+        )
         command[1] = str(
             options.assets_root / "Training" / "bees_continual_elastic_wan_auto_train.py"
         )
