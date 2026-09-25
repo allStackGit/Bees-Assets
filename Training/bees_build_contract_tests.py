@@ -137,6 +137,32 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         taskkill = source.index("& taskkill /PID")
         self.assertLess(stop_helper, taskkill)
 
+    def test_operator_status_shows_remote_wan_traffic(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        status = re.search(
+            r"function Get-StatusFrameLines.*?function Initialize-LiveStatusRegion",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(status)
+        block = status.group(0)
+        self.assertIn(
+            "Get-ObjectPropertyValue $throughput 'network_sent_bytes_total'",
+            block,
+        )
+        self.assertIn(
+            "Get-ObjectPropertyValue $throughput 'network_received_bytes_total'",
+            block,
+        )
+        self.assertIn(
+            "Get-ObjectPropertyValue $throughput 'network_mib_per_s'",
+            block,
+        )
+        self.assertIn("SentGiB", block)
+        self.assertIn("RecvGiB", block)
+        self.assertIn("'MiB/s'", block)
+        self.assertIn("/1GB", block)
+
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
