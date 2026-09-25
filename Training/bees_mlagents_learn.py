@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import _thread
 import copy
+import json
 import os
+from pathlib import Path
 import signal
 import sys
 import threading
+import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
@@ -35,6 +38,8 @@ RESULTS_DIR_FLAG = "--results-dir"
 DEFAULT_RESULTS_DIR = ".results"
 WORKER_TIMER_SAMPLE_STEPS = 64
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+MODEL_SNAPSHOT_REQUEST_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"
+MODEL_SNAPSHOT_RESPONSE_FILE_ENV = "BEES_TRAINING_MODEL_SNAPSHOT_RESPONSE_FILE"
 MANAGED_STOP_POLL_SECONDS = 0.25
 _ORIGINAL_MLAGENTS_WORKER = None
 
@@ -549,6 +554,115 @@ def _install_windows_break_interrupt():
     return signal.signal(signal.SIGBREAK, signal.default_int_handler)
 
 
+def _atomic_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
+def _handle_model_snapshot_request(trainer, request_path: Path, response_path: Path) -> bool:
+    """Export the current in-memory policy at a trainer-thread trajectory boundary."""
+
+    if not request_path.is_file():
+        return False
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+        if not isinstance(request, dict):
+            raise ValueError("snapshot request must be a JSON object")
+        request_id = str(request.get("request_id", "")).strip()
+        if not request_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for ch in request_id):
+            raise ValueError("snapshot request_id is invalid")
+
+        step = int(trainer.get_step)
+        model_root = Path(str(trainer.model_saver.model_path)).expanduser().resolve()
+        model_root.mkdir(parents=True, exist_ok=True)
+        output_base = model_root / (
+            f"diagnostic-{trainer.brain_name}-{step}-{request_id[:12]}"
+        )
+        trainer.model_saver.export(str(output_base), trainer.brain_name)
+        model_path = output_base.with_suffix(".onnx")
+        if not model_path.is_file():
+            raise RuntimeError(f"model exporter did not create {model_path}")
+
+        _atomic_json(
+            response_path,
+            {
+                "schema_version": 1,
+                "status": "succeeded",
+                "request_id": request_id,
+                "run_id": os.environ.get("BEES_TRAINING_RUN_ID", ""),
+                "step": step,
+                "model_path": str(model_path),
+                "completed_unix_seconds": time.time(),
+            },
+        )
+        print(
+            f"[Bees RL] Diagnostic model snapshot exported at step {step}: {model_path}",
+            flush=True,
+        )
+    except Exception as exc:
+        request_id = ""
+        try:
+            raw = json.loads(request_path.read_text(encoding="utf-8-sig"))
+            if isinstance(raw, dict):
+                request_id = str(raw.get("request_id", ""))
+        except Exception:
+            pass
+        try:
+            _atomic_json(
+                response_path,
+                {
+                    "schema_version": 1,
+                    "status": "failed",
+                    "request_id": request_id,
+                    "run_id": os.environ.get("BEES_TRAINING_RUN_ID", ""),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "completed_unix_seconds": time.time(),
+                },
+            )
+        except OSError:
+            pass
+        print(
+            f"[Bees RL] Diagnostic model snapshot failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+    finally:
+        try:
+            request_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+    return True
+
+
+def _install_model_snapshot_requests():
+    """Service bundle snapshot requests from the trainer thread without stopping training."""
+
+    request_value = os.environ.get(MODEL_SNAPSHOT_REQUEST_FILE_ENV, "").strip()
+    response_value = os.environ.get(MODEL_SNAPSHOT_RESPONSE_FILE_ENV, "").strip()
+    if not request_value or not response_value:
+        return None
+
+    from mlagents.trainers.trainer.rl_trainer import RLTrainer
+
+    request_path = Path(request_value).expanduser().resolve()
+    response_path = Path(response_value).expanduser().resolve()
+    original = RLTrainer._maybe_save_model
+
+    def maybe_save_model_with_snapshot(self, step_after_process: int) -> None:
+        original(self, step_after_process)
+        _handle_model_snapshot_request(self, request_path, response_path)
+
+    RLTrainer._maybe_save_model = maybe_save_model_with_snapshot
+    return original
+
+
 def _start_managed_stop_watcher():
     """Interrupt the trainer main thread when its supervisor requests a final checkpoint."""
     path = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
@@ -645,6 +759,7 @@ def main() -> None:
     previous_argv = sys.argv
     previous_sigbreak_handler = _install_windows_break_interrupt()
     managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
+    original_maybe_save_model = _install_model_snapshot_requests()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
     try:
@@ -657,6 +772,9 @@ def main() -> None:
             managed_stop_watcher.join(timeout=1.0)
         if previous_sigbreak_handler is not None:
             signal.signal(signal.SIGBREAK, previous_sigbreak_handler)
+        if original_maybe_save_model is not None:
+            from mlagents.trainers.trainer.rl_trainer import RLTrainer
+            RLTrainer._maybe_save_model = original_maybe_save_model
         torch_utils.torch.load = original_torch_load
         restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
