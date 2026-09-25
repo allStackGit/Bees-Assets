@@ -931,8 +931,18 @@ function Prepare-RemoteBootstrap($Config){
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Copy-Item -LiteralPath $windowsBridge -Destination (Join-Path $RemoteRoot $windowsBridgeName) -Force
-    Copy-Item -LiteralPath $linuxBridge -Destination (Join-Path $RemoteRoot $linuxBridgeName) -Force
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $windowsBridgeName) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $linuxBridgeName) -Force -ErrorAction SilentlyContinue
+
+    function Format-Base64Payload([byte[]]$Bytes,[int]$Width=120){
+        $value=[Convert]::ToBase64String($Bytes)
+        $builder=New-Object Text.StringBuilder
+        for($offset=0;$offset -lt $value.Length;$offset+=$Width){
+            $length=[Math]::Min($Width,$value.Length-$offset)
+            [void]$builder.AppendLine($value.Substring($offset,$length))
+        }
+        $builder.ToString().TrimEnd()
+    }
 
     $windowsBody=$windowsTemplate
     $windowsReplacements=@{
@@ -947,21 +957,49 @@ function Prepare-RemoteBootstrap($Config){
         '__BEES_TORCH_DEVICE__'=(Escape-SingleQuoted $torchDevice)
     }
     foreach($key in $windowsReplacements.Keys){ $windowsBody=$windowsBody.Replace($key,[string]$windowsReplacements[$key]) }
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
 
-    # Windows commonly blocks unsigned .ps1 files under the default execution policy. The .cmd
-    # wrapper applies Bypass only to this child PowerShell process; it does not modify machine or
-    # user execution-policy settings.
-    $windowsCmd=@'
+    # Build one self-extracting Windows launcher. The large payload comes after the batch logic,
+    # so startup text appears before PowerShell reads or expands it.
+    $windowsPayloadRoot=Join-Path $RuntimeRoot 'remote-windows-bootstrap-payload'
+    if(Test-Path -LiteralPath $windowsPayloadRoot){Remove-Item -LiteralPath $windowsPayloadRoot -Recurse -Force}
+    Ensure-Directory $windowsPayloadRoot
+    $windowsPayloadZip=Join-Path $RuntimeRoot 'remote-windows-bootstrap-payload.zip'
+    Remove-Item -LiteralPath $windowsPayloadZip -Force -ErrorAction SilentlyContinue
+    try {
+        [IO.File]::WriteAllText((Join-Path $windowsPayloadRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
+        Copy-Item -LiteralPath $windowsBridge -Destination (Join-Path $windowsPayloadRoot $windowsBridgeName) -Force
+        Compress-Archive -Path (Join-Path $windowsPayloadRoot '*') -DestinationPath $windowsPayloadZip -CompressionLevel Optimal
+        $windowsPayload=Format-Base64Payload ([IO.File]::ReadAllBytes($windowsPayloadZip))
+    } finally {
+        Remove-Item -LiteralPath $windowsPayloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $windowsPayloadZip -Force -ErrorAction SilentlyContinue
+    }
+
+    $windowsCmd=@"
 @echo off
-setlocal
+setlocal EnableExtensions
 echo [Bees remote] launching Windows training worker...
-echo [Bees remote] loading PowerShell bootstrap...
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0bees-remote-worker.ps1" %*
+set "BEES_BOOTSTRAP_DIR=%TEMP%\BeesTrainingBootstrap"
+set "BEES_SELF=%~f0"
+set "BEES_PAYLOAD_ZIP=%BEES_BOOTSTRAP_DIR%\payload.zip"
+if exist "%BEES_BOOTSTRAP_DIR%" rd /s /q "%BEES_BOOTSTRAP_DIR%"
+mkdir "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
+echo [Bees remote] extracting bundled bootstrap...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "\$t=[IO.File]::ReadAllText(\$env:BEES_SELF);\$s='::BEES_PAYLOAD_BEGIN';\$e='::BEES_PAYLOAD_END';\$i=\$t.IndexOf(\$s);\$j=\$t.IndexOf(\$e,\$i+\$s.Length);if(\$i -lt 0 -or \$j -lt 0){throw 'Embedded Bees payload not found.'};\$b=\$t.Substring(\$i+\$s.Length,\$j-(\$i+\$s.Length)) -replace '\\s','';[IO.File]::WriteAllBytes(\$env:BEES_PAYLOAD_ZIP,[Convert]::FromBase64String(\$b));Expand-Archive -LiteralPath \$env:BEES_PAYLOAD_ZIP -DestinationPath \$env:BEES_BOOTSTRAP_DIR -Force"
+if errorlevel 1 (
+  echo [Bees remote] failed to extract the bundled bootstrap.
+  exit /b 1
+)
+echo [Bees remote] starting PowerShell bootstrap...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%BEES_BOOTSTRAP_DIR%\bees-remote-worker.ps1" %*
 set "BEES_EXIT=%ERRORLEVEL%"
 if not "%BEES_EXIT%"=="0" echo [Bees remote] worker exited with code %BEES_EXIT%.
+rd /s /q "%BEES_BOOTSTRAP_DIR%" >nul 2>&1
 exit /b %BEES_EXIT%
-'@
+::BEES_PAYLOAD_BEGIN
+$windowsPayload
+::BEES_PAYLOAD_END
+"@
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
@@ -978,12 +1016,68 @@ exit /b %BEES_EXIT%
     }
     foreach($key in $linuxReplacements.Keys){ $linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key]) }
     $linuxBody=[regex]::Replace($linuxBody,"\r\n","\n")
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxBody,$utf8NoBom)
+    $linuxBridgePayload=Format-Base64Payload ([IO.File]::ReadAllBytes($linuxBridge))
+
+    # Linux likewise gets a single self-extracting script. The binary is a here-document reached
+    # only after the launcher has already printed its startup status.
+    $linuxWrapper=@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "[Bees remote] launching Linux training worker..."
+
+have() { command -v "\$1" >/dev/null 2>&1; }
+sudo_cmd() {
+    if [[ "\$(id -u)" -eq 0 ]]; then
+        "\$@"
+    elif have sudo; then
+        sudo "\$@"
+    else
+        echo "error: root privileges are required to install base64/coreutils, but sudo is unavailable." >&2
+        return 1
+    fi
+}
+if ! have base64; then
+    echo "[Bees remote] installing base64/coreutils prerequisite..."
+    if have apt-get; then sudo_cmd apt-get update && sudo_cmd apt-get install -y coreutils
+    elif have dnf; then sudo_cmd dnf install -y coreutils
+    elif have yum; then sudo_cmd yum install -y coreutils
+    elif have zypper; then sudo_cmd zypper --non-interactive install coreutils
+    elif have pacman; then sudo_cmd pacman -Sy --noconfirm coreutils
+    else echo "error: base64 is required and no supported package manager was found." >&2; exit 2
+    fi
+fi
+
+BOOTSTRAP_DIR="__TMPDIR_EXPR__/bees-training-bootstrap-\$\$"
+rm -rf "\$BOOTSTRAP_DIR"
+mkdir -p "\$BOOTSTRAP_DIR"
+trap 'rm -rf "\$BOOTSTRAP_DIR"' EXIT
+
+echo "[Bees remote] extracting bundled bootstrap..."
+cat > "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" <<'__BEES_INNER_SCRIPT__'
+$linuxBody
+__BEES_INNER_SCRIPT__
+
+base64 -d > "\$BOOTSTRAP_DIR/$linuxBridgeName" <<'__BEES_BRIDGE_PAYLOAD__'
+$linuxBridgePayload
+__BEES_BRIDGE_PAYLOAD__
+
+chmod 700 "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "\$BOOTSTRAP_DIR/$linuxBridgeName"
+echo "[Bees remote] starting shell bootstrap..."
+set +e
+bash "\$BOOTSTRAP_DIR/bees-remote-worker-inner.sh" "\$@"
+BEES_EXIT=\$?
+set -e
+exit "\$BEES_EXIT"
+"@
+    $linuxWrapper=$linuxWrapper.Replace('__TMPDIR_EXPR__','${TMPDIR:-/tmp}')
+    $linuxWrapper=[regex]::Replace($linuxWrapper,"\r\n","\n")
+    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxWrapper,$utf8NoBom)
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
-    Write-Host 'Windows: copy bees-remote-worker.cmd, bees-remote-worker.ps1, and bees-tailnet-bridge-windows.exe together; run the .cmd file, optionally with -Envs N.'
-    Write-Host "Linux:   copy bees-remote-worker.sh and bees-tailnet-bridge-linux together; run 'bash bees-remote-worker.sh', optionally with --envs N."
+    Write-Host 'Windows: copy only bees-remote-worker.cmd and run it; optionally pass -Envs N.'
+    Write-Host "Linux:   copy only bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
 }
 
 function Invoke-Server {
