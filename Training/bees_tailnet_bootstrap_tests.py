@@ -80,6 +80,15 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("remote Python dependency validation failed", linux)
         self.assertIn("_python_remote_dependencies_ok", managed)
 
+    def test_remote_launcher_describes_cpu_and_ram_environment_default(self):
+        windows = WINDOWS_TEMPLATE.read_text(encoding="utf-8")
+        linux = LINUX_TEMPLATE.read_text(encoding="utf-8")
+        expected = "environment count defaults automatically from available CPU and RAM (maximum 64)."
+        stale = "environment count defaults to 4x available CPU threads (maximum 64)."
+        for source in (windows, linux):
+            self.assertIn(expected, source)
+            self.assertNotIn(stale, source)
+
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
         self.assertEqual(config["remoteTransport"], "tailnet")
