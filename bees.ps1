@@ -61,7 +61,7 @@ function Install-AtomicFile([string]$Source,[string]$Destination){
     Ensure-Directory (Split-Path -Parent $destinationPath)
     if(Test-Path -LiteralPath $destinationPath){
         $backup="$destinationPath.swap-backup"
-        $maxAttempts=50
+        $maxAttempts=300
         for($attempt=1;$attempt -le $maxAttempts;$attempt++){
             Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
             try {
