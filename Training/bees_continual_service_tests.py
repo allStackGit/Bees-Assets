@@ -37,11 +37,21 @@ class ContinualServiceTests(unittest.TestCase):
                 )
             )
 
-    def test_first_generation_resumes_after_mlagents_created_run_directory(self):
+    def test_first_generation_requires_real_checkpoint_before_resume(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
             run_dir = options.root / "trainer-results" / options.run_id
             run_dir.mkdir(parents=True)
+            self.assertFalse(
+                service.should_resume_training(
+                    options,
+                    generation_index=0,
+                    previously_started=True,
+                )
+            )
+            checkpoint = run_dir / "BeesRL1v1" / "checkpoint.pt"
+            checkpoint.parent.mkdir()
+            checkpoint.write_bytes(b"checkpoint")
             self.assertTrue(
                 service.should_resume_training(
                     options,
@@ -50,9 +60,24 @@ class ContinualServiceTests(unittest.TestCase):
                 )
             )
 
-    def test_later_generations_preserve_persistent_resume_lineage(self):
+    def test_later_generations_require_persistent_checkpoint_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir))
+            with self.assertRaisesRegex(RuntimeError, "checkpoint is missing"):
+                service.should_resume_training(
+                    options,
+                    generation_index=1,
+                    previously_started=False,
+                )
+            checkpoint = (
+                options.root
+                / "trainer-results"
+                / options.run_id
+                / "BeesRL1v1"
+                / "checkpoint.pt"
+            )
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"checkpoint")
             self.assertTrue(
                 service.should_resume_training(
                     options,
@@ -67,11 +92,19 @@ class ContinualServiceTests(unittest.TestCase):
             options = self._options(root, generation_steps=100)
             command0 = service.training_command(options, 0, resume=False)
             command1 = service.training_command(options, 1, resume=True)
+            command0_retry = service.training_command(
+                options,
+                0,
+                resume=False,
+                force_fresh=True,
+            )
 
             self.assertIn("--run-id=continuous-test", command0)
             self.assertIn("--run-id=continuous-test", command1)
             self.assertNotIn("--resume", command0)
             self.assertIn("--resume", command1)
+            self.assertIn("--force", command0_retry)
+            self.assertNotIn("--resume", command0_retry)
             self.assertIn("--continual-public-generation-id=generation-00000000", command0)
             self.assertIn("--continual-public-generation-id=generation-00000001", command1)
             self.assertIn("max_steps: 100", Path(command0[2]).read_text(encoding="utf-8"))
