@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
+import zipfile
 from argparse import Namespace
 from pathlib import Path
 from unittest import mock
@@ -27,6 +29,31 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             second = managed._load_actor_key(root)
             self.assertEqual(first, second)
             self.assertEqual(len(first), 32)
+
+    def test_runtime_version_is_read_from_executing_root_not_mutable_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            active = "a" * 40
+            (root / "bees-runtime-version.txt").write_text(active, encoding="ascii")
+            self.assertEqual(managed._runtime_version_from_root(root), active)
+
+    def test_runtime_version_is_read_from_packaged_zip(self):
+        buffer = io.BytesIO()
+        expected = "b" * 40
+        with zipfile.ZipFile(buffer, "w") as bundle:
+            bundle.writestr("bees-runtime-version.txt", expected)
+        self.assertEqual(
+            managed._runtime_version_from_zip(buffer.getvalue()),
+            expected,
+        )
+
+    def test_runtime_version_rejects_missing_or_malformed_marker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertEqual(managed._runtime_version_from_root(Path(temp)), "")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as bundle:
+            bundle.writestr("bees-runtime-version.txt", "not-a-sha")
+        self.assertEqual(managed._runtime_version_from_zip(buffer.getvalue()), "")
 
     def test_managed_worker_command_uses_actor_key_and_local_tailnet_broker(self):
         args = Namespace(
