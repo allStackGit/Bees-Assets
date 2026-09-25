@@ -229,11 +229,64 @@ class TrainingBundleTests(unittest.TestCase):
                 self.assertIn("No space left on device", warnings)
                 self.assertIn("build mismatch", warnings)
                 self.assertIn("revision mismatch", warnings)
+                self.assertNotIn(
+                    "trainer central-learner: no uploaded logs for bundled run",
+                    warnings,
+                )
                 self.assertIn(
                     "logs/trainers/remote-warwick/remote-supervisor.log",
                     zipped.namelist(),
                 )
             self.assertFalse(live.exists())
+
+    def test_live_snapshot_newer_than_summary_clamps_model_lag_to_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-current"
+            bees_root, assets_root = self._layout(root, run_id)
+            results = bees_root / "Training" / "trainer-results" / run_id / "BeesRL1v1"
+            results.mkdir(parents=True)
+            live = results / "diagnostic-BeesRL1v1-10100-abc.onnx"
+            live.write_bytes(b"live")
+            status_json = root / "status.json"
+            status_json.write_text(
+                json.dumps({"desired": {"run_id": run_id}, "trainers": []}),
+                encoding="utf-8",
+            )
+            status_text = root / "status.txt"
+            status_text.write_text(
+                "Learner logs: Step=10000  ELO=1000\n",
+                encoding="utf-8",
+            )
+            snapshot_json = root / "snapshot.json"
+            snapshot_json.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "succeeded",
+                        "request_id": "abc",
+                        "run_id": run_id,
+                        "step": 10100,
+                        "model_path": str(live),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                status_json=status_json,
+                status_text=status_text,
+                snapshot_json=snapshot_json,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertEqual(manifest["learner_step"], 10000)
+                self.assertEqual(manifest["model_step"], 10100)
+                self.assertEqual(manifest["model_lag_steps"], 0)
 
     def test_stale_fallback_model_produces_model_lag_warning(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
