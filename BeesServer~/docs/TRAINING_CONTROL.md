@@ -43,7 +43,9 @@ The authoritative non-secret cluster configuration is `Assets\\Training\\bees.cl
 
 `bundle` creates one upload-ready ZIP under `B:\\Bees\\Diagnostics` for the current training run. It is intended for external diagnosis of training health, speed, ship behavior, and policy learning without manually collecting files from each trainer.
 
-By default it includes the newest ONNX file, the newest 10% of each text log, complete small JSON log metadata, current BeesServer/trainer status, cluster and PPO configuration, run/continual-service state, ML-Agents timer/training-status JSON, and a combined text log. Remote trainer logs are read from the learner-owned `B:\\Bees\\Training\\TrainerLogs\\<run-id>` mirror populated by the existing verified log-upload protocol; the bundle command does not SSH into trainer machines.
+For the active run, `bundle` first asks the live ML-Agents trainer thread for an immediate ONNX export of the current in-memory policy. This does not stop/restart training and does not create an extra optimizer checkpoint or alter the normal checkpoint schedule. The temporary diagnostic ONNX is deleted after the ZIP owns its copy. If the live export cannot complete, collection continues with the newest retained ONNX and records the snapshot failure/model lag in the manifest.
+
+By default the bundle includes that current/fallback ONNX, the newest 10% of each text log, complete small JSON log metadata, current BeesServer/trainer status, cluster and PPO configuration, run/continual-service state, ML-Agents timer/training-status JSON, and a combined text log. Remote trainer logs are read from the learner-owned `B:\\Bees\\Training\\TrainerLogs\\<run-id>` mirror populated by the existing verified log-upload protocol; the bundle command does not SSH into trainer machines. Managed remote supervisors also mirror their own console plus child worker/WAN output into run-scoped `remote-supervisor.log`, which is uploaded through the same path.
 
 Use a different percentage when needed:
 
@@ -57,7 +59,7 @@ To package a retained older run explicitly:
 .\Assets\bees.ps1 bundle -RunId bees-v19-r3-s1-... -LogPercent 10
 ```
 
-The ZIP contains `manifest.json` with the selected run, source paths, byte ranges, hashes, and any missing-data warnings. A missing ONNX or unavailable live status is recorded as a warning rather than preventing collection, so the command remains useful for diagnosing failed or newly started runs.
+The ZIP contains `manifest.json` with the selected run, source paths, byte ranges, hashes, learner/model steps, model lag, per-trainer uploaded-log freshness, structured diagnostics, and warnings. It automatically flags stale trainers, reported trainer errors, build/revision mismatches, missing expected trainers, missing/stale uploaded logs, failed live snapshots, and materially stale model exports. A missing ONNX or unavailable live status is recorded rather than preventing collection, so the command remains useful for diagnosing failed or newly started runs. When `-RunId` targets a historical run, current live learner steps are not mixed into that run's model-lag calculation.
 
 Environment/scenario arguments may be supplied for one start with repeated `-EnvArg` values. For example, a fresh 1v1 Wasp-versus-Gunship run on a 32-unit map with a 30-second timeout is:
 
