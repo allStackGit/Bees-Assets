@@ -1461,7 +1461,7 @@ test('training control returns per-worker env targets from accepted-step optimiz
         activateTestRelease(store, 'release-opt');
         store.setDesiredState({ training_enabled: true });
 
-        const heartbeat = acceptedSteps => store.heartbeat({
+        const heartbeat = consumedSteps => store.heartbeat({
             trainer_id: 'remote-linux',
             role: 'dedicated',
             platform: 'LinuxPlayer',
@@ -1478,7 +1478,7 @@ test('training control returns per-worker env targets from accepted-step optimiz
             },
             metrics: {
                 throughput: {
-                    accepted_steps_total: acceptedSteps,
+                    learner_consumed_steps_total: consumedSteps,
                 },
             },
         });
@@ -1532,7 +1532,7 @@ test('training control pauses env optimization during a release cutover', () => 
         activateTestRelease(store, 'release-1');
         store.setDesiredState({ training_enabled: true });
 
-        const heartbeat = acceptedSteps => store.heartbeat({
+        const heartbeat = consumedSteps => store.heartbeat({
             trainer_id: 'remote-linux',
             role: 'dedicated',
             platform: 'LinuxPlayer',
@@ -1549,7 +1549,7 @@ test('training control pauses env optimization during a release cutover', () => 
             },
             metrics: {
                 throughput: {
-                    accepted_steps_total: acceptedSteps,
+                    learner_consumed_steps_total: consumedSteps,
                 },
             },
         });
