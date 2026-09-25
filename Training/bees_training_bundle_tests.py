@@ -233,6 +233,7 @@ class TrainingBundleTests(unittest.TestCase):
                     "logs/trainers/remote-warwick/remote-supervisor.log",
                     zipped.namelist(),
                 )
+            self.assertFalse(live.exists())
 
     def test_stale_fallback_model_produces_model_lag_warning(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -261,6 +262,43 @@ class TrainingBundleTests(unittest.TestCase):
                         for warning in manifest["warnings"]
                     )
                 )
+
+    def test_historical_run_ignores_current_live_step_for_model_lag(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old_run = "bees-v20-old"
+            current_run = "bees-v20-current"
+            bees_root, assets_root = self._layout(root, old_run)
+            results = bees_root / "Training" / "trainer-results" / old_run / "BeesRL1v1"
+            results.mkdir(parents=True)
+            (results / "BeesRL1v1-500.onnx").write_bytes(b"old")
+            run_logs = results / "run_logs"
+            run_logs.mkdir()
+            (run_logs / "training_status.json").write_text(
+                '{"step": 600}\n',
+                encoding="utf-8",
+            )
+            status_json = root / "status.json"
+            status_json.write_text(
+                json.dumps({"desired": {"run_id": current_run}, "trainers": []}),
+                encoding="utf-8",
+            )
+            status_text = root / "status.txt"
+            status_text.write_text("Learner logs: Step=999999\n", encoding="utf-8")
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                run_id=old_run,
+                status_json=status_json,
+                status_text=status_text,
+            )
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertEqual(manifest["learner_step"], 600)
+                self.assertEqual(manifest["model_step"], 500)
+                self.assertEqual(manifest["model_lag_steps"], 100)
 
     def test_unified_operator_exposes_bundle_command(self) -> None:
         operator = (
