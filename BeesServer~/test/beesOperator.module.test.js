@@ -389,3 +389,9 @@ test('learner Python setup cannot leak installer output into executable resoluti
     assert.ok(source.includes('$pythonResult.Count -ne 1'));
     assert.ok(source.includes('Managed learner Python executable is missing: $python'));
 });
+
+
+test('central training wrapper is launched with unbuffered Python output', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    assert.ok(source.includes("$args=@('-u',$agent,'--server-url'"));
+});
