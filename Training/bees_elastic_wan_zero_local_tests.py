@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest import mock
 from types import SimpleNamespace
@@ -167,12 +168,21 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         run_options = SimpleNamespace(
             checkpoint_settings=SimpleNamespace(run_id="zero-local-test")
         )
-        broker = elastic.ElasticWanBroker(
-            options,
-            run_options,
-            "0123456789abcdef0123456789abcdef",
-            local_envs=0,
-        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                elastic.BUILD_ID_ENV: "zero-local-build",
+                elastic.RUN_ID_ENV: "zero-local-test",
+                elastic.COMPATIBILITY_KEY_ENV: "e" * 64,
+            },
+            clear=False,
+        ):
+            broker = elastic.ElasticWanBroker(
+                options,
+                run_options,
+                "0123456789abcdef0123456789abcdef",
+                local_envs=0,
+            )
         broker.initialize_control({})
         return broker
 
@@ -181,6 +191,7 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 0,
                 "env_count": 8,
                 "control_epoch": 1,
@@ -193,11 +204,27 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         self.assertEqual(session["remote_worker_base"], 0)
         self.assertEqual(session["capacity_envs"], 12 * 64)
 
+    def test_stale_release_cannot_seed_zero_local_behavior_specs(self):
+        broker = self._broker()
+        specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
+        payload = {
+            **broker.release_identity,
+            "actor_id": 0,
+            "env_count": 8,
+            "control_epoch": 1,
+            "behavior_specs": specs,
+        }
+        payload["build_id"] = "stale-build"
+        with self.assertRaisesRegex(ValueError, "release identity"):
+            broker.register_actor(payload)
+        self.assertEqual(broker.active_actor_snapshot(), {})
+
     def test_first_remote_behavior_specs_are_pinned_after_discovery(self):
         broker = self._broker()
         specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 0,
                 "env_count": 8,
                 "control_epoch": 1,
@@ -216,6 +243,7 @@ class ZeroLocalBrokerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differ from Exeter"):
             broker.register_actor(
                 {
+                    **broker.release_identity,
                     "actor_id": 1,
                     "env_count": 4,
                     "control_epoch": 1,
