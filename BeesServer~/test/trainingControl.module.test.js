@@ -738,6 +738,385 @@ test('incompatible release waits for prestaging, stops all trainers, then switch
     });
 });
 
+test('preparing rollout barrier survives training-control server restart', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = { statePath, artifactRoot, leaseSeconds: 20 };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'restart-preparing-old');
+        publishDedicatedBuild(store, root, 'restart-preparing-new');
+
+        store.stageRelease({
+            buildId: 'restart-preparing-old',
+            runId: 'restart-preparing-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store, trainerId, 'restart-preparing-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'restart-preparing-new',
+            runId: 'restart-preparing-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-preparing-old',
+            oldSha,
+            { preparedBuildId: 'restart-preparing-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        store = new TrainingControlStore(options);
+        let desired = store.status().desired;
+        assert.equal(desired.canonical_build_id, 'restart-preparing-old');
+        assert.equal(desired.pending_release.phase, 'preparing');
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-preparing-old',
+            oldSha,
+            { preparedBuildId: 'restart-preparing-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+        desired = heartbeatDedicated(
+            store,
+            'central-learner',
+            'restart-preparing-old',
+            oldSha,
+            { preparedBuildId: 'restart-preparing-new' },
+        );
+        assert.equal(desired.pending_release.phase, 'rolling');
+        assert.equal(store.state.canonical_build_id, 'restart-preparing-old');
+    });
+});
+
+test('rolling rollout barrier survives server restart and re-requires healthy trainers', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = { statePath, artifactRoot, leaseSeconds: 20 };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'restart-rolling-old');
+        const newSha = publishDedicatedBuild(store, root, 'restart-rolling-new');
+
+        store.stageRelease({
+            buildId: 'restart-rolling-old',
+            runId: 'restart-rolling-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'restart-rolling-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'restart-rolling-new',
+            runId: 'restart-rolling-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-rolling-old',
+            oldSha,
+            { preparedBuildId: 'restart-rolling-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'restart-rolling-old',
+            oldSha,
+            { preparedBuildId: 'restart-rolling-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        store = new TrainingControlStore(options);
+        assert.equal(store.status().desired.pending_release.phase, 'rolling');
+        assert.equal(store.state.canonical_build_id, 'restart-rolling-old');
+        assert.equal(store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        }).desired_build_id, 'restart-rolling-new');
+
+        const rolloutRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-rolling-new',
+            newSha,
+            {
+                preparedBuildId: 'restart-rolling-new',
+                appliedRevision: rolloutRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'restart-rolling-old');
+        assert.equal(store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        }).desired_build_id, 'restart-rolling-new');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'restart-rolling-new',
+            newSha,
+            {
+                preparedBuildId: 'restart-rolling-new',
+                appliedRevision: rolloutRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'restart-rolling-new');
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
+test('incompatible stopping barrier survives server restart until every trainer re-registers stopped', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = { statePath, artifactRoot, leaseSeconds: 20 };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'restart-stopping-old');
+        publishDedicatedBuild(store, root, 'restart-stopping-new');
+
+        store.stageRelease({
+            buildId: 'restart-stopping-old',
+            runId: 'restart-stopping-old-run',
+            compatibilityKey: '3'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'restart-stopping-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'restart-stopping-new',
+            runId: 'restart-stopping-new-run',
+            compatibilityKey: '4'.repeat(64),
+            incompatible: true,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-stopping-old',
+            oldSha,
+            { preparedBuildId: 'restart-stopping-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'restart-stopping-old',
+            oldSha,
+            { preparedBuildId: 'restart-stopping-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        store = new TrainingControlStore(options);
+        assert.equal(store.status().desired.pending_release.phase, 'stopping');
+        assert.equal(store.state.run_id, 'restart-stopping-old-run');
+        assert.equal(store.state.canonical_build_id, 'restart-stopping-old');
+
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'restart-stopping-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'restart-stopping-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.run_id, 'restart-stopping-old-run');
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'restart-stopping-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'restart-stopping-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'restart-stopping-new');
+        assert.equal(store.state.run_id, 'restart-stopping-new-run');
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
+test('compatible rollout does not count an installed but crashed build as healthy', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'health-old');
+        const newSha = publishDedicatedBuild(store, root, 'health-new');
+
+        store.stageRelease({
+            buildId: 'health-old',
+            runId: 'health-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'health-old', oldSha);
+
+        store.stageRelease({
+            buildId: 'health-new',
+            runId: 'health-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-old',
+            oldSha,
+            { preparedBuildId: 'health-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+        const rolloutRevision = store.state.pending_release.phase_revision;
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'health-new',
+                appliedRevision: rolloutRevision,
+                lastError: 'managed process exited with code 1',
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'health-old');
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-new',
+            newSha,
+            {
+                preparedBuildId: 'health-new',
+                appliedRevision: rolloutRevision - 1,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'health-old');
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-new',
+            '0'.repeat(64),
+            {
+                preparedBuildId: 'health-new',
+                appliedRevision: rolloutRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'health-old');
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-new',
+            newSha,
+            {
+                preparedBuildId: 'health-new',
+                appliedRevision: rolloutRevision,
+                lastError: 'startup health error',
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'health-old');
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'health-new',
+            newSha,
+            {
+                preparedBuildId: 'health-new',
+                appliedRevision: rolloutRevision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'health-new');
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
+test('schema 4 pending rollout migration waits for trainer recollection instead of promoting empty barrier', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const store = new TrainingControlStore({
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'migration-old');
+        publishDedicatedBuild(store, root, 'migration-new');
+        store.stageRelease({
+            buildId: 'migration-old',
+            runId: 'migration-run',
+            compatibilityKey: '6'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'migration-old', oldSha);
+        store.stageRelease({
+            buildId: 'migration-new',
+            runId: 'migration-run',
+            compatibilityKey: '6'.repeat(64),
+            incompatible: false,
+        });
+
+        const legacy = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        legacy.schema_version = 4;
+        delete legacy.known_dedicated_trainers;
+        delete legacy.pending_release.required_trainers;
+        delete legacy.pending_release.phase_revision;
+        delete legacy.pending_release.collect_until_ms;
+        fs.writeFileSync(statePath, JSON.stringify(legacy));
+
+        const migrated = new TrainingControlStore({
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const desired = migrated.status().desired;
+        assert.equal(desired.schema_version, 5);
+        assert.equal(desired.canonical_build_id, 'migration-old');
+        assert.equal(desired.pending_release.build_id, 'migration-new');
+        assert.equal(desired.pending_release.phase, 'preparing');
+        assert.deepEqual(desired.pending_release.required_trainers, []);
+        assert.equal(desired.pending_release.collect_until_ms, 11000);
+    });
+});
+
 test('trainer logs append by verified offset under their run and trainer namespace', () => {
     withTempDir(root => {
         const logRoot = path.join(root, 'logs');
