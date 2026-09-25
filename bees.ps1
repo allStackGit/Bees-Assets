@@ -55,6 +55,8 @@ $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
+$CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
+$CentralAgentShutdownRequestPath=Join-Path $CentralAgentInstallRoot 'worker-shutdown.request'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
 $TailnetRoot=Join-Path $RuntimeRoot 'Tailnet'
 $TailnetBinRoot=Join-Path $TailnetRoot 'Bin'
@@ -964,12 +966,35 @@ function Get-StringSha256([string]$Value){
     try{$bytes=[Text.Encoding]::UTF8.GetBytes($Value);([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
 }
 
+function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
+    if($Id -le 0 -or -not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){ return $true }
+    Ensure-Directory $CentralAgentInstallRoot
+    Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
+    [IO.File]::WriteAllText(
+        $CentralAgentShutdownRequestPath,
+        "stop`n",
+        (New-Object Text.UTF8Encoding($false))
+    )
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while([DateTime]::UtcNow -lt $deadline){
+        if(-not(Get-Process -Id $Id -ErrorAction SilentlyContinue)){
+            Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
+            return $true
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    Write-Warning "Central learner did not finish graceful checkpoint finalization within $TimeoutSeconds seconds; forcing process-tree termination."
+    Stop-ProcessTree $Id
+    Remove-Item -LiteralPath $CentralAgentShutdownRequestPath -Force -ErrorAction SilentlyContinue
+    return $false
+}
+
 function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
-    Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory (Join-Path $BeesRoot 'ManagedBuilds\central-learner')
+    Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory $CentralAgentInstallRoot
     $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
     $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'; $service=Join-Path $AssetsRoot 'Training\bees_continual_elastic_wan_service.py'
     $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
-    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',(Join-Path $BeesRoot 'ManagedBuilds\central-learner'),'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
+    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
     $trainingSourceHash=Get-GitTreeSha 'Training'
     $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
@@ -977,21 +1002,21 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing -and $existing.pid -and (Get-Process -Id ([int]$existing.pid) -ErrorAction SilentlyContinue)){
             if(([string]$existing.command_hash) -eq $commandHash){ return }
-            Write-Host 'Central training configuration changed; restarting the managed central agent.'
-            Stop-ProcessTree ([int]$existing.pid)
+            Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
+            $null=Stop-CentralAgentGracefully ([int]$existing.pid)
         }
     } elseif(Test-Path -LiteralPath $CentralAgentPidPath) {
         $legacyPid=0
         [void][int]::TryParse((Get-Content -LiteralPath $CentralAgentPidPath -Raw).Trim(),[ref]$legacyPid)
         if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
-            Write-Host 'Restarting the existing central agent under unified command management.'
-            Stop-ProcessTree $legacyPid
+            Write-Host 'Restarting the existing central agent under unified command management after a graceful checkpoint request.'
+            $null=Stop-CentralAgentGracefully $legacyPid
         }
     }
     Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
     $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
     $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
-    [pscustomobject]@{pid=$p.Id;command_hash=$commandHash;started_utc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
+    [pscustomobject]@{pid=$p.Id;command_hash=$commandHash;graceful_checkpoint_shutdown=$true;started_utc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
     Write-Host "Central training agent started with PID $($p.Id)."
 }
 
@@ -1369,7 +1394,7 @@ function Invoke-Stop {
     $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath
     if(Test-Control ([string]$config.controlUrl) $admin){
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{training_enabled=$false}; Write-Host "Training stop requested at revision $($desired.revision)."
-        $deadline=[DateTime]::UtcNow.AddSeconds(30)
+        $deadline=[DateTime]::UtcNow.AddSeconds(180)
         while([DateTime]::UtcNow -lt $deadline){
             $s=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
             $running=@($s.trainers|Where-Object{-not $_.stale -and $_.role -eq 'dedicated' -and $_.process_state -ne 'stopped'})
