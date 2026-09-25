@@ -14,6 +14,7 @@ collection, stale-actor leases, and capacity diagnostics.
 from __future__ import annotations
 
 import collections
+import os
 import queue
 import time
 from dataclasses import dataclass
@@ -40,6 +41,9 @@ WAN_BROKER_PORT_FLAG = base.WAN_BROKER_PORT_FLAG
 WAN_AUTH_TOKEN_FILE_FLAG = base.WAN_AUTH_TOKEN_FILE_FLAG
 WAN_MAX_QUEUED_BATCHES_FLAG = base.WAN_MAX_QUEUED_BATCHES_FLAG
 WAN_LEASE_SECONDS_FLAG = "--bees-wan-actor-lease-seconds"
+BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
+RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
+COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 
 
 @dataclass(frozen=True)
@@ -364,6 +368,28 @@ class ElasticWanBroker(base.WanActorBroker):
         self.options = options
         self.local_envs = int(local_envs)
         self.remote_worker_base = self.local_envs
+        build_id = os.environ.get(BUILD_ID_ENV, "").strip()
+        compatibility_key = os.environ.get(COMPATIBILITY_KEY_ENV, "").strip().lower()
+        run_id = str(run_options.checkpoint_settings.run_id).strip()
+        environment_run_id = os.environ.get(RUN_ID_ENV, "").strip()
+        if not build_id:
+            raise RuntimeError("Elastic WAN learner requires managed build identity")
+        if len(compatibility_key) != 64 or any(
+            ch not in "0123456789abcdef" for ch in compatibility_key
+        ):
+            raise RuntimeError("Elastic WAN learner requires a 64-hex compatibility identity")
+        if not run_id:
+            raise RuntimeError("Elastic WAN learner requires a non-empty run identity")
+        if environment_run_id and environment_run_id != run_id:
+            raise RuntimeError(
+                f"Elastic WAN learner run identity mismatch: env={environment_run_id!r} "
+                f"trainer={run_id!r}"
+            )
+        self.release_identity = {
+            "build_id": build_id,
+            "run_id": run_id,
+            "compatibility_key": compatibility_key,
+        }
         self._reference_behavior_specs: Optional[Dict[str, Any]] = None
         self._reference_signatures: Optional[Dict[str, Any]] = None
         self._claims: Dict[str, Dict[str, Any]] = {}
@@ -385,8 +411,20 @@ class ElasticWanBroker(base.WanActorBroker):
             "envs_per_actor": MAX_ENVS_PER_ACTOR,
             "min_actors": self.options.min_actors,
             "run_id": str(self.run_options.checkpoint_settings.run_id),
+            "release_identity": dict(self.release_identity),
             "run_options": self.run_options,
         }
+
+    def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:
+        actual = {
+            "build_id": str(payload.get("build_id", "")).strip(),
+            "run_id": str(payload.get("run_id", "")).strip(),
+            "compatibility_key": str(payload.get("compatibility_key", "")).strip().lower(),
+        }
+        if actual != self.release_identity:
+            raise ValueError(
+                "actor release identity does not match the authoritative learner session"
+            )
 
     def _validate_actor_id(self, value: Any) -> int:
         if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < self.options.max_actors:
@@ -455,6 +493,7 @@ class ElasticWanBroker(base.WanActorBroker):
             self._claims.pop(actor_key, None)
 
     def claim_actor(self, payload: Mapping[str, Any]) -> int:
+        self._validate_release_identity(payload)
         actor_key = payload.get("actor_key")
         if not isinstance(actor_key, str) or not actor_key or len(actor_key) > 128:
             raise ValueError("actor_key must be a non-empty string up to 128 characters")
@@ -506,6 +545,7 @@ class ElasticWanBroker(base.WanActorBroker):
             return actor_id
 
     def register_actor(self, payload: Mapping[str, Any]) -> None:
+        self._validate_release_identity(payload)
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         env_count = payload.get("env_count")
         if not isinstance(env_count, int) or isinstance(env_count, bool) or not 1 <= env_count <= MAX_ENVS_PER_ACTOR:
