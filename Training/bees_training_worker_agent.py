@@ -39,6 +39,8 @@ RUN_ID_PLACEHOLDER = "{run_id}"
 WORKER_ENVS_PLACEHOLDER = "{worker_envs}"
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
+BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
+COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
@@ -411,7 +413,9 @@ class ManagedProcess:
         self.command: tuple[str, ...] = ()
         self.revision = -1
         self.build_sha256 = ""
+        self.build_id = ""
         self.run_id = ""
+        self.compatibility_key = ""
         self.environment_args: tuple[str, ...] = ()
         self.worker_env_count: Optional[int] = None
         self.throughput_metrics_file: Optional[Path] = None
@@ -434,7 +438,9 @@ class ManagedProcess:
         *,
         revision: int,
         build_sha256: str,
+        build_id: str,
         run_id: str,
+        compatibility_key: str,
         state_file: Path,
         environment_args: Sequence[str],
         worker_env_count: Optional[int] = None,
@@ -445,7 +451,17 @@ class ManagedProcess:
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
+        build_id = str(build_id).strip()
+        compatibility_key = str(compatibility_key).strip().lower()
+        if not build_id:
+            raise ValueError("managed training process requires a non-empty build_id")
+        if len(compatibility_key) != 64 or any(
+            ch not in "0123456789abcdef" for ch in compatibility_key
+        ):
+            raise ValueError("managed training process requires a 64-hex compatibility_key")
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
+        environment[BUILD_ID_ENV] = build_id
+        environment[COMPATIBILITY_KEY_ENV] = compatibility_key
         environment["PYTHONUNBUFFERED"] = "1"
         throughput_metrics_file = state_file.parent / "worker-throughput.json"
         try:
@@ -481,7 +497,9 @@ class ManagedProcess:
         self.command = tuple(command)
         self.revision = revision
         self.build_sha256 = build_sha256
+        self.build_id = build_id
         self.run_id = str(run_id)
+        self.compatibility_key = compatibility_key
         self.environment_args = tuple(str(value) for value in environment_args)
         self.worker_env_count = worker_env_count
         self.throughput_metrics_file = throughput_metrics_file
@@ -838,6 +856,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 mode = str(desired["desired_mode"])
                 revision = int(desired["revision"])
                 run_id = str(desired.get("run_id", ""))
+                compatibility_key = str(desired.get("compatibility_key", "")).strip().lower()
                 environment_args = tuple(str(value) for value in desired["environment_args"])
                 worker_env_count = args.worker_envs
                 if args.auto_worker_envs:
@@ -908,7 +927,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             command,
                             revision=revision,
                             build_sha256=desired_sha,
+                            build_id=str(active_build["build_id"]),
                             run_id=run_id,
+                            compatibility_key=compatibility_key,
                             state_file=state_file,
                             environment_args=environment_args,
                             worker_env_count=worker_env_count,
@@ -969,7 +990,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         needs_restart = (
                             not managed.alive()
                             or managed.build_sha256 != desired_sha
+                            or managed.build_id != str(active_build["build_id"])
                             or managed.run_id != run_id
+                            or managed.compatibility_key != compatibility_key
                             or managed.environment_args != environment_args
                             or managed.command != tuple(command)
                         )
