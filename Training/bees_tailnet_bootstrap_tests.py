@@ -63,6 +63,8 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertIn("checkpointing before restarting the managed central agent", operator)
         self.assertNotIn("Stop-ProcessTree ([int]$existing.pid)", operator)
         self.assertIn("AddSeconds(180)", operator)
+        self.assertIn("Refusing to stop BeesServer while checkpoint/log preservation is incomplete.", operator)
+        self.assertIn("Refusing to stop BeesServer because checkpoint completion cannot be coordinated.", operator)
 
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
