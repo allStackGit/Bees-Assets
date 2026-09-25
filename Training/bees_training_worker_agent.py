@@ -891,7 +891,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id=run_id,
                             state_file=state_file,
                             environment_args=environment_args,
-
                             worker_env_count=worker_env_count,
                             graceful_checkpoint=(
                                 args.role == "dedicated"
@@ -962,7 +961,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 run_id=run_id,
                                 state_file=state_file,
                                 environment_args=environment_args,
-
                                 worker_env_count=worker_env_count,
                                 graceful_checkpoint=(
                                     args.role == "dedicated"
