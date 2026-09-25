@@ -124,7 +124,7 @@ For a compatible release:
 5. Once all active trainers are prepared, the server rolls dedicated trainers one at a time.
 6. Trainers already moved to the pending release stay there while the remaining trainers update.
 7. The central learner is ordered after remote trainers.
-8. After all dedicated trainers report the new build, it becomes canonical.
+8. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied. After every required dedicated trainer has provided that healthy acknowledgement, the release becomes canonical.
 
 For an incompatible release:
 
@@ -136,11 +136,13 @@ For an incompatible release:
 
 This keeps update interruption limited to the actual process restart/cutover rather than download, extraction, dependency installation, or artifact verification.
 
+The release barrier is restart-durable. When a release is staged, the control state persists the required dedicated trainer identities/platforms and the rollout phase revision. Restarting BeesServer during `preparing`, `rolling`, or `stopping` does not treat an empty in-memory trainer map as success: required trainers must re-register and satisfy the same persisted barrier before promotion can continue. The control state also retains recently active dedicated trainer identities so a server restart immediately before staging cannot collapse a live cluster to an empty barrier. Older schema-4 pending releases use one control-lease recollection window during migration rather than being promoted immediately from an empty registry.
+
 The build command automatically stages a successful build into a control server that is already online. Compatible rollouts therefore continue after `build` returns. For an incompatible release, `build` waits for the coordinated cutover and performs the final old-run log archive before returning.
 
 ## Managed BeesServer updates
 
-The operator records the Git tree identity of `BeesServer~` when it launches the managed server. `server`, `start`, and live-cluster `build` detect a changed server tree and restart the managed BeesServer automatically while preserving the persisted training desired state and artifact catalog.
+The operator records the Git tree identity of `BeesServer~` when it launches the managed server. `server`, `start`, and live-cluster `build` detect a changed server tree and restart the managed BeesServer automatically while preserving the persisted training desired state, artifact catalog, recently active dedicated trainer registry, and any active rollout barrier.
 
 If the control port is occupied by a server that was not launched/recorded by the Bees operator, the script refuses to kill it automatically. Stop that unmanaged server once and rerun the command; subsequent source refreshes can then be automatic.
 
