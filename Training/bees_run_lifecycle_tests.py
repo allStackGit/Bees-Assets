@@ -43,6 +43,10 @@ class RunLifecycleTests(unittest.TestCase):
         (scenes / "RlPolicySchema.cs").write_text("policy-v18\n", encoding="utf-8")
         (scenes / "RlCombatPerception.cs").write_text("perception-v1\n", encoding="utf-8")
         (scenes / "RlOneVsOneAgent.cs").write_text("actions-v1\n", encoding="utf-8")
+        (scenes / "RlOneVsOneEpisodeCoordinator.cs").write_text(
+            "episode-coordinator-v1\n",
+            encoding="utf-8",
+        )
         (scenes / "RlTeamExplorationGrid.cs").write_text("exploration-v1\n", encoding="utf-8")
         (scenes / "RlEpisodeShipIdentity.cs").write_text("identity-v1\n", encoding="utf-8")
         return assets
@@ -117,6 +121,25 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertTrue(second["new_run"])
             self.assertNotEqual(second["run_id"], first["run_id"])
             self.assertNotEqual(second["compatibility_key"], first["compatibility_key"])
+
+    def test_episode_reward_coordinator_change_creates_new_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+            coordinator = (
+                assets / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs"
+            )
+            coordinator.write_text("episode-coordinator-v2\n", encoding="utf-8")
+            second = lifecycle.plan_run(assets, state)
+            self.assertTrue(second["incompatible"])
+            self.assertNotEqual(second["run_id"], first["run_id"])
+            self.assertNotEqual(
+                second["compatibility_key"],
+                first["compatibility_key"],
+            )
 
     def test_observation_implementation_change_creates_new_run(self):
         with tempfile.TemporaryDirectory() as temp:
