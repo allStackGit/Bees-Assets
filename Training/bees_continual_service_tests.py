@@ -57,6 +57,42 @@ class ContinualServiceTests(unittest.TestCase):
                 with self.assertRaises(KeyboardInterrupt):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
 
+    def test_parse_options_allows_zero_local_envs_for_learner_only_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = root / "Assets"
+            training = assets / "Training"
+            training.mkdir(parents=True)
+            trainer_config = training / "rl_1v1_config.yaml"
+            trainer_config.write_text(
+                "behaviors:\n  BeesRL1v1:\n    max_steps: 1000\n",
+                encoding="utf-8",
+            )
+            continual_config = training / "continual_learning_config.json"
+            continual_config.write_text("{}\n", encoding="utf-8")
+            training_env = root / "Bees RL Training.exe"
+            training_env.write_bytes(b"x")
+            unity = root / "Unity.exe"
+            unity.write_bytes(b"x")
+            project = root / "Project"
+            project.mkdir()
+
+            options = service.parse_options([
+                f"--root={root / 'continual'}",
+                f"--assets-root={assets}",
+                f"--training-env={training_env}",
+                f"--telemetry-quarantine={root / 'quarantine'}",
+                f"--model-distribution-root={root / 'distribution'}",
+                "--game-build-version=test-build",
+                f"--unity-editor={unity}",
+                f"--unity-project-root={project}",
+                f"--trainer-config={trainer_config}",
+                f"--continual-config={continual_config}",
+                "--num-envs=0",
+            ])
+
+            self.assertEqual(options.num_envs, 0)
+
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             options = self._options(Path(temp_dir), generation_steps=250_000)
