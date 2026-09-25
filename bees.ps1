@@ -986,7 +986,22 @@ function Prepare-RemoteBootstrap($Config){
     $windowsPayloadZip=Join-Path $RuntimeRoot 'remote-windows-bootstrap-payload.zip'
     Remove-Item -LiteralPath $windowsPayloadZip -Force -ErrorAction SilentlyContinue
     try {
-        [IO.File]::WriteAllText((Join-Path $windowsPayloadRoot 'bees-remote-worker.ps1'),$windowsBody,$utf8NoBom)
+        $generatedWindowsBootstrap=Join-Path $windowsPayloadRoot 'bees-remote-worker.ps1'
+        [IO.File]::WriteAllText($generatedWindowsBootstrap,$windowsBody,$utf8NoBom)
+
+        # Validate the exact generated artifact that will be shipped to the remote. This catches
+        # template/replacement quoting damage before a launcher can ever leave the learner.
+        $parseErrors=$null
+        [System.Management.Automation.Language.Parser]::ParseFile(
+            $generatedWindowsBootstrap,
+            [ref]$null,
+            [ref]$parseErrors
+        ) | Out-Null
+        if($parseErrors.Count -gt 0){
+            $details=($parseErrors | ForEach-Object { $_.Message }) -join '; '
+            throw "Generated Windows remote bootstrap failed PowerShell parsing: $details"
+        }
+
         Copy-Item -LiteralPath $windowsBridge -Destination (Join-Path $windowsPayloadRoot $windowsBridgeName) -Force
         Compress-Archive -Path (Join-Path $windowsPayloadRoot '*') -DestinationPath $windowsPayloadZip -CompressionLevel Optimal
         $windowsPayload=Format-Base64Payload ([IO.File]::ReadAllBytes($windowsPayloadZip))
