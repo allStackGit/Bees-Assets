@@ -230,7 +230,7 @@ Write-Host '[Bees remote] Stage 5/5: starting managed training worker...'
 if($Envs -gt 0){
     Write-Host "Starting Bees remote worker with $Envs environments."
 }else{
-    Write-Host 'Starting Bees remote worker; environment count defaults to 4x available CPU threads (maximum 64).'
+    Write-Host 'Starting Bees remote worker; environment count defaults automatically from available CPU and RAM (maximum 64).'
 }
 Write-Host 'Private transport, control, build updates, and WAN rollouts are automatic. Ctrl+C stops this worker.'
 & $venvPython -u @workerArgs
