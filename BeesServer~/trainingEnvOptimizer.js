@@ -317,7 +317,12 @@ class TrainingEnvOptimizer {
             state.baseline_envs !== null &&
             state.desired_envs !== state.baseline_envs &&
             capacity.current_envs !== state.baseline_envs;
-        if (probingAwayFromBaseline && record.process_state !== 'running') {
+        if (
+            probingAwayFromBaseline &&
+            typeof record.process_state === 'string' &&
+            record.process_state &&
+            record.process_state !== 'running'
+        ) {
             this._abortProbe(
                 state,
                 capacity,
