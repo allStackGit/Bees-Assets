@@ -5,6 +5,7 @@ DEFAULT_INSTALL_ROOT="__BEES_LINUX_INSTALL_ROOT__"
 DEFAULT_TORCH_DEVICE="__BEES_TORCH_DEVICE__"
 TAILNET_LEARNER="__BEES_TAILNET_LEARNER__"
 TAILNET_BOOTSTRAP_PORT="__BEES_TAILNET_BOOTSTRAP_PORT__"
+GAMEPLAY_PORT="__BEES_GAMEPLAY_PORT__"
 CONTROL_PORT="__BEES_CONTROL_PORT__"
 BROKER_PORT="__BEES_BROKER_PORT__"
 BUNDLED_TAILNET_BRIDGE="__BEES_TAILNET_BRIDGE_FILE__"
@@ -37,7 +38,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for value in "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER" "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$BUNDLED_TAILNET_BRIDGE" "$TAILNET_BRIDGE_SHA256" "$BOOTSTRAP_TOKEN"; do
+for value in "$INSTALL_ROOT" "$TORCH_DEVICE" "$TAILNET_LEARNER" "$TAILNET_BOOTSTRAP_PORT" "$GAMEPLAY_PORT" "$CONTROL_PORT" "$BROKER_PORT" "$BUNDLED_TAILNET_BRIDGE" "$TAILNET_BRIDGE_SHA256" "$BOOTSTRAP_TOKEN"; do
     if [[ "$value" == __BEES_* ]]; then
         echo "error: launcher is not configured. Copy the generated .sh file from B:\\Bees\\Remote after running bees.ps1 start." >&2
         exit 2
@@ -49,7 +50,7 @@ if [[ -n "$ENVS" ]] && { ! is_uint "$ENVS" || (( ENVS < 1 || ENVS > 64 )); }; th
     echo "error: --envs must be in 1-64 when specified" >&2
     exit 2
 fi
-for port in "$TAILNET_BOOTSTRAP_PORT" "$CONTROL_PORT" "$BROKER_PORT"; do
+for port in "$TAILNET_BOOTSTRAP_PORT" "$GAMEPLAY_PORT" "$CONTROL_PORT" "$BROKER_PORT"; do
     if ! is_uint "$port" || (( port < 1 || port > 65535 )); then
         echo "error: configured Bees ports must be in 1-65535" >&2
         exit 2
@@ -232,6 +233,7 @@ WORKER_ARGS=(
     --tailnet-state "$TAILNET_STATE"
     --tailnet-hostname "$WORKER_HOSTNAME"
     --tailnet-target "$TAILNET_LEARNER"
+    --gameplay-port "$GAMEPLAY_PORT"
     --control-port "$CONTROL_PORT"
     --bootstrap-port "$TAILNET_BOOTSTRAP_PORT"
     --broker-port "$BROKER_PORT"
