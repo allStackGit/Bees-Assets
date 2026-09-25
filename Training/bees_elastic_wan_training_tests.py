@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import bees_elastic_wan_actor_worker as actor_worker
 import bees_elastic_wan_training as elastic
@@ -118,12 +120,21 @@ class ElasticBrokerTests(unittest.TestCase):
         run_options = SimpleNamespace(
             checkpoint_settings=SimpleNamespace(run_id="elastic-test")
         )
-        broker = elastic.ElasticWanBroker(
-            options,
-            run_options,
-            "0123456789abcdef0123456789abcdef",
-            local_envs=32,
-        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                elastic.BUILD_ID_ENV: "elastic-build",
+                elastic.RUN_ID_ENV: "elastic-test",
+                elastic.COMPATIBILITY_KEY_ENV: "c" * 64,
+            },
+            clear=False,
+        ):
+            broker = elastic.ElasticWanBroker(
+                options,
+                run_options,
+                "0123456789abcdef0123456789abcdef",
+                local_envs=32,
+            )
         specs = {"BeesRL1v1?team=0": FakeBehaviorSpec()}
         broker.set_reference_behavior_specs(specs)
         broker.initialize_control({})
@@ -141,6 +152,7 @@ class ElasticBrokerTests(unittest.TestCase):
         broker, specs = self._broker()
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 0,
                 "env_count": 1,
                 "control_epoch": 1,
@@ -149,6 +161,7 @@ class ElasticBrokerTests(unittest.TestCase):
         )
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": 1,
                 "env_count": 64,
                 "control_epoch": 1,
@@ -162,6 +175,7 @@ class ElasticBrokerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "1,64"):
             broker.register_actor(
                 {
+                    **broker.release_identity,
                     "actor_id": 0,
                     "env_count": 65,
                     "control_epoch": 1,
@@ -169,18 +183,44 @@ class ElasticBrokerTests(unittest.TestCase):
                 }
             )
 
+    def test_claim_rejects_actor_from_a_different_release(self):
+        broker, _specs = self._broker()
+        payload = {
+            **broker.release_identity,
+            "actor_key": "machine-stale",
+            "actor_instance_id": "process-stale",
+            "env_count": 8,
+        }
+        payload["compatibility_key"] = "d" * 64
+        with self.assertRaisesRegex(ValueError, "release identity"):
+            broker.claim_actor(payload)
+        self.assertEqual(broker.active_actor_snapshot(), {})
+
+    def test_actor_rejects_session_from_a_different_release(self):
+        expected = {
+            "build_id": "build-a",
+            "run_id": "run-a",
+            "compatibility_key": "a" * 64,
+        }
+        session = {"release_identity": dict(expected)}
+        actor_worker._validate_session_release_identity(session, expected)
+        session["release_identity"]["build_id"] = "build-b"
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            actor_worker._validate_session_release_identity(session, expected)
+
     def test_central_claims_first_available_actor_slots(self):
         broker, _specs = self._broker()
-        first = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
-        second = broker.claim_actor({"actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 12})
+        first = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
+        second = broker.claim_actor({**broker.release_identity, "actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 12})
         self.assertEqual(first, 0)
         self.assertEqual(second, 1)
 
     def test_same_remote_identity_reclaims_its_slot(self):
         broker, specs = self._broker()
-        actor_id = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
+        actor_id = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": actor_id,
                 "actor_key": "machine-a",
                 "actor_instance_id": "process-a",
@@ -190,20 +230,21 @@ class ElasticBrokerTests(unittest.TestCase):
             }
         )
         self.assertEqual(
-            broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a2", "env_count": 16}),
+            broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a2", "env_count": 16}),
             actor_id,
         )
         self.assertEqual(
-            broker.claim_actor({"actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 4}),
+            broker.claim_actor({**broker.release_identity, "actor_key": "machine-b", "actor_instance_id": "process-b", "env_count": 4}),
             1,
         )
 
     def test_claimed_slot_cannot_be_registered_by_another_identity(self):
         broker, specs = self._broker()
-        actor_id = broker.claim_actor({"actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
+        actor_id = broker.claim_actor({**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "process-a", "env_count": 8})
         with self.assertRaisesRegex(ValueError, "no active claim|owned by another"):
             broker.register_actor(
                 {
+                    **broker.release_identity,
                     "actor_id": actor_id,
                     "actor_key": "machine-b",
                     "actor_instance_id": "process-b",
@@ -221,6 +262,7 @@ class ElasticBrokerTests(unittest.TestCase):
         )
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": actor_id,
                 "actor_key": "machine-a",
                 "actor_instance_id": "old-process",
@@ -231,12 +273,13 @@ class ElasticBrokerTests(unittest.TestCase):
         )
         self.assertEqual(
             broker.claim_actor(
-                {"actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
+                {**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
             ),
             actor_id,
         )
         broker.register_actor(
             {
+                **broker.release_identity,
                 "actor_id": actor_id,
                 "actor_key": "machine-a",
                 "actor_instance_id": "new-process",
@@ -248,6 +291,7 @@ class ElasticBrokerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another remote process"):
             broker.acknowledge_reset(
                 {
+                    **broker.release_identity,
                     "actor_id": actor_id,
                     "actor_key": "machine-a",
                     "actor_instance_id": "old-process",
