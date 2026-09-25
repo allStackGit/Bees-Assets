@@ -109,6 +109,70 @@ class SlotSafetyTests(unittest.TestCase):
                 }
             )
 
+    def test_claimed_restart_can_replace_same_machine_instance_immediately(self):
+        broker, specs = self._broker()
+        actor_key = "trainer-machine-key"
+        old_instance = "a" * 32
+        new_instance = "b" * 32
+
+        actor_id = broker.claim_actor(
+            {
+                **broker.release_identity,
+                "actor_key": actor_key,
+                "actor_instance_id": old_instance,
+                "env_count": 4,
+            }
+        )
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": actor_id,
+                "actor_key": actor_key,
+                "actor_instance_id": old_instance,
+                "env_count": 4,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+
+        replacement_id = broker.claim_actor(
+            {
+                **broker.release_identity,
+                "actor_key": actor_key,
+                "actor_instance_id": new_instance,
+                "env_count": 5,
+            }
+        )
+        self.assertEqual(replacement_id, actor_id)
+
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": replacement_id,
+                "actor_key": actor_key,
+                "actor_instance_id": new_instance,
+                "env_count": 5,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        self.assertEqual(broker.active_actor_snapshot(), {actor_id: 5})
+        self.assertEqual(
+            broker._registrations[actor_id]["actor_instance_id"],
+            new_instance,
+        )
+
+        with self.assertRaisesRegex(ValueError, "owned by another"):
+            broker.acknowledge_reset(
+                {
+                    **broker.release_identity,
+                    "actor_id": actor_id,
+                    "actor_key": actor_key,
+                    "actor_instance_id": old_instance,
+                    "control_epoch": 1,
+                }
+            )
+
     def test_authenticated_control_ack_refreshes_actor_lease(self):
         broker, specs = self._broker()
         broker.register_actor(
