@@ -129,14 +129,18 @@ test('bees.ps1 uses a .zip temporary path for remote runtime compression', () =>
 });
 
 
-test('bees.ps1 live status updates in place instead of clearing the host', () => {
+test('bees.ps1 live status reserves one region and rewrites it in place', () => {
     const source = fs.readFileSync(operatorPath, 'utf8');
     const statusBlock = source.match(/function Get-StatusFrameLines[\s\S]*?function Invoke-Status/)?.[0] || '';
     assert.doesNotMatch(statusBlock, /Clear-Host/);
+    assert.match(statusBlock, /function Initialize-LiveStatusRegion/);
     assert.match(statusBlock, /function Write-LiveStatusFrame/);
     assert.match(statusBlock, /\[Console\]::SetCursorPosition/);
     assert.match(statusBlock, /PadRight\(\$width\)/);
-    assert.match(statusBlock, /Get-StatusFrameLines \$Config \$AdminToken/);
+    assert.match(statusBlock, /\$region=Initialize-LiveStatusRegion/);
+    assert.match(statusBlock, /Write-LiveStatusFrame \$lines \$region\.Top \$region\.Height/);
+    assert.match(statusBlock, /if\(\[Console\]::IsOutputRedirected\)/);
+    assert.doesNotMatch(statusBlock, /\$inPlace/);
 });
 
 test('remote launchers show staged startup progress and unbuffered worker output', () => {
@@ -159,4 +163,15 @@ test('managed remote worker emits a recurring live status heartbeat', () => {
     assert.match(source, /next_status = now \+ 5\.0/);
     assert.match(source, /print\(_remote_status_summary\(args, trainer_id\), flush=True\)/);
     assert.match(source, /"state=\{state\} envs=\{args\.envs\} build=\{build_id\}/);
+});
+
+
+test('bees.ps1 generates a Windows cmd wrapper that bypasses execution policy only for the worker process', () => {
+    const source = fs.readFileSync(operatorPath, 'utf8');
+    const remoteBootstrap = source.match(/function Prepare-RemoteBootstrap[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(remoteBootstrap, /bees-remote-worker\.cmd/);
+    assert.match(remoteBootstrap, /powershell\.exe -NoProfile -ExecutionPolicy Bypass -File/);
+    assert.match(remoteBootstrap, /bees-remote-worker\.ps1/);
+    assert.match(remoteBootstrap, /%\*/);
+    assert.doesNotMatch(remoteBootstrap, /Set-ExecutionPolicy/);
 });
