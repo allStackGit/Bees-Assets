@@ -195,6 +195,7 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
                         raise RuntimeError("WAN actor broker closed while waiting for trajectories")
                 continue
             if self._bees_wan_broker._batch_is_current(batch):
+                self._bees_wan_broker.record_consumed_batch(batch)
                 return batch
 
     def _inject_remote_batches(self) -> None:
