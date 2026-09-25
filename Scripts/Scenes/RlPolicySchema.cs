@@ -11,9 +11,9 @@ using System.Collections.Generic;
 /// </summary>
 internal static partial class RlPolicySchema
 {
-    internal const int Version = 18;
+    internal const int Version = 19;
     internal const string ExpectedBehaviorName = "BeesRL1v1";
-    internal const int PerceptionObservationSize = 7321;
+    internal const int PerceptionObservationSize = 7593;
     internal const int EpisodeProgressObservationIndex = PerceptionObservationSize;
     internal const int ReservedObservationStartIndex = EpisodeProgressObservationIndex + 1;
     internal const int ReservedObservationCount = 20;
@@ -31,7 +31,7 @@ internal static partial class RlPolicySchema
         "shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|" +
         "allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|" +
         "self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|" +
-        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=13x13|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id";
+        "map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id";
 
     internal static void ValidateOrThrow()
     {
@@ -69,7 +69,7 @@ internal static partial class RlPolicySchema
         Check(errors, RlCombatPerception.AllyObservationSize, 44, "ally observation size");
         Check(errors, RlCombatPerception.ParentCarrierObservationSize, 40, "parent-carrier observation size");
         Check(errors, RlCombatPerception.ObjectiveObservationSize, 16, "objective channels");
-        Check(errors, RlCombatPerception.NavigationGridSize, 13, "navigation grid width");
+        Check(errors, RlCombatPerception.NavigationGridSize, 21, "navigation grid width");
         Check(errors, RlCombatPerception.ExplorationGridSize, 16, "exploration grid width");
         Check(errors, RlCombatPerception.ExplorationGridCellCount, 256, "exploration grid cells");
 
