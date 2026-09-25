@@ -63,6 +63,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
 
             self.assertTrue(stop[0])
 
+    def test_pid_file_cleanup_only_removes_current_supervisor_record(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pid_file = Path(temp) / managed.REMOTE_PID_FILE
+            pid_file.write_text("123\n", encoding="ascii")
+
+            managed._clear_pid_file_if_owned(pid_file, 456)
+            self.assertTrue(pid_file.exists())
+
+            managed._clear_pid_file_if_owned(pid_file, 123)
+            self.assertFalse(pid_file.exists())
+
     def test_release_metadata_accepts_utf8_bom(self):
         payload = b"\xef\xbb\xbf" + b'{"build_id":"build-1"}'
         self.assertEqual(
