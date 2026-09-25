@@ -197,12 +197,20 @@ def _load_state(path: Path) -> Optional[dict[str, Any]]:
     return value
 
 
-def plan_run(assets_root: Path, state_path: Path, now: Optional[datetime] = None) -> dict[str, Any]:
+def plan_run(
+    assets_root: Path,
+    state_path: Path,
+    now: Optional[datetime] = None,
+    *,
+    force_new: bool = False,
+) -> dict[str, Any]:
     now = now or _utc_now()
     payload = contract_payload(assets_root)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
-    incompatible = previous is not None and previous["compatibility_key"] != key
+    incompatible = previous is not None and (
+        previous["compatibility_key"] != key or force_new
+    )
     new_run = previous is None or incompatible
     run_id = _run_id(payload, key, now) if new_run else str(previous["run_id"])
     return {
@@ -216,6 +224,7 @@ def plan_run(assets_root: Path, state_path: Path, now: Optional[datetime] = None
         ),
         "incompatible": incompatible,
         "new_run": new_run,
+        "forced_new_run": bool(force_new),
         "contract": payload,
     }
 
@@ -267,6 +276,11 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("--assets-root", required=True)
     plan.add_argument("--state", required=True)
     plan.add_argument("--out", required=True)
+    plan.add_argument(
+        "--force-new",
+        action="store_true",
+        help="Create a new run even when the compatibility contract is unchanged.",
+    )
 
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
@@ -277,7 +291,11 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "plan":
-        value = plan_run(Path(args.assets_root), Path(args.state))
+        value = plan_run(
+            Path(args.assets_root),
+            Path(args.state),
+            force_new=bool(args.force_new),
+        )
         _atomic_json(Path(args.out), value)
         print(json.dumps(value, sort_keys=True))
         return 0
