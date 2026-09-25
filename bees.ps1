@@ -1164,7 +1164,7 @@ __WINDOWS_PAYLOAD__
         '__BEES_TORCH_DEVICE__'=(Escape-BashDoubleQuoted $torchDevice)
     }
     foreach($key in $linuxReplacements.Keys){ $linuxBody=$linuxBody.Replace($key,[string]$linuxReplacements[$key]) }
-    $linuxBody=[regex]::Replace($linuxBody,"\r\n","\n")
+    $linuxBody=$linuxBody.Replace("`r`n","`n").Replace("`r","`n")
     $linuxBridgePayload=Format-Base64Payload ([IO.File]::ReadAllBytes($linuxBridge))
 
     # Linux likewise gets a single self-extracting script. The binary is a here-document reached
@@ -1222,7 +1222,13 @@ exit "$BEES_EXIT"
     $linuxWrapper=$linuxWrapper.Replace('__LINUX_INNER_SCRIPT__',$linuxBody)
     $linuxWrapper=$linuxWrapper.Replace('__LINUX_BRIDGE_PAYLOAD__',$linuxBridgePayload)
     $linuxWrapper=$linuxWrapper.Replace('__LINUX_BRIDGE_NAME__',$linuxBridgeName)
-    $linuxWrapper=[regex]::Replace($linuxWrapper,"\r\n","\n")
+    $linuxWrapper=$linuxWrapper.Replace("`r`n","`n").Replace("`r","`n")
+    if(-not $linuxWrapper.StartsWith("#!/usr/bin/env bash`n")){
+        throw 'Generated Linux remote launcher has an invalid shebang/newline layout.'
+    }
+    if($linuxWrapper.StartsWith('#!/usr/bin/env bash\n')){
+        throw 'Generated Linux remote launcher contains escaped newlines instead of LF characters.'
+    }
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxWrapper,$utf8NoBom)
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
