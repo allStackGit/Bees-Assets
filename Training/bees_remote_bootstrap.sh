@@ -334,7 +334,11 @@ else
     echo "[Bees remote] starting worker with BeesServer environment auto-optimization (CPU-derived start, RAM-capped maximum 64)."
 fi
 rm -f "$SHUTDOWN_REQUEST_FILE"
-nohup "$VENV_PYTHON" -u "${WORKER_ARGS[@]}" >>"$SUPERVISOR_LOG" 2>&1 </dev/null &
+if have setsid; then
+    nohup setsid "$VENV_PYTHON" -u "${WORKER_ARGS[@]}" >>"$SUPERVISOR_LOG" 2>&1 </dev/null &
+else
+    nohup "$VENV_PYTHON" -u "${WORKER_ARGS[@]}" >>"$SUPERVISOR_LOG" 2>&1 </dev/null &
+fi
 WORKER_PID=$!
 printf '%s' "$WORKER_PID" > "$SUPERVISOR_PID_FILE"
 sleep 0.75
