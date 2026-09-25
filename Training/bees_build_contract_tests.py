@@ -45,9 +45,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("Get-GitTreeSha", source)
         self.assertIn(
-            "$serverSourceHash=Get-DirectoryContentSha256 $ServerRoot @('node_modules')",
+            "$serverSourceHash=Get-WorkingTreeContentSha256 'BeesServer~'",
             source,
         )
+        self.assertIn(
+            "ls-files --cached --others --exclude-standard",
+            source,
+        )
+        self.assertIn("sha256='missing'", source)
         self.assertIn("$trainingSourceHash=Get-TrainingRuntimeSourceHash", source)
         self.assertIn("$runtimeVersion=Get-DirectoryContentSha256 $staging", source)
         self.assertIn(
