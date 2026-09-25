@@ -14,13 +14,36 @@ import bees_managed_remote_worker as managed
 
 
 class ManagedRemoteWorkerTests(unittest.TestCase):
-    def test_default_envs_are_four_times_available_threads(self):
-        with mock.patch.object(managed, "_available_cpu_threads", return_value=6):
+    def test_default_envs_are_four_times_available_threads_when_memory_allows(self):
+        with (
+            mock.patch.object(managed, "_available_cpu_threads", return_value=6),
+            mock.patch.object(managed, "_memory_env_limit", return_value=64),
+        ):
             self.assertEqual(managed._default_envs(), 24)
 
     def test_default_envs_respect_actor_capacity_cap(self):
-        with mock.patch.object(managed, "_available_cpu_threads", return_value=32):
+        with (
+            mock.patch.object(managed, "_available_cpu_threads", return_value=32),
+            mock.patch.object(managed, "_memory_env_limit", return_value=64),
+        ):
             self.assertEqual(managed._default_envs(), managed.MAX_ENVS_PER_ACTOR)
+
+    def test_default_envs_are_capped_by_available_memory(self):
+        gib = 1024 * 1024 * 1024
+        with (
+            mock.patch.object(managed, "_available_cpu_threads", return_value=4),
+            mock.patch.object(managed, "_available_memory_bytes", return_value=int(3.8 * gib)),
+        ):
+            self.assertEqual(managed._memory_env_limit(), 2)
+            self.assertEqual(managed._default_envs(), 2)
+
+    def test_default_envs_fall_back_to_cpu_when_memory_is_unknown(self):
+        with (
+            mock.patch.object(managed, "_available_cpu_threads", return_value=4),
+            mock.patch.object(managed, "_available_memory_bytes", return_value=None),
+        ):
+            self.assertEqual(managed._memory_env_limit(), managed.MAX_ENVS_PER_ACTOR)
+            self.assertEqual(managed._default_envs(), 16)
 
     def test_actor_key_is_persistent_per_installation(self):
         with tempfile.TemporaryDirectory() as temp:
