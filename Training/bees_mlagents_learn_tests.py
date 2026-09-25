@@ -8,6 +8,8 @@ Run from the Bees Assets root inside the ML-Agents virtual environment:
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -554,6 +556,82 @@ class FastEnvManagerTests(unittest.TestCase):
         self.assertFalse(manager.env_workers[0].waiting)
         self.assertFalse(manager.env_workers[1].waiting)
         self.assertEqual(result, responses)
+
+
+class DiagnosticModelSnapshotTests(unittest.TestCase):
+    def test_snapshot_exports_current_policy_without_checkpointing(self):
+        class FakeSaver:
+            def __init__(self, root: Path):
+                self.model_path = str(root)
+                self.exports = []
+
+            def export(self, output_path: str, behavior_name: str) -> None:
+                self.exports.append((output_path, behavior_name))
+                Path(output_path + ".onnx").write_bytes(b"current-policy")
+
+        class FakeTrainer:
+            brain_name = "BeesRL1v1"
+            get_step = 123456
+
+            def __init__(self, root: Path):
+                self.model_saver = FakeSaver(root)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = root / "model-snapshot.request"
+            response = root / "model-snapshot.response.json"
+            request.write_text(
+                json.dumps({"request_id": "abc123", "run_id": "run-a"}),
+                encoding="utf-8",
+            )
+            trainer = FakeTrainer(root / "results")
+            with mock.patch.dict(os.environ, {"BEES_TRAINING_RUN_ID": "run-a"}):
+                handled = launcher._handle_model_snapshot_request(
+                    trainer,
+                    request,
+                    response,
+                )
+
+            self.assertTrue(handled)
+            self.assertFalse(request.exists())
+            payload = json.loads(response.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "succeeded")
+            self.assertEqual(payload["step"], 123456)
+            self.assertEqual(payload["run_id"], "run-a")
+            model = Path(payload["model_path"])
+            self.assertTrue(model.is_file())
+            self.assertEqual(model.read_bytes(), b"current-policy")
+            self.assertEqual(len(trainer.model_saver.exports), 1)
+
+    def test_snapshot_failure_is_reported_without_raising(self):
+        class FakeSaver:
+            model_path = "unused"
+
+            def export(self, _output_path: str, _behavior_name: str) -> None:
+                raise RuntimeError("export failed")
+
+        class FakeTrainer:
+            brain_name = "BeesRL1v1"
+            get_step = 12
+            model_saver = FakeSaver()
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = root / "model-snapshot.request"
+            response = root / "model-snapshot.response.json"
+            request.write_text('{"request_id":"failed-one"}', encoding="utf-8")
+
+            self.assertTrue(
+                launcher._handle_model_snapshot_request(
+                    FakeTrainer(),
+                    request,
+                    response,
+                )
+            )
+            payload = json.loads(response.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertIn("export failed", payload["error"])
+            self.assertFalse(request.exists())
 
 
 if __name__ == "__main__":
