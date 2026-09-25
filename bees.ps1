@@ -900,8 +900,8 @@ function Prepare-RemoteBootstrap($Config){
     $bridges=Get-TailnetBridgePaths
     $windowsBridge=[string]$bridges.distribution_windows
     $linuxBridge=[string]$bridges.distribution_linux
-    $windowsBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($windowsBridge))
-    $linuxBridgeBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($linuxBridge))
+    $windowsBridgeName='bees-tailnet-bridge-windows.exe'
+    $linuxBridgeName='bees-tailnet-bridge-linux'
     $windowsBridgeSha=(Get-FileHash -LiteralPath $windowsBridge -Algorithm SHA256).Hash.ToLowerInvariant()
     $linuxBridgeSha=(Get-FileHash -LiteralPath $linuxBridge -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -931,6 +931,8 @@ function Prepare-RemoteBootstrap($Config){
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Copy-Item -LiteralPath $windowsBridge -Destination (Join-Path $RemoteRoot $windowsBridgeName) -Force
+    Copy-Item -LiteralPath $linuxBridge -Destination (Join-Path $RemoteRoot $linuxBridgeName) -Force
 
     $windowsBody=$windowsTemplate
     $windowsReplacements=@{
@@ -938,7 +940,7 @@ function Prepare-RemoteBootstrap($Config){
         '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
         '__BEES_CONTROL_PORT__'=[string]$controlPort
         '__BEES_BROKER_PORT__'=[string]$brokerPort
-        '__BEES_TAILNET_BRIDGE_B64__'=$windowsBridgeBase64
+        '__BEES_TAILNET_BRIDGE_FILE__'=$windowsBridgeName
         '__BEES_TAILNET_BRIDGE_SHA256__'=$windowsBridgeSha
         '__BEES_BOOTSTRAP_TOKEN__'=(Escape-SingleQuoted $bootstrapToken)
         '__BEES_INSTALL_ROOT__'=(Escape-SingleQuoted $installRoot)
@@ -953,8 +955,12 @@ function Prepare-RemoteBootstrap($Config){
     $windowsCmd=@'
 @echo off
 setlocal
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0bees-remote-worker.ps1" %*
-exit /b %ERRORLEVEL%
+echo [Bees remote] launching Windows training worker...
+echo [Bees remote] loading PowerShell bootstrap...
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0bees-remote-worker.ps1" %*
+set "BEES_EXIT=%ERRORLEVEL%"
+if not "%BEES_EXIT%"=="0" echo [Bees remote] worker exited with code %BEES_EXIT%.
+exit /b %BEES_EXIT%
 '@
     [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
 
@@ -964,7 +970,7 @@ exit /b %ERRORLEVEL%
         '__BEES_TAILNET_BOOTSTRAP_PORT__'=[string]$bootstrapPort
         '__BEES_CONTROL_PORT__'=[string]$controlPort
         '__BEES_BROKER_PORT__'=[string]$brokerPort
-        '__BEES_TAILNET_BRIDGE_B64__'=$linuxBridgeBase64
+        '__BEES_TAILNET_BRIDGE_FILE__'=$linuxBridgeName
         '__BEES_TAILNET_BRIDGE_SHA256__'=$linuxBridgeSha
         '__BEES_BOOTSTRAP_TOKEN__'=(Escape-BashDoubleQuoted $bootstrapToken)
         '__BEES_LINUX_INSTALL_ROOT__'=(Escape-BashDoubleQuoted $linuxInstallRoot)
@@ -976,8 +982,8 @@ exit /b %ERRORLEVEL%
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
-    Write-Host 'Windows: copy bees-remote-worker.cmd and bees-remote-worker.ps1 together; run the .cmd file, optionally with -Envs N.'
-    Write-Host "Linux:   copy bees-remote-worker.sh and run 'bash bees-remote-worker.sh'; optionally pass --envs N."
+    Write-Host 'Windows: copy bees-remote-worker.cmd, bees-remote-worker.ps1, and bees-tailnet-bridge-windows.exe together; run the .cmd file, optionally with -Envs N.'
+    Write-Host "Linux:   copy bees-remote-worker.sh and bees-tailnet-bridge-linux together; run 'bash bees-remote-worker.sh', optionally with --envs N."
 }
 
 function Invoke-Server {
