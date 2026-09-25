@@ -13,7 +13,7 @@ $TailnetLearner='__BEES_TAILNET_LEARNER__'
 $TailnetBootstrapPort='__BEES_TAILNET_BOOTSTRAP_PORT__'
 $ControlPort='__BEES_CONTROL_PORT__'
 $BrokerPort='__BEES_BROKER_PORT__'
-$TailnetBridgeBase64='__BEES_TAILNET_BRIDGE_B64__'
+$BundledTailnetBridge='__BEES_TAILNET_BRIDGE_FILE__'
 $TailnetBridgeSha256='__BEES_TAILNET_BRIDGE_SHA256__'
 $BootstrapToken='__BEES_BOOTSTRAP_TOKEN__'
 
@@ -30,7 +30,7 @@ foreach($item in @(
     @($TailnetBootstrapPort,'TailnetBootstrapPort'),
     @($ControlPort,'ControlPort'),
     @($BrokerPort,'BrokerPort'),
-    @($TailnetBridgeBase64,'TailnetBridge'),
+    @($BundledTailnetBridge,'TailnetBridgeFile'),
     @($TailnetBridgeSha256,'TailnetBridgeSha256'),
     @($BootstrapToken,'BootstrapToken')
 )){ Require-GeneratedValue ([string]$item[0]) ([string]$item[1]) }
@@ -63,6 +63,13 @@ foreach($path in @($InstallRoot,$RuntimeRoot,$SecretsRoot,$DownloadsRoot,$Tailne
     $null=New-Item -ItemType Directory -Force -Path $path
 }
 
+$bundledBridgePath=Join-Path $PSScriptRoot $BundledTailnetBridge
+if(-not(Test-Path -LiteralPath $bundledBridgePath)){
+    throw "Bundled tailnet runtime is missing: $bundledBridgePath. Copy the generated Windows remote bundle files together."
+}
+$bundledBridgeSha=(Get-FileHash -LiteralPath $bundledBridgePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if($bundledBridgeSha -ne $TailnetBridgeSha256){ throw 'Bundled tailnet runtime failed SHA-256 verification.' }
+
 $tailnetBridge=Join-Path $TailnetRoot 'bees-tailnet-bridge.exe'
 $writeBridge=$true
 if(Test-Path -LiteralPath $tailnetBridge){
@@ -70,11 +77,11 @@ if(Test-Path -LiteralPath $tailnetBridge){
     $writeBridge=$existing -ne $TailnetBridgeSha256
 }
 if($writeBridge){
-    Write-Host '[Bees remote] extracting bundled private-network runtime...'
-    [IO.File]::WriteAllBytes($tailnetBridge,[Convert]::FromBase64String($TailnetBridgeBase64))
+    Write-Host '[Bees remote] installing bundled private-network runtime...'
+    Copy-Item -LiteralPath $bundledBridgePath -Destination $tailnetBridge -Force
 }
 $actualBridgeSha=(Get-FileHash -LiteralPath $tailnetBridge -Algorithm SHA256).Hash.ToLowerInvariant()
-if($actualBridgeSha -ne $TailnetBridgeSha256){ throw 'Bundled tailnet runtime failed SHA-256 verification.' }
+if($actualBridgeSha -ne $TailnetBridgeSha256){ throw 'Installed tailnet runtime failed SHA-256 verification.' }
 
 $bootstrapTokenPath=Join-Path $TailnetRoot 'bootstrap.token'
 $BootstrapToken | Set-Content -LiteralPath $bootstrapTokenPath -NoNewline -Encoding ASCII
