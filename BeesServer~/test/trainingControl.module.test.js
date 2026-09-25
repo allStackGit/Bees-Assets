@@ -803,6 +803,50 @@ test('preparing rollout barrier survives training-control server restart', () =>
     });
 });
 
+test('recent trainer registry seeds a release staged immediately after server restart', () => {
+    withTempDir(root => {
+        let now = 5000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 20,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'restart-stage-old');
+        publishDedicatedBuild(store, root, 'restart-stage-new');
+
+        store.stageRelease({
+            buildId: 'restart-stage-old',
+            runId: 'restart-stage-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'restart-stage-old', oldSha);
+        }
+
+        store = new TrainingControlStore(options);
+        const staged = store.stageRelease({
+            buildId: 'restart-stage-new',
+            runId: 'restart-stage-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+
+        assert.equal(staged.canonical_build_id, 'restart-stage-old');
+        assert.equal(staged.pending_release.phase, 'preparing');
+        assert.deepEqual(
+            staged.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+        assert.equal(staged.pending_release.collect_until_ms, 0);
+    });
+});
+
 test('rolling rollout barrier survives server restart and re-requires healthy trainers', () => {
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
