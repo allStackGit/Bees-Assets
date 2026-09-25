@@ -25,7 +25,36 @@ function withTempDir(work) {
 }
 
 
-function publishDedicatedBuild(store, root, buildId) {\n    const archive = path.join(root, buildId + '.zip');\n    fs.writeFileSync(archive, Buffer.from(buildId + '-build'));\n    store.publishArtifact({\n        role: 'dedicated',\n        platform: 'WindowsPlayer',\n        buildId,\n        archivePath: archive,\n        entrypoint: 'Bees.exe',\n    });\n    return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;\n}\n\nfunction heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}) {\n    return store.heartbeat({\n        trainer_id: trainerId,\n        role: 'dedicated',\n        platform: 'WindowsPlayer',\n        process_state: options.processState || 'running',\n        build_id: buildId,\n        build_sha256: buildSha256,\n        prepared_build_id: options.preparedBuildId || '',\n        applied_revision: options.appliedRevision === undefined\n            ? store.state.revision\n            : options.appliedRevision,\n        last_error: options.lastError || '',\n    });\n}\n\nfunction invokeGet(handler, url, token) {
+function publishDedicatedBuild(store, root, buildId) {
+    const archive = path.join(root, buildId + '.zip');
+    fs.writeFileSync(archive, Buffer.from(buildId + '-build'));
+    store.publishArtifact({
+        role: 'dedicated',
+        platform: 'WindowsPlayer',
+        buildId,
+        archivePath: archive,
+        entrypoint: 'Bees.exe',
+    });
+    return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;
+}
+
+function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}) {
+    return store.heartbeat({
+        trainer_id: trainerId,
+        role: 'dedicated',
+        platform: 'WindowsPlayer',
+        process_state: options.processState || 'running',
+        build_id: buildId,
+        build_sha256: buildSha256,
+        prepared_build_id: options.preparedBuildId || '',
+        applied_revision: options.appliedRevision === undefined
+            ? store.state.revision
+            : options.appliedRevision,
+        last_error: options.lastError || '',
+    });
+}
+
+function invokeGet(handler, url, token) {
     return new Promise(resolve => {
         const request = {
             method: 'GET',
