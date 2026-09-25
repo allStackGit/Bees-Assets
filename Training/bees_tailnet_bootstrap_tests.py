@@ -47,6 +47,14 @@ class TailnetBootstrapSourceTests(unittest.TestCase):
         self.assertNotIn("__BEES_ACTOR_ID__", operator)
         self.assertNotIn("__BEES_ENVS__", operator)
 
+    def test_linux_launcher_uses_real_lf_characters_not_literal_backslash_n(self):
+        operator = OPERATOR.read_text(encoding="utf-8")
+        self.assertIn('$linuxBody=$linuxBody.Replace("`r`n","`n").Replace("`r","`n")', operator)
+        self.assertIn('$linuxWrapper=$linuxWrapper.Replace("`r`n","`n").Replace("`r","`n")', operator)
+        self.assertIn('StartsWith("#!/usr/bin/env bash`n")', operator)
+        self.assertNotIn('[regex]::Replace($linuxWrapper,"\\r\\n","\\n")', operator)
+        self.assertNotIn('[regex]::Replace($linuxBody,"\\r\\n","\\n")', operator)
+
     def test_cluster_uses_tailnet_without_ssh_settings(self):
         config = json.loads(CLUSTER.read_text(encoding="utf-8"))
         self.assertEqual(config["remoteTransport"], "tailnet")
