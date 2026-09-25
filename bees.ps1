@@ -316,22 +316,12 @@ function Build-TailnetBridge {
         }
     }
 
-    Ensure-Directory $TailnetBridgeDistributionRoot
-    $distributionWindows=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge.exe'
-    $distributionLinux=Join-Path $TailnetBridgeDistributionRoot 'bees-tailnet-bridge'
-    $distributionWindowsTemp="$distributionWindows.new"
-    $distributionLinuxTemp="$distributionLinux.new"
-    Copy-Item -LiteralPath $versionWindows -Destination $distributionWindowsTemp -Force
-    Copy-Item -LiteralPath $versionLinux -Destination $distributionLinuxTemp -Force
-    Install-AtomicFile $distributionWindowsTemp $distributionWindows
-    Install-AtomicFile $distributionLinuxTemp $distributionLinux
-
     [pscustomobject]@{
-        schema_version=1
+        schema_version=2
         source_hash=$sourceHash
         gateway_windows=$versionWindows
-        distribution_windows=$distributionWindows
-        distribution_linux=$distributionLinux
+        distribution_windows=$versionWindows
+        distribution_linux=$versionLinux
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $TailnetBridgeManifestPath -Encoding UTF8
 }
 
@@ -723,7 +713,17 @@ function Invoke-Build {
     }
 
     $unity=Resolve-UnityEditor $config
+    $previousBridgeHash=$null
+    if(Test-Path -LiteralPath $TailnetBridgeManifestPath){
+        try {
+            $previousBridgeHash=[string]((Get-Content -LiteralPath $TailnetBridgeManifestPath -Raw | ConvertFrom-Json).source_hash)
+        } catch {
+            $previousBridgeHash=$null
+        }
+    }
     Build-TailnetBridge
+    $currentBridgeHash=Get-TailnetBridgeSourceHash
+    $tailnetBridgeChanged=($previousBridgeHash -ne $currentBridgeHash)
     Ensure-Directory $BuildsRoot
     $date=Get-Date -Format 'yyyy-MM-dd'
     $time=Get-Date -Format 'HHmmss'
@@ -808,6 +808,10 @@ function Invoke-Build {
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
                 Prepare-RemoteBootstrap $config
+                if($tailnetBridgeChanged){
+                    Write-Host 'Embedded tailnet helper changed; restarting the private gateway onto the new immutable helper version.'
+                    Start-TailnetGatewayIfNeeded $config
+                }
             }
             Publish-Release $config $admin $release
             $staged=Stage-Release $config $admin $release
