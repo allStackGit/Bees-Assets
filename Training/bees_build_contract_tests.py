@@ -334,6 +334,38 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         taskkill = source.index("& taskkill /PID")
         self.assertLess(stop_helper, taskkill)
 
+    def test_status_distinguishes_control_transport_failure_from_render_failure(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Get-StatusFrameLines")
+        end = source.index("function Initialize-LiveStatusRegion", start)
+        block = source[start:end]
+
+        request = block.index(
+            '$s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken'
+        )
+        offline = block.index("Server: OFFLINE/UNREACHABLE", request)
+        render_try = block.index("try {", offline + 1)
+        render_error = block.index("Dashboard: RENDER ERROR", render_try)
+        responded = block.index("Control endpoint: RESPONDED", render_error)
+
+        self.assertLess(request, offline)
+        self.assertLess(offline, render_try)
+        self.assertLess(render_try, render_error)
+        self.assertLess(render_error, responded)
+        self.assertEqual(block.count("Server: OFFLINE/UNREACHABLE"), 1)
+        self.assertIn(
+            "$d=Get-ObjectPropertyValue $s 'desired'",
+            block,
+        )
+        self.assertIn(
+            "$trainerValue=Get-ObjectPropertyValue $s 'trainers'",
+            block,
+        )
+        self.assertNotIn("$s.desired", block)
+        self.assertNotIn("$s.trainers", block)
+        self.assertNotIn("$d.pending_release", block)
+        self.assertNotIn("$d.environment_args", block)
+
     def test_operator_status_shows_remote_wan_traffic(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         status = re.search(
