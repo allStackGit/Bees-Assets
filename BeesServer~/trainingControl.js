@@ -252,7 +252,6 @@ class TrainingControlStore {
         if (parsed.schema_version !== CONTROL_SCHEMA_VERSION) {
             throw new Error('training-control state schema is incompatible');
         }
-        if (migrated) atomicWriteJson(this.statePath, parsed);
         if (!Number.isInteger(parsed.revision) || parsed.revision < 0) {
             throw new Error('training-control state revision is invalid');
         }
@@ -396,6 +395,7 @@ class TrainingControlStore {
         if (parsed.training_enabled && !parsed.canonical_build_id) {
             throw new Error('training-control persisted training state has no canonical build');
         }
+        if (migrated) atomicWriteJson(this.statePath, parsed);
         return parsed;
     }
 
