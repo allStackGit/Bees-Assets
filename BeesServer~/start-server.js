@@ -199,7 +199,21 @@ function runSupervisor(options) {
             );
             if (consecutiveHealthFailures >= HEALTH_FAILURE_LIMIT && child) {
                 consecutiveHealthFailures = 0;
-                try { child.kill('SIGTERM'); } catch (_) {}
+                const unhealthyChild = child;
+                try { unhealthyChild.kill('SIGTERM'); } catch (_) {}
+                const forceTimer = setTimeout(() => {
+                    if (
+                        child === unhealthyChild &&
+                        unhealthyChild.exitCode === null &&
+                        unhealthyChild.signalCode === null
+                    ) {
+                        console.error(
+                            '[Bees server supervisor] unhealthy server did not exit after SIGTERM; forcing termination'
+                        );
+                        try { unhealthyChild.kill('SIGKILL'); } catch (_) {}
+                    }
+                }, 5000);
+                forceTimer.unref();
             }
         }, HEALTH_INTERVAL_MS);
         healthTimer.unref();
