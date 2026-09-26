@@ -115,6 +115,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_supervisor_launches_worker_through_owned_process_container(self):
+        process = mock.Mock()
+        process.stdout = io.StringIO("")
+        with mock.patch.object(managed, "popen_owned", return_value=process) as owned:
+            returned, thread = managed._start_logged_process(["python", "worker.py"])
+            thread.join(timeout=1.0)
+
+        self.assertIs(returned, process)
+        owned.assert_called_once()
+        self.assertEqual(owned.call_args.args[0], ["python", "worker.py"])
+
     def test_terminate_raises_when_child_exit_cannot_be_confirmed(self):
         process = mock.Mock()
         process.pid = 7331
