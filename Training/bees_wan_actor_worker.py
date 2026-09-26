@@ -602,6 +602,10 @@ class ActorSession:
         options.env_settings.env_path = str(self.env_path)
         options.env_settings.base_port = self.local_base_port
         options.env_settings.num_envs = self.env_count
+        # Remote actors are intentionally long-lived. Preserve ML-Agents' rolling restart-rate
+        # guard, but do not let isolated Unity failures accumulate into a permanent lifetime cap.
+        # Rapid repeated failures still exceed restarts_rate_limit_n/period and fail the actor.
+        options.env_settings.max_lifetime_restarts = -1
         options.env_settings.seed = _resolve_actor_seed(
             int(options.env_settings.seed),
             session_id=self.session_id,
