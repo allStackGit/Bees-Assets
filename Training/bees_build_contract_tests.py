@@ -50,6 +50,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("if($launcher.Count -gt 1)", source)
         self.assertNotIn("$launcher=Resolve-PythonLauncher\n", source)
 
+    def test_build_preflight_distinguishes_live_unity_from_stale_lock(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Get-UnityProcessesForProject")
+        end = source.index("function Get-UnityBuildProgressStatus", start)
+        block = source[start:end]
+
+        self.assertIn("Get-CimInstance Win32_Process", block)
+        self.assertIn("Name = 'Unity.exe'", block)
+        self.assertIn("if(-not(Test-Path -LiteralPath $lock)){ return }", block)
+        self.assertIn("Removed stale Unity lock file because no Unity Editor process is running", block)
+        self.assertIn("Refusing to remove the lock automatically", block)
+        self.assertNotIn("appears to already be open in the Unity Editor", block)
+
     def test_operator_hashes_actual_server_and_training_runtime_bytes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("Get-GitTreeSha", source)
@@ -175,6 +188,16 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("LearnerAvgStep/s", block)
         self.assertIn("LearnerLiveStep/s", block)
         self.assertIn("OptExp/s is the last per-worker optimizer consumption sample", block)
+        self.assertIn(
+            "$beeAimSamples=Get-ObjectPropertyValue $m 'bee_aim_samples'",
+            block,
+        )
+        self.assertIn(
+            "$humanAimSamples=Get-ObjectPropertyValue $m 'human_aim_samples'",
+            block,
+        )
+        self.assertNotIn("$m.bee_aim_samples", block)
+        self.assertNotIn("$m.human_aim_samples", block)
 
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
