@@ -773,14 +773,14 @@ class ElasticWanBroker(base.WanActorBroker):
             ):
                 raise ValueError(
                     "trajectory batch_id must be a non-empty string up to 64 characters")
+            if payload.get("control_epoch") != self._control_epoch:
+                raise base.StaleActorStateError(
+                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
+                )
+            self._validate_policy_versions(payload.get("policy_versions"))
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
                 return duplicate_count
-        if payload.get("control_epoch") != self.control_epoch:
-            raise base.StaleActorStateError(
-                f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
-            )
-        self._validate_policy_versions(payload.get("policy_versions"))
         trajectories = payload.get("trajectories")
         if not isinstance(trajectories, list) or not trajectories:
             raise ValueError("trajectory batch must contain at least one trajectory")
@@ -826,14 +826,14 @@ class ElasticWanBroker(base.WanActorBroker):
                         "actor lease expired while validating trajectories; re-register before uploading"
                     )
                 self._validate_dynamic_owner_locked(actor_id, payload)
-                duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
-                if duplicate_count is not None:
-                    return duplicate_count
                 if payload.get("control_epoch") != self._control_epoch:
                     raise base.StaleActorStateError(
                         "trajectory control epoch changed while validating the batch"
                     )
                 self._validate_policy_versions(payload.get("policy_versions"))
+                duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+                if duplicate_count is not None:
+                    return duplicate_count
                 self._registrations[actor_id]["last_seen"] = time.monotonic()
                 self._trajectory_batches.put_nowait(item)
                 self._remember_accepted_batch_locked(
