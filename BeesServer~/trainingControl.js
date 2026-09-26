@@ -250,6 +250,9 @@ class TrainingControlStore {
                 !Number.isFinite(pending.collect_until_ms) || pending.collect_until_ms < 0) {
                 throw new Error('training-control pending release is invalid');
             }
+            if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+                pending.environment_args = normalizeEnvironmentArgs(pending.environment_args);
+            }
             const trainerIds = new Set();
             for (const trainer of pending.required_trainers) {
                 if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
@@ -608,6 +611,9 @@ class TrainingControlStore {
         this.state.canonical_build_id = pending.build_id;
         this.state.run_id = pending.run_id;
         this.state.compatibility_key = pending.compatibility_key;
+        if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+            this.state.environment_args = [...pending.environment_args];
+        }
         this.state.pending_release = null;
         this.state.revision++;
         this._persist();
@@ -662,10 +668,19 @@ class TrainingControlStore {
         return false;
     }
 
-    stageRelease({ buildId, runId, compatibilityKey, incompatible = false }) {
+    stageRelease({
+        buildId,
+        runId,
+        compatibilityKey,
+        incompatible = false,
+        environmentArgs = undefined,
+    }) {
         buildId = requireString(buildId, 'build_id', 128);
         runId = requireString(runId, 'run_id', 128);
         compatibilityKey = requireString(compatibilityKey, 'compatibility_key', 64).toLowerCase();
+        const releaseEnvironmentArgs = environmentArgs === undefined
+            ? undefined
+            : normalizeEnvironmentArgs(environmentArgs);
         if (!/^[A-Za-z0-9._-]+$/.test(buildId) ||
             !/^[A-Za-z0-9._-]+$/.test(runId) ||
             !/^[0-9a-f]{64}$/.test(compatibilityKey)) {
@@ -691,18 +706,43 @@ class TrainingControlStore {
             this.state.run_id === runId &&
             this.state.compatibility_key === compatibilityKey &&
             this.state.pending_release === null) {
+            if (releaseEnvironmentArgs !== undefined &&
+                JSON.stringify(releaseEnvironmentArgs) !==
+                    JSON.stringify(this.state.environment_args)) {
+                throw Object.assign(
+                    new Error(
+                        'canonical release environment_args differ from the requested release transition'),
+                    { statusCode: 409 });
+            }
             return this.desiredState();
         }
         const existingPending = this.state.pending_release;
+        const requestedEnvironmentIdentity = releaseEnvironmentArgs === undefined
+            ? null
+            : JSON.stringify(releaseEnvironmentArgs);
+        const pendingEnvironmentIdentity = existingPending &&
+            Object.prototype.hasOwnProperty.call(existingPending, 'environment_args')
+            ? JSON.stringify(existingPending.environment_args)
+            : null;
         if (existingPending &&
             existingPending.build_id === buildId &&
             existingPending.run_id === runId &&
             existingPending.compatibility_key === compatibilityKey &&
-            existingPending.incompatible === incompatible) {
+            existingPending.incompatible === incompatible &&
+            pendingEnvironmentIdentity === requestedEnvironmentIdentity) {
             this._advanceRollout();
             return this.desiredState();
         }
         if (existingPending) {
+            if (existingPending.build_id === buildId &&
+                existingPending.run_id === runId &&
+                existingPending.compatibility_key === compatibilityKey &&
+                existingPending.incompatible === incompatible) {
+                throw Object.assign(
+                    new Error(
+                        'pending release environment_args differ from the requested release transition'),
+                    { statusCode: 409 });
+            }
             throw Object.assign(
                 new Error(
                     'another release rollout is already pending: ' +
@@ -716,6 +756,9 @@ class TrainingControlStore {
             run_id: runId,
             compatibility_key: compatibilityKey,
             incompatible,
+            ...(releaseEnvironmentArgs === undefined
+                ? {}
+                : { environment_args: [...releaseEnvironmentArgs] }),
             phase: 'preparing',
             required_trainers: requiredTrainers,
             phase_revision: this.state.revision + 1,
@@ -1139,6 +1182,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     runId: body.run_id,
                     compatibilityKey: body.compatibility_key,
                     incompatible: body.incompatible,
+                    environmentArgs: Object.prototype.hasOwnProperty.call(
+                        body, 'environment_args')
+                        ? body.environment_args
+                        : undefined,
                 }));
                 return;
             }
