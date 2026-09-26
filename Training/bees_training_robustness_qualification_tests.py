@@ -109,6 +109,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             node = next(check for check in checks if check.name == "node:training-control")
             command = " ".join(node.command)
             self.assertIn("trainingControl.module.test.js", command)
+            self.assertIn("trainingControlCli.module.test.js", command)
             self.assertIn("trainingEnvOptimizer.module.test.js", command)
 
     def test_run_check_propagates_nonzero_exit(self):
