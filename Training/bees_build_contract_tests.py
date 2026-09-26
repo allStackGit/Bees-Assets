@@ -482,7 +482,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             block,
         )
         self.assertIn("config_hash=$serverConfigHash", block)
-        self.assertIn("schema_version=3", block)
+        self.assertIn("Write-BeesServerManagedState", source)
+        self.assertIn("schema_version=5", source)
 
     def test_server_launch_config_identity_covers_control_tokens_and_runtime_inputs(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
