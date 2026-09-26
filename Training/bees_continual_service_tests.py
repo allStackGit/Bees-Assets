@@ -35,15 +35,14 @@ class ContinualServiceTests(unittest.TestCase):
             with (
                 mock.patch.object(service.os, "name", "posix"),
                 mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
-                mock.patch.object(service.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(service.os, "killpg") as killpg,
+                mock.patch.object(service, "popen_owned", return_value=fake) as popen,
                 mock.patch.object(service.time, "sleep"),
             ):
                 with self.assertRaises(KeyboardInterrupt):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
 
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
-            killpg.assert_not_called()
+            self.assertEqual(popen.call_args.args[0], ["python", "trainer.py"])
 
     def test_fast_child_exit_still_treats_stop_file_as_interrupted_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -54,7 +53,7 @@ class ContinualServiceTests(unittest.TestCase):
 
             with (
                 mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
-                mock.patch.object(service.subprocess, "Popen", return_value=fake),
+                mock.patch.object(service, "popen_owned", return_value=fake),
             ):
                 with self.assertRaises(KeyboardInterrupt):
                     service._run_managed_subprocess(["python", "trainer.py"], options)
