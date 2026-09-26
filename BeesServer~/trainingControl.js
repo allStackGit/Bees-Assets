@@ -281,6 +281,13 @@ class TrainingControlStore {
             if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
                 pending.environment_args = normalizeEnvironmentArgs(pending.environment_args);
             }
+            if (!Array.isArray(pending.rolled_trainers)) {
+                pending.rolled_trainers = [];
+            } else {
+                pending.rolled_trainers = pending.rolled_trainers
+                    .filter(value => typeof value === 'string' && value)
+                    .slice(0, 1024);
+            }
             const trainerIds = new Set();
             for (const trainer of pending.required_trainers) {
                 if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
@@ -670,8 +677,9 @@ class TrainingControlStore {
     _rollingTargetId() {
         const pending = this.state.pending_release;
         if (!pending || pending.phase !== 'rolling') return null;
+        const rolled = new Set(pending.rolled_trainers || []);
         const remaining = pending.required_trainers
-            .filter(spec => !this._trainerHealthyOnPending(spec, pending));
+            .filter(spec => !rolled.has(spec.trainer_id));
         if (!remaining.length) return null;
 
         const environmentTransition =
@@ -732,8 +740,27 @@ class TrainingControlStore {
             if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
+
+            // A rollout acknowledgement is valid only for the trainer that was explicitly assigned
+            // the current rolling slot. All trainers observe the shared control revision, including
+            // trainers deliberately left on the old environment arguments. Therefore
+            // build_id+applied_revision alone cannot identify a completed same-build config cutover.
+            const rollingTargetId = this._rollingTargetId();
+            if (rollingTargetId) {
+                const targetSpec = pending.required_trainers.find(
+                    spec => spec.trainer_id === rollingTargetId);
+                if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                    if (!pending.rolled_trainers.includes(rollingTargetId)) {
+                        pending.rolled_trainers.push(rollingTargetId);
+                        this.state.revision++;
+                        this._persist();
+                    }
+                }
+            }
+
+            const rolled = new Set(pending.rolled_trainers || []);
             if (pending.required_trainers.every(
-                spec => this._trainerHealthyOnPending(spec, pending))) {
+                spec => rolled.has(spec.trainer_id))) {
                 return this._promotePendingRelease();
             }
             return false;
@@ -889,6 +916,7 @@ class TrainingControlStore {
                 : { environment_args: [...releaseEnvironmentArgs] }),
             phase: 'preparing',
             required_trainers: requiredTrainers,
+            rolled_trainers: [],
             phase_revision: this.state.revision + 1,
             collect_until_ms: (
                 this.state.training_enabled && requiredTrainers.length === 0
@@ -1081,10 +1109,8 @@ class TrainingControlStore {
         const pending = this.state.pending_release;
         if (role === 'dedicated' && pending) {
             if (pending.phase === 'rolling') {
-                const current = this.trainers.get(trainerId);
-                const alreadyRolled = current &&
-                    current.build_id === pending.build_id &&
-                    current.applied_revision >= pending.phase_revision;
+                const alreadyRolled = (pending.rolled_trainers || [])
+                    .includes(trainerId);
                 const recollecting = pending.collect_until_ms > this.now();
                 const isRollingTarget = !recollecting &&
                     this._rollingTargetId() === trainerId;
