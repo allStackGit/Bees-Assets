@@ -304,12 +304,13 @@ function runSync(executable, args = [], options = {}) {
 }
 
 function runChecked(executable, args = [], cwd = paths.assetsRoot, env = process.env) {
-    const result = runSync(executable, args, { cwd, env });
-    const output = String(result.stdout || '');
-    if (output) process.stdout.write(output);
-    const errorOutput = String(result.stderr || '');
-    if (errorOutput) process.stderr.write(errorOutput);
-    return result;
+    // Setup/build helpers can run for minutes. Preserve the old operator's live child output
+    // instead of buffering an entire pip/npm/go/archive operation until it exits.
+    return runSync(executable, args, {
+        cwd,
+        env,
+        stdio: 'inherit',
+    });
 }
 
 function waitForSpawn(child, label, timeoutMs = 5000) {
