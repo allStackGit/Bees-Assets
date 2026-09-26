@@ -167,7 +167,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn("function Get-BeesServerRuntimeSourceHash", source)
-        server_hash_start = source.index("function Get-BeesServerRuntimeSourceHash")
+        server_hash_start = source.index("function Get-BeesServerRuntimeFileNames")
         server_hash_end = source.index("function Get-BeesServerDependencyHash", server_hash_start)
         server_hash = source[server_hash_start:server_hash_end]
         for runtime_file in (
@@ -402,7 +402,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
     def test_non_runtime_server_edits_do_not_participate_in_restart_identity(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
-        start = source.index("function Get-BeesServerRuntimeSourceHash")
+        start = source.index("function Get-BeesServerRuntimeFileNames")
         end = source.index("function Get-BeesServerDependencyHash", start)
         block = source[start:end]
 
@@ -426,7 +426,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
     def test_server_runtime_hash_matches_transitive_local_require_graph(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
-        start = source.index("function Get-BeesServerRuntimeSourceHash")
+        start = source.index("function Get-BeesServerRuntimeFileNames")
         end = source.index("function Get-BeesServerDependencyHash", start)
         block = source[start:end]
         declared = set(re.findall(r"'([^']+\\.js)'", block))
@@ -521,34 +521,62 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             server,
         )
 
-    def test_operator_reinstalls_server_dependencies_when_package_identity_changes(self):
+    def test_server_replacement_is_prepared_before_live_process_cutover(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        prepare_start = source.index("function Prepare-BeesServerRuntime")
+        prepare_end = source.index("function Get-BeesServerDependencyHash", prepare_start)
+        prepare = source[prepare_start:prepare_end]
+
+        self.assertIn("Invoke-Checked $npm @('ci') $candidate", prepare)
+        self.assertIn("Invoke-Checked $Node @('--check'", prepare)
+        self.assertIn("runtime.loadLegacyRuntime()", prepare)
         self.assertIn(
-            "$ServerDependencyStampPath=Join-Path $RuntimeRoot "
-            "'bees-server-dependencies.sha256'",
-            source,
-        )
-        self.assertIn("function Get-BeesServerDependencyHash", source)
-        self.assertIn("name='package.json'", source)
-        self.assertIn("name='package-lock.json'", source)
-        self.assertIn(
-            "$installedDependencyHash -ne $dependencyHash",
-            source,
+            "Active BeesServer runtime failed staged verification",
+            prepare,
         )
 
         start = source.index("function Start-BeesServerIfNeeded")
-        remove_stamp = source.index(
-            "Remove-Item -LiteralPath $ServerDependencyStampPath",
-            start,
+        end = source.index("function Get-LatestRelease", start)
+        block = source[start:end]
+        prepared = block.index("$preparedServer=Prepare-BeesServerRuntime $node")
+        stop = block.index(
+            "Stop-ManagedProcessTree $managedState $node 'BeesServer'"
         )
-        npm_ci = source.index("Invoke-Checked $npm @('ci') $ServerRoot", start)
-        write_stamp = source.index(
-            "$dependencyHash | Set-Content -LiteralPath "
-            "$ServerDependencyStampPath",
-            start,
+        launch = block.index(
+            "Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot"
         )
-        self.assertLess(remove_stamp, npm_ci)
-        self.assertLess(npm_ci, write_stamp)
+        self.assertLess(prepared, stop)
+        self.assertLess(stop, launch)
+        self.assertIn("runtime_root=$serverRuntimeRoot", block)
+        self.assertIn("dependency_hash=$serverDependencyHash", block)
+        self.assertIn("schema_version=4", block)
+        self.assertNotIn("$ServerDependencyStampPath", source)
+        self.assertNotIn("Invoke-Checked $npm @('ci') $ServerRoot", source)
+
+    def test_failed_server_replacement_restores_previous_verified_runtime(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Start-BeesServerIfNeeded")
+        end = source.index("function Get-LatestRelease", start)
+        block = source[start:end]
+
+        self.assertIn(
+            "Replacement BeesServer failed after cutover; restoring previously verified runtime",
+            block,
+        )
+        self.assertIn(
+            "Test-BeesServerStagedRuntime $previousRuntimeRoot $previousSourceHash",
+            block,
+        )
+        self.assertIn("$previousConfigHash -eq $serverConfigHash", block)
+        self.assertIn(
+            "Start-BeesServerRuntimeProcess $Config $node $previousRuntimeRoot",
+            block,
+        )
+        self.assertIn("rollback_reason=$replacementError", block)
+        self.assertIn(
+            "previous verified runtime was restored successfully",
+            block,
+        )
 
 
     def test_operator_never_kills_a_managed_process_by_pid_alone(self):
