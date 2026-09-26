@@ -260,10 +260,7 @@ namespace Assets.Scripts.Levels
             float speedPaddingY = Mathf.Abs(yVelocity) * 2.5f;
             bounds.Expand(new Vector3(speedPaddingX * 2f, speedPaddingY * 2f, 0));
 
-            Vector2Int min = ConvertToMapCoordinates(
-                PathfinderObstacleScope.WorldToLevel(Level, new Vector2(bounds.min.x, bounds.max.y)));
-            Vector2Int max = ConvertToMapCoordinates(
-                PathfinderObstacleScope.WorldToLevel(Level, new Vector2(bounds.max.x, bounds.min.y)));
+            GetObstacleGridBounds(bounds, out Vector2Int min, out Vector2Int max);
             int startX = Mathf.Clamp(Mathf.Min(min.x, max.x), 0, _grid.MaxX);
             int endX = Mathf.Clamp(Mathf.Max(min.x, max.x), 0, _grid.MaxX);
             int startY = Mathf.Clamp(Mathf.Min(min.y, max.y), 0, _grid.MaxY);
