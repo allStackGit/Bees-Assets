@@ -120,12 +120,22 @@ func copyConn(a, b net.Conn) {
 	<-done
 }
 
-func proxyListener(ctx context.Context, ln net.Listener, dial func(context.Context) (net.Conn, error), label string) {
+func proxyListener(
+	ctx context.Context,
+	ln net.Listener,
+	dial func(context.Context) (net.Conn, error),
+	label string,
+	onFailure func(error),
+) {
 	for {
 		src, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() == nil {
-				log.Printf("[Bees tailnet] %s accept failed: %v", label, err)
+				failure := fmt.Errorf("%s accept failed: %w", label, err)
+				log.Printf("[Bees tailnet] %v", failure)
+				if onFailure != nil {
+					onFailure(failure)
+				}
 			}
 			return
 		}
@@ -267,6 +277,160 @@ func parsePort(value string) (int, error) {
 	return port, nil
 }
 
+func writeGatewayHealth(path, ip4 string, controlPort, brokerPort, bootstrapPort int) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	now := time.Now()
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		payload := fmt.Sprintf(
+			"ready ip=%s control=%d broker=%d bootstrap=%d\n",
+			ip4,
+			controlPort,
+			brokerPort,
+			bootstrapPort,
+		)
+		if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+			return err
+		}
+	}
+	return os.Chtimes(path, now, now)
+}
+
+func serveGatewaySession(
+	ctx context.Context,
+	c *commonFlags,
+	controlPort int,
+	brokerPort int,
+	bootstrapPort int,
+	bootstrapBundlePath string,
+	token string,
+	healthFile string,
+) error {
+	s, err := server(c)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	ip4, err := up(ctx, s)
+	if err != nil {
+		return err
+	}
+
+	controlLn, err := s.Listen("tcp", fmt.Sprintf(":%d", controlPort))
+	if err != nil {
+		return fmt.Errorf("listen control: %w", err)
+	}
+	defer controlLn.Close()
+	brokerLn, err := s.Listen("tcp", fmt.Sprintf(":%d", brokerPort))
+	if err != nil {
+		return fmt.Errorf("listen broker: %w", err)
+	}
+	defer brokerLn.Close()
+	bootstrapLn, err := s.Listen("tcp", fmt.Sprintf(":%d", bootstrapPort))
+	if err != nil {
+		return fmt.Errorf("listen bootstrap: %w", err)
+	}
+	defer bootstrapLn.Close()
+
+	sessionCtx, sessionCancel := context.WithCancel(ctx)
+	defer sessionCancel()
+	failures := make(chan error, 1)
+	fail := func(failure error) {
+		if failure == nil {
+			return
+		}
+		select {
+		case failures <- failure:
+		default:
+		}
+		sessionCancel()
+	}
+
+	go proxyListener(
+		sessionCtx,
+		controlLn,
+		localDial(fmt.Sprintf("127.0.0.1:%d", controlPort)),
+		"control",
+		fail,
+	)
+	go proxyListener(
+		sessionCtx,
+		brokerLn,
+		localDial(fmt.Sprintf("127.0.0.1:%d", brokerPort)),
+		"broker",
+		fail,
+	)
+
+	httpServer := &http.Server{Handler: bootstrapHandler(token, bootstrapBundlePath)}
+	go func() {
+		if err := httpServer.Serve(bootstrapLn); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) &&
+			sessionCtx.Err() == nil {
+			fail(fmt.Errorf("bootstrap HTTP server failed: %w", err))
+		}
+	}()
+	go func() {
+		<-sessionCtx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer shutdownCancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+		_ = controlLn.Close()
+		_ = brokerLn.Close()
+		_ = bootstrapLn.Close()
+	}()
+
+	if strings.TrimSpace(healthFile) != "" {
+		_ = os.Remove(healthFile)
+		defer os.Remove(healthFile)
+		if err := writeGatewayHealth(
+			healthFile,
+			ip4,
+			controlPort,
+			brokerPort,
+			bootstrapPort,
+		); err != nil {
+			return fmt.Errorf("write gateway health: %w", err)
+		}
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-sessionCtx.Done():
+					return
+				case <-ticker.C:
+					if err := writeGatewayHealth(
+						healthFile,
+						ip4,
+						controlPort,
+						brokerPort,
+						bootstrapPort,
+					); err != nil {
+						fail(fmt.Errorf("refresh gateway health: %w", err))
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	log.Printf(
+		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d",
+		ip4, controlPort, brokerPort, bootstrapPort,
+	)
+	select {
+	case <-ctx.Done():
+		return nil
+	case failure := <-failures:
+		return failure
+	}
+}
+
 func runGateway(args []string) error {
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	c := addCommon(fs)
@@ -275,6 +439,7 @@ func runGateway(args []string) error {
 	bootstrapPort := fs.Int("bootstrap-port", 7151, "tailnet bootstrap port")
 	bootstrapBundlePath := fs.String("bootstrap-bundle", "", "atomic remote bootstrap bundle path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
+	healthFile := fs.String("health-file", "", "optional gateway liveness heartbeat file")
 	_ = fs.String("owner-token", "", "opaque managed-launch ownership token")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -301,60 +466,31 @@ func runGateway(args []string) error {
 		return fmt.Errorf("bootstrap bundle is not a regular file: %s", *bootstrapBundlePath)
 	}
 
-	s, err := server(c)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	ip4, err := up(ctx, s)
-	if err != nil {
-		return err
-	}
-
-	controlLn, err := s.Listen("tcp", fmt.Sprintf(":%d", *controlPort))
-	if err != nil {
-		return fmt.Errorf("listen control: %w", err)
-	}
-	defer controlLn.Close()
-	brokerLn, err := s.Listen("tcp", fmt.Sprintf(":%d", *brokerPort))
-	if err != nil {
-		return fmt.Errorf("listen broker: %w", err)
-	}
-	defer brokerLn.Close()
-	bootstrapLn, err := s.Listen("tcp", fmt.Sprintf(":%d", *bootstrapPort))
-	if err != nil {
-		return fmt.Errorf("listen bootstrap: %w", err)
-	}
-	defer bootstrapLn.Close()
-
-	go proxyListener(ctx, controlLn, localDial(fmt.Sprintf("127.0.0.1:%d", *controlPort)), "control")
-	go proxyListener(ctx, brokerLn, localDial(fmt.Sprintf("127.0.0.1:%d", *brokerPort)), "broker")
-	httpServer := &http.Server{Handler: bootstrapHandler(token, *bootstrapBundlePath)}
-	go func() {
-		if err := httpServer.Serve(bootstrapLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("[Bees tailnet] bootstrap HTTP server failed: %v", err)
-			cancel()
+	for {
+		err := serveGatewaySession(
+			ctx,
+			c,
+			*controlPort,
+			*brokerPort,
+			*bootstrapPort,
+			*bootstrapBundlePath,
+			token,
+			*healthFile,
+		)
+		if ctx.Err() != nil {
+			return nil
 		}
-	}()
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer shutdownCancel()
-		_ = httpServer.Shutdown(shutdownCtx)
-		_ = controlLn.Close()
-		_ = brokerLn.Close()
-		_ = bootstrapLn.Close()
-	}()
-
-	log.Printf(
-		"[Bees tailnet] gateway online ip=%s control=%d broker=%d bootstrap=%d",
-		ip4, *controlPort, *brokerPort, *bootstrapPort,
-	)
-	<-ctx.Done()
-	return nil
+		if err != nil {
+			log.Printf("[Bees tailnet] gateway session failed: %v; restarting", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 func atomicWrite(path string, mode os.FileMode, write func(io.Writer) error) error {
@@ -645,7 +781,7 @@ func runForwardMulti(args []string) error {
 			return fmt.Errorf("listen %s: %w", local, err)
 		}
 		listeners = append(listeners, ln)
-		go proxyListener(ctx, ln, tailnetDial(s, remote), local+" -> "+remote)
+		go proxyListener(ctx, ln, tailnetDial(s, remote), local+" -> "+remote, nil)
 		log.Printf("[Bees tailnet] forwarding %s -> %s", local, remote)
 	}
 	defer func() {
