@@ -229,12 +229,16 @@ def _assign_windows_owned_child(process: subprocess.Popen) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def popen_owned(
     command: Sequence[str],
     **kwargs: Any,
 ) -> subprocess.Popen:
     """Launch a child that the OS tears down when this owning process disappears."""
-    if os.name == "nt":
+    if _is_windows():
         process = subprocess.Popen(list(command), **kwargs)
         try:
             _assign_windows_owned_child(process)
