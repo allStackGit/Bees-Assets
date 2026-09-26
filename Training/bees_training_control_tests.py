@@ -211,6 +211,7 @@ class TrainingControlClientTests(unittest.TestCase):
         reordered = agent.environment_args_identity(("--rl-health-ratio=.25", "--rl-map-size=32"))
         self.assertEqual(first, second)
         self.assertEqual(len(first), 64)
+        self.assertEqual(first, "f1e00a70d7208ecbd776146fc91a62f78bfc24101a63b7b7eb672f73b1b91334")
         self.assertNotEqual(first, reordered)
 
     def test_dedicated_child_health_gates_running_state_and_surfaces_errors(self):
