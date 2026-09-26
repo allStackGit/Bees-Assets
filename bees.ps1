@@ -489,7 +489,7 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
 
     $argList=@(
-        'gateway',
+        'gateway-supervisor',
         '--state',$state,
         '--hostname',$hostname,
         '--control-port',[string]$controlPort,
