@@ -594,6 +594,15 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         raise ValueError("--retry-seconds must be greater than zero")
     if not isinstance(args.run_id, str) or not args.run_id.strip():
         raise ValueError("--run-id must be non-empty")
+    run_id = args.run_id.strip()
+    if (
+        len(run_id) > 128
+        or re.fullmatch(r"[A-Za-z0-9._-]+", run_id) is None
+        or run_id in {".", ".."}
+    ):
+        raise ValueError(
+            "--run-id may contain only letters, digits, dot, underscore, and dash"
+        )
     if not isinstance(args.game_build_version, str) or not args.game_build_version.strip():
         raise ValueError("--game-build-version must be non-empty")
 
@@ -636,7 +645,7 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
             else None
         ),
         python_executable=args.python_executable,
-        run_id=args.run_id.strip(),
+        run_id=run_id,
         generation_steps=args.generation_steps,
         num_envs=args.num_envs,
         platform=args.platform,
