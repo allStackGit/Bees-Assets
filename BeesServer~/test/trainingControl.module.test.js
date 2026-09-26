@@ -1605,6 +1605,103 @@ test('environment-changing release requires artifact-bound validation proof befo
     });
 });
 
+test('unchanged environment args do not require new heartbeat identity on code-only rollout', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 20,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'identity-old');
+        const newSha = publishDedicatedBuild(store, root, 'identity-new');
+        const args = ['--rl-map-size=48'];
+
+        store.stageRelease({
+            buildId: 'identity-old',
+            runId: 'identity-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+            environmentArgs: args,
+            environmentValidationKey: validationKey(store, 'identity-old', args),
+        });
+        store.setDesiredState({ training_enabled: true });
+
+        // Model a supervisor from immediately before environment_id heartbeats were introduced.
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'identity-old',
+            build_sha256: oldSha,
+            prepared_build_id: '',
+            applied_revision: store.state.revision,
+            last_error: '',
+        });
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'identity-old',
+            build_sha256: oldSha,
+            prepared_build_id: '',
+            applied_revision: store.state.revision,
+            last_error: '',
+        });
+
+        store.stageRelease({
+            buildId: 'identity-new',
+            runId: 'identity-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+            environmentArgs: args,
+            environmentValidationKey: validationKey(store, 'identity-new', args),
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            store.heartbeat({
+                trainer_id: trainerId,
+                role: 'dedicated',
+                platform: 'WindowsPlayer',
+                process_state: 'running',
+                build_id: 'identity-old',
+                build_sha256: oldSha,
+                prepared_build_id: 'identity-new',
+                applied_revision: store.state.revision,
+                last_error: '',
+            });
+        }
+
+        const rolloutRevision = store.state.pending_release.phase_revision;
+        assert.equal(store._rollingTargetId(), 'remote-a');
+        store.heartbeat({
+            trainer_id: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'identity-new',
+            build_sha256: newSha,
+            prepared_build_id: 'identity-new',
+            applied_revision: rolloutRevision,
+            last_error: '',
+        });
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        store.heartbeat({
+            trainer_id: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            build_id: 'identity-new',
+            build_sha256: newSha,
+            prepared_build_id: 'identity-new',
+            applied_revision: rolloutRevision,
+            last_error: '',
+        });
+        assert.equal(store.state.canonical_build_id, 'identity-new');
+        assert.equal(store.state.pending_release, null);
+    });
+});
+
 test('same-run environment rollout is central-first and never exposes mixed desired args', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
