@@ -261,14 +261,6 @@ namespace Assets.Scripts.Server
         private ServerResponse _message_response;
         private ServerRequest _message_request;
 
-        private void Message(byte[] bytes)
-        {
-            _f_message = System.Text.Encoding.UTF8.GetString(bytes);
-            _message_response = JsonUtility.FromJson<ServerResponse>(_f_message);
-            _message_response.RequestType = Utilities.ConvertNameToRequestType[_message_response.Type];
-            Message(_f_message, _message_response);
-        }
-
         private void Message(string message, ServerResponse response)
         {
             _f_message = message;
@@ -417,7 +409,7 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Message(_update_message);
+                    Debug.LogWarning("Ignoring malformed or unsupported server response.");
                 }
                 messagesProcessed++;
             }
