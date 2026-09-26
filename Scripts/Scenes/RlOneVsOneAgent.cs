@@ -868,7 +868,9 @@ internal sealed class RlOneVsOneAgent : Agent
             _previousCanAcceptUserInput = _boundSquad.CanAcceptUserInput;
             _hasStoredSquadControlState = true;
             _boundSquad.IsUserControlled = false;
-            _boundSquad.IsHiveMindControlled = true;
+            // The policy owns this squad during training. Keep the Hive Mind from issuing
+            // concurrent squad commands; ship-level vision state remains independent.
+            _boundSquad.IsHiveMindControlled = false;
             _boundSquad.CanAcceptUserInput = false;
         }
 
