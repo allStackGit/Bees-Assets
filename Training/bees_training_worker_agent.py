@@ -1348,10 +1348,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             desired_process_safe = False
             try:
-                desired = client.heartbeat(heartbeat)
+                received_state = client.heartbeat(heartbeat)
+                received_lease_seconds = float(received_state["lease_seconds"])
+                if not math.isfinite(received_lease_seconds) or received_lease_seconds <= 0:
+                    raise ValueError("server lease_seconds must be a finite positive value")
+                desired = received_state
                 received_desired = True
+                lease_seconds = received_lease_seconds
                 last_contact = time.monotonic()
-                lease_seconds = float(desired["lease_seconds"])
                 last_error = ""
 
                 mode = str(desired["desired_mode"])
