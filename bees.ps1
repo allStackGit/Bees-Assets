@@ -52,6 +52,8 @@ $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $DiagnosticBenchmarkScript=Join-Path $AssetsRoot 'Training\bees_training_diagnostic_benchmark.py'
+$ReleaseRuntimeScript=Join-Path $AssetsRoot 'Training\bees_release_runtime.py'
+$ReleaseRuntimeInstallRoot=Join-Path $RuntimeRoot 'TrainingReleases'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
@@ -682,6 +684,96 @@ function Package-Build([string]$Python,[string]$Source,[string]$Archive,[string]
     Invoke-Checked $Python @((Join-Path $AssetsRoot 'Training\bees_package_training_build.py'),'--source',$Source,'--output',$Archive,'--entrypoint',$Entrypoint) $AssetsRoot
 }
 
+function Invoke-PythonJson([string]$Python,[string[]]$ArgumentList,[string]$WorkingDirectory=$AssetsRoot){
+    Push-Location $WorkingDirectory
+    try {
+        $output=@(& $Python @ArgumentList)
+        $exitCode=$LASTEXITCODE
+        if($exitCode -ne 0){
+            throw "$Python exited with code $exitCode while running $($ArgumentList -join ' ')."
+        }
+        $json=($output -join [Environment]::NewLine).Trim()
+        if(-not $json){ throw "$Python produced no JSON output for $($ArgumentList[0])." }
+        try { return ($json | ConvertFrom-Json) }
+        catch { throw "Invalid JSON from $($ArgumentList[0]): $json" }
+    } finally {
+        Pop-Location
+    }
+}
+
+function New-ReleaseTrainingRuntime(
+    [string]$Python,
+    [string]$BuildId,
+    [string]$SourceCommit,
+    [string]$Archive
+){
+    if(-not(Test-Path -LiteralPath $ReleaseRuntimeScript)){
+        throw "Training runtime packager is missing: $ReleaseRuntimeScript"
+    }
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'package',
+        '--assets-root',$AssetsRoot,
+        '--output',$Archive,
+        '--build-id',$BuildId,
+        '--source-commit',$SourceCommit
+    ) $AssetsRoot
+}
+
+function Resolve-ReleaseTrainingRuntime(
+    [string]$Python,
+    $Release,
+    [switch]$AllowLegacyPin
+){
+    $runtime=Get-ObjectPropertyValue $Release 'training_runtime'
+    if($null -eq $runtime){
+        if(-not $AllowLegacyPin){
+            throw "Release $($Release.build_id) has no immutable training runtime. Rebuild the release."
+        }
+        $legacyBuild=([string]$Release.build_id).Trim()
+        if(-not $legacyBuild){ throw 'Legacy release has no build_id.' }
+        $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $legacyBuild
+        Ensure-Directory $packageRoot
+        $archive=Join-Path $packageRoot 'training-runtime.zip'
+        $sourceCommit=Get-GitShortSha
+        Write-Warning "Release $legacyBuild predates immutable training runtimes. Pinning the current Training runtime once for recovery; the next build will pin its runtime at build time."
+        $runtime=New-ReleaseTrainingRuntime $Python $legacyBuild $sourceCommit $archive
+        $runtime | Add-Member -NotePropertyName legacy_pinned_after_build -NotePropertyValue $true -Force
+        $Release | Add-Member -NotePropertyName training_runtime -NotePropertyValue $runtime -Force
+        if($null -ne (Get-ObjectPropertyValue $Release 'schema_version')){
+            $Release.schema_version=3
+        }
+        Save-LatestRelease $Release
+    }
+
+    $archivePath=([string](Get-ObjectPropertyValue $runtime 'archive')).Trim()
+    $archiveSha=([string](Get-ObjectPropertyValue $runtime 'archive_sha256')).Trim().ToLowerInvariant()
+    $runtimeVersion=([string](Get-ObjectPropertyValue $runtime 'runtime_version')).Trim().ToLowerInvariant()
+    $buildId=([string]$Release.build_id).Trim()
+    if(-not $archivePath -or -not $archiveSha -or -not $runtimeVersion){
+        throw "Release $buildId has incomplete immutable training runtime metadata."
+    }
+
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'verify',
+        '--archive',$archivePath,
+        '--expected-sha256',$archiveSha,
+        '--expected-version',$runtimeVersion,
+        '--expected-build-id',$buildId
+    ) $AssetsRoot
+}
+
+function Install-ReleaseTrainingRuntime([string]$Python,$Release,[switch]$AllowLegacyPin){
+    $runtime=Resolve-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin:$AllowLegacyPin
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'install',
+        '--archive',[string]$runtime.archive,
+        '--destination-root',$ReleaseRuntimeInstallRoot,
+        '--expected-sha256',[string]$runtime.archive_sha256,
+        '--expected-version',[string]$runtime.runtime_version,
+        '--expected-build-id',[string]$Release.build_id
+    ) $AssetsRoot
+}
+
 function Get-GitShortSha {
     $git=Resolve-Git; Push-Location $AssetsRoot
     try {
@@ -1077,10 +1169,13 @@ function Invoke-Build {
         }
     }
 
+    $trainingRuntimeArchive=Join-Path $packageRoot 'training-runtime.zip'
+    $trainingRuntime=New-ReleaseTrainingRuntime $python $buildId $sha $trainingRuntimeArchive
+
     $previousRunId=$null
     if($plan.previous_run_id){ $previousRunId=[string]$plan.previous_run_id }
     $release=[pscustomobject]@{
-        schema_version=2
+        schema_version=3
         build_id=$buildId
         source_commit=$sha
         created_utc=[DateTime]::UtcNow.ToString('o')
@@ -1090,6 +1185,7 @@ function Invoke-Build {
         incompatible=[bool]$plan.incompatible
         contract=$plan.contract
         artifacts=$artifacts
+        training_runtime=$trainingRuntime
     }
     Save-LatestRelease $release
     Commit-TrainingRunPlan $python
@@ -1106,7 +1202,7 @@ function Invoke-Build {
             Assert-CentralAgentCheckpointSafe
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
-                Prepare-RemoteBootstrap $config
+                Prepare-RemoteBootstrap $config $python $release
                 if($tailnetBridgeChanged){
                     Write-Host 'Embedded tailnet helper changed; restarting the private gateway onto the new immutable helper version.'
                     Start-TailnetGatewayIfNeeded $config
@@ -1469,15 +1565,21 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     throw "Central learner PID $Id is still finalizing its checkpoint after $TimeoutSeconds seconds. Refusing forced termination; the existing learner remains authoritative."
 }
 
-function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
+function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity,$Release){
     Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory $CentralAgentInstallRoot
     $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
-    $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'; $service=Join-Path $AssetsRoot 'Training\bees_continual_elastic_wan_service.py'
+    $installedRuntime=Install-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin
+    $runtimeRoot=[string]$installedRuntime.installed_root
+    $runtimeVersion=[string]$installedRuntime.runtime_version
+    $agent=Join-Path $runtimeRoot 'bees_training_worker_agent.py'; $service=Join-Path $runtimeRoot 'bees_continual_elastic_wan_service.py'
+    $trainerConfig=Join-Path $runtimeRoot 'rl_1v1_config.yaml'; $continualConfig=Join-Path $runtimeRoot 'continual_learning_config.json'
+    foreach($required in @($agent,$service,$trainerConfig,$continualConfig)){
+        if(-not(Test-Path -LiteralPath $required)){ throw "Installed release training runtime is missing: $required" }
+    }
     $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
-    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
+    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot","--runtime-training-root=$runtimeRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--trainer-config=$trainerConfig","--continual-config=$continualConfig","--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-    $trainingSourceHash=Get-TrainingRuntimeSourceHash
-    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
+    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $runtimeVersion)
     $existing=$null
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
@@ -1536,7 +1638,7 @@ function Escape-BashDoubleQuoted([string]$Value){
     $Value
 }
 
-function Prepare-RemoteBootstrap($Config){
+function Prepare-RemoteBootstrap($Config,[string]$Python,$Release){
     if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
@@ -1575,26 +1677,14 @@ function Prepare-RemoteBootstrap($Config){
 
     Ensure-Directory $RemoteRoot
     Ensure-Directory $RuntimeRoot
-    $staging=Join-Path $RuntimeRoot 'remote-runtime-staging'
-    if(Test-Path -LiteralPath $staging){Remove-Item -LiteralPath $staging -Recurse -Force}
-    Ensure-Directory $staging
-    try {
-        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
-        Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
-        # Version the exact staged payload bytes, not the committed Git tree or live source
-        # directory, so dirty/uncommitted changes and mid-packaging edits cannot be mislabeled.
-        $runtimeVersion=Get-DirectoryContentSha256 $staging
-        $runtimeVersion | Set-Content -LiteralPath (Join-Path $staging 'bees-runtime-version.txt') -NoNewline -Encoding ASCII
-        $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-        # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
-        # archive beside the final file and atomically swap it into place after compression.
-        $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
-        Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
-        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZipTemp -CompressionLevel Optimal
-        Install-AtomicFile $runtimeZipTemp $runtimeZip
-    } finally {
-        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    $releaseRuntime=Resolve-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin
+    $runtimeVersion=[string]$releaseRuntime.runtime_version
+    $releaseRuntimeArchive=[string]$releaseRuntime.archive
+    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
+    $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
+    Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath $releaseRuntimeArchive -Destination $runtimeZipTemp
+    Install-AtomicFile $runtimeZipTemp $runtimeZip
 
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
@@ -1833,6 +1923,7 @@ function Invoke-Start {
     }
 
     Ensure-RunLifecycleMatchesRelease $python $release
+    $null=Resolve-ReleaseTrainingRuntime $python $release -AllowLegacyPin
     Assert-CentralAgentCheckpointSafe
 
     $forcedPlan=$null
@@ -1880,6 +1971,7 @@ function Invoke-Start {
             incompatible=$true
             contract=$forcedPlan.contract
             artifacts=$release.artifacts
+            training_runtime=$release.training_runtime
         }
         # Persist the forced-run intent before the server can begin the incompatible cutover.
         # If the shell dies after the release write but before the lifecycle commit, the retained
@@ -1891,7 +1983,7 @@ function Invoke-Start {
 
     $unity=Resolve-UnityEditor $config
     Ensure-TailnetIdentity $config
-    Prepare-RemoteBootstrap $config
+    Prepare-RemoteBootstrap $config $python $release
     Publish-Release $config $admin $release
     Start-TailnetGatewayIfNeeded $config
 
@@ -1900,7 +1992,7 @@ function Invoke-Start {
         training_enabled=$true
         environment_args=@($envArgs)
     }
-    Start-CentralAgentIfNeeded $config $python $unity
+    Start-CentralAgentIfNeeded $config $python $unity $release
 
     if($NewRun){
         $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
