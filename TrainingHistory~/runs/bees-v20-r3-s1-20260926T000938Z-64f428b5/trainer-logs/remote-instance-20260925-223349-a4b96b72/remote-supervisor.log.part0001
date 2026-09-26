@@ -1,0 +1,9 @@
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=25 optimizer=paused
+[Bees WAN actor] waiting for central trainer: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=25 optimizer=warmup
+[Bees remote] staged worker update runtime=09c2bd62ee67 bridge=a75d014ae476.
+[Bees remote] activating staged worker runtime 09c2bd62ee67 at this trainer's rollout turn.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+[Bees WAN actor] waiting for central trainer: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=5->4 build=2026-09-25-173601-b698a1e1ee57 rev=-1 optimizer=awaiting-restart runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
