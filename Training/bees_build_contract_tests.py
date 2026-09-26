@@ -389,7 +389,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         start = source.index("function Invoke-Qualify")
         end = source.index("switch($Command)", start)
         block = source[start:end]
-        self.assertIn("Resolve-Python $config", block)
+        self.assertIn("Ensure-LearnerPython $config", block)
         self.assertIn("$RobustnessQualificationScript", block)
         self.assertIn("'--bees-root',$BeesRoot", block)
         self.assertIn("'--assets-root',$AssetsRoot", block)
