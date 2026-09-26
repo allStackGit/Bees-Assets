@@ -56,6 +56,14 @@ GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 
 
 MAX_RETAINED_RUN_LOG_DIRS = 3
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_run_id(run_id: str) -> str:
+    value = str(run_id or "")
+    if value and (value in {".", ".."} or not RUN_ID_RE.fullmatch(value)):
+        raise ValueError(f"unsafe training run id: {value!r}")
+    return value
 
 
 def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
@@ -112,7 +120,7 @@ class EpisodeLogMetrics:
         self._run_id = ""
 
     def refresh(self, run_id: str = "") -> dict[str, object]:
-        run_id = str(run_id or "")
+        run_id = _validate_run_id(run_id)
         if run_id != self._run_id:
             self._run_id = run_id
             self._episodes.clear()
@@ -120,8 +128,14 @@ class EpisodeLogMetrics:
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            bounded_logs = sorted(scan_root.rglob("BeesEpisode-*.log"))
-            log_paths = bounded_logs or sorted(scan_root.rglob("Player-*.log"))
+            bounded_logs = sorted(
+                path for path in scan_root.rglob("BeesEpisode-*.log")
+                if not path.is_symlink()
+            )
+            log_paths = bounded_logs or sorted(
+                path for path in scan_root.rglob("Player-*.log")
+                if not path.is_symlink()
+            )
             for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
@@ -509,6 +523,7 @@ class TrainingLogUploader:
         trainer_id: str,
         run_id: str,
     ) -> int:
+        run_id = _validate_run_id(run_id)
         if not run_id:
             return 0
         run_root = self.root / run_id
@@ -519,7 +534,11 @@ class TrainingLogUploader:
         for log_path in sorted(run_root.rglob("*")):
             if budget <= 0:
                 break
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             relative = log_path.relative_to(run_root).as_posix()
             try:
@@ -571,6 +590,7 @@ class TrainingLogUploader:
         return uploaded
 
     def _has_pending_local_bytes(self, run_id: str) -> bool:
+        run_id = _validate_run_id(run_id)
         run_root = self.root / run_id
         if not run_root.is_dir():
             return False
