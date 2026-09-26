@@ -112,15 +112,17 @@ func TestGatewaySupervisorUsesDistinctRecoverableChildOwnerToken(t *testing.T) {
 	}
 	ownerToken := managedFlagValue(args, "--owner-token")
 	childArgs := withoutManagedOwnerToken(args)
-	childArgs = append(childArgs, "--owner-token", ownerToken+".child")
+	childToken := managedChildOwnerToken(ownerToken)
+	childArgs = append(childArgs, "--owner-token", childToken)
 
-	if got := managedFlagValue(childArgs, "--owner-token"); got != "owner-secret.child" {
+	if got := managedFlagValue(childArgs, "--owner-token"); got != childToken {
 		t.Fatalf("unexpected child owner token %q", got)
 	}
-	for _, value := range childArgs {
-		if value == "owner-secret" {
-			t.Fatalf("supervisor owner token leaked unchanged into child args: %#v", childArgs)
-		}
+	if strings.Contains(childToken, ownerToken) {
+		t.Fatalf("child owner token must not contain parent token: parent=%q child=%q", ownerToken, childToken)
+	}
+	if len(childToken) != 64 {
+		t.Fatalf("unexpected child owner token length %d", len(childToken))
 	}
 	if got := managedFlagValue(childArgs, "--health-file"); got != "health.txt" {
 		t.Fatalf("unexpected health file %q", got)
