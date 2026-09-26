@@ -440,6 +440,29 @@ class ActorFailureDiagnosticsTests(unittest.TestCase):
 
             self.assertTrue(stop.is_set())
 
+    def test_session_failure_telemetry_reports_count_type_and_age(self):
+        telemetry = actor_worker._SessionFailureTelemetry()
+        with mock.patch.object(
+            actor_worker.time,
+            "monotonic",
+            side_effect=[100.0, 107.5],
+        ):
+            telemetry.record(IndexError("bad action batch"))
+            snapshot = telemetry.snapshot()
+
+        self.assertEqual(snapshot["session_failures_total"], 1)
+        self.assertEqual(snapshot["last_session_failure_type"], "IndexError")
+        self.assertEqual(snapshot["seconds_since_last_session_failure"], 7.5)
+
+    def test_reconnect_backoff_is_bounded_and_resettable(self):
+        backoff = actor_worker._ReconnectBackoff(5.0, max_seconds=30.0)
+        self.assertEqual(
+            [backoff.next_delay() for _ in range(5)],
+            [5.0, 10.0, 20.0, 30.0, 30.0],
+        )
+        backoff.reset()
+        self.assertEqual(backoff.next_delay(), 5.0)
+
     def test_session_failure_reports_context_and_full_traceback(self):
         stderr = io.StringIO()
         session = SimpleNamespace(
