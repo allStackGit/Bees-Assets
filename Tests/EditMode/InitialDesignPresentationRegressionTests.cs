@@ -92,7 +92,7 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "UI Components", "CampaignFeedbackAdjustmentGuard.cs"));
 
             Assert.That(missionSource, Does.Contain("the number hotkeys on your keyboard"));
-            Assert.That(campaignGuardSource, Does.Contain("bool squadNumberPage = Contains(text, \\"number hotkeys\\");"));
+            Assert.That(campaignGuardSource, Does.Contain("bool squadNumberPage = Contains(text, \"number hotkeys\");"));
             Assert.That(campaignGuardSource, Does.Contain("EnsureSquadNumberArrow();"));
             Assert.That(missionSource, Does.Contain("basicTooltip.Place(new Vector2(0, -160), new Vector2(150, 100));"));
             Assert.That(missionSource, Does.Contain("squadNumberHighlightRect.localScale = Vector3.one;"));
