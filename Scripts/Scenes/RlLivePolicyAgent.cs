@@ -235,7 +235,8 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
-        RlOneVsOneAgent.CollectPolicyObservations(_perception, _ship, _side, sensor, 0);
+        int frameQuarterTurns = GetPolicyFrameQuarterTurns();
+        RlOneVsOneAgent.CollectPolicyObservations(_perception, _ship, _side, sensor, frameQuarterTurns);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -268,8 +269,12 @@ internal sealed class RlLivePolicyAgent : Agent
             return;
         }
 
+        int frameQuarterTurns = GetPolicyFrameQuarterTurns();
         ActionSegment<float> continuous = actions.ContinuousActions;
-        RlOneVsOneAgent.ApplyMovementCommand(_ship, new Vector2(continuous[0], continuous[1]));
+        Vector2 policyMovement = new Vector2(continuous[0], continuous[1]);
+        RlOneVsOneAgent.ApplyMovementCommand(
+            _ship,
+            RlPolicyCoordinateFrame.PolicyToWorld(policyMovement, frameQuarterTurns));
         RlOneVsOneAgent.SetCommunicationActions(_ship, continuous);
 
         ActionSegment<int> discrete = actions.DiscreteActions;
@@ -282,7 +287,9 @@ internal sealed class RlLivePolicyAgent : Agent
             Vector2 aim = new Vector2(continuous[aimStart], continuous[aimStart + 1]);
             if (aim.sqrMagnitude >= AimDeadZone * AimDeadZone)
             {
-                _weaponAimDirections[slot] = aim.normalized;
+                _weaponAimDirections[slot] = RlPolicyCoordinateFrame.PolicyToWorld(
+                    aim.normalized,
+                    frameQuarterTurns);
             }
 
             bool fire = allowWeaponFire &&
@@ -564,7 +571,10 @@ internal sealed class RlLivePolicyAgent : Agent
         for (int i = 0; i < _ship.Turrets.Count; i++)
         {
             Turret turret = _ship.Turrets[i];
-            turret.SetRlControl(turret.GetPosition() + Vector2.up * Mathf.Max(1f, turret.Range), false);
+            Vector2 initialAim = RlPolicyCoordinateFrame.PolicyToWorld(
+                Vector2.up,
+                GetPolicyFrameQuarterTurns());
+            turret.SetRlControl(turret.GetPosition() + initialAim * Mathf.Max(1f, turret.Range), false);
         }
         return true;
     }
@@ -599,10 +609,37 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private void ResetWeaponAimDirections()
     {
+        Vector2 defaultAim = RlPolicyCoordinateFrame.PolicyToWorld(
+            Vector2.up,
+            GetPolicyFrameQuarterTurns());
         for (int i = 0; i < _weaponAimDirections.Length; i++)
         {
-            _weaponAimDirections[i] = Vector2.up;
+            _weaponAimDirections[i] = defaultAim;
         }
+    }
+
+    private int GetPolicyFrameQuarterTurns()
+    {
+        if (_level == null || ConfigData.Configuration == null)
+        {
+            return 0;
+        }
+
+        int teamId;
+        if (_side == ConfigData.Configuration.BeeSide)
+        {
+            teamId = 0;
+        }
+        else if (_side == ConfigData.Configuration.HumanSide)
+        {
+            teamId = 1;
+        }
+        else
+        {
+            return 0;
+        }
+
+        return RlPolicyCoordinateFrame.GetQuarterTurns(_level, teamId);
     }
 
     private void ReleaseShip()
