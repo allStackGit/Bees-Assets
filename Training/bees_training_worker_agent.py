@@ -607,6 +607,14 @@ class TrainingLogUploader:
         )
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+_POSIX_SIGTERM = getattr(signal, "SIGTERM", 15)
+_POSIX_SIGKILL = getattr(signal, "SIGKILL", 9)
+
+
 class ManagedProcess:
     def __init__(self) -> None:
         self.process: Optional[subprocess.Popen] = None
@@ -749,7 +757,7 @@ class ManagedProcess:
         self.process = popen_owned(
             list(command),
             env=environment,
-            start_new_session=(os.name != "nt"),
+            start_new_session=(not _is_windows()),
         )
         self.command = tuple(command)
         self.revision = revision
@@ -844,7 +852,7 @@ class ManagedProcess:
 
         # Non-checkpoint-owning workers may be force-stopped, but never report them stopped
         # until wait() has confirmed that the owned process actually exited.
-        if os.name == "nt":
+        if _is_windows():
             try:
                 subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -862,7 +870,7 @@ class ManagedProcess:
                 pass
         else:
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(process.pid, _POSIX_SIGTERM)
             except Exception:
                 pass
             try:
@@ -873,7 +881,7 @@ class ManagedProcess:
                 pass
 
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(process.pid, _POSIX_SIGKILL)
             except Exception:
                 pass
             try:
