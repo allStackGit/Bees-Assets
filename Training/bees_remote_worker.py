@@ -213,8 +213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not os.path.isfile(env_path):
         print(f"error: Unity environment executable does not exist: {env_path}", file=sys.stderr)
         return 2
-    if not math.isfinite(args.tunnel_startup_seconds) or args.tunnel_startup_seconds < 0:
-        print("error: --tunnel-startup-seconds must be non-negative", file=sys.stderr)
+    if not math.isfinite(args.tunnel_startup_seconds) or args.tunnel_startup_seconds <= 0:
+        print("error: --tunnel-startup-seconds must be positive", file=sys.stderr)
         return 2
 
     print(
