@@ -805,6 +805,35 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             self.assertEqual(current["build_id"], "build-prepared")
 
+    def test_managed_build_retention_bounds_immutable_install_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = control.ManagedBuildStore(root / "managed")
+            store.MAX_RETAINED_BUILDS = 2
+            latest = None
+            for index in range(4):
+                archive = root / f"build-{index}.zip"
+                with zipfile.ZipFile(archive, "w") as bundle:
+                    bundle.writestr("Bees.x86_64", f"binary-{index}".encode("ascii"))
+                descriptor = {
+                    "role": "dedicated",
+                    "platform": "LinuxPlayer",
+                    "build_id": f"build-{index}",
+                    "archive_sha256": control.file_sha256(archive),
+                    "archive_size_bytes": archive.stat().st_size,
+                    "entrypoint": "Bees.x86_64",
+                    "artifact_url": f"/v1/artifact/dedicated/LinuxPlayer/build-{index}",
+                }
+                latest, _ = store.prepare(FakeClient(archive), descriptor)
+
+            installed = [
+                path for path in (root / "managed" / "builds").iterdir()
+                if path.is_dir() and not path.name.startswith(".")
+            ]
+            self.assertLessEqual(len(installed), 2)
+            self.assertIsNotNone(latest)
+            self.assertTrue(latest.is_file())
+
     def test_managed_build_rejects_archive_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
