@@ -31,6 +31,8 @@ import urllib.request
 import uuid
 import zipfile
 
+from bees_process_safety import popen_owned
+
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
@@ -1204,7 +1206,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             worker_log_thread: Optional[threading.Thread] = None
             runtime_cutover: Optional[Path] = None
             try:
-                tailnet = subprocess.Popen(_tailnet_forward_command(args))
+                tailnet = popen_owned(_tailnet_forward_command(args))
                 if not _wait_for_private_transport(
                     args,
                     tailnet,
