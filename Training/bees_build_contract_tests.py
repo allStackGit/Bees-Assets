@@ -1108,7 +1108,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         central_start = source.index("function Start-CentralAgentIfNeeded")
         central_end = source.index("function Get-EnvironmentArgs", central_start)
         central = source[central_start:central_end]
-        self.assertIn("$args|ForEach-Object{Quote-Arg ([string]$_)}", central)
+        self.assertIn("$launchArgs|ForEach-Object{Quote-Arg ([string]$_)}", central)
 
     def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
@@ -1206,17 +1206,86 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("environment_args=@($envArgs)", invoke_start[forced_state:forced_block_end])
 
         ordinary_stage = invoke_start.index(
-            "Stage-Release $config $admin $release",
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)",
             forced_block_end,
         )
         ordinary_state = invoke_start.index(
             'Invoke-ControlPost "$($config.controlUrl)/v1/admin/state"',
             ordinary_stage,
         )
-        self.assertIn(
+        self.assertNotIn(
             "environment_args=@($envArgs)",
             invoke_start[ordinary_state:invoke_start.index("}", ordinary_state) + 1],
         )
+        self.assertIn(
+            "Wait-ReleaseRollout $config $admin",
+            invoke_start[ordinary_stage:],
+        )
+
+    def test_environment_args_are_validated_before_any_run_or_control_mutation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        validator_start = source.index("function Assert-RlEnvironmentArgsValid")
+        validator_end = source.index("function Escape-SingleQuoted", validator_start)
+        validator = source[validator_start:validator_end]
+        self.assertIn("'--rl-validate-options-only'", validator)
+        self.assertIn("$process.WaitForExit(60000)", validator)
+        self.assertIn("Invalid RL environment arguments", validator)
+        self.assertIn("Install-AtomicFile $temp $stamp", validator)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        first_validation = invoke_start.index(
+            "Assert-RlEnvironmentArgsValid $release @($envArgs)"
+        )
+        new_plan = invoke_start.index("New-TrainingRunPlan $python -ForceNew")
+        stage = invoke_start.index(
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)"
+        )
+        self.assertLess(first_validation, new_plan)
+        self.assertLess(first_validation, stage)
+        self.assertNotIn(
+            "environment_args=@($envArgs)",
+            invoke_start[stage:],
+        )
+
+    def test_gateway_and_central_launch_intent_is_durable_before_process_creation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        gateway_start = source.index("function Start-TailnetGatewayIfNeeded")
+        gateway_end = source.index("function Invoke-Checked", gateway_start)
+        gateway = source[gateway_start:gateway_end]
+        gateway_intent = gateway.index("Write-AtomicJsonFile $TailnetGatewayStatePath $launchIntent")
+        gateway_launch = gateway.index("$p=Start-Process @startArgs")
+        gateway_finalize = gateway.index(
+            "Write-AtomicJsonFile $TailnetGatewayStatePath $activeGatewayState"
+        )
+        self.assertLess(gateway_intent, gateway_launch)
+        self.assertLess(gateway_launch, gateway_finalize)
+        self.assertIn("Find-ManagedProcessByOwnerToken $bridge", gateway)
+        self.assertIn("'--owner-token',$gatewayOwnerToken", gateway)
+
+        central_start = source.index("function Start-CentralAgentIfNeeded")
+        central_end = source.index("function Get-EnvironmentArgs", central_start)
+        central = source[central_start:central_end]
+        central_intent = central.index("Write-AtomicJsonFile $CentralAgentStatePath $launchIntent")
+        central_launch = central.index("$p=Start-Process", central_intent)
+        central_finalize = central.index(
+            "Write-AtomicJsonFile $CentralAgentStatePath $activeCentralState"
+        )
+        self.assertLess(central_intent, central_launch)
+        self.assertLess(central_launch, central_finalize)
+        self.assertIn("Find-ManagedProcessByOwnerToken $BootstrapPython", central)
+        self.assertIn("'--owner-token',$centralOwnerToken", central)
+
+        identity_start = source.index("function Ensure-TailnetIdentity")
+        identity_end = source.index("function Start-TailnetGatewayIfNeeded", identity_start)
+        identity = source[identity_start:identity_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $bridge", identity)
+
+        running_start = source.index("function Get-RunningCentralAgentPid")
+        running_end = source.index("function Assert-CentralAgentCheckpointSafe", running_start)
+        running = source[running_start:running_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $supervisorPython", running)
 
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
