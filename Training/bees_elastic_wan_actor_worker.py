@@ -31,6 +31,25 @@ import bees_wan_actor_worker as worker
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 
 
+MAX_RECONNECT_BACKOFF_SECONDS = 30.0
+HEALTHY_SESSION_RESET_SECONDS = 60.0
+
+
+class _ReconnectBackoff:
+    def __init__(self, base_seconds: float, max_seconds: float = MAX_RECONNECT_BACKOFF_SECONDS):
+        self.base_seconds = max(0.1, float(base_seconds))
+        self.max_seconds = max(self.base_seconds, float(max_seconds))
+        self._next_seconds = self.base_seconds
+
+    def reset(self) -> None:
+        self._next_seconds = self.base_seconds
+
+    def next_delay(self) -> float:
+        delay = self._next_seconds
+        self._next_seconds = min(self.max_seconds, max(self.base_seconds, delay * 2.0))
+        return delay
+
+
 class _SessionFailureTelemetry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -401,6 +420,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         failure_telemetry = _SessionFailureTelemetry()
+        reconnect_backoff = _ReconnectBackoff(args.reconnect_seconds)
         client = ElasticBrokerClient(
             args.broker_host,
             args.broker_port,
@@ -414,6 +434,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         while not stop.is_set():
             actor_session = None
+            session_started_monotonic: Optional[float] = None
             try:
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
                 session_id = raw_session.get("session_id")
@@ -443,18 +464,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
+                    session_started_monotonic = time.monotonic()
                     actor_session.run()
                 finally:
                     actor_session.close()
             except worker.BrokerSessionChanged:
+                reconnect_backoff.reset()
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
             except worker.BrokerUnavailable as exc:
-                print(f"[Bees WAN actor] central trainer unavailable: {exc}")
-                stop.wait(args.reconnect_seconds)
+                delay = reconnect_backoff.next_delay()
+                print(
+                    f"[Bees WAN actor] central trainer unavailable: {exc}; "
+                    f"retrying in {delay:.1f}s."
+                )
+                stop.wait(delay)
             except KeyboardInterrupt:
                 stop.set()
             except Exception as exc:
+                if (
+                    session_started_monotonic is not None
+                    and time.monotonic() - session_started_monotonic
+                    >= HEALTHY_SESSION_RESET_SECONDS
+                ):
+                    reconnect_backoff.reset()
                 failure_telemetry.record(exc)
                 if actor_session is not None:
                     try:
@@ -462,7 +495,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     except Exception:
                         pass
                 _report_session_failure(exc, actor_session)
-                stop.wait(args.reconnect_seconds)
+                stop.wait(reconnect_backoff.next_delay())
         return 0
     finally:
         stop.set()
