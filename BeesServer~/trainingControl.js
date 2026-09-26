@@ -1226,7 +1226,7 @@ class TrainingControlStore {
             build_id: buildId,
             archive_path: destination,
             archive_sha256: archiveSha256,
-            archive_size_bytes: stats.size,
+            archive_size_bytes: fs.statSync(destination).size,
             entrypoint,
         };
         const catalog = this._catalogForRole(role);
