@@ -2920,6 +2920,10 @@ function Invoke-Start {
     $resumeForcedNewRun=($null -ne $forcedPlan)
     $outgoingRun=$null
 
+    if(-not $resumeForcedNewRun){
+        Assert-RlEnvironmentArgsValid $release @($envArgs)
+    }
+
     if($resumeForcedNewRun){
         $planBuild=([string](Get-ObjectPropertyValue $forcedPlan 'build_id')).Trim()
         $planRun=([string]$forcedPlan.run_id).Trim()
@@ -2949,6 +2953,7 @@ function Invoke-Start {
         } else {
             $envArgs=@(@($persistedEnvironmentArgs) | ForEach-Object {[string]$_})
         }
+        Assert-RlEnvironmentArgsValid $release @($envArgs)
 
         if($releaseRun -eq $planRun -and $releaseKey -eq $planKey){
             Write-Host "Resuming interrupted forced new-run operation: target=$planRun build=$planBuild."
@@ -3016,10 +3021,31 @@ function Invoke-Start {
             training_enabled=$true
         }
     } else {
-        $staged=Stage-Release $config $admin $release
+        $preEnvironmentStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+        $preEnvironmentPending=$preEnvironmentStatus.desired.pending_release
+        if($preEnvironmentPending){
+            $pendingBuild=([string]$preEnvironmentPending.build_id).Trim()
+            $pendingRun=([string]$preEnvironmentPending.run_id).Trim()
+            $pendingKey=([string]$preEnvironmentPending.compatibility_key).Trim().ToLowerInvariant()
+            if(
+                -not [bool]$preEnvironmentPending.incompatible -and
+                $pendingBuild -eq ([string]$release.build_id).Trim() -and
+                $pendingRun -eq ([string]$release.run_id).Trim() -and
+                $pendingKey -eq ([string]$release.compatibility_key).Trim().ToLowerInvariant()
+            ){
+                Write-Host "Finishing the existing compatible release rollout before applying environment arguments."
+                $null=Wait-ReleaseRollout $config $admin $pendingBuild $pendingRun $pendingKey
+            } else {
+                throw "Cannot change environment arguments while a different/incompatible release rollout is pending."
+            }
+        }
+
+        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$true
-            environment_args=@($envArgs)
+        }
+        if($staged.pending_release){
+            $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
         }
     }
 
