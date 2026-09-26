@@ -464,6 +464,26 @@ class BrokerInvariantTests(unittest.TestCase):
         with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
             self.broker.submit_trajectory_batch(payload)
 
+    def test_stale_generation_takes_precedence_at_final_queue_admission(self):
+        payload = self._payload(0, "agent_2-12")
+        payload["batch_id"] = "validation-straddled-reset"
+        broker = self.broker
+        original_specs = broker.merged_behavior_specs
+
+        def reset_during_validation():
+            broker.merged_behavior_specs = original_specs
+            broker.request_reset({"difficulty": 3})
+            with broker._condition:
+                # Model a duplicate result becoming visible after this request began validating.
+                broker._remember_accepted_batch_locked(
+                    payload["actor_id"], payload["batch_id"], len(payload["trajectories"])
+                )
+            return original_specs()
+
+        broker.merged_behavior_specs = reset_during_validation
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            broker.submit_trajectory_batch(payload)
+
     def test_behavior_spec_mismatch_between_actors_fails_closed(self):
         different = FakeBehaviorSpec()
         different.observation_specs = (FakeObservationSpec((5,)),)
