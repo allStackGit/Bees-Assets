@@ -107,28 +107,31 @@ async function requestCentralDiagnosticModelSnapshot(status, targetRunId, output
     }
 }
 
-function waitForExit(child, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            killProcessTree(child);
-            resolve({ timeout: true, code: null });
-        }, timeoutMs);
-        child.once('error', error => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            reject(error);
-        });
-        child.once('exit', code => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve({ timeout: false, code });
-        });
+async function waitForExit(child, timeoutMs) {
+    let spawnError = null;
+    child.once('error', error => {
+        spawnError = error;
     });
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (spawnError) throw spawnError;
+        if (child.exitCode !== null || child.signalCode !== null) {
+            return { timeout: false, code: child.exitCode };
+        }
+        await sleep(100);
+    }
+
+    // taskkill/process.kill can return before inherited file handles have fully closed. Wait for
+    // process termination before diagnostic cleanup so a best-effort timeout cannot make bundle
+    // collection fail with a transient sharing violation.
+    killProcessTree(child);
+    const killDeadline = Date.now() + 5000;
+    while (Date.now() < killDeadline) {
+        if (child.exitCode !== null || child.signalCode !== null) break;
+        await sleep(100);
+    }
+    return { timeout: true, code: child.exitCode };
 }
 
 async function invokeCentralDiagnosticBenchmark(targetRunId, snapshotJson, outputJson) {
