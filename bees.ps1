@@ -810,27 +810,6 @@ function Get-NamedFileSetSha256([object[]]$Entries){
     Get-StringSha256 ($ordered|ConvertTo-Json -Compress -Depth 3)
 }
 
-function Get-DirectoryContentSha256([string]$Root,[string[]]$ExcludeDirectoryNames=@()){
-    if(-not(Test-Path -LiteralPath $Root -PathType Container)){ throw "Content-hash root is missing: $Root" }
-    $resolved=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Root).Path).TrimEnd([char[]]"\/")
-    $pending=New-Object 'Collections.Generic.Stack[string]'
-    $pending.Push($resolved)
-    $entries=@()
-    while($pending.Count -gt 0){
-        $current=$pending.Pop()
-        foreach($item in @(Get-ChildItem -LiteralPath $current -Force)){
-            if($item.PSIsContainer){
-                if($ExcludeDirectoryNames -notcontains $item.Name){ $pending.Push($item.FullName) }
-                continue
-            }
-            $relative=$item.FullName.Substring($resolved.Length).TrimStart([char[]]"\/").Replace('\','/')
-            $entries += [pscustomobject]@{name=$relative;path=$item.FullName}
-        }
-    }
-    Get-NamedFileSetSha256 $entries
-}
-
-
 function Get-WorkingTreeContentSha256([string]$RelativePath){
     $git=Resolve-Git
     Push-Location $AssetsRoot
@@ -863,19 +842,6 @@ function Get-WorkingTreeContentSha256([string]$RelativePath){
     }
     if($manifest.Count -eq 0){ throw "Working-tree content set is empty: $RelativePath" }
     Get-StringSha256 (@($manifest|Sort-Object name)|ConvertTo-Json -Compress -Depth 3)
-}
-
-function Get-TrainingRuntimeSourceHash {
-    $sourceRoot=Join-Path $AssetsRoot 'Training'
-    $entries=@(
-        Get-ChildItem -LiteralPath $sourceRoot -Filter '*.py' -File |
-            ForEach-Object { [pscustomobject]@{name=$_.Name;path=$_.FullName} }
-    )
-    $entries += [pscustomobject]@{
-        name='bees_remote_requirements.txt'
-        path=$RemoteRequirementsPath
-    }
-    Get-NamedFileSetSha256 $entries
 }
 
 function Get-BeesServerDependencyHash {
