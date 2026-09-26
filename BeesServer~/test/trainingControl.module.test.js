@@ -1153,6 +1153,206 @@ test('disabling training never bypasses an incompatible stopping barrier', () =>
     });
 });
 
+test('incompatible release promotes environment args atomically with run identity across restart', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = { statePath, artifactRoot, leaseSeconds: 20 };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'atomic-env-old');
+        publishDedicatedBuild(store, root, 'atomic-env-new');
+
+        store.stageRelease({
+            buildId: 'atomic-env-old',
+            runId: 'atomic-env-old-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({
+            training_enabled: true,
+            environment_args: ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'atomic-env-old', oldSha);
+        }
+
+        const targetArgs = [
+            '--rl-map-size-min=48',
+            '--rl-map-size-max=64',
+            '--rl-health-ratio=.05',
+        ];
+        store.stageRelease({
+            buildId: 'atomic-env-new',
+            runId: 'atomic-env-new-run',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: true,
+            environmentArgs: targetArgs,
+        });
+
+        assert.deepEqual(
+            store.state.pending_release.environment_args,
+            targetArgs,
+        );
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+        let central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(central.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            central.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'atomic-env-old',
+                oldSha,
+                { preparedBuildId: 'atomic-env-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        // The pending target survives a control-server restart without becoming current early.
+        store = new TrainingControlStore(options);
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.deepEqual(store.state.pending_release.environment_args, targetArgs);
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'atomic-env-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'atomic-env-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'atomic-env-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'atomic-env-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'atomic-env-new');
+        assert.equal(store.state.run_id, 'atomic-env-new-run');
+        assert.equal(store.state.compatibility_key, 'b'.repeat(64));
+        assert.deepEqual(store.state.environment_args, targetArgs);
+
+        central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(central.run_id, 'atomic-env-new-run');
+        assert.deepEqual(central.environment_args, targetArgs);
+    });
+});
+
+test('release retry rejects environment args drift for pending or canonical identity', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'env-drift-old');
+        publishDedicatedBuild(store, root, 'env-drift-new');
+
+        store.stageRelease({
+            buildId: 'env-drift-old',
+            runId: 'env-drift-old-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({
+            training_enabled: true,
+            environment_args: ['--rl-map-size=32'],
+        });
+        heartbeatDedicated(store, 'central-learner', 'env-drift-old', oldSha);
+
+        const target = {
+            buildId: 'env-drift-new',
+            runId: 'env-drift-new-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: true,
+            environmentArgs: ['--rl-map-size=48'],
+        };
+        store.stageRelease(target);
+
+        assert.throws(
+            () => store.stageRelease({
+                ...target,
+                environmentArgs: ['--rl-map-size=64'],
+            }),
+            error => error.statusCode === 409 &&
+                /pending release environment_args differ/.test(error.message),
+        );
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-drift-old',
+            oldSha,
+            { preparedBuildId: 'env-drift-new' },
+        );
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-drift-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'env-drift-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+
+        assert.throws(
+            () => store.stageRelease({
+                ...target,
+                environmentArgs: ['--rl-map-size=64'],
+            }),
+            error => error.statusCode === 409 &&
+                /canonical release environment_args differ/.test(error.message),
+        );
+        assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+    });
+});
+
 test('compatible preparing drops a persistently failing remote after grace', () => {
     withTempDir(root => {
         let now = 1000;
