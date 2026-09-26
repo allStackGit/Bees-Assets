@@ -194,7 +194,7 @@ Manual-only protection is acceptable only when the record explains why determini
 ### REG-020 — Turrets retained departed asteroid targets
 **Area:** `Scripts/Entities/Ships/Ship.Movement.cs`, `Scripts/Entities/Ships/Weapons/Turret.Targeting.cs`, asteroid lifecycle  
 **Symptom:** a turret could continue aiming and firing at an asteroid after the owning ship removed it from its nearby-asteroid set.  
-**Root cause:** `LeftNearbyAsteroid` removed the asteroid only from `Ship.NearbyAsteroids`; each turret cached its own reference and the firing guard checked object liveness/map entry without checking that the target remained nearby.  
-**Permanent protection:** `MovementStaleStateTests.LeavingAsteroidClearsCachedTurretTarget` protects the detach path clearing the matching target and target flags.  
+**Root cause:** the ship removed an asteroid from `NearbyAsteroids` without clearing each turret's cached reference. Both `LeftNearbyAsteroid` and the periodic dead/null-entry pruning path could leave the cache intact; the firing guard checks object liveness/map entry but does not verify that the target remains nearby.  
+**Permanent protection:** `MovementStaleStateTests.LeavingAsteroidClearsCachedTurretTarget` protects both detach and stale-entry pruning paths clearing the matching target and target flags.  
 **Verification:** the removal, cache invalidation, and firing guard were reviewed statically. The regression test was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** removing an asteroid from a ship's nearby set must also invalidate any turret target reference to that asteroid.
