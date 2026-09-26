@@ -318,6 +318,32 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("$cap.current_envs", block)
         self.assertNotIn("$opt.measured_sps", block)
 
+    def test_idempotent_start_keeps_healthy_tailnet_gateway_running(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Start-TailnetGatewayIfNeeded")
+        end = source.index("function Invoke-Checked", start)
+        block = source[start:end]
+
+        self.assertIn("$gatewayConfigHash=Get-StringSha256", block)
+        self.assertIn(
+            "$recordedConfigHash -eq $gatewayConfigHash",
+            block,
+        )
+        self.assertIn("Embedded tailnet gateway already healthy", block)
+        self.assertIn("return", block)
+        self.assertIn("config_hash=$gatewayConfigHash", block)
+        self.assertIn(
+            "The gateway reads runtime/release/worker/WAN payload files "
+            "for every bootstrap request",
+            block,
+        )
+        keep = block.index("$recordedConfigHash -eq $gatewayConfigHash")
+        stop = block.index(
+            "Stop-ManagedProcessTree $gatewayState $bridge "
+            "'embedded tailnet gateway'"
+        )
+        self.assertLess(keep, stop)
+
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
