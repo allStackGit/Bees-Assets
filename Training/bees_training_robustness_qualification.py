@@ -50,6 +50,7 @@ class Check:
     required: bool = True
     result_xml: Path | None = None
     required_test_substring: str | None = None
+    diagnostic_log: Path | None = None
 
 
 def _resolve_go(bees_root: Path) -> str | None:
@@ -191,6 +192,7 @@ def build_checks(
                 cwd=bees_root,
                 result_xml=unity_results,
                 required_test_substring=UNITY_REQUIRED_TEST,
+                diagnostic_log=unity_log,
             )
         )
 
@@ -200,7 +202,7 @@ def build_checks(
             checks.append(
                 Check(
                     name="go:tailnet-bridge",
-                    command=(go, "test", "./..."),
+                    command=(go, "test", "-mod=mod", "./..."),
                     cwd=bridge_root,
                 )
             )
@@ -261,6 +263,23 @@ def _validate_unity_results(
     return True, ""
 
 
+def _log_tail(path: Path, maximum_lines: int = 80, maximum_bytes: int = 256 * 1024) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            handle.seek(max(0, size - maximum_bytes))
+            data = handle.read()
+    except OSError:
+        return ""
+    text = data.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if size > maximum_bytes and lines:
+        lines = lines[1:]
+    return "\n".join(lines[-maximum_lines:])
+
+
 def _run_check(check: Check) -> tuple[bool, float]:
     if not check.command:
         if check.required:
@@ -273,6 +292,12 @@ def _run_check(check: Check) -> tuple[bool, float]:
         check.result_xml.parent.mkdir(parents=True, exist_ok=True)
         try:
             check.result_xml.unlink()
+        except FileNotFoundError:
+            pass
+    if check.diagnostic_log is not None:
+        check.diagnostic_log.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            check.diagnostic_log.unlink()
         except FileNotFoundError:
             pass
 
@@ -299,6 +324,13 @@ def _run_check(check: Check) -> tuple[bool, float]:
         f"[FAIL] {check.name}: exit={completed.returncode} ({elapsed:.1f}s)",
         flush=True,
     )
+    if check.diagnostic_log is not None:
+        tail = _log_tail(check.diagnostic_log)
+        if tail:
+            print(
+                f"[LOG ] {check.name}: tail of {check.diagnostic_log}:\n{tail}",
+                flush=True,
+            )
     return False, elapsed
 
 
