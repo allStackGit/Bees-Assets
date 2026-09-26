@@ -15,6 +15,7 @@ import math
 import os
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -52,6 +53,30 @@ ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
+
+
+MAX_RETAINED_RUN_LOG_DIRS = 3
+
+
+def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
+    if not root.is_dir():
+        return
+    current = str(current_run_id or "").strip()
+    candidates = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name == current:
+            continue
+        try:
+            candidates.append((child.stat().st_mtime_ns, child))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    for _, path in candidates[MAX_RETAINED_RUN_LOG_DIRS - 1:]:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def environment_args_identity(environment_args: Sequence[str]) -> str:
@@ -698,8 +723,10 @@ class ManagedProcess:
         environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
-        log_dir = state_file.parent / "logs" / run_id
+        logs_root = state_file.parent / "logs"
+        log_dir = logs_root / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
+        _prune_run_log_directories(logs_root, str(run_id))
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
         environment["BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"] = str(
             state_file.parent / "model-snapshot.request"
