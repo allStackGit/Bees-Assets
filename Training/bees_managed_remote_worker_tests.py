@@ -554,5 +554,28 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             )
 
 
+    def test_version_directory_retention_preserves_active_and_newest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "versions"
+            root.mkdir(parents=True)
+            versions = []
+            for index in range(5):
+                version = root / f"v{index}"
+                version.mkdir()
+                (version / "marker").write_text(str(index), encoding="utf-8")
+                versions.append(version)
+
+            managed._prune_version_directories(
+                root,
+                preserve_paths=[versions[0] / "marker", versions[-1] / "marker"],
+                retain=2,
+            )
+
+            remaining = {path.name for path in root.iterdir() if path.is_dir()}
+            self.assertIn("v0", remaining)
+            self.assertIn("v4", remaining)
+            self.assertLessEqual(len(remaining), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
