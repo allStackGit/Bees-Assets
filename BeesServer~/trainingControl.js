@@ -141,6 +141,13 @@ class TrainingControlStore {
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
         }
+        this.compatibleFailureGraceSeconds = Number(
+            options.compatibleFailureGraceSeconds ??
+            Math.max(60, this.leaseSeconds * 2));
+        if (!Number.isFinite(this.compatibleFailureGraceSeconds) ||
+            this.compatibleFailureGraceSeconds <= 0) {
+            throw new Error('training-control compatibleFailureGraceSeconds must be positive');
+        }
         this.now = typeof options.now === 'function' ? options.now : () => Date.now();
         this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
@@ -250,6 +257,9 @@ class TrainingControlStore {
                     !/^[A-Za-z0-9._-]+$/.test(trainer.trainer_id) ||
                     typeof trainer.platform !== 'string' ||
                     !/^[A-Za-z0-9._-]+$/.test(trainer.platform) ||
+                    (Object.prototype.hasOwnProperty.call(trainer, 'failure_since_ms') &&
+                        (!Number.isFinite(trainer.failure_since_ms) ||
+                            trainer.failure_since_ms < 0)) ||
                     trainerIds.has(trainer.trainer_id)) {
                     throw new Error('training-control pending release trainer barrier is invalid');
                 }
@@ -501,7 +511,12 @@ class TrainingControlStore {
 
     _pruneExpiredCompatibleBarrierTrainers(pending) {
         if (!pending || pending.incompatible) return false;
-        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const now = this.now();
+        const cutoff = now - this.leaseSeconds * 1000;
+        const failureGraceMs = this.compatibleFailureGraceSeconds * 1000;
+        const rollingTargetId = pending.phase === 'rolling'
+            ? this._rollingTargetId()
+            : null;
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -520,6 +535,36 @@ class TrainingControlStore {
             if (lastSeen !== null && lastSeen < cutoff) {
                 changed = true;
                 continue;
+            }
+
+            // The central learner owns the optimizer/checkpoint lineage and is never bypassed.
+            // A remote, however, must reduce cluster capacity instead of wedging every healthy
+            // trainer forever when it stays online but persistently cannot prepare/start a
+            // semantically compatible release.
+            let releaseFailure = false;
+            if (spec.trainer_id !== 'central-learner' && current) {
+                if (pending.phase === 'preparing') {
+                    const ready = current.build_id === pending.build_id ||
+                        current.prepared_build_id === pending.build_id;
+                    releaseFailure = !ready && Boolean(current.preparation_error);
+                } else if (pending.phase === 'rolling' &&
+                    rollingTargetId === spec.trainer_id &&
+                    !this._trainerHealthyOnPending(spec, pending)) {
+                    releaseFailure = Boolean(current.last_error);
+                }
+            }
+
+            if (releaseFailure) {
+                if (!Number.isFinite(spec.failure_since_ms)) {
+                    spec.failure_since_ms = now;
+                    changed = true;
+                } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    changed = true;
+                    continue;
+                }
+            } else if (Object.prototype.hasOwnProperty.call(spec, 'failure_since_ms')) {
+                delete spec.failure_since_ms;
+                changed = true;
             }
             kept.push(spec);
         }
@@ -583,6 +628,9 @@ class TrainingControlStore {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
+            for (const spec of pending.required_trainers) {
+                delete spec.failure_since_ms;
+            }
             this.state.revision++;
             pending.phase_revision = this.state.revision;
             this._persist();
@@ -837,6 +885,7 @@ class TrainingControlStore {
             compatibility_key: this.state.compatibility_key,
             pending_release: pending,
             lease_seconds: this.leaseSeconds,
+            compatible_failure_grace_seconds: this.compatibleFailureGraceSeconds,
             builds,
         };
     }
@@ -903,6 +952,7 @@ class TrainingControlStore {
                 }
                 : null,
             lease_seconds: this.leaseSeconds,
+            compatible_failure_grace_seconds: this.compatibleFailureGraceSeconds,
             build: publicBuildDescriptor(buildRecord),
             prepare_build: publicBuildDescriptor(prepareRecord),
         };
@@ -927,6 +977,9 @@ class TrainingControlStore {
             build_sha256: typeof payload.build_sha256 === 'string' ? payload.build_sha256.slice(0, 64) : '',
             prepared_build_id: typeof payload.prepared_build_id === 'string'
                 ? payload.prepared_build_id.slice(0, 128)
+                : '',
+            preparation_error: typeof payload.preparation_error === 'string'
+                ? payload.preparation_error.slice(0, 2048)
                 : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
