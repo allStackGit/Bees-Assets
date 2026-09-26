@@ -1021,6 +1021,7 @@ test('compatible rollout converges across worker loss, server restart, and worke
             },
         );
         assert.equal(store._rollingTargetId(), 'central-learner');
+        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
 
         // BeesServer dies/restarts after one remote has rolled. Persisted state must not promote
         // the release until the surviving trainers re-register healthy.
@@ -1028,6 +1029,8 @@ test('compatible rollout converges across worker loss, server restart, and worke
         store = new TrainingControlStore(options);
         assert.equal(store.state.canonical_build_id, 'resilience-old');
         assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
+        assert.equal(store._rollingTargetId(), 'central-learner');
 
         heartbeatDedicated(
             store,
