@@ -9,6 +9,7 @@ unavailable. When control returns, the worker reconciles build/config state and 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -47,9 +48,19 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
+ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
+
+
+def environment_args_identity(environment_args: Sequence[str]) -> str:
+    payload = json.dumps(
+        [str(value) for value in environment_args],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -665,6 +676,7 @@ class ManagedProcess:
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         environment[BUILD_ID_ENV] = build_id
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
+        environment[ENVIRONMENT_ID_ENV] = environment_args_identity(environment_args)
         environment["PYTHONUNBUFFERED"] = "1"
         health_file = state_file.parent / "child-health.json"
         health_token = ""
@@ -944,6 +956,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
+    parser.add_argument(
+        "--owner-token",
+        default="",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--worker-envs", type=int, default=None)
     parser.add_argument("--worker-envs-min", type=int, default=1)
     parser.add_argument("--worker-envs-max", type=int, default=64)
