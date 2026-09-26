@@ -220,11 +220,19 @@ namespace Assets.Scripts.Levels
 
             public override bool Equals(object obj)
             {
-                return this == ((MapNode)obj);
+                return obj is MapNode other && this == other;
             }
 
             public static bool operator ==(MapNode a, MapNode b)
             {
+                if (ReferenceEquals(a, b))
+                {
+                    return true;
+                }
+                if (ReferenceEquals(a, null) || ReferenceEquals(b, null))
+                {
+                    return false;
+                }
                 return a.Id == b.Id;
             }
 
