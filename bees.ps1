@@ -1571,6 +1571,8 @@ function Reconcile-LatestReleaseBeforeBuild(
     Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
 
     $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+    $currentEnvironmentArgs=@($status.desired.environment_args | ForEach-Object {[string]$_})
+    Assert-RlEnvironmentArgsValid $Release @($currentEnvironmentArgs)
     $pending=$status.desired.pending_release
     $releaseBuild=([string]$Release.build_id).Trim()
     $releaseRun=([string]$Release.run_id).Trim()
@@ -1773,6 +1775,11 @@ function Invoke-Build {
             if(-not(Test-Control ([string]$config.controlUrl) $admin)){
                 throw 'Managed BeesServer reconciliation completed without a reachable training-control endpoint.'
             }
+            $preStageStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+            $preStageEnvironmentArgs=@(
+                $preStageStatus.desired.environment_args | ForEach-Object {[string]$_}
+            )
+            Assert-RlEnvironmentArgsValid $release @($preStageEnvironmentArgs)
             Assert-CentralAgentCheckpointSafe
             $centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release
             Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime
