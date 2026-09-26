@@ -1567,12 +1567,12 @@ function Reconcile-LatestReleaseBeforeBuild(
     $Release
 ){
     Ensure-RunLifecycleMatchesRelease $Python $Release
-    $centralRuntime=Prepare-CentralReleaseRuntime $Config $Python $Unity $Release
-    Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
-
     $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
     $currentEnvironmentArgs=@($status.desired.environment_args | ForEach-Object {[string]$_})
     Assert-RlEnvironmentArgsValid $Release @($currentEnvironmentArgs)
+
+    $centralRuntime=Prepare-CentralReleaseRuntime $Config $Python $Unity $Release
+    Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
     $pending=$status.desired.pending_release
     $releaseBuild=([string]$Release.build_id).Trim()
     $releaseRun=([string]$Release.run_id).Trim()
