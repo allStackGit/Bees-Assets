@@ -123,6 +123,29 @@ test('worker token cannot invoke admin endpoints and admin token can inspect sta
     });
 });
 
+test('artifact retention prunes old unreferenced build archives', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const store = new TrainingControlStore({
+            statePath,
+            artifactRoot,
+            artifactRetentionBuilds: 2,
+        });
+
+        for (let index = 0; index < 4; index++) {
+            publishDedicatedBuild(store, root, 'build-' + index);
+        }
+
+        assert.equal(store.artifact('dedicated', 'WindowsPlayer', 'build-0'), null);
+        assert.equal(store.artifact('dedicated', 'WindowsPlayer', 'build-1'), null);
+        assert.ok(store.artifact('dedicated', 'WindowsPlayer', 'build-2'));
+        assert.ok(store.artifact('dedicated', 'WindowsPlayer', 'build-3'));
+        const archived = fs.readdirSync(path.join(artifactRoot, 'dedicated', 'WindowsPlayer'));
+        assert.equal(archived.length, 2);
+    });
+});
+
 test('desired state is persisted and maps stop to inference for full games only', () => {
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
