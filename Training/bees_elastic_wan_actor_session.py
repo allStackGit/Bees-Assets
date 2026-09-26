@@ -43,7 +43,9 @@ class ElasticActorSession(worker.ActorSession):
         ):
             raise RuntimeError("Elastic WAN session has an invalid actor lease duration")
 
-        interval = max(0.25, float(lease_seconds) / 3.0)
+        interval = min(5.0, max(0.05, float(lease_seconds) / 3.0))
+        if interval >= float(lease_seconds):
+            raise RuntimeError("Elastic WAN actor lease is too short to renew safely")
         self._claim_keeper_stop.clear()
         self._claim_keeper = threading.Thread(
             target=self._maintain_claim,
