@@ -147,6 +147,10 @@ test('environment argument identity is ordered and stable across trainer/server 
     const first = ['--rl-map-size=32', '--rl-health-ratio=.25'];
     const reordered = ['--rl-health-ratio=.25', '--rl-map-size=32'];
     assert.equal(environmentArgsIdentity(first).length, 64);
+    assert.equal(
+        environmentArgsIdentity(first),
+        'f1e00a70d7208ecbd776146fc91a62f78bfc24101a63b7b7eb672f73b1b91334',
+    );
     assert.equal(environmentArgsIdentity(first), environmentArgsIdentity([...first]));
     assert.notEqual(environmentArgsIdentity(first), environmentArgsIdentity(reordered));
 });
