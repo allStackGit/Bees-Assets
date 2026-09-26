@@ -716,6 +716,7 @@ public class CutsceneManager : MonoBehaviour
         _dialoguePresentationSuppressed = suppressed;
         if (suppressed)
         {
+            _dialogueSectionActive = false;
             HideDialogue();
         }
     }
