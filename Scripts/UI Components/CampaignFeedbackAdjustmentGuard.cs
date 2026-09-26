@@ -36,6 +36,9 @@ namespace Assets.Scripts.UIComponents
         private bool _dialogueManagerEnabledBeforeGate;
         private bool _dialogueBoxActiveBeforeGate;
         private bool _plutoThreeTimerAdjusted;
+        private Level _trackedLevel;
+        private int _trackedMissionId = -1;
+        private float _trackedLevelStartTime = float.NaN;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -77,6 +80,7 @@ namespace Assets.Scripts.UIComponents
             int missionId = ConfigData.UserProgressData.GetCurrentLevel(
                 ConfigData.Configuration.UserSide,
                 ConfigData.GameModes.Campaign);
+            TrackMissionInstance(missionId);
 
             switch (missionId)
             {
@@ -421,14 +425,39 @@ namespace Assets.Scripts.UIComponents
                 source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private void ResetStageState()
+        private void TrackMissionInstance(int missionId)
+        {
+            Level level = _stage.PrimaryLevel;
+            float levelStartTime = level.StartTime;
+            if (_trackedLevel == level &&
+                _trackedMissionId == missionId &&
+                Mathf.Approximately(_trackedLevelStartTime, levelStartTime))
+            {
+                return;
+            }
+
+            ResetMissionPresentationState();
+            _trackedLevel = level;
+            _trackedMissionId = missionId;
+            _trackedLevelStartTime = levelStartTime;
+        }
+
+        private void ResetMissionPresentationState()
         {
             RestorePlutoTwoDialogue();
             DestroySquadNumberArrow();
-            _stage = null;
             _plutoTwoTutorialSeen = false;
             _plutoTwoTutorialComplete = false;
             _plutoThreeTimerAdjusted = false;
+        }
+
+        private void ResetStageState()
+        {
+            ResetMissionPresentationState();
+            _stage = null;
+            _trackedLevel = null;
+            _trackedMissionId = -1;
+            _trackedLevelStartTime = float.NaN;
         }
     }
 }
