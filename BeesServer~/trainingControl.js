@@ -1456,10 +1456,9 @@ class TrainingControlStore {
         if (!Buffer.isBuffer(data) || data.length > 1024 * 1024) {
             throw Object.assign(new Error('log chunk must be at most 1 MiB'), { statusCode: 413 });
         }
-        const root = path.join(this.logRoot, runId, trainerId);
-        fs.mkdirSync(root, { recursive: true });
-        let parent = root;
-        const pathParts = relativePath.split('/');
+        fs.mkdirSync(this.logRoot, { recursive: true });
+        let parent = this.logRoot;
+        const pathParts = [runId, trainerId, ...relativePath.split('/')];
         for (const part of pathParts.slice(0, -1)) {
             parent = path.join(parent, part);
             try {
