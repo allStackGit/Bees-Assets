@@ -312,6 +312,35 @@ function runChecked(executable, args = [], cwd = paths.assetsRoot, env = process
     return result;
 }
 
+function waitForSpawn(child, label, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(label + ' did not report a successful spawn within ' + timeoutMs + ' ms.'));
+        }, timeoutMs);
+
+        child.once('spawn', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(child);
+        });
+        child.once('error', error => {
+            if (settled) {
+                // Keep a post-spawn error from becoming an unhandled EventEmitter error while
+                // still leaving the process lifecycle visible in the operator logs.
+                console.error(label + ' process error: ' + error.message);
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            reject(new Error(label + ' failed to spawn: ' + error.message));
+        });
+    });
+}
+
 function testPythonCode(python, code) {
     const result = runSync(python, ['-c', code], { check: false, stdio: 'ignore' });
     return result.status === 0;
@@ -602,6 +631,7 @@ module.exports = {
     testControl,
     testManagedProcessIdentity,
     testPythonCode,
+    waitForSpawn,
     writeJsonAtomic,
     writeTextAtomic,
 };
