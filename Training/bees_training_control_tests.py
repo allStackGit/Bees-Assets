@@ -405,6 +405,9 @@ class TrainingControlClientTests(unittest.TestCase):
                         "network_sent_bytes_total": 3 * 1024 * 1024,
                         "network_received_bytes_total": 5 * 1024 * 1024,
                         "network_mib_per_s": 1.75,
+                        "session_failures_total": 3,
+                        "seconds_since_last_session_failure": 7.5,
+                        "last_session_failure_type": "IndexError",
                     }
                 ),
                 encoding="utf-8",
@@ -419,6 +422,9 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(metrics["network_sent_bytes_total"], 3 * 1024 * 1024)
             self.assertEqual(metrics["network_received_bytes_total"], 5 * 1024 * 1024)
             self.assertEqual(metrics["network_mib_per_s"], 1.75)
+            self.assertEqual(metrics["session_failures_total"], 3)
+            self.assertEqual(metrics["seconds_since_last_session_failure"], 7.5)
+            self.assertEqual(metrics["last_session_failure_type"], "IndexError")
             self.assertEqual(
                 agent.read_throughput_metrics(path, expected_pid=999),
                 {},
