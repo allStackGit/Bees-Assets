@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
     DEVELOPMENT_DATABASE,
     parseLauncherOptions,
+    managedChildOwnerToken,
     trainingControlProbeConfig,
 } = require('../start-server');
 
@@ -88,4 +89,13 @@ test('server launcher keeps managed owner token private from legacy server args'
         logFile: null,
         serverArgs: ['test', '7146'],
     });
+});
+
+
+test('managed child owner token is deterministic and does not contain parent token', () => {
+    const parent = 'owner-secret';
+    const child = managedChildOwnerToken(parent);
+    assert.equal(child.length, 64);
+    assert.equal(child, managedChildOwnerToken(parent));
+    assert.equal(child.includes(parent), false);
 });
