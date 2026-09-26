@@ -2589,21 +2589,49 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     if($windowsArtifact.Count -ne 1){
         throw 'Latest release has no local dedicated Windows artifact for RL environment validation.'
     }
-    $artifact=$windowsArtifact[0]
-    $folder=[IO.Path]::GetFullPath([string]$artifact.folder)
-    $entrypoint=[string]$artifact.entrypoint
-    $executable=Join-Path $folder $entrypoint
-    if(-not(Test-Path -LiteralPath $executable -PathType Leaf)){
-        throw "RL environment validator executable is missing: $executable"
-    }
 
-    $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
-    $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+    $artifact=$windowsArtifact[0]
+    $entrypoint=[string]$artifact.entrypoint
     $archivePath=[IO.Path]::GetFullPath([string]$artifact.archive)
     if(-not(Test-Path -LiteralPath $archivePath -PathType Leaf)){
         throw "RL environment validation archive is missing: $archivePath"
     }
     $archiveSha=(Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
+    $artifactCacheRoot=Join-Path (Join-Path $validationRoot 'Artifacts') $archiveSha
+    $artifactReadyPath=Join-Path $artifactCacheRoot '.ready'
+    if(-not(Test-Path -LiteralPath $artifactReadyPath -PathType Leaf)){
+        Ensure-Directory (Split-Path -Parent $artifactCacheRoot)
+        $candidate="$artifactCacheRoot.candidate-$PID-$([Guid]::NewGuid().ToString('N'))"
+        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            Expand-Archive -LiteralPath $archivePath -DestinationPath $candidate -Force
+            $candidateExecutable=Join-Path $candidate $entrypoint
+            if(-not(Test-Path -LiteralPath $candidateExecutable -PathType Leaf)){
+                throw "RL environment validation archive does not contain its declared entrypoint: $entrypoint"
+            }
+            if(Test-Path -LiteralPath $artifactCacheRoot){
+                Remove-Item -LiteralPath $artifactCacheRoot -Recurse -Force
+            }
+            Move-Item -LiteralPath $candidate -Destination $artifactCacheRoot
+            [IO.File]::WriteAllText(
+                $artifactReadyPath,
+                "archive_sha256=$archiveSha" + [Environment]::NewLine,
+                (New-Object Text.UTF8Encoding($false))
+            )
+        } finally {
+            Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $executable=Join-Path $artifactCacheRoot $entrypoint
+    if(-not(Test-Path -LiteralPath $executable -PathType Leaf)){
+        throw "RL environment validator executable is missing from extracted artifact: $executable"
+    }
+
+    $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
+    $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
     $encodedArgs=@(
         @($EnvironmentArgs) | ForEach-Object {
             [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$_))
@@ -2622,7 +2650,6 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         $archiveSha + [Environment]::NewLine +
         $argsJson
     )
-    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
     if(Test-Path -LiteralPath $stamp -PathType Leaf){ return $validationProof }
 
@@ -2637,7 +2664,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     ) + @($EnvironmentArgs)
     $argumentString=($arguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
 
-    $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $folder -WindowStyle Hidden -PassThru
+    $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $artifactCacheRoot -WindowStyle Hidden -PassThru
     if(-not $process.WaitForExit(60000)){
         & taskkill /PID $process.Id /T /F *> $null
         throw "RL environment validation timed out after 60 seconds. See $log"
