@@ -17,6 +17,7 @@ test('server launcher preserves legacy server arguments', () => {
     assert.deepEqual(parseLauncherOptions(['test', '7146']), {
         background: false,
         supervisor: false,
+        managedOwnerToken: '',
         logFile: null,
         serverArgs: ['test', '7146'],
     });
@@ -26,6 +27,7 @@ test('server launcher supports detached background mode and default log file', (
     assert.deepEqual(parseLauncherOptions(['test', '7146', '--background', '--log']), {
         background: true,
         supervisor: false,
+        managedOwnerToken: '',
         logFile: path.join('logs', 'bees-server.log'),
         serverArgs: ['test', '7146'],
     });
@@ -35,6 +37,7 @@ test('server launcher accepts a custom log path without forwarding launcher flag
     assert.deepEqual(parseLauncherOptions(['--background', '--log=logs/development.log', '7146']), {
         background: true,
         supervisor: false,
+        managedOwnerToken: '',
         logFile: 'logs/development.log',
         serverArgs: ['7146'],
     });
@@ -45,6 +48,7 @@ test('server launcher consumes the private supervisor flag', () => {
     assert.deepEqual(parseLauncherOptions(['--supervisor', 'test', '7146']), {
         background: false,
         supervisor: true,
+        managedOwnerToken: '',
         logFile: null,
         serverArgs: ['test', '7146'],
     });
@@ -68,4 +72,20 @@ test('training control health probe is disabled without complete managed control
         BEES_TRAINING_CONTROL_ENABLED: '1',
         BEES_TRAINING_CONTROL_PORT: '7150',
     }), null);
+});
+
+
+test('server launcher keeps managed owner token private from legacy server args', () => {
+    assert.deepEqual(parseLauncherOptions([
+        '--background',
+        '--managed-owner-token', 'owner-secret',
+        'test',
+        '7146',
+    ]), {
+        background: true,
+        supervisor: false,
+        managedOwnerToken: 'owner-secret',
+        logFile: null,
+        serverArgs: ['test', '7146'],
+    });
 });
