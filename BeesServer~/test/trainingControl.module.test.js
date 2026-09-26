@@ -1167,10 +1167,10 @@ test('incompatible release promotes environment args atomically with run identit
             runId: 'atomic-env-old-run',
             compatibilityKey: 'a'.repeat(64),
             incompatible: false,
+            environmentArgs: ['--rl-map-size=32', '--rl-health-ratio=.25'],
         });
         store.setDesiredState({
             training_enabled: true,
-            environment_args: ['--rl-map-size=32', '--rl-health-ratio=.25'],
         });
         for (const trainerId of ['remote-a', 'central-learner']) {
             heartbeatDedicated(store, trainerId, 'atomic-env-old', oldSha);
@@ -1294,10 +1294,10 @@ test('release retry rejects environment args drift for pending or canonical iden
             runId: 'env-drift-old-run',
             compatibilityKey: 'c'.repeat(64),
             incompatible: false,
+            environmentArgs: ['--rl-map-size=32'],
         });
         store.setDesiredState({
             training_enabled: true,
-            environment_args: ['--rl-map-size=32'],
         });
         heartbeatDedicated(store, 'central-learner', 'env-drift-old', oldSha);
 
@@ -1347,9 +1347,95 @@ test('release retry rejects environment args drift for pending or canonical iden
                 environmentArgs: ['--rl-map-size=64'],
             }),
             error => error.statusCode === 409 &&
-                /canonical release environment_args differ/.test(error.message),
+                /same-run environment-only transitions must use compatible rolling rollout/.test(error.message),
         );
         assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+    });
+});
+
+test('same-run environment rollout is central-first and never exposes mixed desired args', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 20,
+        });
+        const sha = publishDedicatedBuild(store, root, 'env-roll');
+        const oldArgs = ['--rl-map-size=32', '--rl-health-ratio=.25'];
+        const newArgs = ['--rl-map-size=64', '--rl-health-ratio=.10'];
+
+        store.stageRelease({
+            buildId: 'env-roll',
+            runId: 'env-roll-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+            environmentArgs: oldArgs,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'env-roll', sha);
+        heartbeatDedicated(store, 'central-learner', 'env-roll', sha);
+
+        assert.throws(
+            () => store.setDesiredState({ environment_args: newArgs }),
+            error => error.statusCode === 409 &&
+                /environment_args are rollout-owned/.test(error.message),
+        );
+
+        store.stageRelease({
+            buildId: 'env-roll',
+            runId: 'env-roll-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+            environmentArgs: newArgs,
+        });
+        assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        const phaseRevision = store.state.pending_release.phase_revision;
+
+        let remote = store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        let central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.deepEqual(remote.environment_args, oldArgs);
+        assert.deepEqual(central.environment_args, newArgs);
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-roll',
+            sha,
+            { appliedRevision: phaseRevision },
+        );
+        assert.equal(store._rollingTargetId(), 'remote-a');
+
+        remote = store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.deepEqual(remote.environment_args, newArgs);
+        assert.deepEqual(central.environment_args, newArgs);
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'env-roll',
+            sha,
+            { appliedRevision: phaseRevision },
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.deepEqual(store.state.environment_args, newArgs);
     });
 });
 
