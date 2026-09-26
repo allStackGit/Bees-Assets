@@ -127,6 +127,24 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         process.terminate.assert_called_once()
         process.kill.assert_called_once()
 
+    def test_supervisor_requests_worker_agent_shutdown_before_force_kill(self):
+        with tempfile.TemporaryDirectory() as temp:
+            request = Path(temp) / "worker-agent-stop.request"
+            process = mock.Mock()
+            process.poll.return_value = None
+            process.wait.return_value = 0
+
+            self.assertTrue(
+                managed._request_graceful_worker_stop(
+                    process,
+                    request,
+                    timeout=7.0,
+                )
+            )
+
+            self.assertEqual(request.read_text(encoding="ascii"), "stop\n")
+            process.wait.assert_called_once_with(timeout=7.0)
+
     def test_unhealthy_python_waits_for_repair_cutover(self):
         args = Namespace()
         process = mock.Mock()
@@ -259,6 +277,11 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertIn("--runtime-ready-file", command)
         ready = command[command.index("--runtime-ready-file") + 1]
         self.assertTrue(ready.endswith("runtime-ready-build.txt"))
+        self.assertIn("--shutdown-request-file", command)
+        stop_request = command[command.index("--shutdown-request-file") + 1]
+        self.assertTrue(
+            stop_request.endswith(managed.REMOTE_WORKER_AGENT_STOP_REQUEST_FILE)
+        )
 
     def test_fixed_env_override_disables_auto_optimizer(self):
         args = Namespace(
