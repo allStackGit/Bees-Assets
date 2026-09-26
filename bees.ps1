@@ -982,7 +982,7 @@ function Wait-ReleaseRollout(
         if($null -ne $centralFailure){
             $centralError=[string](Get-ObjectPropertyValue $centralFailure 'last_error')
             if($centralError -match '^managed process exited with code '){
-                throw "Central learner failed while rolling release $BuildId: $centralError. See $LogsRoot\Training\central-agent.err.log and central-agent.out.log."
+                throw "Central learner failed while rolling release ${BuildId}: $centralError. See $LogsRoot\Training\central-agent.err.log and central-agent.out.log."
             }
         }
 
