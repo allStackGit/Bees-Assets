@@ -431,6 +431,11 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
+        self.assertNotIn("machine-a", broker._claims)
+        self.assertEqual(
+            broker.session_payload()["actor_lease_seconds"],
+            broker.options.actor_lease_seconds,
+        )
         with self.assertRaisesRegex(ValueError, "claimed by another remote process"):
             broker.claim_actor(
                 {
