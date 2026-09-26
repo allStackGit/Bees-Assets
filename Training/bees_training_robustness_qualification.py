@@ -264,6 +264,25 @@ def _validate_unity_results(
     return True, ""
 
 
+def _unity_failed_cases(result_path: Path, maximum_cases: int = 12) -> tuple[str, ...]:
+    if not result_path.is_file():
+        return ()
+    try:
+        root = ET.parse(result_path).getroot()
+    except (OSError, ET.ParseError):
+        return ()
+
+    details: list[str] = []
+    for case in root.findall(".//test-case"):
+        if case.attrib.get("result") != "Failed":
+            continue
+        identity = case.attrib.get("fullname") or case.attrib.get("name") or "(unnamed test)"
+        details.append(identity)
+        if len(details) >= maximum_cases:
+            break
+    return tuple(details)
+
+
 def _log_tail(path: Path, maximum_lines: int = 80, maximum_bytes: int = 256 * 1024) -> str:
     if not path.is_file():
         return ""
@@ -325,6 +344,13 @@ def _run_check(check: Check) -> tuple[bool, float]:
         f"[FAIL] {check.name}: exit={completed.returncode} ({elapsed:.1f}s)",
         flush=True,
     )
+    if check.result_xml is not None:
+        failed_cases = _unity_failed_cases(check.result_xml)
+        if failed_cases:
+            print(
+                f"[XML ] {check.name}: failed tests:\n- " + "\n- ".join(failed_cases),
+                flush=True,
+            )
     if check.diagnostic_log is not None:
         tail = _log_tail(check.diagnostic_log)
         if tail:
