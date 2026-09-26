@@ -22,7 +22,18 @@ public static class CampaignDialogueOverrides
 
         // This transition has drifted furthest from the current Mission Scripting document, so
         // rebuild it from the authored version instead of trying to maintain the older sequence.
-        manager.NeptuneToTitania = BuildNeptuneToTitania();
+        // Update the list in place because PlayDialogueSection callers may already hold its reference
+        // when StartDialogue applies the presentation-time overrides.
+        List<DialogueLine> neptuneToTitania = BuildNeptuneToTitania();
+        if (manager.NeptuneToTitania == null)
+        {
+            manager.NeptuneToTitania = neptuneToTitania;
+        }
+        else
+        {
+            manager.NeptuneToTitania.Clear();
+            manager.NeptuneToTitania.AddRange(neptuneToTitania);
+        }
 
         PatchTitaniaBeenoculars(manager.Titania_Beenoculars);
         PatchUranusOnTheOffensive(manager.Uranus_OnTheOffensive);
