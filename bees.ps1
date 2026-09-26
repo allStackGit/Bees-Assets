@@ -1444,7 +1444,8 @@ function Stage-Release(
     $Config,
     [string]$AdminToken,
     $Release,
-    [AllowNull()][string[]]$EnvironmentArgs=$null
+    [AllowNull()][string[]]$EnvironmentArgs=$null,
+    [string]$EnvironmentValidationKey=''
 ){
     $body=@{
         build_id=[string]$Release.build_id
@@ -1454,6 +1455,9 @@ function Stage-Release(
     }
     if($PSBoundParameters.ContainsKey('EnvironmentArgs')){
         $body.environment_args=@($EnvironmentArgs)
+    }
+    if($EnvironmentValidationKey){
+        $body.environment_validation_key=$EnvironmentValidationKey
     }
     Invoke-ControlPost "$($Config.controlUrl)/v1/admin/release" $AdminToken $body
 }
@@ -2576,6 +2580,22 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
 
     $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
     $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+    $archivePath=[IO.Path]::GetFullPath([string]$artifact.archive)
+    if(-not(Test-Path -LiteralPath $archivePath -PathType Leaf)){
+        throw "RL environment validation archive is missing: $archivePath"
+    }
+    $archiveSha=(Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $encodedArgs=@(
+        @($EnvironmentArgs) | ForEach-Object {
+            [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$_))
+        }
+    )
+    $validationProof=Get-StringSha256 (
+        "bees-environment-validation-v1" + [Environment]::NewLine +
+        ([string]$Release.build_id) + [Environment]::NewLine +
+        $archiveSha + [Environment]::NewLine +
+        ($encodedArgs -join [Environment]::NewLine)
+    )
     $validationKey=Get-StringSha256 (
         ([string]$Release.build_id) + [Environment]::NewLine +
         $validatorSha + [Environment]::NewLine +
@@ -2583,7 +2603,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     )
     $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
-    if(Test-Path -LiteralPath $stamp -PathType Leaf){ return }
+    if(Test-Path -LiteralPath $stamp -PathType Leaf){ return $validationProof }
 
     Ensure-Directory $validationRoot
     Ensure-Directory (Join-Path $LogsRoot 'Training')
@@ -2609,7 +2629,9 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     $stampText=(
         "build=" + [string]$Release.build_id + [Environment]::NewLine +
         "validator_sha256=" + $validatorSha + [Environment]::NewLine +
-        "args_sha256=" + $validationKey + [Environment]::NewLine
+        "archive_sha256=" + $archiveSha + [Environment]::NewLine +
+        "args_sha256=" + $validationKey + [Environment]::NewLine +
+        "release_validation_key=" + $validationProof + [Environment]::NewLine
     )
     [IO.File]::WriteAllText(
         $temp,
@@ -2617,6 +2639,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         (New-Object Text.UTF8Encoding($false))
     )
     Install-AtomicFile $temp $stamp
+    return $validationProof
 }
 
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
