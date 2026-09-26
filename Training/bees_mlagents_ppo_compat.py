@@ -9,6 +9,7 @@ from typing import Callable, Optional
 
 VALUE_KEY_PROBE = "__bees_value_key_probe__"
 MAX_CONTINUOUS_SIGMA = 1.5
+MIN_CONTINUOUS_SIGMA = 1e-3
 BEES_MOVEMENT_CONTINUOUS_ACTIONS = 2
 BEES_WEAPON_SLOTS = 5
 BEES_WEAPON_AIM_ACTIONS_PER_SLOT = 2
@@ -308,13 +309,15 @@ def install_continuous_sigma_guard(
 
     The guard clamps the learned unconditional parameter before every forward
     pass. Conditional distributions, if introduced later, have their emitted
-    standard deviation clamped instead. The lower side is intentionally left
-    unconstrained so the policy can still become precise; Bees keeps a nonzero
-    PPO beta as the exploration floor.
+    standard deviation clamped instead. The positive lower bound keeps entropy
+    gradients active while still allowing very precise actions; PPO beta adds
+    further exploration pressure.
     """
 
-    if not math.isfinite(max_sigma) or max_sigma <= 0.0:
-        raise ValueError(f"max_sigma must be finite and positive; got {max_sigma!r}.")
+    if not math.isfinite(max_sigma) or max_sigma < MIN_CONTINUOUS_SIGMA:
+        raise ValueError(
+            f"max_sigma must be finite and at least {MIN_CONTINUOUS_SIGMA}; got {max_sigma!r}."
+        )
 
     from mlagents.torch_utils import torch
     from mlagents.trainers.torch_entities.distributions import GaussianDistribution
@@ -329,14 +332,21 @@ def install_continuous_sigma_guard(
     def guarded_forward(self, inputs):
         if self.conditional_sigma:
             distribution = original_forward(self, inputs)
-            distribution.std = torch.clamp(distribution.std, max=max_sigma)
+            distribution.std = torch.clamp(
+                distribution.std,
+                min=MIN_CONTINUOUS_SIGMA,
+                max=max_sigma,
+            )
             return distribution
 
         # Clamp the parameter itself so resumed checkpoints with pathological
         # sigma values are repaired before they can affect an action, loss, or
         # ONNX export. no_grad keeps the projection outside the PPO gradient.
         with torch.no_grad():
-            self.log_sigma.clamp_(max=max_log_sigma)
+            self.log_sigma.clamp_(
+                min=math.log(MIN_CONTINUOUS_SIGMA),
+                max=max_log_sigma,
+            )
         return original_forward(self, inputs)
 
     GaussianDistribution.forward = guarded_forward
