@@ -802,6 +802,11 @@ class WanActorBroker:
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
                 return duplicate_count
+            if payload.get("control_epoch") != self._control_epoch:
+                raise StaleActorStateError(
+                    "trajectory control epoch changed while validating the batch"
+                )
+            self._validate_policy_versions(payload.get("policy_versions"))
             self._trajectory_batches.put_nowait(item)
             self._remember_accepted_batch_locked(actor_id, batch_id, len(trajectories))
         return len(trajectories)
