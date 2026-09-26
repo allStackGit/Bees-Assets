@@ -532,6 +532,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("$keep.ContainsKey($full)", block)
         self.assertIn("Where-Object{$_.Name -notlike '*.candidate-*'}", block)
         self.assertIn("Select-Object -First $KeepNewest", block)
+        self.assertIn("[DateTime]::UtcNow.AddHours(-1)", block)
+        self.assertIn("$_.Name -like '*.candidate-*'", block)
 
         operator_start = source.index("function Start-BeesServerIfNeeded")
         operator_end = source.index("function Get-LatestRelease", operator_start)
@@ -545,6 +547,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             operator,
         )
 
+    def test_cached_server_runtime_revalidates_dependency_load(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Test-BeesServerRuntimeLoad")
+        end = source.index("function Prepare-BeesServerRuntime", start)
+        block = source[start:end]
+
+        self.assertIn("runtime.loadLegacyRuntime()", block)
+        self.assertIn("return ($LASTEXITCODE -eq 0)", block)
+        self.assertIn(
+            "return (Test-BeesServerRuntimeLoad $Node $RuntimeRoot)",
+            block,
+        )
+
     def test_server_replacement_is_prepared_before_live_process_cutover(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         prepare_start = source.index("function Prepare-BeesServerRuntime")
@@ -554,6 +569,10 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("Invoke-Checked $npm @('ci') $candidate", prepare)
         self.assertIn("Invoke-Checked $Node @('--check'", prepare)
         self.assertIn("runtime.loadLegacyRuntime()", prepare)
+        self.assertIn(
+            "Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node",
+            prepare,
+        )
         self.assertIn(
             "Active BeesServer runtime failed staged verification",
             prepare,
