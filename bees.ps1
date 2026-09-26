@@ -943,7 +943,7 @@ function Wait-ReleaseRollout(
                 [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $trainerId
             }|Select-Object -First 1)
             if($record.Count -eq 0){
-                $waiting += "$trainerId:missing"
+                $waiting += ("{0}:missing" -f $trainerId)
                 continue
             }
             $r=$record[0]
@@ -965,7 +965,7 @@ function Wait-ReleaseRollout(
                     ($null -eq $phaseRevision -or [int]$rev -ge [int]$phaseRevision))
             }
             if(-not $satisfied){
-                $detail="$trainerId:$state"
+                $detail=("{0}:{1}" -f $trainerId,$state)
                 if($stale){$detail+='(STALE)'}
                 $detail+=" build=$(if($build){$build}else{'-'})"
                 if($prepared){$detail+=" prepared=$prepared"}
@@ -976,7 +976,7 @@ function Wait-ReleaseRollout(
         }
         $progress="Waiting for release rollout: phase=$phase remaining=$(if($waiting.Count){$waiting -join '; '}else{'control state advancing'})"
         $now=[DateTime]::UtcNow
-        if($progress -ne $lastProgress -or ($now-$lastProgressAt).TotalSeconds -ge 10){
+        if($progress -ne $lastProgress -or ($now - $lastProgressAt).TotalSeconds -ge 10){
             Write-Host $progress
             $lastProgress=$progress
             $lastProgressAt=$now
