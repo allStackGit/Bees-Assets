@@ -10,6 +10,14 @@ from unittest import mock
 import bees_training_robustness_qualification as qualification
 
 
+def _write_operator_placeholders(training: Path) -> None:
+    (training / "bees_operator.js").write_text("'use strict';\n", encoding="utf-8")
+    operator = training / "operator"
+    operator.mkdir()
+    (operator / "common.js").write_text("'use strict';\n", encoding="utf-8")
+    (operator / "commands.js").write_text("'use strict';\n", encoding="utf-8")
+
+
 class RobustnessQualificationTests(unittest.TestCase):
     def test_focused_suite_covers_control_runtime_bootstrap_and_wan_layers(self):
         expected = {
@@ -59,6 +67,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             bridge.mkdir(parents=True)
             for name in qualification.FOCUSED_PYTHON_SUITES:
                 (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
 
             with (
                 mock.patch.object(qualification.shutil, "which", return_value=None),
@@ -72,8 +81,11 @@ class RobustnessQualificationTests(unittest.TestCase):
                     skip_go=False,
                 )
 
+            operator = next(check for check in checks if check.name == "node:operator-syntax")
             node = next(check for check in checks if check.name == "node:training-control")
             go = next(check for check in checks if check.name == "go:tailnet-bridge")
+            self.assertTrue(operator.required)
+            self.assertEqual(operator.command, ())
             self.assertTrue(node.required)
             self.assertEqual(node.command, ())
             self.assertFalse(go.required)
@@ -91,6 +103,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             bridge.mkdir(parents=True)
             for name in qualification.FOCUSED_PYTHON_SUITES:
                 (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
 
             with (
                 mock.patch.object(
@@ -108,12 +121,43 @@ class RobustnessQualificationTests(unittest.TestCase):
                     skip_go=True,
                 )
 
+            syntax_checks = [
+                check for check in checks
+                if check.name.startswith("node:operator-syntax:")
+            ]
+            self.assertEqual(len(syntax_checks), 3)
+            self.assertTrue(all(check.command[1] == "--check" for check in syntax_checks))
+            checked_paths = {Path(check.command[2]).name for check in syntax_checks}
+            self.assertEqual(
+                checked_paths,
+                {"bees_operator.js", "common.js", "commands.js"},
+            )
+
             node = next(check for check in checks if check.name == "node:training-control")
             command = " ".join(node.command)
             self.assertIn("startServerLauncher.module.test.js", command)
             self.assertIn("trainingControl.module.test.js", command)
             self.assertIn("trainingControlCli.module.test.js", command)
             self.assertIn("trainingEnvOptimizer.module.test.js", command)
+
+    def test_operator_js_file_discovery_requires_entrypoint_and_module_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            training = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "entrypoint"):
+                qualification._operator_js_files(training)
+
+            (training / "bees_operator.js").write_text("'use strict';\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "module directory"):
+                qualification._operator_js_files(training)
+
+            operator = training / "operator"
+            operator.mkdir()
+            (operator / "z.js").write_text("'use strict';\n", encoding="utf-8")
+            (operator / "a.js").write_text("'use strict';\n", encoding="utf-8")
+            self.assertEqual(
+                tuple(path.name for path in qualification._operator_js_files(training)),
+                ("bees_operator.js", "a.js", "z.js"),
+            )
 
     def test_unity_qualification_runs_foundation_editmode_and_requires_rl_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
