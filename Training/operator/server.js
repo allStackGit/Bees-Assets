@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const net = require('node:net');
 const path = require('node:path');
 
 const {
@@ -49,6 +50,37 @@ const SERVER_RUNTIME_FILES = Object.freeze([
     'package.json',
     'package-lock.json',
 ]);
+
+function controlProbeHost(config) {
+    const host = String(config.controlHost || '127.0.0.1').trim();
+    return host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
+}
+
+function testTcpPortOpen(host, port, timeoutMs = 500) {
+    return new Promise(resolve => {
+        const socket = net.createConnection({ host, port: Number(port) });
+        let settled = false;
+        const finish = open => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            resolve(open);
+        };
+        socket.setTimeout(timeoutMs);
+        socket.once('connect', () => finish(true));
+        socket.once('timeout', () => finish(false));
+        socket.once('error', () => finish(false));
+    });
+}
+
+async function waitForTcpPortClosed(host, port, timeoutMs = 15000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (!(await testTcpPortOpen(host, port))) return true;
+        await sleep(250);
+    }
+    return !(await testTcpPortOpen(host, port));
+}
 
 function runtimeEntries(root) {
     return SERVER_RUNTIME_FILES.map(name => ({ name, filePath: path.join(root, name) }));
@@ -359,6 +391,7 @@ async function startBeesServerRuntimeProcess(
 async function startBeesServerIfNeeded(config, workerToken, adminToken) {
     const node = process.execPath;
     const configHash = getBeesServerLaunchConfigHash(config, workerToken, adminToken);
+    const probeHost = controlProbeHost(config);
 
     // Prepare and validate replacement bytes before disturbing the current service.
     const prepared = prepareBeesServerRuntime(node);
@@ -454,7 +487,14 @@ async function startBeesServerIfNeeded(config, workerToken, adminToken) {
         const { assertCentralAgentCheckpointSafe } = require('./central');
         assertCentralAgentCheckpointSafe();
         stopManagedProcessTree(state, node, 'BeesServer');
-        await sleep(500);
+        await waitForTcpPortClosed(probeHost, Number(config.controlPort), 15000);
+    }
+
+    if (await testTcpPortOpen(probeHost, Number(config.controlPort))) {
+        throw new Error(
+            'Training-control port ' + config.controlPort +
+            ' is already in use but did not accept this admin token. The process is not the verified managed BeesServer, so it will not be killed automatically.'
+        );
     }
 
     ensureDir(path.join(paths.logsRoot, 'Server'));
@@ -524,6 +564,7 @@ async function startBeesServerIfNeeded(config, workerToken, adminToken) {
 
 module.exports = {
     SERVER_RUNTIME_FILES,
+    controlProbeHost,
     getBeesServerDependencyHash,
     getBeesServerLaunchConfigHash,
     getBeesServerRuntimeSourceHash,
@@ -533,5 +574,7 @@ module.exports = {
     startBeesServerIfNeeded,
     startBeesServerRuntimeProcess,
     testBeesServerStagedRuntime,
+    testTcpPortOpen,
+    waitForTcpPortClosed,
     writeBeesServerManagedState,
 };
