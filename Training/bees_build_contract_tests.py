@@ -847,7 +847,11 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
         self.assertIn("function Get-LocalLearnerStats([string]$RunId='')", block)
         self.assertIn("Join-Path $trainerResultsRoot $RunId", block)
-        self.assertIn("Select-Object -First 24", block)
+        self.assertIn(
+            "Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 24",
+            block,
+        )
+        self.assertNotIn("-Descending,FullName", block)
         self.assertNotIn(
             "foreach($root in @((Join-Path $LogsRoot 'Training'),"
             "(Join-Path $TrainingRoot 'trainer-results')))",

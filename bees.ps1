@@ -3512,7 +3512,7 @@ function Get-LocalLearnerStats([string]$RunId='') {
     # Reading 1,000 lines from every historical log made even a one-shot start/status command
     # appear hung on long-lived installations. Current learner/service logs are continuously
     # updated, so a small newest-first window is sufficient and keeps dashboard work bounded.
-    $files=@($files | Sort-Object LastWriteTimeUtc -Descending,FullName | Select-Object -First 24)
+    $files=@($files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 24)
     foreach($file in @($files | Sort-Object LastWriteTimeUtc,FullName)){
         $firstStep=$null; $firstElapsed=$null; $previousStep=$null; $previousElapsed=$null
         $fileAverageStepsPerSecond=$null; $fileLiveStepsPerSecond=$null
