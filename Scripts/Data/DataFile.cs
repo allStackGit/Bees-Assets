@@ -87,17 +87,20 @@ namespace Assets.Scripts.Data
                 contents = ConfigData.WaitingMessage;
             }
 
-            SetContents(contents);
+            SetStoredContents(contents);
             return contents;
         }
 
         private object ReadJsonObject()
         {
             string contents = ReadContents();
-            if (!ConfigData.Configuration.UseLocalStorage)
+            if (ConfigData.Configuration.UseLocalStorage)
             {
-                contents = GetContents();
+                // Local parsing was already attempted by ReadContents. Returning its cached value
+                // lets SetupFile route malformed JSON through the same defaults path as remote data.
+                return GetJsonObject();
             }
+            contents = GetContents();
             return JsonConvert.DeserializeObject(contents);
         }
 
@@ -173,7 +176,7 @@ namespace Assets.Scripts.Data
         /// This tolerant path is intentionally separate from SetContents' atomic replacement
         /// contract.
         /// </summary>
-        private void SetServerContents(string contents)
+        private void SetStoredContents(string contents)
         {
             try
             {
