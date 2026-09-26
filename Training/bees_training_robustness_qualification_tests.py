@@ -255,7 +255,6 @@ class RobustnessQualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             log = root / "unity.log"
-            log.write_text("first\nsecond\nthird\n", encoding="utf-8")
             check = qualification.Check(
                 name="unity-example",
                 command=("unity", "-batchmode"),
@@ -263,11 +262,16 @@ class RobustnessQualificationTests(unittest.TestCase):
                 diagnostic_log=log,
             )
             completed = mock.Mock(returncode=2)
+
+            def run_and_write_log(*_args, **_kwargs):
+                log.write_text("first\nsecond\nthird\n", encoding="utf-8")
+                return completed
+
             with (
                 mock.patch.object(
                     qualification.subprocess,
                     "run",
-                    return_value=completed,
+                    side_effect=run_and_write_log,
                 ),
                 mock.patch("builtins.print") as printer,
             ):
