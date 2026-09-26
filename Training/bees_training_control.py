@@ -119,7 +119,12 @@ class TrainingControlClient:
         env_optimizer = value.get("env_optimizer")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
             raise ControlRejected("training-control revision is invalid")
-        if not isinstance(lease_seconds, (int, float)) or isinstance(lease_seconds, bool) or lease_seconds <= 0:
+        if (
+            not isinstance(lease_seconds, (int, float))
+            or isinstance(lease_seconds, bool)
+            or not math.isfinite(lease_seconds)
+            or lease_seconds <= 0
+        ):
             raise ControlRejected("training-control lease_seconds is invalid")
         if not isinstance(environment_args, list) or any(
             not isinstance(item, str) for item in environment_args
@@ -425,7 +430,7 @@ class ManagedBuildStore:
         except OSError:
             return
         for child in children:
-            if not child.is_dir() or child.name.startswith("."):
+            if child.is_symlink() or not child.is_dir() or child.name.startswith("."):
                 continue
             if not (child / ".bees-build.json").is_file():
                 continue
@@ -433,7 +438,14 @@ class ManagedBuildStore:
                 modified = child.stat().st_mtime_ns
             except OSError:
                 continue
-            candidates.append((modified, child.resolve()))
+            resolved_child = child.resolve()
+            try:
+                resolved_child.relative_to(self.builds.resolve())
+            except ValueError:
+                continue
+            if resolved_child.parent != self.builds.resolve():
+                continue
+            candidates.append((modified, resolved_child))
         candidates.sort(reverse=True)
         keep.update(path for _, path in candidates[: self.MAX_RETAINED_BUILDS])
 
