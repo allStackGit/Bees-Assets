@@ -1726,11 +1726,92 @@ function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$Ad
     Get-StringSha256 ($payload|ConvertTo-Json -Compress -Depth 4)
 }
 
+function Set-BeesServerLaunchEnvironment($Config,[string]$WorkerToken,[string]$AdminToken){
+    $env:BEES_TRAINING_CONTROL_ENABLED='1'
+    $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken
+    $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
+    $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost
+    $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
+    $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'
+    $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
+    $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
+    $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
+}
+
+function Start-BeesServerRuntimeProcess(
+    $Config,
+    [string]$Node,
+    [string]$RuntimeRoot,
+    [string]$WorkerToken,
+    [string]$AdminToken,
+    [string]$ServerLog,
+    [int]$TimeoutSeconds=30
+){
+    $base=[string]$Config.controlUrl
+    $launcher=Join-Path $RuntimeRoot 'start-server.js'
+    if(-not(Test-Path -LiteralPath $launcher -PathType Leaf)){
+        throw "Prepared BeesServer runtime is missing its launcher: $launcher"
+    }
+
+    Set-BeesServerLaunchEnvironment $Config $WorkerToken $AdminToken
+    $launchedPid=0
+    Push-Location $RuntimeRoot
+    try {
+        $output=@(& $Node $launcher '--background' "--log=$ServerLog" 'test' ([string]$GameplayServerPort) 2>&1)
+        if($LASTEXITCODE -ne 0){
+            throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)"
+        }
+        $joined=$output -join [Environment]::NewLine
+        Write-Host $joined
+        if($joined -match 'PID\s+(\d+)'){
+            $launchedPid=[int]$Matches[1]
+        }
+    } finally {
+        Pop-Location
+    }
+    if($launchedPid -le 0){
+        throw 'BeesServer launcher succeeded without reporting the managed child PID.'
+    }
+
+    $identity=Get-ProcessIdentity $launchedPid
+    if($null -eq $identity -or -not [string]::Equals(
+        [string]$identity.executable_path,
+        [IO.Path]::GetFullPath($Node),
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        if($null -ne $identity){
+            try{$null=Stop-ManagedProcessTree $identity $Node 'failed BeesServer candidate'}catch{}
+        }
+        throw 'Could not establish the BeesServer candidate process identity after launch.'
+    }
+
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while([DateTime]::UtcNow -lt $deadline){
+        if(Test-Control $base $AdminToken){
+            return $identity
+        }
+        if(-not(Test-ManagedProcessIdentity $identity $Node)){
+            throw "BeesServer candidate PID $launchedPid exited before the control endpoint became healthy. Check $ServerLog."
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    if(Test-ManagedProcessIdentity $identity $Node){
+        try{$null=Stop-ManagedProcessTree $identity $Node 'unhealthy BeesServer candidate'}catch{}
+    }
+    throw "BeesServer candidate did not become reachable at $base within $TimeoutSeconds seconds. Check $ServerLog."
+}
+
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
-    $serverSourceHash=Get-BeesServerRuntimeSourceHash
     $serverConfigHash=Get-BeesServerLaunchConfigHash $Config $WorkerToken $AdminToken
     $node=Resolve-Node $Config
+    # Stage and validate the replacement before inspecting/stopping the live process. A broken
+    # source/dependency update therefore leaves the already healthy control plane untouched.
+    $preparedServer=Prepare-BeesServerRuntime $node
+    $serverSourceHash=[string]$preparedServer.source_hash
+    $serverDependencyHash=[string]$preparedServer.dependency_hash
+    $serverRuntimeRoot=[IO.Path]::GetFullPath([string]$preparedServer.runtime_root)
     $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
 
     # Process ownership is authoritative even when the desired control URL/token has changed or
@@ -1769,11 +1850,23 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         }
         $managedSourceHash=[string](Get-ObjectPropertyValue $managedState 'source_hash')
         $managedConfigHash=[string](Get-ObjectPropertyValue $managedState 'config_hash')
+        $managedRuntimeRoot=([string](Get-ObjectPropertyValue $managedState 'runtime_root')).Trim()
+        $runtimeMatches=$false
+        if($managedRuntimeRoot){
+            try {
+                $runtimeMatches=[string]::Equals(
+                    [IO.Path]::GetFullPath($managedRuntimeRoot),
+                    $serverRuntimeRoot,
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+            } catch { $runtimeMatches=$false }
+        }
         $serverExecutableMatches=Test-ManagedProcessIdentity $managedState $node
         if(
             $serverExecutableMatches -and
             $managedSourceHash -eq $serverSourceHash -and
-            $managedConfigHash -eq $serverConfigHash
+            $managedConfigHash -eq $serverConfigHash -and
+            $runtimeMatches
         ){
             return
         }
@@ -1798,63 +1891,70 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
 
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
     if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. The process is not the verified managed BeesServer, so it will not be killed automatically." }
-    $npm=Resolve-Npm
-    Ensure-Directory $RuntimeRoot
-    $dependencyHash=Get-BeesServerDependencyHash
-    $installedDependencyHash=''
-    if(Test-Path -LiteralPath $ServerDependencyStampPath){
-        try{$installedDependencyHash=(Get-Content -LiteralPath $ServerDependencyStampPath -Raw).Trim().ToLowerInvariant()}catch{$installedDependencyHash=''}
-    }
-    $nodeModulesPath=Join-Path $ServerRoot 'node_modules'
-    if(-not(Test-Path -LiteralPath $nodeModulesPath -PathType Container) -or $installedDependencyHash -ne $dependencyHash){
-        Write-Host 'Installing BeesServer dependencies for the current package lock...'
-        Remove-Item -LiteralPath $ServerDependencyStampPath -Force -ErrorAction SilentlyContinue
-        Invoke-Checked $npm @('ci') $ServerRoot
-        $dependencyHash | Set-Content -LiteralPath $ServerDependencyStampPath -NoNewline -Encoding ASCII
-    }
-    Ensure-Directory (Join-Path $LogsRoot 'Server'); Ensure-Directory (Join-Path $TrainingRoot 'Control')
+
+    Ensure-Directory (Join-Path $LogsRoot 'Server')
+    Ensure-Directory (Join-Path $TrainingRoot 'Control')
     $serverLog=Join-Path $LogsRoot 'Server\bees-server.log'
-    $env:BEES_TRAINING_CONTROL_ENABLED='1'; $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken; $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
-    $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
-    $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'; $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
-    $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
-    $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
-    $launchedPid=0
-    Push-Location $ServerRoot
+    $previousState=$managedState
+    $previousConfigHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'config_hash')}else{''}
+    $previousSourceHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'source_hash')}else{''}
+    $previousRuntimeRoot=if($null -ne $previousState){([string](Get-ObjectPropertyValue $previousState 'runtime_root')).Trim()}else{''}
+    $previousDependencyHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'dependency_hash')}else{''}
+
     try {
-        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 'test' ([string]$GameplayServerPort) 2>&1)
-        if($LASTEXITCODE -ne 0){ throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)" }
-        $joined=$output -join [Environment]::NewLine; Write-Host $joined
-        if($joined -match 'PID\s+(\d+)'){
-            $launchedPid=[int]$Matches[1]
-            $launchedPid | Set-Content -LiteralPath $ServerPidPath -NoNewline
-        }
-    } finally { Pop-Location }
-    $deadline=[DateTime]::UtcNow.AddSeconds(30)
-    while([DateTime]::UtcNow -lt $deadline){
-        if(Test-Control $base $AdminToken){
-            $serverIdentity=Get-ProcessIdentity $launchedPid
-            if($null -eq $serverIdentity -or -not [string]::Equals(
-                [string]$serverIdentity.executable_path,
-                [IO.Path]::GetFullPath($node),
-                [StringComparison]::OrdinalIgnoreCase
-            )){
-                throw 'BeesServer became reachable but its launched process identity could not be verified. Refusing to record unsafe PID-only ownership.'
+        $serverIdentity=Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot $WorkerToken $AdminToken $serverLog
+    } catch {
+        $replacementError=$_.Exception.Message
+        $rollbackError=''
+        $rolledBack=$false
+        if(
+            $previousRuntimeRoot -and
+            $previousConfigHash -eq $serverConfigHash -and
+            $previousSourceHash -and
+            (Test-BeesServerStagedRuntime $previousRuntimeRoot $previousSourceHash)
+        ){
+            Write-Warning "Replacement BeesServer failed after cutover; restoring previously verified runtime $previousSourceHash."
+            try {
+                $rollbackIdentity=Start-BeesServerRuntimeProcess $Config $node $previousRuntimeRoot $WorkerToken $AdminToken $serverLog
+                [pscustomobject]@{
+                    schema_version=4
+                    pid=[int]$rollbackIdentity.pid
+                    process_start_utc=[string]$rollbackIdentity.process_start_utc
+                    executable_path=[string]$rollbackIdentity.executable_path
+                    source_hash=$previousSourceHash
+                    dependency_hash=$previousDependencyHash
+                    runtime_root=[IO.Path]::GetFullPath($previousRuntimeRoot)
+                    config_hash=$previousConfigHash
+                    started_utc=[DateTime]::UtcNow.ToString('o')
+                    rollback_reason=$replacementError
+                } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
+                $rollbackIdentity.pid | Set-Content -LiteralPath $ServerPidPath -NoNewline
+                $rolledBack=$true
+            } catch {
+                $rollbackError=$_.Exception.Message
             }
-            [pscustomobject]@{
-                schema_version=3
-                pid=[int]$serverIdentity.pid
-                process_start_utc=[string]$serverIdentity.process_start_utc
-                executable_path=[string]$serverIdentity.executable_path
-                source_hash=$serverSourceHash
-                config_hash=$serverConfigHash
-                started_utc=[DateTime]::UtcNow.ToString('o')
-            } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
-            return
         }
-        Start-Sleep -Milliseconds 500
+        if($rolledBack){
+            throw "Replacement BeesServer failed, but the previous verified runtime was restored successfully. replacement_error=$replacementError"
+        }
+        if($rollbackError){
+            throw "Replacement BeesServer failed and rollback also failed. replacement_error=$replacementError rollback_error=$rollbackError"
+        }
+        throw
     }
-    throw "Training control did not become reachable at $base. Check $serverLog."
+
+    $serverIdentity.pid | Set-Content -LiteralPath $ServerPidPath -NoNewline
+    [pscustomobject]@{
+        schema_version=4
+        pid=[int]$serverIdentity.pid
+        process_start_utc=[string]$serverIdentity.process_start_utc
+        executable_path=[string]$serverIdentity.executable_path
+        source_hash=$serverSourceHash
+        dependency_hash=$serverDependencyHash
+        runtime_root=$serverRuntimeRoot
+        config_hash=$serverConfigHash
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
 }
 
 function Get-LatestRelease {
