@@ -252,6 +252,18 @@ Schema-2, schema-3, and schema-4 state migrate forward. Canonical artifacts are 
 
 Dedicated workers fail closed when the control lease expires. The default control lease is 60 seconds; worker heartbeats run every 5 seconds and individual control requests time out after 5 seconds, so a brief control-plane stall does not consume most of the lease or unnecessarily recycle a healthy trainer. Loss of control authority is distinct from a local reconciliation error: after a successful heartbeat, an ancillary artifact/runtime-state/local-status failure does not kill a dedicated trainer if the already-running process still exactly matches the server-desired build hash/id, run id, compatibility key, environment arguments, and worker environment count. The error remains visible and reconciliation retries on the next heartbeat. If any of those identities differ, or the desired mode is no longer training, the worker still fails closed and stops the stale process immediately. Local diagnostic-state write failure is also best-effort and cannot by itself crash the supervisor. Full-game clients fall back to inference and are not killed merely because control is unavailable.
 
+## Robustness qualification
+
+Before a real training operation, the operator can run the focused distributed-training robustness gate without starting/stopping the live cluster or changing desired state:
+
+```powershell
+.\Assets\bees.ps1 qualify
+```
+
+The gate runs the focused Python orchestration/runtime/bootstrap/control suites, the BeesServer training-control Node suite, the whole `bees.ps1` PowerShell parse contract when PowerShell is available, and the tailnet bridge Go tests when a Go toolchain is available. It is intended to catch operator syntax regressions, release/runtime identity drift, resumability errors, worker/control lease regressions, WAN slot/reconnect issues, bootstrap publication problems, and control-state rollout failures before they reach an expensive training run. Missing Node is a qualification failure because server control is mandatory; missing Go is reported as a skip because the operator can bootstrap the pinned portable Go toolchain during an actual bridge build.
+
+The qualification command is observational with respect to the live cluster: it does not start BeesServer, stage a release, change training state, create a run, restart a trainer, archive a run, or publish a bootstrap generation.
+
 ## Lower-level control CLI
 
 `bees.ps1` is the normal operator interface. `trainingControlCli.js` remains available for diagnostics and unusual deployments.
