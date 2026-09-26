@@ -165,12 +165,12 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
             child,
             log,
             60000,
-            /RL training configuration /,
+            null,
         );
         let validationSucceeded = false;
 
         if (!outcome.exited) {
-            if (outcome.marker) {
+            if (/RL training configuration /.test(outcome.logText)) {
                 killProcessTree(child);
                 console.warn(
                     'Release ' + release.build_id +
