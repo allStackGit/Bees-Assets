@@ -77,6 +77,40 @@ class RobustnessQualificationTests(unittest.TestCase):
             self.assertFalse(go.required)
             self.assertEqual(go.command, ())
 
+    def test_node_qualification_includes_environment_optimizer_suite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bees_root = Path(temp_dir)
+            assets = bees_root / "Assets"
+            training = assets / "Training"
+            server = assets / "BeesServer~"
+            bridge = assets / "Tools~" / "bees-tailnet-bridge"
+            training.mkdir(parents=True)
+            (server / "test").mkdir(parents=True)
+            bridge.mkdir(parents=True)
+            for name in qualification.FOCUSED_PYTHON_SUITES:
+                (training / name).write_text("# placeholder\n", encoding="utf-8")
+
+            with (
+                mock.patch.object(
+                    qualification.shutil,
+                    "which",
+                    side_effect=lambda name: "/usr/bin/node" if name == "node" else None,
+                ),
+                mock.patch.object(qualification, "_resolve_go", return_value=None),
+            ):
+                checks = qualification.build_checks(
+                    bees_root=bees_root,
+                    assets_root=assets,
+                    full_python=False,
+                    skip_node=False,
+                    skip_go=True,
+                )
+
+            node = next(check for check in checks if check.name == "node:training-control")
+            command = " ".join(node.command)
+            self.assertIn("trainingControl.module.test.js", command)
+            self.assertIn("trainingEnvOptimizer.module.test.js", command)
+
     def test_run_check_propagates_nonzero_exit(self):
         check = qualification.Check(
             name="example",
