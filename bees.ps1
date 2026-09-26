@@ -1341,15 +1341,15 @@ function Prepare-BeesServerRuntime([string]$Node){
         $dependencyHash=Get-BeesServerDependencyHash $candidate
         $npm=Resolve-Npm
         Write-Host "Pre-staging BeesServer runtime $($sourceHash.Substring(0,12)) while the current server remains online..."
-        Invoke-Checked $npm @('ci') $candidate
+        Invoke-Checked $npm @('ci') $candidate | Out-Host
 
         foreach($name in @(Get-BeesServerRuntimeFileNames|Where-Object{$_.EndsWith('.js',[StringComparison]::OrdinalIgnoreCase)})){
-            Invoke-Checked $Node @('--check',(Join-Path $candidate $name)) $candidate
+            Invoke-Checked $Node @('--check',(Join-Path $candidate $name)) $candidate | Out-Host
         }
         Invoke-Checked $Node @(
             '-e',
             "const runtime=require('./server'); runtime.loadLegacyRuntime();"
-        ) $candidate
+        ) $candidate | Out-Host
 
         $actualEntries=@(
             foreach($name in @(Get-BeesServerRuntimeFileNames)){
