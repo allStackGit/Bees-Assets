@@ -188,6 +188,10 @@ public class DialogueManager : MonoBehaviour
         // Dialogue sections reuse DialogueLine instances from CutsceneManager's lists.
         // Clear per-presentation flags before either displaying or skipping this section so a
         // prior skip/completion cannot suppress prompts or leak state into a replay.
+        if (lines == null)
+        {
+            lines = new List<DialogueLine>();
+        }
         if (lines != null)
         {
             foreach (DialogueLine line in lines)
@@ -242,7 +246,10 @@ public class DialogueManager : MonoBehaviour
 
         foreach (DialogueLine line in lines)
         {
-            dialogueLines.Enqueue(line);
+            if (line != null)
+            {
+                dialogueLines.Enqueue(line);
+            }
         }
         _playIntercomWhenPresented = dialogueLines.Count > 0;
 
