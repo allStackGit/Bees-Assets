@@ -256,6 +256,9 @@ def read_throughput_metrics(
     network_sent = value.get("network_sent_bytes_total")
     network_received = value.get("network_received_bytes_total")
     network_rate = value.get("network_mib_per_s")
+    session_failures = value.get("session_failures_total")
+    failure_age = value.get("seconds_since_last_session_failure")
+    failure_type = value.get("last_session_failure_type")
     if (
         not isinstance(pid, int)
         or isinstance(pid, bool)
@@ -277,6 +280,29 @@ def read_throughput_metrics(
         or queue_depth < 0
     ):
         return {}
+    failure_present = any(
+        item is not None for item in (session_failures, failure_age, failure_type)
+    )
+    if failure_present and (
+        not isinstance(session_failures, int)
+        or isinstance(session_failures, bool)
+        or session_failures < 0
+        or (
+            failure_age is not None
+            and (
+                not isinstance(failure_age, (int, float))
+                or isinstance(failure_age, bool)
+                or not math.isfinite(float(failure_age))
+                or float(failure_age) < 0.0
+            )
+        )
+        or (
+            failure_type is not None
+            and not isinstance(failure_type, str)
+        )
+    ):
+        return {}
+
     traffic_present = any(
         item is not None for item in (network_sent, network_received, network_rate)
     )
@@ -305,6 +331,16 @@ def read_throughput_metrics(
         "learner_consumed_steps_total": learner_consumed_steps,
         "upload_queue_depth": queue_depth,
     }
+    if failure_present:
+        result.update(
+            {
+                "session_failures_total": session_failures,
+                "seconds_since_last_session_failure": (
+                    None if failure_age is None else float(failure_age)
+                ),
+                "last_session_failure_type": str(failure_type or ""),
+            }
+        )
     if traffic_present:
         result.update(
             {
