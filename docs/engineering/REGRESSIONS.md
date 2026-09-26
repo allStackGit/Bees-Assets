@@ -210,7 +210,7 @@ Manual-only protection is acceptable only when the record explains why determini
 
 
 
-### REG-006 — Initial episode-log tail scan skipped a complete record
+### REG-022 — Initial episode-log tail scan skipped a complete record
 **Area:** `Training/bees_training_worker_agent.py`, `EpisodeLogMetrics`  
 **Symptom:** when a log exceeded the 4 MiB startup scan window and the selected offset landed exactly at a line boundary, the first complete episode record in the window was omitted from the reported metrics.  
 **Root cause:** startup parsing always discarded the first decoded line whenever the scan began at a nonzero offset, assuming it was a partial record.  
@@ -218,7 +218,7 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** focused regression coverage was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** bounded log readers must distinguish an arbitrary interior offset from an exact record boundary before discarding input.
 
-### REG-007 — Stale claim renewal overlapped a replacement actor session
+### REG-023 — Stale claim renewal overlapped a replacement actor session
 **Area:** `Training/bees_elastic_wan_actor_session.py`, persistent actor-slot claim lifecycle  
 **Symptom:** a replacement process on the same remote worker could have its initial slot claim rejected while the prior session's renewal request was still in flight after shutdown returned.  
 **Root cause:** claim-keeper shutdown joined for two seconds even though broker requests can take up to the client's 30-second timeout; the old process could exit while its request was still in flight, allowing that delayed request to refresh the retired process identity.  
