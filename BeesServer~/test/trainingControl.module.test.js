@@ -1388,6 +1388,58 @@ test('release retry rejects environment args drift for pending or canonical iden
     });
 });
 
+test('environment-changing release requires artifact-bound validation proof before staging', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        publishDedicatedBuild(store, root, 'validated-env-build');
+        const oldArgs = ['--rl-map-size=32'];
+        const newArgs = ['--rl-map-size=64'];
+
+        store.stageRelease({
+            buildId: 'validated-env-build',
+            runId: 'validated-env-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+            environmentArgs: oldArgs,
+            environmentValidationKey: validationKey(
+                store, 'validated-env-build', oldArgs),
+        });
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'validated-env-build',
+                runId: 'validated-env-run',
+                compatibilityKey: '7'.repeat(64),
+                incompatible: false,
+                environmentArgs: newArgs,
+            }),
+            error => error.statusCode === 409 &&
+                /missing authoritative compiled-build validation/.test(error.message),
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.deepEqual(store.state.environment_args, oldArgs);
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId: 'validated-env-build',
+                runId: 'validated-env-run',
+                compatibilityKey: '7'.repeat(64),
+                incompatible: false,
+                environmentArgs: newArgs,
+                environmentValidationKey: validationKey(
+                    store, 'validated-env-build', oldArgs),
+            }),
+            error => error.statusCode === 409 &&
+                /missing authoritative compiled-build validation/.test(error.message),
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.deepEqual(store.state.environment_args, oldArgs);
+    });
+});
+
 test('same-run environment rollout is central-first and never exposes mixed desired args', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
