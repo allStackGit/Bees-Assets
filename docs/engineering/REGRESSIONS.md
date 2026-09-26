@@ -208,3 +208,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** the parser and focused regression protection were reviewed statically. Tests were not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** command-line enum options must reject undefined numeric enum values as well as unrecognized names.
 
+
+
+### REG-006 — Initial episode-log tail scan skipped a complete record
+**Area:** `Training/bees_training_worker_agent.py`, `EpisodeLogMetrics`  
+**Symptom:** when a log exceeded the 4 MiB startup scan window and the selected offset landed exactly at a line boundary, the first complete episode record in the window was omitted from the reported metrics.  
+**Root cause:** startup parsing always discarded the first decoded line whenever the scan began at a nonzero offset, assuming it was a partial record.  
+**Permanent protection:** `Training/bees_training_worker_agent_tests.py` builds a log whose bounded scan begins exactly at a complete episode record and asserts that it is counted. The reader now checks the byte preceding the offset and discards text only when that offset is inside a record.  
+**Verification:** focused regression coverage was added but not executed, per the static-only audit constraint.  
+**Invariant/knowledge:** bounded log readers must distinguish an arbitrary interior offset from an exact record boundary before discarding input.
