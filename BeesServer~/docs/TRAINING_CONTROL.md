@@ -262,7 +262,7 @@ Before a real training operation, the operator can run the focused distributed-t
 
 The gate runs the focused Python orchestration/runtime/bootstrap/control suites, the BeesServer training-control Node suite, the whole `bees.ps1` PowerShell parse contract when PowerShell is available, and the tailnet bridge Go tests when a Go toolchain is available. It is intended to catch operator syntax regressions, release/runtime identity drift, resumability errors, worker/control lease regressions, WAN slot/reconnect issues, bootstrap publication problems, and control-state rollout failures before they reach an expensive training run. Missing Node is a qualification failure because server control is mandatory; missing Go is reported as a skip because the operator can bootstrap the pinned portable Go toolchain during an actual bridge build.
 
-The qualification command is observational with respect to the live cluster: it does not start BeesServer, stage a release, change training state, create a run, restart a trainer, archive a run, or publish a bootstrap generation.
+The qualification command is observational with respect to the live cluster: it does not start BeesServer, stage a release, change training state, create a run, restart a trainer, archive a run, or publish a bootstrap generation. It reuses or prepares the managed learner Python dependency environment for the current training requirements so WAN/ML-Agents-adjacent tests run against the dependencies the training stack actually expects; that local dependency cache preparation is the only setup side effect.
 
 ## Lower-level control CLI
 
