@@ -1044,8 +1044,13 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "'gateway-state.json'",
             source,
         )
-        self.assertGreaterEqual(source.count("process_start_utc=[string]"), 3)
-        self.assertGreaterEqual(source.count("executable_path=[string]"), 3)
+        self.assertGreaterEqual(source.count("process_start_utc=[string]"), 2)
+        self.assertGreaterEqual(source.count("executable_path=[string]"), 2)
+        self.assertIn("function Add-ManagedIdentityToState", source)
+        self.assertIn("Write-AtomicJsonFile $TailnetGatewayStatePath", source)
+        self.assertIn("Write-AtomicJsonFile $CentralAgentStatePath", source)
+        self.assertNotIn("|Set-Content -LiteralPath $CentralAgentStatePath", source)
+        self.assertNotIn("|Set-Content -LiteralPath $TailnetGatewayStatePath", source)
         self.assertIn(
             "Stop-ManagedProcessTree $gatewayState $bridge "
             "'embedded tailnet gateway'",
