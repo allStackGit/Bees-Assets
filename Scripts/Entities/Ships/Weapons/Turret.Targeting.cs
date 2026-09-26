@@ -151,6 +151,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         {
             Ship.SetCombatTimer();
             SendProjectile();
+            ReadyToFire = false;
         }
 
         protected void TryToFire()
