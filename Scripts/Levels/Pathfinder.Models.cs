@@ -39,7 +39,6 @@ namespace Assets.Scripts.Levels
                     for (int y = 0; y < Height; y++)
                     {
                         Nodes[x][y] = new MapNode(x, y, this, TotalNodes++);
-                        TotalNodes++;
                         NodeSet.Add(Nodes[x][y]);
                     }
                 }
