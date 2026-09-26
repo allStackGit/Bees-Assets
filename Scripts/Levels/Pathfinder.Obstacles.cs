@@ -149,6 +149,29 @@ namespace Assets.Scripts.Levels
             return ObstaclePoints[0].Count - 1;
         }
 
+        private void GetObstacleGridBounds(Bounds bounds, out Vector2Int min, out Vector2Int max)
+        {
+            min = new Vector2Int(int.MaxValue, int.MaxValue);
+            max = new Vector2Int(int.MinValue, int.MinValue);
+            IncludeObstacleGridPoint(new Vector2(bounds.min.x, bounds.min.y), ref min, ref max);
+            IncludeObstacleGridPoint(new Vector2(bounds.min.x, bounds.max.y), ref min, ref max);
+            IncludeObstacleGridPoint(new Vector2(bounds.max.x, bounds.min.y), ref min, ref max);
+            IncludeObstacleGridPoint(new Vector2(bounds.max.x, bounds.max.y), ref min, ref max);
+        }
+
+        private void IncludeObstacleGridPoint(
+            Vector2 worldPoint,
+            ref Vector2Int min,
+            ref Vector2Int max)
+        {
+            Vector2Int point = ConvertToMapCoordinates(
+                PathfinderObstacleScope.WorldToLevel(Level, worldPoint));
+            min.x = Mathf.Min(min.x, point.x);
+            min.y = Mathf.Min(min.y, point.y);
+            max.x = Mathf.Max(max.x, point.x);
+            max.y = Mathf.Max(max.y, point.y);
+        }
+
         public int[][] GetObstaclePoints(Obstacle obstacle, float xVelocity, float yVelocity)
         {
             Collider2D collider = obstacle.ClearanceMappingCollider != null
@@ -160,10 +183,7 @@ namespace Assets.Scripts.Levels
             float speedPaddingY = Mathf.Abs(yVelocity) * 2.5f;
             bounds.Expand(new Vector3(speedPaddingX * 2f, speedPaddingY * 2f, 0));
 
-            Vector2Int min = ConvertToMapCoordinates(
-                PathfinderObstacleScope.WorldToLevel(Level, new Vector2(bounds.min.x, bounds.max.y)));
-            Vector2Int max = ConvertToMapCoordinates(
-                PathfinderObstacleScope.WorldToLevel(Level, new Vector2(bounds.max.x, bounds.min.y)));
+            GetObstacleGridBounds(bounds, out Vector2Int min, out Vector2Int max);
             int startX = Mathf.Clamp(Mathf.Min(min.x, max.x), 0, _grid.MaxX);
             int endX = Mathf.Clamp(Mathf.Max(min.x, max.x), 0, _grid.MaxX);
             int startY = Mathf.Clamp(Mathf.Min(min.y, max.y), 0, _grid.MaxY);
