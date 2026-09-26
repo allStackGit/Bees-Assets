@@ -70,15 +70,7 @@ namespace Assets.Scripts.Data
             if (ConfigData.Configuration.UseLocalStorage)
             {
                 MakeFileIfNecessary();
-                StreamReader fileStream = new StreamReader(FullPath);
-
-                while (!fileStream.EndOfStream)
-                {
-                    string line = fileStream.ReadLine();
-                    contents += line;
-                }
-
-                fileStream.Close();
+                contents = File.ReadAllText(FullPath);
             }
             else
             {
