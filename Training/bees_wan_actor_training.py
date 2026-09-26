@@ -807,6 +807,16 @@ class WanActorBroker:
                     "trajectory control epoch changed while validating the batch"
                 )
             self._validate_policy_versions(payload.get("policy_versions"))
+            # A cohort needs one fresh batch per actor at a time. Reject excess queued
+            # batches with normal backpressure instead of accepting them only to discard
+            # them when the cohort selector sees a duplicate actor.
+            with self._trajectory_batches.mutex:
+                actor_batch_pending = any(
+                    int(queued.get("actor_id", -1)) == actor_id
+                    for queued in self._trajectory_batches.queue
+                )
+            if actor_batch_pending:
+                raise queue.Full
             self._trajectory_batches.put_nowait(item)
             self._remember_accepted_batch_locked(actor_id, batch_id, len(trajectories))
         return len(trajectories)
@@ -882,14 +892,13 @@ class WanActorBroker:
                     continue
 
                 actor_id = int(batch["actor_id"])
-                if actor_id in actors:
-                    # This should be uncommon because selected actors are backpressured. If a second
-                    # request raced the block, include it only after the distinct-actor requirement
-                    # has been satisfied by a later batch rather than silently replacing another machine.
-                    continue
+                # Do not discard a batch already in flight when an actor is selected.
+                # Admission normally limits each actor to one queued batch, but retaining a
+                # duplicate here protects trajectories accepted by a request racing that limit.
                 selected.append(batch)
-                actors.add(actor_id)
-                self._cohort_blocked_actors.add(actor_id)
+                if actor_id not in actors:
+                    actors.add(actor_id)
+                    self._cohort_blocked_actors.add(actor_id)
                 if len(actors) >= required:
                     return tuple(selected)
 
