@@ -13,6 +13,7 @@ import ctypes
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -1217,7 +1218,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if len({args.control_port, args.bootstrap_port, args.broker_port}) != 3:
         print("error: control/bootstrap/broker ports must be distinct", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.runtime_poll_seconds <= 0:
+    if (
+        not math.isfinite(args.reconnect_seconds)
+        or not math.isfinite(args.runtime_poll_seconds)
+        or args.reconnect_seconds <= 0
+        or args.runtime_poll_seconds <= 0
+    ):
         print("error: reconnect/runtime-poll seconds must be positive", file=sys.stderr)
         return 2
     if not str(args.tailnet_target).strip():
