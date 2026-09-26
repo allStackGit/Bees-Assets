@@ -426,6 +426,349 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         for symbol in modules.values():
             self.assertNotIn(symbol, shim)
 
+
+    def test_build_preflight_distinguishes_live_unity_from_stale_lock(self):
+        source = read_operator("build.js")
+        start = source.index("function queryUnityProcesses")
+        end = source.index("function getUnityBuildProgressStatus", start)
+        block = source[start:end]
+        self.assertIn("Get-CimInstance Win32_Process", block)
+        self.assertIn("Get-Process -Name \\'Unity\\'", block)
+        self.assertIn("if (!exists(lock)) return", block)
+        self.assertIn("Removed stale Unity lock file because no Unity Editor process is running", block)
+        self.assertIn("Refusing to remove the lock automatically", block)
+
+    def test_build_preflights_unity_before_archive_or_destructive_build_reset(self):
+        source = read_operator("build.js")
+        start = source.index("async function invokeBuild")
+        block = source[start:]
+        preflight = block.index("assertUnityProjectAvailableForBatchBuild()")
+        archive = block.index("archiveTrainingRun(", preflight)
+        reset = block.index("resetBuildDirectory(windowsBuild", preflight)
+        self.assertLess(preflight, archive)
+        self.assertLess(preflight, reset)
+
+    def test_operator_hashes_actual_server_bytes_and_pins_training_runtime_release(self):
+        server = read_operator("server.js")
+        build = read_operator("build.js")
+        runtime = read_operator("runtime.js")
+        central = read_operator("central.js")
+        tailnet = read_operator("tailnet.js")
+
+        self.assertIn("getNamedFileSetSha256(runtimeEntries(paths.serverRoot))", server)
+        for runtime_file in (
+            "start-server.js", "server.js", "siServerDev.js", "serverContracts.js",
+            "database.js", "gamePersistence.js", "outcomeReservations.js",
+            "campaignCheckpoint.js", "security.js", "cachePersistence.js",
+            "rlDemonstrationUploads.js", "rlTelemetryUploadSecurity.js",
+            "rlTelemetryUploads.js", "rlModelDistributionSecurity.js",
+            "rlModelDistribution.js", "trainingControl.js", "trainingEnvOptimizer.js",
+            "package.json", "package-lock.json",
+        ):
+            self.assertIn(f"'{runtime_file}'", server)
+        self.assertNotIn("readdirSync(paths.serverRoot)", server)
+
+        self.assertIn("newReleaseTrainingRuntime(", build)
+        self.assertIn("schema_version: 3", build)
+        self.assertIn("training_runtime: trainingRuntime", build)
+        self.assertIn("'--expected-sha256', archiveSha", runtime)
+        self.assertIn("'--expected-version', runtimeVersion", runtime)
+        self.assertIn("fs.copyFileSync(releaseRuntimeArchive, runtimeZipTemp)", tailnet)
+        self.assertNotIn("remote-runtime-staging", tailnet)
+
+        self.assertIn("installReleaseTrainingRuntime(bootstrapPython, release, true)", central)
+        self.assertIn("ensureLearnerPython(config, runtimeRoot)", central)
+        self.assertIn("launch_command: launchCommand", central)
+        self.assertIn("writeJsonAtomic(paths.centralRuntimePointerPath", central)
+        self.assertIn("writeTextAtomic(paths.centralRuntimeReadyBuildPath", central)
+
+    def test_build_and_start_prepare_central_runtime_before_release_barrier(self):
+        build = read_operator("build.js")
+        start = build.index("async function invokeBuild")
+        block = build[start:]
+        prepare = block.index("prepareCentralReleaseRuntime(", block.index("const preStageStatus"))
+        central = block.index("startCentralAgentIfNeeded(", prepare)
+        stage = block.index("stageRelease(", central)
+        self.assertLess(prepare, central)
+        self.assertLess(central, stage)
+
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeStart")
+        end = commands.index("async function invokeStop", start)
+        block = commands[start:end]
+        prepare = block.index("prepareCentralReleaseRuntime(")
+        central = block.index("startCentralAgentIfNeeded(", prepare)
+        stage = block.index("stageRelease(", central)
+        self.assertLess(prepare, central)
+        self.assertLess(central, stage)
+
+    def test_build_reconciles_previous_release_before_new_release_identity_exists(self):
+        source = read_operator("build.js")
+        start = source.index("async function invokeBuild")
+        block = source[start:]
+        current = block.index("const currentRelease = getLatestRelease()")
+        reconcile = block.index("reconcileLatestReleaseBeforeBuild(", current)
+        archive = block.index("archiveTrainingRun(", reconcile)
+        plan = block.index("newTrainingRunPlan(python)", archive)
+        release = block.index("const release = {", plan)
+        self.assertLess(current, reconcile)
+        self.assertLess(reconcile, archive)
+        self.assertLess(reconcile, plan)
+        self.assertLess(reconcile, release)
+
+        helper_start = source.index("async function reconcileLatestReleaseBeforeBuild")
+        helper_end = source.index("async function invokeBuild", helper_start)
+        helper = source[helper_start:helper_end]
+        self.assertIn("ensureRunLifecycleMatchesRelease(python, release)", helper)
+        self.assertIn("prepareCentralReleaseRuntime(config, python, unity, release)", helper)
+        self.assertIn("startCentralAgentIfNeeded(config, python, unity, release, centralRuntime)", helper)
+        self.assertIn("Previous release is still rolling out", helper)
+        self.assertIn("waitReleaseRollout(config, adminToken, releaseBuild, releaseRun, releaseKey)", helper)
+        self.assertIn("was persisted but is not canonical", helper)
+        self.assertIn("prepareRemoteBootstrap(config, python, release)", helper)
+        self.assertIn("publishRelease(config, adminToken, release)", helper)
+
+    def test_prebuild_reconciliation_rejects_control_release_identity_drift(self):
+        source = read_operator("build.js")
+        start = source.index("async function reconcileLatestReleaseBeforeBuild")
+        end = source.index("async function invokeBuild", start)
+        block = source[start:end]
+        self.assertIn("pendingBuild !== releaseBuild", block)
+        self.assertIn("pendingRun !== releaseRun", block)
+        self.assertIn("pendingKey !== releaseKey", block)
+        self.assertIn("Training control has a pending release that differs from latest release metadata", block)
+        self.assertIn("Previous release reconciliation returned without making", block)
+
+    def test_learner_python_is_isolated_by_release_requirements_identity(self):
+        source = read_operator("runtime.js")
+        start = source.index("function ensureLearnerPython")
+        end = source.index("function newReleaseTrainingRuntime", start)
+        block = source[start:end]
+        self.assertIn("bees_learner_requirements.txt", block)
+        self.assertIn("bees_remote_requirements.txt", block)
+        self.assertIn("const venvRoot = path.join(venvBase, requirementsHash)", block)
+        self.assertIn("path.join(paths.runtimeRoot, 'LearnerPython')", block)
+        self.assertIn("Installing central learner dependencies for runtime", block)
+        self.assertIn("pruneLearnerPythonRuntimes([venvPython])", block)
+
+    def test_operator_exposes_side_effect_free_robustness_qualification(self):
+        shim = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        cli = NODE_OPERATOR.read_text(encoding="utf-8")
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeQualify")
+        block = commands[start:commands.index("module.exports", start)]
+        self.assertIn("'qualify'", shim)
+        self.assertIn("'qualify'", cli)
+        self.assertIn("ensureLearnerPython(config)", block)
+        self.assertIn("resolveUnityEditor(config)", block)
+        self.assertIn("paths.robustnessQualificationScript", block)
+        self.assertIn("'--bees-root', paths.beesRoot", block)
+        self.assertIn("'--assets-root', paths.assetsRoot", block)
+        self.assertIn("'--unity-editor', unity", block)
+        for forbidden in (
+            "startBeesServerIfNeeded", "stageRelease(", "setDesiredState(",
+            "prepareRemoteBootstrap", "startCentralAgentIfNeeded", "archiveTrainingRun",
+        ):
+            self.assertNotIn(forbidden, block)
+
+    def test_non_runtime_server_edits_do_not_participate_in_restart_identity(self):
+        source = read_operator("server.js")
+        start = source.index("const SERVER_RUNTIME_FILES")
+        end = source.index("function controlProbeHost", start)
+        block = source[start:end]
+        self.assertIn("'package.json'", block)
+        self.assertIn("'package-lock.json'", block)
+        for non_runtime_file in (
+            "run-tests.js", "testServerConfig.js", "trainingControlCli.js",
+            "migrate.js", "recover-tables.js", "mediaServer.js",
+            "schemaMigrations.js", "eslint.config.js", "app.js", "tst.js",
+        ):
+            self.assertNotIn(f"'{non_runtime_file}'", block)
+        self.assertNotIn("AGENTS.md", block)
+        self.assertNotIn("docs", block)
+
+    def test_server_start_reconciles_owned_process_before_endpoint_health(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerIfNeeded")
+        block = source[start:source.index("module.exports", start)]
+        load_state = block.index("if (exists(paths.serverStatePath))")
+        prove_owned = block.index("if (testManagedProcessIdentity(state))")
+        probe_control = block.index("const online = await testControl")
+        restart_owned = block.index("} else if (owned)", probe_control)
+        stop_owned = block.index("stopManagedProcessTree(state, node, 'BeesServer')")
+        self.assertLess(load_state, prove_owned)
+        self.assertLess(prove_owned, probe_control)
+        self.assertLess(probe_control, restart_owned)
+        self.assertLess(restart_owned, stop_owned)
+        self.assertIn("Managed BeesServer is not accepting the desired control endpoint/token", block)
+        self.assertIn("The process is not the verified managed BeesServer, so it will not be killed automatically.", block)
+        self.assertIn("await waitForTcpPortClosed", block)
+        self.assertIn("if (await testTcpPortOpen", block)
+
+    def test_server_launch_config_identity_covers_control_tokens_and_runtime_inputs(self):
+        source = read_operator("server.js")
+        start = source.index("function getBeesServerLaunchConfigHash")
+        end = source.index("function writeBeesServerManagedState", start)
+        block = source[start:end]
+        for field in (
+            "control_url", "control_host", "control_port", "gameplay_port",
+            "worker_token_sha256", "admin_token_sha256",
+            "environment_validation_secret_sha256", "control_state",
+            "artifact_root", "log_root", "db_host", "db_user",
+            "db_password_sha256", "db_name", "require_test_db",
+            "disable_background_jobs",
+        ):
+            self.assertIn(field, block)
+        self.assertIn("sha256Text(workerToken)", block)
+        self.assertIn("sha256Text(adminToken)", block)
+        self.assertIn("ensureTokenFile(paths.environmentValidationTokenPath)", block)
+        self.assertNotIn("worker_token: workerToken", block)
+        self.assertNotIn("admin_token: adminToken", block)
+
+        operator = source[source.index("async function startBeesServerIfNeeded"):]
+        self.assertIn("String(state.config_hash || '') === configHash", operator)
+
+    def test_training_runtime_retention_preserves_active_staged_and_recent_roots(self):
+        source = read_operator("runtime.js")
+        self.assertIn("function pruneReleaseTrainingRuntimes(extraRoots = [], keepNewest = 4)", source)
+        for state_path in (
+            "paths.centralRuntimePointerPath",
+            "paths.centralRuntimeStatePath",
+            "paths.centralAgentStatePath",
+        ):
+            self.assertIn(state_path, source)
+        self.assertIn("['runtime_root', 'release_runtime_root']", source)
+        self.assertIn("keepNewest", source)
+        self.assertIn("60 * 60 * 1000", source)
+
+        central = read_operator("central.js")
+        self.assertIn("pruneReleaseTrainingRuntimes([runtimeRoot])", central)
+
+    def test_learner_python_retention_preserves_active_staged_and_recent_envs(self):
+        source = read_operator("runtime.js")
+        self.assertIn("function pruneLearnerPythonRuntimes(extraExecutables = [], keepNewest = 3)", source)
+        for state_path in (
+            "paths.centralRuntimePointerPath",
+            "paths.centralRuntimeStatePath",
+            "paths.centralAgentStatePath",
+        ):
+            self.assertIn(state_path, source)
+        self.assertIn("['python_executable', 'learner_python']", source)
+        self.assertIn("keepNewest", source)
+        self.assertIn("pruneLearnerPythonRuntimes([venvPython])", source)
+
+    def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
+        source = read_operator("server.js")
+        start = source.index("function pruneBeesServerRuntimes")
+        end = source.index("function prepareBeesServerRuntime", start)
+        block = source[start:end]
+        self.assertIn("keepNewest = 3", block)
+        self.assertIn("entry.name.includes('.candidate-')", block)
+        self.assertIn("60 * 60 * 1000", block)
+        self.assertIn("keep.has(path.resolve(entry.full).toLowerCase())", block)
+        operator = source[source.index("async function startBeesServerIfNeeded"):]
+        self.assertIn("pruneBeesServerRuntimes([runtimeRoot])", operator)
+        self.assertIn("pruneBeesServerRuntimes([previousRuntimeRoot])", operator)
+
+    def test_cached_server_runtime_revalidates_dependency_load(self):
+        source = read_operator("server.js")
+        start = source.index("function testBeesServerRuntimeLoad")
+        end = source.index("function pruneBeesServerRuntimes", start)
+        block = source[start:end]
+        self.assertIn("runtime.loadLegacyRuntime()", block)
+        self.assertIn("result.status === 0", block)
+        self.assertIn("testBeesServerRuntimeLoad(node, runtimeRoot)", block)
+
+    def test_server_replacement_is_prepared_before_live_process_cutover(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerIfNeeded")
+        block = source[start:]
+        prepare = block.index("prepareBeesServerRuntime(node)")
+        stop = block.index("stopManagedProcessTree(state, node, 'BeesServer')")
+        self.assertLess(prepare, stop)
+
+    def test_server_cutover_records_replacement_ownership_before_health_wait(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerRuntimeProcess")
+        end = source.index("async function startBeesServerIfNeeded", start)
+        block = source[start:end]
+        identity = block.index("const identity = getProcessIdentity(launchedPid)")
+        starting = block.index("writeBeesServerManagedState(", identity)
+        deadline = block.index("const deadline = Date.now()", starting)
+        healthy = block.index("if (await testControl", deadline)
+        active = block.index("'active'", healthy)
+        self.assertLess(identity, starting)
+        self.assertLess(starting, deadline)
+        self.assertLess(deadline, healthy)
+        self.assertLess(healthy, active)
+
+        write_start = source.index("function writeBeesServerManagedState")
+        write_end = source.index("async function startBeesServerRuntimeProcess", write_start)
+        write_block = source[write_start:write_end]
+        self.assertIn("schema_version: 5", write_block)
+        self.assertIn("writeJsonAtomic(paths.serverStatePath", write_block)
+        self.assertIn("writeTextAtomic(paths.serverPidPath", write_block)
+
+    def test_server_cutover_preserves_old_state_until_new_identity_is_durable(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerIfNeeded")
+        block = source[start:]
+        stop = block.index("stopManagedProcessTree(state, node, 'BeesServer')")
+        launch = block.index("startBeesServerRuntimeProcess(", stop)
+        between = block[stop:launch]
+        self.assertNotIn("removeIfExists(paths.serverStatePath)", between)
+        self.assertNotIn("removeIfExists(paths.serverPidPath)", between)
+        self.assertIn("String(state.status || '') !== 'active'", block)
+        self.assertIn("writeBeesServerManagedState(", block)
+
+    def test_failed_server_replacement_restores_previous_verified_runtime(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerIfNeeded")
+        block = source[start:]
+        self.assertIn("Replacement BeesServer failed after cutover; restoring previously verified runtime", block)
+        self.assertIn("testBeesServerStagedRuntime(previousRuntimeRoot, previousSourceHash, node)", block)
+        self.assertIn("previousConfigHash === configHash", block)
+        self.assertIn("previousRuntimeRoot", block)
+        self.assertIn("replacementError", block)
+        self.assertIn("previous verified runtime was restored successfully", block)
+
+    def test_operator_never_kills_a_managed_process_by_pid_alone(self):
+        source = read_operator("common.js")
+        start = source.index("function stopManagedProcessTree")
+        end = source.index("function readTail", start)
+        block = source[start:end]
+        self.assertIn("testManagedProcessIdentity(state)", block)
+        self.assertIn("getStateReferencedLivePid(state)", block)
+        self.assertIn("PID may have been reused", block)
+        self.assertNotIn("process.kill(Number(state.pid)", block.split("if (!testManagedProcessIdentity(state))", 1)[1].split("}", 1)[0])
+
+    def test_status_distinguishes_control_transport_failure_from_render_failure(self):
+        source = read_operator("status.js")
+        start = source.index("async function getStatusFrameLines")
+        end = source.index("async function showStatus", start)
+        block = source[start:end]
+        request = block.index("status = await requestJson")
+        offline = block.index("Server: OFFLINE/UNREACHABLE", request)
+        render_try = block.index("try {", offline + 1)
+        render_error = block.index("Dashboard: RENDER ERROR", render_try)
+        responded = block.index("Control endpoint: RESPONDED", render_error)
+        self.assertLess(request, offline)
+        self.assertLess(offline, render_try)
+        self.assertLess(render_try, render_error)
+        self.assertLess(render_error, responded)
+        self.assertEqual(block.count("Server: OFFLINE/UNREACHABLE"), 1)
+
+    def test_status_learner_log_scan_is_bounded_to_active_run(self):
+        source = read_operator("status.js")
+        start = source.index("function getLocalLearnerStats")
+        end = source.index("function number", start)
+        block = source[start:end]
+        self.assertIn("if (runId) trainerResultsRoot = path.join(trainerResultsRoot, runId)", block)
+        self.assertIn(".slice(0, 24)", block)
+        status = source[source.index("async function getStatusFrameLines"):]
+        self.assertIn("getLocalLearnerStats(String(desired.run_id || ''))", status)
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
