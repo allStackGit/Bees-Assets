@@ -16,7 +16,9 @@ namespace Bees.Tests.EditMode
             int start = source.IndexOf("public void NearbyAsteroidDoubleCheck()");
             Assert.That(start, Is.GreaterThanOrEqualTo(0));
             string method = source.Substring(start, source.IndexOf("public void LeftNearbyAsteroid", start) - start);
-            StringAssert.Contains("NearbyAsteroids.RemoveAll(asteroid => asteroid == null || asteroid.IsDead)", method);
+            StringAssert.Contains("asteroid == null || asteroid.IsDead", method);
+            StringAssert.Contains("ClearTurretAsteroidTarget(asteroid)", method);
+            StringAssert.Contains("NearbyAsteroids.RemoveAt(i)", method);
         }
 
         [Test]
@@ -30,9 +32,15 @@ namespace Bees.Tests.EditMode
             Assert.That(end, Is.GreaterThan(start));
             string method = source.Substring(start, end - start);
             StringAssert.Contains("NearbyAsteroids.Remove(asteroid)", method);
-            StringAssert.Contains("turret.TargetAsteroid == asteroid", method);
-            StringAssert.Contains("turret.TargetAsteroid = null", method);
-            StringAssert.Contains("turret.HasTargetAsteroid = false", method);
+            StringAssert.Contains("ClearTurretAsteroidTarget(asteroid)", method);
+            int clearStart = source.IndexOf("private void ClearTurretAsteroidTarget");
+            int clearEnd = source.IndexOf("public void LeftNearbyAsteroid", clearStart);
+            Assert.That(clearStart, Is.GreaterThanOrEqualTo(0));
+            Assert.That(clearEnd, Is.GreaterThan(clearStart));
+            string clearMethod = source.Substring(clearStart, clearEnd - clearStart);
+            StringAssert.Contains("turret.TargetAsteroid == asteroid", clearMethod);
+            StringAssert.Contains("turret.TargetAsteroid = null", clearMethod);
+            StringAssert.Contains("turret.HasTargetAsteroid = false", clearMethod);
         }
 
         [Test]
