@@ -924,6 +924,8 @@ function Invoke-Build {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
     $sourceSha=Get-GitShortSha
+    $unity=Resolve-UnityEditor $config
+    Assert-UnityProjectAvailableForBatchBuild
 
     $outgoingRun=Get-ActiveRunId $config
     if($outgoingRun){
@@ -939,7 +941,6 @@ function Invoke-Build {
         Write-Host "Training contract is compatible; continuing run $($plan.run_id)."
     }
 
-    $unity=Resolve-UnityEditor $config
     $previousBridgeHash=$null
     if(Test-Path -LiteralPath $TailnetBridgeManifestPath){
         try {
@@ -963,7 +964,6 @@ function Invoke-Build {
     Reset-BuildDirectory $linux
     if($FullGame){ Reset-BuildDirectory $game }
 
-    Assert-UnityProjectAvailableForBatchBuild
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl' $win 'Bees RL Training.exe' "$date-rl-windows.log"
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl' $linux 'Bees RL Training.x86_64' "$date-rl-linux.log"
     if($FullGame){
