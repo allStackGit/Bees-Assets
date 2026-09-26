@@ -108,6 +108,18 @@ function requireRole(value) {
     return role;
 }
 
+function environmentValidationKeyForRelease(buildId, archiveSha256, environmentArgs) {
+    const encodedArgs = environmentArgs
+        .map(value => Buffer.from(value, 'utf8').toString('base64'))
+        .join('\n');
+    const material =
+        'bees-environment-validation-v1\n' +
+        buildId + '\n' +
+        archiveSha256 + '\n' +
+        encodedArgs;
+    return crypto.createHash('sha256').update(material, 'utf8').digest('hex');
+}
+
 function normalizeEnvironmentArgs(value) {
     if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
         throw Object.assign(new Error('environment_args must be an array of strings'), { statusCode: 400 });
@@ -726,6 +738,7 @@ class TrainingControlStore {
         compatibilityKey,
         incompatible = false,
         environmentArgs = undefined,
+        environmentValidationKey = undefined,
     }) {
         buildId = requireString(buildId, 'build_id', 128);
         runId = requireString(runId, 'run_id', 128);
@@ -745,6 +758,42 @@ class TrainingControlStore {
             throw Object.assign(
                 new Error('release build has no published platform artifact'),
                 { statusCode: 409 });
+        }
+        const effectiveEnvironmentArgs = releaseEnvironmentArgs === undefined
+            ? this.state.environment_args
+            : releaseEnvironmentArgs;
+        const environmentValidationRequired =
+            releaseEnvironmentArgs !== undefined ||
+            (
+                effectiveEnvironmentArgs.length > 0 &&
+                this.state.canonical_build_id !== buildId
+            );
+        if (environmentValidationRequired) {
+            const windowsRecord = this.state.builds.WindowsPlayer &&
+                this.state.builds.WindowsPlayer[buildId];
+            if (!windowsRecord) {
+                throw Object.assign(
+                    new Error(
+                        'environment validation requires a published dedicated WindowsPlayer artifact'),
+                    { statusCode: 409 });
+            }
+            const suppliedValidationKey = typeof environmentValidationKey === 'string'
+                ? environmentValidationKey.trim().toLowerCase()
+                : '';
+            const expectedValidationKey = environmentValidationKeyForRelease(
+                buildId,
+                windowsRecord.archive_sha256,
+                effectiveEnvironmentArgs,
+            );
+            if (
+                !/^[0-9a-f]{64}$/.test(suppliedValidationKey) ||
+                suppliedValidationKey !== expectedValidationKey
+            ) {
+                throw Object.assign(
+                    new Error(
+                        'release environment_args are missing authoritative compiled-build validation'),
+                    { statusCode: 409 });
+            }
         }
         const missingTargets = this._missingActiveTargets(buildId);
         if (missingTargets.length > 0) {
@@ -1255,6 +1304,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     environmentArgs: Object.prototype.hasOwnProperty.call(
                         body, 'environment_args')
                         ? body.environment_args
+                        : undefined,
+                    environmentValidationKey: Object.prototype.hasOwnProperty.call(
+                        body, 'environment_validation_key')
+                        ? body.environment_validation_key
                         : undefined,
                 }));
                 return;
