@@ -13,6 +13,7 @@ const {
     paths,
     readJson,
     readText,
+    removeUtf8BomIfPresent,
     removeIfExists,
     resolvePython,
     resolveUnityEditor,
@@ -113,6 +114,7 @@ async function invokeStart(options = {}) {
         return;
     }
 
+    removeUtf8BomIfPresent(paths.latestReleasePath);
     let release = getLatestRelease();
     if (!release.run_id || !release.compatibility_key) {
         throw new Error(
