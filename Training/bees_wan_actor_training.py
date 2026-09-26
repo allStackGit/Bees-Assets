@@ -834,6 +834,10 @@ class WanActorBroker:
         with self._condition:
             self._cohort_blocked_actors.clear()
             required = min(self.options.min_actors, len(self._registrations))
+            generation = (
+                self._control_epoch,
+                tuple(sorted(self._policy_versions_locked().items())),
+            )
         if required <= 0:
             raise RuntimeError("WAN actor cohort requested before any actor registered")
 
@@ -855,18 +859,35 @@ class WanActorBroker:
                 raise TimeoutError(
                     f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
                 ) from exc
-            if not self._batch_is_current(batch):
-                continue
-            actor_id = int(batch["actor_id"])
-            if actor_id in actors:
-                # This should be uncommon because selected actors are backpressured. If a second
-                # request raced the block, include it only after the distinct-actor requirement has
-                # been satisfied by a later batch rather than silently replacing another machine.
-                continue
-            selected.append(batch)
-            actors.add(actor_id)
+
             with self._condition:
+                current_generation = (
+                    self._control_epoch,
+                    tuple(sorted(self._policy_versions_locked().items())),
+                )
+                if current_generation != generation:
+                    # A policy/control change invalidates batches already removed from the queue.
+                    # Start a fresh cohort so the learner never mixes epochs.
+                    selected.clear()
+                    actors.clear()
+                    self._cohort_blocked_actors.clear()
+                    generation = current_generation
+                    required = min(self.options.min_actors, len(self._registrations))
+                if not self._batch_is_current(batch):
+                    continue
+
+                actor_id = int(batch["actor_id"])
+                if actor_id in actors:
+                    # This should be uncommon because selected actors are backpressured. If a second
+                    # request raced the block, include it only after the distinct-actor requirement
+                    # has been satisfied by a later batch rather than silently replacing another machine.
+                    continue
+                selected.append(batch)
+                actors.add(actor_id)
                 self._cohort_blocked_actors.add(actor_id)
+                if len(actors) >= required:
+                    return tuple(selected)
+
         return tuple(selected)
 
 
