@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence
 
+from bees_process_safety import popen_owned, write_managed_health
+
 
 SERVICE_SCHEMA_VERSION = 1
 DEFAULT_RUN_ID = "bees-continuous-v8"
@@ -370,7 +372,7 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
     else:
         kwargs["start_new_session"] = True
 
-    process = subprocess.Popen(list(command), **kwargs)
+    process = popen_owned(list(command), **kwargs)
     stop_requested = False
     while process.poll() is None:
         if _managed_stop_requested() and not stop_requested:
@@ -457,6 +459,13 @@ def run_service(
             phase = str(state["phase"])
 
             if phase == "train":
+                write_managed_health(
+                    "starting",
+                    details={
+                        "phase": "train",
+                        "generation_index": index,
+                    },
+                )
                 previously_started = bool(state["training_started"])
                 state["training_started"] = True
                 save_state(options, state)
@@ -519,8 +528,17 @@ def run_service(
         except KeyboardInterrupt:
             return 130
         except Exception as exc:
+            message = f"{type(exc).__name__}: {exc}"
+            write_managed_health(
+                "error",
+                error=message,
+                details={
+                    "phase": str(state.get("phase", "unknown")),
+                    "generation_index": int(state.get("generation_index", -1)),
+                },
+            )
             print(
-                f"[Bees continuous] phase failed safely: {type(exc).__name__}: {exc}",
+                f"[Bees continuous] phase failed safely: {message}",
                 file=sys.stderr,
             )
             if options.once:
