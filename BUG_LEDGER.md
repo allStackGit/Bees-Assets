@@ -1,9 +1,7 @@
 # Bug Ledger
 
-Static-only audit of `performance/2026-08-13-client-audit`; no runtime measurements are claimed. No tests, builds, executables, benchmarks, simulations, package-manager commands, or GitHub Actions were run.
+Static-only repository audit on `rl/initial-design-work`. This ledger tracks validated, unresolved defects for the active audit; fixed regressions belong in `docs/engineering/REGRESSIONS.md`.
 
-No validated defects introduced by the audited performance branch remain recorded.
+The WAN actor empty-trajectory-queue crash was fixed and has a focused regression test. The change and test were not executed, per the audit's static-only constraint.
 
-Finding passes: 2 / 2 consecutive clean full static passes.
-
-No client production-code changes were required by this regression audit.
+Finding passes: 0 / 2 consecutive clean full-code passes after the latest production fix. The repository-wide audit remains in progress; no full-pass completion is claimed.
