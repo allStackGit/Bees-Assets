@@ -529,6 +529,24 @@ class ElasticWanBroker(base.WanActorBroker):
         for actor_key in stale:
             self._claims.pop(actor_key, None)
 
+    def _fence_previous_actor_instance_locked(
+        self, actor_key: str, actor_instance_id: str, now: float
+    ) -> None:
+        fenced = [
+            actor_id
+            for actor_id, record in self._registrations.items()
+            if record.get("actor_key") == actor_key
+            and record.get("actor_instance_id") != actor_instance_id
+        ]
+        if not fenced:
+            return
+        for actor_id in fenced:
+            self._registrations.pop(actor_id, None)
+        self._topology_epoch += 1
+        active = self._active_snapshot_locked(now=now)
+        self.diagnostics.topology_changed(len(active), sum(active.values()))
+        self._condition.notify_all()
+
     def claim_actor(self, payload: Mapping[str, Any]) -> int:
         self._validate_release_identity(payload)
         actor_key = payload.get("actor_key")
@@ -548,13 +566,16 @@ class ElasticWanBroker(base.WanActorBroker):
 
             existing = self._claims.get(actor_key)
             if existing is not None:
+                actor_id = int(existing["actor_id"])
+                self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
                 existing["last_seen"] = now
                 existing["env_count"] = env_count
                 existing["actor_instance_id"] = actor_instance_id
-                return int(existing["actor_id"])
+                return actor_id
 
-            for actor_id, record in self._registrations.items():
+            for actor_id, record in tuple(self._registrations.items()):
                 if record.get("actor_key") == actor_key:
+                    self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
                     self._claims[actor_key] = {
                         "actor_id": int(actor_id),
                         "env_count": env_count,
