@@ -407,7 +407,28 @@ function Ensure-TailnetIdentity($Config){
                 throw 'Embedded tailnet gateway is running but its persisted learner IPv4 address is missing. Refusing to start a second tsnet server against the same state directory.'
             }
             $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-            if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}
+            if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
+                throw "Embedded tailnet gateway is running but its persisted learner IPv4 address is invalid: $tailnetIp"
+            }
+            Write-Host "Embedded Bees tailnet identity already active at $tailnetIp; reusing the live gateway state."
+            return
+        }
+        $livePid=Get-StateReferencedLivePid $gatewayState
+        if($livePid -gt 0){
+            throw "Tailnet gateway state references live PID $livePid but its persisted PID/start-time/executable identity does not match. Refusing concurrent authentication against a possibly unrelated process/state owner."
+        }
+    }
+
+    Write-Host 'Checking embedded Bees tailnet identity. On first use, open the Tailscale login URL shown below.'
+    Invoke-Checked $bridge @('auth','--state',$state,'--hostname',$hostname,'--ip-file',$TailnetAddressPath) $AssetsRoot
+
+    if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
+        throw 'Embedded tailnet authentication did not produce a learner IPv4 address.'
+    }
+    $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+    if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
+        throw "Unexpected learner tailnet IPv4 address: $tailnetIp"
+    }
 }
 
 function Start-TailnetGatewayIfNeeded($Config){
