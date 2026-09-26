@@ -51,6 +51,24 @@ class RunLifecycleTests(unittest.TestCase):
         (scenes / "RlEpisodeShipIdentity.cs").write_text("identity-v1\n", encoding="utf-8")
         return assets
 
+    def test_contract_fingerprint_is_stable_and_tracks_semantic_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            first = lifecycle.contract_fingerprint(assets)
+            second = lifecycle.contract_fingerprint(assets)
+
+            self.assertEqual(first["compatibility_key"], second["compatibility_key"])
+            self.assertEqual(first["contract"], second["contract"])
+
+            reward = assets / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
+            reward.write_text("reward-v2\n", encoding="utf-8")
+            changed = lifecycle.contract_fingerprint(assets)
+            self.assertNotEqual(
+                changed["compatibility_key"],
+                first["compatibility_key"],
+            )
+
     def test_compatible_build_keeps_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
