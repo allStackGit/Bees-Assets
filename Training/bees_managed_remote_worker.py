@@ -38,6 +38,7 @@ REMOTE_MEMORY_RESERVE_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
+REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -337,6 +338,34 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         raise RuntimeError(
             f"remote supervisor child process {process.pid} did not stop"
         ) from exc
+
+
+def _worker_agent_stop_request_path(args: argparse.Namespace) -> Path:
+    return (
+        Path(args.install_root).expanduser().resolve()
+        / "ManagedBuilds"
+        / REMOTE_WORKER_AGENT_STOP_REQUEST_FILE
+    )
+
+
+def _request_graceful_worker_stop(
+    process: Optional[subprocess.Popen],
+    request_path: Path,
+    *,
+    timeout: float = 30.0,
+) -> bool:
+    if process is None or process.poll() is not None:
+        return True
+    try:
+        request_path.parent.mkdir(parents=True, exist_ok=True)
+        request_path.write_text("stop\n", encoding="ascii")
+    except OSError:
+        return False
+    try:
+        process.wait(timeout=timeout)
+        return True
+    except Exception:
+        return False
 
 
 def _wait_for_ports(
@@ -1012,6 +1041,8 @@ def _worker_command(args: argparse.Namespace, root: Path, actor_key: str) -> lis
         str(Path(args.install_root).expanduser().resolve() / "ManagedBuilds"),
         "--runtime-ready-file",
         str(Path(args.install_root).expanduser().resolve() / "runtime-ready-build.txt"),
+        "--shutdown-request-file",
+        str(_worker_agent_stop_request_path(args)),
         "--worker-envs",
         str(args.envs),
         "--worker-envs-min",
@@ -1234,11 +1265,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 stop[0] = True
             finally:
                 termination_errors = []
-                for label, process in (("worker", worker), ("tailnet", tailnet)):
+                worker_stopped = _request_graceful_worker_stop(
+                    worker,
+                    _worker_agent_stop_request_path(args),
+                )
+                if not worker_stopped:
                     try:
-                        _terminate(process)
+                        _terminate(worker)
                     except RuntimeError as exc:
-                        termination_errors.append(f"{label}: {exc}")
+                        termination_errors.append(f"worker: {exc}")
+                try:
+                    _terminate(tailnet)
+                except RuntimeError as exc:
+                    termination_errors.append(f"tailnet: {exc}")
                 if worker_log_thread is not None:
                     worker_log_thread.join(timeout=1.0)
                 if termination_errors:
