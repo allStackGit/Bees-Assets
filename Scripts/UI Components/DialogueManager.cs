@@ -192,17 +192,14 @@ public class DialogueManager : MonoBehaviour
         {
             lines = new List<DialogueLine>();
         }
-        if (lines != null)
+        foreach (DialogueLine line in lines)
         {
-            foreach (DialogueLine line in lines)
+            if (line == null)
             {
-                if (line == null)
-                {
-                    continue;
-                }
-                line.IsSkipped = false;
-                line.IsOver = false;
+                continue;
             }
+            line.IsSkipped = false;
+            line.IsOver = false;
         }
 
         _isLastDialogue = isLastDialogue;
