@@ -637,6 +637,68 @@ class CandidateMonitor:
         self._thread: Optional[threading.Thread] = None
         self.errors: List[str] = []
 
+    def _pending_path(self, path: Path) -> Path:
+        return path.with_name(path.name + ".bees-candidate-pending.json")
+
+    def _pending_payload(
+        self,
+        path: Path,
+        identity: Tuple[int, int],
+        step: int,
+    ) -> Dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "training_run_id": self.run_id,
+            "game_build_version": self.game_build,
+            "training_step": int(step),
+            "parent_model_id": self.parent_model_id,
+            "training_config_path": str(self.training_config.expanduser().resolve()),
+            "artifact_path": str(path.resolve()),
+            "artifact_size": int(identity[0]),
+            "artifact_mtime_ns": int(identity[1]),
+        }
+
+    def _write_pending(
+        self,
+        path: Path,
+        identity: Tuple[int, int],
+        step: int,
+    ) -> None:
+        marker = self._pending_path(path)
+        temporary = marker.with_name(marker.name + f".{os.getpid()}.tmp")
+        payload = self._pending_payload(path, identity, step)
+        try:
+            temporary.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.replace(temporary, marker)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+    def _pending_matches(self, path: Path, identity: Tuple[int, int]) -> bool:
+        marker = self._pending_path(path)
+        try:
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return False
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+            return False
+        step = infer_training_step(path)
+        if step is None:
+            return False
+        expected = self._pending_payload(path, identity, step)
+        return payload == expected
+
+    def _clear_pending(self, path: Path) -> None:
+        try:
+            self._pending_path(path).unlink()
+        except FileNotFoundError:
+            pass
+
     def prime_existing(self) -> None:
         """Treat pre-existing exports as baseline, not newly produced candidates."""
         if not self.results_run_dir.exists():
@@ -655,7 +717,15 @@ class CandidateMonitor:
                 continue
             if stat.st_size <= 0:
                 continue
-            self._registered[str(path.resolve())] = (stat.st_size, stat.st_mtime_ns)
+            identity = (stat.st_size, stat.st_mtime_ns)
+            key = str(path.resolve())
+            if self._pending_matches(path, identity):
+                # A prior process exported this candidate but failed before registration
+                # completed. Preserve the durable intent and retry immediately on startup
+                # instead of misclassifying it as an old resume baseline.
+                self._stats[key] = (identity[0], identity[1], 2)
+                continue
+            self._registered[key] = identity
 
     def start(self) -> None:
         # On --resume the results tree can contain thousands of old checkpoints.
@@ -716,6 +786,11 @@ class CandidateMonitor:
         if step is None:
             return
 
+        # Persist registration intent before touching the registry. If copying or
+        # committing the model fails, the marker survives process restart and prime_existing()
+        # retries this exact run/lineage/file identity. register_model() itself is content-hash
+        # idempotent, so a crash after its DB commit but before marker deletion is also safe.
+        self._write_pending(path, identity, step)
         model = self.store.register_model(
             path,
             training_run_id=self.run_id,
@@ -727,6 +802,7 @@ class CandidateMonitor:
             status="candidate",
             metadata={"registration_source": "bees_continual_train"},
         )
+        self._clear_pending(path)
         self._registered[key] = identity
         print(
             f"[Bees continual] registered candidate model_id={model['model_id']} step={step} "
