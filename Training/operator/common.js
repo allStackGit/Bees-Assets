@@ -392,8 +392,11 @@ function getNamedFileSetSha256(entries) {
     return sha256Text(JSON.stringify(manifest));
 }
 
-function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = 5000) {
+function requestJson(baseUrl, token, method, requestPath, payload = null, timeoutMs = null) {
     const url = new URL(requestPath, baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
+    const effectiveTimeoutMs = timeoutMs == null
+        ? (String(method).toUpperCase() === 'GET' ? 5000 : 30000)
+        : Number(timeoutMs);
     const transport = url.protocol === 'https:' ? https : http;
     const body = payload === null ? null : Buffer.from(JSON.stringify(payload) + '\n', 'utf8');
     return new Promise((resolve, reject) => {
@@ -426,7 +429,13 @@ function requestJson(baseUrl, token, method, requestPath, payload = null, timeou
                 resolve(value);
             });
         });
-        request.setTimeout(timeoutMs, () => request.destroy(new Error('training-control request timed out')));
+        request.setTimeout(
+            effectiveTimeoutMs,
+            () => request.destroy(new Error(
+                'training-control ' + String(method).toUpperCase() +
+                ' request timed out after ' + effectiveTimeoutMs + ' ms'
+            )),
+        );
         request.on('error', reject);
         if (body) request.write(body);
         request.end();
