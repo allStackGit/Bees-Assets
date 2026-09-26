@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import tempfile
 from typing import Any, Mapping, Sequence
 import zipfile
@@ -66,7 +67,11 @@ def _canonical_json(value: Any) -> bytes:
 
 def _runtime_source_files(training_root: Path) -> list[Path]:
     files = sorted(
-        (path for path in training_root.glob("*.py") if path.is_file()),
+        (
+            path
+            for path in training_root.glob("*.py")
+            if path.is_file() and not path.name.endswith("_tests.py")
+        ),
         key=lambda path: path.name,
     )
     for name in EXTRA_RUNTIME_FILES:
@@ -414,7 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_build_id=args.expected_build_id,
             )
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
-        print(f"training runtime error: {exc}", file=os.sys.stderr)
+        print(f"training runtime error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
