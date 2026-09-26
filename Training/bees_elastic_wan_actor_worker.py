@@ -17,6 +17,7 @@ import secrets
 import signal
 import sys
 import threading
+import traceback
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -24,6 +25,117 @@ import bees_elastic_wan_actor_session as elastic_session
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
 import bees_wan_actor_worker as worker
+
+
+MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+
+
+def _watch_managed_stop_request(
+    path: Path,
+    stop: threading.Event,
+    *,
+    poll_seconds: float = 0.25,
+) -> None:
+    while not stop.is_set():
+        if path.is_file():
+            stop.set()
+            return
+        stop.wait(poll_seconds)
+
+
+def _safe_shape(value: Any) -> Optional[list[int]]:
+    shape = getattr(value, "shape", None)
+    if shape is None:
+        return None
+    try:
+        return [int(item) for item in shape]
+    except (TypeError, ValueError):
+        return None
+
+
+def _actor_failure_context(session: Any) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "actor_id": getattr(session, "actor_id", None),
+        "env_count": getattr(session, "env_count", None),
+        "worker_offset": getattr(session, "worker_offset", None),
+        "total_envs": getattr(session, "total_envs", None),
+        "policy_epoch": getattr(session, "policy_epoch", None),
+        "control_epoch": getattr(session, "control_epoch", None),
+        "topology_epoch": getattr(session, "topology_epoch", None),
+        "policy_versions": dict(getattr(session, "policy_versions", {}) or {}),
+    }
+    manager = getattr(session, "manager", None)
+    if manager is None:
+        return context
+
+    worker_states = []
+    for index, env_worker in enumerate(getattr(manager, "env_workers", ()) or ()):
+        item: dict[str, Any] = {
+            "index": index,
+            "waiting": bool(getattr(env_worker, "waiting", False)),
+        }
+        previous = getattr(env_worker, "previous_step", None)
+        if previous is not None:
+            item["worker_id"] = getattr(previous, "worker_id", None)
+            results = getattr(previous, "current_all_step_result", None)
+            if isinstance(results, Mapping):
+                behaviors = {}
+                for behavior, pair in results.items():
+                    try:
+                        decision, terminal = pair
+                    except (TypeError, ValueError):
+                        continue
+                    behaviors[str(behavior)] = {
+                        "decision_count": len(decision),
+                        "terminal_count": len(terminal),
+                        "decision_agent_ids_shape": _safe_shape(
+                            getattr(decision, "agent_id", None)
+                        ),
+                        "terminal_agent_ids_shape": _safe_shape(
+                            getattr(terminal, "agent_id", None)
+                        ),
+                    }
+                item["behaviors"] = behaviors
+
+            action_infos = getattr(previous, "brain_name_to_action_info", None)
+            if isinstance(action_infos, Mapping):
+                actions = {}
+                for behavior, info in action_infos.items():
+                    action = getattr(info, "action", None)
+                    actions[str(behavior)] = {
+                        "agent_ids_shape": _safe_shape(getattr(info, "agent_ids", None)),
+                        "continuous_shape": _safe_shape(
+                            getattr(action, "continuous", None)
+                        ),
+                        "discrete_shape": _safe_shape(
+                            getattr(action, "discrete", None)
+                        ),
+                    }
+                item["actions"] = actions
+        worker_states.append(item)
+    context["workers"] = worker_states
+    return context
+
+
+def _report_session_failure(exc: BaseException, session: Any) -> None:
+    print(
+        f"[Bees WAN actor] session failed: {type(exc).__name__}: {exc}; reconnecting.",
+        file=sys.stderr,
+    )
+    if session is not None:
+        try:
+            print(
+                "[Bees WAN actor] failure context: "
+                + json.dumps(_actor_failure_context(session), sort_keys=True),
+                file=sys.stderr,
+            )
+        except Exception as context_exc:
+            print(
+                f"[Bees WAN actor] failure context unavailable: "
+                f"{type(context_exc).__name__}: {context_exc}",
+                file=sys.stderr,
+            )
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
 
 
 class ElasticBrokerClient(worker.BrokerClient):
@@ -240,6 +352,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     stop = threading.Event()
+    stop_request_value = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
+    stop_request_file = (
+        Path(stop_request_value).expanduser().resolve() if stop_request_value else None
+    )
+    stop_watcher: Optional[threading.Thread] = None
+    if stop_request_file is not None:
+        stop_watcher = threading.Thread(
+            target=_watch_managed_stop_request,
+            args=(stop_request_file, stop),
+            name="bees-wan-managed-stop",
+            daemon=True,
+        )
+        stop_watcher.start()
 
     def request_stop(_signum: int, _frame: Any) -> None:
         stop.set()
@@ -259,6 +384,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             compatibility_key=release_identity["compatibility_key"],
         )
         while not stop.is_set():
+            actor_session = None
             try:
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
                 session_id = raw_session.get("session_id")
@@ -299,13 +425,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except KeyboardInterrupt:
                 stop.set()
             except Exception as exc:
-                print(
-                    f"[Bees WAN actor] session failed: {type(exc).__name__}: {exc}; reconnecting.",
-                    file=sys.stderr,
-                )
+                _report_session_failure(exc, actor_session)
                 stop.wait(args.reconnect_seconds)
         return 0
     finally:
+        stop.set()
+        if stop_watcher is not None:
+            stop_watcher.join(timeout=1.0)
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
 
