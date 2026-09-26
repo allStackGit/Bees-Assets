@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -437,6 +438,97 @@ func serveGatewaySession(
 	}
 }
 
+func managedFlagValue(args []string, name string) string {
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		if argument == name && index+1 < len(args) {
+			return args[index+1]
+		}
+		if strings.HasPrefix(argument, name+"=") {
+			return strings.TrimPrefix(argument, name+"=")
+		}
+	}
+	return ""
+}
+
+func withoutManagedOwnerToken(args []string) []string {
+	result := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		if argument == "--owner-token" {
+			if index+1 < len(args) {
+				index++
+			}
+			continue
+		}
+		if strings.HasPrefix(argument, "--owner-token=") {
+			continue
+		}
+		result = append(result, argument)
+	}
+	return result
+}
+
+func runGatewaySupervisor(args []string) error {
+	childArgs := withoutManagedOwnerToken(args)
+	healthFile := managedFlagValue(childArgs, "--health-file")
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if strings.TrimSpace(healthFile) != "" {
+			_ = os.Remove(healthFile)
+		}
+		commandArgs := append([]string{"gateway"}, childArgs...)
+		child := exec.Command(os.Args[0], commandArgs...)
+		child.Stdout = os.Stdout
+		child.Stderr = os.Stderr
+		child.Stdin = os.Stdin
+		if err := child.Start(); err != nil {
+			log.Printf("[Bees tailnet] gateway child launch failed: %v; retrying", err)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+		log.Printf("[Bees tailnet] gateway supervisor started child pid=%d", child.Process.Pid)
+		done := make(chan error, 1)
+		go func() {
+			done <- child.Wait()
+		}()
+
+		select {
+		case <-ctx.Done():
+			_ = child.Process.Kill()
+			<-done
+			if strings.TrimSpace(healthFile) != "" {
+				_ = os.Remove(healthFile)
+			}
+			return nil
+		case err := <-done:
+			if strings.TrimSpace(healthFile) != "" {
+				_ = os.Remove(healthFile)
+			}
+			if err != nil {
+				log.Printf("[Bees tailnet] gateway child exited: %v; restarting", err)
+			} else {
+				log.Printf("[Bees tailnet] gateway child exited cleanly; restarting")
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 func runGateway(args []string) error {
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	c := addCommon(fs)
@@ -806,7 +898,7 @@ func runForwardMulti(args []string) error {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: bees-tailnet-bridge <auth|probe|gateway|fetch|forward-multi> [options]")
+	fmt.Fprintln(os.Stderr, "Usage: bees-tailnet-bridge <auth|probe|gateway-supervisor|gateway|fetch|forward-multi> [options]")
 }
 
 func main() {
@@ -820,6 +912,8 @@ func main() {
 		err = runAuth(os.Args[2:])
 	case "probe":
 		err = runProbe(os.Args[2:])
+	case "gateway-supervisor":
+		err = runGatewaySupervisor(os.Args[2:])
 	case "gateway":
 		err = runGateway(os.Args[2:])
 	case "fetch":
