@@ -1,0 +1,7 @@
+2026/09/25 18:20:00 [Bees tailnet] gateway online ip=100.80.169.87 control=7150 broker=55051 bootstrap=7151
+2026/09/25 20:09:16 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 20:09:17 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 20:09:17 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 20:09:19 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 20:09:19 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
+2026/09/25 20:09:20 [Bees tailnet] control target unavailable: dial tcp 127.0.0.1:7150: connectex: No connection could be made because the target machine actively refused it.
