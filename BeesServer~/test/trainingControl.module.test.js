@@ -12,6 +12,9 @@ const {
     environmentValidationKeyForRelease,
 } = require('../trainingControl');
 
+const TEST_ENV_VALIDATION_SECRET = 'validation-test-secret-'.repeat(3);
+process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET = TEST_ENV_VALIDATION_SECRET;
+
 function withTempDir(work) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-training-control-'));
     let result;
@@ -48,6 +51,7 @@ function validationKey(store, buildId, environmentArgs) {
         buildId,
         artifact.archive_sha256,
         environmentArgs,
+        TEST_ENV_VALIDATION_SECRET,
     );
 }
 
@@ -1385,6 +1389,79 @@ test('release retry rejects environment args drift for pending or canonical iden
                 /same-run environment-only transitions must use compatible rolling rollout/.test(error.message),
         );
         assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+    });
+});
+
+test('public release metadata cannot forge an environment validation attestation', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const buildId = 'validation-auth-build';
+        publishDedicatedBuild(store, root, buildId);
+        const environmentArgs = ['--rl-map-size=64'];
+        const artifact = store.artifact('dedicated', 'WindowsPlayer', buildId);
+        const encodedArgs = environmentArgs
+            .map(value => Buffer.from(value, 'utf8').toString('base64'))
+            .join('\n');
+        const forgeablePublicHash = crypto.createHash('sha256').update(
+            'bees-environment-validation-v1\n' +
+            buildId + '\n' +
+            artifact.archive_sha256 + '\n' +
+            encodedArgs,
+            'utf8',
+        ).digest('hex');
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId,
+                runId: 'validation-auth-run',
+                compatibilityKey: '6'.repeat(64),
+                incompatible: false,
+                environmentArgs,
+                environmentValidationKey: forgeablePublicHash,
+            }),
+            error => error.statusCode === 409 &&
+                /missing authoritative compiled-build validation/.test(error.message),
+        );
+
+        store.stageRelease({
+            buildId,
+            runId: 'validation-auth-run',
+            compatibilityKey: '6'.repeat(64),
+            incompatible: false,
+            environmentArgs,
+            environmentValidationKey: validationKey(store, buildId, environmentArgs),
+        });
+        assert.deepEqual(store.state.environment_args, environmentArgs);
+    });
+});
+
+test('environment validation fails closed when server attestation secret is absent', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            environmentValidationSecret: '',
+        });
+        const buildId = 'validation-no-secret';
+        publishDedicatedBuild(store, root, buildId);
+        const environmentArgs = ['--rl-map-size=48'];
+
+        assert.throws(
+            () => store.stageRelease({
+                buildId,
+                runId: 'validation-no-secret-run',
+                compatibilityKey: '5'.repeat(64),
+                incompatible: false,
+                environmentArgs,
+                environmentValidationKey: 'a'.repeat(64),
+            }),
+            error => error.statusCode === 503 &&
+                /no environment validation secret configured/.test(error.message),
+        );
+        assert.equal(store.state.pending_release, null);
     });
 });
 
