@@ -294,20 +294,67 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(prepare, central)
         self.assertLess(central, stage)
 
-    def test_build_migrates_central_supervisor_before_new_release_identity_exists(self):
+    def test_build_reconciles_previous_release_before_new_release_identity_exists(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Invoke-Build")
         end = source.index("function Invoke-Server", start)
         block = source[start:end]
 
-        migrate = block.index("$currentRelease=Get-LatestRelease")
-        plan = block.index("$plan=New-TrainingRunPlan")
+        current = block.index("$currentRelease=Get-LatestRelease")
+        reconcile = block.index(
+            "Reconcile-LatestReleaseBeforeBuild "
+            "$config $python $unity $preBuildAdmin $currentRelease"
+        )
+        archive = block.index("Archive-TrainingRun", reconcile)
+        plan = block.index("$plan=New-TrainingRunPlan", archive)
         new_release = block.index("$release=[pscustomobject]", plan)
-        self.assertLess(migrate, plan)
-        self.assertLess(migrate, new_release)
+        self.assertLess(current, reconcile)
+        self.assertLess(reconcile, archive)
+        self.assertLess(reconcile, plan)
+        self.assertLess(reconcile, new_release)
+
+        helper_start = source.index("function Reconcile-LatestReleaseBeforeBuild")
+        helper_end = source.index("function Invoke-Build", helper_start)
+        helper = source[helper_start:helper_end]
+        self.assertIn("Ensure-RunLifecycleMatchesRelease $Python $Release", helper)
         self.assertIn(
-            "Start-CentralAgentIfNeeded $config $python $unity "
-            "$currentRelease $currentCentralRuntime",
+            "Prepare-CentralReleaseRuntime $Config $Python $Unity $Release",
+            helper,
+        )
+        self.assertIn(
+            "Start-CentralAgentIfNeeded $Config $Python $Unity "
+            "$Release $centralRuntime",
+            helper,
+        )
+        self.assertIn("Previous release is still rolling out", helper)
+        self.assertIn(
+            "Wait-ReleaseRollout $Config $AdminToken "
+            "$releaseBuild $releaseRun $releaseKey",
+            helper,
+        )
+        self.assertIn(
+            "Latest release $releaseBuild was persisted but is not canonical",
+            helper,
+        )
+        self.assertIn("Prepare-RemoteBootstrap $Config $Python $Release", helper)
+        self.assertIn("Publish-Release $Config $AdminToken $Release", helper)
+        self.assertIn("$staged=Stage-Release $Config $AdminToken $Release", helper)
+
+    def test_prebuild_reconciliation_rejects_control_release_identity_drift(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Reconcile-LatestReleaseBeforeBuild")
+        end = source.index("function Invoke-Build", start)
+        block = source[start:end]
+
+        self.assertIn("$pendingBuild -ne $releaseBuild", block)
+        self.assertIn("$pendingRun -ne $releaseRun", block)
+        self.assertIn("$pendingKey -ne $releaseKey", block)
+        self.assertIn(
+            "Training control has a pending release that differs from latest release metadata",
+            block,
+        )
+        self.assertIn(
+            "Previous release reconciliation returned without making",
             block,
         )
 
