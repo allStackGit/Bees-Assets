@@ -306,7 +306,7 @@ class ElasticBrokerTests(unittest.TestCase):
             "actor_instance_id": "process-stale",
             "env_count": 8,
         }
-        payload["compatibility_key"] = "d" * 64
+        payload["build_id"] = "elastic-build-other"
         with self.assertRaisesRegex(ValueError, "release identity"):
             broker.claim_actor(payload)
         self.assertEqual(broker.active_actor_snapshot(), {})
@@ -321,11 +321,13 @@ class ElasticBrokerTests(unittest.TestCase):
         session = {"release_identity": dict(expected)}
         actor_worker._validate_session_release_identity(session, expected)
 
-        # Compatible rolling releases may use a different executable build while preserving
-        # the same semantic run lineage.
+        # Policy/checkpoint compatibility may remain unchanged across builds, but rollout actors
+        # must never mix trajectories from two compiled simulation builds in one learner session.
         session["release_identity"]["build_id"] = "build-b"
-        actor_worker._validate_session_release_identity(session, expected)
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            actor_worker._validate_session_release_identity(session, expected)
 
+        session["release_identity"]["build_id"] = "build-a"
         session["release_identity"]["compatibility_key"] = "b" * 64
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             actor_worker._validate_session_release_identity(session, expected)
