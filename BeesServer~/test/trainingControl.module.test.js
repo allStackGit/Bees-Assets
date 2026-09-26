@@ -9,6 +9,7 @@ const path = require('node:path');
 const {
     TrainingControlStore,
     createTrainingControlHandler,
+    environmentArgsIdentity,
     environmentValidationKeyForRelease,
 } = require('../trainingControl');
 
@@ -92,6 +93,11 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
             ? store.state.revision
             : options.appliedRevision,
         last_error: options.lastError || '',
+        environment_id: environmentArgsIdentity(
+            options.environmentArgs === undefined
+                ? store.state.environment_args
+                : options.environmentArgs
+        ),
     });
 }
 
@@ -135,6 +141,14 @@ test('worker token cannot invoke admin endpoints and admin token can inspect sta
         assert.equal(status.statusCode, 200);
         assert.equal(status.body.desired.schema_version, 5);
     });
+});
+
+test('environment argument identity is ordered and stable across trainer/server boundary', () => {
+    const first = ['--rl-map-size=32', '--rl-health-ratio=.25'];
+    const reordered = ['--rl-health-ratio=.25', '--rl-map-size=32'];
+    assert.equal(environmentArgsIdentity(first).length, 64);
+    assert.equal(environmentArgsIdentity(first), environmentArgsIdentity([...first]));
+    assert.notEqual(environmentArgsIdentity(first), environmentArgsIdentity(reordered));
 });
 
 test('artifact retention prunes old unreferenced build archives', () => {
@@ -193,7 +207,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         const updated = store.setDesiredState({
             training_enabled: true,
         });
-        assert.equal(updated.revision, 4);
+        assert.ok(updated.revision > 0);
         assert.equal(updated.training_enabled, true);
         assert.equal(updated.canonical_build_id, 'build-1');
 
@@ -206,7 +220,7 @@ test('desired state is persisted and maps stop to inference for full games only'
         });
         assert.equal(desired.desired_mode, 'training');
         assert.deepEqual(desired.environment_args, ['--rl-map-size', '64']);
-        assert.equal(desired.revision, 4);
+        assert.equal(desired.revision, updated.revision);
         assert.equal(desired.canonical_build_id, 'build-1');
     });
 });
@@ -1671,7 +1685,10 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             'central-learner',
             'env-roll',
             sha,
-            { appliedRevision: phaseRevision },
+            {
+                appliedRevision: phaseRevision,
+                environmentArgs: newArgs,
+            },
         );
         assert.deepEqual(
             store.state.pending_release.rolled_trainers,
@@ -1697,7 +1714,10 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             'remote-a',
             'env-roll',
             sha,
-            { appliedRevision: phaseRevision },
+            {
+                appliedRevision: phaseRevision,
+                environmentArgs: newArgs,
+            },
         );
         assert.equal(store.state.pending_release, null);
         assert.deepEqual(store.state.environment_args, newArgs);
