@@ -1268,6 +1268,22 @@ function Invoke-Build {
     $unity=Resolve-UnityEditor $config
     Assert-UnityProjectAvailableForBatchBuild
 
+    # Converge an already-running cluster onto the stable central supervisor before creating a
+    # newer release. This one-time migration happens while latest-release still describes the
+    # canonical runtime, so the fallback child command can never be paired with the wrong build.
+    if((Test-Path -LiteralPath $LatestReleasePath) -and (Test-Path -LiteralPath $AdminTokenPath)){
+        $preBuildAdmin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+        if($preBuildAdmin -and (Test-Control ([string]$config.controlUrl) $preBuildAdmin)){
+            $preBuildWorker=Ensure-TokenFile $WorkerTokenPath
+            Start-BeesServerIfNeeded $config $preBuildWorker $preBuildAdmin
+            $currentRelease=Get-LatestRelease
+            if($currentRelease.run_id -and $currentRelease.compatibility_key){
+                $currentCentralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $currentRelease
+                Start-CentralAgentIfNeeded $config $python $unity $currentRelease $currentCentralRuntime
+            }
+        }
+    }
+
     $outgoingRun=Get-ActiveRunId $config
     if($outgoingRun){
         Archive-TrainingRun $python $outgoingRun 'pre-build'
@@ -1382,6 +1398,8 @@ function Invoke-Build {
             $worker=Ensure-TokenFile $WorkerTokenPath
             Start-BeesServerIfNeeded $config $worker $admin
             Assert-CentralAgentCheckpointSafe
+            $centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release
+            Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
                 Prepare-RemoteBootstrap $config $python $release
@@ -2270,17 +2288,18 @@ function Invoke-Start {
     }
 
     $unity=Resolve-UnityEditor $config
+    $centralRuntime=Prepare-CentralReleaseRuntime $config $bootstrapPython $unity $release
     Ensure-TailnetIdentity $config
     Prepare-RemoteBootstrap $config $python $release
     Publish-Release $config $admin $release
     Start-TailnetGatewayIfNeeded $config
+    Start-CentralAgentIfNeeded $config $bootstrapPython $unity $release $centralRuntime
 
     $staged=Stage-Release $config $admin $release
     $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
         training_enabled=$true
         environment_args=@($envArgs)
     }
-    Start-CentralAgentIfNeeded $config $python $unity $release
 
     if($NewRun){
         $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
