@@ -521,6 +521,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             server,
         )
 
+    def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Prune-BeesServerRuntimes")
+        end = source.index("function Test-BeesServerStagedRuntime", start)
+        block = source[start:end]
+
+        self.assertIn("[int]$KeepNewest=3", block)
+        self.assertIn("$keep.ContainsKey($full)", block)
+        self.assertIn("Where-Object{$_.Name -notlike '*.candidate-*'}", block)
+        self.assertIn("Select-Object -First $KeepNewest", block)
+
+        operator_start = source.index("function Start-BeesServerIfNeeded")
+        operator_end = source.index("function Get-LatestRelease", operator_start)
+        operator = source[operator_start:operator_end]
+        self.assertIn(
+            "Prune-BeesServerRuntimes @($serverRuntimeRoot)",
+            operator,
+        )
+        self.assertIn(
+            "Prune-BeesServerRuntimes @($previousRuntimeRoot)",
+            operator,
+        )
+
     def test_server_replacement_is_prepared_before_live_process_cutover(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         prepare_start = source.index("function Prepare-BeesServerRuntime")
@@ -552,6 +575,70 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("schema_version=4", block)
         self.assertNotIn("$ServerDependencyStampPath", source)
         self.assertNotIn("Invoke-Checked $npm @('ci') $ServerRoot", source)
+
+    def test_server_cutover_records_replacement_ownership_before_health_wait(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Start-BeesServerRuntimeProcess")
+        end = source.index("function Start-BeesServerIfNeeded", start)
+        block = source[start:end]
+
+        identity = block.index("$identity=Get-ProcessIdentity $launchedPid")
+        starting = block.index(
+            "Write-BeesServerManagedState $identity "
+            "([string]$RuntimeIdentity.source_hash)"
+        )
+        deadline = block.index("$deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)")
+        healthy = block.index("if(Test-Control $base $AdminToken)")
+        active = block.index("'active' $RollbackReason", healthy)
+
+        self.assertLess(identity, starting)
+        self.assertLess(starting, deadline)
+        self.assertLess(deadline, healthy)
+        self.assertLess(healthy, active)
+
+        write_start = source.index("function Write-BeesServerManagedState")
+        write_end = source.index("function Start-BeesServerRuntimeProcess", write_start)
+        write_block = source[write_start:write_end]
+        self.assertIn("Install-AtomicFile $temp $ServerStatePath", write_block)
+        self.assertIn("Install-AtomicFile $pidTemp $ServerPidPath", write_block)
+        self.assertIn("schema_version=5", write_block)
+        self.assertIn("status=$Status", write_block)
+
+    def test_server_cutover_preserves_old_state_until_new_identity_is_durable(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Start-BeesServerIfNeeded")
+        end = source.index("function Get-LatestRelease", start)
+        block = source[start:end]
+
+        stop = block.index(
+            "Stop-ManagedProcessTree $managedState $node 'BeesServer'"
+        )
+        launch = block.index(
+            "Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot",
+            stop,
+        )
+        between = block[stop:launch]
+        self.assertNotIn(
+            "Remove-Item -LiteralPath $ServerStatePath",
+            between,
+        )
+        self.assertNotIn(
+            "Remove-Item -LiteralPath $ServerPidPath",
+            between,
+        )
+
+        match = block.index("$runtimeMatches")
+        promote = block.index(
+            "Write-BeesServerManagedState $managedState "
+            "$serverSourceHash $serverDependencyHash",
+            match,
+        )
+        healthy_return = block.index("return", promote)
+        self.assertLess(promote, healthy_return)
+        self.assertIn(
+            "Get-ObjectPropertyValue $managedState 'status'",
+            block[match:healthy_return],
+        )
 
     def test_failed_server_replacement_restores_previous_verified_runtime(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
