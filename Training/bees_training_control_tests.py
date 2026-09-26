@@ -203,6 +203,14 @@ class TrainingControlClientTests(unittest.TestCase):
             5.0,
         )
 
+    def test_environment_args_identity_is_ordered_and_deterministic(self):
+        first = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
+        second = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
+        reordered = agent.environment_args_identity(("--rl-health-ratio=.25", "--rl-map-size=32"))
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 64)
+        self.assertNotEqual(first, reordered)
+
     def test_dedicated_child_health_gates_running_state_and_surfaces_errors(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -284,6 +292,10 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
             self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
             self.assertEqual(environment[agent.COMPATIBILITY_KEY_ENV], "b" * 64)
+            self.assertEqual(
+                environment[agent.ENVIRONMENT_ID_ENV],
+                agent.environment_args_identity(()),
+            )
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
             self.assertTrue(
                 Path(environment["BEES_TRAINING_CHILD_HEALTH_FILE"]).as_posix().endswith(
