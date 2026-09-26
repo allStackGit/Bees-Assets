@@ -1669,6 +1669,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 managed.stop(progress_callback=stopping_keepalive)
             except RuntimeError as exc:
                 print(f"[Bees control] {type(exc).__name__}: {exc}", file=sys.stderr)
+                # A persistent stop-request I/O failure returns immediately. Keep retrying the
+                # fail-closed shutdown, but avoid a tight loop that floods stderr and burns CPU.
+                time.sleep(1.0)
                 continue
         if shutdown_request_file is not None:
             try:
