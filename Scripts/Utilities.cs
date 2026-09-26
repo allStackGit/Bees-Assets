@@ -1405,7 +1405,7 @@ namespace Assets.Scripts
 
         public static float CalculateFirepower(int power, int range, float rateOfFire, float rotationRate, float ProjectileValue, float specialFirepower)
         {
-            return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow((range / 20), 2)) : specialFirepower;
+            return rateOfFire > 0 ? ((((power*ProjectileValue) / rateOfFire) * Mathf.Clamp(rotationRate/128, .5f, 1.25f)) * Mathf.Pow(range / 20f, 2)) : specialFirepower;
         }
 
         public static bool HasObstaclesInTheWay(Vector2 start, Vector2 end)
