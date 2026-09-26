@@ -1054,6 +1054,104 @@ test('compatible rollout converges across worker loss, server restart, and worke
     });
 });
 
+test('disabling training during compatible rolling promotes the fully prepared release', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stop-compatible-old');
+        const newSha = publishDedicatedBuild(store, root, 'stop-compatible-new');
+
+        store.stageRelease({
+            buildId: 'stop-compatible-old',
+            runId: 'stop-compatible-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stop-compatible-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'stop-compatible-new',
+            runId: 'stop-compatible-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stop-compatible-old',
+                oldSha,
+                { preparedBuildId: 'stop-compatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        const desired = store.setDesiredState({ training_enabled: false });
+
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'stop-compatible-new');
+        assert.equal(desired.run_id, 'stop-compatible-run');
+        assert.equal(desired.pending_release, null);
+        const remote = store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(remote.desired_mode, 'stopped');
+        assert.equal(remote.desired_build_id, 'stop-compatible-new');
+    });
+});
+
+test('disabling training never bypasses an incompatible stopping barrier', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stop-incompatible-old');
+        publishDedicatedBuild(store, root, 'stop-incompatible-new');
+
+        store.stageRelease({
+            buildId: 'stop-incompatible-old',
+            runId: 'stop-incompatible-old-run',
+            compatibilityKey: 'f'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stop-incompatible-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'stop-incompatible-new',
+            runId: 'stop-incompatible-new-run',
+            compatibilityKey: '0'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stop-incompatible-old',
+                oldSha,
+                { preparedBuildId: 'stop-incompatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        const desired = store.setDesiredState({ training_enabled: false });
+
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'stop-incompatible-old');
+        assert.equal(desired.run_id, 'stop-incompatible-old-run');
+        assert.equal(desired.pending_release.phase, 'stopping');
+    });
+});
+
 test('incompatible rollout never drops an expired required trainer', () => {
     withTempDir(root => {
         let now = 1000;
