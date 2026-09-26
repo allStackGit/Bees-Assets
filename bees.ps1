@@ -526,6 +526,13 @@ function Start-TailnetGatewayIfNeeded($Config){
                 Write-Host "Recovered embedded tailnet gateway ownership after interrupted launch (PID $($recovered.pid))."
             }
         }
+        if(-not(Test-ManagedProcessIdentity $gatewayState) -and $ownerToken){
+            $orphanChild=Find-ManagedProcessByOwnerToken $bridge ($ownerToken + '.child') 'orphaned embedded tailnet gateway child'
+            if($null -ne $orphanChild){
+                Write-Host "Stopping orphaned embedded tailnet gateway child PID $($orphanChild.pid) left by a dead supervisor."
+                $null=Stop-ManagedProcessTree $orphanChild $bridge 'orphaned embedded tailnet gateway child'
+            }
+        }
     }
     if($null -ne $gatewayState){
         if(Test-ManagedProcessIdentity $gatewayState){
