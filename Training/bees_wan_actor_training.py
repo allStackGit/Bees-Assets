@@ -817,16 +817,16 @@ class WanActorBroker:
             "trajectories": trajectories,
         }
         with self._condition:
-            if actor_id in self._cohort_blocked_actors:
-                raise queue.Full
-            duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
-            if duplicate_count is not None:
-                return duplicate_count
             if payload.get("control_epoch") != self._control_epoch:
                 raise StaleActorStateError(
                     "trajectory control epoch changed while validating the batch"
                 )
             self._validate_policy_versions(payload.get("policy_versions"))
+            if actor_id in self._cohort_blocked_actors:
+                raise queue.Full
+            duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+            if duplicate_count is not None:
+                return duplicate_count
             # A cohort needs one fresh batch per actor at a time. Reject excess queued
             # batches with normal backpressure instead of accepting them only to discard
             # them when the cohort selector sees a duplicate actor.
