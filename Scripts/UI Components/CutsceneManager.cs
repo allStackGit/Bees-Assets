@@ -731,7 +731,9 @@ public class CutsceneManager : MonoBehaviour
     }
     public void PlaySingleDialogueLine(DialogueLine line, bool isLastDialogue = false)
     {
-        HitDialogueBreak = false;
+        // PlayDialogueSection owns the break reset when it actually starts a section.
+        // If tutorial presentation is suppressed, it returns without showing dialogue and
+        // must not clear the mission's existing dialogue-break signal.
         PlayDialogueSection(new List<DialogueLine> { line }, isLastDialogue);
     }
     public void PlayDialogueSection(List<DialogueLine> lines, bool isLastDialogue = false)
