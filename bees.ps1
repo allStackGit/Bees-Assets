@@ -59,6 +59,7 @@ $BootstrapBundlePath=Join-Path $RemoteRoot 'bees-bootstrap-bundle.zip'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
+$ServerReleaseRoot=Join-Path $RuntimeRoot 'ServerReleases'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
@@ -1018,11 +1019,11 @@ function Get-NamedFileSetSha256([object[]]$Entries){
     Get-StringSha256 ($ordered|ConvertTo-Json -Compress -Depth 3)
 }
 
-function Get-BeesServerRuntimeSourceHash {
-    # Hash only files that participate in the managed server process. Test runners,
-    # maintenance CLIs, migration/recovery tools, lint config, and documentation must
-    # not recycle a healthy training control plane merely because they changed.
-    $runtimeFiles=@(
+function Get-BeesServerRuntimeFileNames {
+    # Keep this list limited to files that participate in the managed server process. The focused
+    # contract test walks the transitive local require graph so a newly required runtime module
+    # cannot be forgotten here.
+    @(
         'start-server.js',
         'server.js',
         'siServerDev.js',
@@ -1043,8 +1044,11 @@ function Get-BeesServerRuntimeSourceHash {
         'package.json',
         'package-lock.json'
     )
+}
+
+function Get-BeesServerRuntimeSourceHash {
     $entries=@(
-        foreach($name in $runtimeFiles){
+        foreach($name in @(Get-BeesServerRuntimeFileNames)){
             [pscustomobject]@{
                 name=$name
                 path=(Join-Path $ServerRoot $name)
@@ -1052,6 +1056,119 @@ function Get-BeesServerRuntimeSourceHash {
         }
     )
     Get-NamedFileSetSha256 $entries
+}
+
+function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSourceHash){
+    if(-not(Test-Path -LiteralPath $RuntimeRoot -PathType Container)){ return $false }
+    $readyPath=Join-Path $RuntimeRoot 'bees-server-runtime.json'
+    $nodeModules=Join-Path $RuntimeRoot 'node_modules'
+    if(-not(Test-Path -LiteralPath $readyPath -PathType Leaf) -or
+       -not(Test-Path -LiteralPath $nodeModules -PathType Container)){
+        return $false
+    }
+    try {
+        $ready=Get-Content -LiteralPath $readyPath -Raw|ConvertFrom-Json
+        if(([string](Get-ObjectPropertyValue $ready 'source_hash')).Trim().ToLowerInvariant() -ne $ExpectedSourceHash){
+            return $false
+        }
+        $entries=@(
+            foreach($name in @(Get-BeesServerRuntimeFileNames)){
+                [pscustomobject]@{
+                    name=$name
+                    path=(Join-Path $RuntimeRoot $name)
+                }
+            }
+        )
+        return ((Get-NamedFileSetSha256 $entries) -eq $ExpectedSourceHash)
+    } catch {
+        return $false
+    }
+}
+
+function Prepare-BeesServerRuntime([string]$Node){
+    $sourceHash=Get-BeesServerRuntimeSourceHash
+    Ensure-Directory $ServerReleaseRoot
+    $runtimeRoot=Join-Path $ServerReleaseRoot $sourceHash
+    if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
+        return [pscustomobject]@{
+            source_hash=$sourceHash
+            dependency_hash=Get-BeesServerDependencyHash
+            runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
+        }
+    }
+
+    $candidate=Join-Path $ServerReleaseRoot ("$sourceHash.candidate-" + [Guid]::NewGuid().ToString('N'))
+    Ensure-Directory $candidate
+    try {
+        foreach($name in @(Get-BeesServerRuntimeFileNames)){
+            $source=Join-Path $ServerRoot $name
+            if(-not(Test-Path -LiteralPath $source -PathType Leaf)){
+                throw "BeesServer runtime source is missing: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $candidate $name)
+        }
+
+        $npm=Resolve-Npm
+        Write-Host "Pre-staging BeesServer runtime $($sourceHash.Substring(0,12)) while the current server remains online..."
+        Invoke-Checked $npm @('ci') $candidate
+
+        foreach($name in @(Get-BeesServerRuntimeFileNames|Where-Object{$_.EndsWith('.js',[StringComparison]::OrdinalIgnoreCase)})){
+            Invoke-Checked $Node @('--check',(Join-Path $candidate $name)) $candidate
+        }
+        Invoke-Checked $Node @(
+            '-e',
+            "const runtime=require('./server'); runtime.loadLegacyRuntime();"
+        ) $candidate
+
+        $actualEntries=@(
+            foreach($name in @(Get-BeesServerRuntimeFileNames)){
+                [pscustomobject]@{
+                    name=$name
+                    path=(Join-Path $candidate $name)
+                }
+            }
+        )
+        $actualHash=Get-NamedFileSetSha256 $actualEntries
+        if($actualHash -ne $sourceHash){
+            throw "BeesServer source changed while staging. expected=$sourceHash staged=$actualHash"
+        }
+
+        $ready=[ordered]@{
+            schema_version=1
+            source_hash=$sourceHash
+            dependency_hash=Get-BeesServerDependencyHash
+            prepared_utc=[DateTime]::UtcNow.ToString('o')
+        }
+        [IO.File]::WriteAllText(
+            (Join-Path $candidate 'bees-server-runtime.json'),
+            ($ready|ConvertTo-Json -Depth 4) + [Environment]::NewLine,
+            (New-Object Text.UTF8Encoding($false))
+        )
+
+        if(Test-Path -LiteralPath $runtimeRoot){
+            if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
+                Remove-Item -LiteralPath $candidate -Recurse -Force
+            } else {
+                Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
+                Move-Item -LiteralPath $candidate -Destination $runtimeRoot
+            }
+        } else {
+            Move-Item -LiteralPath $candidate -Destination $runtimeRoot
+        }
+    } finally {
+        if(Test-Path -LiteralPath $candidate){
+            Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if(-not(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash)){
+        throw "BeesServer staged runtime failed post-install verification: $runtimeRoot"
+    }
+    [pscustomobject]@{
+        source_hash=$sourceHash
+        dependency_hash=Get-BeesServerDependencyHash
+        runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
+    }
 }
 
 function Get-BeesServerDependencyHash {
