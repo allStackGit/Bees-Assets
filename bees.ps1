@@ -2575,8 +2575,11 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     }
 
     $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
+    $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
     $validationKey=Get-StringSha256 (
-        ([string]$Release.build_id) + [Environment]::NewLine + $argsJson
+        ([string]$Release.build_id) + [Environment]::NewLine +
+        $validatorSha + [Environment]::NewLine +
+        $argsJson
     )
     $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
@@ -2605,6 +2608,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     $temp="$stamp.new"
     $stampText=(
         "build=" + [string]$Release.build_id + [Environment]::NewLine +
+        "validator_sha256=" + $validatorSha + [Environment]::NewLine +
         "args_sha256=" + $validationKey + [Environment]::NewLine
     )
     [IO.File]::WriteAllText(
