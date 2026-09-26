@@ -246,7 +246,7 @@ State schema 5 persists:
 
 Schema-2, schema-3, and schema-4 state migrate forward. Canonical artifacts are server-owned copies and are rechecked for exact size/SHA-256 when state is loaded.
 
-Dedicated workers fail closed when the control lease expires. The default control lease is 60 seconds; worker heartbeats run every 5 seconds and individual control requests time out after 5 seconds, so a brief control-plane stall does not consume most of the lease or unnecessarily recycle a healthy trainer. Full-game clients fall back to inference and are not killed merely because control is unavailable.
+Dedicated workers fail closed when the control lease expires. The default control lease is 60 seconds; worker heartbeats run every 5 seconds and individual control requests time out after 5 seconds, so a brief control-plane stall does not consume most of the lease or unnecessarily recycle a healthy trainer. Loss of control authority is distinct from a local reconciliation error: after a successful heartbeat, an ancillary artifact/runtime-state/local-status failure does not kill a dedicated trainer if the already-running process still exactly matches the server-desired build hash/id, run id, compatibility key, environment arguments, and worker environment count. The error remains visible and reconciliation retries on the next heartbeat. If any of those identities differ, or the desired mode is no longer training, the worker still fails closed and stops the stale process immediately. Local diagnostic-state write failure is also best-effort and cannot by itself crash the supervisor. Full-game clients fall back to inference and are not killed merely because control is unavailable.
 
 ## Lower-level control CLI
 
