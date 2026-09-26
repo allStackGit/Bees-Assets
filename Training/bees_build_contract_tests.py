@@ -1216,6 +1216,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(success, legacy)
 
 
+
+    def test_checked_subprocesses_stream_long_running_setup_output(self):
+        source = read_operator("common.js")
+        start = source.index("function runChecked")
+        end = source.index("function waitForSpawn", start)
+        block = source[start:end]
+        self.assertIn("stdio: 'inherit'", block)
+        self.assertNotIn("process.stdout.write", block)
+        self.assertNotIn("process.stderr.write", block)
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
