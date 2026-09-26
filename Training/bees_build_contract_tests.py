@@ -679,6 +679,43 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertLess(keep, stop)
 
+    def test_build_recovers_crashed_managed_server_without_reviving_intentional_stop(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        self.assertIn(
+            "$preBuildManagedServerExists=Test-Path -LiteralPath $ServerStatePath",
+            block,
+        )
+        self.assertIn(
+            "$preBuildControlOnline -or $preBuildManagedServerExists",
+            block,
+        )
+        self.assertIn(
+            "$managedServerExists=Test-Path -LiteralPath $ServerStatePath",
+            block,
+        )
+        self.assertIn(
+            "$controlOnline -or $managedServerExists",
+            block,
+        )
+        self.assertIn(
+            "An intentionally stopped server has no",
+            block,
+        )
+        self.assertIn(
+            "Managed BeesServer reconciliation completed without a reachable "
+            "training-control endpoint.",
+            block,
+        )
+
+        post = block.index("$managedServerExists=Test-Path -LiteralPath $ServerStatePath")
+        reconcile = block.index("Start-BeesServerIfNeeded $config $worker $admin", post)
+        publish = block.index("Publish-Release $config $admin $release", reconcile)
+        self.assertLess(reconcile, publish)
+
     def test_live_build_always_reconciles_private_gateway(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Invoke-Build")
