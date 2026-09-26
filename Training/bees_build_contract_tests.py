@@ -1381,7 +1381,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         gateway_end = source.index("function Invoke-Checked", gateway_start)
         gateway = source[gateway_start:gateway_end]
         self.assertIn("'gateway-supervisor'", gateway)
-        self.assertIn("($ownerToken + '.child')", gateway)
+        self.assertIn('Get-StringSha256 ("bees-managed-child:" + $ownerToken)', gateway)
         self.assertIn("'orphaned embedded tailnet gateway child'", gateway)
 
         server_start = source.index("function Start-BeesServerRuntimeProcess")
@@ -1394,7 +1394,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         reconcile_end = source.index("function Get-LatestRelease", reconcile_start)
         reconcile = source[reconcile_start:reconcile_end]
         self.assertIn("Find-ManagedProcessByOwnerToken $node $serverOwnerToken 'BeesServer supervisor'", reconcile)
-        self.assertIn("($serverOwnerToken + '.child')", reconcile)
+        self.assertIn('Get-StringSha256 ("bees-managed-child:" + $serverOwnerToken)', reconcile)
         self.assertIn("'orphaned BeesServer child'", reconcile)
 
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
