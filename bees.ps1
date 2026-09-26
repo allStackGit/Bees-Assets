@@ -53,7 +53,9 @@ $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $DiagnosticBenchmarkScript=Join-Path $AssetsRoot 'Training\bees_training_diagnostic_benchmark.py'
 $ReleaseRuntimeScript=Join-Path $AssetsRoot 'Training\bees_release_runtime.py'
+$BootstrapBundleScript=Join-Path $AssetsRoot 'Training\bees_bootstrap_bundle.py'
 $ReleaseRuntimeInstallRoot=Join-Path $RuntimeRoot 'TrainingReleases'
+$BootstrapBundlePath=Join-Path $RemoteRoot 'bees-bootstrap-bundle.zip'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
 $ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
@@ -452,15 +454,9 @@ function Start-TailnetGatewayIfNeeded($Config){
         throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
     }
 
-    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
     foreach($path in @(
-        $runtimeZip,
-        $WorkerTokenPath,
-        $WanTokenPath,
-        $BootstrapTokenPath,
-        $LatestReleasePath,
-        [string]$bridges.distribution_windows,
-        [string]$bridges.distribution_linux
+        $BootstrapBundlePath,
+        $BootstrapTokenPath
     )){
         if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
     }
@@ -472,16 +468,12 @@ function Start-TailnetGatewayIfNeeded($Config){
         '--control-port',[string]$controlPort,
         '--broker-port',[string]$brokerPort,
         '--bootstrap-port',[string]$bootstrapPort,
-        '--runtime',$runtimeZip,
-        '--worker-token',$WorkerTokenPath,
-        '--wan-token',$WanTokenPath,
-        '--release',$LatestReleasePath,
-        '--windows-bridge',[string]$bridges.distribution_windows,
-        '--linux-bridge',[string]$bridges.distribution_linux,
+        '--bootstrap-bundle',$BootstrapBundlePath,
         '--bootstrap-token',$BootstrapTokenPath
     )
-    # The gateway reads runtime/release/worker/WAN payload files for every bootstrap request,
-    # so replacing those files must not recycle an otherwise healthy private network endpoint.
+    # The complete worker bootstrap is one atomically replaced outer ZIP. Publishing a new
+    # release therefore does not require recycling the private endpoint and a worker can never
+    # observe a cross-generation mix of release metadata/runtime/tokens/helper binaries.
     # Restart only when process-level gateway configuration actually changes.
     $bootstrapTokenSha=(Get-FileHash -LiteralPath $BootstrapTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $gatewayConfigHash=Get-StringSha256 (
@@ -2007,11 +1999,30 @@ function Prepare-RemoteBootstrap($Config,[string]$Python,$Release){
     $releaseRuntime=Resolve-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin
     $runtimeVersion=[string]$releaseRuntime.runtime_version
     $releaseRuntimeArchive=[string]$releaseRuntime.archive
+    # Keep the standalone runtime mirror during migration so an already-running pre-bundle
+    # gateway can still serve a coherent payload until Start-TailnetGatewayIfNeeded replaces it.
     $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
     $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
     Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
     Copy-Item -LiteralPath $releaseRuntimeArchive -Destination $runtimeZipTemp
     Install-AtomicFile $runtimeZipTemp $runtimeZip
+
+    if(-not(Test-Path -LiteralPath $BootstrapBundleScript)){
+        throw "Remote bootstrap bundle publisher is missing: $BootstrapBundleScript"
+    }
+    $bootstrapBundle=Invoke-PythonJson $Python @(
+        $BootstrapBundleScript,
+        '--output',$BootstrapBundlePath,
+        '--runtime',$releaseRuntimeArchive,
+        '--worker-token',$WorkerTokenPath,
+        '--wan-token',$WanTokenPath,
+        '--release',$LatestReleasePath,
+        '--windows-bridge',$windowsBridge,
+        '--linux-bridge',$linuxBridge
+    ) $AssetsRoot
+    if(([string]$bootstrapBundle.build_id) -ne ([string]$Release.build_id)){
+        throw "Published bootstrap bundle build identity disagrees with release. bundle=$($bootstrapBundle.build_id) release=$($Release.build_id)"
+    }
 
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
