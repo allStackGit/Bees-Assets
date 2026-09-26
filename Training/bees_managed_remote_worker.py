@@ -59,8 +59,11 @@ class _RunScopedLogSink:
 
     def set_run_id(self, run_id: str) -> None:
         normalized = str(run_id or "").strip()
-        if normalized and not RUN_ID_PATTERN.fullmatch(normalized):
-            return
+        if normalized and (
+            normalized in {".", ".."}
+            or not RUN_ID_PATTERN.fullmatch(normalized)
+        ):
+            normalized = ""
         with self._lock:
             self._run_id = normalized
 
