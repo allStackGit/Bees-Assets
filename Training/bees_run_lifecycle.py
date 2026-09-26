@@ -213,8 +213,14 @@ def plan_run(
     now: Optional[datetime] = None,
     *,
     force_new: bool = False,
+    build_id: Optional[str] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
+    if build_id is not None:
+        if not isinstance(build_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", build_id):
+            raise ValueError("build_id must contain only safe release-id characters")
+        if not force_new:
+            raise ValueError("build_id is only valid for a forced-new run plan")
     payload = contract_payload(assets_root)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
@@ -235,6 +241,7 @@ def plan_run(
         "incompatible": incompatible,
         "new_run": new_run,
         "forced_new_run": bool(force_new),
+        "build_id": build_id,
         "contract": payload,
     }
 
@@ -291,6 +298,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create a new run even when the compatibility contract is unchanged.",
     )
+    plan.add_argument(
+        "--build-id",
+        default=None,
+        help="Bind a forced-new operation to the exact existing release build.",
+    )
 
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
@@ -308,6 +320,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             Path(args.assets_root),
             Path(args.state),
             force_new=bool(args.force_new),
+            build_id=args.build_id,
         )
         _atomic_json(Path(args.out), value)
         print(json.dumps(value, sort_keys=True))
