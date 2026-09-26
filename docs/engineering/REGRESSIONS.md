@@ -146,3 +146,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `WanOptionTests.test_actor_collects_trajectories_until_queue_empty` supplies one item and then exercises the empty read; it requires the actor to return the collected trajectory normally.  
 **Verification:** the changed handler and focused regression were reviewed statically against the imported `queue` module and ML-Agents trajectory-queue usage. The test was not executed.  
 **Invariant/knowledge:** emptying an ML-Agents trajectory queue is an ordinary actor-loop condition and must be handled with the module-level `queue.Empty` exception.
+
+
+### REG-015 — Capped training-log uploads blocked final flush
+**Area:** `Training/bees_training_worker_agent.py`, `Training/bees_training_control_tests.py`, training-control log ingestion  
+**Symptom:** `flush_all` retried to its pass limit for a log larger than the per-file upload cap, even after the server had received the full allowed prefix.  
+**Root cause:** the uploader stopped sending at `MAX_FILE_UPLOAD_BYTES`, while pending-byte detection compared the uploaded offset to the full local file length. The remaining tail was intentionally outside the upload contract but was reported as permanently pending.  
+**Permanent protection:** existing `test_training_log_uploader_caps_each_uploaded_file` uses an eight-byte file and a four-byte cap, calls `flush_all` twice, and requires only the first four bytes to be uploaded. Pending detection now compares offsets against the per-file upload limit.  
+**Verification:** source and the existing focused test were reviewed statically against the shared cap semantics. The test was not executed.  
+**Invariant/knowledge:** local bytes beyond the uploader's explicit per-file cap are outside the upload contract and must not prevent final flushing from completing.
