@@ -314,6 +314,9 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("$prepared=[string](Get-ObjectPropertyValue $r 'prepared_build_id')", block)
         self.assertIn("$stale=[bool](Get-ObjectPropertyValue $r 'stale')", block)
         self.assertIn("($now - $lastProgressAt).TotalSeconds -ge 10", block)
+        self.assertIn("Central learner failed while rolling release", block)
+        self.assertIn("central-agent.err.log", block)
+        self.assertIn("central-agent.out.log", block)
 
     def test_forced_new_run_waits_for_matching_compatible_pending_release(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
