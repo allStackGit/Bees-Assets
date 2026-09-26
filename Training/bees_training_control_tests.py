@@ -268,8 +268,8 @@ class TrainingControlClientTests(unittest.TestCase):
 
         with (
             mock.patch.object(agent.os, "name", "posix"),
-            mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-            mock.patch.object(agent.os, "killpg") as killpg,
+            mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+            mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
             managed = agent.ManagedProcess()
             managed.start(
@@ -335,7 +335,7 @@ class TrainingControlClientTests(unittest.TestCase):
 
         with (
             mock.patch.object(agent.os, "name", "posix"),
-            mock.patch.object(agent.os, "killpg") as killpg,
+            mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
             managed = agent.ManagedProcess()
             managed.process = fake
@@ -363,8 +363,8 @@ class TrainingControlClientTests(unittest.TestCase):
 
             with (
                 mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
             ):
                 managed = agent.ManagedProcess()
@@ -400,8 +400,8 @@ class TrainingControlClientTests(unittest.TestCase):
 
             with (
                 mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
             ):
                 managed = agent.ManagedProcess()
@@ -437,7 +437,7 @@ class TrainingControlClientTests(unittest.TestCase):
             with (
                 mock.patch.object(agent.os, "name", "posix"),
                 mock.patch.object(agent.subprocess, "Popen", return_value=fake),
-                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent, "GRACEFUL_CHECKPOINT_STOP_SECONDS", 0.0),
             ):
                 managed = agent.ManagedProcess()
@@ -667,7 +667,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 "python",
                 "worker.py",
                 "--env",
-                "/tmp/Bees.x86_64",
+                str(Path("/tmp/Bees.x86_64")),
                 "--build-id=release-42",
                 "--run-id=run-42",
                 "--env-args",
