@@ -43,6 +43,7 @@ THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
+GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -533,6 +534,7 @@ class ManagedProcess:
         self.worker_env_count: Optional[int] = None
         self.throughput_metrics_file: Optional[Path] = None
         self.graceful_checkpoint = False
+        self.graceful_remote_stop = False
         self.stop_request_file: Optional[Path] = None
 
     def alive(self) -> bool:
@@ -558,6 +560,7 @@ class ManagedProcess:
         environment_args: Sequence[str],
         worker_env_count: Optional[int] = None,
         graceful_checkpoint: bool = False,
+        graceful_remote_stop: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
         self.stop(progress_callback=stop_progress)
@@ -598,7 +601,7 @@ class ManagedProcess:
             stop_request_file.unlink()
         except FileNotFoundError:
             pass
-        if graceful_checkpoint:
+        if graceful_checkpoint or graceful_remote_stop:
             environment[MANAGED_STOP_FILE_ENV] = str(stop_request_file)
         else:
             environment.pop(MANAGED_STOP_FILE_ENV, None)
@@ -617,7 +620,10 @@ class ManagedProcess:
         self.worker_env_count = worker_env_count
         self.throughput_metrics_file = throughput_metrics_file
         self.graceful_checkpoint = bool(graceful_checkpoint)
-        self.stop_request_file = stop_request_file if graceful_checkpoint else None
+        self.graceful_remote_stop = bool(graceful_remote_stop)
+        self.stop_request_file = (
+            stop_request_file if graceful_checkpoint or graceful_remote_stop else None
+        )
 
     def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
         process = self.process
@@ -662,6 +668,34 @@ class ManagedProcess:
                 "central learner checkpoint finalization is still running; "
                 "refusing forced termination to preserve optimizer progress"
             )
+
+        # Remote WAN actors can tear down their own ML-Agents manager and Unity workers cleanly.
+        # Give them a bounded chance to do so before retaining the existing force-kill fallback.
+        if self.graceful_remote_stop and self.stop_request_file is not None:
+            try:
+                self.stop_request_file.parent.mkdir(parents=True, exist_ok=True)
+                self.stop_request_file.write_text("stop\n", encoding="ascii")
+            except OSError:
+                pass
+            else:
+                deadline = time.monotonic() + GRACEFUL_REMOTE_STOP_SECONDS
+                next_progress = 0.0
+                while process.poll() is None and time.monotonic() < deadline:
+                    now = time.monotonic()
+                    if progress_callback is not None and now >= next_progress:
+                        try:
+                            progress_callback()
+                        except Exception:
+                            pass
+                        next_progress = now + 2.0
+                    time.sleep(0.25)
+                if process.poll() is not None:
+                    self.process = None
+                    try:
+                        self.stop_request_file.unlink()
+                    except FileNotFoundError:
+                        pass
+                    return
 
         # Non-checkpoint-owning workers may be force-stopped, but never report them stopped
         # until wait() has confirmed that the owned process actually exited.
@@ -1056,6 +1090,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             graceful_checkpoint=(
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
+                            ),
+                            graceful_remote_stop=(
+                                args.role == "dedicated"
+                                and args.trainer_id != "central-learner"
                             ),
                             stop_progress=stopping_keepalive,
                         )
