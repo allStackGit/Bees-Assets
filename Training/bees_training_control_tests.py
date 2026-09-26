@@ -24,6 +24,12 @@ class FakeClient:
 
 
 class TrainingControlClientTests(unittest.TestCase):
+    def test_worker_control_requests_fail_fast_inside_server_lease(self):
+        self.assertEqual(
+            agent._parser().get_default("request_timeout_seconds"),
+            5.0,
+        )
+
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
         fake.pid = 4242
