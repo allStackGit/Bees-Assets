@@ -35,6 +35,7 @@ FOCUSED_PYTHON_SUITES = (
     "bees_continual_train_tests.py",
     "bees_mlagents_learn_tests.py",
     "bees_continual_elastic_wan_service_tests.py",
+    "bees_training_robustness_qualification_tests.py",
 )
 
 UNITY_REQUIRED_TEST = (
