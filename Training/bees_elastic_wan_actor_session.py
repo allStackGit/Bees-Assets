@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
+import queue
+import threading
 import time
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import bees_wan_actor_worker as worker
 
@@ -20,6 +23,78 @@ class ElasticActorSession(worker.ActorSession):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.topology_epoch = -1
+        self._claim_keeper_stop = threading.Event()
+        self._claim_keeper: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if (
+            getattr(self.client, "actor_key", None) is None
+            or getattr(self.client, "requested_actor_id", None) is not None
+        ):
+            super().start()
+            return
+
+        lease_seconds = self.session.get("actor_lease_seconds")
+        if (
+            not isinstance(lease_seconds, (int, float))
+            or isinstance(lease_seconds, bool)
+            or not math.isfinite(float(lease_seconds))
+            or float(lease_seconds) <= 0
+        ):
+            raise RuntimeError("Elastic WAN session has an invalid actor lease duration")
+
+        interval = max(0.25, float(lease_seconds) / 3.0)
+        self._claim_keeper_stop.clear()
+        self._claim_keeper = threading.Thread(
+            target=self._maintain_claim,
+            args=(float(lease_seconds), interval),
+            name=f"bees-wan-claim-{self.actor_id}",
+            daemon=True,
+        )
+        self._claim_keeper.start()
+        try:
+            super().start()
+        except BaseException:
+            self._stop_claim_keeper()
+            raise
+
+    def _maintain_claim(self, lease_seconds: float, interval: float) -> None:
+        lease_deadline = time.monotonic() + lease_seconds
+        while not self._claim_keeper_stop.wait(interval):
+            try:
+                claimed_actor_id = self.client.claim(self.session_id)
+                if claimed_actor_id != self.actor_id:
+                    raise RuntimeError(
+                        f"Elastic WAN claim moved from actor {self.actor_id} "
+                        f"to actor {claimed_actor_id} during session startup"
+                    )
+                lease_deadline = time.monotonic() + lease_seconds
+            except worker.BrokerUnavailable as exc:
+                if time.monotonic() >= lease_deadline:
+                    self._thread_error.put(
+                        TimeoutError(
+                            f"Elastic WAN actor claim could not be renewed before lease expiry: {exc}"
+                        )
+                    )
+                    return
+                if self._claim_keeper_stop.wait(min(5.0, interval)):
+                    return
+            except worker.BrokerSessionChanged:
+                self._session_changed.set()
+                return
+            except BaseException as exc:
+                self._thread_error.put(exc)
+                return
+
+    def _stop_claim_keeper(self) -> None:
+        self._claim_keeper_stop.set()
+        if self._claim_keeper is not None:
+            self._claim_keeper.join(timeout=2.0)
+            self._claim_keeper = None
+
+    def close(self) -> None:
+        self._stop_claim_keeper()
+        super().close()
 
     def _heartbeat(self) -> None:
         self.client.reset_ack(
