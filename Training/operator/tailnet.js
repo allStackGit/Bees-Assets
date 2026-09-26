@@ -28,6 +28,7 @@ const {
     sleep,
     stopManagedProcessTree,
     testManagedProcessIdentity,
+    waitForSpawn,
     writeJsonAtomic,
     writeTextAtomic,
 } = require('./common');
@@ -416,6 +417,7 @@ async function startTailnetGatewayIfNeeded(config) {
         fs.closeSync(outFd);
         fs.closeSync(errFd);
     }
+    await waitForSpawn(child, 'Embedded tailnet gateway');
     child.unref();
     await sleep(250);
     if (!child.pid) {
