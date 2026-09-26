@@ -1,8 +1,16 @@
 'use strict';
 
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+
+const SUPERVISOR_FLAG = '--supervisor';
+const HEALTH_INTERVAL_MS = 5000;
+const HEALTH_TIMEOUT_MS = 2000;
+const HEALTH_STARTUP_GRACE_MS = 30000;
+const HEALTH_FAILURE_LIMIT = 3;
+const RESTART_DELAY_MS = 1000;
 
 // DEVELOPMENT POLICY: These credentials are intentionally committed directly in source for ease
 // of access during the current development phase. The database does not currently contain important
@@ -18,6 +26,7 @@ const DEVELOPMENT_DATABASE = Object.freeze({
 
 function parseLauncherOptions(argv = process.argv.slice(2)) {
     let background = false;
+    let supervisor = false;
     let logFile = null;
     const serverArgs = [];
 
@@ -25,6 +34,10 @@ function parseLauncherOptions(argv = process.argv.slice(2)) {
         const argument = String(argv[index]);
         if (argument === '--background' || argument === '-b') {
             background = true;
+            continue;
+        }
+        if (argument === SUPERVISOR_FLAG) {
+            supervisor = true;
             continue;
         }
         if (argument === '--log') {
@@ -47,7 +60,7 @@ function parseLauncherOptions(argv = process.argv.slice(2)) {
         serverArgs.push(argument);
     }
 
-    return { background, logFile, serverArgs };
+    return { background, supervisor, logFile, serverArgs };
 }
 
 function openLog(logFile) {
@@ -57,44 +70,188 @@ function openLog(logFile) {
     return { path: resolved, fd: fs.openSync(resolved, 'a') };
 }
 
+function serverEnvironment(source = process.env) {
+    return {
+        ...source,
+        BEES_DB_HOST: source.BEES_DB_HOST || DEVELOPMENT_DATABASE.host,
+        BEES_DB_USER: source.BEES_DB_USER || DEVELOPMENT_DATABASE.user,
+        BEES_DB_PASSWORD: source.BEES_DB_PASSWORD || DEVELOPMENT_DATABASE.password,
+        BEES_DB_NAME: source.BEES_DB_NAME || DEVELOPMENT_DATABASE.name,
+    };
+}
+
+function trainingControlProbeConfig(env = process.env) {
+    if (String(env.BEES_TRAINING_CONTROL_ENABLED || '') !== '1') return null;
+    const token = String(env.BEES_TRAINING_CONTROL_ADMIN_TOKEN || '').trim();
+    const port = Number(env.BEES_TRAINING_CONTROL_PORT);
+    if (!token || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+    let host = String(env.BEES_TRAINING_CONTROL_HOST || '127.0.0.1').trim();
+    if (!host || host === '0.0.0.0' || host === '::') host = '127.0.0.1';
+    return { host, port, token };
+}
+
+function probeTrainingControl(config, timeoutMs = HEALTH_TIMEOUT_MS) {
+    if (!config) return Promise.resolve(true);
+    return new Promise(resolve => {
+        const request = http.request({
+            method: 'GET',
+            host: config.host,
+            port: config.port,
+            path: '/v1/status',
+            headers: { Authorization: 'Bearer ' + config.token },
+        }, response => {
+            response.resume();
+            resolve(response.statusCode >= 200 && response.statusCode < 300);
+        });
+        request.setTimeout(timeoutMs, () => request.destroy(new Error('training-control health timeout')));
+        request.on('error', () => resolve(false));
+        request.end();
+    });
+}
+
+function runSupervisor(options) {
+    const serverPath = path.join(__dirname, 'server.js');
+    const env = serverEnvironment();
+    const healthConfig = trainingControlProbeConfig(env);
+    let child = null;
+    let stopping = false;
+    let restartTimer = null;
+    let healthTimer = null;
+    let startedAt = 0;
+    let consecutiveHealthFailures = 0;
+
+    const clearRestart = () => {
+        if (restartTimer) clearTimeout(restartTimer);
+        restartTimer = null;
+    };
+
+    const scheduleRestart = () => {
+        if (stopping || restartTimer) return;
+        restartTimer = setTimeout(() => {
+            restartTimer = null;
+            startChild();
+        }, RESTART_DELAY_MS);
+    };
+
+    const startChild = () => {
+        if (stopping) return;
+        startedAt = Date.now();
+        consecutiveHealthFailures = 0;
+        child = spawn(process.execPath, [serverPath, ...options.serverArgs], {
+            cwd: __dirname,
+            detached: false,
+            stdio: 'inherit',
+            env,
+        });
+        console.log(`[Bees server supervisor] started server PID ${child.pid}`);
+
+        child.on('error', error => {
+            console.error(`[Bees server supervisor] server launch failed: ${error.message}`);
+        });
+        child.on('exit', (code, signal) => {
+            const ended = child;
+            child = null;
+            if (stopping) return;
+            console.error(
+                '[Bees server supervisor] server exited unexpectedly ' +
+                `pid=${ended && ended.pid ? ended.pid : 'unknown'} code=${code ?? 'none'} signal=${signal || 'none'}; restarting`
+            );
+            scheduleRestart();
+        });
+    };
+
+    const stop = signal => {
+        if (stopping) return;
+        stopping = true;
+        clearRestart();
+        if (healthTimer) clearInterval(healthTimer);
+        healthTimer = null;
+        if (child && child.exitCode === null && child.signalCode === null) {
+            try {
+                child.kill(signal || 'SIGTERM');
+            } catch (_) {}
+            const forceTimer = setTimeout(() => {
+                if (child && child.exitCode === null && child.signalCode === null) {
+                    try { child.kill('SIGKILL'); } catch (_) {}
+                }
+            }, 5000);
+            forceTimer.unref();
+        }
+    };
+
+    process.on('SIGINT', () => stop('SIGINT'));
+    process.on('SIGTERM', () => stop('SIGTERM'));
+
+    startChild();
+
+    if (healthConfig) {
+        healthTimer = setInterval(async () => {
+            if (stopping || !child || child.exitCode !== null || child.signalCode !== null) return;
+            if (Date.now() - startedAt < HEALTH_STARTUP_GRACE_MS) return;
+            const healthy = await probeTrainingControl(healthConfig);
+            if (healthy) {
+                consecutiveHealthFailures = 0;
+                return;
+            }
+            consecutiveHealthFailures++;
+            console.error(
+                `[Bees server supervisor] training-control health probe failed ${consecutiveHealthFailures}/${HEALTH_FAILURE_LIMIT}`
+            );
+            if (consecutiveHealthFailures >= HEALTH_FAILURE_LIMIT && child) {
+                consecutiveHealthFailures = 0;
+                try { child.kill('SIGTERM'); } catch (_) {}
+            }
+        }, HEALTH_INTERVAL_MS);
+        healthTimer.unref();
+    }
+}
+
 function launchServer(options = parseLauncherOptions()) {
     const serverPath = path.join(__dirname, 'server.js');
     const log = openLog(options.logFile);
-    const stdio = log
-        ? ['ignore', log.fd, log.fd]
-        : options.background
-            ? 'ignore'
-            : 'inherit';
+    const env = serverEnvironment();
 
-    const env = {
-        ...process.env,
-        BEES_DB_HOST: process.env.BEES_DB_HOST || DEVELOPMENT_DATABASE.host,
-        BEES_DB_USER: process.env.BEES_DB_USER || DEVELOPMENT_DATABASE.user,
-        BEES_DB_PASSWORD: process.env.BEES_DB_PASSWORD || DEVELOPMENT_DATABASE.password,
-        BEES_DB_NAME: process.env.BEES_DB_NAME || DEVELOPMENT_DATABASE.name,
-    };
+    if (options.supervisor) {
+        if (log) fs.closeSync(log.fd);
+        runSupervisor(options);
+        return null;
+    }
+
+    if (options.background) {
+        const stdio = log ? ['ignore', log.fd, log.fd] : 'ignore';
+        const supervisor = spawn(
+            process.execPath,
+            [__filename, SUPERVISOR_FLAG, ...options.serverArgs],
+            {
+                cwd: __dirname,
+                detached: true,
+                stdio,
+                env,
+            }
+        );
+        if (log) fs.closeSync(log.fd);
+        supervisor.on('error', error => {
+            console.error(`Failed to start Bees server supervisor: ${error.message}`);
+            process.exitCode = 1;
+        });
+        supervisor.unref();
+        const destination = log ? `; logging to ${log.path}` : '';
+        console.log(`Bees server started in background with PID ${supervisor.pid}${destination}`);
+        return supervisor;
+    }
 
     const child = spawn(process.execPath, [serverPath, ...options.serverArgs], {
         cwd: __dirname,
-        detached: options.background,
-        stdio,
+        detached: false,
+        stdio: log ? ['ignore', log.fd, log.fd] : 'inherit',
         env,
     });
-
     if (log) fs.closeSync(log.fd);
 
     child.on('error', error => {
         console.error(`Failed to start Bees server: ${error.message}`);
         process.exitCode = 1;
     });
-
-    if (options.background) {
-        child.unref();
-        const destination = log ? `; logging to ${log.path}` : '';
-        console.log(`Bees server started in background with PID ${child.pid}${destination}`);
-        return child;
-    }
-
     child.on('exit', (code, signal) => {
         if (signal) process.exitCode = 1;
         else process.exitCode = code ?? 1;
@@ -104,4 +261,13 @@ function launchServer(options = parseLauncherOptions()) {
 
 if (require.main === module) launchServer();
 
-module.exports = { DEVELOPMENT_DATABASE, parseLauncherOptions, openLog, launchServer };
+module.exports = {
+    DEVELOPMENT_DATABASE,
+    parseLauncherOptions,
+    openLog,
+    serverEnvironment,
+    trainingControlProbeConfig,
+    probeTrainingControl,
+    runSupervisor,
+    launchServer,
+};
