@@ -49,6 +49,8 @@ RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 class _RunScopedLogSink:
     """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
 
+    MAX_BYTES = 16 * 1024 * 1024
+
     def __init__(self, root: Path) -> None:
         self.root = root
         self._run_id = ""
@@ -71,6 +73,15 @@ class _RunScopedLogSink:
             path = self.root / run_id / "remote-supervisor.log"
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
+                encoded_size = len(value.encode("utf-8", errors="replace"))
+                current_size = path.stat().st_size if path.is_file() else 0
+                if current_size > 0 and current_size + encoded_size > self.MAX_BYTES:
+                    rotated = path.with_name(path.name + ".1")
+                    try:
+                        rotated.unlink()
+                    except FileNotFoundError:
+                        pass
+                    os.replace(path, rotated)
                 with path.open("a", encoding="utf-8", errors="replace") as handle:
                     handle.write(value)
             except OSError:
