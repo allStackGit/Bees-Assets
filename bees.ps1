@@ -2700,10 +2700,22 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             $pendingIncompatible=Get-ObjectPropertyValue $pending 'incompatible'
             $lines += "Pending release: build=$pendingBuildId phase=$pendingPhase incompatible=$pendingIncompatible"
             $required=@(Get-ObjectPropertyValue $pending 'required_trainers')
+            $failureGraceSeconds=Get-ObjectPropertyValue $d 'compatible_failure_grace_seconds'
             $blockers=@()
             foreach($requiredTrainer in $required){
                 $requiredId=[string](Get-ObjectPropertyValue $requiredTrainer 'trainer_id')
                 $requiredPlatform=[string](Get-ObjectPropertyValue $requiredTrainer 'platform')
+                $failureSinceMs=Get-ObjectPropertyValue $requiredTrainer 'failure_since_ms'
+                $failureGraceDisplay=''
+                if($null -ne $failureSinceMs){
+                    $unixNowMs=([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()*1000)
+                    $failureAgeSeconds=[Math]::Max(0.0,($unixNowMs-[double]$failureSinceMs)/1000.0)
+                    if($null -ne $failureGraceSeconds){
+                        $failureGraceDisplay=(" failure-grace={0:N1}/{1:N0}s" -f $failureAgeSeconds,[double]$failureGraceSeconds)
+                    }else{
+                        $failureGraceDisplay=(" failure-grace={0:N1}s" -f $failureAgeSeconds)
+                    }
+                }
                 $record=@($trainerRecords|Where-Object{
                     [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $requiredId
                 }|Select-Object -First 1)
@@ -2728,7 +2740,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($build){$build}else{'-'}),
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
-                        $(if($error){" error=$error"}else{''}))
+                        $(if($error){" error=$error"}else{''}) + $failureGraceDisplay)
                 }elseif($pendingPhase -eq 'rolling' -and
                         ($stale -or $build -ne [string]$pendingBuildId -or $state -ne 'running' -or
                          $error -or ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
@@ -2737,7 +2749,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($build){$build}else{'-'}),
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
-                        $(if($error){" error=$error"}else{''}))
+                        $(if($error){" error=$error"}else{''}) + $failureGraceDisplay)
                 }elseif($pendingPhase -eq 'stopping' -and
                         ($stale -or $state -ne 'stopped' -or
                          ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
