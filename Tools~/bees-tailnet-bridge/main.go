@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"flag"
@@ -469,11 +470,16 @@ func withoutManagedOwnerToken(args []string) []string {
 	return result
 }
 
+func managedChildOwnerToken(ownerToken string) string {
+	sum := sha256.Sum256([]byte("bees-managed-child:" + ownerToken))
+	return fmt.Sprintf("%x", sum)
+}
+
 func runGatewaySupervisor(args []string) error {
 	ownerToken := managedFlagValue(args, "--owner-token")
 	childArgs := withoutManagedOwnerToken(args)
 	if strings.TrimSpace(ownerToken) != "" {
-		childArgs = append(childArgs, "--owner-token", ownerToken+".child")
+		childArgs = append(childArgs, "--owner-token", managedChildOwnerToken(ownerToken))
 	}
 	healthFile := managedFlagValue(childArgs, "--health-file")
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
