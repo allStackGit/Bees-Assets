@@ -844,6 +844,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--platform", required=True)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--runtime-ready-file", default="")
+    parser.add_argument("--runtime-cutover-pointer", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
@@ -870,6 +871,88 @@ def _normalized_launch_command(values: Sequence[str]) -> list[str]:
     if not command:
         raise ValueError("a managed launch command is required after '--'")
     return command
+
+
+def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, str]]:
+    if not str(path_value).strip():
+        return None
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping) or value.get("schema_version") != 1:
+        raise ValueError("runtime cutover pointer schema is invalid")
+
+    build_id = str(value.get("build_id", "")).strip()
+    runtime_version = str(value.get("runtime_version", "")).strip().lower()
+    runtime_root = Path(str(value.get("runtime_root", ""))).expanduser().resolve()
+    python_executable = Path(str(value.get("python_executable", ""))).expanduser().resolve()
+    if not build_id:
+        raise ValueError("runtime cutover pointer has no build_id")
+    if len(runtime_version) != 64 or any(
+        ch not in "0123456789abcdef" for ch in runtime_version
+    ):
+        raise ValueError("runtime cutover pointer has invalid runtime_version")
+    if not runtime_root.is_dir():
+        raise ValueError(f"runtime cutover root does not exist: {runtime_root}")
+    marker = runtime_root / "bees-runtime-version.txt"
+    if (
+        not marker.is_file()
+        or marker.read_text(encoding="ascii").strip().lower() != runtime_version
+    ):
+        raise ValueError("runtime cutover root version marker does not match pointer")
+    agent_path = runtime_root / "bees_training_worker_agent.py"
+    if not agent_path.is_file():
+        raise ValueError(f"runtime cutover agent is missing: {agent_path}")
+    if not python_executable.is_file():
+        raise ValueError(
+            f"runtime cutover Python executable is missing: {python_executable}"
+        )
+    return {
+        "build_id": build_id,
+        "runtime_version": runtime_version,
+        "runtime_root": str(runtime_root),
+        "python_executable": str(python_executable),
+        "agent_path": str(agent_path),
+    }
+
+
+def _rebase_runtime_argv(
+    raw_argv: Sequence[str],
+    current_root: Path,
+    next_root: Path,
+) -> list[str]:
+    old = str(current_root.resolve())
+    new = str(next_root.resolve())
+    flags = re.IGNORECASE if os.name == "nt" else 0
+    pattern = re.compile(re.escape(old), flags)
+    return [pattern.sub(lambda _match: new, str(value)) for value in raw_argv]
+
+
+def _selected_runtime_cutover(
+    pointer_path: str,
+    desired: Mapping[str, Any],
+) -> Optional[dict[str, str]]:
+    pointer = _load_runtime_cutover_pointer(pointer_path)
+    if pointer is None:
+        return None
+    current_root = Path(__file__).resolve().parent
+    next_root = Path(pointer["runtime_root"]).resolve()
+    if next_root == current_root:
+        return None
+
+    pointer_build = pointer["build_id"]
+    desired_build = str(desired.get("desired_build_id", "")).strip()
+    mode = str(desired.get("desired_mode", ""))
+    selected = bool(desired_build and desired_build == pointer_build)
+    pending = desired.get("pending_release")
+    if (
+        mode == "stopped"
+        and isinstance(pending, Mapping)
+        and str(pending.get("build_id", "")).strip() == pointer_build
+    ):
+        selected = True
+    return pointer if selected else None
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1018,10 +1101,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if not preparation_error:
                         preparation_error = (
                             "Unity artifact is prepared for "
-                            f"{artifact_prepared_build_id}, but the remote Python runtime "
+                            f"{artifact_prepared_build_id}, but the Python runtime "
                             f"is ready for {runtime_ready_build or '(none)'}"
                         )
                     prepared_build_id = ""
+                elif args.runtime_cutover_pointer:
+                    try:
+                        runtime_pointer = _load_runtime_cutover_pointer(
+                            args.runtime_cutover_pointer
+                        )
+                        pointer_build = (
+                            runtime_pointer["build_id"] if runtime_pointer else ""
+                        )
+                        if pointer_build != artifact_prepared_build_id:
+                            raise ValueError(
+                                "runtime cutover pointer is prepared for "
+                                f"{pointer_build or '(none)'} instead of "
+                                f"{artifact_prepared_build_id}"
+                            )
+                    except (OSError, ValueError, json.JSONDecodeError) as exc:
+                        if not preparation_error:
+                            preparation_error = (
+                                "Unity artifact is prepared for "
+                                f"{artifact_prepared_build_id}, but the central Python runtime "
+                                f"cutover is not ready: {type(exc).__name__}: {exc}"
+                            )
+                        prepared_build_id = ""
             heartbeat = default_heartbeat(
                 trainer_id=args.trainer_id,
                 role=args.role,
@@ -1066,6 +1171,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
                 desired_build_id = str(desired.get("desired_build_id", ""))
                 active_build_id = str(active_build.get("build_id", "")) if active_build else ""
+
+                runtime_cutover = _selected_runtime_cutover(
+                    args.runtime_cutover_pointer,
+                    desired,
+                )
+                if runtime_cutover is not None:
+                    managed.stop(progress_callback=stopping_keepalive)
+                    try:
+                        log_uploader.flush_all(
+                            client,
+                            trainer_id=args.trainer_id,
+                            run_id=run_id,
+                        )
+                    except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
+                        pass
+                    current_root = Path(__file__).resolve().parent
+                    next_root = Path(runtime_cutover["runtime_root"])
+                    next_python = runtime_cutover["python_executable"]
+                    next_agent = runtime_cutover["agent_path"]
+                    next_argv = _rebase_runtime_argv(
+                        raw_argv,
+                        current_root,
+                        next_root,
+                    )
+                    print(
+                        "[Bees control] activating pinned central runtime "
+                        f"build={runtime_cutover['build_id']} "
+                        f"runtime={runtime_cutover['runtime_version'][:12]}",
+                        flush=True,
+                    )
+                    os.execv(
+                        next_python,
+                        [next_python, next_agent, *next_argv],
+                    )
+
                 source_changed = file_sha256(Path(__file__).resolve()) != startup_source_sha
                 if source_changed and (
                     mode == "stopped"
