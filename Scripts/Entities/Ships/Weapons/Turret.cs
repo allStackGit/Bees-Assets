@@ -39,13 +39,13 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             bool fireAtFrontOfShip,
             float rotationRate)
         {
+            RotationRate = rotationRate;
             base.Create(ship, type, weaponSound, range, power, 0, rateOfFire, projectileValue, piece, projectileType);
             OriginalRotation = PieceTransform.eulerAngles.z;
             Rotation = OriginalRotation;
             ShouldFireAtFrontOfShip = fireAtFrontOfShip;
             PassesPerFire = 3;
             TargetingRate = RateOfFire / PassesPerFire;
-            RotationRate = rotationRate;
             DamagePerSecond = RateOfFire > 0 ? Power / RateOfFire : 0;
 
             if (Ship.IsUserControlled)
