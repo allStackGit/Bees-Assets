@@ -88,7 +88,12 @@ namespace Bees.Tests.EditMode
                 Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto.cs"));
             string guardSource = File.ReadAllText(Path.Combine(
                 Application.dataPath, "Scripts", "UI Components", "PlutoTwoTutorialPresentationGuard.cs"));
+            string campaignGuardSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "UI Components", "CampaignFeedbackAdjustmentGuard.cs"));
 
+            Assert.That(missionSource, Does.Contain("the number hotkeys on your keyboard"));
+            Assert.That(campaignGuardSource, Does.Contain("bool squadNumberPage = Contains(text, \\"number hotkeys\\");"));
+            Assert.That(campaignGuardSource, Does.Contain("EnsureSquadNumberArrow();"));
             Assert.That(missionSource, Does.Contain("basicTooltip.Place(new Vector2(0, -160), new Vector2(150, 100));"));
             Assert.That(missionSource, Does.Contain("squadNumberHighlightRect.localScale = Vector3.one;"));
             Assert.That(missionSource, Does.Contain("squadNumberHighlightRect.sizeDelta = new Vector2(150f, 30f);"));
@@ -103,7 +108,7 @@ namespace Bees.Tests.EditMode
             Assert.That(sequenceBlock, Does.Contain("PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(3, 2))"));
             Assert.That(sequenceBlock, Does.Contain("Stage.Menus.TogglePausePanel();"));
 
-            Assert.That(guardSource, Does.Contain("CenterMissionStatus(stage);"));
+            Assert.That(guardSource, Does.Contain("CenterMissionStatus(_stage, _statusCorners, _canvasCorners);"));
             Assert.That(guardSource, Does.Not.Contain("dialogueManager.enabled"));
             Assert.That(guardSource, Does.Not.Contain("HoldDialogueUntilTutorialEnds"));
             Assert.That(guardSource, Does.Not.Contain("RepairOverscaledTutorialHighlight"));
