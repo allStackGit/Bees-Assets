@@ -1091,10 +1091,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
                             ),
-                            graceful_remote_stop=(
-                                args.role == "dedicated"
-                                and args.trainer_id != "central-learner"
-                            ),
                             stop_progress=stopping_keepalive,
                         )
                         applied_revision = revision
