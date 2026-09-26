@@ -2597,41 +2597,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         throw "RL environment validation archive is missing: $archivePath"
     }
     $archiveSha=(Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-
-    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
-    $artifactCacheRoot=Join-Path (Join-Path $validationRoot 'Artifacts') $archiveSha
-    $artifactReadyPath=Join-Path $artifactCacheRoot '.ready'
-    if(-not(Test-Path -LiteralPath $artifactReadyPath -PathType Leaf)){
-        Ensure-Directory (Split-Path -Parent $artifactCacheRoot)
-        $candidate="$artifactCacheRoot.candidate-$PID-$([Guid]::NewGuid().ToString('N'))"
-        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
-        try {
-            Expand-Archive -LiteralPath $archivePath -DestinationPath $candidate -Force
-            $candidateExecutable=Join-Path $candidate $entrypoint
-            if(-not(Test-Path -LiteralPath $candidateExecutable -PathType Leaf)){
-                throw "RL environment validation archive does not contain its declared entrypoint: $entrypoint"
-            }
-            if(Test-Path -LiteralPath $artifactCacheRoot){
-                Remove-Item -LiteralPath $artifactCacheRoot -Recurse -Force
-            }
-            Move-Item -LiteralPath $candidate -Destination $artifactCacheRoot
-            [IO.File]::WriteAllText(
-                $artifactReadyPath,
-                "archive_sha256=$archiveSha" + [Environment]::NewLine,
-                (New-Object Text.UTF8Encoding($false))
-            )
-        } finally {
-            Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    $executable=Join-Path $artifactCacheRoot $entrypoint
-    if(-not(Test-Path -LiteralPath $executable -PathType Leaf)){
-        throw "RL environment validator executable is missing from extracted artifact: $executable"
-    }
-
     $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
-    $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
     $encodedArgs=@(
         @($EnvironmentArgs) | ForEach-Object {
             [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$_))
@@ -2646,49 +2612,62 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     )
     $validationKey=Get-StringSha256 (
         ([string]$Release.build_id) + [Environment]::NewLine +
-        $validatorSha + [Environment]::NewLine +
         $archiveSha + [Environment]::NewLine +
         $argsJson
     )
+    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
     if(Test-Path -LiteralPath $stamp -PathType Leaf){ return $validationProof }
 
     Ensure-Directory $validationRoot
     Ensure-Directory (Join-Path $LogsRoot 'Training')
-    $log=Join-Path $LogsRoot "Training\rl-environment-validation-$($validationKey.Substring(0,12)).log"
-    $arguments=@(
-        '-batchmode',
-        '-nographics',
-        '-logFile',$log,
-        '--rl-validate-options-only'
-    ) + @($EnvironmentArgs)
-    $argumentString=($arguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+    $candidate=Join-Path $validationRoot ("candidate-" + $archiveSha.Substring(0,12) + "-" + $PID + "-" + [Guid]::NewGuid().ToString('N'))
+    Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        Expand-Archive -LiteralPath $archivePath -DestinationPath $candidate -Force
+        $executable=Join-Path $candidate $entrypoint
+        if(-not(Test-Path -LiteralPath $executable -PathType Leaf)){
+            throw "RL environment validation archive does not contain its declared entrypoint: $entrypoint"
+        }
+        $validatorSha=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+        $log=Join-Path $LogsRoot "Training\rl-environment-validation-$($validationKey.Substring(0,12)).log"
+        $arguments=@(
+            '-batchmode',
+            '-nographics',
+            '-logFile',$log,
+            '--rl-validate-options-only'
+        ) + @($EnvironmentArgs)
+        $argumentString=($arguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
 
-    $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $artifactCacheRoot -WindowStyle Hidden -PassThru
-    if(-not $process.WaitForExit(60000)){
-        & taskkill /PID $process.Id /T /F *> $null
-        throw "RL environment validation timed out after 60 seconds. See $log"
-    }
-    if($process.ExitCode -ne 0){
-        throw "Invalid RL environment arguments; validator exited with code $($process.ExitCode). See $log"
-    }
+        $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $candidate -WindowStyle Hidden -PassThru
+        if(-not $process.WaitForExit(60000)){
+            & taskkill /PID $process.Id /T /F *> $null
+            throw "RL environment validation timed out after 60 seconds. See $log"
+        }
+        if($process.ExitCode -ne 0){
+            throw "Invalid RL environment arguments; validator exited with code $($process.ExitCode). See $log"
+        }
 
-    $temp="$stamp.new"
-    $stampText=(
-        "build=" + [string]$Release.build_id + [Environment]::NewLine +
-        "validator_sha256=" + $validatorSha + [Environment]::NewLine +
-        "archive_sha256=" + $archiveSha + [Environment]::NewLine +
-        "args_sha256=" + $validationKey + [Environment]::NewLine +
-        "release_validation_key=" + $validationProof + [Environment]::NewLine
-    )
-    [IO.File]::WriteAllText(
-        $temp,
-        $stampText,
-        (New-Object Text.UTF8Encoding($false))
-    )
-    Install-AtomicFile $temp $stamp
+        $temp="$stamp.new"
+        $stampText=(
+            "build=" + [string]$Release.build_id + [Environment]::NewLine +
+            "validator_sha256=" + $validatorSha + [Environment]::NewLine +
+            "archive_sha256=" + $archiveSha + [Environment]::NewLine +
+            "args_sha256=" + $validationKey + [Environment]::NewLine +
+            "release_validation_key=" + $validationProof + [Environment]::NewLine
+        )
+        [IO.File]::WriteAllText(
+            $temp,
+            $stampText,
+            (New-Object Text.UTF8Encoding($false))
+        )
+        Install-AtomicFile $temp $stamp
+    } finally {
+        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+    }
     return $validationProof
 }
+
 
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 function Escape-BashDoubleQuoted([string]$Value){
