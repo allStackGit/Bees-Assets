@@ -154,11 +154,22 @@ class EpisodeLogMetrics:
             self._pending.pop(log_path, None)
         try:
             with log_path.open("rb") as handle:
+                previous_byte = b""
+                if first_read and position > 0:
+                    handle.seek(position - 1)
+                    previous_byte = handle.read(1)
                 handle.seek(position)
-                data = handle.read()
+                raw_data = handle.read()
         except OSError:
             return
-        self._positions[log_path] = position + len(data)
+        data = raw_data
+        if first_read and position > 0 and previous_byte not in (b"\\n", b"\\r"):
+            separators = [
+                index for index in (data.find(b"\\n"), data.find(b"\\r"))
+                if index >= 0
+            ]
+            data = data[min(separators) + 1:] if separators else b""
+        self._positions[log_path] = position + len(raw_data)
         if not data:
             return
         text = self._pending.get(log_path, "") + data.decode("utf-8", errors="replace")
@@ -168,8 +179,6 @@ class EpisodeLogMetrics:
             self._pending[log_path] = lines.pop()
         else:
             self._pending[log_path] = ""
-        if first_read and position > 0 and lines:
-            lines = lines[1:]
         for line in lines:
             match = EPISODE_LOG_PATTERN.search(line)
             if not match:
