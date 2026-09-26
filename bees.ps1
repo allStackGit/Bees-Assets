@@ -1985,7 +1985,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                     [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $requiredId
                 }|Select-Object -First 1)
                 if($record.Count -eq 0){
-                    $blockers += "$requiredId[$requiredPlatform]: missing/no heartbeat"
+                    $blockers += ("{0}[{1}]: missing/no heartbeat" -f $requiredId,$requiredPlatform)
                     continue
                 }
                 $r=$record[0]
