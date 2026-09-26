@@ -61,6 +61,9 @@ $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
 $CentralAgentShutdownRequestPath=Join-Path $CentralAgentInstallRoot 'worker-shutdown.request'
+$CentralRuntimePointerPath=Join-Path $CentralAgentInstallRoot 'release-runtime.json'
+$CentralRuntimeReadyBuildPath=Join-Path $CentralAgentInstallRoot 'runtime-ready-build.txt'
+$CentralRuntimeStatePath=Join-Path $CentralAgentInstallRoot 'active-runtime.json'
 $CentralModelSnapshotRequestPath=Join-Path $CentralAgentInstallRoot 'model-snapshot.request'
 $CentralModelSnapshotResponsePath=Join-Path $CentralAgentInstallRoot 'model-snapshot.response.json'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
@@ -818,6 +821,153 @@ function Install-ReleaseTrainingRuntime([string]$Python,$Release,[switch]$AllowL
         '--expected-version',[string]$runtime.runtime_version,
         '--expected-build-id',[string]$Release.build_id
     ) $AssetsRoot
+}
+
+function New-CentralLearnerLaunchCommand(
+    $Config,
+    [string]$LearnerPython,
+    [string]$Unity,
+    [string]$RuntimeRootPath
+){
+    $service=Join-Path $RuntimeRootPath 'bees_continual_elastic_wan_service.py'
+    $trainerConfig=Join-Path $RuntimeRootPath 'rl_1v1_config.yaml'
+    $continualConfig=Join-Path $RuntimeRootPath 'continual_learning_config.json'
+    foreach($required in @($LearnerPython,$service,$trainerConfig,$continualConfig)){
+        if(-not(Test-Path -LiteralPath $required)){
+            throw "Central release runtime is missing: $required"
+        }
+    }
+    $telemetry=Join-Path $TrainingRoot 'Telemetry'
+    $models=Join-Path $TrainingRoot 'Models'
+    Ensure-Directory $telemetry
+    Ensure-Directory $models
+    @(
+        $LearnerPython,
+        $service,
+        "--root=$TrainingRoot",
+        "--assets-root=$AssetsRoot",
+        "--runtime-training-root=$RuntimeRootPath",
+        '--training-env={env}',
+        "--telemetry-quarantine=$telemetry",
+        "--model-distribution-root=$models",
+        '--game-build-version={build_id}',
+        '--run-id={run_id}',
+        "--trainer-config=$trainerConfig",
+        "--continual-config=$continualConfig",
+        "--unity-editor=$Unity",
+        "--unity-project-root=$BeesRoot",
+        "--generation-steps=$($Config.generationSteps)",
+        "--num-envs=$($Config.numLocalEnvs)",
+        '--platform=WindowsPlayer',
+        "--bees-wan-actors=$($Config.maxRemoteActors)",
+        "--bees-wan-min-actors=$($Config.minRemoteActors)",
+        "--bees-wan-broker-port=$($Config.brokerPort)",
+        "--bees-wan-auth-token-file=$WanTokenPath"
+    )
+}
+
+function Prepare-CentralReleaseRuntime(
+    $Config,
+    [string]$BootstrapPython,
+    [string]$Unity,
+    $Release
+){
+    Ensure-Directory $CentralAgentInstallRoot
+    $installed=Install-ReleaseTrainingRuntime $BootstrapPython $Release -AllowLegacyPin
+    $runtimeRootPath=[string]$installed.installed_root
+    $runtimeVersion=([string]$installed.runtime_version).Trim().ToLowerInvariant()
+    $learnerResult=@(Ensure-LearnerPython $Config $runtimeRootPath)
+    if($learnerResult.Count -ne 1){
+        throw "Learner Python resolver returned $($learnerResult.Count) values while staging central runtime; expected one."
+    }
+    $learnerPython=[IO.Path]::GetFullPath([string]$learnerResult[0])
+    $launchCommand=@(New-CentralLearnerLaunchCommand $Config $learnerPython $Unity $runtimeRootPath)
+    $pointer=[ordered]@{
+        schema_version=1
+        build_id=[string]$Release.build_id
+        runtime_version=$runtimeVersion
+        runtime_root=[IO.Path]::GetFullPath($runtimeRootPath)
+        python_executable=$learnerPython
+        launch_command=@($launchCommand)
+        prepared_utc=[DateTime]::UtcNow.ToString('o')
+    }
+
+    $pointerTemp="$CentralRuntimePointerPath.new"
+    [IO.File]::WriteAllText(
+        $pointerTemp,
+        ($pointer|ConvertTo-Json -Depth 8) + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $pointerTemp $CentralRuntimePointerPath
+
+    $readyTemp="$CentralRuntimeReadyBuildPath.new"
+    [IO.File]::WriteAllText(
+        $readyTemp,
+        ([string]$Release.build_id) + [Environment]::NewLine,
+        (New-Object Text.ASCIIEncoding)
+    )
+    Install-AtomicFile $readyTemp $CentralRuntimeReadyBuildPath
+
+    [pscustomobject]@{
+        build_id=[string]$Release.build_id
+        runtime_version=$runtimeVersion
+        runtime_root=[IO.Path]::GetFullPath($runtimeRootPath)
+        learner_python=$learnerPython
+        launch_command=@($launchCommand)
+    }
+}
+
+function Get-CentralFallbackLaunchCommand(
+    $Config,
+    [string]$Unity,
+    $PreparedRuntime
+){
+    $canonicalBuild=''
+    if(Test-Path -LiteralPath $AdminTokenPath){
+        try{
+            $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+            if($admin){
+                $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $admin
+                $desired=Get-ObjectPropertyValue $status 'desired'
+                $canonicalBuild=([string](Get-ObjectPropertyValue $desired 'canonical_build_id')).Trim()
+            }
+        }catch{$canonicalBuild=''}
+    }
+
+    if(-not $canonicalBuild -or $canonicalBuild -eq [string]$PreparedRuntime.build_id){
+        return @($PreparedRuntime.launch_command)
+    }
+
+    if(Test-Path -LiteralPath $CentralRuntimeStatePath){
+        try{
+            $runtimeState=Get-Content -LiteralPath $CentralRuntimeStatePath -Raw|ConvertFrom-Json
+            $stateBuild=([string](Get-ObjectPropertyValue $runtimeState 'build_id')).Trim()
+            $statePython=([string](Get-ObjectPropertyValue $runtimeState 'python_executable')).Trim()
+            $stateRoot=([string](Get-ObjectPropertyValue $runtimeState 'runtime_root')).Trim()
+            if($stateBuild -eq $canonicalBuild -and $statePython -and $stateRoot){
+                return @(New-CentralLearnerLaunchCommand $Config $statePython $Unity $stateRoot)
+            }
+        }catch{}
+    }
+
+    $existing=$null
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
+    }
+    $currentBuildPath=Join-Path $CentralAgentInstallRoot 'current.json'
+    if($null -ne $existing -and (Test-Path -LiteralPath $currentBuildPath)){
+        try{
+            $currentBuild=Get-Content -LiteralPath $currentBuildPath -Raw|ConvertFrom-Json
+            $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
+            $existingPython=([string](Get-ObjectPropertyValue $existing 'learner_python')).Trim()
+            $existingRoot=([string](Get-ObjectPropertyValue $existing 'release_runtime_root')).Trim()
+            if($currentBuildId -eq $canonicalBuild -and $existingPython -and $existingRoot){
+                return @(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+            }
+        }catch{}
+    }
+
+    throw "Cannot safely restart the central supervisor while canonical build $canonicalBuild differs from prepared build $($PreparedRuntime.build_id): no verified launch command for the canonical runtime is available."
 }
 
 function Get-GitShortSha {
@@ -1646,31 +1796,69 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     throw "Central learner PID $Id is still finalizing its checkpoint after $TimeoutSeconds seconds. Refusing forced termination; the existing learner remains authoritative."
 }
 
-function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity,$Release){
-    Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory $CentralAgentInstallRoot
-    $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
-    $installedRuntime=Install-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin
-    $runtimeRoot=[string]$installedRuntime.installed_root
-    $runtimeVersion=[string]$installedRuntime.runtime_version
-    $agent=Join-Path $runtimeRoot 'bees_training_worker_agent.py'; $service=Join-Path $runtimeRoot 'bees_continual_elastic_wan_service.py'
-    $trainerConfig=Join-Path $runtimeRoot 'rl_1v1_config.yaml'; $continualConfig=Join-Path $runtimeRoot 'continual_learning_config.json'
-    foreach($required in @($agent,$service,$trainerConfig,$continualConfig)){
-        if(-not(Test-Path -LiteralPath $required)){ throw "Installed release training runtime is missing: $required" }
+function Start-CentralAgentIfNeeded(
+    $Config,
+    [string]$BootstrapPython,
+    [string]$Unity,
+    $Release,
+    $PreparedRuntime=$null
+){
+    Ensure-Directory $RuntimeRoot
+    Ensure-Directory (Join-Path $LogsRoot 'Training')
+    Ensure-Directory $CentralAgentInstallRoot
+    $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'
+    $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
+
+    if($null -eq $PreparedRuntime){
+        $PreparedRuntime=Prepare-CentralReleaseRuntime $Config $BootstrapPython $Unity $Release
     }
-    $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
-    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot","--runtime-training-root=$runtimeRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--trainer-config=$trainerConfig","--continual-config=$continualConfig","--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
+    $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'
+    if(-not(Test-Path -LiteralPath $agent)){
+        throw "Stable central training supervisor is missing: $agent"
+    }
+    if(-not(Test-PythonCode $BootstrapPython 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')){
+        throw "Central training supervisor requires Python 3.10: $BootstrapPython"
+    }
+
+    $fallbackCommand=@(Get-CentralFallbackLaunchCommand $Config $Unity $PreparedRuntime)
+    $supervisorArgs=@(
+        '-u',$agent,
+        '--server-url',[string]$Config.controlUrl,
+        '--token-file',$WorkerTokenPath,
+        '--trainer-id','central-learner',
+        '--role','dedicated',
+        '--platform','WindowsPlayer',
+        '--install-root',$CentralAgentInstallRoot,
+        '--runtime-ready-file',$CentralRuntimeReadyBuildPath,
+        '--runtime-cutover-pointer',$CentralRuntimePointerPath,
+        '--runtime-state-file',$CentralRuntimeStatePath,
+        '--shutdown-request-file',$CentralAgentShutdownRequestPath
+    )
+    $args=@($supervisorArgs + @('--') + $fallbackCommand)
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $runtimeVersion)
+
+    $agentSourceHash=(Get-FileHash -LiteralPath $agent -Algorithm SHA256).Hash.ToLowerInvariant()
+    $workerTokenHash=(Get-FileHash -LiteralPath $WorkerTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $commandHash=Get-StringSha256 (
+        [IO.Path]::GetFullPath($BootstrapPython) + [Environment]::NewLine +
+        $agentSourceHash + [Environment]::NewLine +
+        $workerTokenHash + [Environment]::NewLine +
+        (($supervisorArgs|ForEach-Object{[string]$_}) -join [Environment]::NewLine)
+    )
+
     $existing=$null
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing){
             if(Test-ManagedProcessIdentity $existing){
                 if(
-                    (Test-ManagedProcessIdentity $existing $Python) -and
-                    ([string](Get-ObjectPropertyValue $existing 'command_hash')) -eq $commandHash
-                ){ return }
-                Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
+                    (Test-ManagedProcessIdentity $existing $BootstrapPython) -and
+                    ([string](Get-ObjectPropertyValue $existing 'command_hash')) -eq $commandHash -and
+                    [bool](Get-ObjectPropertyValue $existing 'runtime_cutover_capable')
+                ){
+                    return
+                }
+                Write-Host 'Central supervisor/control configuration changed; checkpointing the learner before replacing the verified supervisor.'
                 $null=Stop-CentralAgentGracefully ([int]$existing.pid)
             } else {
                 $livePid=Get-StateReferencedLivePid $existing
@@ -1688,31 +1876,38 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity,$Rele
             throw "Central learner PID $legacyPid is from legacy PID-only state. Refusing to stop it automatically because the PID may have been reused."
         }
     }
+
     Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
-    $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+    $p=Start-Process -FilePath $BootstrapPython -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
     $identity=Get-ProcessIdentity $p.Id
     if($null -eq $identity -or -not [string]::Equals(
         [string]$identity.executable_path,
-        [IO.Path]::GetFullPath($Python),
+        [IO.Path]::GetFullPath($BootstrapPython),
         [StringComparison]::OrdinalIgnoreCase
     )){
         try{$p.Kill()}catch{}
-        throw 'Could not establish the central learner process identity after launch.'
+        throw 'Could not establish the stable central supervisor process identity after launch.'
     }
+
     $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
     [pscustomobject]@{
-        schema_version=2
+        schema_version=3
         pid=[int]$identity.pid
         process_start_utc=[string]$identity.process_start_utc
         executable_path=[string]$identity.executable_path
         command_hash=$commandHash
-        learner_python=[IO.Path]::GetFullPath($Python)
-        release_runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
-        release_runtime_version=$runtimeVersion
+        supervisor_python=[IO.Path]::GetFullPath($BootstrapPython)
+        learner_python=[string]$PreparedRuntime.learner_python
+        release_runtime_root=[string]$PreparedRuntime.runtime_root
+        release_runtime_version=[string]$PreparedRuntime.runtime_version
+        runtime_cutover_pointer=$CentralRuntimePointerPath
+        runtime_ready_file=$CentralRuntimeReadyBuildPath
+        runtime_state_file=$CentralRuntimeStatePath
+        runtime_cutover_capable=$true
         graceful_checkpoint_shutdown=$true
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
-    Write-Host "Central training agent started with PID $($p.Id)."
+    Write-Host "Stable central training supervisor started with PID $($p.Id)."
 }
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
