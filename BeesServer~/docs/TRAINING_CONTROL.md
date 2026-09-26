@@ -135,8 +135,8 @@ For a compatible release or same-run static environment-argument change:
 7. A required trainer whose dedicated control lease genuinely expires is removed from the compatible barrier. A late or returning trainer does not re-expand the in-flight barrier; it stays on the semantically compatible canonical build/configuration until promotion, then reconciles to the new canonical state.
 8. For an environment-argument change, the central learner is cut over first. Every managed learner/actor process receives a SHA-256 identity of its exact ordered environment-argument list, and the WAN broker admits trajectories only when `run_id`, compatibility key, and environment identity all match. Old actors therefore cannot feed old-scenario trajectories into the newly configured learner while remotes restart one at a time.
 9. Trainers already moved to the pending release/configuration stay there while the remaining trainers update.
-9. The central learner is ordered after remote trainers.
-10. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied. After every remaining required dedicated trainer has provided that healthy acknowledgement, the release becomes canonical.
+10. For ordinary compatible code releases, remote trainers remain ordered before the central learner; environment-only transitions use the central-first rule above so the authoritative broker switches semantic environment identity before accepting newly configured actors.
+11. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied. After every remaining required dedicated trainer has provided that healthy acknowledgement, the release becomes canonical.
 
 For an incompatible release:
 
