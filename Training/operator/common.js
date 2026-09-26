@@ -412,12 +412,6 @@ async function testControl(baseUrl, token) {
     }
 }
 
-function normalizeIso(value) {
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return '';
-    return date.toISOString();
-}
-
 function powershellExecutable() {
     if (process.platform !== 'win32') return resolveCommand('pwsh');
     try {
@@ -453,7 +447,9 @@ function getProcessIdentity(pid) {
         const value = JSON.parse(String(result.stdout || '').trim());
         return {
             pid: Number(value.pid),
-            process_start_utc: normalizeIso(value.process_start_utc),
+            // Preserve PowerShell's exact round-trip timestamp. Parsing through JS Date truncates
+            // Windows process-start precision and weakens the PID-reuse ownership check.
+            process_start_utc: String(value.process_start_utc || ''),
             executable_path: path.resolve(String(value.executable_path)),
         };
     } catch (_) {
@@ -483,7 +479,7 @@ function testManagedProcessIdentity(state, expectedExecutable = '') {
     if (!state || !state.pid || !state.process_start_utc || !state.executable_path) return false;
     const current = getProcessIdentity(Number(state.pid));
     if (!current) return false;
-    if (normalizeIso(current.process_start_utc) !== normalizeIso(state.process_start_utc)) return false;
+    if (String(current.process_start_utc) !== String(state.process_start_utc)) return false;
     if (!samePath(current.executable_path, state.executable_path)) return false;
     if (expectedExecutable && !samePath(current.executable_path, expectedExecutable)) return false;
     return true;
@@ -581,7 +577,6 @@ module.exports = {
     invokePythonJson,
     isProcessAlive,
     loadConfig,
-    normalizeIso,
     path,
     paths,
     powershellExecutable,
