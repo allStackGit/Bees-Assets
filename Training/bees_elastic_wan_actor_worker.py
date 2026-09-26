@@ -328,11 +328,13 @@ def _validate_session_release_identity(
     actual = session.get("release_identity")
     if not isinstance(actual, Mapping):
         raise RuntimeError("Elastic WAN session is missing release identity")
+    build_id = str(actual.get("build_id", "")).strip()
     run_id = str(actual.get("run_id", "")).strip()
     compatibility_key = str(actual.get("compatibility_key", "")).strip().lower()
     environment_id = str(actual.get("environment_id", "")).strip().lower()
     if (
-        run_id != str(expected.get("run_id", "")).strip()
+        build_id != str(expected.get("build_id", "")).strip()
+        or run_id != str(expected.get("run_id", "")).strip()
         or compatibility_key != str(expected.get("compatibility_key", "")).strip().lower()
         or environment_id != str(expected.get("environment_id", "")).strip().lower()
     ):

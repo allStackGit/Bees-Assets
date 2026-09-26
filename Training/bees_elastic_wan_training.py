@@ -449,11 +449,13 @@ class ElasticWanBroker(base.WanActorBroker):
         }
 
     def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:
+        actual_build_id = str(payload.get("build_id", "")).strip()
         actual_run_id = str(payload.get("run_id", "")).strip()
         actual_compatibility_key = str(payload.get("compatibility_key", "")).strip().lower()
         actual_environment_id = str(payload.get("environment_id", "")).strip().lower()
         if (
-            actual_run_id != self.release_identity["run_id"]
+            actual_build_id != self.release_identity["build_id"]
+            or actual_run_id != self.release_identity["run_id"]
             or actual_compatibility_key != self.release_identity["compatibility_key"]
             or actual_environment_id != self.release_identity["environment_id"]
         ):

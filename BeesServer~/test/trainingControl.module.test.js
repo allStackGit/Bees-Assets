@@ -45,6 +45,20 @@ function publishDedicatedBuild(store, root, buildId) {
     return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;
 }
 
+function publishDedicatedBuildForPlatform(store, root, buildId, platform) {
+    const archive = path.join(root, buildId + '-' + platform + '.zip');
+    fs.writeFileSync(archive, Buffer.from(buildId + '-' + platform + '-build'));
+    store.publishArtifact({
+        role: 'dedicated',
+        platform,
+        buildId,
+        archivePath: archive,
+        entrypoint: platform === 'LinuxPlayer' ? 'Bees.x86_64' : 'Bees.exe',
+    });
+    return store.artifact('dedicated', platform, buildId).archive_sha256;
+}
+
+
 function validationKey(store, buildId, environmentArgs) {
     const artifact = store.artifact('dedicated', 'WindowsPlayer', buildId);
     return environmentValidationKeyForRelease(
@@ -68,7 +82,7 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
     return store.heartbeat({
         trainer_id: trainerId,
         role: 'dedicated',
-        platform: 'WindowsPlayer',
+        platform: options.platform || 'WindowsPlayer',
         process_state: options.processState || 'running',
         build_id: buildId,
         build_sha256: buildSha256,
@@ -758,6 +772,7 @@ test('compatible preparing drops a trainer after its dedicated lease expires', (
             desired.pending_release.required_trainers.map(item => item.trainer_id),
             ['central-learner'],
         );
+        assert.deepEqual(desired.pending_release.required_remote_platforms, []);
     });
 });
 
@@ -771,7 +786,7 @@ test('compatible rolling skips an expired target and advances to the next live t
             now: () => now,
         });
         const oldSha = publishDedicatedBuild(store, root, 'stale-roll-old');
-        publishDedicatedBuild(store, root, 'stale-roll-new');
+        const newSha = publishDedicatedBuild(store, root, 'stale-roll-new');
         store.stageRelease({
             buildId: 'stale-roll-old',
             runId: 'stale-roll-run',
@@ -798,18 +813,38 @@ test('compatible rolling skips an expired target and advances to the next live t
             );
         }
         assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'stale-roll-new',
+            newSha,
+            {
+                preparedBuildId: 'stale-roll-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
         assert.equal(store._rollingTargetId(), 'remote-a');
 
         now = 9000;
-        for (const trainerId of ['remote-b', 'central-learner']) {
-            heartbeatDedicated(
-                store,
-                trainerId,
-                'stale-roll-old',
-                oldSha,
-                { preparedBuildId: 'stale-roll-new' },
-            );
-        }
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'stale-roll-old',
+            oldSha,
+            { preparedBuildId: 'stale-roll-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'stale-roll-new',
+            newSha,
+            {
+                preparedBuildId: 'stale-roll-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
         now = 11001;
         const desired = store.status().desired;
 
@@ -1012,19 +1047,43 @@ test('compatible rollout converges across worker loss, server restart, and worke
             );
         }
         assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.deepEqual(
+            store.state.pending_release.rolled_trainers,
+            ['central-learner'],
+        );
         assert.equal(store._rollingTargetId(), 'remote-a');
 
         // remote-a disappears. The healthy members keep their leases while it expires.
         now = 9000;
-        for (const trainerId of ['remote-b', 'central-learner']) {
-            heartbeatDedicated(
-                store,
-                trainerId,
-                'resilience-old',
-                oldSha,
-                { preparedBuildId: 'resilience-new' },
-            );
-        }
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-old',
+            oldSha,
+            { preparedBuildId: 'resilience-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
         now = 11001;
         store.status();
         assert.deepEqual(
@@ -1033,31 +1092,21 @@ test('compatible rollout converges across worker loss, server restart, and worke
         );
         assert.equal(store._rollingTargetId(), 'remote-b');
 
-        heartbeatDedicated(
-            store,
-            'remote-b',
-            'resilience-new',
-            newSha,
-            {
-                preparedBuildId: 'resilience-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        assert.equal(store._rollingTargetId(), 'central-learner');
-        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
-
-        // BeesServer dies/restarts after one remote has rolled. Persisted state must not promote
-        // the release until the surviving trainers re-register healthy.
+        // BeesServer dies/restarts after the learner has rolled. Persisted state must not promote
+        // until the surviving remote re-registers healthy on the exact pending build.
         now = 12000;
         store = new TrainingControlStore(options);
         assert.equal(store.state.canonical_build_id, 'resilience-old');
         assert.equal(store.state.pending_release.phase, 'rolling');
-        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
-        assert.equal(store._rollingTargetId(), 'central-learner');
+        assert.deepEqual(
+            store.state.pending_release.rolled_trainers,
+            ['central-learner'],
+        );
+        assert.equal(store._rollingTargetId(), 'remote-b');
 
         heartbeatDedicated(
             store,
-            'remote-b',
+            'central-learner',
             'resilience-new',
             newSha,
             {
@@ -1065,18 +1114,18 @@ test('compatible rollout converges across worker loss, server restart, and worke
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
-        let centralDesired = heartbeatDedicated(
+        const remoteDesired = heartbeatDedicated(
             store,
-            'central-learner',
+            'remote-b',
             'resilience-old',
             oldSha,
             { preparedBuildId: 'resilience-new' },
         );
-        assert.equal(centralDesired.desired_build_id, 'resilience-new');
+        assert.equal(remoteDesired.desired_build_id, 'resilience-new');
 
         heartbeatDedicated(
             store,
-            'central-learner',
+            'remote-b',
             'resilience-new',
             newSha,
             {
@@ -1099,9 +1148,8 @@ test('compatible rollout converges across worker loss, server restart, and worke
         assert.equal(rejoined.pending_release, null);
         heartbeatDedicated(store, 'remote-a', 'resilience-new', newSha);
         const remoteA = store.status().trainers.find(
-            trainer => trainer.trainer_id === 'remote-a');
+            record => record.trainer_id === 'remote-a');
         assert.equal(remoteA.build_id, 'resilience-new');
-        assert.equal(remoteA.stale, false);
     });
 });
 
@@ -1896,51 +1944,9 @@ test('compatible rolling skips a persistently crashing remote but never central 
                 { preparedBuildId: 'roll-fail-new' },
             );
         }
-        assert.equal(store._rollingTargetId(), 'remote-bad');
-
-        heartbeatDedicated(
-            store,
-            'remote-bad',
-            'roll-fail-new',
-            newSha,
-            {
-                processState: 'stopped',
-                preparedBuildId: 'roll-fail-new',
-                lastError: 'managed process exited with code 2',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        now = 6001;
-        heartbeatDedicated(
-            store,
-            'remote-bad',
-            'roll-fail-new',
-            newSha,
-            {
-                processState: 'stopped',
-                preparedBuildId: 'roll-fail-new',
-                lastError: 'managed process exited with code 2',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        assert.deepEqual(
-            store.state.pending_release.required_trainers.map(item => item.trainer_id),
-            ['remote-good', 'central-learner'],
-        );
-        assert.equal(store._rollingTargetId(), 'remote-good');
-
-        heartbeatDedicated(
-            store,
-            'remote-good',
-            'roll-fail-new',
-            newSha,
-            {
-                preparedBuildId: 'roll-fail-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
         assert.equal(store._rollingTargetId(), 'central-learner');
 
+        // Central owns the optimizer/checkpoint lineage and can never age out of the rollout.
         heartbeatDedicated(
             store,
             'central-learner',
@@ -1966,13 +1972,212 @@ test('compatible rolling skips a persistently crashing remote but never central 
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        assert.equal(store.state.canonical_build_id, 'roll-fail-old');
 
+        // Once central recovers, remotes roll against the exact new learner session.
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                preparedBuildId: 'roll-fail-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store._rollingTargetId(), 'remote-bad');
+
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'managed process exited with code 2',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 25001;
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'managed process exited with code 2',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
         assert.deepEqual(
             store.state.pending_release.required_trainers.map(item => item.trainer_id),
             ['remote-good', 'central-learner'],
         );
-        assert.equal(store._rollingTargetId(), 'central-learner');
-        assert.equal(store.state.canonical_build_id, 'roll-fail-old');
+        assert.deepEqual(
+            store.state.pending_release.quarantined_trainers,
+            ['remote-bad'],
+        );
+        assert.equal(store._rollingTargetId(), 'remote-good');
+
+        heartbeatDedicated(
+            store,
+            'remote-good',
+            'roll-fail-new',
+            newSha,
+            {
+                preparedBuildId: 'roll-fail-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'roll-fail-new');
+    });
+});
+
+test('compatible rollout requires a healthy canary for every active remote platform', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldWindowsSha = publishDedicatedBuild(store, root, 'platform-old');
+        const oldLinuxSha = publishDedicatedBuildForPlatform(
+            store, root, 'platform-old', 'LinuxPlayer');
+        const newWindowsSha = publishDedicatedBuild(store, root, 'platform-new');
+        const newLinuxSha = publishDedicatedBuildForPlatform(
+            store, root, 'platform-new', 'LinuxPlayer');
+
+        store.stageRelease({
+            buildId: 'platform-old',
+            runId: 'platform-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(
+            store, 'central-learner', 'platform-old', oldWindowsSha);
+        heartbeatDedicated(
+            store, 'remote-linux', 'platform-old', oldLinuxSha,
+            { platform: 'LinuxPlayer' });
+
+        store.stageRelease({
+            buildId: 'platform-new',
+            runId: 'platform-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        assert.deepEqual(
+            store.state.pending_release.required_remote_platforms,
+            ['LinuxPlayer'],
+        );
+
+        heartbeatDedicated(
+            store, 'central-learner', 'platform-old', oldWindowsSha,
+            { preparedBuildId: 'platform-new' });
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparationError: 'linux package failed validation',
+                lastError: 'linux package failed validation',
+            },
+        );
+        now = 6001;
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparationError: 'linux package failed validation',
+                lastError: 'linux package failed validation',
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+        assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-linux']);
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'platform-new',
+            newWindowsSha,
+            {
+                preparedBuildId: 'platform-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'platform-old');
+        assert.deepEqual(store.state.pending_release.healthy_remote_platforms, []);
+
+        // The quarantined host may reconnect to canonical, but cannot satisfy the canary.
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            { platform: 'LinuxPlayer', preparedBuildId: 'platform-new' },
+        );
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+
+        // Platform coverage and quarantine survive a control-server restart.
+        store = new TrainingControlStore(options);
+        assert.deepEqual(
+            store.state.pending_release.required_remote_platforms,
+            ['LinuxPlayer'],
+        );
+        assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-linux']);
+
+        // A different Linux host may become the replacement canary.
+        heartbeatDedicated(
+            store,
+            'remote-linux-replacement',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparedBuildId: 'platform-new',
+            },
+        );
+        assert.ok(store.state.pending_release.required_trainers.some(
+            item => item.trainer_id === 'remote-linux-replacement'));
+
+        heartbeatDedicated(
+            store,
+            'remote-linux-replacement',
+            'platform-new',
+            newLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparedBuildId: 'platform-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'platform-new');
     });
 });
 
