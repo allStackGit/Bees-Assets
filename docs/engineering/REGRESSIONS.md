@@ -155,3 +155,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** existing `test_training_log_uploader_caps_each_uploaded_file` uses an eight-byte file and a four-byte cap, calls `flush_all` twice, and requires only the first four bytes to be uploaded. Pending detection now compares offsets against the per-file upload limit.  
 **Verification:** source and the existing focused test were reviewed statically against the shared cap semantics. The test was not executed.  
 **Invariant/knowledge:** local bytes beyond the uploader's explicit per-file cap are outside the upload contract and must not prevent final flushing from completing.
+
+
+### REG-016 — Minimap clicks used screen coordinates as world coordinates
+**Area:** `Scripts/Levels/LevelInputManager.cs`, minimap navigation  
+**Symptom:** clicking or right-clicking the minimap could map the pointer to an incorrect viewport location because screen-space pointer coordinates were passed to a world-to-local transform.  
+**Root cause:** `Transform.InverseTransformPoint` expects world-space coordinates, while the EventSystem result supplies a screen-space position.  
+**Permanent protection:** minimap navigation now converts the pointer through `RectTransformUtility.ScreenPointToLocalPointInRectangle`, using the canvas camera when needed, before mapping the local point to viewport coordinates.  
+**Verification:** the input path and `Prefabs/UI/Mini Map Canvas.prefab` were reviewed statically; the prefab uses a screen-space overlay canvas. No test or gameplay run was performed.  
+**Invariant/knowledge:** screen pointer coordinates must be converted with the target RectTransform and its canvas camera before viewport mapping.
