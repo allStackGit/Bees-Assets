@@ -159,7 +159,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
         removeIfExists(log);
 
         // argv remains structured all the way into CreateProcess. This deliberately avoids
-        // PowerShell Start-Process ArgumentList reparsing and its path-with-spaces failure mode.
+        // shell command-line reparsing and its path-with-spaces failure mode.
         const validationArgs = [
             '-batchmode',
             '-nographics',
