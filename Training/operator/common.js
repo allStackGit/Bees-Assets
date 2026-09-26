@@ -444,7 +444,7 @@ function requestJson(baseUrl, token, method, requestPath, payload = null, timeou
 
 async function testControl(baseUrl, token) {
     try {
-        await requestJson(baseUrl, token, 'GET', '/v1/status', null, 1500);
+        await requestJson(baseUrl, token, 'GET', '/v1/status', null, 5000);
         return true;
     } catch (_) {
         return false;
