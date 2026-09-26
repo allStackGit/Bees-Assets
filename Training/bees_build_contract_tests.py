@@ -578,6 +578,25 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             prepare,
         )
 
+    def test_learner_python_retention_preserves_active_staged_and_recent_envs(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Prune-LearnerPythonRuntimes")
+        end = source.index("function Ensure-LearnerPython", start)
+        block = source[start:end]
+
+        self.assertIn("[int]$KeepNewest=3", block)
+        self.assertIn("$CentralRuntimePointerPath", block)
+        self.assertIn("$CentralRuntimeStatePath", block)
+        self.assertIn("$CentralAgentStatePath", block)
+        self.assertIn("'python_executable','learner_python'", block)
+        self.assertIn("$keep.ContainsKey($full)", block)
+        self.assertIn("Select-Object -First $KeepNewest", block)
+
+        ensure_start = source.index("function Ensure-LearnerPython")
+        ensure_end = source.index("function Resolve-Node", ensure_start)
+        ensure = source[ensure_start:ensure_end]
+        self.assertIn("Prune-LearnerPythonRuntimes @($venvPython)", ensure)
+
     def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Prune-BeesServerRuntimes")
@@ -1354,6 +1373,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         running_end = source.index("function Assert-CentralAgentCheckpointSafe", running_start)
         running = source[running_start:running_end]
         self.assertIn("Find-ManagedProcessByOwnerToken $supervisorPython", running)
+
+    def test_learner_infrastructure_supervisors_have_recoverable_child_ownership(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        gateway_start = source.index("function Start-TailnetGatewayIfNeeded")
+        gateway_end = source.index("function Invoke-Checked", gateway_start)
+        gateway = source[gateway_start:gateway_end]
+        self.assertIn("'gateway-supervisor'", gateway)
+        self.assertIn("($ownerToken + '.child')", gateway)
+        self.assertIn("'orphaned embedded tailnet gateway child'", gateway)
+
+        server_start = source.index("function Start-BeesServerRuntimeProcess")
+        server_end = source.index("function Start-BeesServerIfNeeded", server_start)
+        server_launch = source[server_start:server_end]
+        self.assertIn("'--managed-owner-token' $serverOwnerToken", server_launch)
+        self.assertIn("$serverOwnerToken=[Guid]::NewGuid().ToString('N')", server_launch)
+
+        reconcile_start = source.index("function Start-BeesServerIfNeeded")
+        reconcile_end = source.index("function Get-LatestRelease", reconcile_start)
+        reconcile = source[reconcile_start:reconcile_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $node $serverOwnerToken 'BeesServer supervisor'", reconcile)
+        self.assertIn("($serverOwnerToken + '.child')", reconcile)
+        self.assertIn("'orphaned BeesServer child'", reconcile)
 
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
