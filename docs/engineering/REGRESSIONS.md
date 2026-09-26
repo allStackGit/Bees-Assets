@@ -217,3 +217,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_training_worker_agent_tests.py` builds a log whose bounded scan begins exactly at a complete episode record and asserts that it is counted. The reader now checks the byte preceding the offset and discards text only when that offset is inside a record.  
 **Verification:** focused regression coverage was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** bounded log readers must distinguish an arbitrary interior offset from an exact record boundary before discarding input.
+
+### REG-007 — Stale claim renewal overlapped a replacement actor session
+**Area:** `Training/bees_elastic_wan_actor_session.py`, persistent actor-slot claim lifecycle  
+**Symptom:** a replacement session on the same remote worker could have its initial slot claim rejected while the prior session's renewal request was still in flight after shutdown returned.  
+**Root cause:** claim-keeper shutdown joined for two seconds even though broker requests can take up to the client's 30-second timeout; the old request could still be processed after the next session began.  
+**Permanent protection:** `Training/bees_elastic_wan_training_tests.py` requires session shutdown to wait for the claim-keeper thread to finish before clearing its reference. `_stop_claim_keeper` now joins without a shorter timeout; the keeper's broker request has the configured finite timeout.  
+**Verification:** focused regression coverage was added but not executed, per the static-only audit constraint.  
+**Invariant/knowledge:** a session must not release actor-slot lifecycle ownership while an authenticated claim renewal is still in flight.
