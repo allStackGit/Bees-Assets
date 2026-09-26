@@ -45,6 +45,20 @@ function publishDedicatedBuild(store, root, buildId) {
     return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;
 }
 
+function publishDedicatedBuildForPlatform(store, root, buildId, platform) {
+    const archive = path.join(root, buildId + '-' + platform + '.zip');
+    fs.writeFileSync(archive, Buffer.from(buildId + '-' + platform + '-build'));
+    store.publishArtifact({
+        role: 'dedicated',
+        platform,
+        buildId,
+        archivePath: archive,
+        entrypoint: platform === 'LinuxPlayer' ? 'Bees.x86_64' : 'Bees.exe',
+    });
+    return store.artifact('dedicated', platform, buildId).archive_sha256;
+}
+
+
 function validationKey(store, buildId, environmentArgs) {
     const artifact = store.artifact('dedicated', 'WindowsPlayer', buildId);
     return environmentValidationKeyForRelease(
@@ -68,7 +82,7 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
     return store.heartbeat({
         trainer_id: trainerId,
         role: 'dedicated',
-        platform: 'WindowsPlayer',
+        platform: options.platform || 'WindowsPlayer',
         process_state: options.processState || 'running',
         build_id: buildId,
         build_sha256: buildSha256,
@@ -1973,6 +1987,149 @@ test('compatible rolling skips a persistently crashing remote but never central 
         );
         assert.equal(store._rollingTargetId(), 'central-learner');
         assert.equal(store.state.canonical_build_id, 'roll-fail-old');
+    });
+});
+
+test('compatible rollout requires a healthy canary for every active remote platform', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldWindowsSha = publishDedicatedBuild(store, root, 'platform-old');
+        const oldLinuxSha = publishDedicatedBuildForPlatform(
+            store, root, 'platform-old', 'LinuxPlayer');
+        const newWindowsSha = publishDedicatedBuild(store, root, 'platform-new');
+        const newLinuxSha = publishDedicatedBuildForPlatform(
+            store, root, 'platform-new', 'LinuxPlayer');
+
+        store.stageRelease({
+            buildId: 'platform-old',
+            runId: 'platform-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(
+            store, 'central-learner', 'platform-old', oldWindowsSha);
+        heartbeatDedicated(
+            store, 'remote-linux', 'platform-old', oldLinuxSha,
+            { platform: 'LinuxPlayer' });
+
+        store.stageRelease({
+            buildId: 'platform-new',
+            runId: 'platform-run',
+            compatibilityKey: '7'.repeat(64),
+            incompatible: false,
+        });
+        assert.deepEqual(
+            store.state.pending_release.required_remote_platforms,
+            ['LinuxPlayer'],
+        );
+
+        heartbeatDedicated(
+            store, 'central-learner', 'platform-old', oldWindowsSha,
+            { preparedBuildId: 'platform-new' });
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparationError: 'linux package failed validation',
+                lastError: 'linux package failed validation',
+            },
+        );
+        now = 6001;
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparationError: 'linux package failed validation',
+                lastError: 'linux package failed validation',
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+        assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-linux']);
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'platform-new',
+            newWindowsSha,
+            {
+                preparedBuildId: 'platform-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'platform-old');
+        assert.deepEqual(store.state.pending_release.healthy_remote_platforms, []);
+
+        // The quarantined host may reconnect to canonical, but cannot satisfy the canary.
+        heartbeatDedicated(
+            store,
+            'remote-linux',
+            'platform-old',
+            oldLinuxSha,
+            { platform: 'LinuxPlayer', preparedBuildId: 'platform-new' },
+        );
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+
+        // Platform coverage and quarantine survive a control-server restart.
+        store = new TrainingControlStore(options);
+        assert.deepEqual(
+            store.state.pending_release.required_remote_platforms,
+            ['LinuxPlayer'],
+        );
+        assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-linux']);
+
+        // A different Linux host may become the replacement canary.
+        heartbeatDedicated(
+            store,
+            'remote-linux-replacement',
+            'platform-old',
+            oldLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparedBuildId: 'platform-new',
+            },
+        );
+        assert.ok(store.state.pending_release.required_trainers.some(
+            item => item.trainer_id === 'remote-linux-replacement'));
+
+        heartbeatDedicated(
+            store,
+            'remote-linux-replacement',
+            'platform-new',
+            newLinuxSha,
+            {
+                platform: 'LinuxPlayer',
+                preparedBuildId: 'platform-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'platform-new');
     });
 });
 

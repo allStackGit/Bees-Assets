@@ -317,6 +317,55 @@ class TrainingControlStore {
                 }
                 rolledTrainerIds.add(trainerId);
             }
+
+            const derivedRemotePlatforms = [...new Set(
+                pending.required_trainers
+                    .filter(trainer => trainer.trainer_id !== 'central-learner')
+                    .map(trainer => trainer.platform),
+            )].sort();
+            if (!Array.isArray(pending.required_remote_platforms)) {
+                pending.required_remote_platforms = derivedRemotePlatforms;
+            }
+            const requiredRemotePlatforms = new Set();
+            for (const platform of pending.required_remote_platforms) {
+                if (typeof platform !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(platform) ||
+                    requiredRemotePlatforms.has(platform)) {
+                    throw new Error(
+                        'training-control pending release remote platform barrier is invalid');
+                }
+                requiredRemotePlatforms.add(platform);
+            }
+            if (!Array.isArray(pending.healthy_remote_platforms)) {
+                pending.healthy_remote_platforms = derivedRemotePlatforms.filter(
+                    platform => pending.required_trainers.some(
+                        trainer => trainer.trainer_id !== 'central-learner' &&
+                            trainer.platform === platform &&
+                            rolledTrainerIds.has(trainer.trainer_id)));
+            }
+            const healthyRemotePlatforms = new Set();
+            for (const platform of pending.healthy_remote_platforms) {
+                if (typeof platform !== 'string' ||
+                    !requiredRemotePlatforms.has(platform) ||
+                    healthyRemotePlatforms.has(platform)) {
+                    throw new Error(
+                        'training-control pending release healthy remote platforms are invalid');
+                }
+                healthyRemotePlatforms.add(platform);
+            }
+            if (!Array.isArray(pending.quarantined_trainers)) {
+                pending.quarantined_trainers = [];
+            }
+            const quarantinedTrainerIds = new Set();
+            for (const trainerId of pending.quarantined_trainers) {
+                if (typeof trainerId !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+                    quarantinedTrainerIds.has(trainerId)) {
+                    throw new Error(
+                        'training-control pending release quarantine is invalid');
+                }
+                quarantinedTrainerIds.add(trainerId);
+            }
         }
         if (!Array.isArray(parsed.known_dedicated_trainers)) {
             throw new Error('training-control known trainer registry is invalid');
@@ -561,7 +610,19 @@ class TrainingControlStore {
         // deadlock the in-flight barrier. The only compatible exception is the explicit
         // recollection window used when a restart/migration staged with no known trainers.
         if (!pending.incompatible && pending.collect_until_ms <= this.now()) {
-            return false;
+            const requiredPlatforms = new Set(pending.required_remote_platforms || []);
+            const healthyPlatforms = new Set(pending.healthy_remote_platforms || []);
+            const quarantined = new Set(pending.quarantined_trainers || []);
+            const platformHasCandidate = pending.required_trainers.some(
+                spec => spec.trainer_id !== 'central-learner' &&
+                    spec.platform === record.platform);
+            const replacementPlatformCanary =
+                record.trainer_id !== 'central-learner' &&
+                !quarantined.has(record.trainer_id) &&
+                requiredPlatforms.has(record.platform) &&
+                !healthyPlatforms.has(record.platform) &&
+                !platformHasCandidate;
+            if (!replacementPlatformCanary) return false;
         }
 
         // Incompatible run cutovers remain strict: any dedicated trainer that appears before
@@ -599,6 +660,18 @@ class TrainingControlStore {
                 record.build_id === pending.build_id ||
                 record.prepared_build_id === pending.build_id);
         });
+    }
+
+    _remotePlatformCoverageSatisfied(pending) {
+        if (!pending || pending.incompatible || !this.state.training_enabled) return true;
+        const required = Array.isArray(pending.required_remote_platforms)
+            ? pending.required_remote_platforms
+            : [];
+        const healthy = new Set(
+            Array.isArray(pending.healthy_remote_platforms)
+                ? pending.healthy_remote_platforms
+                : []);
+        return required.every(platform => healthy.has(platform));
     }
 
     _pruneExpiredCompatibleBarrierTrainers(pending) {
@@ -651,6 +724,13 @@ class TrainingControlStore {
                     spec.failure_since_ms = now;
                     changed = true;
                 } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    if (!Array.isArray(pending.quarantined_trainers)) {
+                        pending.quarantined_trainers = [];
+                    }
+                    if (!pending.quarantined_trainers.includes(spec.trainer_id)) {
+                        pending.quarantined_trainers.push(spec.trainer_id);
+                        pending.quarantined_trainers.sort();
+                    }
                     changed = true;
                     continue;
                 }
@@ -777,8 +857,13 @@ class TrainingControlStore {
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
-            if (pending.required_trainers.length === 0 ||
-                (!this.state.training_enabled && !pending.incompatible)) {
+            if (pending.required_trainers.length === 0) {
+                if (this._remotePlatformCoverageSatisfied(pending)) {
+                    return this._promotePendingRelease();
+                }
+                return false;
+            }
+            if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
@@ -810,8 +895,19 @@ class TrainingControlStore {
                 const targetSpec = pending.required_trainers.find(
                     spec => spec.trainer_id === rollingTargetId);
                 if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                    let changed = false;
                     if (!pending.rolled_trainers.includes(rollingTargetId)) {
                         pending.rolled_trainers.push(rollingTargetId);
+                        changed = true;
+                    }
+                    if (targetSpec.trainer_id !== 'central-learner' &&
+                        (pending.required_remote_platforms || []).includes(targetSpec.platform) &&
+                        !(pending.healthy_remote_platforms || []).includes(targetSpec.platform)) {
+                        pending.healthy_remote_platforms.push(targetSpec.platform);
+                        pending.healthy_remote_platforms.sort();
+                        changed = true;
+                    }
+                    if (changed) {
                         this.state.revision++;
                         this._persist();
                     }
@@ -820,7 +916,8 @@ class TrainingControlStore {
 
             const rolled = new Set(pending.rolled_trainers || []);
             if (pending.required_trainers.every(
-                spec => rolled.has(spec.trainer_id))) {
+                spec => rolled.has(spec.trainer_id)) &&
+                this._remotePlatformCoverageSatisfied(pending)) {
                 return this._promotePendingRelease();
             }
             return false;
@@ -966,6 +1063,11 @@ class TrainingControlStore {
         }
 
         const requiredTrainers = this._releaseBarrierTrainers();
+        const requiredRemotePlatforms = [...new Set(
+            requiredTrainers
+                .filter(trainer => trainer.trainer_id !== 'central-learner')
+                .map(trainer => trainer.platform),
+        )].sort();
         this.state.pending_release = {
             build_id: buildId,
             run_id: runId,
@@ -977,6 +1079,9 @@ class TrainingControlStore {
             phase: 'preparing',
             required_trainers: requiredTrainers,
             rolled_trainers: [],
+            required_remote_platforms: requiredRemotePlatforms,
+            healthy_remote_platforms: [],
+            quarantined_trainers: [],
             phase_revision: this.state.revision + 1,
             collect_until_ms: (
                 this.state.training_enabled && requiredTrainers.length === 0
