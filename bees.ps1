@@ -1290,7 +1290,9 @@ function Invoke-Build {
     # canonical runtime, so the fallback child command can never be paired with the wrong build.
     if((Test-Path -LiteralPath $LatestReleasePath) -and (Test-Path -LiteralPath $AdminTokenPath)){
         $preBuildAdmin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
-        if($preBuildAdmin -and (Test-Control ([string]$config.controlUrl) $preBuildAdmin)){
+        $preBuildControlOnline=if($preBuildAdmin){Test-Control ([string]$config.controlUrl) $preBuildAdmin}else{$false}
+        $preBuildManagedServerExists=Test-Path -LiteralPath $ServerStatePath
+        if($preBuildAdmin -and ($preBuildControlOnline -or $preBuildManagedServerExists)){
             $preBuildWorker=Ensure-TokenFile $WorkerTokenPath
             Start-BeesServerIfNeeded $config $preBuildWorker $preBuildAdmin
             $currentRelease=Get-LatestRelease
@@ -1411,9 +1413,17 @@ function Invoke-Build {
 
     if(Test-Path -LiteralPath $AdminTokenPath){
         $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
-        if($admin -and (Test-Control ([string]$config.controlUrl) $admin)){
+        $controlOnline=if($admin){Test-Control ([string]$config.controlUrl) $admin}else{$false}
+        $managedServerExists=Test-Path -LiteralPath $ServerStatePath
+        if($admin -and ($controlOnline -or $managedServerExists)){
             $worker=Ensure-TokenFile $WorkerTokenPath
+            # A previously managed server that crashed during the build is recoverable state, not
+            # a reason to silently skip release staging. An intentionally stopped server has no
+            # managed state file and remains stopped.
             Start-BeesServerIfNeeded $config $worker $admin
+            if(-not(Test-Control ([string]$config.controlUrl) $admin)){
+                throw 'Managed BeesServer reconciliation completed without a reachable training-control endpoint.'
+            }
             Assert-CentralAgentCheckpointSafe
             $centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release
             Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime
