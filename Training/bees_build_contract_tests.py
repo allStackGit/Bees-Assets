@@ -109,6 +109,41 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             1,
         )
 
+    def test_build_rechecks_rl_compatibility_after_unity_before_publish(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        linux_build = block.index(
+            "Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl'"
+        )
+        recheck = block.index(
+            "$postBuildFingerprint=Get-TrainingCompatibilityFingerprint $python"
+        )
+        package = block.index("Package-Build $python $win", recheck)
+        save_release = block.index("Save-LatestRelease $release", recheck)
+
+        self.assertLess(linux_build, recheck)
+        self.assertLess(recheck, package)
+        self.assertLess(recheck, save_release)
+        self.assertIn(
+            "$postBuildKey -ne $plannedKey",
+            block,
+        )
+        self.assertIn(
+            "Refusing to publish a mixed release",
+            block,
+        )
+        self.assertIn(
+            "function Get-TrainingCompatibilityFingerprint",
+            source,
+        )
+        self.assertIn(
+            "$RunLifecycleScript,'fingerprint'",
+            source,
+        )
+
     def test_remote_worker_reports_runtime_preparation_blocker(self):
         source = TRAINING_WORKER_AGENT.read_text(encoding="utf-8")
         self.assertIn(
