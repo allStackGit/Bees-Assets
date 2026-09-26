@@ -1067,7 +1067,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not 1 <= args.local_base_port <= 65535:
         print("error: --local-base-port must be in 1-65535", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.upload_queue <= 0 or args.tunnel_startup_seconds < 0:
+    if (
+        not math.isfinite(args.reconnect_seconds)
+        or args.reconnect_seconds <= 0
+        or args.upload_queue <= 0
+        or not math.isfinite(args.tunnel_startup_seconds)
+        or args.tunnel_startup_seconds < 0
+    ):
         print("error: reconnect/upload/tunnel values are outside valid bounds", file=sys.stderr)
         return 2
 
