@@ -6,7 +6,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { TrainingControlStore, createTrainingControlHandler } = require('../trainingControl');
+const {
+    TrainingControlStore,
+    createTrainingControlHandler,
+    environmentValidationKeyForRelease,
+} = require('../trainingControl');
 
 function withTempDir(work) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bees-training-control-'));
@@ -36,6 +40,15 @@ function publishDedicatedBuild(store, root, buildId) {
         entrypoint: 'Bees.exe',
     });
     return store.artifact('dedicated', 'WindowsPlayer', buildId).archive_sha256;
+}
+
+function validationKey(store, buildId, environmentArgs) {
+    const artifact = store.artifact('dedicated', 'WindowsPlayer', buildId);
+    return environmentValidationKeyForRelease(
+        buildId,
+        artifact.archive_sha256,
+        environmentArgs,
+    );
 }
 
 function activateTestRelease(store, buildId, runId = 'run-' + buildId, key = 'a'.repeat(64)) {
@@ -133,6 +146,8 @@ test('desired state is persisted and maps stop to inference for full games only'
             compatibilityKey: 'a'.repeat(64),
             incompatible: false,
             environmentArgs: ['--rl-map-size', '64'],
+            environmentValidationKey: validationKey(
+                store, 'build-1', ['--rl-map-size', '64']),
         });
         const updated = store.setDesiredState({
             training_enabled: true,
@@ -1173,6 +1188,11 @@ test('incompatible release promotes environment args atomically with run identit
             compatibilityKey: 'a'.repeat(64),
             incompatible: false,
             environmentArgs: ['--rl-map-size=32', '--rl-health-ratio=.25'],
+            environmentValidationKey: validationKey(
+                store,
+                'atomic-env-old',
+                ['--rl-map-size=32', '--rl-health-ratio=.25'],
+            ),
         });
         store.setDesiredState({
             training_enabled: true,
@@ -1192,6 +1212,8 @@ test('incompatible release promotes environment args atomically with run identit
             compatibilityKey: 'b'.repeat(64),
             incompatible: true,
             environmentArgs: targetArgs,
+            environmentValidationKey: validationKey(
+                store, 'atomic-env-new', targetArgs),
         });
 
         assert.deepEqual(
@@ -1300,6 +1322,8 @@ test('release retry rejects environment args drift for pending or canonical iden
             compatibilityKey: 'c'.repeat(64),
             incompatible: false,
             environmentArgs: ['--rl-map-size=32'],
+            environmentValidationKey: validationKey(
+                store, 'env-drift-old', ['--rl-map-size=32']),
         });
         store.setDesiredState({
             training_enabled: true,
@@ -1312,6 +1336,8 @@ test('release retry rejects environment args drift for pending or canonical iden
             compatibilityKey: 'd'.repeat(64),
             incompatible: true,
             environmentArgs: ['--rl-map-size=48'],
+            environmentValidationKey: validationKey(
+                store, 'env-drift-new', ['--rl-map-size=48']),
         };
         store.stageRelease(target);
 
@@ -1319,6 +1345,8 @@ test('release retry rejects environment args drift for pending or canonical iden
             () => store.stageRelease({
                 ...target,
                 environmentArgs: ['--rl-map-size=64'],
+                environmentValidationKey: validationKey(
+                    store, 'env-drift-new', ['--rl-map-size=64']),
             }),
             error => error.statusCode === 409 &&
                 /pending release environment_args differ/.test(error.message),
@@ -1350,6 +1378,8 @@ test('release retry rejects environment args drift for pending or canonical iden
             () => store.stageRelease({
                 ...target,
                 environmentArgs: ['--rl-map-size=64'],
+                environmentValidationKey: validationKey(
+                    store, 'env-drift-new', ['--rl-map-size=64']),
             }),
             error => error.statusCode === 409 &&
                 /same-run environment-only transitions must use compatible rolling rollout/.test(error.message),
@@ -1375,6 +1405,8 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             compatibilityKey: 'e'.repeat(64),
             incompatible: false,
             environmentArgs: oldArgs,
+            environmentValidationKey: validationKey(
+                store, 'env-roll', oldArgs),
         });
         store.setDesiredState({ training_enabled: true });
         heartbeatDedicated(store, 'remote-a', 'env-roll', sha);
@@ -1392,6 +1424,8 @@ test('same-run environment rollout is central-first and never exposes mixed desi
             compatibilityKey: 'e'.repeat(64),
             incompatible: false,
             environmentArgs: newArgs,
+            environmentValidationKey: validationKey(
+                store, 'env-roll', newArgs),
         });
         assert.equal(store.state.pending_release.phase, 'rolling');
         assert.equal(store._rollingTargetId(), 'central-learner');
