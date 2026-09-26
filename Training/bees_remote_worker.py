@@ -238,6 +238,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         deadline = time.monotonic() + args.tunnel_startup_seconds
         while time.monotonic() < deadline and tunnel.poll() is None and not stop_requested:
             time.sleep(0.05)
+        if stop_requested:
+            return 0
         if tunnel.poll() is not None:
             print(
                 f"error: SSH tunnel exited before workers started (code {tunnel.returncode}).",
@@ -246,6 +248,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 3
 
         for worker_id, port in zip(worker_ids, ports):
+            if stop_requested or tunnel.poll() is not None:
+                break
             command = unity_command(
                 env_path,
                 port,
