@@ -2449,9 +2449,6 @@ function Start-CentralAgentIfNeeded(
         '--runtime-state-file',$CentralRuntimeStatePath,
         '--shutdown-request-file',$CentralAgentShutdownRequestPath
     )
-    $args=@($supervisorArgs + @('--') + $fallbackCommand)
-    $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-
     $agentSourceHash=(Get-FileHash -LiteralPath $agent -Algorithm SHA256).Hash.ToLowerInvariant()
     $workerTokenHash=(Get-FileHash -LiteralPath $WorkerTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $commandHash=Get-StringSha256 (
