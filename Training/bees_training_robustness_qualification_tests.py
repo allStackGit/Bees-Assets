@@ -159,6 +159,36 @@ class RobustnessQualificationTests(unittest.TestCase):
                 ("bees_operator.js", "a.js", "z.js"),
             )
 
+    def test_go_qualification_uses_same_module_resolution_mode_as_bridge_build(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bees_root = Path(temp_dir)
+            assets = bees_root / "Assets"
+            training = assets / "Training"
+            server = assets / "BeesServer~"
+            bridge = assets / "Tools~" / "bees-tailnet-bridge"
+            training.mkdir(parents=True)
+            server.mkdir()
+            bridge.mkdir(parents=True)
+            for name in qualification.FOCUSED_PYTHON_SUITES:
+                (training / name).write_text("# placeholder\n", encoding="utf-8")
+            _write_operator_placeholders(training)
+
+            with (
+                mock.patch.object(qualification.shutil, "which", return_value=None),
+                mock.patch.object(qualification, "_resolve_go", return_value="/tool/go"),
+            ):
+                checks = qualification.build_checks(
+                    bees_root=bees_root,
+                    assets_root=assets,
+                    full_python=False,
+                    skip_node=True,
+                    skip_go=False,
+                    skip_unity=True,
+                )
+
+            go = next(check for check in checks if check.name == "go:tailnet-bridge")
+            self.assertEqual(go.command, ("/tool/go", "test", "-mod=mod", "./..."))
+
     def test_unity_qualification_runs_foundation_editmode_and_requires_rl_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bees_root = Path(temp_dir)
@@ -194,6 +224,7 @@ class RobustnessQualificationTests(unittest.TestCase):
                 qualification.UNITY_REQUIRED_TEST,
             )
             self.assertIsNotNone(unity.result_xml)
+            self.assertIsNotNone(unity.diagnostic_log)
 
     def test_unity_result_validation_requires_specific_passing_rl_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -218,6 +249,36 @@ class RobustnessQualificationTests(unittest.TestCase):
                 ),
                 (True, ""),
             )
+
+    def test_run_check_surfaces_bounded_diagnostic_log_tail_on_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            log = root / "unity.log"
+            log.write_text("first\nsecond\nthird\n", encoding="utf-8")
+            check = qualification.Check(
+                name="unity-example",
+                command=("unity", "-batchmode"),
+                cwd=root,
+                diagnostic_log=log,
+            )
+            completed = mock.Mock(returncode=2)
+            with (
+                mock.patch.object(
+                    qualification.subprocess,
+                    "run",
+                    return_value=completed,
+                ),
+                mock.patch("builtins.print") as printer,
+            ):
+                ok, _elapsed = qualification._run_check(check)
+
+            self.assertFalse(ok)
+            output = "\n".join(
+                " ".join(str(value) for value in call.args)
+                for call in printer.call_args_list
+            )
+            self.assertIn("tail of", output)
+            self.assertIn("third", output)
 
     def test_run_check_propagates_nonzero_exit(self):
         check = qualification.Check(
