@@ -128,6 +128,19 @@ def _safe_rel(path: Path, root: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
 
 
+def _validate_run_root(path: Path, training_root: Path, run_id: str) -> None:
+    training = training_root.resolve()
+    parent = path.parent.resolve()
+    resolved = path.resolve()
+    try:
+        parent.relative_to(training)
+        resolved.relative_to(parent)
+    except ValueError as exc:
+        raise ValueError(f"training run directory escapes Training: {path}") from exc
+    if resolved.parent != parent or resolved.name != run_id:
+        raise ValueError(f"training run directory is redirected: {path}")
+
+
 def _iter_log_files(root: Path) -> Iterable[Path]:
     if not root.is_dir():
         return ()
@@ -454,6 +467,8 @@ def create_bundle(
     training_root = bees_root / "Training"
     results_root = training_root / "trainer-results" / resolved_run
     trainer_logs_root = training_root / "TrainerLogs" / resolved_run
+    _validate_run_root(results_root, training_root, resolved_run)
+    _validate_run_root(trainer_logs_root, training_root, resolved_run)
     output_root = (output_root or (bees_root / "Diagnostics")).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
