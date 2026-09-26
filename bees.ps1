@@ -906,6 +906,8 @@ function Wait-ReleaseRollout(
     [int]$TimeoutSeconds=600
 ){
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastProgress=''
+    $lastProgressAt=[DateTime]::MinValue
     while([DateTime]::UtcNow -lt $deadline){
         $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
         $pending=$status.desired.pending_release
@@ -913,7 +915,71 @@ function Wait-ReleaseRollout(
             ([string]$status.desired.canonical_build_id) -eq $BuildId -and
             ([string]$status.desired.run_id) -eq $RunId -and
             ([string]$status.desired.compatibility_key) -eq $CompatibilityKey){
+            Write-Host "Release rollout complete: build=$BuildId run=$RunId."
             return $status
+        }
+
+        if($null -eq $pending){
+            throw "Release rollout ended without activating the expected identity. expected build=$BuildId run=$RunId; active build=$($status.desired.canonical_build_id) run=$($status.desired.run_id)."
+        }
+
+        $pendingBuild=([string](Get-ObjectPropertyValue $pending 'build_id')).Trim()
+        $pendingRun=([string](Get-ObjectPropertyValue $pending 'run_id')).Trim()
+        $pendingKey=([string](Get-ObjectPropertyValue $pending 'compatibility_key')).Trim().ToLowerInvariant()
+        if($pendingBuild -ne $BuildId -or
+           $pendingRun -ne $RunId -or
+           $pendingKey -ne $CompatibilityKey){
+            throw "A different release became pending while waiting. expected build=$BuildId run=$RunId; pending build=$pendingBuild run=$pendingRun."
+        }
+
+        $phase=[string](Get-ObjectPropertyValue $pending 'phase')
+        $phaseRevision=Get-ObjectPropertyValue $pending 'phase_revision'
+        $required=@(Get-ObjectPropertyValue $pending 'required_trainers')
+        $trainerRecords=@($status.trainers)
+        $waiting=@()
+        foreach($requiredTrainer in $required){
+            $trainerId=[string](Get-ObjectPropertyValue $requiredTrainer 'trainer_id')
+            $record=@($trainerRecords|Where-Object{
+                [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $trainerId
+            }|Select-Object -First 1)
+            if($record.Count -eq 0){
+                $waiting += "$trainerId:missing"
+                continue
+            }
+            $r=$record[0]
+            $stale=[bool](Get-ObjectPropertyValue $r 'stale')
+            $state=[string](Get-ObjectPropertyValue $r 'process_state')
+            $build=[string](Get-ObjectPropertyValue $r 'build_id')
+            $prepared=[string](Get-ObjectPropertyValue $r 'prepared_build_id')
+            $rev=Get-ObjectPropertyValue $r 'applied_revision'
+            $error=[string](Get-ObjectPropertyValue $r 'last_error')
+            $satisfied=$false
+            if($phase -eq 'preparing'){
+                $satisfied=(-not $stale -and ($build -eq $BuildId -or $prepared -eq $BuildId))
+            }elseif($phase -eq 'rolling'){
+                $satisfied=(-not $stale -and $state -eq 'running' -and
+                    $build -eq $BuildId -and -not $error -and
+                    ($null -eq $phaseRevision -or [int]$rev -ge [int]$phaseRevision))
+            }elseif($phase -eq 'stopping'){
+                $satisfied=(-not $stale -and $state -eq 'stopped' -and
+                    ($null -eq $phaseRevision -or [int]$rev -ge [int]$phaseRevision))
+            }
+            if(-not $satisfied){
+                $detail="$trainerId:$state"
+                if($stale){$detail+='(STALE)'}
+                $detail+=" build=$(if($build){$build}else{'-'})"
+                if($prepared){$detail+=" prepared=$prepared"}
+                if($null -ne $rev){$detail+=" rev=$rev"}
+                if($error){$detail+=" error=$error"}
+                $waiting += $detail
+            }
+        }
+        $progress="Waiting for release rollout: phase=$phase remaining=$(if($waiting.Count){$waiting -join '; '}else{'control state advancing'})"
+        $now=[DateTime]::UtcNow
+        if($progress -ne $lastProgress -or ($now-$lastProgressAt).TotalSeconds -ge 10){
+            Write-Host $progress
+            $lastProgress=$progress
+            $lastProgressAt=$now
         }
         Start-Sleep -Seconds 1
     }
