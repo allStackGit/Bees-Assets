@@ -1746,8 +1746,25 @@ function Invoke-Start {
     $outgoingRun=$null
     if($NewRun){
         $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
-        if($status.desired.pending_release){
-            throw 'Cannot force a new training run while another release rollout is pending.'
+        $pending=$status.desired.pending_release
+        if($pending){
+            $pendingBuild=([string]$pending.build_id).Trim()
+            $pendingRun=([string]$pending.run_id).Trim()
+            $pendingKey=([string]$pending.compatibility_key).Trim().ToLowerInvariant()
+            $pendingIncompatible=[bool]$pending.incompatible
+            $latestBuild=([string]$release.build_id).Trim()
+            $latestRun=([string]$release.run_id).Trim()
+            $latestKey=([string]$release.compatibility_key).Trim().ToLowerInvariant()
+
+            if(-not $pendingIncompatible -and
+               $pendingBuild -eq $latestBuild -and
+               $pendingRun -eq $latestRun -and
+               $pendingKey -eq $latestKey){
+                Write-Host "Latest compatible release is still rolling out (phase=$($pending.phase)); waiting for build $pendingBuild to become canonical before forcing the new run."
+                $status=Wait-ReleaseRollout $config $admin $pendingBuild $pendingRun $pendingKey
+            } else {
+                throw "Cannot force a new training run while a different or incompatible release rollout is pending (build=$pendingBuild run=$pendingRun phase=$($pending.phase) incompatible=$pendingIncompatible)."
+            }
         }
         $outgoingRun=([string]$status.desired.run_id).Trim()
         if(-not $outgoingRun){ $outgoingRun=([string]$release.run_id).Trim() }
