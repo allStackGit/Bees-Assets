@@ -465,6 +465,17 @@ def create_bundle(
     status_value = _json(status_json) if status_json else None
     snapshot_value = _json(snapshot_json) if snapshot_json else None
     benchmark_value = _json(benchmark_json) if benchmark_json else None
+    if benchmark_value:
+        benchmark_status = str(benchmark_value.get("status", "") or "")
+        if benchmark_status in {"failed", "timeout"}:
+            reason = str(
+                benchmark_value.get("error", "")
+                or benchmark_value.get("reason", "")
+                or benchmark_status
+            )
+            warnings.append(
+                f"deterministic diagnostic benchmark {benchmark_status}: {reason}"
+            )
     cluster_value = _json(assets_root / "Training" / "bees.cluster.json")
     log_freshness = _trainer_log_freshness(trainer_logs_root, generated_utc)
     status_diagnostics, status_warnings = _diagnose_status(
