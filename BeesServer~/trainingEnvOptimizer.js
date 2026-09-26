@@ -6,6 +6,7 @@ const DEFAULT_WARMUP_MS = 20_000;
 const DEFAULT_MEASUREMENT_MS = 60_000;
 const DEFAULT_COOLDOWN_MS = 20_000;
 const DEFAULT_RETEST_MS = 5 * 60_000;
+const DEFAULT_INSTABILITY_HOLD_MS = 15 * 60_000;
 const DEFAULT_METRICS_TIMEOUT_MS = 3 * 60_000;
 const DEFAULT_MIN_IMPROVEMENT_RATIO = 0.03;
 const DEFAULT_REGRESSION_RATIO = 0.05;
@@ -61,6 +62,8 @@ class TrainingEnvOptimizer {
         this.measurementMs = Number(options.measurementMs ?? DEFAULT_MEASUREMENT_MS);
         this.cooldownMs = Number(options.cooldownMs ?? DEFAULT_COOLDOWN_MS);
         this.retestMs = Number(options.retestMs ?? DEFAULT_RETEST_MS);
+        this.instabilityHoldMs = Number(
+            options.instabilityHoldMs ?? DEFAULT_INSTABILITY_HOLD_MS);
         this.metricsTimeoutMs = Number(options.metricsTimeoutMs ?? DEFAULT_METRICS_TIMEOUT_MS);
         this.minImprovementRatio = Number(
             options.minImprovementRatio ?? DEFAULT_MIN_IMPROVEMENT_RATIO);
@@ -70,6 +73,7 @@ class TrainingEnvOptimizer {
             measurementMs: this.measurementMs,
             cooldownMs: this.cooldownMs,
             retestMs: this.retestMs,
+            instabilityHoldMs: this.instabilityHoldMs,
             metricsTimeoutMs: this.metricsTimeoutMs,
         })) {
             if (!Number.isFinite(value) || value < 0) {
@@ -107,6 +111,8 @@ class TrainingEnvOptimizer {
             last_decision: 'collecting baseline',
             cooldown_until_ms: 0,
             retest_after_ms: 0,
+            instability_hold_until_ms: 0,
+            last_instability_ms: null,
             last_update_ms: now,
             metrics_missing_since_ms: null,
         };
@@ -168,6 +174,13 @@ class TrainingEnvOptimizer {
     }
 
     _chooseProbe(state, capacity, now) {
+        if (now < state.instability_hold_until_ms) {
+            this._releaseProbe(state.trainer_id);
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'stability-hold';
+            state.last_decision = 'holding env count after recent worker instability';
+            return;
+        }
         const preferred = state.direction;
         const alternate = -preferred;
         if (!this._directionBlocked(state, preferred) &&
@@ -333,17 +346,64 @@ class TrainingEnvOptimizer {
             state.baseline_envs !== null &&
             state.desired_envs !== state.baseline_envs &&
             capacity.current_envs !== state.baseline_envs;
-        if (
-            probingAwayFromBaseline &&
-            typeof record.process_state === 'string' &&
-            record.process_state &&
-            record.process_state !== 'running'
-        ) {
-            this._abortProbe(
+        const processState = typeof record.process_state === 'string'
+            ? record.process_state.trim()
+            : '';
+        const reportedError = typeof record.last_error === 'string'
+            ? record.last_error.trim()
+            : '';
+        const workerUnstable =
+            (processState && processState !== 'running') || Boolean(reportedError);
+        if (workerUnstable) {
+            state.last_instability_ms = timestamp;
+            state.instability_hold_until_ms = Math.max(
+                state.instability_hold_until_ms,
+                timestamp + this.instabilityHoldMs,
+            );
+            if (probingAwayFromBaseline) {
+                this._abortProbe(
+                    state,
+                    capacity,
+                    timestamp,
+                    reportedError
+                        ? 'probe worker reported an error'
+                        : 'probe process is not running',
+                );
+                return this.snapshot(record.trainer_id);
+            }
+            this._releaseProbe(state.trainer_id);
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'stability-hold';
+            state.phase_started_ms = timestamp;
+            state.measurement_started_ms = null;
+            state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
+            state.source_steps = totalSteps;
+            state.last_decision = reportedError
+                ? 'holding env count after worker-reported error'
+                : 'holding env count after worker stopped unexpectedly';
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (timestamp < state.instability_hold_until_ms) {
+            if (
+                state.baseline_envs !== null &&
+                capacity.current_envs === state.baseline_envs
+            ) {
+                this._releaseProbe(state.trainer_id);
+            }
+            state.desired_envs = state.baseline_envs ?? capacity.current_envs;
+            state.phase = 'stability-hold';
+            state.last_decision = 'holding env count after recent worker instability';
+            return this.snapshot(record.trainer_id);
+        }
+
+        if (state.phase === 'stability-hold') {
+            this._resetMeasurement(
                 state,
-                capacity,
                 timestamp,
-                'probe process is not running',
+                totalSteps,
+                'stability hold complete; collecting fresh baseline',
             );
             return this.snapshot(record.trainer_id);
         }
@@ -464,6 +524,8 @@ class TrainingEnvOptimizer {
             step: state.step,
             decision: state.last_decision,
             probing: this.activeProbeTrainerId === trainerId,
+            stability_hold_until_ms: state.instability_hold_until_ms,
+            last_instability_ms: state.last_instability_ms,
         };
     }
 
