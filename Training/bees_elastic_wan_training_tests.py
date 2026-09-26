@@ -298,6 +298,36 @@ class ElasticBrokerTests(unittest.TestCase):
         self.assertEqual(after["consumed_steps_by_actor"]["0"], 37)
         self.assertEqual(after["trajectory_queue_depth"], 0)
 
+    def test_stale_generation_takes_precedence_over_duplicate_ack(self):
+        broker, specs = self._broker()
+        broker.register_actor(
+            {
+                **broker.release_identity,
+                "actor_id": 0,
+                "env_count": 8,
+                "control_epoch": 1,
+                "behavior_specs": specs,
+            }
+        )
+        payload = {
+            **broker.release_identity,
+            "actor_id": 0,
+            "env_count": 8,
+            "control_epoch": 1,
+            "batch_id": "lookup-straddled-reset",
+            "policy_versions": {},
+            "trajectories": [],
+        }
+        with broker._condition:
+            broker._remember_accepted_batch_locked(0, payload["batch_id"], 1)
+        broker.request_reset({"difficulty": 2})
+        with broker._condition:
+            # Model a cached duplicate result captured across generation invalidation.
+            broker._remember_accepted_batch_locked(0, payload["batch_id"], 1)
+
+        with self.assertRaisesRegex(base.StaleActorStateError, "control epoch"):
+            broker.submit_trajectory_batch(payload)
+
     def test_claim_rejects_actor_from_a_different_release(self):
         broker, _specs = self._broker()
         payload = {
