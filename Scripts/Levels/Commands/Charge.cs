@@ -73,6 +73,9 @@ namespace Assets.Scripts.Levels.Commands
         private void GetTargetShip(Ship chargingShip)
         {
             _getTargetShip_bomb = (Bomb)chargingShip.Weapons[0];
+            // Charge selects a target before it is in weapon range; don't reuse the
+            // cached in-range list from the turret's normal targeting pass.
+            _getTargetShip_bomb.HasCachedChanged = true;
             _getTargetShip_targetingList = _getTargetShip_bomb.MakeSortedTargetingList(true);
             if (_getTargetShip_targetingList.Count > 0)
             {
