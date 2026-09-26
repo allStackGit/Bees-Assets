@@ -147,7 +147,8 @@ public class Tooltip : MonoBehaviour
     {
         ResetSequence(false);
 
-        if (pages == null || pages.Count == 0 || !ConfigData.UserProgressData.ShowToolTips)
+        if (pages == null || pages.Count == 0 || ConfigData.UserProgressData == null ||
+            !ConfigData.UserProgressData.ShowToolTips)
         {
             HideInternal();
             if (onComplete != null)
@@ -182,7 +183,7 @@ public class Tooltip : MonoBehaviour
     private void ShowInternal(string text, bool hasX)
     {
         ConfigureVisuals();
-        if (ConfigData.UserProgressData.ShowToolTips)
+        if (ConfigData.UserProgressData != null && ConfigData.UserProgressData.ShowToolTips)
         {
             TooltipObject.SetActive(false);
             TooltipText.text = text;
