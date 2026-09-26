@@ -5162,3 +5162,15 @@ RL arena size 32 cannot contain Beehive (diameter 34).
     "memorysetup-job-temp-allocator-block-size-background=1048576"
     "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
 [Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup error=ControlUnavailable: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[WARNING] Environment timed out shutting down. Killing...
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=paused

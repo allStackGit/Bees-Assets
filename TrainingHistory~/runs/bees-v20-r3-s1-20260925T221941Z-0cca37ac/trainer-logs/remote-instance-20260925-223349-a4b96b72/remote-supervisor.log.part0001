@@ -21810,3 +21810,838 @@ Input System module state changed to: Shutdown.
 CodeReloadManager destroyed
 GarbageCollector disposing of ComputeBuffer. Please use ComputeBuffer.Release() or .Dispose() to manually release the buffer.
 [Bees WAN actor] session failed: UnityCommunicatorStoppedException: Communicator has exited.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] learner assigned actor slot 2.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /register: 400 invalid-request: actor slot 2 is already owned by another live remote process; use a different --actor-id or wait for its lease to expire; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] learner assigned actor slot 2.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac.
+[Bees WAN actor] Unity log tail /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac/Player-0.log:
+Processor: AMD EPYC 7B12, 4 core(s) @ 2249 MHz 
+Available Memory: 7944 MB 
+Linux Kernel and distribution: Linux 6.12 Debian GNU/Linux 13 64bit
+System Language: C
+Keyboard Layout: (unset)
+Mono path[0] = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.062 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.990623 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+[S_API] SteamAPI_Init(): SteamAPI_IsSteamRunning() did not locate a running instance of Steam.
+dlopen failed trying to load:
+/home/beesdevelopai/.steam/sdk64/steamclient.so
+with error:
+/home/beesdevelopai/.steam/sdk64/steamclient.so: cannot open shared object file: No such file or directory
+[S_API] SteamAPI_Init(): Failed to load module '/home/beesdevelopai/.steam/sdk64/steamclient.so'
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+RL training configuration health_ratio=0.05 map_size_range=32..48 episode_timeout=30s ships_per_side=2 decision_period=5 matchup_mode=sampled bee_ship_types=Honeybee,Hornet,Wasp,Leafcutter,YellowJacket,Beehive,Bumblebee human_ship_types=Scout,Gunship,Frigate,Dreadnought,Barge,FireBarge,WarpGate,Carrier,Cruiser,Flagship
+RL training arenas_per_environment=1
+Registered Communicator in Agent.
+RL policy ABI v20 bees-rl-v20|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id observations=7614 continuous_actions=16 weapon_fire_branches=5x2 special_branch=5 allies=64 enemies=64 moving_asteroids=48 mining_asteroids=8 map_objects=64 navigation_grid=21x21 exploration_grid=16x16 weapon_slots=5 enemy_weapon_mounts=0 objective_channels=16 spawned_ship_control=dynamic arenas=1
+RL arena size 32 cannot contain Beehive (diameter 34).
+[Bees WAN actor] Unity log tail /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac/Player-1.log:
+Processor: AMD EPYC 7B12, 4 core(s) @ 2249 MHz 
+Available Memory: 7944 MB 
+Linux Kernel and distribution: Linux 6.12 Debian GNU/Linux 13 64bit
+System Language: C
+Keyboard Layout: (unset)
+Mono path[0] = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.072 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 1.124733 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+[S_API] SteamAPI_Init(): SteamAPI_IsSteamRunning() did not locate a running instance of Steam.
+dlopen failed trying to load:
+/home/beesdevelopai/.steam/sdk64/steamclient.so
+with error:
+/home/beesdevelopai/.steam/sdk64/steamclient.so: cannot open shared object file: No such file or directory
+[S_API] SteamAPI_Init(): Failed to load module '/home/beesdevelopai/.steam/sdk64/steamclient.so'
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+RL training configuration health_ratio=0.05 map_size_range=32..48 episode_timeout=30s ships_per_side=2 decision_period=5 matchup_mode=sampled bee_ship_types=Honeybee,Hornet,Wasp,Leafcutter,YellowJacket,Beehive,Bumblebee human_ship_types=Scout,Gunship,Frigate,Dreadnought,Barge,FireBarge,WarpGate,Carrier,Cruiser,Flagship
+RL training arenas_per_environment=1
+Registered Communicator in Agent.
+[Bees WAN actor] Unity log tail /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac/Player-2.log:
+Processor: AMD EPYC 7B12, 4 core(s) @ 2249 MHz 
+Available Memory: 7944 MB 
+Linux Kernel and distribution: Linux 6.12 Debian GNU/Linux 13 64bit
+System Language: C
+Keyboard Layout: (unset)
+Mono path[0] = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.072 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 1.110763 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+[S_API] SteamAPI_Init(): SteamAPI_IsSteamRunning() did not locate a running instance of Steam.
+dlopen failed trying to load:
+/home/beesdevelopai/.steam/sdk64/steamclient.so
+with error:
+/home/beesdevelopai/.steam/sdk64/steamclient.so: cannot open shared object file: No such file or directory
+[S_API] SteamAPI_Init(): Failed to load module '/home/beesdevelopai/.steam/sdk64/steamclient.so'
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+RL training configuration health_ratio=0.05 map_size_range=32..48 episode_timeout=30s ships_per_side=2 decision_period=5 matchup_mode=sampled bee_ship_types=Honeybee,Hornet,Wasp,Leafcutter,YellowJacket,Beehive,Bumblebee human_ship_types=Scout,Gunship,Frigate,Dreadnought,Barge,FireBarge,WarpGate,Carrier,Cruiser,Flagship
+RL training arenas_per_environment=1
+Registered Communicator in Agent.
+[Bees WAN actor] Unity log tail /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac/Player-3.log:
+Processor: AMD EPYC 7B12, 4 core(s) @ 2249 MHz 
+Available Memory: 7944 MB 
+Linux Kernel and distribution: Linux 6.12 Debian GNU/Linux 13 64bit
+System Language: C
+Keyboard Layout: (unset)
+Mono path[0] = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.079 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.945182 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+[S_API] SteamAPI_Init(): SteamAPI_IsSteamRunning() did not locate a running instance of Steam.
+dlopen failed trying to load:
+/home/beesdevelopai/.steam/sdk64/steamclient.so
+with error:
+/home/beesdevelopai/.steam/sdk64/steamclient.so: cannot open shared object file: No such file or directory
+[S_API] SteamAPI_Init(): Failed to load module '/home/beesdevelopai/.steam/sdk64/steamclient.so'
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+RL training configuration health_ratio=0.05 map_size_range=32..48 episode_timeout=30s ships_per_side=2 decision_period=5 matchup_mode=sampled bee_ship_types=Honeybee,Hornet,Wasp,Leafcutter,YellowJacket,Beehive,Bumblebee human_ship_types=Scout,Gunship,Frigate,Dreadnought,Barge,FireBarge,WarpGate,Carrier,Cruiser,Flagship
+RL training arenas_per_environment=1
+[Bees WAN actor] Unity log tail /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac/Player-4.log:
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/beesdevelopai/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.062 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.855663 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+[S_API] SteamAPI_Init(): SteamAPI_IsSteamRunning() did not locate a running instance of Steam.
+dlopen failed trying to load:
+/home/beesdevelopai/.steam/sdk64/steamclient.so
+with error:
+/home/beesdevelopai/.steam/sdk64/steamclient.so: cannot open shared object file: No such file or directory
+[S_API] SteamAPI_Init(): Failed to load module '/home/beesdevelopai/.steam/sdk64/steamclient.so'
+[Steamworks.NET] SteamAPI_Init() failed. Continuing without Steam features.
+Steam API is unavailable; using local fallback identity.
+RL training configuration health_ratio=0.05 map_size_range=32..48 episode_timeout=30s ships_per_side=2 decision_period=5 matchup_mode=sampled bee_ship_types=Honeybee,Hornet,Wasp,Leafcutter,YellowJacket,Beehive,Bumblebee human_ship_types=Scout,Gunship,Frigate,Dreadnought,Barge,FireBarge,WarpGate,Carrier,Cruiser,Flagship
+RL training arenas_per_environment=1
+Registered Communicator in Agent.
+RL policy ABI v20 bees-rl-v20|behavior=BeesRL1v1|network=ff-128x3|normalize=true|obs=7614|tail=episode-progress+20-reserved|cont=16|disc=2x5,5|coord-frame=team-episode-distinct-quarter-turn|weapon-aim=slotwise-xy|weapon-fire=slotwise-cease-or-fire|healing=weapon-exclusive|weapon-ready=rl-latched-until-fire|shiptype=fixed-scrambled-scalar24|weapontype=fixed-scrambled-scalar10|mapbits=4|shipmap=v1-0..23|weaponmap=v1-0..9|allies=64|enemies=64|weapons=5|entity-weapons=5|enemy-mounts=0|mining=8|map-objects=64|moving-asteroids=48|self=25|ship-id=episode-permuted-scalar23|capability=12|parent-carrier=40|entity-core=14|entity=40|ally=44-with-private-comm4|communication=4-continuous-private-allied|self-weapon=15|observed-weapon=5|weapon-observation=split-self-vs-observed|mining-slot=7|map-slot=12|moving-asteroid-slot=11|objective=16|grid=21x21-cell6|exploration-grid=16x16-team-shared-sight-recency|entity-order=distance,type,fleet-id,runtime-id observations=7614 continuous_actions=16 weapon_fire_branches=5x2 special_branch=5 allies=64 enemies=64 moving_asteroids=48 mining_asteroids=8 map_objects=64 navigation_grid=21x21 exploration_grid=16x16 weapon_slots=5 enemy_weapon_mounts=0 objective_channels=16 spawned_ship_control=dynamic arenas=1
+RL 1v1 episode=1 arena=0 outcome=timeout bee_team=0 human_team=1 ships_per_side=2 map_size=36 winner=0 timeout=True duration=29.99s bee_tsv=22->11 human_tsv=168->150 bee_fire_requests=0 bee_shots=0 bee_hits=1 bee_damage=15 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=29.99s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=0.20s bee_spawned=0 bee_agent_coverage=1/2 bee_weapons=none bee_rewards=terminal:-1.1000,tsv:0.0093,time:0.0000,total:-1.0907 human_fire_requests=1 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=29.99s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=1/2 human_weapons=DualCannon:1/0 human_rewards=terminal:-1.1000,tsv:-0.0051,time:0.0000,total:-1.1051 bee_ships=YellowJacket:2 human_ships=Gunship:1|WarpGate:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=bomb:15 human_damage_sources=none bee_damage_by_ship=YellowJacket:15 human_damage_by_ship=none bee_self_damage=10 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:1 human_specials=none bee_root_outcomes=YellowJacket/self_detonate:1|YellowJacket/timeout-alive:1 human_root_outcomes=Gunship/enemy-YellowJacket:1|WarpGate/timeout-alive:1 map_size=36.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=0.84 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=2 arena=0 outcome=side_2_win bee_team=1 human_team=0 ships_per_side=2 map_size=48 winner=2 timeout=False duration=3.59s bee_tsv=53->0 human_tsv=157->158 bee_fire_requests=20 bee_shots=1 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=3.29s bee_contact_to_end=3.59s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=3.29s bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:8/0|SplitShot:12/1 bee_rewards=terminal:-1.0000,tsv:-0.0180,time:0.0000,total:-1.0180 human_fire_requests=21 human_shots=1 human_hits=2 human_damage=35 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=3.34s human_contact_to_end=3.59s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=3.34s human_first_hit=3.48s human_spawned=1 human_agent_coverage=2/2 human_weapons=BeamCannon:21/1 human_rewards=terminal:1.0000,tsv:0.0281,time:-0.0012,total:1.0269 bee_ships=Hornet:1|Leafcutter:1 human_ships=Cruiser:1|Scout:1 bee_children=none human_children=Beacon:spawn1,alive1,dmg0 bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=gun:35 bee_damage_by_ship=none human_damage_by_ship=Cruiser:35 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=scout_beacon:1 bee_root_outcomes=Hornet/enemy-Cruiser:1|Leafcutter/enemy-Cruiser:1 human_root_outcomes=Cruiser/alive:1|Scout/alive:1 map_size=48.00 bee_aim_samples=1 bee_aim_error=50.99deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=31.49 bee_first_hit_distance=none human_aim_samples=1 human_aim_error=4.46deg human_aim_within_5deg=100.00 % human_turret_aligned=100.00 % human_first_fire_distance=33.67 human_first_hit_distance=26.17
+RL 1v1 episode=3 arena=0 outcome=side_1_win bee_team=0 human_team=1 ships_per_side=2 map_size=48 winner=1 timeout=False duration=2.34s bee_tsv=52->52 human_tsv=192->0 bee_fire_requests=16 bee_shots=1 bee_hits=2 bee_damage=48 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=2.29s bee_contact_to_end=2.34s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=2.29s bee_first_hit=2.32s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:16/1 bee_rewards=terminal:1.0000,tsv:0.0602,time:-0.0008,total:1.0595 human_fire_requests=29 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=2.34s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=BeamCannon:16/0|LightCannon:13/0 human_rewards=terminal:-1.0000,tsv:-0.0715,time:0.0000,total:-1.0715 bee_ships=Honeybee:1|Leafcutter:1 human_ships=Cruiser:1|Dreadnought:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=gun:48 human_damage_sources=none bee_damage_by_ship=Leafcutter:48 human_damage_by_ship=none bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Honeybee/alive:1|Leafcutter/alive:1 human_root_outcomes=Cruiser/enemy-Leafcutter:1|Dreadnought/enemy-Leafcutter:1 map_size=48.00 bee_aim_samples=1 bee_aim_error=97.32deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=4.08 bee_first_hit_distance=5.83 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=4 arena=0 outcome=side_1_win bee_team=1 human_team=0 ships_per_side=2 map_size=44 winner=1 timeout=False duration=0.70s bee_tsv=285->285 human_tsv=652->0 bee_fire_requests=5 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=0.70s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:3/0|Turret:2/0 bee_rewards=terminal:1.0000,tsv:0.0072,time:-0.0002,total:1.0070 human_fire_requests=10 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=0.70s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=Turret:8/0|FullShipTurret:2/0 human_rewards=terminal:-1.0000,tsv:-0.0624,time:0.0000,total:-1.0624 bee_ships=Bumblebee:1|Leafcutter:1 human_ships=FireBarge:1|Flagship:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=none bee_damage_by_ship=none human_damage_by_ship=none bee_self_damage=0 human_self_damage=90 bee_friendly_damage=0 human_friendly_damage=75 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=fire_barge_detonate:1 bee_root_outcomes=Bumblebee/alive:1|Leafcutter/alive:1 human_root_outcomes=FireBarge/self_detonate:1|Flagship/friendly-FireBarge:1 map_size=44.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=5 arena=0 outcome=side_2_win bee_team=0 human_team=1 ships_per_side=2 map_size=36 winner=2 timeout=False duration=4.75s bee_tsv=27->0 human_tsv=148->152 bee_fire_requests=14 bee_shots=1 bee_hits=2 bee_damage=67 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=4.17s bee_contact_to_end=4.75s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=4.17s bee_first_hit=1.48s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:14/1 bee_rewards=terminal:-1.0000,tsv:0.0453,time:0.0000,total:-0.9547 human_fire_requests=236 human_shots=1 human_hits=1 human_damage=20 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=4.00s human_contact_to_end=4.75s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=4.00s human_first_hit=4.73s human_spawned=0 human_agent_coverage=18/18 human_weapons=Turret:208/1|DualCannon:28/0 human_rewards=terminal:1.0000,tsv:-0.0589,time:-0.0016,total:0.9395 bee_ships=Wasp:1|YellowJacket:1 human_ships=Carrier:1|Gunship:1 bee_children=none human_children=Drone:spawn8,alive7,dmg0|Striker:spawn8,alive8,dmg20 bee_striker_reloads=0 human_striker_reloads=4 bee_damage_sources=bomb:2|gun:65 human_damage_sources=bomb:20 bee_damage_by_ship=Wasp:65|YellowJacket:2 human_damage_by_ship=Striker:20 bee_self_damage=10 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:1 human_specials=striker_bomb_drop:7 bee_root_outcomes=Wasp/enemy-Striker:1|YellowJacket/self_detonate:1 human_root_outcomes=Carrier/enemy-Wasp:1|Gunship/alive:1 map_size=36.00 bee_aim_samples=1 bee_aim_error=15.21deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=22.70 bee_first_hit_distance=2.76 human_aim_samples=1 human_aim_error=130.73deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=22.16 human_first_hit_distance=21.51
+RL 1v1 episode=6 arena=0 outcome=side_1_win bee_team=1 human_team=0 ships_per_side=2 map_size=32 winner=1 timeout=False duration=8.45s bee_tsv=59->48 human_tsv=137->0 bee_fire_requests=20 bee_shots=3 bee_hits=2 bee_damage=168 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=2.29s bee_contact_to_end=8.45s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=2.29s bee_first_hit=0.48s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:20/3 bee_rewards=terminal:1.0000,tsv:0.0502,time:-0.0028,total:1.0474 human_fire_requests=65 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=8.45s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=LightCannon:65/0 human_rewards=terminal:-1.0000,tsv:-0.0627,time:0.0000,total:-1.0627 bee_ships=Leafcutter:1|YellowJacket:1 human_ships=Barge:1|Dreadnought:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=bomb:140|gun:28 human_damage_sources=none bee_damage_by_ship=Leafcutter:28|YellowJacket:140 human_damage_by_ship=none bee_self_damage=10 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:1 human_specials=barge_charge:1 bee_root_outcomes=Leafcutter/alive:1|YellowJacket/self_detonate:1 human_root_outcomes=Barge/enemy-YellowJacket:1|Dreadnought/enemy-Leafcutter:1 map_size=32.00 bee_aim_samples=3 bee_aim_error=93.98deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=7.66 bee_first_hit_distance=5.80 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=7 arena=0 outcome=side_1_win bee_team=0 human_team=1 ships_per_side=2 map_size=32 winner=1 timeout=False duration=24.44s bee_tsv=52->52 human_tsv=84->0 bee_fire_requests=122 bee_shots=8 bee_hits=2 bee_damage=56 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=4.29s bee_contact_to_end=24.44s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=4.29s bee_first_hit=24.42s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:122/8 bee_rewards=terminal:1.0000,tsv:0.0514,time:-0.0081,total:1.0433 human_fire_requests=231 human_shots=1 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=6.68s human_contact_to_end=24.44s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=6.68s human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=LightCannon:231/1 human_rewards=terminal:-1.0000,tsv:-0.0545,time:0.0000,total:-1.0545 bee_ships=Honeybee:1|Leafcutter:1 human_ships=Dreadnought:2 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=gun:56 human_damage_sources=none bee_damage_by_ship=Leafcutter:56 human_damage_by_ship=none bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Honeybee/alive:1|Leafcutter/alive:1 human_root_outcomes=Dreadnought/enemy-Leafcutter:2 map_size=32.00 bee_aim_samples=8 bee_aim_error=77.81deg bee_aim_within_5deg=12.50 % bee_turret_aligned=100.00 % bee_first_fire_distance=17.18 bee_first_hit_distance=13.01 human_aim_samples=1 human_aim_error=164.36deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=18.53 human_first_hit_distance=none
+RL 1v1 episode=8 arena=0 outcome=timeout bee_team=1 human_team=0 ships_per_side=2 map_size=32 winner=0 timeout=True duration=30.00s bee_tsv=474->237 human_tsv=53->53 bee_fire_requests=140 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=30.00s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Turret:140/0 bee_rewards=terminal:-1.1000,tsv:-0.0377,time:0.0000,total:-1.1377 human_fire_requests=508 human_shots=2 human_hits=1 human_damage=45 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=26.67s human_contact_to_end=30.00s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=26.67s human_first_hit=28.72s human_spawned=0 human_agent_coverage=2/2 human_weapons=DualCannon:203/0|RocketTurret:305/2 human_rewards=terminal:-1.1000,tsv:0.0416,time:0.0000,total:-1.0584 bee_ships=Bumblebee:2 human_ships=Frigate:1|Gunship:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=gun:45 bee_damage_by_ship=none human_damage_by_ship=Frigate:45 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Bumblebee/enemy-Frigate:1|Bumblebee/timeout-alive:1 human_root_outcomes=Frigate/timeout-alive:1|Gunship/timeout-alive:1 map_size=32.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=2 human_aim_error=56.32deg human_aim_within_5deg=50.00 % human_turret_aligned=100.00 % human_first_fire_distance=10.35 human_first_hit_distance=7.78
+RL 1v1 episode=9 arena=0 outcome=timeout bee_team=0 human_team=1 ships_per_side=2 map_size=44 winner=0 timeout=True duration=30.00s bee_tsv=52->48 human_tsv=185->35 bee_fire_requests=127 bee_shots=13 bee_hits=2 bee_damage=68 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=3.78s bee_contact_to_end=30.00s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=3.78s bee_first_hit=3.96s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:127/13 bee_rewards=terminal:-1.1000,tsv:0.0506,time:0.0000,total:-1.0494 human_fire_requests=313 human_shots=1 human_hits=1 human_damage=2 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=28.67s human_contact_to_end=30.00s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=28.67s human_first_hit=28.72s human_spawned=0 human_agent_coverage=2/2 human_weapons=RocketTurret:313/1 human_rewards=terminal:-1.1000,tsv:-0.0545,time:0.0000,total:-1.1545 bee_ships=Honeybee:1|Leafcutter:1 human_ships=Frigate:1|WarpGate:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=gun:68 human_damage_sources=gun:2 bee_damage_by_ship=Leafcutter:68 human_damage_by_ship=Frigate:2 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Honeybee/enemy-Frigate:1|Leafcutter/timeout-alive:1 human_root_outcomes=Frigate/timeout-alive:1|WarpGate/enemy-Leafcutter:1 map_size=44.00 bee_aim_samples=13 bee_aim_error=59.36deg bee_aim_within_5deg=15.38 % bee_turret_aligned=100.00 % bee_first_fire_distance=20.58 bee_first_hit_distance=17.58 human_aim_samples=1 human_aim_error=67.46deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=24.93 human_first_hit_distance=1.12
+RL 1v1 episode=10 arena=0 outcome=timeout bee_team=1 human_team=0 ships_per_side=2 map_size=40 winner=0 timeout=True duration=30.00s bee_tsv=253->16 human_tsv=245->150 bee_fire_requests=123 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=30.00s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Turret:32/0|Eye:91/0 bee_rewards=terminal:-1.1000,tsv:-0.0404,time:0.0000,total:-1.1404 human_fire_requests=221 human_shots=2 human_hits=1 human_damage=45 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=11.35s human_contact_to_end=30.00s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=11.35s human_first_hit=11.46s human_spawned=0 human_agent_coverage=2/2 human_weapons=BeamCannon:221/2 human_rewards=terminal:-1.1000,tsv:0.0241,time:0.0000,total:-1.0759 bee_ships=Bumblebee:1|Wasp:1 human_ships=Barge:1|Cruiser:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=gun:45 bee_damage_by_ship=none human_damage_by_ship=Cruiser:45 bee_self_damage=0 human_self_damage=140 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=barge_charge:1 bee_root_outcomes=Bumblebee/enemy-Cruiser:1|Wasp/timeout-alive:1 human_root_outcomes=Barge/self_charge:1|Cruiser/timeout-alive:1 map_size=40.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=2 human_aim_error=18.11deg human_aim_within_5deg=50.00 % human_turret_aligned=100.00 % human_first_fire_distance=23.46 human_first_hit_distance=23.59
+RL 1v1 summary episodes=10 arena=0 bee_record=4-6 human_record=2-8 draws=0 timeouts=4 avg_duration=16.43s bee_shots=27 bee_hits=11 bee_hit_rate=40.74 % bee_damage=422 human_shots=8 human_hits=6 human_hit_rate=75.00 % human_damage=147
+RL 1v1 episode=11 arena=0 outcome=side_2_win bee_team=0 human_team=1 ships_per_side=2 map_size=40 winner=2 timeout=False duration=5.31s bee_tsv=21->0 human_tsv=280->416 bee_fire_requests=29 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=5.31s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:29/0 bee_rewards=terminal:-1.0000,tsv:0.0029,time:0.0000,total:-0.9971 human_fire_requests=289 human_shots=1 human_hits=2 human_damage=25 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=2.68s human_contact_to_end=5.31s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=2.68s human_first_hit=3.09s human_spawned=0 human_agent_coverage=18/18 human_weapons=BeamCannon:36/0|Turret:253/1 human_rewards=terminal:1.0000,tsv:0.0135,time:-0.0018,total:1.0117 bee_ships=Hornet:1|Wasp:1 human_ships=Carrier:1|Cruiser:1 bee_children=none human_children=Drone:spawn8,alive8,dmg0|Striker:spawn8,alive8,dmg25 bee_striker_reloads=0 human_striker_reloads=3 bee_damage_sources=none human_damage_sources=bomb:25 bee_damage_by_ship=none human_damage_by_ship=Striker:25 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=striker_bomb_drop:5 bee_root_outcomes=Hornet/enemy-Striker:1|Wasp/enemy-Striker:1 human_root_outcomes=Carrier/alive:1|Cruiser/alive:1 map_size=40.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=1 human_aim_error=89.33deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=21.05 human_first_hit_distance=24.08
+RL 1v1 episode=12 arena=0 outcome=draw bee_team=1 human_team=0 ships_per_side=2 map_size=40 winner=0 timeout=False duration=1.39s bee_tsv=22->0 human_tsv=137->0 bee_fire_requests=0 bee_shots=0 bee_hits=2 bee_damage=168 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=1.39s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=1.28s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=none bee_rewards=terminal:0.0000,tsv:0.0500,time:0.0000,total:0.0500 human_fire_requests=9 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=1.39s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=LightCannon:9/0 human_rewards=terminal:0.0000,tsv:-0.0789,time:0.0000,total:-0.0789 bee_ships=YellowJacket:2 human_ships=Barge:1|Dreadnought:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=bomb:168 human_damage_sources=none bee_damage_by_ship=YellowJacket:168 human_damage_by_ship=none bee_self_damage=20 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:2 human_specials=barge_charge:1 bee_root_outcomes=YellowJacket/self_detonate:2 human_root_outcomes=Barge/enemy-YellowJacket:1|Dreadnought/enemy-YellowJacket:1 map_size=40.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=4.82 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=13 arena=0 outcome=side_1_win bee_team=0 human_team=1 ships_per_side=2 map_size=40 winner=1 timeout=False duration=3.61s bee_tsv=16->5 human_tsv=245->0 bee_fire_requests=14 bee_shots=1 bee_hits=1 bee_damage=20 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=2.67s bee_contact_to_end=3.61s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=2.67s bee_first_hit=0.08s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:14/1 bee_rewards=terminal:1.0000,tsv:0.0448,time:-0.0012,total:1.0436 human_fire_requests=0 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=3.61s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=none human_rewards=terminal:-1.0000,tsv:-0.0866,time:0.0000,total:-1.0866 bee_ships=Hornet:1|YellowJacket:1 human_ships=Barge:1|Cruiser:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=bomb:20 human_damage_sources=none bee_damage_by_ship=YellowJacket:20 human_damage_by_ship=none bee_self_damage=10 human_self_damage=140 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:1 human_specials=barge_charge:1 bee_root_outcomes=Hornet/alive:1|YellowJacket/self_detonate:1 human_root_outcomes=Barge/self_charge:1|Cruiser/enemy-YellowJacket:1 map_size=40.00 bee_aim_samples=1 bee_aim_error=78.22deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=25.70 bee_first_hit_distance=3.72 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=14 arena=0 outcome=timeout bee_team=1 human_team=0 ships_per_side=2 map_size=32 winner=0 timeout=True duration=30.00s bee_tsv=21->5 human_tsv=36->36 bee_fire_requests=147 bee_shots=1 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=11.34s bee_contact_to_end=30.00s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=11.34s bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:147/1 bee_rewards=terminal:-1.1000,tsv:-0.0208,time:0.0000,total:-1.1208 human_fire_requests=367 human_shots=2 human_hits=1 human_damage=20 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=21.67s human_contact_to_end=30.00s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=21.67s human_first_hit=21.70s human_spawned=0 human_agent_coverage=2/2 human_weapons=DualCannon:367/2 human_rewards=terminal:-1.1000,tsv:0.0302,time:0.0000,total:-1.0698 bee_ships=Hornet:1|Wasp:1 human_ships=Gunship:2 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=gun:20 bee_damage_by_ship=none human_damage_by_ship=Gunship:20 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Hornet/timeout-alive:1|Wasp/enemy-Gunship:1 human_root_outcomes=Gunship/timeout-alive:2 map_size=32.00 bee_aim_samples=1 bee_aim_error=107.11deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=9.89 bee_first_hit_distance=none human_aim_samples=2 human_aim_error=9.87deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=1.64 human_first_hit_distance=1.80
+RL 1v1 episode=15 arena=0 outcome=side_2_win bee_team=0 human_team=1 ships_per_side=2 map_size=48 winner=2 timeout=False duration=4.70s bee_tsv=336->0 human_tsv=137->42 bee_fire_requests=19 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=4.70s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Eye:19/0 bee_rewards=terminal:-1.0000,tsv:-0.0638,time:0.0000,total:-1.0638 human_fire_requests=23 human_shots=1 human_hits=2 human_damage=140 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=4.67s human_contact_to_end=4.70s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=4.67s human_first_hit=2.30s human_spawned=0 human_agent_coverage=2/2 human_weapons=LightCannon:23/1 human_rewards=terminal:1.0000,tsv:0.0363,time:-0.0016,total:1.0347 bee_ships=Beehive:1|Wasp:1 human_ships=Barge:1|Dreadnought:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=none human_damage_sources=charge:120|gun:20 bee_damage_by_ship=none human_damage_by_ship=Barge:120|Dreadnought:20 bee_self_damage=0 human_self_damage=140 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=barge_charge:1 bee_root_outcomes=Beehive/enemy-Barge:1|Wasp/enemy-Dreadnought:1 human_root_outcomes=Barge/self_charge:1|Dreadnought/alive:1 map_size=48.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=1 human_aim_error=60.03deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=1.57 human_first_hit_distance=8.99
+RL 1v1 episode=16 arena=0 outcome=draw bee_team=1 human_team=0 ships_per_side=2 map_size=36 winner=0 timeout=False duration=0.98s bee_tsv=22->0 human_tsv=482->0 bee_fire_requests=0 bee_shots=0 bee_hits=2 bee_damage=95 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=0.98s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=0.08s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=none bee_rewards=terminal:0.0000,tsv:0.0637,time:0.0000,total:0.0637 human_fire_requests=9 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=0.98s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=Turret:1/0|FullShipTurret:1/0|BeamCannon:7/0 human_rewards=terminal:0.0000,tsv:-0.0884,time:0.0000,total:-0.0884 bee_ships=YellowJacket:2 human_ships=Cruiser:1|Flagship:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=bomb:95 human_damage_sources=none bee_damage_by_ship=YellowJacket:95 human_damage_by_ship=none bee_self_damage=20 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=yellow_jacket_detonate:2 human_specials=none bee_root_outcomes=YellowJacket/self_detonate:2 human_root_outcomes=Cruiser/enemy-YellowJacket:1|Flagship/enemy-YellowJacket:1 map_size=36.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=2.26 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+RL 1v1 episode=17 arena=0 outcome=side_1_win bee_team=0 human_team=1 ships_per_side=2 map_size=36 winner=1 timeout=False duration=9.33s bee_tsv=368->368 human_tsv=482->0 bee_fire_requests=47 bee_shots=4 bee_hits=3 bee_damage=95 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=4.78s bee_contact_to_end=9.33s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=4.78s bee_first_hit=6.40s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=SplitShot:47/4 bee_rewards=terminal:1.0000,tsv:0.0486,time:-0.0031,total:1.0455 human_fire_requests=176 human_shots=3 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=5.75s human_contact_to_end=9.33s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=5.75s human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=Turret:83/1|BeamCannon:50/1|FullShipTurret:43/1 human_rewards=terminal:-1.0000,tsv:-0.0495,time:0.0000,total:-1.0495 bee_ships=Beehive:1|Leafcutter:1 human_ships=Cruiser:1|Flagship:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=gun:95 human_damage_sources=none bee_damage_by_ship=Leafcutter:95 human_damage_by_ship=none bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Beehive/alive:1|Leafcutter/alive:1 human_root_outcomes=Cruiser/enemy-Leafcutter:1|Flagship/enemy-Leafcutter:1 map_size=36.00 bee_aim_samples=4 bee_aim_error=37.98deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=18.58 bee_first_hit_distance=16.76 human_aim_samples=3 human_aim_error=88.93deg human_aim_within_5deg=0.00 % human_turret_aligned=66.67 % human_first_fire_distance=51.67 human_first_hit_distance=none
+RL 1v1 episode=18 arena=0 outcome=side_2_win bee_team=1 human_team=0 ships_per_side=2 map_size=48 winner=2 timeout=False duration=12.61s bee_tsv=241->0 human_tsv=165->301 bee_fire_requests=11 bee_shots=0 bee_hits=0 bee_damage=0 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=none bee_contact_to_end=12.61s bee_contact_losses=0 bee_lost_contact=0.00s bee_first_fire=none bee_first_hit=none bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Turret:11/0 bee_rewards=terminal:-1.0000,tsv:-0.0476,time:0.0000,total:-1.0476 human_fire_requests=721 human_shots=5 human_hits=2 human_damage=47 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=2.67s human_contact_to_end=12.61s human_contact_losses=1 human_lost_contact=0.00s human_first_fire=2.67s human_first_hit=2.19s human_spawned=0 human_agent_coverage=18/18 human_weapons=RocketTurret:147/0|Turret:574/5 human_rewards=terminal:1.0000,tsv:0.0501,time:-0.0042,total:1.0459 bee_ships=Bumblebee:1|Honeybee:1 human_ships=Carrier:1|Frigate:1 bee_children=none human_children=Drone:spawn8,alive8,dmg0|Striker:spawn8,alive8,dmg47 bee_striker_reloads=0 human_striker_reloads=4 bee_damage_sources=none human_damage_sources=bomb:47 bee_damage_by_ship=none human_damage_by_ship=Striker:47 bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=striker_bomb_drop:5 bee_root_outcomes=Bumblebee/enemy-Striker:1|Honeybee/enemy-Striker:1 human_root_outcomes=Carrier/alive:1|Frigate/alive:1 map_size=48.00 bee_aim_samples=0 bee_aim_error=none bee_aim_within_5deg=none bee_turret_aligned=none bee_first_fire_distance=none bee_first_hit_distance=none human_aim_samples=5 human_aim_error=99.87deg human_aim_within_5deg=0.00 % human_turret_aligned=100.00 % human_first_fire_distance=27.57 human_first_hit_distance=16.95
+RL 1v1 episode=19 arena=0 outcome=side_1_win bee_team=0 human_team=1 ships_per_side=2 map_size=48 winner=1 timeout=False duration=25.80s bee_tsv=557->557 human_tsv=192->0 bee_fire_requests=86 bee_shots=2 bee_hits=1 bee_damage=68 bee_first_contact=0.00s bee_no_enemy_visible=0.00s bee_no_enemy_visible_pct=0.00 % bee_contact_to_fire=9.17s bee_contact_to_end=25.80s bee_contact_losses=1 bee_lost_contact=0.00s bee_first_fire=9.17s bee_first_hit=25.80s bee_spawned=0 bee_agent_coverage=2/2 bee_weapons=Turret:86/2 bee_rewards=terminal:1.0000,tsv:0.0242,time:-0.0086,total:1.0156 human_fire_requests=1 human_shots=0 human_hits=0 human_damage=0 human_first_contact=0.00s human_no_enemy_visible=0.00s human_no_enemy_visible_pct=0.00 % human_contact_to_fire=none human_contact_to_end=25.80s human_contact_losses=0 human_lost_contact=0.00s human_first_fire=none human_first_hit=none human_spawned=0 human_agent_coverage=2/2 human_weapons=LightCannon:1/0 human_rewards=terminal:-1.0000,tsv:-0.0077,time:0.0000,total:-1.0077 bee_ships=Beehive:1|Bumblebee:1 human_ships=Dreadnought:1|WarpGate:1 bee_children=none human_children=none bee_striker_reloads=0 human_striker_reloads=0 bee_damage_sources=gun:68 human_damage_sources=none bee_damage_by_ship=Bumblebee:68 human_damage_by_ship=none bee_self_damage=0 human_self_damage=0 bee_friendly_damage=0 human_friendly_damage=0 bee_unattributed_damage=0 human_unattributed_damage=0 bee_specials=none human_specials=none bee_root_outcomes=Beehive/alive:1|Bumblebee/alive:1 human_root_outcomes=Dreadnought/warp_return:1|WarpGate/enemy-Bumblebee:1 map_size=48.00 bee_aim_samples=2 bee_aim_error=62.96deg bee_aim_within_5deg=0.00 % bee_turret_aligned=100.00 % bee_first_fire_distance=7.78 bee_first_hit_distance=7.61 human_aim_samples=0 human_aim_error=none human_aim_within_5deg=none human_turret_aligned=none human_first_fire_distance=none human_first_hit_distance=none
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input Polling Thread exited.
+Input System module state changed to: Shutdown.
+09/26/2026 00:09:15|Fatal|<>c__DisplayClass17.<startReceiving>b__16|System.IO.IOException: Unable to read data from the transport connection: Connection reset by peer. ---> System.Net.Sockets.SocketException: Connection reset by peer
+                            at System.Net.Sockets.Socket.EndReceive (System.IAsyncResult asyncResult) [0x00012] in <b5bea03a21454c798d8a356071301d1d>:0 
+                            at System.Net.Sockets.NetworkStream.EndRead (System.IAsyncResult asyncResult) [0x0002a] in <b5bea03a21454c798d8a356071301d1d>:0 
+                             --- End of inner exception stack trace ---
+                            at System.Net.Sockets.NetworkStream.EndRead (System.IAsyncResult asyncResult) [0x0006e] in <b5bea03a21454c798d8a356071301d1d>:0 
+                            at WebSocketSharp.Ext+<>c__DisplayClass9.<ReadBytesAsync>b__8 (System.IAsyncResult ar) [0x00002] in <38d3cef14c5a4fc9a92de0991034bc1a>:0 
+CodeReloadManager destroyed
+GarbageCollector disposing of ComputeBuffer. Please use ComputeBuffer.Release() or .Dispose() to manually release the buffer.
+[Bees WAN actor] session failed: UnityCommunicatorStoppedException: Communicator has exited.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] learner assigned actor slot 2.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac.
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /register: 400 invalid-request: actor slot 2 is already owned by another live remote process; use a different --actor-id or wait for its lease to expire; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] learner assigned actor slot 2.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees WAN actor] launching 4 Unity environments base_port=5005 logs=/home/beesdevelopai/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260925T221941Z-0cca37ac.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /register: 400 invalid-request: actor slot 2 is already owned by another live remote process; use a different --actor-id or wait for its lease to expire; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=warmup
+[Bees WAN actor] waiting for central trainer: Remote end closed connection without response
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=running envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=23 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=25 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=25 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-instance-20260925-223349-a4b96b72 state=stopped envs=4 build=2026-09-25-173601-b698a1e1ee57 rev=25 optimizer=paused

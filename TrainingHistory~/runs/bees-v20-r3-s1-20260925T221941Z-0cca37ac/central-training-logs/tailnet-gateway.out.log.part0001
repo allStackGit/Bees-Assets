@@ -1,3 +1,3 @@
 [Bees tailnet] tsnet running state path B:\Bees\Runtime\Tailnet\LearnerState\tailscaled.state
 [Bees tailnet] tsnet starting with hostname "bees-learner", varRoot "B:\\Bees\\Runtime\\Tailnet\\LearnerState"
-[Bees tailnet] AuthLoop: state is Starting; done
+[Bees tailnet] AuthLoop: state is Running; done
