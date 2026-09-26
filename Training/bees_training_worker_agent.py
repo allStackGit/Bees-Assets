@@ -469,6 +469,7 @@ class BackgroundBuildPreparer:
 
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
+    MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -512,9 +513,13 @@ class TrainingLogUploader:
                     next_offset = -next_offset - 1
                 position = next_offset
                 self._positions[log_path] = position
-            if size <= position:
+            if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
-            amount = min(budget, size - position)
+            amount = min(
+                budget,
+                size - position,
+                self.MAX_FILE_UPLOAD_BYTES - position,
+            )
             try:
                 with log_path.open("rb") as handle:
                     handle.seek(position)
