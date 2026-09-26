@@ -255,16 +255,24 @@ class RobustnessQualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             log = root / "unity.log"
+            result = root / "unity.xml"
             check = qualification.Check(
                 name="unity-example",
                 command=("unity", "-batchmode"),
                 cwd=root,
+                result_xml=result,
                 diagnostic_log=log,
             )
             completed = mock.Mock(returncode=2)
 
             def run_and_write_log(*_args, **_kwargs):
                 log.write_text("first\nsecond\nthird\n", encoding="utf-8")
+                result.write_text(
+                    '<test-run passed="1" failed="1">'
+                    '<test-case fullname="Bees.Tests.ExampleFailure" result="Failed" />'
+                    '</test-run>',
+                    encoding="utf-8",
+                )
                 return completed
 
             with (
@@ -282,6 +290,8 @@ class RobustnessQualificationTests(unittest.TestCase):
                 " ".join(str(value) for value in call.args)
                 for call in printer.call_args_list
             )
+            self.assertIn("failed tests", output)
+            self.assertIn("Bees.Tests.ExampleFailure", output)
             self.assertIn("tail of", output)
             self.assertIn("third", output)
 
