@@ -36,8 +36,13 @@ def package_build(source: Path, output: Path, entrypoint: str) -> None:
         compresslevel=6,
         strict_timestamps=False,
     ) as bundle:
+        excluded_paths = {output, temporary}
         for file_path in sorted(
-            (item for item in source.rglob("*") if item.is_file()),
+            (
+                item
+                for item in source.rglob("*")
+                if item.is_file() and item.resolve() not in excluded_paths
+            ),
             key=lambda item: item.as_posix(),
         ):
             relative = file_path.relative_to(source).as_posix()
