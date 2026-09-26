@@ -549,13 +549,18 @@ def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
 
 
 def _direct_version_root(root: Path, path: Path) -> Optional[Path]:
+    # Do not resolve interpreter symlinks here. Linux venv/bin/python commonly points at
+    # a base interpreter outside the venv; resolving it would make an active managed venv
+    # look unrelated to VenvVersions and eligible for deletion.
+    root_absolute = Path(os.path.abspath(os.fspath(root)))
+    path_absolute = Path(os.path.abspath(os.fspath(path)))
     try:
-        relative = path.resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
+        relative = path_absolute.relative_to(root_absolute)
+    except ValueError:
         return None
     if not relative.parts:
         return None
-    return (root / relative.parts[0]).resolve()
+    return root_absolute / relative.parts[0]
 
 
 def _prune_version_directories(
@@ -885,7 +890,7 @@ class RuntimeUpdater:
         )
         _prune_version_directories(
             self.install_root / "VenvVersions",
-            preserve_paths=[Path(sys.executable).resolve(), staged_python],
+            preserve_paths=[Path(sys.executable).absolute(), staged_python],
             retain=MAX_RETAINED_VENV_VERSIONS,
         )
         update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
