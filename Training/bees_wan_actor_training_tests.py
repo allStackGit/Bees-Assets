@@ -262,6 +262,13 @@ class WanOptionTests(unittest.TestCase):
             session._learner_consumed_steps_total = 4
             session._last_throughput_write = 0.0
             session._upload_queue = queue.Queue()
+            session._session_failure_telemetry = SimpleNamespace(
+                snapshot=lambda: {
+                    "session_failures_total": 2,
+                    "seconds_since_last_session_failure": 12.5,
+                    "last_session_failure_type": "UnityCommunicatorStoppedException",
+                }
+            )
             session.env_count = 7
             session.client = SimpleNamespace(
                 traffic_snapshot=lambda: {
@@ -286,6 +293,12 @@ class WanOptionTests(unittest.TestCase):
             self.assertEqual(payload["accepted_trajectories_total"], 2)
             self.assertEqual(payload["learner_consumed_steps_total"], 4)
             self.assertEqual(payload["upload_queue_depth"], 0)
+            self.assertEqual(payload["session_failures_total"], 2)
+            self.assertEqual(payload["seconds_since_last_session_failure"], 12.5)
+            self.assertEqual(
+                payload["last_session_failure_type"],
+                "UnityCommunicatorStoppedException",
+            )
             self.assertEqual(payload["network_sent_bytes_total"], 3 * 1024 * 1024)
             self.assertEqual(payload["network_received_bytes_total"], 2 * 1024 * 1024)
             self.assertEqual(payload["network_mib_per_s"], 1.25)
