@@ -873,7 +873,7 @@ def _normalized_launch_command(values: Sequence[str]) -> list[str]:
     return command
 
 
-def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, str]]:
+def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, Any]]:
     if not str(path_value).strip():
         return None
     path = Path(path_value).expanduser().resolve()
@@ -887,6 +887,7 @@ def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, str]]:
     runtime_version = str(value.get("runtime_version", "")).strip().lower()
     runtime_root = Path(str(value.get("runtime_root", ""))).expanduser().resolve()
     python_executable = Path(str(value.get("python_executable", ""))).expanduser().resolve()
+    launch_command = value.get("launch_command")
     if not build_id:
         raise ValueError("runtime cutover pointer has no build_id")
     if len(runtime_version) != 64 or any(
@@ -901,58 +902,42 @@ def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, str]]:
         or marker.read_text(encoding="ascii").strip().lower() != runtime_version
     ):
         raise ValueError("runtime cutover root version marker does not match pointer")
-    agent_path = runtime_root / "bees_training_worker_agent.py"
-    if not agent_path.is_file():
-        raise ValueError(f"runtime cutover agent is missing: {agent_path}")
     if not python_executable.is_file():
         raise ValueError(
             f"runtime cutover Python executable is missing: {python_executable}"
+        )
+    if (
+        not isinstance(launch_command, list)
+        or not launch_command
+        or not all(isinstance(value, str) and value for value in launch_command)
+    ):
+        raise ValueError("runtime cutover pointer has invalid launch_command")
+    if str(Path(launch_command[0]).expanduser().resolve()) != str(python_executable):
+        raise ValueError(
+            "runtime cutover launch_command does not use the pinned Python executable"
+        )
+    if not any(ENV_PLACEHOLDER in token for token in launch_command):
+        raise ValueError(
+            f"runtime cutover launch_command must contain {ENV_PLACEHOLDER}"
         )
     return {
         "build_id": build_id,
         "runtime_version": runtime_version,
         "runtime_root": str(runtime_root),
         "python_executable": str(python_executable),
-        "agent_path": str(agent_path),
+        "launch_command": list(launch_command),
     }
 
 
-def _rebase_runtime_argv(
-    raw_argv: Sequence[str],
-    current_root: Path,
-    next_root: Path,
-) -> list[str]:
-    old = str(current_root.resolve())
-    new = str(next_root.resolve())
-    flags = re.IGNORECASE if os.name == "nt" else 0
-    pattern = re.compile(re.escape(old), flags)
-    return [pattern.sub(lambda _match: new, str(value)) for value in raw_argv]
-
-
-def _selected_runtime_cutover(
+def _runtime_launch_template(
     pointer_path: str,
-    desired: Mapping[str, Any],
-) -> Optional[dict[str, str]]:
+    build_id: str,
+    fallback: Sequence[str],
+) -> list[str]:
     pointer = _load_runtime_cutover_pointer(pointer_path)
-    if pointer is None:
-        return None
-    current_root = Path(__file__).resolve().parent
-    next_root = Path(pointer["runtime_root"]).resolve()
-    if next_root == current_root:
-        return None
-
-    pointer_build = pointer["build_id"]
-    desired_build = str(desired.get("desired_build_id", "")).strip()
-    mode = str(desired.get("desired_mode", ""))
-    selected = bool(desired_build and desired_build == pointer_build)
-    pending = desired.get("pending_release")
-    if (
-        mode == "stopped"
-        and isinstance(pending, Mapping)
-        and str(pending.get("build_id", "")).strip() == pointer_build
-    ):
-        selected = True
-    return pointer if selected else None
+    if pointer is None or pointer["build_id"] != str(build_id):
+        return list(fallback)
+    return list(pointer["launch_command"])
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1172,40 +1157,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 desired_build_id = str(desired.get("desired_build_id", ""))
                 active_build_id = str(active_build.get("build_id", "")) if active_build else ""
 
-                runtime_cutover = _selected_runtime_cutover(
-                    args.runtime_cutover_pointer,
-                    desired,
-                )
-                if runtime_cutover is not None:
-                    managed.stop(progress_callback=stopping_keepalive)
-                    try:
-                        log_uploader.flush_all(
-                            client,
-                            trainer_id=args.trainer_id,
-                            run_id=run_id,
-                        )
-                    except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError):
-                        pass
-                    current_root = Path(__file__).resolve().parent
-                    next_root = Path(runtime_cutover["runtime_root"])
-                    next_python = runtime_cutover["python_executable"]
-                    next_agent = runtime_cutover["agent_path"]
-                    next_argv = _rebase_runtime_argv(
-                        raw_argv,
-                        current_root,
-                        next_root,
-                    )
-                    print(
-                        "[Bees control] activating pinned central runtime "
-                        f"build={runtime_cutover['build_id']} "
-                        f"runtime={runtime_cutover['runtime_version'][:12]}",
-                        flush=True,
-                    )
-                    os.execv(
-                        next_python,
-                        [next_python, next_agent, *next_argv],
-                    )
-
                 source_changed = file_sha256(Path(__file__).resolve()) != startup_source_sha
                 if source_changed and (
                     mode == "stopped"
@@ -1245,8 +1196,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if descriptor and not managed.alive():
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(
+                        runtime_command_template = _runtime_launch_template(
+                            args.runtime_cutover_pointer,
+                            str(active_build["build_id"]),
                             command_template,
+                        )
+                        command = render_command(
+                            runtime_command_template,
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
@@ -1309,8 +1265,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     else:
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(
+                        runtime_command_template = _runtime_launch_template(
+                            args.runtime_cutover_pointer,
+                            str(active_build["build_id"]),
                             command_template,
+                        )
+                        command = render_command(
+                            runtime_command_template,
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
