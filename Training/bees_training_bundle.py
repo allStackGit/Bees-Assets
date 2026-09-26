@@ -251,6 +251,7 @@ def _max_step_in_json(value: Any) -> Optional[int]:
                 and isinstance(child, (int, float))
                 and not isinstance(child, bool)
                 and child >= 0
+                and (not isinstance(child, float) or math.isfinite(child))
             ):
                 candidate = int(child)
                 latest = candidate if latest is None else max(latest, candidate)
@@ -279,7 +280,11 @@ def _learner_step(
     latest: Optional[int] = None
     if learner_log_root and learner_log_root.is_dir():
         for path in learner_log_root.rglob("*"):
-            if not path.is_file() or path.suffix.lower() not in TEXT_LOG_SUFFIXES:
+            if (
+                not path.is_file()
+                or path.is_symlink()
+                or path.suffix.lower() not in TEXT_LOG_SUFFIXES
+            ):
                 continue
             for match in STEP_RE.finditer(_tail_text(path)):
                 value = int(match.group(1))
@@ -287,6 +292,8 @@ def _learner_step(
 
     if results_root and results_root.is_dir():
         for path in results_root.rglob("training_status.json"):
+            if path.is_symlink():
+                continue
             value = _json(path)
             candidate = _max_step_in_json(value) if value is not None else None
             if candidate is not None:
@@ -298,7 +305,7 @@ def _model_step(path: Optional[Path], snapshot: Optional[dict[str, Any]]) -> Opt
     if snapshot and snapshot.get("status") == "succeeded":
         try:
             return int(snapshot.get("step"))
-        except (TypeError, ValueError):
+        except (OverflowError, TypeError, ValueError):
             pass
     if path:
         match = MODEL_STEP_RE.search(path.name)
@@ -312,7 +319,11 @@ def _trainer_log_freshness(root: Path, now_utc: datetime) -> dict[str, dict[str,
     if not root.is_dir():
         return result
     for trainer_root in sorted(path for path in root.iterdir() if path.is_dir()):
-        files = [path for path in trainer_root.rglob("*") if path.is_file()]
+        files = [
+            path
+            for path in trainer_root.rglob("*")
+            if path.is_file() and not path.is_symlink()
+        ]
         if not files:
             result[trainer_root.name] = {
                 "file_count": 0,
