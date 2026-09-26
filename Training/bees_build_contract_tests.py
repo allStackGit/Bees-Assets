@@ -63,6 +63,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("Refusing to remove the lock automatically", block)
         self.assertNotIn("appears to already be open in the Unity Editor", block)
 
+    def test_build_preflights_unity_before_archive_or_destructive_build_reset(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        preflight = block.index("Assert-UnityProjectAvailableForBatchBuild")
+        archive = block.index("Archive-TrainingRun")
+        reset = block.index("Reset-BuildDirectory $win")
+        self.assertLess(preflight, archive)
+        self.assertLess(preflight, reset)
+
     def test_operator_hashes_actual_server_and_training_runtime_bytes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("Get-GitTreeSha", source)
