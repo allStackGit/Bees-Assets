@@ -809,6 +809,65 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(training_entry.read_bytes(), b"training")
             self.assertEqual(game_entry.read_bytes(), b"game")
 
+    def test_dedicated_process_safety_requires_exact_desired_identity(self):
+        managed = agent.ManagedProcess()
+        process = mock.Mock()
+        process.poll.return_value = None
+        managed.process = process
+        managed.build_id = "build-a"
+        managed.build_sha256 = "a" * 64
+        managed.run_id = "run-a"
+        managed.compatibility_key = "b" * 64
+        managed.environment_args = ("--rl-map-size=32",)
+        managed.worker_env_count = 8
+        descriptor = {
+            "build_id": "build-a",
+            "archive_sha256": "a" * 64,
+        }
+
+        self.assertTrue(
+            agent.dedicated_process_matches_desired(
+                managed,
+                mode="training",
+                descriptor=descriptor,
+                run_id="run-a",
+                compatibility_key="b" * 64,
+                environment_args=("--rl-map-size=32",),
+                worker_env_count=8,
+            )
+        )
+
+        mismatches = (
+            {"mode": "stopped"},
+            {"descriptor": {"build_id": "build-b", "archive_sha256": "a" * 64}},
+            {"descriptor": {"build_id": "build-a", "archive_sha256": "c" * 64}},
+            {"run_id": "run-b"},
+            {"compatibility_key": "d" * 64},
+            {"environment_args": ("--rl-map-size=64",)},
+            {"worker_env_count": 9},
+        )
+        base = {
+            "mode": "training",
+            "descriptor": descriptor,
+            "run_id": "run-a",
+            "compatibility_key": "b" * 64,
+            "environment_args": ("--rl-map-size=32",),
+            "worker_env_count": 8,
+        }
+        for mismatch in mismatches:
+            with self.subTest(mismatch=mismatch):
+                self.assertFalse(
+                    agent.dedicated_process_matches_desired(
+                        managed,
+                        **{**base, **mismatch},
+                    )
+                )
+
+        process.poll.return_value = 0
+        self.assertFalse(
+            agent.dedicated_process_matches_desired(managed, **base)
+        )
+
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "state.json"
