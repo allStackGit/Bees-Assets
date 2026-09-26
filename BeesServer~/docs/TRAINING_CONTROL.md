@@ -233,7 +233,7 @@ State schema 5 persists:
 
 Schema-2, schema-3, and schema-4 state migrate forward. Canonical artifacts are server-owned copies and are rechecked for exact size/SHA-256 when state is loaded.
 
-Dedicated workers fail closed when the control lease expires. Full-game clients fall back to inference and are not killed merely because control is unavailable.
+Dedicated workers fail closed when the control lease expires. The default control lease is 60 seconds; worker heartbeats run every 5 seconds and individual control requests time out after 5 seconds, so a brief control-plane stall does not consume most of the lease or unnecessarily recycle a healthy trainer. Full-game clients fall back to inference and are not killed merely because control is unavailable.
 
 ## Lower-level control CLI
 
