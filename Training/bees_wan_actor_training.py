@@ -25,6 +25,7 @@ import http.server
 import json
 import pickle
 import queue
+from collections import OrderedDict
 import secrets
 import threading
 import time
@@ -332,8 +333,32 @@ class WanActorBroker:
         }
         self._trajectory_batches: queue.Queue = queue.Queue(maxsize=options.max_queued_batches)
         self._cohort_blocked_actors = set()
+        self._accepted_batch_ids: Dict[int, OrderedDict] = {}
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
+
+    def _accepted_batch_count_locked(self, actor_id: int, batch_id: Optional[str]) -> Optional[int]:
+        if not batch_id:
+            return None
+        accepted = self._accepted_batch_ids.get(actor_id)
+        if accepted is None or batch_id not in accepted:
+            return None
+        accepted.move_to_end(batch_id)
+        return accepted[batch_id]
+
+    def _remember_accepted_batch_locked(
+        self,
+        actor_id: int,
+        batch_id: Optional[str],
+        trajectory_count: int,
+    ) -> None:
+        if not batch_id:
+            return
+        accepted = self._accepted_batch_ids.setdefault(actor_id, OrderedDict())
+        accepted[batch_id] = trajectory_count
+        accepted.move_to_end(batch_id)
+        while len(accepted) > 256:
+            accepted.popitem(last=False)
 
     def session_payload(self) -> Mapping[str, Any]:
         return {
