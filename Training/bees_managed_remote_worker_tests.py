@@ -554,6 +554,31 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             )
 
 
+    def test_version_directory_retention_preserves_symlinked_active_venv(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "versions"
+            root.mkdir(parents=True)
+            base = Path(temp) / "base-python"
+            base.write_bytes(b"")
+            active = root / "old-active" / "bin" / "python"
+            active.parent.mkdir(parents=True)
+            try:
+                active.symlink_to(base)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+            for index in range(3):
+                version = root / f"new-{index}"
+                version.mkdir()
+                (version / "marker").write_text(str(index), encoding="utf-8")
+
+            managed._prune_version_directories(
+                root,
+                preserve_paths=[active],
+                retain=1,
+            )
+
+            self.assertTrue(active.parent.parent.is_dir())
+
     def test_version_directory_retention_preserves_active_and_newest(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "versions"
