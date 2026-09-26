@@ -1057,6 +1057,30 @@ function Get-BeesServerRuntimeSourceHash {
     Get-NamedFileSetSha256 $entries
 }
 
+function Prune-BeesServerRuntimes([string[]]$KeepRoots=@(),[int]$KeepNewest=3){
+    if(-not(Test-Path -LiteralPath $ServerReleaseRoot -PathType Container)){ return }
+    $keep=@{}
+    foreach($root in @($KeepRoots)){
+        if(-not $root){ continue }
+        try{$keep[[IO.Path]::GetFullPath([string]$root).TrimEnd('\')]=1}catch{}
+    }
+
+    $directories=@(
+        Get-ChildItem -LiteralPath $ServerReleaseRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object{$_.Name -notlike '*.candidate-*'} |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+    foreach($directory in @($directories|Select-Object -First $KeepNewest)){
+        try{$keep[[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')]=1}catch{}
+    }
+
+    foreach($directory in $directories){
+        $full=[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')
+        if($keep.ContainsKey($full)){ continue }
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSourceHash){
     if(-not(Test-Path -LiteralPath $RuntimeRoot -PathType Container)){ return $false }
     $readyPath=Join-Path $RuntimeRoot 'bees-server-runtime.json'
@@ -1947,6 +1971,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
                     rollback_reason=$replacementError
                 } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
                 $rollbackIdentity.pid | Set-Content -LiteralPath $ServerPidPath -NoNewline
+                Prune-BeesServerRuntimes @($previousRuntimeRoot)
                 $rolledBack=$true
             } catch {
                 $rollbackError=$_.Exception.Message
@@ -1973,6 +1998,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         config_hash=$serverConfigHash
         started_utc=[DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
+    Prune-BeesServerRuntimes @($serverRuntimeRoot)
 }
 
 function Get-LatestRelease {
