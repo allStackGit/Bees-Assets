@@ -1227,6 +1227,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("process.stderr.write", block)
 
 
+
+    def test_control_http_keeps_short_reads_and_longer_mutation_timeout(self):
+        source = read_operator("common.js")
+        start = source.index("function requestJson")
+        end = source.index("async function testControl", start)
+        block = source[start:end]
+        self.assertIn("String(method).toUpperCase() === 'GET' ? 5000 : 30000", block)
+        self.assertIn("effectiveTimeoutMs", block)
+        self.assertIn("request.setTimeout(", block)
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
