@@ -214,6 +214,36 @@ class WanOptionTests(unittest.TestCase):
                 env_count=4,
             )
 
+    def test_remote_actor_uses_rolling_restart_budget_without_lifetime_cap(self):
+        session = object.__new__(actor.ActorSession)
+        session.central_run_options = SimpleNamespace(
+            env_settings=SimpleNamespace(
+                env_path="",
+                base_port=5005,
+                num_envs=1,
+                seed=123,
+                max_lifetime_restarts=10,
+                restarts_rate_limit_n=1,
+                restarts_rate_limit_period_s=60,
+            ),
+            engine_settings=SimpleNamespace(no_graphics=False),
+            torch_settings=SimpleNamespace(device="cpu"),
+        )
+        session.env_path = Path("/tmp/bees-training")
+        session.local_base_port = 6005
+        session.env_count = 3
+        session.worker_offset = 64
+        session.session_id = "session-a"
+        session.graphics = False
+        session.torch_device = "cpu"
+
+        options = session._remote_run_options()
+
+        self.assertEqual(options.env_settings.max_lifetime_restarts, -1)
+        self.assertEqual(options.env_settings.restarts_rate_limit_n, 1)
+        self.assertEqual(options.env_settings.restarts_rate_limit_period_s, 60)
+        self.assertEqual(options.env_settings.num_envs, 3)
+
     def test_actor_counts_only_steps_in_accepted_trajectories(self):
         trajectories = [
             FakeTrajectory("Behavior?team=0", "agent-1", count=3),
