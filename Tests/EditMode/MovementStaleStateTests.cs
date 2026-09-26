@@ -20,6 +20,22 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void LeavingAsteroidClearsCachedTurretTarget()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public void LeftNearbyAsteroid");
+            int end = source.IndexOf("public void HandleSupersededPathfindingRequest", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = source.Substring(start, end - start);
+            StringAssert.Contains("NearbyAsteroids.Remove(asteroid)", method);
+            StringAssert.Contains("turret.TargetAsteroid == asteroid", method);
+            StringAssert.Contains("turret.TargetAsteroid = null", method);
+            StringAssert.Contains("turret.HasTargetAsteroid = false", method);
+        }
+
+        [Test]
         public void ExplicitStopCancelsPendingPathRetry()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
