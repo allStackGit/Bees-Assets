@@ -882,6 +882,53 @@ function Install-ReleaseTrainingRuntime([string]$Python,$Release,[switch]$AllowL
     ) $AssetsRoot
 }
 
+function Prune-ReleaseTrainingRuntimes([string[]]$KeepRoots=@(),[int]$KeepNewest=4){
+    if(-not(Test-Path -LiteralPath $ReleaseRuntimeInstallRoot -PathType Container)){ return }
+    $keep=@{}
+    foreach($root in @($KeepRoots)){
+        if(-not $root){ continue }
+        try{$keep[[IO.Path]::GetFullPath([string]$root).TrimEnd('\')]=1}catch{}
+    }
+
+    foreach($statePath in @($CentralRuntimePointerPath,$CentralRuntimeStatePath,$CentralAgentStatePath)){
+        if(-not(Test-Path -LiteralPath $statePath -PathType Leaf)){ continue }
+        try {
+            $state=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
+            foreach($property in @('runtime_root','release_runtime_root')){
+                $root=([string](Get-ObjectPropertyValue $state $property)).Trim()
+                if($root){
+                    try{$keep[[IO.Path]::GetFullPath($root).TrimEnd('\')]=1}catch{}
+                }
+            }
+        } catch {}
+    }
+
+    $allDirectories=@(
+        Get-ChildItem -LiteralPath $ReleaseRuntimeInstallRoot -Directory -ErrorAction SilentlyContinue
+    )
+    $staleTempCutoff=[DateTime]::UtcNow.AddHours(-1)
+    foreach($temporary in @($allDirectories|Where-Object{
+        $_.Name -like '*.tmp' -and $_.LastWriteTimeUtc -lt $staleTempCutoff
+    })){
+        Remove-Item -LiteralPath $temporary.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $directories=@(
+        $allDirectories |
+            Where-Object{$_.Name -notlike '*.tmp'} |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+    foreach($directory in @($directories|Select-Object -First $KeepNewest)){
+        try{$keep[[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')]=1}catch{}
+    }
+
+    foreach($directory in $directories){
+        $full=[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')
+        if($keep.ContainsKey($full)){ continue }
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function New-CentralLearnerLaunchCommand(
     $Config,
     [string]$LearnerPython,
@@ -966,6 +1013,7 @@ function Prepare-CentralReleaseRuntime(
         (New-Object Text.ASCIIEncoding)
     )
     Install-AtomicFile $readyTemp $CentralRuntimeReadyBuildPath
+    Prune-ReleaseTrainingRuntimes @($runtimeRootPath)
 
     [pscustomobject]@{
         build_id=[string]$Release.build_id
