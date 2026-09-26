@@ -97,7 +97,8 @@ function readText(filePath) {
 
 function readJson(filePath, fallback = undefined) {
     try {
-        return JSON.parse(readText(filePath));
+        const text = readText(filePath).replace(/^\uFEFF/, '');
+        return JSON.parse(text);
     } catch (error) {
         if (fallback !== undefined && (error.code === 'ENOENT' || error instanceof SyntaxError)) {
             return fallback;
