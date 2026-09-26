@@ -417,6 +417,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._reference_signatures: Optional[Dict[str, Any]] = None
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._consumed_steps_by_actor: Dict[int, int] = collections.defaultdict(int)
+        self._fair_drain_cursor = 0
         self._topology_epoch = 0
         self.diagnostics = CapacityDiagnostics(self.local_envs)
 
@@ -767,7 +768,10 @@ class ElasticWanBroker(base.WanActorBroker):
             "step_count": step_count,
         }
         try:
-            self._trajectory_batches.put_nowait(item)
+            # Coordinate queue admission with the learner's fair snapshot drain. This keeps
+            # requeueing of unselected batches lossless while producers continue concurrently.
+            with self._condition:
+                self._trajectory_batches.put_nowait(item)
         except queue.Full:
             self.diagnostics.observe_backpressure()
             raise
@@ -783,16 +787,74 @@ class ElasticWanBroker(base.WanActorBroker):
             self._consumed_steps_by_actor[actor_id] += step_count
 
     def drain_current_batches(self, limit: int) -> Tuple[Mapping[str, Any], ...]:
-        selected: List[Mapping[str, Any]] = []
-        for _ in range(max(0, int(limit))):
-            try:
-                batch = self._trajectory_batches.get_nowait()
-            except queue.Empty:
-                break
-            if self._batch_is_current(batch):
-                selected.append(batch)
-                self.record_consumed_batch(batch)
-        return tuple(selected)
+        """Drain current-policy batches fairly across actors without sacrificing capacity.
+
+        Fast actors may contribute multiple batches when slower actors have nothing queued, but
+        when several actors are ready each receives one batch per round before any actor receives
+        another. Rotating the starting actor prevents a consistently busy producer from always
+        winning the first slot. Stale-policy batches are discarded during the same bounded scan.
+        """
+        maximum = max(0, int(limit))
+        if maximum <= 0:
+            return ()
+
+        with self._condition:
+            scan_count = self._trajectory_batches.qsize()
+            if scan_count <= 0:
+                return ()
+
+            candidates: List[Tuple[int, Mapping[str, Any]]] = []
+            for ordinal in range(scan_count):
+                try:
+                    batch = self._trajectory_batches.get_nowait()
+                except queue.Empty:
+                    break
+                if self._batch_is_current(batch):
+                    candidates.append((ordinal, batch))
+
+            if not candidates:
+                return ()
+
+            by_actor: Dict[int, Deque[Tuple[int, Mapping[str, Any]]]] = (
+                collections.defaultdict(collections.deque)
+            )
+            for ordinal, batch in candidates:
+                actor_id = self._validate_actor_id(batch.get("actor_id"))
+                by_actor[actor_id].append((ordinal, batch))
+
+            actor_ids = sorted(by_actor)
+            start = self._fair_drain_cursor % len(actor_ids)
+            actor_order = actor_ids[start:] + actor_ids[:start]
+            chosen: List[Tuple[int, Mapping[str, Any]]] = []
+
+            while len(chosen) < maximum:
+                progressed = False
+                for actor_id in actor_order:
+                    bucket = by_actor[actor_id]
+                    if not bucket:
+                        continue
+                    chosen.append(bucket.popleft())
+                    progressed = True
+                    if len(chosen) >= maximum:
+                        break
+                if not progressed:
+                    break
+
+            chosen_ordinals = {ordinal for ordinal, _batch in chosen}
+            for ordinal, batch in candidates:
+                if ordinal not in chosen_ordinals:
+                    self._trajectory_batches.put_nowait(batch)
+
+            if chosen:
+                last_actor_id = int(chosen[-1][1]["actor_id"])
+                self._fair_drain_cursor = (actor_ids.index(last_actor_id) + 1) % len(actor_ids)
+
+            selected = [batch for _ordinal, batch in chosen]
+            for batch in selected:
+                actor_id = int(batch["actor_id"])
+                self._consumed_steps_by_actor[actor_id] += int(batch["step_count"])
+
+            return tuple(selected)
 
     def publish_policy(self, behavior_name: str, policy: Any) -> int:
         return super().publish_policy(behavior_name, policy)
