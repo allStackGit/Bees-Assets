@@ -526,11 +526,51 @@ function Reset-BuildDirectory([string]$Path){
     Ensure-Directory $Path
 }
 
+function Get-UnityProcessesForProject([string]$ProjectPath){
+    $normalized=[IO.Path]::GetFullPath($ProjectPath).TrimEnd('\\')
+    $matches=@()
+    try {
+        foreach($process in @(Get-CimInstance Win32_Process -Filter "Name = 'Unity.exe'" -ErrorAction SilentlyContinue)){
+            $commandLine=[string]$process.CommandLine
+            if(-not $commandLine){ continue }
+            if($commandLine.IndexOf($normalized,[StringComparison]::OrdinalIgnoreCase) -ge 0){
+                $matches += [pscustomobject]@{
+                    pid=[int]$process.ProcessId
+                    command_line=$commandLine
+                }
+            }
+        }
+    } catch {}
+    return @($matches)
+}
+
 function Assert-UnityProjectAvailableForBatchBuild {
     $lock=Join-Path $BeesRoot 'Temp\UnityLockfile'
-    if(Test-Path -LiteralPath $lock){
-        throw "The Bees Unity project appears to already be open in the Unity Editor. Close the Editor before running '.\Assets\bees.ps1 build'. If Unity is definitely closed, remove the stale lock file: $lock"
+    if(-not(Test-Path -LiteralPath $lock)){ return }
+
+    $projectProcesses=@(Get-UnityProcessesForProject $BeesRoot)
+
+    # Unity may have been closing while this check ran. Do not report a vanished lock as stale.
+    if(-not(Test-Path -LiteralPath $lock)){ return }
+
+    if($projectProcesses.Count -gt 0){
+        $pids=(@($projectProcesses|ForEach-Object{[string]$_.pid}) -join ', ')
+        throw "The Bees Unity project is open in a live Unity Editor process (PID(s): $pids). Close that Editor before running '.\Assets\bees.ps1 build'."
     }
+
+    $anyUnity=@(Get-Process -Name 'Unity' -ErrorAction SilentlyContinue)
+    if($anyUnity.Count -eq 0){
+        try {
+            Remove-Item -LiteralPath $lock -Force -ErrorAction Stop
+            Write-Warning "Removed stale Unity lock file because no Unity Editor process is running: $lock"
+            return
+        } catch {
+            throw "A stale Unity lock file exists but could not be removed: $lock. $($_.Exception.Message)"
+        }
+    }
+
+    $runningPids=(@($anyUnity|ForEach-Object{[string]$_.Id}) -join ', ')
+    throw "UnityLockfile exists for the Bees project, and Unity process(es) are running (PID(s): $runningPids), but their command lines could not be proven to own B:\Bees. Refusing to remove the lock automatically. Close Unity and retry; if the lock still exists after all Unity processes exit, the next build will remove it as stale."
 }
 
 function Get-UnityBuildProgressStatus([string]$LogPath){
@@ -1927,6 +1967,20 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             $cap=$_.worker_capacity
             $opt=$_.env_optimizer
             $throughput=Get-ObjectPropertyValue $m 'throughput'
+            $windowEpisodes=Get-ObjectPropertyValue $m 'window_episodes'
+            $timeoutPct=Get-ObjectPropertyValue $m 'timeout_pct'
+            $beeWinPct=Get-ObjectPropertyValue $m 'bee_win_pct'
+            $humanWinPct=Get-ObjectPropertyValue $m 'human_win_pct'
+            $drawPct=Get-ObjectPropertyValue $m 'draw_pct'
+            $avgDuration=Get-ObjectPropertyValue $m 'avg_duration_s'
+            $beeHitsPerShot=Get-ObjectPropertyValue $m 'bee_hits_per_shot'
+            $humanHitsPerShot=Get-ObjectPropertyValue $m 'human_hits_per_shot'
+            $beeAimSamples=Get-ObjectPropertyValue $m 'bee_aim_samples'
+            $humanAimSamples=Get-ObjectPropertyValue $m 'human_aim_samples'
+            $beeAimError=Get-ObjectPropertyValue $m 'bee_aim_error_deg'
+            $humanAimError=Get-ObjectPropertyValue $m 'human_aim_error_deg'
+            $beeAimWithin5=Get-ObjectPropertyValue $m 'bee_aim_within_5_pct'
+            $humanAimWithin5=Get-ObjectPropertyValue $m 'human_aim_within_5_pct'
             $sentBytes=Get-ObjectPropertyValue $throughput 'network_sent_bytes_total'
             $receivedBytes=Get-ObjectPropertyValue $throughput 'network_received_bytes_total'
             $networkMibPerS=Get-ObjectPropertyValue $throughput 'network_mib_per_s'
@@ -1958,17 +2012,17 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 Build=$_.build_id
                 Rev=$_.applied_revision
                 Age=('{0:N1}s'-f[double]$_.age_seconds)
-                Timeout=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.timeout_pct}else{'-'}
-                BWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.bee_win_pct}else{'-'}
-                HWin=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.human_win_pct}else{'-'}
-                Draw=if($m -and $m.window_episodes){'{0:N1}%'-f[double]$m.draw_pct}else{'-'}
-                Dur=if($m -and $m.window_episodes){'{0:N1}s'-f[double]$m.avg_duration_s}else{'-'}
-                'BHit/Sh'=if($m -and $m.window_episodes -and $null -ne $m.bee_hits_per_shot){'{0:N2}x'-f[double]$m.bee_hits_per_shot}else{'-'}
-                'HHit/Sh'=if($m -and $m.window_episodes -and $null -ne $m.human_hits_per_shot){'{0:N2}x'-f[double]$m.human_hits_per_shot}else{'-'}
-                BAim=if($m -and $m.bee_aim_samples -and $null -ne $m.bee_aim_error_deg){'{0:N1}deg'-f[double]$m.bee_aim_error_deg}else{'-'}
-                HAim=if($m -and $m.human_aim_samples -and $null -ne $m.human_aim_error_deg){'{0:N1}deg'-f[double]$m.human_aim_error_deg}else{'-'}
-                'B<5'=if($m -and $m.bee_aim_samples -and $null -ne $m.bee_aim_within_5_pct){'{0:N1}%'-f[double]$m.bee_aim_within_5_pct}else{'-'}
-                'H<5'=if($m -and $m.human_aim_samples -and $null -ne $m.human_aim_within_5_pct){'{0:N1}%'-f[double]$m.human_aim_within_5_pct}else{'-'}
+                Timeout=if($windowEpisodes -and $null -ne $timeoutPct){'{0:N1}%'-f[double]$timeoutPct}else{'-'}
+                BWin=if($windowEpisodes -and $null -ne $beeWinPct){'{0:N1}%'-f[double]$beeWinPct}else{'-'}
+                HWin=if($windowEpisodes -and $null -ne $humanWinPct){'{0:N1}%'-f[double]$humanWinPct}else{'-'}
+                Draw=if($windowEpisodes -and $null -ne $drawPct){'{0:N1}%'-f[double]$drawPct}else{'-'}
+                Dur=if($windowEpisodes -and $null -ne $avgDuration){'{0:N1}s'-f[double]$avgDuration}else{'-'}
+                'BHit/Sh'=if($windowEpisodes -and $null -ne $beeHitsPerShot){'{0:N2}x'-f[double]$beeHitsPerShot}else{'-'}
+                'HHit/Sh'=if($windowEpisodes -and $null -ne $humanHitsPerShot){'{0:N2}x'-f[double]$humanHitsPerShot}else{'-'}
+                BAim=if($beeAimSamples -and $null -ne $beeAimError){'{0:N1}deg'-f[double]$beeAimError}else{'-'}
+                HAim=if($humanAimSamples -and $null -ne $humanAimError){'{0:N1}deg'-f[double]$humanAimError}else{'-'}
+                'B<5'=if($beeAimSamples -and $null -ne $beeAimWithin5){'{0:N1}%'-f[double]$beeAimWithin5}else{'-'}
+                'H<5'=if($humanAimSamples -and $null -ne $humanAimWithin5){'{0:N1}%'-f[double]$humanAimWithin5}else{'-'}
                 Error=$_.last_error
             }
         })
