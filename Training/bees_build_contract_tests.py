@@ -97,14 +97,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("Get-GitTreeSha", source)
         self.assertIn(
-            "$serverSourceHash=Get-WorkingTreeContentSha256 'BeesServer~'",
+            "$serverSourceHash=Get-BeesServerRuntimeSourceHash",
             source,
         )
-        self.assertIn(
-            "ls-files --cached --others --exclude-standard",
-            source,
-        )
-        self.assertIn("sha256='missing'", source)
+        self.assertIn("function Get-BeesServerRuntimeSourceHash", source)
+        server_hash_start = source.index("function Get-BeesServerRuntimeSourceHash")
+        server_hash_end = source.index("function Get-BeesServerDependencyHash", server_hash_start)
+        server_hash = source[server_hash_start:server_hash_end]
+        self.assertIn("Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js' -File", server_hash)
+        self.assertIn("@('package.json','package-lock.json')", server_hash)
+        self.assertNotIn("docs", server_hash)
+        self.assertNotIn("test\\", server_hash)
+        self.assertNotIn("Get-WorkingTreeContentSha256", source)
 
         self.assertIn(
             "$ReleaseRuntimeScript=Join-Path $AssetsRoot "
@@ -193,6 +197,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             0,
             completed.stderr + completed.stdout,
         )
+
+    def test_non_runtime_server_edits_do_not_participate_in_restart_identity(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Get-BeesServerRuntimeSourceHash")
+        end = source.index("function Get-BeesServerDependencyHash", start)
+        block = source[start:end]
+
+        self.assertIn("-Filter '*.js' -File", block)
+        self.assertIn("'package.json'", block)
+        self.assertIn("'package-lock.json'", block)
+        self.assertNotIn("AGENTS.md", block)
+        self.assertNotIn("docs", block)
+        self.assertNotIn("Training_CONTROL", block)
 
     def test_operator_reinstalls_server_dependencies_when_package_identity_changes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
