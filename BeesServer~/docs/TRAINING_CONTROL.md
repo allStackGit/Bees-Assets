@@ -78,6 +78,8 @@ Environment/scenario arguments may be supplied for one start with repeated `-Env
 
 Omit `-NewRun` to apply the arguments while resuming the existing run. A forced new run reuses the current compiled build, archives the outgoing run before and after the coordinated stop, preserves its checkpoints, and starts the new run with a separate run id/checkpoint namespace.
 
+Forced-new execution is a durable resumable operation rather than a shell-lifetime sequence. Before the latest release is rewritten, the operator persists the target run id, exact existing build id, compatibility identity, previous run identity, and exact environment-argument list in the run plan. That plan remains after the lifecycle commit and is cleared only after the incompatible rollout has promoted the target run and the outgoing run's terminal archive has succeeded. If the shell, BeesServer, or operator command is interrupted anywhere in between, a later ordinary `start` or repeated `start -NewRun` resumes that same target instead of allocating another run. A build refuses to overwrite an unfinished forced-new plan and directs the operator to resume it first. Pre-existing forced-new plans from before build/environment binding are recovered once using the current release/server-owned desired state and then cleared after terminal archival.
+
 ## Builds, run identity, and compatibility
 
 Every compiled training release contains:
