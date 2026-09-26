@@ -16,6 +16,10 @@ namespace Bees.Tests.EditMode
             Assert.That(coordinator, Does.Contain("EpisodeMetricsLogInterval = 10"));
             Assert.That(coordinator, Does.Contain("SummaryIntervalEpisodes = 100"));
             Assert.That(coordinator, Does.Contain("FullEpisodeDiagnosticsInterval = 1000"));
+            Assert.That(coordinator, Does.Contain("TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L"));
+            Assert.That(coordinator, Does.Contain("BEES_TRAINING_LOG_DIR"));
+            Assert.That(coordinator, Does.Contain("BeesEpisode-"));
+            Assert.That(coordinator, Does.Contain("WriteTrainingDiagnostic("));
             Assert.That(coordinator, Does.Contain("BeeShotsFired"));
             Assert.That(coordinator, Does.Contain("BeeShotsHit"));
             Assert.That(coordinator, Does.Contain("BeeDamageDealt"));
