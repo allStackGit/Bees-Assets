@@ -173,6 +173,15 @@ def compatibility_key(payload: Mapping[str, Any]) -> str:
     return _sha256_bytes(canonical.encode("utf-8"))
 
 
+def contract_fingerprint(assets_root: Path) -> dict[str, Any]:
+    payload = contract_payload(assets_root)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "compatibility_key": compatibility_key(payload),
+        "contract": payload,
+    }
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -286,6 +295,9 @@ def _parser() -> argparse.ArgumentParser:
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
     commit.add_argument("--plan", required=True)
+
+    fingerprint = sub.add_parser("fingerprint")
+    fingerprint.add_argument("--assets-root", required=True)
     return parser
 
 
@@ -303,6 +315,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "commit":
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
         value = commit_plan(Path(args.state), plan)
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "fingerprint":
+        value = contract_fingerprint(Path(args.assets_root))
         print(json.dumps(value, sort_keys=True))
         return 0
     return 2
