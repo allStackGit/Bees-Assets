@@ -198,3 +198,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `MovementStaleStateTests.LeavingAsteroidClearsCachedTurretTarget` protects both detach and stale-entry pruning paths clearing the matching target and target flags.  
 **Verification:** the removal, cache invalidation, and firing guard were reviewed statically. The regression test was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** removing an asteroid from a ship's nearby set must also invalidate any turret target reference to that asteroid.
+
+
+### REG-021 — Undefined numeric RL matchup modes were accepted
+**Area:** `Scripts/Scenes/RlOneVsOneTrainingOptions.cs`, RL worker command-line configuration  
+**Symptom:** numeric values such as `--rl-matchup-mode=999` could be accepted and flow into sampled-mode validation despite not naming a supported matchup mode.  
+**Root cause:** `Enum.TryParse` accepts numeric representations, including undefined enum values, unless the parsed value is separately checked against the enum's defined members.  
+**Permanent protection:** matchup-mode parsing now requires a defined `Fixed` or `Sampled` value. `RlOneVsOneTrainingOptionsTests.InvalidOrAmbiguousRlOptionsFailInsteadOfSilentlyUsingDefaults` covers both numeric zero and an out-of-range numeric value.  
+**Verification:** the parser and focused regression protection were reviewed statically. Tests were not executed, per the static-only audit constraint.  
+**Invariant/knowledge:** command-line enum options must reject undefined numeric enum values as well as unrecognized names.
