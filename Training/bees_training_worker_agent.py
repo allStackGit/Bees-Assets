@@ -788,6 +788,39 @@ class ManagedProcess:
             ) from exc
 
 
+def dedicated_process_matches_desired(
+    managed: ManagedProcess,
+    *,
+    mode: str,
+    descriptor: Optional[Mapping[str, Any]],
+    run_id: str,
+    compatibility_key: str,
+    environment_args: Sequence[str],
+    worker_env_count: Optional[int],
+) -> bool:
+    """Return whether the live dedicated process is still safe under the latest desired state.
+
+    This is intentionally stricter than "the process is alive" and looser than command-text
+    identity. Release runtimes are immutable per build, so build/run/compatibility/config identity
+    is the durable safety boundary. A transient ancillary reconciliation failure may leave an exact
+    desired process running; a stale/mismatched process must fail closed.
+    """
+    if mode != "training" or not isinstance(descriptor, Mapping) or not managed.alive():
+        return False
+    desired_build_id = str(descriptor.get("build_id", ""))
+    desired_sha256 = str(descriptor.get("archive_sha256", ""))
+    return (
+        bool(desired_build_id)
+        and bool(desired_sha256)
+        and managed.build_id == desired_build_id
+        and managed.build_sha256 == desired_sha256
+        and managed.run_id == str(run_id)
+        and managed.compatibility_key == str(compatibility_key).strip().lower()
+        and managed.environment_args == tuple(str(value) for value in environment_args)
+        and managed.worker_env_count == worker_env_count
+    )
+
+
 def full_game_update_requires_deferred_restart(
     managed: ManagedProcess,
     desired_build_sha256: str,
@@ -1190,6 +1223,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ),
                 worker_capacity=worker_capacity(),
             )
+            desired_process_safe = False
             try:
                 desired = client.heartbeat(heartbeat)
                 received_desired = True
@@ -1217,6 +1251,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         worker_env_count = requested_worker_envs
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
+                if args.role == "dedicated":
+                    desired_process_safe = dedicated_process_matches_desired(
+                        managed,
+                        mode=mode,
+                        descriptor=descriptor,
+                        run_id=run_id,
+                        compatibility_key=compatibility_key,
+                        environment_args=environment_args,
+                        worker_env_count=worker_env_count,
+                    )
 
                 desired_build_id = str(desired.get("desired_build_id", ""))
                 active_build_id = str(active_build.get("build_id", "")) if active_build else ""
@@ -1379,6 +1423,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 ),
                                 stop_progress=stopping_keepalive,
                             )
+                        if args.role == "dedicated":
+                            desired_process_safe = dedicated_process_matches_desired(
+                                managed,
+                                mode=mode,
+                                descriptor=active_build,
+                                run_id=run_id,
+                                compatibility_key=compatibility_key,
+                                environment_args=environment_args,
+                                worker_env_count=worker_env_count,
+                            )
                         _write_runtime_state(
                             args.runtime_state_file,
                             build_id=str(active_build["build_id"]),
@@ -1422,19 +1476,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
-                write_local_state(
-                    state_file,
-                    desired=desired,
-                    online=False,
-                    last_error=last_error,
-                )
-                if args.role == "dedicated" and (offline or received_desired):
-                    if managed.alive():
+                try:
+                    write_local_state(
+                        state_file,
+                        desired=desired,
+                        online=bool(received_desired and not offline),
+                        last_error=last_error,
+                    )
+                except OSError as state_exc:
+                    print(
+                        "[Bees control] could not persist local diagnostic state: "
+                        f"{type(state_exc).__name__}: {state_exc}",
+                        file=sys.stderr,
+                    )
+
+                if args.role == "dedicated":
+                    if offline:
+                        if managed.alive():
+                            print(
+                                "[Bees control] server lease expired; stopping dedicated trainer.",
+                                file=sys.stderr,
+                            )
+                        managed.stop(progress_callback=stopping_keepalive)
+                    elif received_desired and not desired_process_safe:
+                        if managed.alive():
+                            print(
+                                "[Bees control] desired-state reconciliation failed and the "
+                                "running trainer no longer exactly matches server intent; "
+                                "stopping it until safe state can be applied.",
+                                file=sys.stderr,
+                            )
+                        managed.stop(progress_callback=stopping_keepalive)
+                    elif received_desired and desired_process_safe:
                         print(
-                            "[Bees control] server lease expired; stopping dedicated trainer.",
+                            "[Bees control] reconciliation error while the running trainer "
+                            "still exactly matches server intent; keeping it running and retrying: "
+                            + last_error,
                             file=sys.stderr,
                         )
-                    managed.stop(progress_callback=stopping_keepalive)
                 elif args.role == "full-game" and offline and managed.alive():
                     print(
                         "[Bees control] server lease expired; full game remains running in "
