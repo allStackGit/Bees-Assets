@@ -275,6 +275,7 @@ func runGateway(args []string) error {
 	bootstrapPort := fs.Int("bootstrap-port", 7151, "tailnet bootstrap port")
 	bootstrapBundlePath := fs.String("bootstrap-bundle", "", "atomic remote bootstrap bundle path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
+	_ = fs.String("owner-token", "", "opaque managed-launch ownership token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
