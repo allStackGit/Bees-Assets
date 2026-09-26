@@ -2437,6 +2437,19 @@ function Start-CentralAgentIfNeeded(
     $existing=$null
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
+        if($null -ne $existing -and -not(Test-ManagedProcessIdentity $existing)){
+            $launchStatus=[string](Get-ObjectPropertyValue $existing 'status')
+            $ownerToken=[string](Get-ObjectPropertyValue $existing 'owner_token')
+            if($launchStatus -eq 'launching' -and $ownerToken){
+                $recovered=Find-ManagedProcessByOwnerToken $BootstrapPython $ownerToken 'central training supervisor'
+                if($null -ne $recovered){
+                    $existing=Add-ManagedIdentityToState $existing $recovered 'active'
+                    Write-AtomicJsonFile $CentralAgentStatePath $existing
+                    Write-AtomicPidFile $CentralAgentPidPath ([int]$recovered.pid)
+                    Write-Host "Recovered central supervisor ownership after interrupted launch (PID $($recovered.pid))."
+                }
+            }
+        }
         if($null -ne $existing){
             if(Test-ManagedProcessIdentity $existing){
                 if(
@@ -2465,24 +2478,15 @@ function Start-CentralAgentIfNeeded(
         }
     }
 
-    Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
-    $p=Start-Process -FilePath $BootstrapPython -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
-    $identity=Get-ProcessIdentity $p.Id
-    if($null -eq $identity -or -not [string]::Equals(
-        [string]$identity.executable_path,
-        [IO.Path]::GetFullPath($BootstrapPython),
-        [StringComparison]::OrdinalIgnoreCase
-    )){
-        try{$p.Kill()}catch{}
-        throw 'Could not establish the stable central supervisor process identity after launch.'
-    }
-
-    $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
-    [pscustomobject]@{
-        schema_version=3
-        pid=[int]$identity.pid
-        process_start_utc=[string]$identity.process_start_utc
-        executable_path=[string]$identity.executable_path
+    $centralOwnerToken=[Guid]::NewGuid().ToString('N')
+    $launchSupervisorArgs=@($supervisorArgs + @('--owner-token',$centralOwnerToken))
+    $launchArgs=@($launchSupervisorArgs + @('--') + $fallbackCommand)
+    $launchArgString=($launchArgs|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+    $launchIntent=[pscustomobject]@{
+        schema_version=4
+        status='launching'
+        owner_token=$centralOwnerToken
+        executable_path=[IO.Path]::GetFullPath($BootstrapPython)
         command_hash=$commandHash
         supervisor_python=[IO.Path]::GetFullPath($BootstrapPython)
         learner_python=[string]$PreparedRuntime.learner_python
@@ -2495,7 +2499,24 @@ function Start-CentralAgentIfNeeded(
         fallback_build_id=[string]$fallback.build_id
         graceful_checkpoint_shutdown=$true
         started_utc=[DateTime]::UtcNow.ToString('o')
-    }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
+    }
+    Write-AtomicJsonFile $CentralAgentStatePath $launchIntent
+    Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
+
+    $p=Start-Process -FilePath $BootstrapPython -ArgumentList $launchArgString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+    $identity=Get-ProcessIdentity $p.Id
+    if($null -eq $identity -or -not [string]::Equals(
+        [string]$identity.executable_path,
+        [IO.Path]::GetFullPath($BootstrapPython),
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        try{$p.Kill()}catch{}
+        throw 'Could not establish the stable central supervisor process identity after launch.'
+    }
+
+    $activeCentralState=Add-ManagedIdentityToState $launchIntent $identity 'active'
+    Write-AtomicJsonFile $CentralAgentStatePath $activeCentralState
+    Write-AtomicPidFile $CentralAgentPidPath ([int]$identity.pid)
     Write-Host "Stable central training supervisor started with PID $($p.Id)."
 }
 
