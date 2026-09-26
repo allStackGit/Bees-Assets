@@ -487,6 +487,37 @@ class TrainingControlStore {
         });
     }
 
+    _pruneExpiredCompatibleBarrierTrainers(pending) {
+        if (!pending || pending.incompatible) return false;
+        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const kept = [];
+        let changed = false;
+        for (const spec of pending.required_trainers) {
+            const current = this.trainers.get(spec.trainer_id);
+            let lastSeen = (
+                current &&
+                current.role === 'dedicated' &&
+                current.platform === spec.platform
+            ) ? current.last_seen_ms : null;
+            if (lastSeen === null) {
+                const known = this.state.known_dedicated_trainers.find(
+                    item => item.trainer_id === spec.trainer_id &&
+                        item.platform === spec.platform);
+                if (known) lastSeen = known.last_seen_ms;
+            }
+            if (lastSeen !== null && lastSeen < cutoff) {
+                changed = true;
+                continue;
+            }
+            kept.push(spec);
+        }
+        if (!changed) return false;
+        pending.required_trainers = kept;
+        this.state.revision++;
+        this._persist();
+        return true;
+    }
+
     _trainerHealthyOnPending(spec, pending) {
         const record = this._requiredTrainerRecord(spec);
         if (!record) return false;
@@ -530,6 +561,8 @@ class TrainingControlStore {
         const pending = this.state.pending_release;
         if (!pending) return false;
         if (pending.collect_until_ms > this.now()) return false;
+
+        this._pruneExpiredCompatibleBarrierTrainers(pending);
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
