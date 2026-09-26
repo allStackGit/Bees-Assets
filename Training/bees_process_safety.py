@@ -66,14 +66,21 @@ def write_managed_health(
     }
     if details:
         value["details"] = dict(details)
-    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-    temporary.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
-    return True
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+        return True
+    except OSError:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        return False
 
 
 def read_managed_health(path: Optional[Path], token: str) -> Optional[dict[str, Any]]:
