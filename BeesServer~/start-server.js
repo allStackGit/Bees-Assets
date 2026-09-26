@@ -122,6 +122,13 @@ function probeTrainingControl(config, timeoutMs = HEALTH_TIMEOUT_MS) {
     });
 }
 
+function managedChildOwnerToken(ownerToken) {
+    return crypto
+        .createHash('sha256')
+        .update('bees-managed-child:' + String(ownerToken || ''), 'utf8')
+        .digest('hex');
+}
+
 function runSupervisor(options) {
     const serverPath = path.join(__dirname, 'server.js');
     const env = serverEnvironment();
@@ -152,11 +159,9 @@ function runSupervisor(options) {
         consecutiveHealthFailures = 0;
         const childArgs = [...options.serverArgs];
         if (options.managedOwnerToken) {
-            const childToken = crypto
-                .createHash('sha256')
-                .update('bees-managed-child:' + options.managedOwnerToken, 'utf8')
-                .digest('hex');
-            childArgs.push('--bees-managed-child-token=' + childToken);
+            childArgs.push(
+                '--bees-managed-child-token=' + managedChildOwnerToken(options.managedOwnerToken)
+            );
         }
         child = spawn(process.execPath, [serverPath, ...childArgs], {
             cwd: __dirname,
@@ -308,6 +313,7 @@ module.exports = {
     parseLauncherOptions,
     openLog,
     serverEnvironment,
+    managedChildOwnerToken,
     trainingControlProbeConfig,
     probeTrainingControl,
     runSupervisor,
