@@ -769,6 +769,453 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("getLocalLearnerStats(String(desired.run_id || ''))", status)
 
 
+
+    def test_start_reports_fresh_rollout_state_after_wait(self):
+        source = read_operator("commands.js")
+        start = source.index("async function invokeStart")
+        end = source.index("async function invokeStop", start)
+        block = source[start:end]
+        requested = block.index("'Training requested: build='")
+        refresh = block.index("const finalStatus = await getStatus(config, admin)", requested)
+        self.assertLess(requested, refresh)
+        self.assertIn("Release rollout: complete", block)
+        self.assertNotIn("staged.pending_release.phase", block[requested:])
+
+    def test_operator_status_shows_remote_wan_traffic(self):
+        source = read_operator("status.js")
+        for metric in (
+            "network_sent_bytes_total",
+            "network_received_bytes_total",
+            "network_mib_per_s",
+        ):
+            self.assertIn(metric, source)
+        for column in ("SentGiB", "RecvGiB", "MiB/s"):
+            self.assertIn(column, source)
+
+    def test_live_gateway_reuses_tailnet_identity_without_duplicate_auth(self):
+        source = read_operator("tailnet.js")
+        start = source.index("function ensureTailnetIdentity")
+        end = source.index("function testTailnetGatewayHealth", start)
+        block = source[start:end]
+        self.assertIn("testManagedProcessIdentity(gatewayState)", block)
+        self.assertIn("reusing the live gateway state", block)
+        self.assertIn("Refusing to start a second tsnet server", block)
+        reuse = block.index("reusing the live gateway state")
+        authenticate = block.index("runChecked(bridge", reuse)
+        self.assertLess(reuse, authenticate)
+
+    def test_idempotent_start_keeps_healthy_tailnet_gateway_running(self):
+        source = read_operator("tailnet.js")
+        start = source.index("async function startTailnetGatewayIfNeeded")
+        end = source.index("function escapePowerShellSingleQuoted", start)
+        block = source[start:end]
+        self.assertIn("const configHash = sha256Text(", block)
+        self.assertIn("String(state.config_hash || '') === configHash", block)
+        self.assertIn("Embedded tailnet gateway already healthy", block)
+        keep = block.index("String(state.config_hash || '') === configHash")
+        stop = block.index("stopManagedProcessTree(state, bridge, 'embedded tailnet gateway')")
+        self.assertLess(keep, stop)
+        self.assertIn("'--bootstrap-bundle', paths.bootstrapBundlePath", block)
+        self.assertNotIn("'--runtime'", block)
+        self.assertNotIn("'--worker-token'", block)
+        self.assertNotIn("'--wan-token'", block)
+        self.assertNotIn("'--release'", block)
+
+    def test_build_recovers_crashed_managed_server_without_reviving_intentional_stop(self):
+        source = read_operator("build.js")
+        start = source.index("async function invokeBuild")
+        block = source[start:]
+        self.assertIn("const managedServerExists = exists(paths.serverStatePath)", block)
+        self.assertGreaterEqual(
+            block.count("controlOnline || managedServerExists"),
+            2,
+        )
+        self.assertIn(
+            "Managed BeesServer reconciliation completed without a reachable training-control endpoint",
+            block,
+        )
+        post = block.rindex("const managedServerExists = exists(paths.serverStatePath)")
+        reconcile = block.index("startBeesServerIfNeeded(config, worker, admin)", post)
+        publish = block.index("publishRelease(config, admin, release)", reconcile)
+        self.assertLess(reconcile, publish)
+
+    def test_live_build_always_reconciles_private_gateway(self):
+        source = read_operator("build.js")
+        start = source.index("async function invokeBuild")
+        block = source[start:]
+        prepare = block.rindex("prepareRemoteBootstrap(config, python, release)")
+        reconcile = block.index("startTailnetGatewayIfNeeded(config)", prepare)
+        stage = block.index("stageRelease(", reconcile)
+        self.assertLess(prepare, reconcile)
+        self.assertLess(reconcile, stage)
+        between = block[prepare:reconcile]
+        self.assertNotIn("if (tailnetBridgeChanged)", between)
+
+    def test_managed_process_ownership_is_distinct_from_desired_executable(self):
+        common = read_operator("common.js")
+        start = common.index("function stopManagedProcessTree")
+        end = common.index("function readTail", start)
+        stop_block = common[start:end]
+        self.assertIn("if (!testManagedProcessIdentity(state))", stop_block)
+        self.assertIn(
+            "desired executable changed; safely replacing verified owned process",
+            stop_block,
+        )
+        first_guard = stop_block.index("if (!testManagedProcessIdentity(state))")
+        executable_guard = stop_block.index(
+            "if (expectedExecutable && !testManagedProcessIdentity(state, expectedExecutable))"
+        )
+        self.assertLess(first_guard, executable_guard)
+
+        central = read_operator("central.js")
+        self.assertIn("if (testManagedProcessIdentity(existing))", central)
+        self.assertIn("testManagedProcessIdentity(existing, bootstrapPython)", central)
+
+    def test_operator_persists_identity_for_every_managed_process_owner(self):
+        common = read_operator("common.js")
+        server = read_operator("server.js")
+        central = read_operator("central.js")
+        tailnet = read_operator("tailnet.js")
+        self.assertIn("process_start_utc: String(value.process_start_utc || '')", common)
+        self.assertIn("executable_path: path.resolve(String(value.executable_path))", common)
+        self.assertIn("writeJsonAtomic(paths.serverStatePath", server)
+        self.assertIn("writeJsonAtomic(paths.centralAgentStatePath", central)
+        self.assertIn("writeJsonAtomic(paths.tailnetGatewayStatePath", tailnet)
+        self.assertIn("stopManagedProcessTree(state, node, 'BeesServer')", server)
+        self.assertIn("stopManagedProcessTree(state, bridge, 'embedded tailnet gateway')", tailnet)
+
+    def test_legacy_pid_only_state_fails_closed_instead_of_being_killed(self):
+        common = read_operator("common.js")
+        central = read_operator("central.js")
+        server = read_operator("server.js")
+        tailnet = read_operator("tailnet.js")
+        identity = common[
+            common.index("function testManagedProcessIdentity"):
+            common.index("function getStateReferencedLivePid")
+        ]
+        self.assertIn("!state.process_start_utc", identity)
+        self.assertIn("!state.executable_path", identity)
+        self.assertIn("PID may have been reused", common)
+        self.assertIn("legacy PID-only state", server)
+        self.assertIn("legacy PID-only state", tailnet)
+        self.assertIn("legacy PID-only state", central)
+
+    def test_central_launch_quotes_spaced_equals_option_values(self):
+        # The old implementation needed bespoke PowerShell quoting. The durable contract is
+        # that paths with spaces remain one argument; Node now guarantees this structurally.
+        source = read_operator("central.js")
+        self.assertIn("'--unity-editor', unity", source)
+        self.assertIn("'--unity-project-root', paths.beesRoot", source)
+        self.assertIn("spawn(bootstrapPython, launchArgs", source)
+        self.assertNotIn("launchArgString", source)
+        self.assertNotIn("Quote-Arg", source)
+
+    def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
+        source = read_operator("control.js")
+        start = source.index("async function waitReleaseRollout")
+        block = source[start:source.index("module.exports", start)]
+        self.assertIn("Waiting for release rollout: phase=", block)
+        self.assertIn("Release rollout complete: build=", block)
+        self.assertIn("A different release became pending while waiting", block)
+        self.assertIn("Release rollout ended without activating the expected identity", block)
+        self.assertIn("prepared_build_id", source)
+        self.assertIn("record.stale", source)
+        self.assertIn("now - lastProgressAt >= 10000", block)
+        self.assertIn("Central learner failed while rolling release", block)
+        self.assertIn("central-agent.err.log", block)
+        self.assertIn("central-agent.out.log", block)
+
+    def test_forced_new_run_waits_for_matching_compatible_pending_release(self):
+        source = read_operator("commands.js")
+        start = source.index("async function invokeStart")
+        end = source.index("async function invokeStop", start)
+        block = source[start:end]
+        self.assertIn("Latest compatible release is still rolling out", block)
+        self.assertIn("status = await waitReleaseRollout(", block)
+        self.assertIn("!pendingIncompatible", block)
+        self.assertIn("pendingBuild === latestBuild", block)
+        self.assertIn("pendingRun === latestRun", block)
+        self.assertIn("pendingKey === latestKey", block)
+        self.assertIn(
+            "Cannot force a new training run while a different or incompatible release rollout is pending",
+            block,
+        )
+
+    def test_forced_new_run_intent_is_persisted_before_server_cutover(self):
+        source = read_operator("commands.js")
+        start = source.index("async function invokeStart")
+        end = source.index("async function invokeStop", start)
+        block = source[start:end]
+        forced_plan = block.index("forcedPlan = newTrainingRunPlan")
+        save_release = block.index("saveLatestRelease(release)", forced_plan)
+        commit_plan = block.index("commitTrainingRunPlan(python)", save_release)
+        stage_release = block.index("stageRelease(", commit_plan)
+        self.assertLess(forced_plan, save_release)
+        self.assertLess(save_release, commit_plan)
+        self.assertLess(commit_plan, stage_release)
+        self.assertIn("ensureRunLifecycleMatchesRelease(python, release)", block)
+
+    def test_forced_new_run_stages_environment_args_atomically(self):
+        control = read_operator("control.js")
+        stage = control[
+            control.index("async function stageRelease"):
+            control.index("function rolloutTrainerRecord")
+        ]
+        self.assertIn("environmentArgs", stage)
+        self.assertIn("body.environment_args = [...environmentArgs].map(String)", stage)
+
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeStart")
+        end = commands.index("async function invokeStop", start)
+        block = commands[start:end]
+        forced = block.index("if (performForcedNewRun)")
+        forced_stage = block.index("stageRelease(", forced)
+        forced_state = block.index("setDesiredState(", forced_stage)
+        self.assertNotIn("environment_args", block[forced_state:block.index("} else {", forced_state)])
+        ordinary_stage = block.index("stageRelease(", block.index("} else {", forced_state))
+        ordinary_state = block.index("setDesiredState(", ordinary_stage)
+        self.assertNotIn("environment_args", block[ordinary_state:ordinary_state + 180])
+        self.assertIn("waitReleaseRollout(", block[ordinary_stage:])
+
+    def test_environment_args_are_validated_before_any_run_or_control_mutation(self):
+        validation = read_operator("validation.js")
+        self.assertIn("'--rl-validate-options-only'", validation)
+        self.assertIn("waitForExitOrMarker(", validation)
+        self.assertIn("60000", validation)
+        self.assertIn("Unknown RL training option '--rl-validate-options-only'", validation)
+        self.assertIn("RL training command-line validation succeeded:", validation)
+        self.assertIn("RL training configuration ", validation)
+        self.assertIn("Invalid RL environment arguments", validation)
+        self.assertIn("writeTextAtomic(", validation)
+        self.assertIn("extractZip(activePython, archivePath, candidate)", validation)
+        self.assertIn("removeIfExists(candidate, { recursive: true })", validation)
+        self.assertIn("bees-environment-validation-v2", validation)
+
+        server = read_operator("server.js")
+        self.assertIn("BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET", server)
+
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeStart")
+        end = commands.index("async function invokeStop", start)
+        block = commands[start:end]
+        first_validation = block.index("assertRlEnvironmentArgsValid(")
+        new_plan = block.index("newTrainingRunPlan(python", first_validation)
+        stage = block.index("stageRelease(", first_validation)
+        self.assertLess(first_validation, new_plan)
+        self.assertLess(first_validation, stage)
+
+    def test_live_build_and_recovery_validate_environment_before_staging(self):
+        source = read_operator("build.js")
+        reconcile_start = source.index("async function reconcileLatestReleaseBeforeBuild")
+        reconcile_end = source.index("async function invokeBuild", reconcile_start)
+        reconcile = source[reconcile_start:reconcile_end]
+        validate = reconcile.index("assertRlEnvironmentArgsValid(")
+        central_runtime = reconcile.index("prepareCentralReleaseRuntime(", validate)
+        stage = reconcile.index("stageRelease(", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+        self.assertIn("const status = await getStatus", reconcile[central_runtime:])
+
+        build = source[source.index("async function invokeBuild"):]
+        validate = build.index("assertRlEnvironmentArgsValid(")
+        central_runtime = build.index("prepareCentralReleaseRuntime(", validate)
+        stage = build.index("stageRelease(", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+
+    def test_gateway_and_central_launch_intent_is_durable_before_process_creation(self):
+        central = read_operator("central.js")
+        central_start = central.index("async function startCentralAgentIfNeeded")
+        central_block = central[central_start:]
+        self.assertLess(
+            central_block.index("writeJsonAtomic(paths.centralAgentStatePath, launchIntent)"),
+            central_block.index("spawn(bootstrapPython, launchArgs"),
+        )
+
+        tailnet = read_operator("tailnet.js")
+        gateway_start = tailnet.index("async function startTailnetGatewayIfNeeded")
+        gateway_end = tailnet.index("function escapePowerShellSingleQuoted", gateway_start)
+        gateway = tailnet[gateway_start:gateway_end]
+        self.assertLess(
+            gateway.index("writeJsonAtomic(paths.tailnetGatewayStatePath, launchIntent)"),
+            gateway.index("spawn(bridge, launchArgs"),
+        )
+
+    def test_learner_infrastructure_supervisors_have_recoverable_child_ownership(self):
+        tailnet = read_operator("tailnet.js")
+        gateway = tailnet[
+            tailnet.index("async function startTailnetGatewayIfNeeded"):
+            tailnet.index("function escapePowerShellSingleQuoted")
+        ]
+        self.assertIn("'gateway-supervisor'", gateway)
+        self.assertIn("sha256Text('bees-managed-child:' + state.owner_token)", gateway)
+        self.assertIn("'orphaned embedded tailnet gateway child'", gateway)
+
+        server = read_operator("server.js")
+        launch = server[
+            server.index("async function startBeesServerRuntimeProcess"):
+            server.index("async function startBeesServerIfNeeded")
+        ]
+        self.assertIn("'--managed-owner-token', ownerToken", launch)
+        self.assertIn("const ownerToken =", launch)
+
+        reconcile = server[server.index("async function startBeesServerIfNeeded"):]
+        self.assertIn("findManagedProcessByOwnerToken(node, ownerToken, 'BeesServer supervisor')", reconcile)
+        self.assertIn("sha256Text('bees-managed-child:' + ownerToken)", reconcile)
+        self.assertIn("'orphaned BeesServer child'", reconcile)
+
+    def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
+        runtime = read_operator("runtime.js")
+        plan = runtime[
+            runtime.index("function newTrainingRunPlan"):
+            runtime.index("function commitTrainingRunPlan")
+        ]
+        self.assertIn("options.buildId", plan)
+        self.assertIn("options.environmentArgs", plan)
+        self.assertIn("'--build-id'", plan)
+        self.assertIn("'--environment-args-base64'", plan)
+        self.assertNotIn("'--environment-args-json'", plan)
+        self.assertIn("function getPendingForcedNewRunPlan", runtime)
+        self.assertIn("function completeForcedNewRunPlan", runtime)
+
+        build = read_operator("build.js")
+        invoke_build = build[build.index("async function invokeBuild"):]
+        guard = invoke_build.index("getPendingForcedNewRunPlan()")
+        archive = invoke_build.index("archiveTrainingRun(", guard)
+        self.assertLess(guard, archive)
+        self.assertIn("resume/finalize it before creating another build", invoke_build)
+
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeStart")
+        end = commands.index("async function invokeStop", start)
+        invoke_start = commands[start:end]
+        discover = invoke_start.index("getPendingForcedNewRunPlan()")
+        create = invoke_start.index("} else if (options.newRun)", discover)
+        self.assertLess(discover, create)
+        self.assertIn("envArgs = (forcedPlan.environment_args || []).map(String)", invoke_start)
+        self.assertIn("buildId: String(release.build_id)", invoke_start)
+        self.assertIn("environmentArgs: envArgs", invoke_start)
+        self.assertIn("Boolean(options.newRun || resumeForcedNewRun)", invoke_start)
+        final_archive = invoke_start.index("'forced-new-final'")
+        complete = invoke_start.index("completeForcedNewRunPlan(forcedPlan, release)", final_archive)
+        self.assertLess(final_archive, complete)
+
+    def test_legacy_forced_new_plan_is_recovered_once_instead_of_becoming_a_blocker(self):
+        commands = read_operator("commands.js")
+        start = commands.index("async function invokeStart")
+        end = commands.index("async function invokeStop", start)
+        block = commands[start:end]
+        self.assertIn("Resuming a legacy forced-new run plan without a persisted build binding", block)
+        self.assertIn("Legacy forced-new plan has no persisted environment arguments", block)
+
+        runtime = read_operator("runtime.js")
+        complete = runtime[
+            runtime.index("function completeForcedNewRunPlan"):
+            runtime.index("function archiveTrainingRun")
+        ]
+        self.assertIn("const buildMatches = !currentBuild ||", complete)
+
+    def test_start_can_recover_a_persisted_release_from_its_pending_run_plan(self):
+        source = read_operator("runtime.js")
+        start = source.index("function ensureRunLifecycleMatchesRelease")
+        end = source.index("function convertReleaseToForcedRunPlan", start)
+        block = source[start:end]
+        self.assertIn("if (exists(paths.runPlanPath))", block)
+        self.assertIn("String(plan.run_id || '').trim() === releaseRun", block)
+        self.assertIn(
+            "String(plan.compatibility_key || '').trim().toLowerCase() === releaseKey",
+            block,
+        )
+        self.assertIn("commitTrainingRunPlan(python)", block)
+
+    def test_exact_process_start_identity_is_not_truncated_by_javascript_date(self):
+        source = read_operator("common.js")
+        identity = source[
+            source.index("function getProcessIdentity"):
+            source.index("function isProcessAlive")
+        ]
+        compare = source[
+            source.index("function testManagedProcessIdentity"):
+            source.index("function getStateReferencedLivePid")
+        ]
+        self.assertIn("process_start_utc: String(value.process_start_utc || '')", identity)
+        self.assertIn(
+            "String(current.process_start_utc) !== String(state.process_start_utc)",
+            compare,
+        )
+        self.assertNotIn("new Date(", identity)
+        self.assertNotIn("normalizeIso", compare)
+
+    def test_server_cutover_waits_for_old_port_and_fails_closed_on_unknown_owner(self):
+        source = read_operator("server.js")
+        start = source.index("async function startBeesServerIfNeeded")
+        block = source[start:]
+        stop = block.index("stopManagedProcessTree(state, node, 'BeesServer')")
+        wait = block.index("waitForTcpPortClosed(", stop)
+        port_guard = block.index("if (await testTcpPortOpen(", wait)
+        launch = block.index("startBeesServerRuntimeProcess(", port_guard)
+        self.assertLess(stop, wait)
+        self.assertLess(wait, port_guard)
+        self.assertLess(port_guard, launch)
+        self.assertIn("will not be killed automatically", block[port_guard:launch])
+
+    def test_remote_bootstrap_repairs_legacy_bom_before_python_reads_release_json(self):
+        source = read_operator("tailnet.js")
+        start = source.index("function prepareRemoteBootstrap")
+        block = source[start:]
+        repair = block.index("removeUtf8BomIfPresent(paths.latestReleasePath)")
+        publish = block.index("const bundle = invokePythonJson(", repair)
+        self.assertLess(repair, publish)
+
+    def test_portable_go_keeps_curl_and_powershell_download_fallbacks(self):
+        source = read_operator("tailnet.js")
+        start = source.index("function resolvePortableGo")
+        end = source.index("function getTailnetBridgeSourceHash", start)
+        block = source[start:end]
+        self.assertIn("resolveCommand('curl.exe')", block)
+        self.assertIn("Invoke-WebRequest -UseBasicParsing", block)
+        self.assertIn("BEES_DOWNLOAD_URL", block)
+        self.assertIn("BEES_DOWNLOAD_OUTPUT", block)
+
+    def test_diagnostic_timeout_waits_for_process_exit_before_cleanup(self):
+        source = read_operator("diagnostics.js")
+        start = source.index("async function waitForExit")
+        end = source.index("async function invokeCentralDiagnosticBenchmark", start)
+        block = source[start:end]
+        kill = block.index("killProcessTree(child)")
+        wait = block.index("const killDeadline", kill)
+        exit_check = block.index("child.exitCode !== null || child.signalCode !== null", wait)
+        self.assertLess(kill, wait)
+        self.assertLess(wait, exit_check)
+
+    def test_child_spawn_failures_are_contained_at_node_process_boundaries(self):
+        common = read_operator("common.js")
+        self.assertIn("function waitForSpawn", common)
+        self.assertIn("child.once('error'", common)
+
+        central = read_operator("central.js")
+        self.assertIn("await waitForSpawn(child, 'Central training supervisor')", central)
+
+        tailnet = read_operator("tailnet.js")
+        self.assertIn("await waitForSpawn(child, 'Embedded tailnet gateway')", tailnet)
+
+        validation = read_operator("validation.js")
+        self.assertIn("child.on('error'", validation)
+        self.assertIn("child.beesSpawnError", validation)
+
+    def test_validation_only_probe_waits_for_authoritative_exit_before_legacy_marker_fallback(self):
+        source = read_operator("validation.js")
+        start = source.index("async function assertRlEnvironmentArgsValid")
+        block = source[start:]
+        wait_call = block.index("let outcome = await waitForExitOrMarker(")
+        wait_slice = block[wait_call:wait_call + 180]
+        self.assertIn("60000", wait_slice)
+        self.assertIn("null", wait_slice)
+        success = block.index("RL training command-line validation succeeded:", wait_call)
+        legacy = block.index("RL training configuration ", success)
+        self.assertLess(success, legacy)
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
