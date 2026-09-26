@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import unittest
@@ -422,6 +423,50 @@ class ElasticBrokerTests(unittest.TestCase):
                     "control_epoch": 1,
                 }
             )
+
+
+class ActorFailureDiagnosticsTests(unittest.TestCase):
+    def test_managed_stop_request_sets_actor_stop_event(self):
+        with tempfile.TemporaryDirectory() as temp:
+            request = Path(temp) / "managed-stop.request"
+            request.write_text("stop\n", encoding="ascii")
+            stop = actor_worker.threading.Event()
+
+            actor_worker._watch_managed_stop_request(
+                request,
+                stop,
+                poll_seconds=0.0,
+            )
+
+            self.assertTrue(stop.is_set())
+
+    def test_session_failure_reports_context_and_full_traceback(self):
+        stderr = io.StringIO()
+        session = SimpleNamespace(
+            actor_id=2,
+            env_count=3,
+            worker_offset=128,
+            total_envs=7,
+            policy_epoch=11,
+            control_epoch=5,
+            topology_epoch=4,
+            policy_versions={"BeesRL1v1?team=0": 11},
+            manager=SimpleNamespace(env_workers=[]),
+        )
+        error = IndexError("index 15 is out of bounds for axis 0 with size 15")
+
+        with (
+            mock.patch.object(actor_worker.sys, "stderr", stderr),
+            mock.patch.object(actor_worker.traceback, "print_exception") as print_exception,
+        ):
+            actor_worker._report_session_failure(error, session)
+
+        output = stderr.getvalue()
+        self.assertIn("IndexError", output)
+        self.assertIn('"actor_id": 2', output)
+        self.assertIn('"policy_epoch": 11', output)
+        print_exception.assert_called_once()
+        self.assertIs(print_exception.call_args.args[1], error)
 
 
 class CapacityDiagnosticTests(unittest.TestCase):
