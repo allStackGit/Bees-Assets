@@ -830,8 +830,11 @@ class TrainingControlStore {
         const record = this._requiredTrainerRecord(spec);
         if (!record) return false;
         const artifact = this._catalogForRole('dedicated')[spec.platform]?.[pending.build_id];
+        const environmentTransition =
+            Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
+            JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
         const environmentMatches =
-            !Object.prototype.hasOwnProperty.call(pending, 'environment_args') ||
+            !environmentTransition ||
             record.environment_id === environmentArgsIdentity(pending.environment_args);
         return Boolean(artifact) &&
             record.process_state === 'running' &&
