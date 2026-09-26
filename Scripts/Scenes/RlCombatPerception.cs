@@ -853,12 +853,18 @@ internal sealed class RlCombatPerception
         }
 
         Bounds bounds = collider.bounds;
-        Vector2 min = PathfinderObstacleScope.WorldToLevel(level, bounds.min);
-        Vector2 max = PathfinderObstacleScope.WorldToLevel(level, bounds.max);
+        Vector2 worldMin = bounds.min;
+        Vector2 worldMax = bounds.max;
+        Vector2 corner0 = PathfinderObstacleScope.WorldToLevel(level, worldMin);
+        Vector2 corner1 = PathfinderObstacleScope.WorldToLevel(
+            level, new Vector2(worldMin.x, worldMax.y));
+        Vector2 corner2 = PathfinderObstacleScope.WorldToLevel(
+            level, new Vector2(worldMax.x, worldMin.y));
+        Vector2 corner3 = PathfinderObstacleScope.WorldToLevel(level, worldMax);
+        Vector2 min = Vector2.Min(Vector2.Min(corner0, corner1), Vector2.Min(corner2, corner3));
+        Vector2 max = Vector2.Max(Vector2.Max(corner0, corner1), Vector2.Max(corner2, corner3));
         position = (min + max) * 0.5f;
-        halfExtents = new Vector2(
-            Mathf.Abs(max.x - min.x) * 0.5f,
-            Mathf.Abs(max.y - min.y) * 0.5f);
+        halfExtents = (max - min) * 0.5f;
     }
 
     private static Vector2 GetLevelLocalVelocity(Level level, Vector2 worldVelocity)
