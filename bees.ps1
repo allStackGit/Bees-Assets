@@ -2010,9 +2010,15 @@ function Prepare-RemoteBootstrap($Config,[string]$Python,$Release){
     if(-not(Test-Path -LiteralPath $BootstrapBundleScript)){
         throw "Remote bootstrap bundle publisher is missing: $BootstrapBundleScript"
     }
+    $bootstrapBundleCandidate=Join-Path $RuntimeRoot 'bees-bootstrap-bundle.candidate.zip'
+    $windowsLauncherCandidate=Join-Path $RuntimeRoot 'bees-remote-worker.candidate.cmd'
+    $linuxLauncherCandidate=Join-Path $RuntimeRoot 'bees-remote-worker.candidate.sh'
+    foreach($candidate in @($bootstrapBundleCandidate,$windowsLauncherCandidate,$linuxLauncherCandidate)){
+        Remove-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+    }
     $bootstrapBundle=Invoke-PythonJson $Python @(
         $BootstrapBundleScript,
-        '--output',$BootstrapBundlePath,
+        '--output',$bootstrapBundleCandidate,
         '--runtime',$releaseRuntimeArchive,
         '--worker-token',$WorkerTokenPath,
         '--wan-token',$WanTokenPath,
@@ -2027,12 +2033,6 @@ function Prepare-RemoteBootstrap($Config,[string]$Python,$Release){
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
     $utf8NoBom=New-Object Text.UTF8Encoding($false)
-
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Remove-Item -LiteralPath (Join-Path $RemoteRoot $windowsBridgeName) -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $RemoteRoot $linuxBridgeName) -Force -ErrorAction SilentlyContinue
 
     function Format-Base64Payload([byte[]]$Bytes,[int]$Width=120){
         $value=[Convert]::ToBase64String($Bytes)
@@ -2119,7 +2119,7 @@ __WINDOWS_PAYLOAD__
 ::BEES_PAYLOAD_END
 '@
     $windowsCmd=$windowsCmd.Replace('__WINDOWS_PAYLOAD__',$windowsPayload)
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
+    [IO.File]::WriteAllText($windowsLauncherCandidate,$windowsCmd,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
     $linuxReplacements=@{
@@ -2199,7 +2199,21 @@ exit "$BEES_EXIT"
     if($linuxWrapper.StartsWith('#!/usr/bin/env bash\n')){
         throw 'Generated Linux remote launcher contains escaped newlines instead of LF characters.'
     }
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxWrapper,$utf8NoBom)
+    [IO.File]::WriteAllText($linuxLauncherCandidate,$linuxWrapper,$utf8NoBom)
+
+    # Publish only after every candidate has been generated and validated. The bundle goes last:
+    # existing remotes keep seeing the previous complete generation until both copy-and-run
+    # launchers for the next generation are safely in place.
+    Install-AtomicFile $windowsLauncherCandidate (Join-Path $RemoteRoot 'bees-remote-worker.cmd')
+    Install-AtomicFile $linuxLauncherCandidate (Join-Path $RemoteRoot 'bees-remote-worker.sh')
+    Install-AtomicFile $bootstrapBundleCandidate $BootstrapBundlePath
+
+    # Remove only deprecated generated names after the replacement set is durable.
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $windowsBridgeName) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $linuxBridgeName) -Force -ErrorAction SilentlyContinue
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
