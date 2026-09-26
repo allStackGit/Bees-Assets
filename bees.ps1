@@ -77,6 +77,7 @@ $TailnetBridgeManifestPath=Join-Path $TailnetBinRoot 'current.json'
 $TailnetBridgeDistributionRoot=Join-Path $TailnetBinRoot 'Distribution'
 $TailnetGatewayPidPath=Join-Path $TailnetRoot 'gateway.pid'
 $TailnetGatewayStatePath=Join-Path $TailnetRoot 'gateway-state.json'
+$TailnetGatewayHealthPath=Join-Path $TailnetRoot 'gateway-health.txt'
 $TailnetGatewayLogPath=Join-Path $LogsRoot 'Training\tailnet-gateway.out.log'
 $TailnetGatewayErrPath=Join-Path $LogsRoot 'Training\tailnet-gateway.err.log'
 $TailnetAddressPath=Join-Path $TailnetRoot 'learner-ipv4.txt'
@@ -451,6 +452,17 @@ function Ensure-TailnetIdentity($Config){
     }
 }
 
+function Test-TailnetGatewayHealth([int]$MaxAgeSeconds=15){
+    if(-not(Test-Path -LiteralPath $TailnetGatewayHealthPath -PathType Leaf)){ return $false }
+    try {
+        $item=Get-Item -LiteralPath $TailnetGatewayHealthPath -ErrorAction Stop
+        $age=([DateTime]::UtcNow-$item.LastWriteTimeUtc).TotalSeconds
+        return ($age -ge 0 -and $age -le $MaxAgeSeconds)
+    } catch {
+        return $false
+    }
+}
+
 function Start-TailnetGatewayIfNeeded($Config){
     $transport=if($Config.remoteTransport){([string]$Config.remoteTransport).Trim().ToLowerInvariant()}else{'tailnet'}
     if($transport -ne 'tailnet'){ return }
@@ -484,7 +496,8 @@ function Start-TailnetGatewayIfNeeded($Config){
         '--broker-port',[string]$brokerPort,
         '--bootstrap-port',[string]$bootstrapPort,
         '--bootstrap-bundle',$BootstrapBundlePath,
-        '--bootstrap-token',$BootstrapTokenPath
+        '--bootstrap-token',$BootstrapTokenPath,
+        '--health-file',$TailnetGatewayHealthPath
     )
     # The complete worker bootstrap is one atomically replaced outer ZIP. Publishing a new
     # release therefore does not require recycling the private endpoint and a worker can never
@@ -519,11 +532,15 @@ function Start-TailnetGatewayIfNeeded($Config){
             $recordedConfigHash=[string](Get-ObjectPropertyValue $gatewayState 'config_hash')
             $desiredExecutableMatches=Test-ManagedProcessIdentity $gatewayState $bridge
             if($desiredExecutableMatches -and $recordedConfigHash -eq $gatewayConfigHash){
-                $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
-                Write-Host ("Embedded tailnet gateway already healthy at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,[int]$gatewayState.pid)
-                return
+                if(Test-TailnetGatewayHealth){
+                    $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+                    Write-Host ("Embedded tailnet gateway already healthy at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,[int]$gatewayState.pid)
+                    return
+                }
+                Write-Host 'Embedded tailnet gateway process is owned but its service heartbeat is stale; restarting it.'
+            } else {
+                Write-Host 'Embedded tailnet gateway executable/configuration changed; replacing the verified owned gateway.'
             }
-            Write-Host 'Embedded tailnet gateway executable/configuration changed; replacing the verified owned gateway.'
             $null=Stop-ManagedProcessTree $gatewayState $bridge 'embedded tailnet gateway'
         } else {
             $livePid=Get-StateReferencedLivePid $gatewayState
@@ -533,6 +550,7 @@ function Start-TailnetGatewayIfNeeded($Config){
         }
         Remove-Item -LiteralPath $TailnetGatewayStatePath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $TailnetGatewayHealthPath -Force -ErrorAction SilentlyContinue
     } elseif(Test-Path -LiteralPath $TailnetGatewayPidPath){
         $legacyPid=0
         [void][int]::TryParse((Get-Content -LiteralPath $TailnetGatewayPidPath -Raw).Trim(),[ref]$legacyPid)
@@ -555,6 +573,7 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
     Write-AtomicJsonFile $TailnetGatewayStatePath $launchIntent
     Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $TailnetGatewayHealthPath -Force -ErrorAction SilentlyContinue
 
     $startArgs=@{
         FilePath=$bridge
@@ -566,7 +585,7 @@ function Start-TailnetGatewayIfNeeded($Config){
         PassThru=$true
     }
     $p=Start-Process @startArgs
-    Start-Sleep -Milliseconds 750
+    Start-Sleep -Milliseconds 250
     if($p.HasExited){
         throw "Embedded tailnet gateway exited during startup. Check $TailnetGatewayErrPath"
     }
@@ -579,6 +598,19 @@ function Start-TailnetGatewayIfNeeded($Config){
         try{$p.Kill()}catch{}
         throw 'Could not establish the embedded tailnet gateway process identity after launch.'
     }
+
+    $healthDeadline=[DateTime]::UtcNow.AddSeconds(30)
+    while([DateTime]::UtcNow -lt $healthDeadline -and -not(Test-TailnetGatewayHealth)){
+        if($p.HasExited){
+            throw "Embedded tailnet gateway exited before its service heartbeat became healthy. Check $TailnetGatewayErrPath"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if(-not(Test-TailnetGatewayHealth)){
+        try{$null=Stop-ManagedProcessTree $gatewayIdentity $bridge 'unhealthy embedded tailnet gateway'}catch{}
+        throw "Embedded tailnet gateway did not become service-ready within 30 seconds. Check $TailnetGatewayErrPath"
+    }
+
     $activeGatewayState=Add-ManagedIdentityToState $launchIntent $gatewayIdentity 'active'
     Write-AtomicJsonFile $TailnetGatewayStatePath $activeGatewayState
     Write-AtomicPidFile $TailnetGatewayPidPath ([int]$gatewayIdentity.pid)
