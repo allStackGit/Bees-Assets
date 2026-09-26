@@ -22,6 +22,7 @@ const {
     sleep,
     testManagedProcessIdentity,
     testPythonCode,
+    waitForSpawn,
     writeJsonAtomic,
     writeTextAtomic,
 } = require('./common');
@@ -463,6 +464,7 @@ async function startCentralAgentIfNeeded(
         fs.closeSync(stdoutFd);
         fs.closeSync(stderrFd);
     }
+    await waitForSpawn(child, 'Central training supervisor');
     if (!child.pid) throw new Error('Central supervisor process did not return a PID.');
     child.unref();
 
