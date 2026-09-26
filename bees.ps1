@@ -570,7 +570,7 @@ function Assert-UnityProjectAvailableForBatchBuild {
     }
 
     $runningPids=(@($anyUnity|ForEach-Object{[string]$_.Id}) -join ', ')
-    throw "UnityLockfile exists for the Bees project, and Unity process(es) are running (PID(s): $runningPids), but their command lines could not be proven to own B:\Bees. Refusing to remove the lock automatically. Close Unity and retry; if the lock still exists after all Unity processes exit, the next build will remove it as stale."
+    throw "UnityLockfile exists for the Bees project, and Unity process(es) are running (PID(s): $runningPids), but their command lines could not be proven to own $BeesRoot. Refusing to remove the lock automatically. Close Unity and retry; if the lock still exists after all Unity processes exit, the next build will remove it as stale."
 }
 
 function Get-UnityBuildProgressStatus([string]$LogPath){
@@ -1963,9 +1963,10 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
         $lines += ''
 
         $rows=@($s.trainers|ForEach-Object{
-            $m=$_.metrics
-            $cap=$_.worker_capacity
-            $opt=$_.env_optimizer
+            $record=$_
+            $m=Get-ObjectPropertyValue $record 'metrics'
+            $cap=Get-ObjectPropertyValue $record 'worker_capacity'
+            $opt=Get-ObjectPropertyValue $record 'env_optimizer'
             $throughput=Get-ObjectPropertyValue $m 'throughput'
             $windowEpisodes=Get-ObjectPropertyValue $m 'window_episodes'
             $timeoutPct=Get-ObjectPropertyValue $m 'timeout_pct'
@@ -1984,34 +1985,47 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             $sentBytes=Get-ObjectPropertyValue $throughput 'network_sent_bytes_total'
             $receivedBytes=Get-ObjectPropertyValue $throughput 'network_received_bytes_total'
             $networkMibPerS=Get-ObjectPropertyValue $throughput 'network_mib_per_s'
+            $currentEnvs=Get-ObjectPropertyValue $cap 'current_envs'
+            $desiredEnvs=Get-ObjectPropertyValue $opt 'desired_envs'
+            $measuredSps=Get-ObjectPropertyValue $opt 'measured_sps'
+            $baselineSps=Get-ObjectPropertyValue $opt 'baseline_sps'
+            $optimizerPhase=Get-ObjectPropertyValue $opt 'phase'
+            $trainerId=Get-ObjectPropertyValue $record 'trainer_id'
+            $role=Get-ObjectPropertyValue $record 'role'
+            $platform=Get-ObjectPropertyValue $record 'platform'
+            $processState=Get-ObjectPropertyValue $record 'process_state'
+            $stale=Get-ObjectPropertyValue $record 'stale'
+            $buildId=Get-ObjectPropertyValue $record 'build_id'
+            $appliedRevision=Get-ObjectPropertyValue $record 'applied_revision'
+            $ageSeconds=Get-ObjectPropertyValue $record 'age_seconds'
+            $lastError=Get-ObjectPropertyValue $record 'last_error'
             $envDisplay='-'
-            if($cap -and $null -ne $cap.current_envs){
-                $envDisplay=[string]$cap.current_envs
-                if($opt -and $null -ne $opt.desired_envs -and
-                   [int]$opt.desired_envs -ne [int]$cap.current_envs){
-                    $envDisplay="$($cap.current_envs)->$($opt.desired_envs)"
+            if($null -ne $currentEnvs){
+                $envDisplay=[string]$currentEnvs
+                if($null -ne $desiredEnvs -and [int]$desiredEnvs -ne [int]$currentEnvs){
+                    $envDisplay="$currentEnvs->$desiredEnvs"
                 }
             }
             $optimizerExperienceSps='-'
-            if($opt -and $null -ne $opt.measured_sps){
-                $optimizerExperienceSps=('{0:N0}'-f[double]$opt.measured_sps)
-            }elseif($opt -and $null -ne $opt.baseline_sps){
-                $optimizerExperienceSps=('{0:N0}'-f[double]$opt.baseline_sps)
+            if($null -ne $measuredSps){
+                $optimizerExperienceSps=('{0:N0}'-f[double]$measuredSps)
+            }elseif($null -ne $baselineSps){
+                $optimizerExperienceSps=('{0:N0}'-f[double]$baselineSps)
             }
             [pscustomobject]@{
-                Trainer=$_.trainer_id
-                Role=$_.role
-                Platform=$_.platform
-                State=if($_.stale){'STALE'}else{$_.process_state}
+                Trainer=if($trainerId){$trainerId}else{'-'}
+                Role=if($role){$role}else{'-'}
+                Platform=if($platform){$platform}else{'-'}
+                State=if($stale){'STALE'}elseif($processState){$processState}else{'-'}
                 Envs=$envDisplay
                 'OptExp/s'=$optimizerExperienceSps
                 SentGiB=if($null -ne $sentBytes){'{0:N2}'-f([double]$sentBytes/1GB)}else{'-'}
                 RecvGiB=if($null -ne $receivedBytes){'{0:N2}'-f([double]$receivedBytes/1GB)}else{'-'}
                 'MiB/s'=if($null -ne $networkMibPerS){'{0:N2}'-f[double]$networkMibPerS}else{'-'}
-                Opt=if($opt -and $opt.phase){[string]$opt.phase}else{'-'}
-                Build=$_.build_id
-                Rev=$_.applied_revision
-                Age=('{0:N1}s'-f[double]$_.age_seconds)
+                Opt=if($optimizerPhase){[string]$optimizerPhase}else{'-'}
+                Build=if($buildId){$buildId}else{'-'}
+                Rev=if($null -ne $appliedRevision){$appliedRevision}else{'-'}
+                Age=if($null -ne $ageSeconds){'{0:N1}s'-f[double]$ageSeconds}else{'-'}
                 Timeout=if($windowEpisodes -and $null -ne $timeoutPct){'{0:N1}%'-f[double]$timeoutPct}else{'-'}
                 BWin=if($windowEpisodes -and $null -ne $beeWinPct){'{0:N1}%'-f[double]$beeWinPct}else{'-'}
                 HWin=if($windowEpisodes -and $null -ne $humanWinPct){'{0:N1}%'-f[double]$humanWinPct}else{'-'}
@@ -2023,7 +2037,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 HAim=if($humanAimSamples -and $null -ne $humanAimError){'{0:N1}deg'-f[double]$humanAimError}else{'-'}
                 'B<5'=if($beeAimSamples -and $null -ne $beeAimWithin5){'{0:N1}%'-f[double]$beeAimWithin5}else{'-'}
                 'H<5'=if($humanAimSamples -and $null -ne $humanAimWithin5){'{0:N1}%'-f[double]$humanAimWithin5}else{'-'}
-                Error=$_.last_error
+                Error=if($lastError){$lastError}else{''}
             }
         })
         if($rows.Count){
