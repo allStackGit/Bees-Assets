@@ -280,6 +280,40 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+    def test_forced_new_run_waits_for_matching_compatible_pending_release(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+
+        self.assertIn(
+            "Latest compatible release is still rolling out",
+            invoke_start,
+        )
+        self.assertIn(
+            "$status=Wait-ReleaseRollout $config $admin $pendingBuild $pendingRun $pendingKey",
+            invoke_start,
+        )
+        self.assertIn(
+            "if(-not $pendingIncompatible -and",
+            invoke_start,
+        )
+        self.assertIn(
+            "$pendingBuild -eq $latestBuild",
+            invoke_start,
+        )
+        self.assertIn(
+            "$pendingRun -eq $latestRun",
+            invoke_start,
+        )
+        self.assertIn(
+            "$pendingKey -eq $latestKey",
+            invoke_start,
+        )
+        self.assertIn(
+            "Cannot force a new training run while a different or incompatible release rollout is pending",
+            invoke_start,
+        )
+
     def test_forced_new_run_intent_is_persisted_before_server_cutover(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Invoke-Start")
