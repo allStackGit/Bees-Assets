@@ -325,7 +325,7 @@ class ElasticBrokerTests(unittest.TestCase):
             # Model a cached duplicate result captured across generation invalidation.
             broker._remember_accepted_batch_locked(0, payload["batch_id"], 1)
 
-        with self.assertRaisesRegex(base.StaleActorStateError, "control epoch"):
+        with self.assertRaisesRegex(elastic.base.StaleActorStateError, "control epoch"):
             broker.submit_trajectory_batch(payload)
 
     def test_claim_rejects_actor_from_a_different_release(self):
