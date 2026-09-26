@@ -5,13 +5,31 @@ from __future__ import annotations
 import io
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import bees_elastic_wan_actor_worker as actor_worker
+import bees_elastic_wan_actor_session as actor_session
 import bees_elastic_wan_training as elastic
+
+
+class ElasticActorClaimShutdownTests(unittest.TestCase):
+    def test_shutdown_waits_for_claim_keeper_request_to_finish(self):
+        session = actor_session.ElasticActorSession.__new__(
+            actor_session.ElasticActorSession
+        )
+        session._claim_keeper_stop = threading.Event()
+        keeper = mock.Mock()
+        session._claim_keeper = keeper
+
+        session._stop_claim_keeper()
+
+        self.assertTrue(session._claim_keeper_stop.is_set())
+        keeper.join.assert_called_once_with()
+        self.assertIsNone(session._claim_keeper)
 
 
 class FakeObservationSpec:
