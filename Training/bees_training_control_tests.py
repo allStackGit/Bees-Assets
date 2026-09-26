@@ -145,6 +145,43 @@ class TrainingControlClientTests(unittest.TestCase):
             progress.assert_called()
             killpg.assert_not_called()
 
+    def test_remote_managed_process_requests_graceful_stop_before_force_kill(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = mock.Mock()
+            fake.pid = 4344
+            fake.poll.side_effect = [None, None, 0, 0]
+            fake.wait.return_value = 0
+
+            with (
+                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent.subprocess, "Popen", return_value=fake) as popen,
+                mock.patch.object(agent.os, "killpg") as killpg,
+                mock.patch.object(agent.time, "sleep"),
+            ):
+                managed = agent.ManagedProcess()
+                managed.start(
+                    ["python", "actor.py"],
+                    revision=1,
+                    build_sha256="a" * 64,
+                    build_id="build-a",
+                    run_id="run-a",
+                    compatibility_key="b" * 64,
+                    state_file=root / "control-state.json",
+                    environment_args=(),
+                    graceful_remote_stop=True,
+                )
+                environment = popen.call_args.kwargs["env"]
+                stop_file = Path(environment[agent.MANAGED_STOP_FILE_ENV])
+                self.assertFalse(stop_file.exists())
+
+                progress = mock.Mock()
+                managed.stop(progress_callback=progress)
+
+            self.assertFalse(stop_file.exists())
+            progress.assert_called()
+            killpg.assert_not_called()
+
     def test_central_checkpoint_timeout_refuses_force_kill(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
