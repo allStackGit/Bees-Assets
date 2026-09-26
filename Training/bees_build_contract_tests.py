@@ -970,6 +970,72 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             invoke_start,
         )
 
+    def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        helper_start = source.index("function New-TrainingRunPlan")
+        helper_end = source.index("function Get-TrainingCompatibilityFingerprint", helper_start)
+        helpers = source[helper_start:helper_end]
+        self.assertIn("[string]$BuildId=''", helpers)
+        self.assertIn("[string[]]$EnvironmentArgs=@()", helpers)
+        self.assertIn("'--build-id',$BuildId", helpers)
+        self.assertIn("'--environment-args-json',$environmentArgsJson", helpers)
+        self.assertIn("function Get-PendingForcedNewRunPlan", helpers)
+        self.assertIn("function Complete-ForcedNewRunPlan", helpers)
+
+        build_start = source.index("function Invoke-Build")
+        build_end = source.index("function Invoke-Server", build_start)
+        build = source[build_start:build_end]
+        guard = build.index("$unfinishedForcedPlan=Get-PendingForcedNewRunPlan")
+        archive = build.index("Archive-TrainingRun", guard)
+        self.assertLess(guard, archive)
+        self.assertIn("resume/finalize it before creating another build", build)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        discover = invoke_start.index("$forcedPlan=Get-PendingForcedNewRunPlan")
+        create = invoke_start.index("} elseif($NewRun){", discover)
+        self.assertLess(discover, create)
+        self.assertIn(
+            "$envArgs=@(@($persistedEnvironmentArgs) | "
+            "ForEach-Object {[string]$_})",
+            invoke_start,
+        )
+        self.assertIn(
+            "New-TrainingRunPlan $python -ForceNew "
+            "-BuildId ([string]$release.build_id) -EnvironmentArgs @($envArgs)",
+            invoke_start,
+        )
+        self.assertIn("$performForcedNewRun=($NewRun -or $resumeForcedNewRun)", invoke_start)
+        self.assertIn("if($performForcedNewRun)", invoke_start)
+
+        final_archive = invoke_start.index(
+            "Archive-TrainingRun $python $outgoingRun 'forced-new-final'"
+        )
+        complete = invoke_start.index(
+            "Complete-ForcedNewRunPlan $forcedPlan $release",
+            final_archive,
+        )
+        self.assertLess(final_archive, complete)
+
+    def test_legacy_forced_new_plan_is_recovered_once_instead_of_becoming_a_blocker(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+
+        self.assertIn(
+            "Resuming a legacy forced-new run plan without a persisted build binding",
+            invoke_start,
+        )
+        self.assertIn(
+            "Legacy forced-new plan has no persisted environment arguments",
+            invoke_start,
+        )
+        helpers_start = source.index("function Complete-ForcedNewRunPlan")
+        helpers_end = source.index("function Get-TrainingCompatibilityFingerprint", helpers_start)
+        helpers = source[helpers_start:helpers_end]
+        self.assertIn("$buildMatches=(-not $currentBuild", helpers)
+
     def test_release_wait_requires_build_run_and_compatibility_identity(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Wait-ReleaseRollout")
