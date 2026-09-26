@@ -437,6 +437,18 @@ class BrokerInvariantTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             self.broker.next_trajectory_batch(0.001)
 
+    def test_discarded_batch_retry_is_rejected_as_stale(self):
+        payload = self._payload(0, "agent_2-12")
+        payload["batch_id"] = "accepted-before-reset"
+        self.assertEqual(self.broker.submit_trajectory_batch(payload), 1)
+
+        self.broker.request_reset({"difficulty": 2})
+
+        # The retry may happen when the original HTTP response was lost. Since
+        # reset discarded the queued batch, it must not receive a duplicate ACK.
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            self.broker.submit_trajectory_batch(payload)
+
     def test_behavior_spec_mismatch_between_actors_fails_closed(self):
         different = FakeBehaviorSpec()
         different.observation_specs = (FakeObservationSpec((5,)),)
