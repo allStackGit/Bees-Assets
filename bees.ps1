@@ -1329,6 +1329,67 @@ function Wait-ReleaseRollout(
     throw "Timed out waiting for release $BuildId run=$RunId to finish coordinated rollout."
 }
 
+function Reconcile-LatestReleaseBeforeBuild(
+    $Config,
+    [string]$Python,
+    [string]$Unity,
+    [string]$AdminToken,
+    $Release
+){
+    Ensure-RunLifecycleMatchesRelease $Python $Release
+    $centralRuntime=Prepare-CentralReleaseRuntime $Config $Python $Unity $Release
+    Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
+
+    $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+    $pending=$status.desired.pending_release
+    $releaseBuild=([string]$Release.build_id).Trim()
+    $releaseRun=([string]$Release.run_id).Trim()
+    $releaseKey=([string]$Release.compatibility_key).Trim().ToLowerInvariant()
+
+    if($pending){
+        $pendingBuild=([string]$pending.build_id).Trim()
+        $pendingRun=([string]$pending.run_id).Trim()
+        $pendingKey=([string]$pending.compatibility_key).Trim().ToLowerInvariant()
+        if($pendingBuild -ne $releaseBuild -or
+           $pendingRun -ne $releaseRun -or
+           $pendingKey -ne $releaseKey){
+            throw "Training control has a pending release that differs from latest release metadata. pending=$pendingBuild/$pendingRun latest=$releaseBuild/$releaseRun"
+        }
+        Write-Host "Previous release is still rolling out (phase=$($pending.phase)); finishing build $releaseBuild before compiling another release."
+        $null=Wait-ReleaseRollout $Config $AdminToken $releaseBuild $releaseRun $releaseKey
+        return
+    }
+
+    $canonicalBuild=([string]$status.desired.canonical_build_id).Trim()
+    $canonicalRun=([string]$status.desired.run_id).Trim()
+    $canonicalKey=([string]$status.desired.compatibility_key).Trim().ToLowerInvariant()
+    if($canonicalBuild -eq $releaseBuild -and
+       $canonicalRun -eq $releaseRun -and
+       $canonicalKey -eq $releaseKey){
+        return
+    }
+
+    # A prior build can be interrupted after persisting its immutable release but before publishing
+    # or staging it. Recover that release instead of silently replacing its durable intent with a
+    # newer build.
+    Write-Host "Latest release $releaseBuild was persisted but is not canonical; reconciling it before compiling another release."
+    Ensure-TailnetIdentity $Config
+    Prepare-RemoteBootstrap $Config $Python $Release
+    Publish-Release $Config $AdminToken $Release
+    Start-TailnetGatewayIfNeeded $Config
+    $staged=Stage-Release $Config $AdminToken $Release
+    if($staged.pending_release){
+        $null=Wait-ReleaseRollout $Config $AdminToken $releaseBuild $releaseRun $releaseKey
+    } else {
+        $after=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+        if(([string]$after.desired.canonical_build_id).Trim() -ne $releaseBuild -or
+           ([string]$after.desired.run_id).Trim() -ne $releaseRun -or
+           ([string]$after.desired.compatibility_key).Trim().ToLowerInvariant() -ne $releaseKey){
+            throw "Previous release reconciliation returned without making $releaseBuild/$releaseRun canonical."
+        }
+    }
+}
+
 function Invoke-Build {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
@@ -1342,9 +1403,8 @@ function Invoke-Build {
     $unity=Resolve-UnityEditor $config
     Assert-UnityProjectAvailableForBatchBuild
 
-    # Converge an already-running cluster onto the stable central supervisor before creating a
-    # newer release. This one-time migration happens while latest-release still describes the
-    # canonical runtime, so the fallback child command can never be paired with the wrong build.
+    # Reconcile any previously persisted release before creating a newer one. This covers both an
+    # in-flight rollout and the crash window after latest-release was saved but before it was staged.
     if((Test-Path -LiteralPath $LatestReleasePath) -and (Test-Path -LiteralPath $AdminTokenPath)){
         $preBuildAdmin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
         $preBuildControlOnline=if($preBuildAdmin){Test-Control ([string]$config.controlUrl) $preBuildAdmin}else{$false}
@@ -1352,10 +1412,12 @@ function Invoke-Build {
         if($preBuildAdmin -and ($preBuildControlOnline -or $preBuildManagedServerExists)){
             $preBuildWorker=Ensure-TokenFile $WorkerTokenPath
             Start-BeesServerIfNeeded $config $preBuildWorker $preBuildAdmin
+            if(-not(Test-Control ([string]$config.controlUrl) $preBuildAdmin)){
+                throw 'Managed BeesServer reconciliation completed without a reachable training-control endpoint before build.'
+            }
             $currentRelease=Get-LatestRelease
             if($currentRelease.run_id -and $currentRelease.compatibility_key){
-                $currentCentralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $currentRelease
-                Start-CentralAgentIfNeeded $config $python $unity $currentRelease $currentCentralRuntime
+                Reconcile-LatestReleaseBeforeBuild $config $python $unity $preBuildAdmin $currentRelease
             }
         }
     }
