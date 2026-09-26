@@ -438,7 +438,7 @@ class TrainingControlClientTests(unittest.TestCase):
 
             with (
                 mock.patch.object(agent.os, "name", "posix"),
-                mock.patch.object(agent.subprocess, "Popen", return_value=fake),
+                mock.patch.object(process_safety.subprocess, "Popen", return_value=fake),
                 mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent, "GRACEFUL_CHECKPOINT_STOP_SECONDS", 0.0),
             ):
