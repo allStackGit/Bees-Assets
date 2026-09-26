@@ -778,14 +778,14 @@ class WanActorBroker:
         ):
             raise ValueError("trajectory batch_id must be a non-empty string up to 64 characters")
         with self._condition:
+            if payload.get("control_epoch") != self._control_epoch:
+                raise StaleActorStateError(
+                    f"trajectory control epoch {payload.get('control_epoch')!r} != {self._control_epoch}"
+                )
+            self._validate_policy_versions(payload.get("policy_versions"))
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
-        if duplicate_count is not None:
-            return duplicate_count
-        if payload.get("control_epoch") != self.control_epoch:
-            raise StaleActorStateError(
-                f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
-            )
-        self._validate_policy_versions(payload.get("policy_versions"))
+            if duplicate_count is not None:
+                return duplicate_count
         trajectories = payload.get("trajectories")
         if not isinstance(trajectories, list) or not trajectories:
             raise ValueError("trajectory batch must contain at least one trajectory")
