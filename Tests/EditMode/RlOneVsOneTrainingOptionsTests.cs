@@ -124,6 +124,8 @@ namespace Bees.Tests.EditMode
             AssertParseFails("--rl-episode-timeout", "0");
             AssertParseFails("--rl-ships-per-side", "0");
             AssertParseFails("--rl-bee-ship-types", "NotAShip");
+            AssertParseFails("--rl-matchup-mode", "0");
+            AssertParseFails("--rl-matchup-mode=999");
             AssertParseFails("--rl-ships-per-side", "3", "--rl-bee-ship-types", "Wasp,Hornet");
             AssertParseFails("--rl-typo", "1");
         }
