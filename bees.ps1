@@ -1149,6 +1149,24 @@ function Prepare-BeesServerRuntime([string]$Node){
             if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
                 Remove-Item -LiteralPath $candidate -Recurse -Force
             } else {
+                $activeState=$null
+                if(Test-Path -LiteralPath $ServerStatePath){
+                    try{$activeState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$activeState=$null}
+                }
+                $activeRuntime=if($null -ne $activeState){([string](Get-ObjectPropertyValue $activeState 'runtime_root')).Trim()}else{''}
+                $sameActiveRuntime=$false
+                if($activeRuntime){
+                    try{
+                        $sameActiveRuntime=[string]::Equals(
+                            [IO.Path]::GetFullPath($activeRuntime),
+                            [IO.Path]::GetFullPath($runtimeRoot),
+                            [StringComparison]::OrdinalIgnoreCase
+                        )
+                    }catch{$sameActiveRuntime=$false}
+                }
+                if($sameActiveRuntime -and (Test-ManagedProcessIdentity $activeState)){
+                    throw "Active BeesServer runtime failed staged verification; refusing to mutate its live runtime directory: $runtimeRoot"
+                }
                 Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
                 Move-Item -LiteralPath $candidate -Destination $runtimeRoot
             }
