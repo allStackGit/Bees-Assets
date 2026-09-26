@@ -845,6 +845,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--runtime-ready-file", default="")
     parser.add_argument("--runtime-cutover-pointer", default="")
+    parser.add_argument("--runtime-state-file", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
@@ -933,11 +934,62 @@ def _runtime_launch_template(
     pointer_path: str,
     build_id: str,
     fallback: Sequence[str],
+    cache: Optional[dict[str, list[str]]] = None,
 ) -> list[str]:
+    target_build = str(build_id)
     pointer = _load_runtime_cutover_pointer(pointer_path)
-    if pointer is None or pointer["build_id"] != str(build_id):
-        return list(fallback)
-    return list(pointer["launch_command"])
+    if pointer is not None:
+        pointer_command = list(pointer["launch_command"])
+        if cache is not None:
+            cache[pointer["build_id"]] = pointer_command
+        if pointer["build_id"] == target_build:
+            return pointer_command
+
+    if cache is not None and target_build in cache:
+        return list(cache[target_build])
+
+    fallback_command = list(fallback)
+    if cache is not None and target_build:
+        # The stable supervisor is launched while its fallback release is canonical. Remember
+        # that association so replacing the pointer with a pending release cannot make the current
+        # learner fall back to some later/older runtime while the rollout barrier is still preparing.
+        cache[target_build] = fallback_command
+    return fallback_command
+
+
+def _write_runtime_state(
+    path_value: str,
+    *,
+    build_id: str,
+    command: Sequence[str],
+) -> None:
+    if not str(path_value).strip() or len(command) < 2:
+        return
+    python_executable = Path(command[0]).expanduser().resolve()
+    service_path = Path(command[1]).expanduser().resolve()
+    runtime_root = service_path.parent
+    version = ""
+    marker = runtime_root / "bees-runtime-version.txt"
+    try:
+        version = marker.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        version = ""
+    value = {
+        "schema_version": 1,
+        "build_id": str(build_id),
+        "python_executable": str(python_executable),
+        "runtime_root": str(runtime_root),
+        "runtime_version": version,
+        "updated_unix_seconds": time.time(),
+    }
+    path = Path(path_value).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -967,6 +1019,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"worker-managed launch command must contain {WORKER_ENVS_PLACEHOLDER}"
             )
         token = load_token(args.token_file)
+        runtime_launch_commands: dict[str, list[str]] = {}
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -1200,6 +1253,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.runtime_cutover_pointer,
                             str(active_build["build_id"]),
                             command_template,
+                            runtime_launch_commands,
                         )
                         command = render_command(
                             runtime_command_template,
@@ -1224,6 +1278,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 and args.trainer_id == "central-learner"
                             ),
                             stop_progress=stopping_keepalive,
+                        )
+                        _write_runtime_state(
+                            args.runtime_state_file,
+                            build_id=str(active_build["build_id"]),
+                            command=command,
                         )
                         applied_revision = revision
                     elif descriptor and full_game_update_requires_deferred_restart(
@@ -1269,6 +1328,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.runtime_cutover_pointer,
                             str(active_build["build_id"]),
                             command_template,
+                            runtime_launch_commands,
                         )
                         command = render_command(
                             runtime_command_template,
@@ -1308,6 +1368,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 ),
                                 stop_progress=stopping_keepalive,
                             )
+                        _write_runtime_state(
+                            args.runtime_state_file,
+                            build_id=str(active_build["build_id"]),
+                            command=managed.command or command,
+                        )
                         applied_revision = revision
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
