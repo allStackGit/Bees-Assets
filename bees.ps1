@@ -3398,8 +3398,14 @@ function Invoke-Start {
     }
 
     Write-Host "Training requested: build=$($release.build_id) run=$($release.run_id) revision=$($desired.revision)"
-    if($staged.pending_release){
-        Write-Host "Release rollout: $($staged.pending_release.phase) incompatible=$($staged.pending_release.incompatible)"
+    $finalStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+    $finalPending=Get-ObjectPropertyValue (Get-ObjectPropertyValue $finalStatus 'desired') 'pending_release'
+    if($null -ne $finalPending){
+        $finalPhase=Get-ObjectPropertyValue $finalPending 'phase'
+        $finalIncompatible=Get-ObjectPropertyValue $finalPending 'incompatible'
+        Write-Host "Release rollout: $finalPhase incompatible=$finalIncompatible"
+    } else {
+        Write-Host 'Release rollout: complete'
     }
     Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
     Start-Sleep -Seconds 1
@@ -3484,14 +3490,29 @@ function Invoke-Stop {
     }
 }
 
-function Get-LocalLearnerStats {
+function Get-LocalLearnerStats([string]$RunId='') {
     $elo=$null; $step=$null; $reward=$null; $averageStepsPerSecond=$null; $liveStepsPerSecond=$null
     $files=@()
-    foreach($root in @((Join-Path $LogsRoot 'Training'),(Join-Path $TrainingRoot 'trainer-results'))){
-        if(Test-Path -LiteralPath $root){
-            $files += @(Get-ChildItem -LiteralPath $root -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)
-        }
+    $operatorLogRoot=Join-Path $LogsRoot 'Training'
+    if(Test-Path -LiteralPath $operatorLogRoot){
+        # Operator logs are flat. Do not recursively walk historical validation/runtime trees.
+        $files += @(Get-ChildItem -LiteralPath $operatorLogRoot -Filter '*.log' -File -ErrorAction SilentlyContinue)
     }
+
+    $trainerResultsRoot=Join-Path $TrainingRoot 'trainer-results'
+    if($RunId){
+        $trainerResultsRoot=Join-Path $trainerResultsRoot $RunId
+    }
+    if(Test-Path -LiteralPath $trainerResultsRoot){
+        # The results tree is run-scoped and can accumulate thousands of checkpoints over time.
+        # Only the active run is relevant to the dashboard.
+        $files += @(Get-ChildItem -LiteralPath $trainerResultsRoot -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)
+    }
+
+    # Reading 1,000 lines from every historical log made even a one-shot start/status command
+    # appear hung on long-lived installations. Current learner/service logs are continuously
+    # updated, so a small newest-first window is sufficient and keeps dashboard work bounded.
+    $files=@($files | Sort-Object LastWriteTimeUtc -Descending,FullName | Select-Object -First 24)
     foreach($file in @($files | Sort-Object LastWriteTimeUtc,FullName)){
         $firstStep=$null; $firstElapsed=$null; $previousStep=$null; $previousElapsed=$null
         $fileAverageStepsPerSecond=$null; $fileLiveStepsPerSecond=$null
@@ -3740,7 +3761,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             }
         }
 
-        $l=Get-LocalLearnerStats
+        $l=Get-LocalLearnerStats ([string]$runId)
         $lines += ''
         $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  LearnerAvgStep/s={3}  LearnerLiveStep/s={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
         $lines += 'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
