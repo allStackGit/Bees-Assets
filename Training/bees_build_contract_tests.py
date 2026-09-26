@@ -679,6 +679,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertLess(keep, stop)
 
+    def test_live_build_always_reconciles_private_gateway(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        prepare = block.index("Prepare-RemoteBootstrap $config $python $release")
+        reconcile = block.index("Start-TailnetGatewayIfNeeded $config", prepare)
+        stage = block.index("$staged=Stage-Release", reconcile)
+        self.assertLess(prepare, reconcile)
+        self.assertLess(reconcile, stage)
+
+        between = block[prepare:reconcile]
+        self.assertNotIn(
+            "if($tailnetBridgeChanged){\n"
+            "                    Start-TailnetGatewayIfNeeded $config",
+            between,
+        )
+        self.assertIn(
+            "self-heals a crashed/missing gateway",
+            block,
+        )
+
     def test_remote_bootstrap_is_published_as_one_atomic_generation(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
