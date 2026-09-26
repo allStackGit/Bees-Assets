@@ -306,7 +306,12 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             CachedShootingStrategy = strategy;
             CachedTargetingQueue = _sortedQueue;
             HasCachedChanged = false;
-            if (!IsUsingCachedTargetingQueue)
+            bool refreshDynamicPriority = IsUsingCachedTargetingQueue &&
+                (strategy == ConfigData.ShootingStrategyTypes.Revenge ||
+                 strategy == ConfigData.ShootingStrategyTypes.MostDangerous ||
+                 strategy == ConfigData.ShootingStrategyTypes.LeastHealth ||
+                 strategy == ConfigData.ShootingStrategyTypes.MostHealth);
+            if (!IsUsingCachedTargetingQueue || refreshDynamicPriority)
             {
                 switch (strategy)
                 {
