@@ -86,9 +86,10 @@ function queryUnityProcesses(projectPath) {
     const env = { ...process.env, BEES_UNITY_PROJECT: path.resolve(projectPath) };
     const script = [
         '$n=[IO.Path]::GetFullPath($env:BEES_UNITY_PROJECT).TrimEnd([char[]]"\\\\/");',
-        '$p=@(Get-CimInstance Win32_Process -Filter "Name = \'Unity.exe\'" -ErrorAction SilentlyContinue);',
+        '$p=@();try{$p=@(Get-CimInstance Win32_Process -Filter "Name = \'Unity.exe\'" -ErrorAction Stop)}catch{};',
+        '$live=@(Get-Process -Name \'Unity\' -ErrorAction SilentlyContinue);',
         '$v=[ordered]@{',
-        'all=@($p|ForEach-Object{[int]$_.ProcessId});',
+        'all=@($live|ForEach-Object{[int]$_.Id});',
         'project=@($p|Where-Object{$_.CommandLine -and ([string]$_.CommandLine).IndexOf($n,[StringComparison]::OrdinalIgnoreCase) -ge 0}|ForEach-Object{[ordered]@{pid=[int]$_.ProcessId;command_line=[string]$_.CommandLine}})',
         '};$v|ConvertTo-Json -Compress -Depth 4',
     ].join('');
