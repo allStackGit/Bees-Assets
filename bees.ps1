@@ -1997,7 +1997,8 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 $rev=Get-ObjectPropertyValue $r 'applied_revision'
                 $error=[string](Get-ObjectPropertyValue $r 'last_error')
                 $ready=($build -eq [string]$pending.build_id -or $prepared -eq [string]$pending.build_id)
-                if($pending.phase -eq 'preparing' -and -not $ready){
+                $phaseRevision=Get-ObjectPropertyValue $pending 'phase_revision'
+                if($pending.phase -eq 'preparing' -and ($stale -or -not $ready)){
                     $reason=if($stale){'STALE'}else{'not prepared'}
                     $blockers += ("{0}[{1}]: {2} state={3} age={4:N1}s build={5} prepared={6} rev={7}{8}" -f
                         $requiredId,$requiredPlatform,$reason,$state,[double]$age,
@@ -2006,7 +2007,8 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($null -ne $rev){$rev}else{'-'}),
                         $(if($error){" error=$error"}else{''}))
                 }elseif($pending.phase -eq 'rolling' -and
-                        ($stale -or $build -ne [string]$pending.build_id -or $state -ne 'running' -or $error)){
+                        ($stale -or $build -ne [string]$pending.build_id -or $state -ne 'running' -or
+                         $error -or ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: rollout state={2} age={3:N1}s build={4} prepared={5} rev={6}{7}" -f
                         $requiredId,$requiredPlatform,$state,[double]$age,
                         $(if($build){$build}else{'-'}),
@@ -2014,7 +2016,8 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($null -ne $rev){$rev}else{'-'}),
                         $(if($error){" error=$error"}else{''}))
                 }elseif($pending.phase -eq 'stopping' -and
-                        ($stale -or $state -ne 'stopped')){
+                        ($stale -or $state -ne 'stopped' -or
+                         ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: stop state={2} age={3:N1}s build={4} rev={5}{6}" -f
                         $requiredId,$requiredPlatform,$state,[double]$age,
                         $(if($build){$build}else{'-'}),
