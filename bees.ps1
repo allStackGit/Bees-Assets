@@ -852,21 +852,38 @@ function Get-NamedFileSetSha256([object[]]$Entries){
 }
 
 function Get-BeesServerRuntimeSourceHash {
-    $entries=@(
-        Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js' -File |
-            ForEach-Object {
-                [pscustomobject]@{
-                    name=$_.Name
-                    path=$_.FullName
-                }
-            }
+    # Hash only files that participate in the managed server process. Test runners,
+    # maintenance CLIs, migration/recovery tools, lint config, and documentation must
+    # not recycle a healthy training control plane merely because they changed.
+    $runtimeFiles=@(
+        'start-server.js',
+        'server.js',
+        'siServerDev.js',
+        'serverContracts.js',
+        'database.js',
+        'gamePersistence.js',
+        'outcomeReservations.js',
+        'campaignCheckpoint.js',
+        'security.js',
+        'cachePersistence.js',
+        'rlDemonstrationUploads.js',
+        'rlTelemetryUploadSecurity.js',
+        'rlTelemetryUploads.js',
+        'rlModelDistributionSecurity.js',
+        'rlModelDistribution.js',
+        'trainingControl.js',
+        'trainingEnvOptimizer.js',
+        'package.json',
+        'package-lock.json'
     )
-    foreach($name in @('package.json','package-lock.json')){
-        $entries += [pscustomobject]@{
-            name=$name
-            path=(Join-Path $ServerRoot $name)
+    $entries=@(
+        foreach($name in $runtimeFiles){
+            [pscustomobject]@{
+                name=$name
+                path=(Join-Path $ServerRoot $name)
+            }
         }
-    }
+    )
     Get-NamedFileSetSha256 $entries
 }
 
