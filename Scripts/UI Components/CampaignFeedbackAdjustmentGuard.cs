@@ -109,7 +109,7 @@ namespace Assets.Scripts.UIComponents
 
             bool selectingPage = Contains(text, "select an entire squad");
             bool settingsPage = Contains(text, "flight pattern") && Contains(text, "shooting strateg");
-            bool squadNumberPage = Contains(text, "Squads are assigned number hotkeys");
+            bool squadNumberPage = Contains(text, "number hotkeys");
             bool tacticalSequencePage = squadNumberPage ||
                                         Contains(text, "selected ships’ range") ||
                                         Contains(text, "selected ships' range") ||
