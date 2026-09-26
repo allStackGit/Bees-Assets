@@ -314,7 +314,7 @@ namespace Assets.Scripts.Levels
             {
                 HeapEntry entry = open.Pop();
                 int currentIndex = entry.Node;
-                if (entry.TotalCost != costs[currentIndex] || entry.HeuristicCost != tieBreakers[currentIndex] ||
+                if (entry.TotalCost != totalCost[currentIndex] || entry.HeuristicCost != heuristicCost[currentIndex] ||
                     closedStamp[currentIndex] == searchStamp)
                 {
                     continue;
@@ -398,8 +398,10 @@ namespace Assets.Scripts.Levels
 
             while (open.Count > 0 && Totals[threadIndex].Elapsed.TotalSeconds < TimeLimit)
             {
-                int currentIndex = open.Pop();
-                if (closedStamp[currentIndex] == searchStamp)
+                HeapEntry entry = open.Pop();
+                int currentIndex = entry.Node;
+                if (entry.TotalCost != costs[currentIndex] || entry.HeuristicCost != tieBreakers[currentIndex] ||
+                    closedStamp[currentIndex] == searchStamp)
                 {
                     continue;
                 }
