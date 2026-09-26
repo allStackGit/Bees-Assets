@@ -163,9 +163,9 @@ class EpisodeLogMetrics:
         except OSError:
             return
         data = raw_data
-        if first_read and position > 0 and previous_byte not in (b"\n", b"\\r"):
+        if first_read and position > 0 and previous_byte not in (b"\n", b"\r"):
             separators = [
-                index for index in (data.find(b"\n"), data.find(b"\\r"))
+                index for index in (data.find(b"\n"), data.find(b"\r"))
                 if index >= 0
             ]
             data = data[min(separators) + 1:] if separators else b""
