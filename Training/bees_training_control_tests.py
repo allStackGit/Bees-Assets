@@ -188,6 +188,7 @@ class TrainingControlClientTests(unittest.TestCase):
             prepared_build_id="",
             preparation_error="runtime download failed",
             last_error="runtime download failed",
+            environment_id="e" * 64,
         )
 
         self.assertEqual(
@@ -196,6 +197,7 @@ class TrainingControlClientTests(unittest.TestCase):
         )
         self.assertEqual(heartbeat["last_error"], "runtime download failed")
         self.assertEqual(heartbeat["prepared_build_id"], "")
+        self.assertEqual(heartbeat["environment_id"], "e" * 64)
 
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
