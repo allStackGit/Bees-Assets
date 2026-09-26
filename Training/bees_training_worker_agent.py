@@ -120,7 +120,9 @@ class EpisodeLogMetrics:
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            for log_path in sorted(scan_root.rglob("Player-*.log")):
+            bounded_logs = sorted(scan_root.rglob("BeesEpisode-*.log"))
+            log_paths = bounded_logs or sorted(scan_root.rglob("Player-*.log"))
+            for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
 
