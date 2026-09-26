@@ -16,8 +16,10 @@ const {
     paths,
     powershellExecutable,
     readJson,
+    removeUtf8BomIfPresent,
     readText,
     removeIfExists,
+    resolveCommand,
     runChecked,
     runSync,
     samePath,
@@ -37,7 +39,7 @@ const GO_WINDOWS_ZIP_SHA256 = 'a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9
 
 function resolvePortableGo() {
     try {
-        return require('./common').resolveCommand('go');
+        return resolveCommand('go');
     } catch (_) {}
 
     if (process.platform !== 'win32') {
@@ -55,11 +57,32 @@ function resolvePortableGo() {
         const temporary = archive + '.download';
         const url = 'https://go.dev/dl/go' + GO_VERSION + '.windows-amd64.zip';
         console.log('Downloading portable Go ' + GO_VERSION + ' for the embedded Bees tailnet bridge...');
-        const curl = require('./common').resolveCommand('curl.exe');
-        runChecked(curl, [
-            '--fail', '--location', '--retry', '3', '--retry-delay', '2',
-            '--continue-at', '-', '--output', temporary, url,
-        ], toolchains);
+        let curl = '';
+        try { curl = resolveCommand('curl.exe'); } catch (_) {}
+        if (curl) {
+            // Keep a partial download so an interrupted bootstrap can resume.
+            runChecked(curl, [
+                '--fail', '--location', '--retry', '3', '--retry-delay', '2',
+                '--continue-at', '-', '--output', temporary, url,
+            ], toolchains);
+        } else {
+            // Preserve the pre-refactor fallback for Windows installations without curl.exe.
+            removeIfExists(temporary);
+            const ps = powershellExecutable();
+            runChecked(
+                ps,
+                [
+                    '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+                    'Invoke-WebRequest -UseBasicParsing -Uri $env:BEES_DOWNLOAD_URL -OutFile $env:BEES_DOWNLOAD_OUTPUT',
+                ],
+                toolchains,
+                {
+                    ...process.env,
+                    BEES_DOWNLOAD_URL: url,
+                    BEES_DOWNLOAD_OUTPUT: temporary,
+                },
+            );
+        }
         const actual = sha256File(temporary);
         if (actual !== GO_WINDOWS_ZIP_SHA256) {
             removeIfExists(temporary);
@@ -533,6 +556,11 @@ function prepareRemoteBootstrap(config, python, release) {
     const windowsCandidate = path.join(paths.runtimeRoot, 'bees-remote-worker.candidate.cmd');
     const linuxCandidate = path.join(paths.runtimeRoot, 'bees-remote-worker.candidate.sh');
     for (const candidate of [bundleCandidate, windowsCandidate, linuxCandidate]) removeIfExists(candidate);
+
+    // Releases written by Windows PowerShell 5.1 before the UTF-8 fix may still carry a BOM.
+    // The Python bootstrap publisher reads strict UTF-8 JSON, so repair that legacy artifact at
+    // the boundary before it is embedded for remotes.
+    removeUtf8BomIfPresent(paths.latestReleasePath);
 
     const bundle = invokePythonJson(python, [
         paths.bootstrapBundleScript,
