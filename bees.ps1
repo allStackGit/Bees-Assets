@@ -1146,14 +1146,6 @@ function Get-PendingForcedNewRunPlan {
     if($null -eq $plan -or -not [bool](Get-ObjectPropertyValue $plan 'forced_new_run')){
         return $null
     }
-    $buildId=([string](Get-ObjectPropertyValue $plan 'build_id')).Trim()
-    if(-not $buildId){
-        throw "Pending forced-new run plan predates build-bound recovery and cannot be resumed safely: $RunPlanPath"
-    }
-    $environmentArgs=Get-ObjectPropertyValue $plan 'environment_args'
-    if($null -eq $environmentArgs){
-        throw "Pending forced-new run plan has no persisted environment arguments: $RunPlanPath"
-    }
     $plan
 }
 
@@ -1172,9 +1164,11 @@ function Complete-ForcedNewRunPlan($Plan,$Release){
     $current=$null
     try { $current=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
     catch { throw "Pending training run plan is unreadable during completion: $RunPlanPath" }
+    $currentBuild=([string](Get-ObjectPropertyValue $current 'build_id')).Trim()
+    $buildMatches=(-not $currentBuild -or $currentBuild -eq ([string]$Release.build_id).Trim())
     if($null -eq $current -or
         -not [bool](Get-ObjectPropertyValue $current 'forced_new_run') -or
-        ([string](Get-ObjectPropertyValue $current 'build_id')).Trim() -ne ([string]$Release.build_id).Trim() -or
+        -not $buildMatches -or
         ([string](Get-ObjectPropertyValue $current 'run_id')).Trim() -ne ([string]$Release.run_id).Trim() -or
         ([string](Get-ObjectPropertyValue $current 'compatibility_key')).Trim().ToLowerInvariant() -ne ([string]$Release.compatibility_key).Trim().ToLowerInvariant()){
         throw "Refusing to clear a forced-new run plan that no longer matches the completed release."
@@ -1340,7 +1334,9 @@ function Invoke-Build {
     $python=Resolve-Python $config
     $unfinishedForcedPlan=Get-PendingForcedNewRunPlan
     if($null -ne $unfinishedForcedPlan){
-        throw "A forced new-run operation is still unfinished for build $($unfinishedForcedPlan.build_id) run=$($unfinishedForcedPlan.run_id). Run '.\Assets\bees.ps1 start' to resume it before creating another build."
+        $unfinishedBuild=([string](Get-ObjectPropertyValue $unfinishedForcedPlan 'build_id')).Trim()
+        if(-not $unfinishedBuild){ $unfinishedBuild='legacy-unbound' }
+        throw "A forced new-run operation is still unfinished for build $unfinishedBuild run=$($unfinishedForcedPlan.run_id). Run '.\Assets\bees.ps1 start' to resume/finalize it before creating another build."
     }
     $sourceSha=Get-GitShortSha
     $unity=Resolve-UnityEditor $config
@@ -2362,7 +2358,7 @@ function Invoke-Start {
     $outgoingRun=$null
 
     if($resumeForcedNewRun){
-        $planBuild=([string]$forcedPlan.build_id).Trim()
+        $planBuild=([string](Get-ObjectPropertyValue $forcedPlan 'build_id')).Trim()
         $planRun=([string]$forcedPlan.run_id).Trim()
         $planKey=([string]$forcedPlan.compatibility_key).Trim().ToLowerInvariant()
         $planPreviousRun=([string]$forcedPlan.previous_run_id).Trim()
@@ -2371,12 +2367,25 @@ function Invoke-Start {
         $releaseRun=([string]$release.run_id).Trim()
         $releaseKey=([string]$release.compatibility_key).Trim().ToLowerInvariant()
 
-        if($planBuild -ne $releaseBuild){
+        if(-not $planBuild){
+            $planBuild=$releaseBuild
+            Write-Warning "Resuming a legacy forced-new run plan without a persisted build binding; binding this recovery attempt to latest release $releaseBuild."
+        } elseif($planBuild -ne $releaseBuild){
             throw "Pending forced-new operation targets build $planBuild but latest release is $releaseBuild. Refusing to guess which release should own the run."
         }
         $outgoingRun=$planPreviousRun
-        $persistedEnvironmentArgs=@(Get-ObjectPropertyValue $forcedPlan 'environment_args')
-        $envArgs=@($persistedEnvironmentArgs | ForEach-Object {[string]$_})
+        $persistedEnvironmentArgs=Get-ObjectPropertyValue $forcedPlan 'environment_args'
+        if($null -eq $persistedEnvironmentArgs){
+            if($NewRun){
+                Write-Warning 'Legacy forced-new plan has no persisted environment arguments; using the arguments supplied on this retry.'
+            } else {
+                $resumeStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+                $envArgs=@($resumeStatus.desired.environment_args | ForEach-Object {[string]$_})
+                Write-Warning 'Legacy forced-new plan has no persisted environment arguments; using the server-owned desired arguments for one-time recovery.'
+            }
+        } else {
+            $envArgs=@(@($persistedEnvironmentArgs) | ForEach-Object {[string]$_})
+        }
 
         if($releaseRun -eq $planRun -and $releaseKey -eq $planKey){
             Write-Host "Resuming interrupted forced new-run operation: target=$planRun build=$planBuild."
