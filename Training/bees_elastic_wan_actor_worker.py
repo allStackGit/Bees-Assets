@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import signal
@@ -396,7 +397,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.local_base_port + args.envs - 1 > 65535:
         print("error: local ML-Agents worker ports would exceed 65535", file=sys.stderr)
         return 2
-    if args.reconnect_seconds <= 0 or args.upload_queue <= 0:
+    if not math.isfinite(args.reconnect_seconds) or args.reconnect_seconds <= 0 or args.upload_queue <= 0:
         print("error: reconnect/upload values are outside valid bounds", file=sys.stderr)
         return 2
 
