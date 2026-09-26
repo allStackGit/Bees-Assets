@@ -30,6 +30,7 @@ FOCUSED_PYTHON_SUITES = (
     "bees_elastic_wan_zero_local_tests.py",
     "bees_wan_actor_training_tests.py",
     "bees_continual_service_tests.py",
+    "bees_continual_train_tests.py",
     "bees_continual_elastic_wan_service_tests.py",
 )
 
@@ -111,6 +112,7 @@ def build_checks(
                     command=(
                         node,
                         "--test",
+                        str(server_root / "test" / "startServerLauncher.module.test.js"),
                         str(server_root / "test" / "trainingControl.module.test.js"),
                         str(server_root / "test" / "trainingControlCli.module.test.js"),
                         str(server_root / "test" / "trainingEnvOptimizer.module.test.js"),
