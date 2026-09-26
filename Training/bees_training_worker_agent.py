@@ -917,6 +917,16 @@ def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, Any]]:
         raise ValueError(
             "runtime cutover launch_command does not use the pinned Python executable"
         )
+    service_path = Path(launch_command[1]).expanduser().resolve() if len(launch_command) > 1 else None
+    if (
+        service_path is None
+        or not service_path.is_file()
+        or service_path.parent != runtime_root
+        or service_path.name != "bees_continual_elastic_wan_service.py"
+    ):
+        raise ValueError(
+            "runtime cutover launch_command does not use the pinned continual service"
+        )
     if not any(ENV_PLACEHOLDER in token for token in launch_command):
         raise ValueError(
             f"runtime cutover launch_command must contain {ENV_PLACEHOLDER}"
