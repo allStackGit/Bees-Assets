@@ -935,7 +935,10 @@ function Get-CentralFallbackLaunchCommand(
     }
 
     if(-not $canonicalBuild -or $canonicalBuild -eq [string]$PreparedRuntime.build_id){
-        return @($PreparedRuntime.launch_command)
+        return [pscustomobject]@{
+            build_id=[string]$PreparedRuntime.build_id
+            launch_command=@($PreparedRuntime.launch_command)
+        }
     }
 
     if(Test-Path -LiteralPath $CentralRuntimeStatePath){
@@ -945,7 +948,10 @@ function Get-CentralFallbackLaunchCommand(
             $statePython=([string](Get-ObjectPropertyValue $runtimeState 'python_executable')).Trim()
             $stateRoot=([string](Get-ObjectPropertyValue $runtimeState 'runtime_root')).Trim()
             if($stateBuild -eq $canonicalBuild -and $statePython -and $stateRoot){
-                return @(New-CentralLearnerLaunchCommand $Config $statePython $Unity $stateRoot)
+                return [pscustomobject]@{
+                    build_id=$stateBuild
+                    launch_command=@(New-CentralLearnerLaunchCommand $Config $statePython $Unity $stateRoot)
+                }
             }
         }catch{}
     }
@@ -954,20 +960,39 @@ function Get-CentralFallbackLaunchCommand(
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
     }
-    $currentBuildPath=Join-Path $CentralAgentInstallRoot 'current.json'
-    if($null -ne $existing -and (Test-Path -LiteralPath $currentBuildPath)){
-        try{
-            $currentBuild=Get-Content -LiteralPath $currentBuildPath -Raw|ConvertFrom-Json
-            $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
-            $existingPython=([string](Get-ObjectPropertyValue $existing 'learner_python')).Trim()
-            $existingRoot=([string](Get-ObjectPropertyValue $existing 'release_runtime_root')).Trim()
-            if($currentBuildId -eq $canonicalBuild -and $existingPython -and $existingRoot){
-                return @(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+    if($null -ne $existing){
+        $existingPython=([string](Get-ObjectPropertyValue $existing 'learner_python')).Trim()
+        $existingRoot=([string](Get-ObjectPropertyValue $existing 'release_runtime_root')).Trim()
+        $cutoverCapable=[bool](Get-ObjectPropertyValue $existing 'runtime_cutover_capable')
+        $fallbackBuild=([string](Get-ObjectPropertyValue $existing 'fallback_build_id')).Trim()
+        if($cutoverCapable){
+            if($fallbackBuild -eq $canonicalBuild -and $existingPython -and $existingRoot){
+                return [pscustomobject]@{
+                    build_id=$fallbackBuild
+                    launch_command=@(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+                }
             }
-        }catch{}
+        }else{
+            # Legacy immutable-runtime supervisors did not record fallback_build_id. Their runtime
+            # fields were the only child command they could run, so current.json can prove which
+            # build those fields accompanied during the one-time stable-supervisor migration.
+            $currentBuildPath=Join-Path $CentralAgentInstallRoot 'current.json'
+            if(Test-Path -LiteralPath $currentBuildPath){
+                try{
+                    $currentBuild=Get-Content -LiteralPath $currentBuildPath -Raw|ConvertFrom-Json
+                    $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
+                    if($currentBuildId -eq $canonicalBuild -and $existingPython -and $existingRoot){
+                        return [pscustomobject]@{
+                            build_id=$currentBuildId
+                            launch_command=@(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+                        }
+                    }
+                }catch{}
+            }
+        }
     }
 
-    throw "Cannot safely restart the central supervisor while canonical build $canonicalBuild differs from prepared build $($PreparedRuntime.build_id): no verified launch command for the canonical runtime is available."
+    throw "Cannot safely restart the central supervisor while canonical build $canonicalBuild differs from prepared build $($PreparedRuntime.build_id): no verified launch command bound to the canonical runtime is available."
 }
 
 function Get-GitShortSha {
@@ -1838,7 +1863,8 @@ function Start-CentralAgentIfNeeded(
         throw "Central training supervisor requires Python 3.10: $BootstrapPython"
     }
 
-    $fallbackCommand=@(Get-CentralFallbackLaunchCommand $Config $Unity $PreparedRuntime)
+    $fallback=Get-CentralFallbackLaunchCommand $Config $Unity $PreparedRuntime
+    $fallbackCommand=@($fallback.launch_command)
     $supervisorArgs=@(
         '-u',$agent,
         '--server-url',[string]$Config.controlUrl,
@@ -1922,6 +1948,7 @@ function Start-CentralAgentIfNeeded(
         runtime_ready_file=$CentralRuntimeReadyBuildPath
         runtime_state_file=$CentralRuntimeStatePath
         runtime_cutover_capable=$true
+        fallback_build_id=[string]$fallback.build_id
         graceful_checkpoint_shutdown=$true
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
