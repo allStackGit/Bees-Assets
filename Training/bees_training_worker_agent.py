@@ -722,10 +722,6 @@ class ManagedProcess:
         require_child_health: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
-        self.stop(progress_callback=stop_progress)
-        environment = os.environ.copy()
-        environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
-        environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         build_id = str(build_id).strip()
         compatibility_key = str(compatibility_key).strip().lower()
         if not build_id:
@@ -734,6 +730,14 @@ class ManagedProcess:
             ch not in "0123456789abcdef" for ch in compatibility_key
         ):
             raise ValueError("managed training process requires a 64-hex compatibility_key")
+        if not run_id:
+            raise ValueError("managed training process requires a non-empty run_id")
+
+        # Validate the launch identity before stopping any currently owned child.
+        self.stop(progress_callback=stop_progress)
+        environment = os.environ.copy()
+        environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
+        environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         environment[BUILD_ID_ENV] = build_id
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
@@ -752,8 +756,6 @@ class ManagedProcess:
         except FileNotFoundError:
             pass
         environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
-        if not run_id:
-            raise ValueError("managed training process requires a non-empty run_id")
         logs_root = state_file.parent / "logs"
         log_dir = logs_root / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
