@@ -1421,4 +1421,5 @@ module.exports = {
     startTrainingControl,
     startTrainingControlFromEnvironment,
     sha256File,
+    environmentValidationKeyForRelease,
 };
