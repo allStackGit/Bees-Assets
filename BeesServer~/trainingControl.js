@@ -644,7 +644,16 @@ class TrainingControlStore {
         if (!pending || pending.phase !== 'rolling') return null;
         const remaining = pending.required_trainers
             .filter(spec => !this._trainerHealthyOnPending(spec, pending));
-        return remaining.length ? remaining[0].trainer_id : null;
+        if (!remaining.length) return null;
+
+        const environmentTransition =
+            Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
+            JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
+        if (environmentTransition) {
+            const central = remaining.find(spec => spec.trainer_id === 'central-learner');
+            if (central) return central.trainer_id;
+        }
+        return remaining[0].trainer_id;
     }
 
     _promotePendingRelease() {
@@ -749,15 +758,19 @@ class TrainingControlStore {
             this.state.run_id === runId &&
             this.state.compatibility_key === compatibilityKey &&
             this.state.pending_release === null) {
-            if (releaseEnvironmentArgs !== undefined &&
+            const environmentChanged =
+                releaseEnvironmentArgs !== undefined &&
                 JSON.stringify(releaseEnvironmentArgs) !==
-                    JSON.stringify(this.state.environment_args)) {
+                    JSON.stringify(this.state.environment_args);
+            if (!environmentChanged) {
+                return this.desiredState();
+            }
+            if (incompatible) {
                 throw Object.assign(
                     new Error(
-                        'canonical release environment_args differ from the requested release transition'),
+                        'same-run environment-only transitions must use compatible rolling rollout'),
                     { statusCode: 409 });
             }
-            return this.desiredState();
         }
         const existingPending = this.state.pending_release;
         const requestedEnvironmentIdentity = releaseEnvironmentArgs === undefined
@@ -869,6 +882,13 @@ class TrainingControlStore {
         if (Object.prototype.hasOwnProperty.call(patch, 'environment_args')) {
             const args = normalizeEnvironmentArgs(patch.environment_args);
             if (JSON.stringify(args) !== JSON.stringify(this.state.environment_args)) {
+                if (this.state.canonical_build_id) {
+                    throw Object.assign(
+                        new Error(
+                            'environment_args are rollout-owned once a canonical build exists; ' +
+                            'stage the canonical release with validated environment_args instead'),
+                        { statusCode: 409 });
+                }
                 this.state.environment_args = args;
                 changed = true;
             }
@@ -984,16 +1004,23 @@ class TrainingControlStore {
 
         const catalog = this._catalogForRole(role);
         let desiredBuildId = this.state.canonical_build_id;
+        let desiredEnvironmentArgs = this.state.environment_args;
         let forcedStop = false;
         const pending = this.state.pending_release;
         if (role === 'dedicated' && pending) {
             if (pending.phase === 'rolling') {
                 const current = this.trainers.get(trainerId);
-                const alreadyRolled = current && current.build_id === pending.build_id;
+                const alreadyRolled = current &&
+                    current.build_id === pending.build_id &&
+                    current.applied_revision >= pending.phase_revision;
                 const recollecting = pending.collect_until_ms > this.now();
-                if (alreadyRolled ||
-                    (!recollecting && this._rollingTargetId() === trainerId)) {
+                const isRollingTarget = !recollecting &&
+                    this._rollingTargetId() === trainerId;
+                if (alreadyRolled || isRollingTarget) {
                     desiredBuildId = pending.build_id;
+                    if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+                        desiredEnvironmentArgs = pending.environment_args;
+                    }
                 }
             } else if (pending.phase === 'stopping') {
                 forcedStop = true;
@@ -1024,7 +1051,7 @@ class TrainingControlStore {
             revision: this.state.revision,
             training_enabled: this.state.training_enabled,
             desired_mode: desiredMode,
-            environment_args: [...this.state.environment_args],
+            environment_args: [...desiredEnvironmentArgs],
             worker_env_count: workerEnvCount,
             env_optimizer: envOptimizer,
             canonical_build_id: this.state.canonical_build_id,
