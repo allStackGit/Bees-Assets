@@ -922,6 +922,138 @@ test('late trainer still joins an incompatible stop barrier', () => {
     });
 });
 
+test('compatible rollout converges across worker loss, server restart, and worker rejoin', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'resilience-old');
+        const newSha = publishDedicatedBuild(store, root, 'resilience-new');
+
+        store.stageRelease({
+            buildId: 'resilience-old',
+            runId: 'resilience-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'resilience-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'resilience-new',
+            runId: 'resilience-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'resilience-old',
+                oldSha,
+                { preparedBuildId: 'resilience-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.equal(store._rollingTargetId(), 'remote-a');
+
+        // remote-a disappears. The healthy members keep their leases while it expires.
+        now = 9000;
+        for (const trainerId of ['remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'resilience-old',
+                oldSha,
+                { preparedBuildId: 'resilience-new' },
+            );
+        }
+        now = 11001;
+        store.status();
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+        assert.equal(store._rollingTargetId(), 'remote-b');
+
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        // BeesServer dies/restarts after one remote has rolled. Persisted state must not promote
+        // the release until the surviving trainers re-register healthy.
+        now = 12000;
+        store = new TrainingControlStore(options);
+        assert.equal(store.state.canonical_build_id, 'resilience-old');
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        let centralDesired = heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-old',
+            oldSha,
+            { preparedBuildId: 'resilience-new' },
+        );
+        assert.equal(centralDesired.desired_build_id, 'resilience-new');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'resilience-new');
+        assert.equal(store.state.pending_release, null);
+
+        // The machine that was absent during promotion rejoins on the old compatible build.
+        // It must be told to converge to canonical without reopening the completed rollout.
+        const rejoined = heartbeatDedicated(
+            store,
+            'remote-a',
+            'resilience-old',
+            oldSha,
+        );
+        assert.equal(rejoined.desired_build_id, 'resilience-new');
+        assert.equal(rejoined.pending_release, null);
+        heartbeatDedicated(store, 'remote-a', 'resilience-new', newSha);
+        const remoteA = store.status().trainers.find(
+            trainer => trainer.trainer_id === 'remote-a');
+        assert.equal(remoteA.build_id, 'resilience-new');
+        assert.equal(remoteA.stale, false);
+    });
+});
+
 test('incompatible rollout never drops an expired required trainer', () => {
     withTempDir(root => {
         let now = 1000;
