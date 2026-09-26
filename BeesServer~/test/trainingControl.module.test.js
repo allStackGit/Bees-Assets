@@ -1285,6 +1285,77 @@ test('compatible preparation failure grace resets when the remote recovers', () 
     });
 });
 
+test('compatible preparing never bypasses a failing central learner', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'central-prepare-old');
+        publishDedicatedBuild(store, root, 'central-prepare-new');
+        store.stageRelease({
+            buildId: 'central-prepare-old',
+            runId: 'central-prepare-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'central-prepare-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'central-prepare-old', oldSha);
+        store.stageRelease({
+            buildId: 'central-prepare-new',
+            runId: 'central-prepare-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'central-prepare-old',
+            oldSha,
+            { preparedBuildId: 'central-prepare-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'central-prepare-old',
+            oldSha,
+            {
+                preparationError: 'central runtime staging failed',
+                lastError: 'central runtime staging failed',
+            },
+        );
+
+        now = 20000;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'central-prepare-old',
+            oldSha,
+            {
+                preparationError: 'central runtime staging failed',
+                lastError: 'central runtime staging failed',
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+        const centralSpec = store.state.pending_release.required_trainers.find(
+            item => item.trainer_id === 'central-learner');
+        assert.equal(
+            Object.prototype.hasOwnProperty.call(centralSpec, 'failure_since_ms'),
+            false,
+        );
+    });
+});
+
 test('compatible rolling skips a persistently crashing remote but never central learner', () => {
     withTempDir(root => {
         let now = 1000;
