@@ -231,15 +231,23 @@ def write_remote_worker_spec(
     worker_ids: Sequence[int],
 ) -> Path:
     """Atomically publish the exact remote rollout command-line contract for this trainer launch."""
-    if not worker_ids:
+    normalized_worker_ids = tuple(worker_ids)
+    if not normalized_worker_ids:
         raise ValueError("remote worker spec requires at least one external worker")
-    external_worker_ports(base_port, worker_ids)
-    if len(set(int(value) for value in worker_ids)) != len(tuple(worker_ids)):
+    if not isinstance(base_port, int) or isinstance(base_port, bool) or base_port <= 0:
+        raise ValueError("remote worker spec base port must be a positive integer")
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in normalized_worker_ids
+    ):
+        raise ValueError("remote worker spec worker IDs must be non-negative integers")
+    if len(set(normalized_worker_ids)) != len(normalized_worker_ids):
         raise ValueError("remote worker spec contains duplicate worker IDs")
+    external_worker_ports(base_port, normalized_worker_ids)
 
     identity = _remote_spec_identity(
         base_port=base_port,
-        worker_ids=worker_ids,
+        worker_ids=normalized_worker_ids,
         run_id=_string_trainer_arg(trainer_args, "--run-id"),
         unity_args=unity_environment_args(trainer_args),
     )
