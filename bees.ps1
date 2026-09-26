@@ -1421,9 +1421,11 @@ function Invoke-Build {
             if(Test-Path -LiteralPath $TailnetAddressPath){
                 Prepare-RemoteBootstrap $config $python $release
                 if($tailnetBridgeChanged){
-                    Write-Host 'Embedded tailnet helper changed; restarting the private gateway onto the new immutable helper version.'
-                    Start-TailnetGatewayIfNeeded $config
+                    Write-Host 'Embedded tailnet helper changed; reconciling the private gateway onto the new immutable helper version.'
                 }
+                # Reconcile on every live-cluster build. This is idempotent when healthy and
+                # self-heals a crashed/missing gateway even when the helper version did not change.
+                Start-TailnetGatewayIfNeeded $config
             }
             Publish-Release $config $admin $release
             $staged=Stage-Release $config $admin $release
