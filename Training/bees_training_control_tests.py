@@ -9,6 +9,7 @@ from unittest import mock
 import zipfile
 from pathlib import Path
 
+import bees_process_safety as process_safety
 import bees_training_control as control
 import bees_training_worker_agent as agent
 import bees_remote_worker as remote_worker
@@ -202,6 +203,55 @@ class TrainingControlClientTests(unittest.TestCase):
             5.0,
         )
 
+    def test_dedicated_child_health_gates_running_state_and_surfaces_errors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            fake = mock.Mock()
+            fake.poll.return_value = None
+
+            managed = agent.ManagedProcess()
+            managed.process = fake
+            managed.health_required = True
+            managed.health_file = health_path
+            managed.health_token = "health-token"
+            managed.started_monotonic = agent.time.monotonic()
+
+            self.assertEqual(managed.state("dedicated"), "starting")
+            self.assertEqual(managed.health_error(), "")
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "ready",
+                        "error": "",
+                        "updated_unix_seconds": 1.0,
+                        "pid": 123,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(managed.state("dedicated"), "running")
+            self.assertEqual(managed.health_error(), "")
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "error",
+                        "error": "trainer failed to initialize",
+                        "updated_unix_seconds": 2.0,
+                        "pid": 123,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(managed.state("dedicated"), "starting")
+            self.assertEqual(managed.health_error(), "trainer failed to initialize")
+
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
         fake.pid = 4242
@@ -225,6 +275,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 environment_args=(),
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            self.assertTrue(callable(popen.call_args.kwargs["preexec_fn"]))
             environment = popen.call_args.kwargs["env"]
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
             self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
