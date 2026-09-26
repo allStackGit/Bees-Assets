@@ -143,6 +143,16 @@ namespace Assets.Scripts.Entities.Ships
         public void LeftNearbyAsteroid(CollisionAsteroid asteroid)
         {
             NearbyAsteroids.Remove(asteroid);
+            for (int i = 0; i < Turrets.Count; i++)
+            {
+                var turret = Turrets[i];
+                if (turret != null && turret.TargetAsteroid == asteroid)
+                {
+                    turret.TargetAsteroid = null;
+                    turret.HasTargetAsteroid = false;
+                    turret.IsFiringAtAsteroid = false;
+                }
+            }
         }
 
         public void HandleSupersededPathfindingRequest()
