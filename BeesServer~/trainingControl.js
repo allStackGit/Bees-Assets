@@ -141,6 +141,13 @@ class TrainingControlStore {
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
         }
+        this.compatibleFailureGraceSeconds = Number(
+            options.compatibleFailureGraceSeconds ??
+            Math.max(60, this.leaseSeconds * 2));
+        if (!Number.isFinite(this.compatibleFailureGraceSeconds) ||
+            this.compatibleFailureGraceSeconds <= 0) {
+            throw new Error('training-control compatibleFailureGraceSeconds must be positive');
+        }
         this.now = typeof options.now === 'function' ? options.now : () => Date.now();
         this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
@@ -243,6 +250,9 @@ class TrainingControlStore {
                 !Number.isFinite(pending.collect_until_ms) || pending.collect_until_ms < 0) {
                 throw new Error('training-control pending release is invalid');
             }
+            if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+                pending.environment_args = normalizeEnvironmentArgs(pending.environment_args);
+            }
             const trainerIds = new Set();
             for (const trainer of pending.required_trainers) {
                 if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
@@ -250,6 +260,9 @@ class TrainingControlStore {
                     !/^[A-Za-z0-9._-]+$/.test(trainer.trainer_id) ||
                     typeof trainer.platform !== 'string' ||
                     !/^[A-Za-z0-9._-]+$/.test(trainer.platform) ||
+                    (Object.prototype.hasOwnProperty.call(trainer, 'failure_since_ms') &&
+                        (!Number.isFinite(trainer.failure_since_ms) ||
+                            trainer.failure_since_ms < 0)) ||
                     trainerIds.has(trainer.trainer_id)) {
                     throw new Error('training-control pending release trainer barrier is invalid');
                 }
@@ -452,6 +465,18 @@ class TrainingControlStore {
             }
             return false;
         }
+
+        // Compatible rollout membership is a shrinking snapshot. Trainers that appear after
+        // staging (or return after their lease expired and they were pruned) can continue on the
+        // compatible canonical release and reconcile after promotion; they must not re-expand and
+        // deadlock the in-flight barrier. The only compatible exception is the explicit
+        // recollection window used when a restart/migration staged with no known trainers.
+        if (!pending.incompatible && pending.collect_until_ms <= this.now()) {
+            return false;
+        }
+
+        // Incompatible run cutovers remain strict: any dedicated trainer that appears before
+        // promotion must join the stop barrier so old-run training cannot survive the cutover.
         pending.required_trainers.push({
             trainer_id: record.trainer_id,
             platform: record.platform,
@@ -489,7 +514,12 @@ class TrainingControlStore {
 
     _pruneExpiredCompatibleBarrierTrainers(pending) {
         if (!pending || pending.incompatible) return false;
-        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const now = this.now();
+        const cutoff = now - this.leaseSeconds * 1000;
+        const failureGraceMs = this.compatibleFailureGraceSeconds * 1000;
+        const rollingTargetId = pending.phase === 'rolling'
+            ? this._rollingTargetId()
+            : null;
         const kept = [];
         let changed = false;
         for (const spec of pending.required_trainers) {
@@ -505,6 +535,78 @@ class TrainingControlStore {
                         item.platform === spec.platform);
                 if (known) lastSeen = known.last_seen_ms;
             }
+            if (lastSeen !== null && lastSeen < cutoff) {
+                changed = true;
+                continue;
+            }
+
+            // The central learner owns the optimizer/checkpoint lineage and is never bypassed.
+            // A remote, however, must reduce cluster capacity instead of wedging every healthy
+            // trainer forever when it stays online but persistently cannot prepare/start a
+            // semantically compatible release.
+            let releaseFailure = false;
+            if (spec.trainer_id !== 'central-learner' && current) {
+                if (pending.phase === 'preparing') {
+                    const ready = current.build_id === pending.build_id ||
+                        current.prepared_build_id === pending.build_id;
+                    releaseFailure = !ready && Boolean(current.preparation_error);
+                } else if (pending.phase === 'rolling' &&
+                    rollingTargetId === spec.trainer_id &&
+                    !this._trainerHealthyOnPending(spec, pending)) {
+                    releaseFailure = Boolean(current.last_error);
+                }
+            }
+
+            if (releaseFailure) {
+                if (!Number.isFinite(spec.failure_since_ms)) {
+                    spec.failure_since_ms = now;
+                    changed = true;
+                } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    changed = true;
+                    continue;
+                }
+            } else if (Object.prototype.hasOwnProperty.call(spec, 'failure_since_ms')) {
+                delete spec.failure_since_ms;
+                changed = true;
+            }
+            kept.push(spec);
+        }
+        if (!changed) return false;
+        pending.required_trainers = kept;
+        this.state.revision++;
+        this._persist();
+        return true;
+    }
+
+    _pruneExpiredIncompatibleRemoteTrainers(pending) {
+        if (!pending || !pending.incompatible) return false;
+        const cutoff = this.now() - this.leaseSeconds * 1000;
+        const kept = [];
+        let changed = false;
+        for (const spec of pending.required_trainers) {
+            // The central learner owns the optimizer/checkpoint lineage. An incompatible
+            // cutover must never bypass it merely because its heartbeat went stale.
+            if (spec.trainer_id === 'central-learner') {
+                kept.push(spec);
+                continue;
+            }
+
+            const current = this.trainers.get(spec.trainer_id);
+            let lastSeen = (
+                current &&
+                current.role === 'dedicated' &&
+                current.platform === spec.platform
+            ) ? current.last_seen_ms : null;
+            if (lastSeen === null) {
+                const known = this.state.known_dedicated_trainers.find(
+                    item => item.trainer_id === spec.trainer_id &&
+                        item.platform === spec.platform);
+                if (known) lastSeen = known.last_seen_ms;
+            }
+
+            // Dedicated workers fail closed when their control lease expires. Once the
+            // server observes the same lease expiry, an absent remote cannot contribute
+            // old-run experience and must reduce capacity rather than deadlock a new run.
             if (lastSeen !== null && lastSeen < cutoff) {
                 changed = true;
                 continue;
@@ -551,6 +653,9 @@ class TrainingControlStore {
         this.state.canonical_build_id = pending.build_id;
         this.state.run_id = pending.run_id;
         this.state.compatibility_key = pending.compatibility_key;
+        if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+            this.state.environment_args = [...pending.environment_args];
+        }
         this.state.pending_release = null;
         this.state.revision++;
         this._persist();
@@ -563,6 +668,7 @@ class TrainingControlStore {
         if (pending.collect_until_ms > this.now()) return false;
 
         this._pruneExpiredCompatibleBarrierTrainers(pending);
+        this._pruneExpiredIncompatibleRemoteTrainers(pending);
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
@@ -571,6 +677,9 @@ class TrainingControlStore {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
+            for (const spec of pending.required_trainers) {
+                delete spec.failure_since_ms;
+            }
             this.state.revision++;
             pending.phase_revision = this.state.revision;
             this._persist();
@@ -578,6 +687,14 @@ class TrainingControlStore {
         }
 
         if (pending.phase === 'rolling') {
+            // Reaching rolling already proves every required trainer prepared this compatible
+            // release. If training is then disabled, no trainer should be required to restart just
+            // to acknowledge the new build before canonical promotion; doing so would strand the
+            // rollout because desired_mode is now stopped. Promote the fully staged compatible
+            // release and let stopped/rejoining trainers converge on that canonical build later.
+            if (!this.state.training_enabled && !pending.incompatible) {
+                return this._promotePendingRelease();
+            }
             if (pending.required_trainers.every(
                 spec => this._trainerHealthyOnPending(spec, pending))) {
                 return this._promotePendingRelease();
@@ -594,10 +711,19 @@ class TrainingControlStore {
         return false;
     }
 
-    stageRelease({ buildId, runId, compatibilityKey, incompatible = false }) {
+    stageRelease({
+        buildId,
+        runId,
+        compatibilityKey,
+        incompatible = false,
+        environmentArgs = undefined,
+    }) {
         buildId = requireString(buildId, 'build_id', 128);
         runId = requireString(runId, 'run_id', 128);
         compatibilityKey = requireString(compatibilityKey, 'compatibility_key', 64).toLowerCase();
+        const releaseEnvironmentArgs = environmentArgs === undefined
+            ? undefined
+            : normalizeEnvironmentArgs(environmentArgs);
         if (!/^[A-Za-z0-9._-]+$/.test(buildId) ||
             !/^[A-Za-z0-9._-]+$/.test(runId) ||
             !/^[0-9a-f]{64}$/.test(compatibilityKey)) {
@@ -623,18 +749,43 @@ class TrainingControlStore {
             this.state.run_id === runId &&
             this.state.compatibility_key === compatibilityKey &&
             this.state.pending_release === null) {
+            if (releaseEnvironmentArgs !== undefined &&
+                JSON.stringify(releaseEnvironmentArgs) !==
+                    JSON.stringify(this.state.environment_args)) {
+                throw Object.assign(
+                    new Error(
+                        'canonical release environment_args differ from the requested release transition'),
+                    { statusCode: 409 });
+            }
             return this.desiredState();
         }
         const existingPending = this.state.pending_release;
+        const requestedEnvironmentIdentity = releaseEnvironmentArgs === undefined
+            ? null
+            : JSON.stringify(releaseEnvironmentArgs);
+        const pendingEnvironmentIdentity = existingPending &&
+            Object.prototype.hasOwnProperty.call(existingPending, 'environment_args')
+            ? JSON.stringify(existingPending.environment_args)
+            : null;
         if (existingPending &&
             existingPending.build_id === buildId &&
             existingPending.run_id === runId &&
             existingPending.compatibility_key === compatibilityKey &&
-            existingPending.incompatible === incompatible) {
+            existingPending.incompatible === incompatible &&
+            pendingEnvironmentIdentity === requestedEnvironmentIdentity) {
             this._advanceRollout();
             return this.desiredState();
         }
         if (existingPending) {
+            if (existingPending.build_id === buildId &&
+                existingPending.run_id === runId &&
+                existingPending.compatibility_key === compatibilityKey &&
+                existingPending.incompatible === incompatible) {
+                throw Object.assign(
+                    new Error(
+                        'pending release environment_args differ from the requested release transition'),
+                    { statusCode: 409 });
+            }
             throw Object.assign(
                 new Error(
                     'another release rollout is already pending: ' +
@@ -648,6 +799,9 @@ class TrainingControlStore {
             run_id: runId,
             compatibility_key: compatibilityKey,
             incompatible,
+            ...(releaseEnvironmentArgs === undefined
+                ? {}
+                : { environment_args: [...releaseEnvironmentArgs] }),
             phase: 'preparing',
             required_trainers: requiredTrainers,
             phase_revision: this.state.revision + 1,
@@ -723,6 +877,7 @@ class TrainingControlStore {
             this.state.revision++;
             this._persist();
         }
+        this._advanceRollout();
         return this.desiredState();
     }
 
@@ -816,6 +971,7 @@ class TrainingControlStore {
             compatibility_key: this.state.compatibility_key,
             pending_release: pending,
             lease_seconds: this.leaseSeconds,
+            compatible_failure_grace_seconds: this.compatibleFailureGraceSeconds,
             builds,
         };
     }
@@ -882,6 +1038,7 @@ class TrainingControlStore {
                 }
                 : null,
             lease_seconds: this.leaseSeconds,
+            compatible_failure_grace_seconds: this.compatibleFailureGraceSeconds,
             build: publicBuildDescriptor(buildRecord),
             prepare_build: publicBuildDescriptor(prepareRecord),
         };
@@ -906,6 +1063,9 @@ class TrainingControlStore {
             build_sha256: typeof payload.build_sha256 === 'string' ? payload.build_sha256.slice(0, 64) : '',
             prepared_build_id: typeof payload.prepared_build_id === 'string'
                 ? payload.prepared_build_id.slice(0, 128)
+                : '',
+            preparation_error: typeof payload.preparation_error === 'string'
+                ? payload.preparation_error.slice(0, 2048)
                 : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
@@ -1065,6 +1225,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     runId: body.run_id,
                     compatibilityKey: body.compatibility_key,
                     incompatible: body.incompatible,
+                    environmentArgs: Object.prototype.hasOwnProperty.call(
+                        body, 'environment_args')
+                        ? body.environment_args
+                        : undefined,
                 }));
                 return;
             }

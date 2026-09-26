@@ -56,6 +56,7 @@ function heartbeatDedicated(store, trainerId, buildId, buildSha256, options = {}
         build_id: buildId,
         build_sha256: buildSha256,
         prepared_build_id: options.preparedBuildId || '',
+        preparation_error: options.preparationError || '',
         applied_revision: options.appliedRevision === undefined
             ? store.state.revision
             : options.appliedRevision,
@@ -781,7 +782,980 @@ test('compatible rolling skips an expired target and advances to the next live t
     });
 });
 
-test('incompatible rollout never drops an expired required trainer', () => {
+test('compatible rollout does not re-add a pruned trainer that reconnects mid-rollout', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'rejoin-old');
+        publishDedicatedBuild(store, root, 'rejoin-new');
+        store.stageRelease({
+            buildId: 'rejoin-old',
+            runId: 'rejoin-run',
+            compatibilityKey: '9'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'rejoin-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'rejoin-new',
+            runId: 'rejoin-run',
+            compatibilityKey: '9'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-new' },
+            );
+        }
+
+        now = 9000;
+        for (const trainerId of ['remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-new' },
+            );
+        }
+        now = 11001;
+        store.status();
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+
+        // The expired worker can reconnect and keep using the semantically compatible old
+        // canonical release, but it must not make the in-flight barrier grow again.
+        const rejoined = heartbeatDedicated(store, 'remote-a', 'rejoin-old', oldSha);
+        assert.equal(rejoined.desired_build_id, 'rejoin-old');
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+    });
+});
+
+test('late trainer does not expand a compatible rollout snapshot', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'late-compatible-old');
+        publishDedicatedBuild(store, root, 'late-compatible-new');
+        store.stageRelease({
+            buildId: 'late-compatible-old',
+            runId: 'late-compatible-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'central-learner', 'late-compatible-old', oldSha);
+        store.stageRelease({
+            buildId: 'late-compatible-new',
+            runId: 'late-compatible-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+
+        heartbeatDedicated(
+            store,
+            'remote-late',
+            'late-compatible-old',
+            oldSha,
+            { preparedBuildId: 'late-compatible-new' },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+    });
+});
+
+test('late trainer still joins an incompatible stop barrier', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'late-incompatible-old');
+        publishDedicatedBuild(store, root, 'late-incompatible-new');
+        store.stageRelease({
+            buildId: 'late-incompatible-old',
+            runId: 'late-incompatible-old-run',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'central-learner', 'late-incompatible-old', oldSha);
+        store.stageRelease({
+            buildId: 'late-incompatible-new',
+            runId: 'late-incompatible-new-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: true,
+        });
+
+        heartbeatDedicated(
+            store,
+            'remote-late',
+            'late-incompatible-old',
+            oldSha,
+            { preparedBuildId: 'late-incompatible-new' },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-late', 'central-learner'],
+        );
+    });
+});
+
+test('compatible rollout converges across worker loss, server restart, and worker rejoin', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 10,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'resilience-old');
+        const newSha = publishDedicatedBuild(store, root, 'resilience-new');
+
+        store.stageRelease({
+            buildId: 'resilience-old',
+            runId: 'resilience-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'resilience-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'resilience-new',
+            runId: 'resilience-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'resilience-old',
+                oldSha,
+                { preparedBuildId: 'resilience-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'rolling');
+        assert.equal(store._rollingTargetId(), 'remote-a');
+
+        // remote-a disappears. The healthy members keep their leases while it expires.
+        now = 9000;
+        for (const trainerId of ['remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'resilience-old',
+                oldSha,
+                { preparedBuildId: 'resilience-new' },
+            );
+        }
+        now = 11001;
+        store.status();
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+        assert.equal(store._rollingTargetId(), 'remote-b');
+
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        // BeesServer dies/restarts after one remote has rolled. Persisted state must not promote
+        // the release until the surviving trainers re-register healthy.
+        now = 12000;
+        store = new TrainingControlStore(options);
+        assert.equal(store.state.canonical_build_id, 'resilience-old');
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        let centralDesired = heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-old',
+            oldSha,
+            { preparedBuildId: 'resilience-new' },
+        );
+        assert.equal(centralDesired.desired_build_id, 'resilience-new');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store.state.canonical_build_id, 'resilience-new');
+        assert.equal(store.state.pending_release, null);
+
+        // The machine that was absent during promotion rejoins on the old compatible build.
+        // It must be told to converge to canonical without reopening the completed rollout.
+        const rejoined = heartbeatDedicated(
+            store,
+            'remote-a',
+            'resilience-old',
+            oldSha,
+        );
+        assert.equal(rejoined.desired_build_id, 'resilience-new');
+        assert.equal(rejoined.pending_release, null);
+        heartbeatDedicated(store, 'remote-a', 'resilience-new', newSha);
+        const remoteA = store.status().trainers.find(
+            trainer => trainer.trainer_id === 'remote-a');
+        assert.equal(remoteA.build_id, 'resilience-new');
+        assert.equal(remoteA.stale, false);
+    });
+});
+
+test('disabling training during compatible rolling promotes the fully prepared release', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stop-compatible-old');
+        const newSha = publishDedicatedBuild(store, root, 'stop-compatible-new');
+
+        store.stageRelease({
+            buildId: 'stop-compatible-old',
+            runId: 'stop-compatible-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stop-compatible-old', oldSha);
+        }
+
+        store.stageRelease({
+            buildId: 'stop-compatible-new',
+            runId: 'stop-compatible-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stop-compatible-old',
+                oldSha,
+                { preparedBuildId: 'stop-compatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'rolling');
+
+        const desired = store.setDesiredState({ training_enabled: false });
+
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'stop-compatible-new');
+        assert.equal(desired.run_id, 'stop-compatible-run');
+        assert.equal(desired.pending_release, null);
+        const remote = store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(remote.desired_mode, 'stopped');
+        assert.equal(remote.desired_build_id, 'stop-compatible-new');
+    });
+});
+
+test('disabling training never bypasses an incompatible stopping barrier', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stop-incompatible-old');
+        publishDedicatedBuild(store, root, 'stop-incompatible-new');
+
+        store.stageRelease({
+            buildId: 'stop-incompatible-old',
+            runId: 'stop-incompatible-old-run',
+            compatibilityKey: 'f'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stop-incompatible-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'stop-incompatible-new',
+            runId: 'stop-incompatible-new-run',
+            compatibilityKey: '0'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stop-incompatible-old',
+                oldSha,
+                { preparedBuildId: 'stop-incompatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        const desired = store.setDesiredState({ training_enabled: false });
+
+        assert.equal(desired.training_enabled, false);
+        assert.equal(desired.canonical_build_id, 'stop-incompatible-old');
+        assert.equal(desired.run_id, 'stop-incompatible-old-run');
+        assert.equal(desired.pending_release.phase, 'stopping');
+    });
+});
+
+test('incompatible release promotes environment args atomically with run identity across restart', () => {
+    withTempDir(root => {
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = { statePath, artifactRoot, leaseSeconds: 20 };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'atomic-env-old');
+        publishDedicatedBuild(store, root, 'atomic-env-new');
+
+        store.stageRelease({
+            buildId: 'atomic-env-old',
+            runId: 'atomic-env-old-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({
+            training_enabled: true,
+            environment_args: ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'atomic-env-old', oldSha);
+        }
+
+        const targetArgs = [
+            '--rl-map-size-min=48',
+            '--rl-map-size-max=64',
+            '--rl-health-ratio=.05',
+        ];
+        store.stageRelease({
+            buildId: 'atomic-env-new',
+            runId: 'atomic-env-new-run',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: true,
+            environmentArgs: targetArgs,
+        });
+
+        assert.deepEqual(
+            store.state.pending_release.environment_args,
+            targetArgs,
+        );
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+        let central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(central.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            central.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'atomic-env-old',
+                oldSha,
+                { preparedBuildId: 'atomic-env-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        // The pending target survives a control-server restart without becoming current early.
+        store = new TrainingControlStore(options);
+        assert.equal(store.state.pending_release.phase, 'stopping');
+        assert.deepEqual(store.state.pending_release.environment_args, targetArgs);
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'atomic-env-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'atomic-env-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.run_id, 'atomic-env-old-run');
+        assert.deepEqual(
+            store.state.environment_args,
+            ['--rl-map-size=32', '--rl-health-ratio=.25'],
+        );
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'atomic-env-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'atomic-env-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+
+        assert.equal(store.state.pending_release, null);
+        assert.equal(store.state.canonical_build_id, 'atomic-env-new');
+        assert.equal(store.state.run_id, 'atomic-env-new-run');
+        assert.equal(store.state.compatibility_key, 'b'.repeat(64));
+        assert.deepEqual(store.state.environment_args, targetArgs);
+
+        central = store.stateFor({
+            trainerId: 'central-learner',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.equal(central.run_id, 'atomic-env-new-run');
+        assert.deepEqual(central.environment_args, targetArgs);
+    });
+});
+
+test('release retry rejects environment args drift for pending or canonical identity', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'env-drift-old');
+        publishDedicatedBuild(store, root, 'env-drift-new');
+
+        store.stageRelease({
+            buildId: 'env-drift-old',
+            runId: 'env-drift-old-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({
+            training_enabled: true,
+            environment_args: ['--rl-map-size=32'],
+        });
+        heartbeatDedicated(store, 'central-learner', 'env-drift-old', oldSha);
+
+        const target = {
+            buildId: 'env-drift-new',
+            runId: 'env-drift-new-run',
+            compatibilityKey: 'd'.repeat(64),
+            incompatible: true,
+            environmentArgs: ['--rl-map-size=48'],
+        };
+        store.stageRelease(target);
+
+        assert.throws(
+            () => store.stageRelease({
+                ...target,
+                environmentArgs: ['--rl-map-size=64'],
+            }),
+            error => error.statusCode === 409 &&
+                /pending release environment_args differ/.test(error.message),
+        );
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-drift-old',
+            oldSha,
+            { preparedBuildId: 'env-drift-new' },
+        );
+        const stoppingRevision = store.state.pending_release.phase_revision;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'env-drift-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'env-drift-new',
+                appliedRevision: stoppingRevision,
+            },
+        );
+        assert.equal(store.state.pending_release, null);
+        assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+
+        assert.throws(
+            () => store.stageRelease({
+                ...target,
+                environmentArgs: ['--rl-map-size=64'],
+            }),
+            error => error.statusCode === 409 &&
+                /canonical release environment_args differ/.test(error.message),
+        );
+        assert.deepEqual(store.state.environment_args, ['--rl-map-size=48']);
+    });
+});
+
+test('compatible preparing drops a persistently failing remote after grace', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'prepare-fail-old');
+        publishDedicatedBuild(store, root, 'prepare-fail-new');
+        store.stageRelease({
+            buildId: 'prepare-fail-old',
+            runId: 'prepare-fail-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-bad', 'remote-good', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'prepare-fail-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'prepare-fail-new',
+            runId: 'prepare-fail-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'prepare-fail-old',
+            oldSha,
+            {
+                preparationError: 'download verification failed',
+                lastError: 'download verification failed',
+            },
+        );
+        for (const trainerId of ['remote-good', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'prepare-fail-old',
+                oldSha,
+                { preparedBuildId: 'prepare-fail-new' },
+            );
+        }
+
+        let spec = store.state.pending_release.required_trainers.find(
+            item => item.trainer_id === 'remote-bad');
+        assert.equal(spec.failure_since_ms, 1000);
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        now = 6001;
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'prepare-fail-old',
+            oldSha,
+            {
+                preparationError: 'download verification failed',
+                lastError: 'download verification failed',
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-good', 'central-learner'],
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+    });
+});
+
+test('compatible preparation failure grace resets when the remote recovers', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'prepare-recover-old');
+        publishDedicatedBuild(store, root, 'prepare-recover-new');
+        store.stageRelease({
+            buildId: 'prepare-recover-old',
+            runId: 'prepare-recover-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'prepare-recover-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'prepare-recover-old', oldSha);
+        store.stageRelease({
+            buildId: 'prepare-recover-new',
+            runId: 'prepare-recover-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: false,
+        });
+
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'prepare-recover-old',
+            oldSha,
+            {
+                preparationError: 'temporary download error',
+                lastError: 'temporary download error',
+            },
+        );
+        assert.ok(Number.isFinite(
+            store.state.pending_release.required_trainers[0].failure_since_ms));
+
+        now = 4000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'prepare-recover-old',
+            oldSha,
+            { preparedBuildId: 'prepare-recover-new' },
+        );
+        const spec = store.state.pending_release.required_trainers.find(
+            item => item.trainer_id === 'remote-a');
+        assert.equal(
+            Object.prototype.hasOwnProperty.call(spec, 'failure_since_ms'),
+            false,
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+    });
+});
+
+test('compatible preparing never bypasses a failing central learner', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'central-prepare-old');
+        publishDedicatedBuild(store, root, 'central-prepare-new');
+        store.stageRelease({
+            buildId: 'central-prepare-old',
+            runId: 'central-prepare-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-a', 'central-prepare-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'central-prepare-old', oldSha);
+        store.stageRelease({
+            buildId: 'central-prepare-new',
+            runId: 'central-prepare-run',
+            compatibilityKey: '5'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'central-prepare-old',
+            oldSha,
+            { preparedBuildId: 'central-prepare-new' },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'central-prepare-old',
+            oldSha,
+            {
+                preparationError: 'central runtime staging failed',
+                lastError: 'central runtime staging failed',
+            },
+        );
+
+        now = 20000;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'central-prepare-old',
+            oldSha,
+            {
+                preparationError: 'central runtime staging failed',
+                lastError: 'central runtime staging failed',
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+        const centralSpec = store.state.pending_release.required_trainers.find(
+            item => item.trainer_id === 'central-learner');
+        assert.equal(
+            Object.prototype.hasOwnProperty.call(centralSpec, 'failure_since_ms'),
+            false,
+        );
+    });
+});
+
+test('compatible rolling skips a persistently crashing remote but never central learner', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'roll-fail-old');
+        const newSha = publishDedicatedBuild(store, root, 'roll-fail-new');
+        store.stageRelease({
+            buildId: 'roll-fail-old',
+            runId: 'roll-fail-run',
+            compatibilityKey: '3'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-bad', 'remote-good', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'roll-fail-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'roll-fail-new',
+            runId: 'roll-fail-run',
+            compatibilityKey: '3'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-bad', 'remote-good', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'roll-fail-old',
+                oldSha,
+                { preparedBuildId: 'roll-fail-new' },
+            );
+        }
+        assert.equal(store._rollingTargetId(), 'remote-bad');
+
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'managed process exited with code 2',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 6001;
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'managed process exited with code 2',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-good', 'central-learner'],
+        );
+        assert.equal(store._rollingTargetId(), 'remote-good');
+
+        heartbeatDedicated(
+            store,
+            'remote-good',
+            'roll-fail-new',
+            newSha,
+            {
+                preparedBuildId: 'roll-fail-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'central launch failed',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 20000;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'central launch failed',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-good', 'central-learner'],
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        assert.equal(store.state.canonical_build_id, 'roll-fail-old');
+    });
+});
+
+test('compatible remote failure grace survives training-control restart', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const statePath = path.join(root, 'state.json');
+        const artifactRoot = path.join(root, 'artifacts');
+        const options = {
+            statePath,
+            artifactRoot,
+            leaseSeconds: 60,
+            compatibleFailureGraceSeconds: 5,
+            now: () => now,
+        };
+        let store = new TrainingControlStore(options);
+        const oldSha = publishDedicatedBuild(store, root, 'fail-restart-old');
+        publishDedicatedBuild(store, root, 'fail-restart-new');
+        store.stageRelease({
+            buildId: 'fail-restart-old',
+            runId: 'fail-restart-run',
+            compatibilityKey: '4'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'remote-bad', 'fail-restart-old', oldSha);
+        heartbeatDedicated(store, 'central-learner', 'fail-restart-old', oldSha);
+        store.stageRelease({
+            buildId: 'fail-restart-new',
+            runId: 'fail-restart-run',
+            compatibilityKey: '4'.repeat(64),
+            incompatible: false,
+        });
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'fail-restart-old',
+            oldSha,
+            {
+                preparationError: 'persistent staging failure',
+                lastError: 'persistent staging failure',
+            },
+        );
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'fail-restart-old',
+            oldSha,
+            { preparedBuildId: 'fail-restart-new' },
+        );
+        const before = store.state.pending_release.required_trainers.find(
+            item => item.trainer_id === 'remote-bad').failure_since_ms;
+        assert.equal(before, 1000);
+
+        store = new TrainingControlStore(options);
+        now = 6001;
+        heartbeatDedicated(
+            store,
+            'remote-bad',
+            'fail-restart-old',
+            oldSha,
+            {
+                preparationError: 'persistent staging failure',
+                lastError: 'persistent staging failure',
+            },
+        );
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        // Server restart intentionally forgets live heartbeat records. The still-required
+        // checkpoint owner must re-register before the barrier can advance.
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'fail-restart-old',
+            oldSha,
+            { preparedBuildId: 'fail-restart-new' },
+        );
+        assert.equal(store.state.pending_release.phase, 'rolling');
+    });
+});
+
+test('incompatible rollout drops an expired remote after its fail-closed lease', () => {
     withTempDir(root => {
         let now = 1000;
         const store = new TrainingControlStore({
@@ -819,6 +1793,8 @@ test('incompatible rollout never drops an expired required trainer', () => {
         }
         assert.equal(store.state.pending_release.phase, 'stopping');
 
+        // The remote disappears. The central learner remains fresh and finishes its
+        // authoritative checkpoint/stop acknowledgement before the remote lease expires.
         now = 9000;
         heartbeatDedicated(
             store,
@@ -834,12 +1810,138 @@ test('incompatible rollout never drops an expired required trainer', () => {
         now = 11001;
         const desired = store.status().desired;
 
+        assert.equal(desired.pending_release, null);
+        assert.equal(desired.canonical_build_id, 'stale-incompatible-new');
+        assert.equal(desired.run_id, 'stale-incompatible-new-run');
+    });
+});
+
+test('incompatible rollout never bypasses an expired central learner', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stale-central-old');
+        publishDedicatedBuild(store, root, 'stale-central-new');
+        store.stageRelease({
+            buildId: 'stale-central-old',
+            runId: 'stale-central-old-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stale-central-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'stale-central-new',
+            runId: 'stale-central-new-run',
+            compatibilityKey: 'f'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stale-central-old',
+                oldSha,
+                { preparedBuildId: 'stale-central-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        now = 9000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'stale-central-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'stale-central-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 11001;
+        const desired = store.status().desired;
+
         assert.equal(desired.pending_release.phase, 'stopping');
         assert.deepEqual(
             desired.pending_release.required_trainers.map(item => item.trainer_id),
             ['remote-a', 'central-learner'],
         );
-        assert.equal(desired.canonical_build_id, 'stale-incompatible-old');
+        assert.equal(desired.canonical_build_id, 'stale-central-old');
+    });
+});
+
+test('expired incompatible remote that reconnects before promotion rejoins stop barrier', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'rejoin-incompatible-old');
+        publishDedicatedBuild(store, root, 'rejoin-incompatible-new');
+        store.stageRelease({
+            buildId: 'rejoin-incompatible-old',
+            runId: 'rejoin-incompatible-old-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'rejoin-incompatible-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'rejoin-incompatible-new',
+            runId: 'rejoin-incompatible-new-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-incompatible-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-incompatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        now = 11001;
+        let desired = store.status().desired;
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+
+        now = 12000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'rejoin-incompatible-old',
+            oldSha,
+            {
+                processState: 'running',
+                preparedBuildId: 'rejoin-incompatible-new',
+                appliedRevision: store.state.revision,
+            },
+        );
+        desired = store.status().desired;
+        assert.equal(desired.pending_release.phase, 'stopping');
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+        assert.equal(desired.canonical_build_id, 'rejoin-incompatible-old');
     });
 });
 

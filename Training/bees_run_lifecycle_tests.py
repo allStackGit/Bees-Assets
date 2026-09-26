@@ -51,6 +51,24 @@ class RunLifecycleTests(unittest.TestCase):
         (scenes / "RlEpisodeShipIdentity.cs").write_text("identity-v1\n", encoding="utf-8")
         return assets
 
+    def test_contract_fingerprint_is_stable_and_tracks_semantic_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            first = lifecycle.contract_fingerprint(assets)
+            second = lifecycle.contract_fingerprint(assets)
+
+            self.assertEqual(first["compatibility_key"], second["compatibility_key"])
+            self.assertEqual(first["contract"], second["contract"])
+
+            reward = assets / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
+            reward.write_text("reward-v2\n", encoding="utf-8")
+            changed = lifecycle.contract_fingerprint(assets)
+            self.assertNotEqual(
+                changed["compatibility_key"],
+                first["compatibility_key"],
+            )
+
     def test_compatible_build_keeps_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -82,13 +100,62 @@ class RunLifecycleTests(unittest.TestCase):
                 state,
                 datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc),
                 force_new=True,
+                build_id="build-42",
+                environment_args=("--rl-map-size=32", "--rl-health-ratio=.05"),
             )
             self.assertTrue(second["incompatible"])
             self.assertTrue(second["new_run"])
             self.assertTrue(second["forced_new_run"])
+            self.assertEqual(second["build_id"], "build-42")
+            self.assertEqual(
+                second["environment_args"],
+                ["--rl-map-size=32", "--rl-health-ratio=.05"],
+            )
             self.assertNotEqual(second["run_id"], first["run_id"])
             self.assertEqual(second["compatibility_key"], first["compatibility_key"])
             self.assertEqual(second["contract"], first["contract"])
+
+    def test_forced_new_build_binding_rejects_unsafe_or_non_forced_use(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+
+            with self.assertRaisesRegex(ValueError, "only valid for a forced-new"):
+                lifecycle.plan_run(assets, state, build_id="build-42")
+            with self.assertRaisesRegex(ValueError, "only valid for a forced-new"):
+                lifecycle.plan_run(
+                    assets,
+                    state,
+                    environment_args=("--rl-map-size=32",),
+                )
+            with self.assertRaisesRegex(ValueError, "safe release-id"):
+                lifecycle.plan_run(
+                    assets,
+                    state,
+                    force_new=True,
+                    build_id="../unsafe",
+                )
+            with self.assertRaisesRegex(ValueError, "non-empty strings"):
+                lifecycle.plan_run(
+                    assets,
+                    state,
+                    force_new=True,
+                    build_id="build-42",
+                    environment_args=("",),
+                )
+
+    def test_ordinary_plan_has_no_build_binding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+
+            plan = lifecycle.plan_run(assets, state)
+
+            self.assertIsNone(plan["build_id"])
+            self.assertIsNone(plan["environment_args"])
+            self.assertFalse(plan["forced_new_run"])
 
     def test_comment_only_rl_source_change_keeps_run_compatible(self):
         with tempfile.TemporaryDirectory() as temp:

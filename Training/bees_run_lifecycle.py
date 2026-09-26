@@ -173,6 +173,15 @@ def compatibility_key(payload: Mapping[str, Any]) -> str:
     return _sha256_bytes(canonical.encode("utf-8"))
 
 
+def contract_fingerprint(assets_root: Path) -> dict[str, Any]:
+    payload = contract_payload(assets_root)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "compatibility_key": compatibility_key(payload),
+        "contract": payload,
+    }
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -204,8 +213,24 @@ def plan_run(
     now: Optional[datetime] = None,
     *,
     force_new: bool = False,
+    build_id: Optional[str] = None,
+    environment_args: Optional[Sequence[str]] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
+    if build_id is not None:
+        if not isinstance(build_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", build_id):
+            raise ValueError("build_id must contain only safe release-id characters")
+        if not force_new:
+            raise ValueError("build_id is only valid for a forced-new run plan")
+    normalized_environment_args: Optional[list[str]] = None
+    if environment_args is not None:
+        if not force_new:
+            raise ValueError("environment_args are only valid for a forced-new run plan")
+        normalized_environment_args = []
+        for argument in environment_args:
+            if not isinstance(argument, str) or not argument:
+                raise ValueError("environment_args must contain non-empty strings")
+            normalized_environment_args.append(argument)
     payload = contract_payload(assets_root)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
@@ -226,6 +251,8 @@ def plan_run(
         "incompatible": incompatible,
         "new_run": new_run,
         "forced_new_run": bool(force_new),
+        "build_id": build_id,
+        "environment_args": normalized_environment_args,
         "contract": payload,
     }
 
@@ -282,20 +309,40 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create a new run even when the compatibility contract is unchanged.",
     )
+    plan.add_argument(
+        "--build-id",
+        default=None,
+        help="Bind a forced-new operation to the exact existing release build.",
+    )
+    plan.add_argument(
+        "--environment-args-json",
+        default=None,
+        help="Persist the exact server-owned environment argument list for a forced-new operation.",
+    )
 
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
     commit.add_argument("--plan", required=True)
+
+    fingerprint = sub.add_parser("fingerprint")
+    fingerprint.add_argument("--assets-root", required=True)
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "plan":
+        environment_args = None
+        if args.environment_args_json is not None:
+            environment_args = json.loads(args.environment_args_json)
+            if not isinstance(environment_args, list):
+                raise ValueError("--environment-args-json must contain a JSON list")
         value = plan_run(
             Path(args.assets_root),
             Path(args.state),
             force_new=bool(args.force_new),
+            build_id=args.build_id,
+            environment_args=environment_args,
         )
         _atomic_json(Path(args.out), value)
         print(json.dumps(value, sort_keys=True))
@@ -303,6 +350,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "commit":
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
         value = commit_plan(Path(args.state), plan)
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    if args.command == "fingerprint":
+        value = contract_fingerprint(Path(args.assets_root))
         print(json.dumps(value, sort_keys=True))
         return 0
     return 2

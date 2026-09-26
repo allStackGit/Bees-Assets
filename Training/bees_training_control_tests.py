@@ -24,6 +24,178 @@ class FakeClient:
 
 
 class TrainingControlClientTests(unittest.TestCase):
+    def _runtime_pointer_fixture(self, root: Path, build_id: str, version: str):
+        runtime_root = root / f"runtime-{build_id}"
+        runtime_root.mkdir(parents=True)
+        (runtime_root / "bees-runtime-version.txt").write_text(
+            version + "\n",
+            encoding="ascii",
+        )
+        service = runtime_root / "bees_continual_elastic_wan_service.py"
+        service.write_text("# pinned service\n", encoding="utf-8")
+        python_executable = root / f"python-{build_id}"
+        python_executable.write_bytes(b"python")
+        command = [
+            str(python_executable),
+            str(service),
+            "--training-env={env}",
+            "--run-id={run_id}",
+        ]
+        return runtime_root, python_executable, command
+
+    def test_central_runtime_pointer_requires_verified_runtime_and_service(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            version = "a" * 64
+            runtime_root, python_executable, command = self._runtime_pointer_fixture(
+                root,
+                "build-a",
+                version,
+            )
+            pointer = root / "release-runtime.json"
+            pointer.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "build_id": "build-a",
+                        "runtime_version": version,
+                        "runtime_root": str(runtime_root),
+                        "python_executable": str(python_executable),
+                        "launch_command": command,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = agent._load_runtime_cutover_pointer(str(pointer))
+            self.assertEqual(loaded["build_id"], "build-a")
+            self.assertEqual(loaded["runtime_version"], version)
+            self.assertEqual(loaded["launch_command"], command)
+
+            (runtime_root / "bees-runtime-version.txt").write_text(
+                "b" * 64 + "\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(ValueError, "version marker"):
+                agent._load_runtime_cutover_pointer(str(pointer))
+
+    def test_pending_runtime_pointer_does_not_replace_current_cached_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pointer = root / "release-runtime.json"
+            cache = {}
+
+            old_root, old_python, old_command = self._runtime_pointer_fixture(
+                root,
+                "build-old",
+                "a" * 64,
+            )
+            pointer.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "build_id": "build-old",
+                        "runtime_version": "a" * 64,
+                        "runtime_root": str(old_root),
+                        "python_executable": str(old_python),
+                        "launch_command": old_command,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                agent._runtime_launch_template(
+                    str(pointer),
+                    "build-old",
+                    ["fallback", "service", "--training-env={env}"],
+                    cache,
+                ),
+                old_command,
+            )
+
+            new_root, new_python, new_command = self._runtime_pointer_fixture(
+                root,
+                "build-new",
+                "b" * 64,
+            )
+            pointer.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "build_id": "build-new",
+                        "runtime_version": "b" * 64,
+                        "runtime_root": str(new_root),
+                        "python_executable": str(new_python),
+                        "launch_command": new_command,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                agent._runtime_launch_template(
+                    str(pointer),
+                    "build-old",
+                    ["wrong", "service", "--training-env={env}"],
+                    cache,
+                ),
+                old_command,
+            )
+            self.assertEqual(
+                agent._runtime_launch_template(
+                    str(pointer),
+                    "build-new",
+                    ["wrong", "service", "--training-env={env}"],
+                    cache,
+                ),
+                new_command,
+            )
+
+    def test_runtime_state_records_actual_active_child_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime_root, python_executable, command = self._runtime_pointer_fixture(
+                root,
+                "build-a",
+                "c" * 64,
+            )
+            state = root / "active-runtime.json"
+
+            agent._write_runtime_state(
+                str(state),
+                build_id="build-a",
+                command=command,
+            )
+
+            value = json.loads(state.read_text(encoding="utf-8"))
+            self.assertEqual(value["build_id"], "build-a")
+            self.assertEqual(value["runtime_version"], "c" * 64)
+            self.assertEqual(Path(value["runtime_root"]), runtime_root.resolve())
+            self.assertEqual(
+                Path(value["python_executable"]),
+                python_executable.resolve(),
+            )
+
+    def test_heartbeat_reports_release_preparation_error_separately(self):
+        heartbeat = control.default_heartbeat(
+            trainer_id="remote-a",
+            role="dedicated",
+            platform="LinuxPlayer",
+            process_state="running",
+            applied_revision=7,
+            build={"build_id": "old", "archive_sha256": "a" * 64},
+            prepared_build_id="",
+            preparation_error="runtime download failed",
+            last_error="runtime download failed",
+        )
+
+        self.assertEqual(
+            heartbeat["preparation_error"],
+            "runtime download failed",
+        )
+        self.assertEqual(heartbeat["last_error"], "runtime download failed")
+        self.assertEqual(heartbeat["prepared_build_id"], "")
+
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
             agent._parser().get_default("request_timeout_seconds"),
@@ -636,6 +808,65 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertNotEqual(training_entry.parent, game_entry.parent)
             self.assertEqual(training_entry.read_bytes(), b"training")
             self.assertEqual(game_entry.read_bytes(), b"game")
+
+    def test_dedicated_process_safety_requires_exact_desired_identity(self):
+        managed = agent.ManagedProcess()
+        process = mock.Mock()
+        process.poll.return_value = None
+        managed.process = process
+        managed.build_id = "build-a"
+        managed.build_sha256 = "a" * 64
+        managed.run_id = "run-a"
+        managed.compatibility_key = "b" * 64
+        managed.environment_args = ("--rl-map-size=32",)
+        managed.worker_env_count = 8
+        descriptor = {
+            "build_id": "build-a",
+            "archive_sha256": "a" * 64,
+        }
+
+        self.assertTrue(
+            agent.dedicated_process_matches_desired(
+                managed,
+                mode="training",
+                descriptor=descriptor,
+                run_id="run-a",
+                compatibility_key="b" * 64,
+                environment_args=("--rl-map-size=32",),
+                worker_env_count=8,
+            )
+        )
+
+        mismatches = (
+            {"mode": "stopped"},
+            {"descriptor": {"build_id": "build-b", "archive_sha256": "a" * 64}},
+            {"descriptor": {"build_id": "build-a", "archive_sha256": "c" * 64}},
+            {"run_id": "run-b"},
+            {"compatibility_key": "d" * 64},
+            {"environment_args": ("--rl-map-size=64",)},
+            {"worker_env_count": 9},
+        )
+        base = {
+            "mode": "training",
+            "descriptor": descriptor,
+            "run_id": "run-a",
+            "compatibility_key": "b" * 64,
+            "environment_args": ("--rl-map-size=32",),
+            "worker_env_count": 8,
+        }
+        for mismatch in mismatches:
+            with self.subTest(mismatch=mismatch):
+                self.assertFalse(
+                    agent.dedicated_process_matches_desired(
+                        managed,
+                        **{**base, **mismatch},
+                    )
+                )
+
+        process.poll.return_value = 0
+        self.assertFalse(
+            agent.dedicated_process_matches_desired(managed, **base)
+        )
 
     def test_full_game_local_state_defaults_offline_to_inference(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true,Position=0)]
-    [ValidateSet('build','server','start','stop','status','bundle')]
+    [ValidateSet('build','server','start','stop','status','bundle','qualify')]
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
@@ -52,13 +52,21 @@ $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $DiagnosticBenchmarkScript=Join-Path $AssetsRoot 'Training\bees_training_diagnostic_benchmark.py'
+$RobustnessQualificationScript=Join-Path $AssetsRoot 'Training\bees_training_robustness_qualification.py'
+$ReleaseRuntimeScript=Join-Path $AssetsRoot 'Training\bees_release_runtime.py'
+$BootstrapBundleScript=Join-Path $AssetsRoot 'Training\bees_bootstrap_bundle.py'
+$ReleaseRuntimeInstallRoot=Join-Path $RuntimeRoot 'TrainingReleases'
+$BootstrapBundlePath=Join-Path $RemoteRoot 'bees-bootstrap-bundle.zip'
 $ServerPidPath=Join-Path $RuntimeRoot 'bees-server.pid'
 $ServerStatePath=Join-Path $RuntimeRoot 'bees-server-state.json'
-$ServerDependencyStampPath=Join-Path $RuntimeRoot 'bees-server-dependencies.sha256'
+$ServerReleaseRoot=Join-Path $RuntimeRoot 'ServerReleases'
 $CentralAgentPidPath=Join-Path $RuntimeRoot 'central-training-agent.pid'
 $CentralAgentStatePath=Join-Path $RuntimeRoot 'central-training-agent.json'
 $CentralAgentInstallRoot=Join-Path $BeesRoot 'ManagedBuilds\central-learner'
 $CentralAgentShutdownRequestPath=Join-Path $CentralAgentInstallRoot 'worker-shutdown.request'
+$CentralRuntimePointerPath=Join-Path $CentralAgentInstallRoot 'release-runtime.json'
+$CentralRuntimeReadyBuildPath=Join-Path $CentralAgentInstallRoot 'runtime-ready-build.txt'
+$CentralRuntimeStatePath=Join-Path $CentralAgentInstallRoot 'active-runtime.json'
 $CentralModelSnapshotRequestPath=Join-Path $CentralAgentInstallRoot 'model-snapshot.request'
 $CentralModelSnapshotResponsePath=Join-Path $CentralAgentInstallRoot 'model-snapshot.response.json'
 $TailnetToolRoot=Join-Path $AssetsRoot 'Tools~\bees-tailnet-bridge'
@@ -183,12 +191,15 @@ function Test-PythonCode([string]$Exe,[string]$Code){
     }
 }
 
-function Ensure-LearnerPython($Config){
-    if(-not(Test-Path -LiteralPath $LearnerRequirementsPath)){
-        throw "Learner Python requirements are missing: $LearnerRequirementsPath"
+function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
+    $requirementsRootPath=if($RequirementsRoot){[IO.Path]::GetFullPath($RequirementsRoot)}else{Join-Path $AssetsRoot 'Training'}
+    $learnerRequirements=Join-Path $requirementsRootPath 'bees_learner_requirements.txt'
+    $remoteRequirements=Join-Path $requirementsRootPath 'bees_remote_requirements.txt'
+    if(-not(Test-Path -LiteralPath $learnerRequirements)){
+        throw "Learner Python requirements are missing: $learnerRequirements"
     }
-    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){
-        throw "Shared Python requirements are missing: $RemoteRequirementsPath"
+    if(-not(Test-Path -LiteralPath $remoteRequirements)){
+        throw "Shared Python requirements are missing: $remoteRequirements"
     }
 
     $basePython=Resolve-Python $Config
@@ -196,27 +207,29 @@ function Ensure-LearnerPython($Config){
         throw "Bees learner requires Python 3.10. Configured python resolved to '$basePython'."
     }
 
-    $venvRoot=Join-Path $RuntimeRoot 'LearnerPython'
+    $requirementsHash=Get-StringSha256 (
+        (Get-Content -LiteralPath $learnerRequirements -Raw) +
+        [Environment]::NewLine +
+        (Get-Content -LiteralPath $remoteRequirements -Raw)
+    )
+    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvRoot=Join-Path $venvBase $requirementsHash
     $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
     if(-not(Test-Path -LiteralPath $venvPython)){
-        Write-Host "Creating managed learner Python environment at $venvRoot..."
+        Write-Host "Creating release-isolated learner Python environment at $venvRoot..."
+        Ensure-Directory $venvBase
         Invoke-Checked $basePython @('-m','venv',$venvRoot) $AssetsRoot | Out-Host
     }
 
-    $requirementsHash=Get-StringSha256 (
-        (Get-Content -LiteralPath $LearnerRequirementsPath -Raw) +
-        [Environment]::NewLine +
-        (Get-Content -LiteralPath $RemoteRequirementsPath -Raw)
-    )
     $stampPath=Join-Path $venvRoot 'bees-requirements.sha256'
     $currentStamp=if(Test-Path -LiteralPath $stampPath){(Get-Content -LiteralPath $stampPath -Raw).Trim()}else{''}
     $preflight='import sys, mlagents, torch, numpy, onnxruntime; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)'
     $importsOk=($currentStamp -eq $requirementsHash) -and (Test-PythonCode $venvPython $preflight)
 
     if(-not $importsOk){
-        Write-Host 'Installing/updating central learner Python dependencies...'
-        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot | Out-Host
-        Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot | Out-Host
+        Write-Host "Installing central learner dependencies for runtime $requirementsHash..."
+        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $requirementsRootPath | Out-Host
+        Invoke-Checked $venvPython @('-m','pip','install','-r',$learnerRequirements) $requirementsRootPath | Out-Host
         if(-not(Test-PythonCode $venvPython $preflight)){
             throw 'Central learner Python dependency preflight failed after installation.'
         }
@@ -390,6 +403,28 @@ function Ensure-TailnetIdentity($Config){
     Ensure-Directory $state
     Ensure-Directory (Split-Path -Parent $TailnetAddressPath)
 
+    $gatewayState=$null
+    if(Test-Path -LiteralPath $TailnetGatewayStatePath){
+        try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
+    }
+    if($null -ne $gatewayState){
+        if(Test-ManagedProcessIdentity $gatewayState){
+            if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
+                throw 'Embedded tailnet gateway is running but its persisted learner IPv4 address is missing. Refusing to start a second tsnet server against the same state directory.'
+            }
+            $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+            if($tailnetIp -notmatch '^100\.(?:\d{1,3}\.){2}\d{1,3}$'){
+                throw "Embedded tailnet gateway is running but its persisted learner IPv4 address is invalid: $tailnetIp"
+            }
+            Write-Host "Embedded Bees tailnet identity already active at $tailnetIp; reusing the live gateway state."
+            return
+        }
+        $livePid=Get-StateReferencedLivePid $gatewayState
+        if($livePid -gt 0){
+            throw "Tailnet gateway state references live PID $livePid but its persisted PID/start-time/executable identity does not match. Refusing concurrent authentication against a possibly unrelated process/state owner."
+        }
+    }
+
     Write-Host 'Checking embedded Bees tailnet identity. On first use, open the Tailscale login URL shown below.'
     Invoke-Checked $bridge @('auth','--state',$state,'--hostname',$hostname,'--ip-file',$TailnetAddressPath) $AssetsRoot
 
@@ -420,25 +455,48 @@ function Start-TailnetGatewayIfNeeded($Config){
         throw 'controlPort, brokerPort, and tailnetBootstrapPort must be distinct.'
     }
 
-    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
     foreach($path in @(
-        $runtimeZip,
-        $WorkerTokenPath,
-        $WanTokenPath,
-        $BootstrapTokenPath,
-        $LatestReleasePath,
-        [string]$bridges.distribution_windows,
-        [string]$bridges.distribution_linux
+        $BootstrapBundlePath,
+        $BootstrapTokenPath
     )){
         if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
     }
+
+    $argList=@(
+        'gateway',
+        '--state',$state,
+        '--hostname',$hostname,
+        '--control-port',[string]$controlPort,
+        '--broker-port',[string]$brokerPort,
+        '--bootstrap-port',[string]$bootstrapPort,
+        '--bootstrap-bundle',$BootstrapBundlePath,
+        '--bootstrap-token',$BootstrapTokenPath
+    )
+    # The complete worker bootstrap is one atomically replaced outer ZIP. Publishing a new
+    # release therefore does not require recycling the private endpoint and a worker can never
+    # observe a cross-generation mix of release metadata/runtime/tokens/helper binaries.
+    # Restart only when process-level gateway configuration actually changes.
+    $bootstrapTokenSha=(Get-FileHash -LiteralPath $BootstrapTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $gatewayConfigHash=Get-StringSha256 (
+        ([IO.Path]::GetFullPath($bridge)) + [Environment]::NewLine +
+        ($argList -join [Environment]::NewLine) + [Environment]::NewLine +
+        "bootstrap-token-sha256=$bootstrapTokenSha"
+    )
 
     $gatewayState=$null
     if(Test-Path -LiteralPath $TailnetGatewayStatePath){
         try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
     }
     if($null -ne $gatewayState){
-        if(Test-ManagedProcessIdentity $gatewayState $bridge){
+        if(Test-ManagedProcessIdentity $gatewayState){
+            $recordedConfigHash=[string](Get-ObjectPropertyValue $gatewayState 'config_hash')
+            $desiredExecutableMatches=Test-ManagedProcessIdentity $gatewayState $bridge
+            if($desiredExecutableMatches -and $recordedConfigHash -eq $gatewayConfigHash){
+                $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+                Write-Host ("Embedded tailnet gateway already healthy at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,[int]$gatewayState.pid)
+                return
+            }
+            Write-Host 'Embedded tailnet gateway executable/configuration changed; replacing the verified owned gateway.'
             $null=Stop-ManagedProcessTree $gatewayState $bridge 'embedded tailnet gateway'
         } else {
             $livePid=Get-StateReferencedLivePid $gatewayState
@@ -458,21 +516,6 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
 
     Ensure-Directory (Split-Path -Parent $TailnetGatewayLogPath)
-    $argList=@(
-        'gateway',
-        '--state',$state,
-        '--hostname',$hostname,
-        '--control-port',[string]$controlPort,
-        '--broker-port',[string]$brokerPort,
-        '--bootstrap-port',[string]$bootstrapPort,
-        '--runtime',$runtimeZip,
-        '--worker-token',$WorkerTokenPath,
-        '--wan-token',$WanTokenPath,
-        '--release',$LatestReleasePath,
-        '--windows-bridge',[string]$bridges.distribution_windows,
-        '--linux-bridge',[string]$bridges.distribution_linux,
-        '--bootstrap-token',$BootstrapTokenPath
-    )
     $startArgs=@{
         FilePath=$bridge
         ArgumentList=$argList
@@ -498,10 +541,11 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
     [pscustomobject]@{
-        schema_version=1
+        schema_version=2
         pid=[int]$gatewayIdentity.pid
         process_start_utc=[string]$gatewayIdentity.process_start_utc
         executable_path=[string]$gatewayIdentity.executable_path
+        config_hash=$gatewayConfigHash
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $TailnetGatewayStatePath -Encoding UTF8
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
@@ -527,7 +571,7 @@ function Reset-BuildDirectory([string]$Path){
 }
 
 function Get-UnityProcessesForProject([string]$ProjectPath){
-    $normalized=[IO.Path]::GetFullPath($ProjectPath).TrimEnd('\\')
+    $normalized=[IO.Path]::GetFullPath($ProjectPath).TrimEnd([char[]]"\\/")
     $matches=@()
     try {
         foreach($process in @(Get-CimInstance Win32_Process -Filter "Name = 'Unity.exe'" -ErrorAction SilentlyContinue)){
@@ -682,6 +726,268 @@ function Package-Build([string]$Python,[string]$Source,[string]$Archive,[string]
     Invoke-Checked $Python @((Join-Path $AssetsRoot 'Training\bees_package_training_build.py'),'--source',$Source,'--output',$Archive,'--entrypoint',$Entrypoint) $AssetsRoot
 }
 
+function Invoke-PythonJson([string]$Python,[string[]]$ArgumentList,[string]$WorkingDirectory=$AssetsRoot){
+    Push-Location $WorkingDirectory
+    try {
+        $output=@(& $Python @ArgumentList)
+        $exitCode=$LASTEXITCODE
+        if($exitCode -ne 0){
+            throw "$Python exited with code $exitCode while running $($ArgumentList -join ' ')."
+        }
+        $json=($output -join [Environment]::NewLine).Trim()
+        if(-not $json){ throw "$Python produced no JSON output for $($ArgumentList[0])." }
+        try { return ($json | ConvertFrom-Json) }
+        catch { throw "Invalid JSON from $($ArgumentList[0]): $json" }
+    } finally {
+        Pop-Location
+    }
+}
+
+function New-ReleaseTrainingRuntime(
+    [string]$Python,
+    [string]$BuildId,
+    [string]$SourceCommit,
+    [string]$Archive
+){
+    if(-not(Test-Path -LiteralPath $ReleaseRuntimeScript)){
+        throw "Training runtime packager is missing: $ReleaseRuntimeScript"
+    }
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'package',
+        '--assets-root',$AssetsRoot,
+        '--output',$Archive,
+        '--build-id',$BuildId,
+        '--source-commit',$SourceCommit
+    ) $AssetsRoot
+}
+
+function Resolve-ReleaseTrainingRuntime(
+    [string]$Python,
+    $Release,
+    [switch]$AllowLegacyPin
+){
+    $runtime=Get-ObjectPropertyValue $Release 'training_runtime'
+    if($null -eq $runtime){
+        if(-not $AllowLegacyPin){
+            throw "Release $($Release.build_id) has no immutable training runtime. Rebuild the release."
+        }
+        $legacyBuild=([string]$Release.build_id).Trim()
+        if(-not $legacyBuild){ throw 'Legacy release has no build_id.' }
+        $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $legacyBuild
+        Ensure-Directory $packageRoot
+        $archive=Join-Path $packageRoot 'training-runtime.zip'
+        $sourceCommit=Get-GitShortSha
+        Write-Warning "Release $legacyBuild predates immutable training runtimes. Pinning the current Training runtime once for recovery; the next build will pin its runtime at build time."
+        $runtime=New-ReleaseTrainingRuntime $Python $legacyBuild $sourceCommit $archive
+        $runtime | Add-Member -NotePropertyName legacy_pinned_after_build -NotePropertyValue $true -Force
+        $Release | Add-Member -NotePropertyName training_runtime -NotePropertyValue $runtime -Force
+        if($null -ne (Get-ObjectPropertyValue $Release 'schema_version')){
+            $Release.schema_version=3
+        }
+        Save-LatestRelease $Release
+    }
+
+    $archivePath=([string](Get-ObjectPropertyValue $runtime 'archive')).Trim()
+    $archiveSha=([string](Get-ObjectPropertyValue $runtime 'archive_sha256')).Trim().ToLowerInvariant()
+    $runtimeVersion=([string](Get-ObjectPropertyValue $runtime 'runtime_version')).Trim().ToLowerInvariant()
+    $buildId=([string]$Release.build_id).Trim()
+    if(-not $archivePath -or -not $archiveSha -or -not $runtimeVersion){
+        throw "Release $buildId has incomplete immutable training runtime metadata."
+    }
+
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'verify',
+        '--archive',$archivePath,
+        '--expected-sha256',$archiveSha,
+        '--expected-version',$runtimeVersion,
+        '--expected-build-id',$buildId
+    ) $AssetsRoot
+}
+
+function Install-ReleaseTrainingRuntime([string]$Python,$Release,[switch]$AllowLegacyPin){
+    $runtime=Resolve-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin:$AllowLegacyPin
+    Invoke-PythonJson $Python @(
+        $ReleaseRuntimeScript,'install',
+        '--archive',[string]$runtime.archive,
+        '--destination-root',$ReleaseRuntimeInstallRoot,
+        '--expected-sha256',[string]$runtime.archive_sha256,
+        '--expected-version',[string]$runtime.runtime_version,
+        '--expected-build-id',[string]$Release.build_id
+    ) $AssetsRoot
+}
+
+function New-CentralLearnerLaunchCommand(
+    $Config,
+    [string]$LearnerPython,
+    [string]$Unity,
+    [string]$RuntimeRootPath
+){
+    $service=Join-Path $RuntimeRootPath 'bees_continual_elastic_wan_service.py'
+    $trainerConfig=Join-Path $RuntimeRootPath 'rl_1v1_config.yaml'
+    $continualConfig=Join-Path $RuntimeRootPath 'continual_learning_config.json'
+    foreach($required in @($LearnerPython,$service,$trainerConfig,$continualConfig)){
+        if(-not(Test-Path -LiteralPath $required)){
+            throw "Central release runtime is missing: $required"
+        }
+    }
+    $telemetry=Join-Path $TrainingRoot 'Telemetry'
+    $models=Join-Path $TrainingRoot 'Models'
+    Ensure-Directory $telemetry
+    Ensure-Directory $models
+    @(
+        $LearnerPython,
+        $service,
+        "--root=$TrainingRoot",
+        "--assets-root=$AssetsRoot",
+        "--runtime-training-root=$RuntimeRootPath",
+        '--training-env={env}',
+        "--telemetry-quarantine=$telemetry",
+        "--model-distribution-root=$models",
+        '--game-build-version={build_id}',
+        '--run-id={run_id}',
+        "--trainer-config=$trainerConfig",
+        "--continual-config=$continualConfig",
+        "--unity-editor=$Unity",
+        "--unity-project-root=$BeesRoot",
+        "--generation-steps=$($Config.generationSteps)",
+        "--num-envs=$($Config.numLocalEnvs)",
+        '--platform=WindowsPlayer',
+        "--bees-wan-actors=$($Config.maxRemoteActors)",
+        "--bees-wan-min-actors=$($Config.minRemoteActors)",
+        "--bees-wan-broker-port=$($Config.brokerPort)",
+        "--bees-wan-auth-token-file=$WanTokenPath"
+    )
+}
+
+function Prepare-CentralReleaseRuntime(
+    $Config,
+    [string]$BootstrapPython,
+    [string]$Unity,
+    $Release
+){
+    Ensure-Directory $CentralAgentInstallRoot
+    $installed=Install-ReleaseTrainingRuntime $BootstrapPython $Release -AllowLegacyPin
+    $runtimeRootPath=[string]$installed.installed_root
+    $runtimeVersion=([string]$installed.runtime_version).Trim().ToLowerInvariant()
+    $learnerResult=@(Ensure-LearnerPython $Config $runtimeRootPath)
+    if($learnerResult.Count -ne 1){
+        throw "Learner Python resolver returned $($learnerResult.Count) values while staging central runtime; expected one."
+    }
+    $learnerPython=[IO.Path]::GetFullPath([string]$learnerResult[0])
+    $launchCommand=@(New-CentralLearnerLaunchCommand $Config $learnerPython $Unity $runtimeRootPath)
+    $pointer=[ordered]@{
+        schema_version=1
+        build_id=[string]$Release.build_id
+        runtime_version=$runtimeVersion
+        runtime_root=[IO.Path]::GetFullPath($runtimeRootPath)
+        python_executable=$learnerPython
+        launch_command=@($launchCommand)
+        prepared_utc=[DateTime]::UtcNow.ToString('o')
+    }
+
+    $pointerTemp="$CentralRuntimePointerPath.new"
+    [IO.File]::WriteAllText(
+        $pointerTemp,
+        ($pointer|ConvertTo-Json -Depth 8) + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $pointerTemp $CentralRuntimePointerPath
+
+    $readyTemp="$CentralRuntimeReadyBuildPath.new"
+    [IO.File]::WriteAllText(
+        $readyTemp,
+        ([string]$Release.build_id) + [Environment]::NewLine,
+        (New-Object Text.ASCIIEncoding)
+    )
+    Install-AtomicFile $readyTemp $CentralRuntimeReadyBuildPath
+
+    [pscustomobject]@{
+        build_id=[string]$Release.build_id
+        runtime_version=$runtimeVersion
+        runtime_root=[IO.Path]::GetFullPath($runtimeRootPath)
+        learner_python=$learnerPython
+        launch_command=@($launchCommand)
+    }
+}
+
+function Get-CentralFallbackLaunchCommand(
+    $Config,
+    [string]$Unity,
+    $PreparedRuntime
+){
+    $canonicalBuild=''
+    if(Test-Path -LiteralPath $AdminTokenPath){
+        try{
+            $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+            if($admin){
+                $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $admin
+                $desired=Get-ObjectPropertyValue $status 'desired'
+                $canonicalBuild=([string](Get-ObjectPropertyValue $desired 'canonical_build_id')).Trim()
+            }
+        }catch{$canonicalBuild=''}
+    }
+
+    if(-not $canonicalBuild -or $canonicalBuild -eq [string]$PreparedRuntime.build_id){
+        return [pscustomobject]@{
+            build_id=[string]$PreparedRuntime.build_id
+            launch_command=@($PreparedRuntime.launch_command)
+        }
+    }
+
+    if(Test-Path -LiteralPath $CentralRuntimeStatePath){
+        try{
+            $runtimeState=Get-Content -LiteralPath $CentralRuntimeStatePath -Raw|ConvertFrom-Json
+            $stateBuild=([string](Get-ObjectPropertyValue $runtimeState 'build_id')).Trim()
+            $statePython=([string](Get-ObjectPropertyValue $runtimeState 'python_executable')).Trim()
+            $stateRoot=([string](Get-ObjectPropertyValue $runtimeState 'runtime_root')).Trim()
+            if($stateBuild -eq $canonicalBuild -and $statePython -and $stateRoot){
+                return [pscustomobject]@{
+                    build_id=$stateBuild
+                    launch_command=@(New-CentralLearnerLaunchCommand $Config $statePython $Unity $stateRoot)
+                }
+            }
+        }catch{}
+    }
+
+    $existing=$null
+    if(Test-Path -LiteralPath $CentralAgentStatePath){
+        try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
+    }
+    if($null -ne $existing){
+        $existingPython=([string](Get-ObjectPropertyValue $existing 'learner_python')).Trim()
+        $existingRoot=([string](Get-ObjectPropertyValue $existing 'release_runtime_root')).Trim()
+        $cutoverCapable=[bool](Get-ObjectPropertyValue $existing 'runtime_cutover_capable')
+        $fallbackBuild=([string](Get-ObjectPropertyValue $existing 'fallback_build_id')).Trim()
+        if($cutoverCapable){
+            if($fallbackBuild -eq $canonicalBuild -and $existingPython -and $existingRoot){
+                return [pscustomobject]@{
+                    build_id=$fallbackBuild
+                    launch_command=@(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+                }
+            }
+        }else{
+            # Legacy immutable-runtime supervisors did not record fallback_build_id. Their runtime
+            # fields were the only child command they could run, so current.json can prove which
+            # build those fields accompanied during the one-time stable-supervisor migration.
+            $currentBuildPath=Join-Path $CentralAgentInstallRoot 'current.json'
+            if(Test-Path -LiteralPath $currentBuildPath){
+                try{
+                    $currentBuild=Get-Content -LiteralPath $currentBuildPath -Raw|ConvertFrom-Json
+                    $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
+                    if($currentBuildId -eq $canonicalBuild -and $existingPython -and $existingRoot){
+                        return [pscustomobject]@{
+                            build_id=$currentBuildId
+                            launch_command=@(New-CentralLearnerLaunchCommand $Config $existingPython $Unity $existingRoot)
+                        }
+                    }
+                }catch{}
+            }
+        }
+    }
+
+    throw "Cannot safely restart the central supervisor while canonical build $canonicalBuild differs from prepared build $($PreparedRuntime.build_id): no verified launch command bound to the canonical runtime is available."
+}
+
 function Get-GitShortSha {
     $git=Resolve-Git; Push-Location $AssetsRoot
     try {
@@ -713,78 +1019,234 @@ function Get-NamedFileSetSha256([object[]]$Entries){
     Get-StringSha256 ($ordered|ConvertTo-Json -Compress -Depth 3)
 }
 
-function Get-DirectoryContentSha256([string]$Root,[string[]]$ExcludeDirectoryNames=@()){
-    if(-not(Test-Path -LiteralPath $Root -PathType Container)){ throw "Content-hash root is missing: $Root" }
-    $resolved=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Root).Path).TrimEnd([char[]]"\/")
-    $pending=New-Object 'Collections.Generic.Stack[string]'
-    $pending.Push($resolved)
-    $entries=@()
-    while($pending.Count -gt 0){
-        $current=$pending.Pop()
-        foreach($item in @(Get-ChildItem -LiteralPath $current -Force)){
-            if($item.PSIsContainer){
-                if($ExcludeDirectoryNames -notcontains $item.Name){ $pending.Push($item.FullName) }
-                continue
+function Get-BeesServerRuntimeFileNames {
+    # Keep this list limited to files that participate in the managed server process. The focused
+    # contract test walks the transitive local require graph so a newly required runtime module
+    # cannot be forgotten here.
+    @(
+        'start-server.js',
+        'server.js',
+        'siServerDev.js',
+        'serverContracts.js',
+        'database.js',
+        'gamePersistence.js',
+        'outcomeReservations.js',
+        'campaignCheckpoint.js',
+        'security.js',
+        'cachePersistence.js',
+        'rlDemonstrationUploads.js',
+        'rlTelemetryUploadSecurity.js',
+        'rlTelemetryUploads.js',
+        'rlModelDistributionSecurity.js',
+        'rlModelDistribution.js',
+        'trainingControl.js',
+        'trainingEnvOptimizer.js',
+        'package.json',
+        'package-lock.json'
+    )
+}
+
+function Get-BeesServerRuntimeSourceHash {
+    $entries=@(
+        foreach($name in @(Get-BeesServerRuntimeFileNames)){
+            [pscustomobject]@{
+                name=$name
+                path=(Join-Path $ServerRoot $name)
             }
-            $relative=$item.FullName.Substring($resolved.Length).TrimStart([char[]]"\/").Replace('\','/')
-            $entries += [pscustomobject]@{name=$relative;path=$item.FullName}
         }
-    }
+    )
     Get-NamedFileSetSha256 $entries
 }
 
+function Prune-BeesServerRuntimes([string[]]$KeepRoots=@(),[int]$KeepNewest=3){
+    if(-not(Test-Path -LiteralPath $ServerReleaseRoot -PathType Container)){ return }
+    $keep=@{}
+    foreach($root in @($KeepRoots)){
+        if(-not $root){ continue }
+        try{$keep[[IO.Path]::GetFullPath([string]$root).TrimEnd('\')]=1}catch{}
+    }
 
-function Get-WorkingTreeContentSha256([string]$RelativePath){
-    $git=Resolve-Git
-    Push-Location $AssetsRoot
+    $allDirectories=@(
+        Get-ChildItem -LiteralPath $ServerReleaseRoot -Directory -ErrorAction SilentlyContinue
+    )
+    $staleCandidateCutoff=[DateTime]::UtcNow.AddHours(-1)
+    foreach($candidate in @($allDirectories|Where-Object{
+        $_.Name -like '*.candidate-*' -and $_.LastWriteTimeUtc -lt $staleCandidateCutoff
+    })){
+        Remove-Item -LiteralPath $candidate.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $directories=@(
+        $allDirectories |
+            Where-Object{$_.Name -notlike '*.candidate-*'} |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+    foreach($directory in @($directories|Select-Object -First $KeepNewest)){
+        try{$keep[[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')]=1}catch{}
+    }
+
+    foreach($directory in $directories){
+        $full=[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')
+        if($keep.ContainsKey($full)){ continue }
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-BeesServerRuntimeLoad([string]$Node,[string]$RuntimeRoot){
+    if(-not $Node){ return $true }
+    Push-Location $RuntimeRoot
     try {
-        $paths=@(& $git ls-files --cached --others --exclude-standard -- $RelativePath)
-        if($LASTEXITCODE -ne 0){ throw "git ls-files failed for $RelativePath." }
+        $previousErrorAction=$ErrorActionPreference
+        try {
+            $ErrorActionPreference='SilentlyContinue'
+            & $Node -e "const runtime=require('./server'); runtime.loadLegacyRuntime();" *> $null
+            return ($LASTEXITCODE -eq 0)
+        } catch {
+            return $false
+        } finally {
+            $ErrorActionPreference=$previousErrorAction
+        }
     } finally {
         Pop-Location
     }
-    $manifest=@()
-    foreach($repoPath in @($paths|Sort-Object -Unique)){
-        if(-not $repoPath){ continue }
-        $normalized=([string]$repoPath).Replace('\','/')
-        $fullPath=Join-Path $AssetsRoot $normalized
-        if(Test-Path -LiteralPath $fullPath -PathType Leaf){
-            $info=Get-Item -LiteralPath $fullPath
-            $manifest += [pscustomobject]@{
-                name=$normalized
-                length=[int64]$info.Length
-                sha256=(Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSourceHash,[string]$Node=''){
+    if(-not(Test-Path -LiteralPath $RuntimeRoot -PathType Container)){ return $false }
+    $readyPath=Join-Path $RuntimeRoot 'bees-server-runtime.json'
+    $nodeModules=Join-Path $RuntimeRoot 'node_modules'
+    if(-not(Test-Path -LiteralPath $readyPath -PathType Leaf) -or
+       -not(Test-Path -LiteralPath $nodeModules -PathType Container)){
+        return $false
+    }
+    try {
+        $ready=Get-Content -LiteralPath $readyPath -Raw|ConvertFrom-Json
+        if(([string](Get-ObjectPropertyValue $ready 'source_hash')).Trim().ToLowerInvariant() -ne $ExpectedSourceHash){
+            return $false
+        }
+        $entries=@(
+            foreach($name in @(Get-BeesServerRuntimeFileNames)){
+                [pscustomobject]@{
+                    name=$name
+                    path=(Join-Path $RuntimeRoot $name)
+                }
             }
-        } else {
-            # A tracked file deleted from the working tree must also change the identity.
-            $manifest += [pscustomobject]@{
-                name=$normalized
-                length=[int64]-1
-                sha256='missing'
-            }
+        )
+        if((Get-NamedFileSetSha256 $entries) -ne $ExpectedSourceHash){ return $false }
+        return (Test-BeesServerRuntimeLoad $Node $RuntimeRoot)
+    } catch {
+        return $false
+    }
+}
+
+function Prepare-BeesServerRuntime([string]$Node){
+    $sourceHash=Get-BeesServerRuntimeSourceHash
+    Ensure-Directory $ServerReleaseRoot
+    $runtimeRoot=Join-Path $ServerReleaseRoot $sourceHash
+    if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node){
+        return [pscustomobject]@{
+            source_hash=$sourceHash
+            dependency_hash=Get-BeesServerDependencyHash $runtimeRoot
+            runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
         }
     }
-    if($manifest.Count -eq 0){ throw "Working-tree content set is empty: $RelativePath" }
-    Get-StringSha256 (@($manifest|Sort-Object name)|ConvertTo-Json -Compress -Depth 3)
-}
 
-function Get-TrainingRuntimeSourceHash {
-    $sourceRoot=Join-Path $AssetsRoot 'Training'
-    $entries=@(
-        Get-ChildItem -LiteralPath $sourceRoot -Filter '*.py' -File |
-            ForEach-Object { [pscustomobject]@{name=$_.Name;path=$_.FullName} }
-    )
-    $entries += [pscustomobject]@{
-        name='bees_remote_requirements.txt'
-        path=$RemoteRequirementsPath
+    $candidate=Join-Path $ServerReleaseRoot ("$sourceHash.candidate-" + [Guid]::NewGuid().ToString('N'))
+    Ensure-Directory $candidate
+    try {
+        foreach($name in @(Get-BeesServerRuntimeFileNames)){
+            $source=Join-Path $ServerRoot $name
+            if(-not(Test-Path -LiteralPath $source -PathType Leaf)){
+                throw "BeesServer runtime source is missing: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $candidate $name)
+        }
+
+        $dependencyHash=Get-BeesServerDependencyHash $candidate
+        $npm=Resolve-Npm
+        Write-Host "Pre-staging BeesServer runtime $($sourceHash.Substring(0,12)) while the current server remains online..."
+        Invoke-Checked $npm @('ci') $candidate
+
+        foreach($name in @(Get-BeesServerRuntimeFileNames|Where-Object{$_.EndsWith('.js',[StringComparison]::OrdinalIgnoreCase)})){
+            Invoke-Checked $Node @('--check',(Join-Path $candidate $name)) $candidate
+        }
+        Invoke-Checked $Node @(
+            '-e',
+            "const runtime=require('./server'); runtime.loadLegacyRuntime();"
+        ) $candidate
+
+        $actualEntries=@(
+            foreach($name in @(Get-BeesServerRuntimeFileNames)){
+                [pscustomobject]@{
+                    name=$name
+                    path=(Join-Path $candidate $name)
+                }
+            }
+        )
+        $actualHash=Get-NamedFileSetSha256 $actualEntries
+        if($actualHash -ne $sourceHash){
+            throw "BeesServer source changed while staging. expected=$sourceHash staged=$actualHash"
+        }
+
+        $ready=[ordered]@{
+            schema_version=1
+            source_hash=$sourceHash
+            dependency_hash=$dependencyHash
+            prepared_utc=[DateTime]::UtcNow.ToString('o')
+        }
+        [IO.File]::WriteAllText(
+            (Join-Path $candidate 'bees-server-runtime.json'),
+            ($ready|ConvertTo-Json -Depth 4) + [Environment]::NewLine,
+            (New-Object Text.UTF8Encoding($false))
+        )
+
+        if(Test-Path -LiteralPath $runtimeRoot){
+            if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node){
+                Remove-Item -LiteralPath $candidate -Recurse -Force
+            } else {
+                $activeState=$null
+                if(Test-Path -LiteralPath $ServerStatePath){
+                    try{$activeState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$activeState=$null}
+                }
+                $activeRuntime=if($null -ne $activeState){([string](Get-ObjectPropertyValue $activeState 'runtime_root')).Trim()}else{''}
+                $sameActiveRuntime=$false
+                if($activeRuntime){
+                    try{
+                        $sameActiveRuntime=[string]::Equals(
+                            [IO.Path]::GetFullPath($activeRuntime),
+                            [IO.Path]::GetFullPath($runtimeRoot),
+                            [StringComparison]::OrdinalIgnoreCase
+                        )
+                    }catch{$sameActiveRuntime=$false}
+                }
+                if($sameActiveRuntime -and (Test-ManagedProcessIdentity $activeState)){
+                    throw "Active BeesServer runtime failed staged verification; refusing to mutate its live runtime directory: $runtimeRoot"
+                }
+                Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
+                Move-Item -LiteralPath $candidate -Destination $runtimeRoot
+            }
+        } else {
+            Move-Item -LiteralPath $candidate -Destination $runtimeRoot
+        }
+    } finally {
+        if(Test-Path -LiteralPath $candidate){
+            Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
-    Get-NamedFileSetSha256 $entries
+
+    if(-not(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node)){
+        throw "BeesServer staged runtime failed post-install verification: $runtimeRoot"
+    }
+    [pscustomobject]@{
+        source_hash=$sourceHash
+        dependency_hash=Get-BeesServerDependencyHash $runtimeRoot
+        runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
+    }
 }
 
-function Get-BeesServerDependencyHash {
+function Get-BeesServerDependencyHash([string]$Root=$ServerRoot){
     Get-NamedFileSetSha256 @(
-        [pscustomobject]@{name='package.json';path=(Join-Path $ServerRoot 'package.json')},
-        [pscustomobject]@{name='package-lock.json';path=(Join-Path $ServerRoot 'package-lock.json')}
+        [pscustomobject]@{name='package.json';path=(Join-Path $Root 'package.json')},
+        [pscustomobject]@{name='package-lock.json';path=(Join-Path $Root 'package-lock.json')}
     )
 }
 
@@ -826,9 +1288,17 @@ function Archive-TrainingRun([string]$Python,[string]$RunId,[string]$Reason){
     ) $AssetsRoot
 }
 
-function New-TrainingRunPlan([string]$Python,[switch]$ForceNew){
+function New-TrainingRunPlan(
+    [string]$Python,
+    [switch]$ForceNew,
+    [string]$BuildId='',
+    [string[]]$EnvironmentArgs=@()
+){
     if(-not(Test-Path -LiteralPath $RunLifecycleScript)){
         throw "Training run lifecycle helper is missing: $RunLifecycleScript"
+    }
+    if($BuildId -and -not $ForceNew){
+        throw '-BuildId is only valid for a forced-new training run plan.'
     }
     Ensure-Directory $RunLifecycleRoot
     Ensure-Directory $RuntimeRoot
@@ -839,7 +1309,12 @@ function New-TrainingRunPlan([string]$Python,[switch]$ForceNew){
         '--state',$RunStatePath,
         '--out',$RunPlanPath
     )
-    if($ForceNew){ $planArgs+='--force-new' }
+    if($ForceNew){
+        $planArgs+='--force-new'
+        if($BuildId){ $planArgs+=@('--build-id',$BuildId) }
+        $environmentArgsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
+        $planArgs+=@('--environment-args-json',$environmentArgsJson)
+    }
     $null=Invoke-Checked $Python $planArgs $AssetsRoot
     Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
 }
@@ -849,6 +1324,51 @@ function Commit-TrainingRunPlan([string]$Python){
         $RunLifecycleScript,'commit',
         '--state',$RunStatePath,
         '--plan',$RunPlanPath
+    ) $AssetsRoot
+}
+
+function Get-PendingForcedNewRunPlan {
+    if(-not(Test-Path -LiteralPath $RunPlanPath)){ return $null }
+    $plan=$null
+    try { $plan=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
+    catch { throw "Pending training run plan is unreadable: $RunPlanPath" }
+    if($null -eq $plan -or -not [bool](Get-ObjectPropertyValue $plan 'forced_new_run')){
+        return $null
+    }
+    $plan
+}
+
+function Convert-ReleaseToForcedRunPlan($Release,$Plan,[string]$OutgoingRun){
+    $copy=$Release | ConvertTo-Json -Depth 12 | ConvertFrom-Json
+    $copy | Add-Member -NotePropertyName run_id -NotePropertyValue ([string]$Plan.run_id) -Force
+    $copy | Add-Member -NotePropertyName previous_run_id -NotePropertyValue $OutgoingRun -Force
+    $copy | Add-Member -NotePropertyName compatibility_key -NotePropertyValue ([string]$Plan.compatibility_key) -Force
+    $copy | Add-Member -NotePropertyName incompatible -NotePropertyValue $true -Force
+    $copy | Add-Member -NotePropertyName contract -NotePropertyValue $Plan.contract -Force
+    $copy
+}
+
+function Complete-ForcedNewRunPlan($Plan,$Release){
+    if(-not(Test-Path -LiteralPath $RunPlanPath)){ return }
+    $current=$null
+    try { $current=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
+    catch { throw "Pending training run plan is unreadable during completion: $RunPlanPath" }
+    $currentBuild=([string](Get-ObjectPropertyValue $current 'build_id')).Trim()
+    $buildMatches=(-not $currentBuild -or $currentBuild -eq ([string]$Release.build_id).Trim())
+    if($null -eq $current -or
+        -not [bool](Get-ObjectPropertyValue $current 'forced_new_run') -or
+        -not $buildMatches -or
+        ([string](Get-ObjectPropertyValue $current 'run_id')).Trim() -ne ([string]$Release.run_id).Trim() -or
+        ([string](Get-ObjectPropertyValue $current 'compatibility_key')).Trim().ToLowerInvariant() -ne ([string]$Release.compatibility_key).Trim().ToLowerInvariant()){
+        throw "Refusing to clear a forced-new run plan that no longer matches the completed release."
+    }
+    Remove-Item -LiteralPath $RunPlanPath -Force
+}
+
+function Get-TrainingCompatibilityFingerprint([string]$Python){
+    Invoke-PythonJson $Python @(
+        $RunLifecycleScript,'fingerprint',
+        '--assets-root',$AssetsRoot
     ) $AssetsRoot
 }
 
@@ -998,12 +1518,98 @@ function Wait-ReleaseRollout(
     throw "Timed out waiting for release $BuildId run=$RunId to finish coordinated rollout."
 }
 
+function Reconcile-LatestReleaseBeforeBuild(
+    $Config,
+    [string]$Python,
+    [string]$Unity,
+    [string]$AdminToken,
+    $Release
+){
+    Ensure-RunLifecycleMatchesRelease $Python $Release
+    $centralRuntime=Prepare-CentralReleaseRuntime $Config $Python $Unity $Release
+    Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
+
+    $status=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+    $pending=$status.desired.pending_release
+    $releaseBuild=([string]$Release.build_id).Trim()
+    $releaseRun=([string]$Release.run_id).Trim()
+    $releaseKey=([string]$Release.compatibility_key).Trim().ToLowerInvariant()
+
+    if($pending){
+        $pendingBuild=([string]$pending.build_id).Trim()
+        $pendingRun=([string]$pending.run_id).Trim()
+        $pendingKey=([string]$pending.compatibility_key).Trim().ToLowerInvariant()
+        if($pendingBuild -ne $releaseBuild -or
+           $pendingRun -ne $releaseRun -or
+           $pendingKey -ne $releaseKey){
+            throw "Training control has a pending release that differs from latest release metadata. pending=$pendingBuild/$pendingRun latest=$releaseBuild/$releaseRun"
+        }
+        Write-Host "Previous release is still rolling out (phase=$($pending.phase)); finishing build $releaseBuild before compiling another release."
+        $null=Wait-ReleaseRollout $Config $AdminToken $releaseBuild $releaseRun $releaseKey
+        return
+    }
+
+    $canonicalBuild=([string]$status.desired.canonical_build_id).Trim()
+    $canonicalRun=([string]$status.desired.run_id).Trim()
+    $canonicalKey=([string]$status.desired.compatibility_key).Trim().ToLowerInvariant()
+    if($canonicalBuild -eq $releaseBuild -and
+       $canonicalRun -eq $releaseRun -and
+       $canonicalKey -eq $releaseKey){
+        return
+    }
+
+    # A prior build can be interrupted after persisting its immutable release but before publishing
+    # or staging it. Recover that release instead of silently replacing its durable intent with a
+    # newer build.
+    Write-Host "Latest release $releaseBuild was persisted but is not canonical; reconciling it before compiling another release."
+    Ensure-TailnetIdentity $Config
+    Prepare-RemoteBootstrap $Config $Python $Release
+    Publish-Release $Config $AdminToken $Release
+    Start-TailnetGatewayIfNeeded $Config
+    $staged=Stage-Release $Config $AdminToken $Release
+    if($staged.pending_release){
+        $null=Wait-ReleaseRollout $Config $AdminToken $releaseBuild $releaseRun $releaseKey
+    } else {
+        $after=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
+        if(([string]$after.desired.canonical_build_id).Trim() -ne $releaseBuild -or
+           ([string]$after.desired.run_id).Trim() -ne $releaseRun -or
+           ([string]$after.desired.compatibility_key).Trim().ToLowerInvariant() -ne $releaseKey){
+            throw "Previous release reconciliation returned without making $releaseBuild/$releaseRun canonical."
+        }
+    }
+}
+
 function Invoke-Build {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
+    $unfinishedForcedPlan=Get-PendingForcedNewRunPlan
+    if($null -ne $unfinishedForcedPlan){
+        $unfinishedBuild=([string](Get-ObjectPropertyValue $unfinishedForcedPlan 'build_id')).Trim()
+        if(-not $unfinishedBuild){ $unfinishedBuild='legacy-unbound' }
+        throw "A forced new-run operation is still unfinished for build $unfinishedBuild run=$($unfinishedForcedPlan.run_id). Run '.\Assets\bees.ps1 start' to resume/finalize it before creating another build."
+    }
     $sourceSha=Get-GitShortSha
     $unity=Resolve-UnityEditor $config
     Assert-UnityProjectAvailableForBatchBuild
+
+    # Reconcile any previously persisted release before creating a newer one. This covers both an
+    # in-flight rollout and the crash window after latest-release was saved but before it was staged.
+    if((Test-Path -LiteralPath $LatestReleasePath) -and (Test-Path -LiteralPath $AdminTokenPath)){
+        $preBuildAdmin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
+        $preBuildControlOnline=if($preBuildAdmin){Test-Control ([string]$config.controlUrl) $preBuildAdmin}else{$false}
+        $preBuildManagedServerExists=Test-Path -LiteralPath $ServerStatePath
+        if($preBuildAdmin -and ($preBuildControlOnline -or $preBuildManagedServerExists)){
+            $preBuildWorker=Ensure-TokenFile $WorkerTokenPath
+            Start-BeesServerIfNeeded $config $preBuildWorker $preBuildAdmin
+            if(-not(Test-Control ([string]$config.controlUrl) $preBuildAdmin)){
+                throw 'Managed BeesServer reconciliation completed without a reachable training-control endpoint before build.'
+            }
+            $currentRelease=Get-LatestRelease
+            if($currentRelease.run_id -and $currentRelease.compatibility_key){
+                Reconcile-LatestReleaseBeforeBuild $config $python $unity $preBuildAdmin $currentRelease
+            }
+        }
+    }
 
     $outgoingRun=Get-ActiveRunId $config
     if($outgoingRun){
@@ -1038,6 +1644,19 @@ function Invoke-Build {
     $win=Join-Path $BuildsRoot "$date RL Windows"
     $linux=Join-Path $BuildsRoot "$date RL Linux"
     $game=Join-Path $BuildsRoot "$date Full Game Windows"
+
+    # Pin the release's Python/config runtime before Unity compilation begins. A developer can
+    # keep editing the working tree while a long build runs without silently changing the
+    # runtime bytes that will later be paired with these Unity artifacts.
+    $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
+    if(Test-Path -LiteralPath $packageRoot){
+        if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }
+        Remove-Item -LiteralPath $packageRoot -Recurse -Force
+    }
+    Ensure-Directory $packageRoot
+    $trainingRuntimeArchive=Join-Path $packageRoot 'training-runtime.zip'
+    $trainingRuntime=New-ReleaseTrainingRuntime $python $buildId $sha $trainingRuntimeArchive
+
     Reset-BuildDirectory $win
     Reset-BuildDirectory $linux
     if($FullGame){ Reset-BuildDirectory $game }
@@ -1048,12 +1667,13 @@ function Invoke-Build {
         Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game 'Bees.exe' "$date-full-game-windows.log"
     }
 
-    $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
-    if(Test-Path -LiteralPath $packageRoot){
-        if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }
-        Remove-Item -LiteralPath $packageRoot -Recurse -Force
+    $postBuildFingerprint=Get-TrainingCompatibilityFingerprint $python
+    $postBuildKey=([string]$postBuildFingerprint.compatibility_key).Trim().ToLowerInvariant()
+    $plannedKey=([string]$plan.compatibility_key).Trim().ToLowerInvariant()
+    if(-not $postBuildKey -or $postBuildKey -ne $plannedKey){
+        throw "Training compatibility contract changed while Unity was building. Refusing to publish a mixed release. planned=$plannedKey current=$postBuildKey. Re-run the build from the current source."
     }
-    Ensure-Directory $packageRoot
+
     $winZip=Join-Path $packageRoot 'rl-windows.zip'
     $linuxZip=Join-Path $packageRoot 'rl-linux.zip'
     Package-Build $python $win $winZip 'Bees RL Training.exe'
@@ -1080,7 +1700,7 @@ function Invoke-Build {
     $previousRunId=$null
     if($plan.previous_run_id){ $previousRunId=[string]$plan.previous_run_id }
     $release=[pscustomobject]@{
-        schema_version=2
+        schema_version=3
         build_id=$buildId
         source_commit=$sha
         created_utc=[DateTime]::UtcNow.ToString('o')
@@ -1090,6 +1710,7 @@ function Invoke-Build {
         incompatible=[bool]$plan.incompatible
         contract=$plan.contract
         artifacts=$artifacts
+        training_runtime=$trainingRuntime
     }
     Save-LatestRelease $release
     Commit-TrainingRunPlan $python
@@ -1100,17 +1721,29 @@ function Invoke-Build {
 
     if(Test-Path -LiteralPath $AdminTokenPath){
         $admin=(Get-Content -LiteralPath $AdminTokenPath -Raw).Trim()
-        if($admin -and (Test-Control ([string]$config.controlUrl) $admin)){
+        $controlOnline=if($admin){Test-Control ([string]$config.controlUrl) $admin}else{$false}
+        $managedServerExists=Test-Path -LiteralPath $ServerStatePath
+        if($admin -and ($controlOnline -or $managedServerExists)){
             $worker=Ensure-TokenFile $WorkerTokenPath
+            # A previously managed server that crashed during the build is recoverable state, not
+            # a reason to silently skip release staging. An intentionally stopped server has no
+            # managed state file and remains stopped.
             Start-BeesServerIfNeeded $config $worker $admin
+            if(-not(Test-Control ([string]$config.controlUrl) $admin)){
+                throw 'Managed BeesServer reconciliation completed without a reachable training-control endpoint.'
+            }
             Assert-CentralAgentCheckpointSafe
+            $centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release
+            Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime
             Write-Host 'Training control is online; staging this release without stopping the active cluster.'
             if(Test-Path -LiteralPath $TailnetAddressPath){
-                Prepare-RemoteBootstrap $config
+                Prepare-RemoteBootstrap $config $python $release
                 if($tailnetBridgeChanged){
-                    Write-Host 'Embedded tailnet helper changed; restarting the private gateway onto the new immutable helper version.'
-                    Start-TailnetGatewayIfNeeded $config
+                    Write-Host 'Embedded tailnet helper changed; reconciling the private gateway onto the new immutable helper version.'
                 }
+                # Reconcile on every live-cluster build. This is idempotent when healthy and
+                # self-heals a crashed/missing gateway even when the helper version did not change.
+                Start-TailnetGatewayIfNeeded $config
             }
             Publish-Release $config $admin $release
             $staged=Stage-Release $config $admin $release
@@ -1143,45 +1776,228 @@ function Invoke-ControlGet([string]$Url,[string]$Token){ Invoke-RestMethod -Meth
 function Invoke-ControlPost([string]$Url,[string]$Token,$Body){ Invoke-RestMethod -Method Post -Uri $Url -Headers @{Authorization="Bearer $Token"} -ContentType 'application/json' -Body ($Body|ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30 }
 function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet "$Base/v1/status" $Token;$true}catch{$false} }
 
+function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$AdminToken){
+    $dbPasswordHash=if($env:BEES_DB_PASSWORD){Get-StringSha256 ([string]$env:BEES_DB_PASSWORD)}else{''}
+    $payload=[ordered]@{
+        control_url=[string]$Config.controlUrl
+        control_host=[string]$Config.controlHost
+        control_port=[int]$Config.controlPort
+        gameplay_port=[int]$GameplayServerPort
+        worker_token_sha256=Get-StringSha256 $WorkerToken
+        admin_token_sha256=Get-StringSha256 $AdminToken
+        control_state=Join-Path $TrainingRoot 'Control\state.json'
+        artifact_root=Join-Path $TrainingRoot 'Control\Artifacts'
+        log_root=Join-Path $TrainingRoot 'TrainerLogs'
+        db_host=[string]$env:BEES_DB_HOST
+        db_user=[string]$env:BEES_DB_USER
+        db_password_sha256=$dbPasswordHash
+        db_name=[string]$env:BEES_DB_NAME
+        require_test_db=[string]$env:BEES_REQUIRE_TEST_DB
+        disable_background_jobs=[string]$env:BEES_DISABLE_BACKGROUND_JOBS
+    }
+    Get-StringSha256 ($payload|ConvertTo-Json -Compress -Depth 4)
+}
+
+function Set-BeesServerLaunchEnvironment($Config,[string]$WorkerToken,[string]$AdminToken){
+    $env:BEES_TRAINING_CONTROL_ENABLED='1'
+    $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken
+    $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
+    $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost
+    $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
+    $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'
+    $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
+    $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
+    $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
+}
+
+function Write-BeesServerManagedState(
+    $Identity,
+    [string]$SourceHash,
+    [string]$DependencyHash,
+    [string]$RuntimeRoot,
+    [string]$ConfigHash,
+    [string]$Status,
+    [string]$RollbackReason=''
+){
+    $state=[ordered]@{
+        schema_version=5
+        pid=[int]$Identity.pid
+        process_start_utc=[string]$Identity.process_start_utc
+        executable_path=[string]$Identity.executable_path
+        source_hash=$SourceHash
+        dependency_hash=$DependencyHash
+        runtime_root=[IO.Path]::GetFullPath($RuntimeRoot)
+        config_hash=$ConfigHash
+        status=$Status
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    }
+    if($RollbackReason){$state.rollback_reason=$RollbackReason}
+    $temp="$ServerStatePath.new"
+    [IO.File]::WriteAllText(
+        $temp,
+        ($state|ConvertTo-Json -Depth 6) + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $temp $ServerStatePath
+
+    $pidTemp="$ServerPidPath.new"
+    [IO.File]::WriteAllText(
+        $pidTemp,
+        ([string]$Identity.pid),
+        (New-Object Text.ASCIIEncoding)
+    )
+    Install-AtomicFile $pidTemp $ServerPidPath
+}
+
+function Start-BeesServerRuntimeProcess(
+    $Config,
+    [string]$Node,
+    [string]$RuntimeRoot,
+    [string]$WorkerToken,
+    [string]$AdminToken,
+    [string]$ServerLog,
+    $RuntimeIdentity,
+    [string]$RollbackReason='',
+    [int]$TimeoutSeconds=30
+){
+    $base=[string]$Config.controlUrl
+    $launcher=Join-Path $RuntimeRoot 'start-server.js'
+    if(-not(Test-Path -LiteralPath $launcher -PathType Leaf)){
+        throw "Prepared BeesServer runtime is missing its launcher: $launcher"
+    }
+
+    Set-BeesServerLaunchEnvironment $Config $WorkerToken $AdminToken
+    $launchedPid=0
+    Push-Location $RuntimeRoot
+    try {
+        $output=@(& $Node $launcher '--background' "--log=$ServerLog" 'test' ([string]$GameplayServerPort) 2>&1)
+        if($LASTEXITCODE -ne 0){
+            throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)"
+        }
+        $joined=$output -join [Environment]::NewLine
+        Write-Host $joined
+        if($joined -match 'PID\s+(\d+)'){
+            $launchedPid=[int]$Matches[1]
+        }
+    } finally {
+        Pop-Location
+    }
+    if($launchedPid -le 0){
+        throw 'BeesServer launcher succeeded without reporting the managed child PID.'
+    }
+
+    $identity=Get-ProcessIdentity $launchedPid
+    if($null -eq $identity -or -not [string]::Equals(
+        [string]$identity.executable_path,
+        [IO.Path]::GetFullPath($Node),
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        if($null -ne $identity){
+            try{$null=Stop-ManagedProcessTree $identity $Node 'failed BeesServer candidate'}catch{}
+        }
+        throw 'Could not establish the BeesServer candidate process identity after launch.'
+    }
+
+    Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'starting' $RollbackReason
+
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while([DateTime]::UtcNow -lt $deadline){
+        if(Test-Control $base $AdminToken){
+            Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'active' $RollbackReason
+            return $identity
+        }
+        if(-not(Test-ManagedProcessIdentity $identity $Node)){
+            throw "BeesServer candidate PID $launchedPid exited before the control endpoint became healthy. Check $ServerLog."
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    if(Test-ManagedProcessIdentity $identity $Node){
+        try{$null=Stop-ManagedProcessTree $identity $Node 'unhealthy BeesServer candidate'}catch{}
+    }
+    throw "BeesServer candidate did not become reachable at $base within $TimeoutSeconds seconds. Check $ServerLog."
+}
+
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
-    $serverSourceHash=Get-WorkingTreeContentSha256 'BeesServer~'
+    $serverConfigHash=Get-BeesServerLaunchConfigHash $Config $WorkerToken $AdminToken
     $node=Resolve-Node $Config
-    $online=Test-Control $base $AdminToken
+    # Stage and validate the replacement before inspecting/stopping the live process. A broken
+    # source/dependency update therefore leaves the already healthy control plane untouched.
+    $preparedServer=Prepare-BeesServerRuntime $node
+    $serverSourceHash=[string]$preparedServer.source_hash
+    $serverDependencyHash=[string]$preparedServer.dependency_hash
+    $serverRuntimeRoot=[IO.Path]::GetFullPath([string]$preparedServer.runtime_root)
+    $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
 
-    if($online){
-        $managedState=$null
-        if(Test-Path -LiteralPath $ServerStatePath){
-            try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
+    # Process ownership is authoritative even when the desired control URL/token has changed or
+    # the old control endpoint is unhealthy. Reconcile the recorded process first so configuration
+    # changes cannot orphan a server that the operator can still prove it owns.
+    $managedState=$null
+    $managedOwned=$false
+    if(Test-Path -LiteralPath $ServerStatePath){
+        try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
+    }
+    if($null -ne $managedState){
+        if(Test-ManagedProcessIdentity $managedState){
+            $managedOwned=$true
+        } else {
+            $managedPid=Get-StateReferencedLivePid $managedState
+            if($managedPid -gt 0){
+                throw "BeesServer state references live PID $managedPid but its PID/start-time/executable ownership does not match. Refusing to kill a possibly reused PID."
+            }
+            Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
+            $managedState=$null
         }
-        $managedSourceHash=Get-ObjectPropertyValue $managedState 'source_hash'
+    } elseif(Test-Path -LiteralPath $ServerPidPath){
+        $legacyPid=0
+        [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$legacyPid)
+        if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+            throw "BeesServer PID $legacyPid is from legacy PID-only state and cannot be proven safe to kill automatically. Stop that legacy server once, then rerun the command."
+        }
+        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+    }
+
+    $online=Test-Control $base $AdminToken
+    if($online){
+        if($null -eq $managedState -or -not $managedOwned){
+            throw 'BeesServer is online but has no matching managed process identity. Refusing an automatic restart because an unrelated process could own the live endpoint.'
+        }
+        $managedSourceHash=[string](Get-ObjectPropertyValue $managedState 'source_hash')
+        $managedConfigHash=[string](Get-ObjectPropertyValue $managedState 'config_hash')
+        $managedRuntimeRoot=([string](Get-ObjectPropertyValue $managedState 'runtime_root')).Trim()
+        $runtimeMatches=$false
+        if($managedRuntimeRoot){
+            try {
+                $runtimeMatches=[string]::Equals(
+                    [IO.Path]::GetFullPath($managedRuntimeRoot),
+                    $serverRuntimeRoot,
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+            } catch { $runtimeMatches=$false }
+        }
+        $serverExecutableMatches=Test-ManagedProcessIdentity $managedState $node
         if(
-            $null -ne $managedState -and
-            ([string]$managedSourceHash) -eq $serverSourceHash
+            $serverExecutableMatches -and
+            $managedSourceHash -eq $serverSourceHash -and
+            $managedConfigHash -eq $serverConfigHash -and
+            $runtimeMatches
         ){
-            if(-not(Test-ManagedProcessIdentity $managedState $node)){
-                Write-Warning 'BeesServer is healthy and current, but its persisted process identity cannot be verified. Leaving it running; a future automatic restart/stop will refuse to kill it until it is relaunched under identity-safe state.'
+            if(([string](Get-ObjectPropertyValue $managedState 'status')) -ne 'active'){
+                Write-BeesServerManagedState $managedState $serverSourceHash $serverDependencyHash $serverRuntimeRoot $serverConfigHash 'active'
             }
             return
         }
+        Write-Host 'BeesServer executable/runtime/launch configuration changed; restarting the verified managed server without changing desired training state.'
+    } elseif($managedOwned){
+        Write-Host 'Managed BeesServer is not accepting the desired control endpoint/token; restarting the verified owned process to converge launch configuration.'
+    }
 
-        if($null -eq $managedState){
-            throw 'BeesServer is online but has no managed process identity. Refusing an automatic restart because an unrelated process could now own the recorded PID.'
-        }
-        if(-not(Test-ManagedProcessIdentity $managedState $node)){
-            $managedPid=Get-StateReferencedLivePid $managedState
-            if($managedPid -gt 0){
-                throw "BeesServer state references live PID $managedPid but its PID/start-time/executable identity does not match. Refusing to kill a possibly reused PID."
-            }
-            throw 'BeesServer is online but its persisted managed process is no longer present. Refusing to guess which process owns the live server.'
-        }
-        Write-Host 'BeesServer source changed; restarting the managed server without changing desired training state.'
+    if($managedOwned){
         Assert-CentralAgentCheckpointSafe
         $null=Stop-ManagedProcessTree $managedState $node 'BeesServer'
-        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
 
-        $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
         while([DateTime]::UtcNow -lt $deadline){
             $open=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
@@ -1190,65 +2006,61 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         }
     }
 
-    $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
-    if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
-    $npm=Resolve-Npm
-    Ensure-Directory $RuntimeRoot
-    $dependencyHash=Get-BeesServerDependencyHash
-    $installedDependencyHash=''
-    if(Test-Path -LiteralPath $ServerDependencyStampPath){
-        try{$installedDependencyHash=(Get-Content -LiteralPath $ServerDependencyStampPath -Raw).Trim().ToLowerInvariant()}catch{$installedDependencyHash=''}
-    }
-    $nodeModulesPath=Join-Path $ServerRoot 'node_modules'
-    if(-not(Test-Path -LiteralPath $nodeModulesPath -PathType Container) -or $installedDependencyHash -ne $dependencyHash){
-        Write-Host 'Installing BeesServer dependencies for the current package lock...'
-        Remove-Item -LiteralPath $ServerDependencyStampPath -Force -ErrorAction SilentlyContinue
-        Invoke-Checked $npm @('ci') $ServerRoot
-        $dependencyHash | Set-Content -LiteralPath $ServerDependencyStampPath -NoNewline -Encoding ASCII
-    }
-    Ensure-Directory (Join-Path $LogsRoot 'Server'); Ensure-Directory (Join-Path $TrainingRoot 'Control')
+    if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. The process is not the verified managed BeesServer, so it will not be killed automatically." }
+
+    Ensure-Directory (Join-Path $LogsRoot 'Server')
+    Ensure-Directory (Join-Path $TrainingRoot 'Control')
     $serverLog=Join-Path $LogsRoot 'Server\bees-server.log'
-    $env:BEES_TRAINING_CONTROL_ENABLED='1'; $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken; $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
-    $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost; $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
-    $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'; $env:BEES_TRAINING_ARTIFACT_ROOT=Join-Path $TrainingRoot 'Control\Artifacts'
-    $env:BEES_TRAINING_LOG_ROOT=Join-Path $TrainingRoot 'TrainerLogs'
-    $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
-    $launchedPid=0
-    Push-Location $ServerRoot
-    try {
-        $output=@(& $node (Join-Path $ServerRoot 'start-server.js') '--background' "--log=$serverLog" 'test' ([string]$GameplayServerPort) 2>&1)
-        if($LASTEXITCODE -ne 0){ throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)" }
-        $joined=$output -join [Environment]::NewLine; Write-Host $joined
-        if($joined -match 'PID\s+(\d+)'){
-            $launchedPid=[int]$Matches[1]
-            $launchedPid | Set-Content -LiteralPath $ServerPidPath -NoNewline
-        }
-    } finally { Pop-Location }
-    $deadline=[DateTime]::UtcNow.AddSeconds(30)
-    while([DateTime]::UtcNow -lt $deadline){
-        if(Test-Control $base $AdminToken){
-            $serverIdentity=Get-ProcessIdentity $launchedPid
-            if($null -eq $serverIdentity -or -not [string]::Equals(
-                [string]$serverIdentity.executable_path,
-                [IO.Path]::GetFullPath($node),
-                [StringComparison]::OrdinalIgnoreCase
-            )){
-                throw 'BeesServer became reachable but its launched process identity could not be verified. Refusing to record unsafe PID-only ownership.'
-            }
-            [pscustomobject]@{
-                schema_version=2
-                pid=[int]$serverIdentity.pid
-                process_start_utc=[string]$serverIdentity.process_start_utc
-                executable_path=[string]$serverIdentity.executable_path
-                source_hash=$serverSourceHash
-                started_utc=[DateTime]::UtcNow.ToString('o')
-            } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
-            return
-        }
-        Start-Sleep -Milliseconds 500
+    $previousState=$managedState
+    $previousConfigHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'config_hash')}else{''}
+    $previousSourceHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'source_hash')}else{''}
+    $previousRuntimeRoot=if($null -ne $previousState){([string](Get-ObjectPropertyValue $previousState 'runtime_root')).Trim()}else{''}
+    $previousDependencyHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'dependency_hash')}else{''}
+
+    $serverRuntimeIdentity=[pscustomobject]@{
+        source_hash=$serverSourceHash
+        dependency_hash=$serverDependencyHash
+        runtime_root=$serverRuntimeRoot
+        config_hash=$serverConfigHash
     }
-    throw "Training control did not become reachable at $base. Check $serverLog."
+    try {
+        $serverIdentity=Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot $WorkerToken $AdminToken $serverLog $serverRuntimeIdentity
+    } catch {
+        $replacementError=$_.Exception.Message
+        $rollbackError=''
+        $rolledBack=$false
+        if(
+            $previousRuntimeRoot -and
+            $previousConfigHash -eq $serverConfigHash -and
+            $previousSourceHash -and
+            (Test-BeesServerStagedRuntime $previousRuntimeRoot $previousSourceHash $node)
+        ){
+            Write-Warning "Replacement BeesServer failed after cutover; restoring previously verified runtime $previousSourceHash."
+            try {
+                $rollbackRuntimeIdentity=[pscustomobject]@{
+                    source_hash=$previousSourceHash
+                    dependency_hash=$previousDependencyHash
+                    runtime_root=[IO.Path]::GetFullPath($previousRuntimeRoot)
+                    config_hash=$previousConfigHash
+                }
+                $rollbackIdentity=Start-BeesServerRuntimeProcess $Config $node $previousRuntimeRoot $WorkerToken $AdminToken $serverLog $rollbackRuntimeIdentity $replacementError
+                Prune-BeesServerRuntimes @($previousRuntimeRoot)
+                $rolledBack=$true
+            } catch {
+                $rollbackError=$_.Exception.Message
+            }
+        }
+        if($rolledBack){
+            throw "Replacement BeesServer failed, but the previous verified runtime was restored successfully. replacement_error=$replacementError"
+        }
+        if($rollbackError){
+            throw "Replacement BeesServer failed and rollback also failed. replacement_error=$replacementError rollback_error=$rollbackError"
+        }
+        throw
+    }
+
+    Prune-BeesServerRuntimes @($serverRuntimeRoot)
 }
 
 function Get-LatestRelease {
@@ -1370,12 +2182,16 @@ function Get-StateReferencedLivePid($State){
 }
 
 function Stop-ManagedProcessTree($State,[string]$ExpectedExecutable,[string]$Label){
-    if(-not(Test-ManagedProcessIdentity $State $ExpectedExecutable)){
+    if(-not(Test-ManagedProcessIdentity $State)){
         $id=Get-StateReferencedLivePid $State
         if($id -gt 0){
-            throw "Refusing to stop $Label PID $id because its persisted process identity does not match the live process. The PID may have been reused."
+            throw "Refusing to stop $Label PID $id because its persisted PID/start-time/executable ownership does not match the live process. The PID may have been reused."
         }
         return $false
+    }
+    if($ExpectedExecutable -and -not(Test-ManagedProcessIdentity $State $ExpectedExecutable)){
+        $ownedExecutable=[string](Get-ObjectPropertyValue $State 'executable_path')
+        Write-Host "$Label desired executable changed; safely replacing verified owned process $ownedExecutable."
     }
     $id=[int]$State.pid
     & taskkill /PID $id /T /F *> $null
@@ -1469,22 +2285,70 @@ function Stop-CentralAgentGracefully([int]$Id,[int]$TimeoutSeconds=150){
     throw "Central learner PID $Id is still finalizing its checkpoint after $TimeoutSeconds seconds. Refusing forced termination; the existing learner remains authoritative."
 }
 
-function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
-    Ensure-Directory $RuntimeRoot; Ensure-Directory (Join-Path $LogsRoot 'Training'); Ensure-Directory $CentralAgentInstallRoot
-    $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'; $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
-    $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'; $service=Join-Path $AssetsRoot 'Training\bees_continual_elastic_wan_service.py'
-    $telemetry=Join-Path $TrainingRoot 'Telemetry'; $models=Join-Path $TrainingRoot 'Models'; Ensure-Directory $telemetry; Ensure-Directory $models
-    $args=@('-u',$agent,'--server-url',[string]$Config.controlUrl,'--token-file',$WorkerTokenPath,'--trainer-id','central-learner','--role','dedicated','--platform','WindowsPlayer','--install-root',$CentralAgentInstallRoot,'--shutdown-request-file',$CentralAgentShutdownRequestPath,'--',$Python,$service,"--root=$TrainingRoot","--assets-root=$AssetsRoot",'--training-env={env}',"--telemetry-quarantine=$telemetry","--model-distribution-root=$models",'--game-build-version={build_id}','--run-id={run_id}',"--unity-editor=$Unity","--unity-project-root=$BeesRoot","--generation-steps=$($Config.generationSteps)","--num-envs=$($Config.numLocalEnvs)",'--platform=WindowsPlayer',"--bees-wan-actors=$($Config.maxRemoteActors)","--bees-wan-min-actors=$($Config.minRemoteActors)","--bees-wan-broker-port=$($Config.brokerPort)","--bees-wan-auth-token-file=$WanTokenPath")
+function Start-CentralAgentIfNeeded(
+    $Config,
+    [string]$BootstrapPython,
+    [string]$Unity,
+    $Release,
+    $PreparedRuntime=$null
+){
+    Ensure-Directory $RuntimeRoot
+    Ensure-Directory (Join-Path $LogsRoot 'Training')
+    Ensure-Directory $CentralAgentInstallRoot
+    $outLog=Join-Path $LogsRoot 'Training\central-agent.out.log'
+    $errLog=Join-Path $LogsRoot 'Training\central-agent.err.log'
+
+    if($null -eq $PreparedRuntime){
+        $PreparedRuntime=Prepare-CentralReleaseRuntime $Config $BootstrapPython $Unity $Release
+    }
+    $agent=Join-Path $AssetsRoot 'Training\bees_training_worker_agent.py'
+    if(-not(Test-Path -LiteralPath $agent)){
+        throw "Stable central training supervisor is missing: $agent"
+    }
+    if(-not(Test-PythonCode $BootstrapPython 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')){
+        throw "Central training supervisor requires Python 3.10: $BootstrapPython"
+    }
+
+    $fallback=Get-CentralFallbackLaunchCommand $Config $Unity $PreparedRuntime
+    $fallbackCommand=@($fallback.launch_command)
+    $supervisorArgs=@(
+        '-u',$agent,
+        '--server-url',[string]$Config.controlUrl,
+        '--token-file',$WorkerTokenPath,
+        '--trainer-id','central-learner',
+        '--role','dedicated',
+        '--platform','WindowsPlayer',
+        '--install-root',$CentralAgentInstallRoot,
+        '--runtime-ready-file',$CentralRuntimeReadyBuildPath,
+        '--runtime-cutover-pointer',$CentralRuntimePointerPath,
+        '--runtime-state-file',$CentralRuntimeStatePath,
+        '--shutdown-request-file',$CentralAgentShutdownRequestPath
+    )
+    $args=@($supervisorArgs + @('--') + $fallbackCommand)
     $argString=($args|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
-    $trainingSourceHash=Get-TrainingRuntimeSourceHash
-    $commandHash=Get-StringSha256 ($Python + [Environment]::NewLine + $argString + [Environment]::NewLine + $trainingSourceHash)
+
+    $agentSourceHash=(Get-FileHash -LiteralPath $agent -Algorithm SHA256).Hash.ToLowerInvariant()
+    $workerTokenHash=(Get-FileHash -LiteralPath $WorkerTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $commandHash=Get-StringSha256 (
+        [IO.Path]::GetFullPath($BootstrapPython) + [Environment]::NewLine +
+        $agentSourceHash + [Environment]::NewLine +
+        $workerTokenHash + [Environment]::NewLine +
+        (($supervisorArgs|ForEach-Object{[string]$_}) -join [Environment]::NewLine)
+    )
+
     $existing=$null
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         try{$existing=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$existing=$null}
         if($null -ne $existing){
-            if(Test-ManagedProcessIdentity $existing $Python){
-                if(([string](Get-ObjectPropertyValue $existing 'command_hash')) -eq $commandHash){ return }
-                Write-Host 'Central training configuration changed; checkpointing before restarting the managed central agent.'
+            if(Test-ManagedProcessIdentity $existing){
+                if(
+                    (Test-ManagedProcessIdentity $existing $BootstrapPython) -and
+                    ([string](Get-ObjectPropertyValue $existing 'command_hash')) -eq $commandHash -and
+                    [bool](Get-ObjectPropertyValue $existing 'runtime_cutover_capable')
+                ){
+                    return
+                }
+                Write-Host 'Central supervisor/control configuration changed; checkpointing the learner before replacing the verified supervisor.'
                 $null=Stop-CentralAgentGracefully ([int]$existing.pid)
             } else {
                 $livePid=Get-StateReferencedLivePid $existing
@@ -1502,28 +2366,39 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity){
             throw "Central learner PID $legacyPid is from legacy PID-only state. Refusing to stop it automatically because the PID may have been reused."
         }
     }
+
     Remove-Item -LiteralPath $CentralAgentPidPath -Force -ErrorAction SilentlyContinue
-    $p=Start-Process -FilePath $Python -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+    $p=Start-Process -FilePath $BootstrapPython -ArgumentList $argString -WorkingDirectory $AssetsRoot -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
     $identity=Get-ProcessIdentity $p.Id
     if($null -eq $identity -or -not [string]::Equals(
         [string]$identity.executable_path,
-        [IO.Path]::GetFullPath($Python),
+        [IO.Path]::GetFullPath($BootstrapPython),
         [StringComparison]::OrdinalIgnoreCase
     )){
         try{$p.Kill()}catch{}
-        throw 'Could not establish the central learner process identity after launch.'
+        throw 'Could not establish the stable central supervisor process identity after launch.'
     }
+
     $p.Id | Set-Content -LiteralPath $CentralAgentPidPath -NoNewline
     [pscustomobject]@{
-        schema_version=2
+        schema_version=3
         pid=[int]$identity.pid
         process_start_utc=[string]$identity.process_start_utc
         executable_path=[string]$identity.executable_path
         command_hash=$commandHash
+        supervisor_python=[IO.Path]::GetFullPath($BootstrapPython)
+        learner_python=[string]$PreparedRuntime.learner_python
+        release_runtime_root=[string]$PreparedRuntime.runtime_root
+        release_runtime_version=[string]$PreparedRuntime.runtime_version
+        runtime_cutover_pointer=$CentralRuntimePointerPath
+        runtime_ready_file=$CentralRuntimeReadyBuildPath
+        runtime_state_file=$CentralRuntimeStatePath
+        runtime_cutover_capable=$true
+        fallback_build_id=[string]$fallback.build_id
         graceful_checkpoint_shutdown=$true
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
-    Write-Host "Central training agent started with PID $($p.Id)."
+    Write-Host "Stable central training supervisor started with PID $($p.Id)."
 }
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
@@ -1536,7 +2411,7 @@ function Escape-BashDoubleQuoted([string]$Value){
     $Value
 }
 
-function Prepare-RemoteBootstrap($Config){
+function Prepare-RemoteBootstrap($Config,[string]$Python,$Release){
     if(-not(Test-Path -LiteralPath $RemoteBootstrapTemplate)){ throw "Remote Windows bootstrap template is missing: $RemoteBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteLinuxBootstrapTemplate)){ throw "Remote Linux bootstrap template is missing: $RemoteLinuxBootstrapTemplate" }
     if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){ throw "Remote requirements file is missing: $RemoteRequirementsPath" }
@@ -1575,36 +2450,43 @@ function Prepare-RemoteBootstrap($Config){
 
     Ensure-Directory $RemoteRoot
     Ensure-Directory $RuntimeRoot
-    $staging=Join-Path $RuntimeRoot 'remote-runtime-staging'
-    if(Test-Path -LiteralPath $staging){Remove-Item -LiteralPath $staging -Recurse -Force}
-    Ensure-Directory $staging
-    try {
-        Get-ChildItem -Path (Join-Path $AssetsRoot 'Training\*.py') -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $staging }
-        Copy-Item -LiteralPath $RemoteRequirementsPath -Destination (Join-Path $staging 'bees_remote_requirements.txt')
-        # Version the exact staged payload bytes, not the committed Git tree or live source
-        # directory, so dirty/uncommitted changes and mid-packaging edits cannot be mislabeled.
-        $runtimeVersion=Get-DirectoryContentSha256 $staging
-        $runtimeVersion | Set-Content -LiteralPath (Join-Path $staging 'bees-runtime-version.txt') -NoNewline -Encoding ASCII
-        $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
-        # Compress-Archive requires the destination itself to end in .zip. Keep the temporary
-        # archive beside the final file and atomically swap it into place after compression.
-        $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
-        Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
-        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $runtimeZipTemp -CompressionLevel Optimal
-        Install-AtomicFile $runtimeZipTemp $runtimeZip
-    } finally {
-        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    $releaseRuntime=Resolve-ReleaseTrainingRuntime $Python $Release -AllowLegacyPin
+    $runtimeVersion=[string]$releaseRuntime.runtime_version
+    $releaseRuntimeArchive=[string]$releaseRuntime.archive
+    # Keep the standalone runtime mirror during migration so an already-running pre-bundle
+    # gateway can still serve a coherent payload until Start-TailnetGatewayIfNeeded replaces it.
+    $runtimeZip=Join-Path $RemoteRoot 'bees-remote-runtime.zip'
+    $runtimeZipTemp=Join-Path $RemoteRoot 'bees-remote-runtime.new.zip'
+    Remove-Item -LiteralPath $runtimeZipTemp -Force -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath $releaseRuntimeArchive -Destination $runtimeZipTemp
+    Install-AtomicFile $runtimeZipTemp $runtimeZip
+
+    if(-not(Test-Path -LiteralPath $BootstrapBundleScript)){
+        throw "Remote bootstrap bundle publisher is missing: $BootstrapBundleScript"
+    }
+    $bootstrapBundleCandidate=Join-Path $RuntimeRoot 'bees-bootstrap-bundle.candidate.zip'
+    $windowsLauncherCandidate=Join-Path $RuntimeRoot 'bees-remote-worker.candidate.cmd'
+    $linuxLauncherCandidate=Join-Path $RuntimeRoot 'bees-remote-worker.candidate.sh'
+    foreach($candidate in @($bootstrapBundleCandidate,$windowsLauncherCandidate,$linuxLauncherCandidate)){
+        Remove-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+    }
+    $bootstrapBundle=Invoke-PythonJson $Python @(
+        $BootstrapBundleScript,
+        '--output',$bootstrapBundleCandidate,
+        '--runtime',$releaseRuntimeArchive,
+        '--worker-token',$WorkerTokenPath,
+        '--wan-token',$WanTokenPath,
+        '--release',$LatestReleasePath,
+        '--windows-bridge',$windowsBridge,
+        '--linux-bridge',$linuxBridge
+    ) $AssetsRoot
+    if(([string]$bootstrapBundle.build_id) -ne ([string]$Release.build_id)){
+        throw "Published bootstrap bundle build identity disagrees with release. bundle=$($bootstrapBundle.build_id) release=$($Release.build_id)"
     }
 
     $windowsTemplate=Get-Content -LiteralPath $RemoteBootstrapTemplate -Raw
     $linuxTemplate=Get-Content -LiteralPath $RemoteLinuxBootstrapTemplate -Raw
     $utf8NoBom=New-Object Text.UTF8Encoding($false)
-
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Remove-Item -LiteralPath (Join-Path $RemoteRoot $windowsBridgeName) -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $RemoteRoot $linuxBridgeName) -Force -ErrorAction SilentlyContinue
 
     function Format-Base64Payload([byte[]]$Bytes,[int]$Width=120){
         $value=[Convert]::ToBase64String($Bytes)
@@ -1691,7 +2573,7 @@ __WINDOWS_PAYLOAD__
 ::BEES_PAYLOAD_END
 '@
     $windowsCmd=$windowsCmd.Replace('__WINDOWS_PAYLOAD__',$windowsPayload)
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.cmd'),$windowsCmd,$utf8NoBom)
+    [IO.File]::WriteAllText($windowsLauncherCandidate,$windowsCmd,$utf8NoBom)
 
     $linuxBody=$linuxTemplate
     $linuxReplacements=@{
@@ -1771,7 +2653,21 @@ exit "$BEES_EXIT"
     if($linuxWrapper.StartsWith('#!/usr/bin/env bash\n')){
         throw 'Generated Linux remote launcher contains escaped newlines instead of LF characters.'
     }
-    [IO.File]::WriteAllText((Join-Path $RemoteRoot 'bees-remote-worker.sh'),$linuxWrapper,$utf8NoBom)
+    [IO.File]::WriteAllText($linuxLauncherCandidate,$linuxWrapper,$utf8NoBom)
+
+    # Publish only after every candidate has been generated and validated. The bundle goes last:
+    # existing remotes keep seeing the previous complete generation until both copy-and-run
+    # launchers for the next generation are safely in place.
+    Install-AtomicFile $windowsLauncherCandidate (Join-Path $RemoteRoot 'bees-remote-worker.cmd')
+    Install-AtomicFile $linuxLauncherCandidate (Join-Path $RemoteRoot 'bees-remote-worker.sh')
+    Install-AtomicFile $bootstrapBundleCandidate $BootstrapBundlePath
+
+    # Remove only deprecated generated names after the replacement set is durable.
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.ps1' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.cmd' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -LiteralPath $RemoteRoot -Filter 'bees-remote-worker-*.sh' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $windowsBridgeName) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $RemoteRoot $linuxBridgeName) -Force -ErrorAction SilentlyContinue
 
     Write-Host "Remote launchers prepared in $RemoteRoot."
     Write-Host 'No SSH account, SSH keys, SSH server, port forwarding, or separate Tailscale installation is required.'
@@ -1823,7 +2719,14 @@ function Invoke-Start {
     # pre-fix release in place before the gateway serves it.
     Remove-Utf8BomIfPresent $LatestReleasePath
 
-    $pythonResult=@(Ensure-LearnerPython $config)
+    $bootstrapPython=Resolve-Python $config
+    if(-not(Test-PythonCode $bootstrapPython 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')){
+        throw "Bees release tooling requires Python 3.10. Configured python resolved to '$bootstrapPython'."
+    }
+    $installedReleaseRuntime=Install-ReleaseTrainingRuntime $bootstrapPython $release -AllowLegacyPin
+    $runtimeRoot=[string]$installedReleaseRuntime.installed_root
+
+    $pythonResult=@(Ensure-LearnerPython $config $runtimeRoot)
     if($pythonResult.Count -ne 1){
         throw "Learner Python resolver returned $($pythonResult.Count) values; expected exactly one executable path."
     }
@@ -1835,9 +2738,51 @@ function Invoke-Start {
     Ensure-RunLifecycleMatchesRelease $python $release
     Assert-CentralAgentCheckpointSafe
 
-    $forcedPlan=$null
+    $forcedPlan=Get-PendingForcedNewRunPlan
+    $resumeForcedNewRun=($null -ne $forcedPlan)
     $outgoingRun=$null
-    if($NewRun){
+
+    if($resumeForcedNewRun){
+        $planBuild=([string](Get-ObjectPropertyValue $forcedPlan 'build_id')).Trim()
+        $planRun=([string]$forcedPlan.run_id).Trim()
+        $planKey=([string]$forcedPlan.compatibility_key).Trim().ToLowerInvariant()
+        $planPreviousRun=([string]$forcedPlan.previous_run_id).Trim()
+        $planPreviousKey=([string]$forcedPlan.previous_compatibility_key).Trim().ToLowerInvariant()
+        $releaseBuild=([string]$release.build_id).Trim()
+        $releaseRun=([string]$release.run_id).Trim()
+        $releaseKey=([string]$release.compatibility_key).Trim().ToLowerInvariant()
+
+        if(-not $planBuild){
+            $planBuild=$releaseBuild
+            Write-Warning "Resuming a legacy forced-new run plan without a persisted build binding; binding this recovery attempt to latest release $releaseBuild."
+        } elseif($planBuild -ne $releaseBuild){
+            throw "Pending forced-new operation targets build $planBuild but latest release is $releaseBuild. Refusing to guess which release should own the run."
+        }
+        $outgoingRun=$planPreviousRun
+        $persistedEnvironmentArgs=Get-ObjectPropertyValue $forcedPlan 'environment_args'
+        if($null -eq $persistedEnvironmentArgs){
+            if($NewRun){
+                Write-Warning 'Legacy forced-new plan has no persisted environment arguments; using the arguments supplied on this retry.'
+            } else {
+                $resumeStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+                $envArgs=@($resumeStatus.desired.environment_args | ForEach-Object {[string]$_})
+                Write-Warning 'Legacy forced-new plan has no persisted environment arguments; using the server-owned desired arguments for one-time recovery.'
+            }
+        } else {
+            $envArgs=@(@($persistedEnvironmentArgs) | ForEach-Object {[string]$_})
+        }
+
+        if($releaseRun -eq $planRun -and $releaseKey -eq $planKey){
+            Write-Host "Resuming interrupted forced new-run operation: target=$planRun build=$planBuild."
+        } elseif($releaseRun -eq $planPreviousRun -and $releaseKey -eq $planPreviousKey){
+            $release=Convert-ReleaseToForcedRunPlan $release $forcedPlan $outgoingRun
+            Save-LatestRelease $release
+            Commit-TrainingRunPlan $python
+            Write-Host "Recovered forced new-run intent before release staging: target=$planRun build=$planBuild."
+        } else {
+            throw "Pending forced-new operation does not match either the latest release or its recorded predecessor. plan=$planRun previous=$planPreviousRun release=$releaseRun"
+        }
+    } elseif($NewRun){
         $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
         $pending=$status.desired.pending_release
         if($pending){
@@ -1863,51 +2808,43 @@ function Invoke-Start {
         if(-not $outgoingRun){ $outgoingRun=([string]$release.run_id).Trim() }
         Archive-TrainingRun $python $outgoingRun 'forced-new-precutover'
 
-        $forcedPlan=New-TrainingRunPlan $python -ForceNew
+        $forcedPlan=New-TrainingRunPlan $python -ForceNew -BuildId ([string]$release.build_id) -EnvironmentArgs @($envArgs)
         if($forcedPlan.previous_run_id -and
             $outgoingRun -and
             ([string]$forcedPlan.previous_run_id) -ne $outgoingRun){
             throw "Run lifecycle state disagrees with active training run. lifecycle=$($forcedPlan.previous_run_id) active=$outgoingRun"
         }
-        $release=[pscustomobject]@{
-            schema_version=$release.schema_version
-            build_id=[string]$release.build_id
-            source_commit=[string]$release.source_commit
-            created_utc=[string]$release.created_utc
-            run_id=[string]$forcedPlan.run_id
-            previous_run_id=$outgoingRun
-            compatibility_key=[string]$forcedPlan.compatibility_key
-            incompatible=$true
-            contract=$forcedPlan.contract
-            artifacts=$release.artifacts
-        }
-        # Persist the forced-run intent before the server can begin the incompatible cutover.
-        # If the shell dies after the release write but before the lifecycle commit, the retained
-        # run plan lets the next ordinary start complete that commit before staging anything.
+        $release=Convert-ReleaseToForcedRunPlan $release $forcedPlan $outgoingRun
+        # The forced plan is durable operation intent. Keep it until the replacement run is
+        # promoted and the outgoing run's terminal archive succeeds, so any later start can resume.
         Save-LatestRelease $release
         Commit-TrainingRunPlan $python
         Write-Host "Forcing fresh training run: $($release.run_id) (same build $($release.build_id))."
     }
 
+    $performForcedNewRun=($NewRun -or $resumeForcedNewRun)
+
     $unity=Resolve-UnityEditor $config
+    $centralRuntime=Prepare-CentralReleaseRuntime $config $bootstrapPython $unity $release
     Ensure-TailnetIdentity $config
-    Prepare-RemoteBootstrap $config
+    Prepare-RemoteBootstrap $config $python $release
     Publish-Release $config $admin $release
     Start-TailnetGatewayIfNeeded $config
+    Start-CentralAgentIfNeeded $config $bootstrapPython $unity $release $centralRuntime
 
     $staged=Stage-Release $config $admin $release
     $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
         training_enabled=$true
         environment_args=@($envArgs)
     }
-    Start-CentralAgentIfNeeded $config $python $unity
 
-    if($NewRun){
+    if($performForcedNewRun){
         $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
         if($outgoingRun){
             Start-Sleep -Seconds 2
             Archive-TrainingRun $python $outgoingRun 'forced-new-final'
         }
+        Complete-ForcedNewRunPlan $forcedPlan $release
         Write-Host "Forced new-run cutover complete. Active run: $($release.run_id)"
     }
 
@@ -1949,7 +2886,7 @@ function Invoke-Stop {
             try{$serverState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$serverState=$null}
         }
         if($null -ne $serverState){
-            if(Test-ManagedProcessIdentity $serverState $node){
+            if(Test-ManagedProcessIdentity $serverState){
                 $null=Stop-ManagedProcessTree $serverState $node 'BeesServer'
                 Write-Host 'BeesServer stopped.'
             } else {
@@ -1976,7 +2913,7 @@ function Invoke-Stop {
             try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
         }
         if($null -ne $gatewayState){
-            if(Test-ManagedProcessIdentity $gatewayState $gatewayExecutable){
+            if(Test-ManagedProcessIdentity $gatewayState){
                 $null=Stop-ManagedProcessTree $gatewayState $gatewayExecutable 'embedded tailnet gateway'
                 Write-Host 'Embedded Bees tailnet gateway stopped.'
             } else {
@@ -2061,19 +2998,47 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
     )
     try {
         $s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
-        $d=$s.desired
-        $lines += "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"
-        $lines += "Build:  $($d.canonical_build_id)   Run: $($d.run_id)"
+    } catch {
+        $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
+        return $lines
+    }
+
+    try {
+        $d=Get-ObjectPropertyValue $s 'desired'
+        if($null -eq $d){ throw 'status payload has no desired state object' }
+        $trainingEnabled=Get-ObjectPropertyValue $d 'training_enabled'
+        $revision=Get-ObjectPropertyValue $d 'revision'
+        $canonicalBuildId=Get-ObjectPropertyValue $d 'canonical_build_id'
+        $runId=Get-ObjectPropertyValue $d 'run_id'
+        $pending=Get-ObjectPropertyValue $d 'pending_release'
+        $trainerValue=Get-ObjectPropertyValue $s 'trainers'
+        $trainerRecords=if($null -eq $trainerValue){@()}else{@($trainerValue)}
+
+        $lines += "Server: ONLINE   Training: $trainingEnabled   Revision: $revision"
+        $lines += "Build:  $canonicalBuildId   Run: $runId"
         $lines += "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
-        if($d.pending_release){
-            $pending=$d.pending_release
-            $lines += "Pending release: build=$($pending.build_id) phase=$($pending.phase) incompatible=$($pending.incompatible)"
+        if($null -ne $pending){
+            $pendingBuildId=Get-ObjectPropertyValue $pending 'build_id'
+            $pendingPhase=Get-ObjectPropertyValue $pending 'phase'
+            $pendingIncompatible=Get-ObjectPropertyValue $pending 'incompatible'
+            $lines += "Pending release: build=$pendingBuildId phase=$pendingPhase incompatible=$pendingIncompatible"
             $required=@(Get-ObjectPropertyValue $pending 'required_trainers')
-            $trainerRecords=@($s.trainers)
+            $failureGraceSeconds=Get-ObjectPropertyValue $d 'compatible_failure_grace_seconds'
             $blockers=@()
             foreach($requiredTrainer in $required){
                 $requiredId=[string](Get-ObjectPropertyValue $requiredTrainer 'trainer_id')
                 $requiredPlatform=[string](Get-ObjectPropertyValue $requiredTrainer 'platform')
+                $failureSinceMs=Get-ObjectPropertyValue $requiredTrainer 'failure_since_ms'
+                $failureGraceDisplay=''
+                if($null -ne $failureSinceMs){
+                    $unixNowMs=([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()*1000)
+                    $failureAgeSeconds=[Math]::Max(0.0,($unixNowMs-[double]$failureSinceMs)/1000.0)
+                    if($null -ne $failureGraceSeconds){
+                        $failureGraceDisplay=(" failure-grace={0:N1}/{1:N0}s" -f $failureAgeSeconds,[double]$failureGraceSeconds)
+                    }else{
+                        $failureGraceDisplay=(" failure-grace={0:N1}s" -f $failureAgeSeconds)
+                    }
+                }
                 $record=@($trainerRecords|Where-Object{
                     [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $requiredId
                 }|Select-Object -First 1)
@@ -2089,26 +3054,26 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 $state=[string](Get-ObjectPropertyValue $r 'process_state')
                 $rev=Get-ObjectPropertyValue $r 'applied_revision'
                 $error=[string](Get-ObjectPropertyValue $r 'last_error')
-                $ready=($build -eq [string]$pending.build_id -or $prepared -eq [string]$pending.build_id)
+                $ready=($build -eq [string]$pendingBuildId -or $prepared -eq [string]$pendingBuildId)
                 $phaseRevision=Get-ObjectPropertyValue $pending 'phase_revision'
-                if($pending.phase -eq 'preparing' -and ($stale -or -not $ready)){
+                if($pendingPhase -eq 'preparing' -and ($stale -or -not $ready)){
                     $reason=if($stale){'STALE'}else{'not prepared'}
                     $blockers += ("{0}[{1}]: {2} state={3} age={4:N1}s build={5} prepared={6} rev={7}{8}" -f
                         $requiredId,$requiredPlatform,$reason,$state,[double]$age,
                         $(if($build){$build}else{'-'}),
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
-                        $(if($error){" error=$error"}else{''}))
-                }elseif($pending.phase -eq 'rolling' -and
-                        ($stale -or $build -ne [string]$pending.build_id -or $state -ne 'running' -or
+                        $(if($error){" error=$error"}else{''}) + $failureGraceDisplay)
+                }elseif($pendingPhase -eq 'rolling' -and
+                        ($stale -or $build -ne [string]$pendingBuildId -or $state -ne 'running' -or
                          $error -or ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: rollout state={2} age={3:N1}s build={4} prepared={5} rev={6}{7}" -f
                         $requiredId,$requiredPlatform,$state,[double]$age,
                         $(if($build){$build}else{'-'}),
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
-                        $(if($error){" error=$error"}else{''}))
-                }elseif($pending.phase -eq 'stopping' -and
+                        $(if($error){" error=$error"}else{''}) + $failureGraceDisplay)
+                }elseif($pendingPhase -eq 'stopping' -and
                         ($stale -or $state -ne 'stopped' -or
                          ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: stop state={2} age={3:N1}s build={4} rev={5}{6}" -f
@@ -2125,11 +3090,12 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 $lines += "Rollout blockers: none visible; waiting for the control state machine to advance."
             }
         }
-        $ea=@($d.environment_args)
+        $environmentArgs=Get-ObjectPropertyValue $d 'environment_args'
+        $ea=if($null -eq $environmentArgs){@()}else{@($environmentArgs)}
         $lines += "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"
         $lines += ''
 
-        $rows=@($s.trainers|ForEach-Object{
+        $rows=@($trainerRecords|ForEach-Object{
             $record=$_
             $m=Get-ObjectPropertyValue $record 'metrics'
             $cap=Get-ObjectPropertyValue $record 'worker_capacity'
@@ -2218,7 +3184,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
 
         $expected=@($Config.expectedTrainers)
         if($expected.Count){
-            $present=@($s.trainers|ForEach-Object{[string]$_.trainer_id})
+            $present=@($trainerRecords|ForEach-Object{[string](Get-ObjectPropertyValue $_ 'trainer_id')})
             $missing=@($expected|Where-Object{$present -notcontains [string]$_})
             if($missing.Count){
                 $lines += "WARNING: Expected trainers not connected: $($missing -join ', ')"
@@ -2230,7 +3196,9 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
         $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  LearnerAvgStep/s={3}  LearnerLiveStep/s={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
         $lines += 'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
     } catch {
-        $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
+        $lines += ''
+        $lines += "Dashboard: RENDER ERROR - $($_.Exception.GetType().Name): $($_.Exception.Message)"
+        $lines += 'Control endpoint: RESPONDED. The server is reachable; only this status snapshot failed to render completely.'
     }
     $lines
 }
@@ -2439,7 +3407,33 @@ function Invoke-CentralDiagnosticBenchmark(
             return
         }
 
-        $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
+        $learnerPython=''
+        $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
+        if(Test-Path -LiteralPath $CentralRuntimeStatePath){
+            try {
+                $runtimeState=Get-Content -LiteralPath $CentralRuntimeStatePath -Raw | ConvertFrom-Json
+                $runtimeBuild=([string](Get-ObjectPropertyValue $runtimeState 'build_id')).Trim()
+                if($currentBuildId -and $runtimeBuild -ne $currentBuildId){
+                    $result.reason="central learner runtime/build identity is inconsistent: build=$currentBuildId runtime=$runtimeBuild"
+                    return
+                }
+                $learnerPython=[string](Get-ObjectPropertyValue $runtimeState 'python_executable')
+            } catch {
+                $result.reason="central learner active runtime state is unreadable: $CentralRuntimeStatePath"
+                return
+            }
+        }
+        if(-not $learnerPython -and (Test-Path -LiteralPath $CentralAgentStatePath)){
+            # Legacy fallback for a central supervisor that predates active-runtime reporting.
+            try {
+                $centralState=Get-Content -LiteralPath $CentralAgentStatePath -Raw | ConvertFrom-Json
+                $learnerPython=[string](Get-ObjectPropertyValue $centralState 'learner_python')
+            } catch { $learnerPython='' }
+        }
+        if(-not $learnerPython){
+            # Final legacy fallback for pre-release-isolation central state.
+            $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
+        }
         if(-not(Test-Path -LiteralPath $learnerPython)){
             $result.reason="managed learner Python is unavailable: $learnerPython"
             return
@@ -2605,6 +3599,24 @@ function Invoke-Bundle {
 
 function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath; Show-Status $config $admin ([bool]$Once) }
 
+function Invoke-Qualify {
+    $config=Get-ClusterConfig
+    $pythonResult=@(Ensure-LearnerPython $config)
+    if($pythonResult.Count -ne 1){
+        throw "Learner Python resolver returned $($pythonResult.Count) values for robustness qualification; expected one."
+    }
+    $python=[string]$pythonResult[0]
+    if(-not(Test-Path -LiteralPath $RobustnessQualificationScript)){
+        throw "Training robustness qualification helper is missing: $RobustnessQualificationScript"
+    }
+    Write-Host 'Running local distributed-training robustness qualification. Live training/server/run state will not be changed.'
+    Invoke-Checked $python @(
+        $RobustnessQualificationScript,
+        '--bees-root',$BeesRoot,
+        '--assets-root',$AssetsRoot
+    ) $AssetsRoot | Out-Host
+}
+
 switch($Command){
     'build'{Invoke-Build}
     'server'{Invoke-Server}
@@ -2612,4 +3624,5 @@ switch($Command){
     'stop'{Invoke-Stop}
     'status'{Invoke-Status}
     'bundle'{Invoke-Bundle}
+    'qualify'{Invoke-Qualify}
 }

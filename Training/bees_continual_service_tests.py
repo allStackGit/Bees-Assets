@@ -92,6 +92,7 @@ class ContinualServiceTests(unittest.TestCase):
             ])
 
             self.assertEqual(options.num_envs, 0)
+            self.assertEqual(options.runtime_training_root, training.resolve())
 
     def test_generation_targets_are_cumulative_for_resume_lineage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -159,6 +160,27 @@ class ContinualServiceTests(unittest.TestCase):
                     previously_started=False,
                 )
             )
+
+    def test_commands_use_pinned_runtime_root_without_replacing_game_assets_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            pinned = root / "PinnedRuntime"
+            pinned.mkdir()
+            options = service.ServiceOptions(
+                **{**options.__dict__, "runtime_training_root": pinned}
+            )
+
+            training = service.training_command(options, 0, resume=False)
+            release = service.release_command(options)
+            stage = service.stage_command(options)
+            publish = service.hot_publish_command(options, root / "metadata.json")
+
+            self.assertEqual(Path(training[1]).parent, pinned)
+            self.assertEqual(Path(release[1]).parent, pinned)
+            self.assertEqual(Path(stage[1]).parent, pinned)
+            self.assertEqual(Path(publish[1]).parent, pinned)
+            self.assertIn(f"--assets-root={options.assets_root}", stage)
 
     def test_training_command_reuses_run_id_and_changes_only_generation_target(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -346,6 +368,7 @@ class ContinualServiceTests(unittest.TestCase):
         return service.ServiceOptions(
             root=store,
             assets_root=assets,
+            runtime_training_root=training,
             training_env=training_env,
             telemetry_quarantine=quarantine,
             model_distribution_root=distribution,

@@ -43,6 +43,7 @@ class ContinualElasticWanServiceTests(unittest.TestCase):
         )
         options = SimpleNamespace(
             assets_root=service.Path("B:/Bees/Assets"),
+            runtime_training_root=service.Path("B:/Bees/Runtime/Releases/build/Training"),
         )
         captured = {}
 

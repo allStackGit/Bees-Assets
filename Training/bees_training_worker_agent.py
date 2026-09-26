@@ -788,6 +788,39 @@ class ManagedProcess:
             ) from exc
 
 
+def dedicated_process_matches_desired(
+    managed: ManagedProcess,
+    *,
+    mode: str,
+    descriptor: Optional[Mapping[str, Any]],
+    run_id: str,
+    compatibility_key: str,
+    environment_args: Sequence[str],
+    worker_env_count: Optional[int],
+) -> bool:
+    """Return whether the live dedicated process is still safe under the latest desired state.
+
+    This is intentionally stricter than "the process is alive" and looser than command-text
+    identity. Release runtimes are immutable per build, so build/run/compatibility/config identity
+    is the durable safety boundary. A transient ancillary reconciliation failure may leave an exact
+    desired process running; a stale/mismatched process must fail closed.
+    """
+    if mode != "training" or not isinstance(descriptor, Mapping) or not managed.alive():
+        return False
+    desired_build_id = str(descriptor.get("build_id", ""))
+    desired_sha256 = str(descriptor.get("archive_sha256", ""))
+    return (
+        bool(desired_build_id)
+        and bool(desired_sha256)
+        and managed.build_id == desired_build_id
+        and managed.build_sha256 == desired_sha256
+        and managed.run_id == str(run_id)
+        and managed.compatibility_key == str(compatibility_key).strip().lower()
+        and managed.environment_args == tuple(str(value) for value in environment_args)
+        and managed.worker_env_count == worker_env_count
+    )
+
+
 def full_game_update_requires_deferred_restart(
     managed: ManagedProcess,
     desired_build_sha256: str,
@@ -844,6 +877,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--platform", required=True)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--runtime-ready-file", default="")
+    parser.add_argument("--runtime-cutover-pointer", default="")
+    parser.add_argument("--runtime-state-file", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
@@ -870,6 +905,134 @@ def _normalized_launch_command(values: Sequence[str]) -> list[str]:
     if not command:
         raise ValueError("a managed launch command is required after '--'")
     return command
+
+
+def _load_runtime_cutover_pointer(path_value: str) -> Optional[dict[str, Any]]:
+    if not str(path_value).strip():
+        return None
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping) or value.get("schema_version") != 1:
+        raise ValueError("runtime cutover pointer schema is invalid")
+
+    build_id = str(value.get("build_id", "")).strip()
+    runtime_version = str(value.get("runtime_version", "")).strip().lower()
+    runtime_root = Path(str(value.get("runtime_root", ""))).expanduser().resolve()
+    python_executable = Path(str(value.get("python_executable", ""))).expanduser().resolve()
+    launch_command = value.get("launch_command")
+    if not build_id:
+        raise ValueError("runtime cutover pointer has no build_id")
+    if len(runtime_version) != 64 or any(
+        ch not in "0123456789abcdef" for ch in runtime_version
+    ):
+        raise ValueError("runtime cutover pointer has invalid runtime_version")
+    if not runtime_root.is_dir():
+        raise ValueError(f"runtime cutover root does not exist: {runtime_root}")
+    marker = runtime_root / "bees-runtime-version.txt"
+    if (
+        not marker.is_file()
+        or marker.read_text(encoding="ascii").strip().lower() != runtime_version
+    ):
+        raise ValueError("runtime cutover root version marker does not match pointer")
+    if not python_executable.is_file():
+        raise ValueError(
+            f"runtime cutover Python executable is missing: {python_executable}"
+        )
+    if (
+        not isinstance(launch_command, list)
+        or not launch_command
+        or not all(isinstance(value, str) and value for value in launch_command)
+    ):
+        raise ValueError("runtime cutover pointer has invalid launch_command")
+    if str(Path(launch_command[0]).expanduser().resolve()) != str(python_executable):
+        raise ValueError(
+            "runtime cutover launch_command does not use the pinned Python executable"
+        )
+    service_path = Path(launch_command[1]).expanduser().resolve() if len(launch_command) > 1 else None
+    if (
+        service_path is None
+        or not service_path.is_file()
+        or service_path.parent != runtime_root
+        or service_path.name != "bees_continual_elastic_wan_service.py"
+    ):
+        raise ValueError(
+            "runtime cutover launch_command does not use the pinned continual service"
+        )
+    if not any(ENV_PLACEHOLDER in token for token in launch_command):
+        raise ValueError(
+            f"runtime cutover launch_command must contain {ENV_PLACEHOLDER}"
+        )
+    return {
+        "build_id": build_id,
+        "runtime_version": runtime_version,
+        "runtime_root": str(runtime_root),
+        "python_executable": str(python_executable),
+        "launch_command": list(launch_command),
+    }
+
+
+def _runtime_launch_template(
+    pointer_path: str,
+    build_id: str,
+    fallback: Sequence[str],
+    cache: Optional[dict[str, list[str]]] = None,
+) -> list[str]:
+    target_build = str(build_id)
+    pointer = _load_runtime_cutover_pointer(pointer_path)
+    if pointer is not None:
+        pointer_command = list(pointer["launch_command"])
+        if cache is not None:
+            cache[pointer["build_id"]] = pointer_command
+        if pointer["build_id"] == target_build:
+            return pointer_command
+
+    if cache is not None and target_build in cache:
+        return list(cache[target_build])
+
+    fallback_command = list(fallback)
+    if cache is not None and target_build:
+        # The stable supervisor is launched while its fallback release is canonical. Remember
+        # that association so replacing the pointer with a pending release cannot make the current
+        # learner fall back to some later/older runtime while the rollout barrier is still preparing.
+        cache[target_build] = fallback_command
+    return fallback_command
+
+
+def _write_runtime_state(
+    path_value: str,
+    *,
+    build_id: str,
+    command: Sequence[str],
+) -> None:
+    if not str(path_value).strip() or len(command) < 2:
+        return
+    python_executable = Path(command[0]).expanduser().resolve()
+    service_path = Path(command[1]).expanduser().resolve()
+    runtime_root = service_path.parent
+    version = ""
+    marker = runtime_root / "bees-runtime-version.txt"
+    try:
+        version = marker.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        version = ""
+    value = {
+        "schema_version": 1,
+        "build_id": str(build_id),
+        "python_executable": str(python_executable),
+        "runtime_root": str(runtime_root),
+        "runtime_version": version,
+        "updated_unix_seconds": time.time(),
+    }
+    path = Path(path_value).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -899,6 +1062,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"worker-managed launch command must contain {WORKER_ENVS_PLACEHOLDER}"
             )
         token = load_token(args.token_file)
+        runtime_launch_commands: dict[str, list[str]] = {}
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -1018,10 +1182,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if not preparation_error:
                         preparation_error = (
                             "Unity artifact is prepared for "
-                            f"{artifact_prepared_build_id}, but the remote Python runtime "
+                            f"{artifact_prepared_build_id}, but the Python runtime "
                             f"is ready for {runtime_ready_build or '(none)'}"
                         )
                     prepared_build_id = ""
+                elif args.runtime_cutover_pointer:
+                    try:
+                        runtime_pointer = _load_runtime_cutover_pointer(
+                            args.runtime_cutover_pointer
+                        )
+                        pointer_build = (
+                            runtime_pointer["build_id"] if runtime_pointer else ""
+                        )
+                        if pointer_build != artifact_prepared_build_id:
+                            raise ValueError(
+                                "runtime cutover pointer is prepared for "
+                                f"{pointer_build or '(none)'} instead of "
+                                f"{artifact_prepared_build_id}"
+                            )
+                    except (OSError, ValueError, json.JSONDecodeError) as exc:
+                        if not preparation_error:
+                            preparation_error = (
+                                "Unity artifact is prepared for "
+                                f"{artifact_prepared_build_id}, but the central Python runtime "
+                                f"cutover is not ready: {type(exc).__name__}: {exc}"
+                            )
+                        prepared_build_id = ""
             heartbeat = default_heartbeat(
                 trainer_id=args.trainer_id,
                 role=args.role,
@@ -1030,12 +1216,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 applied_revision=applied_revision,
                 build=active_build,
                 prepared_build_id=prepared_build_id,
+                preparation_error=preparation_error,
                 last_error=last_error or preparation_error,
                 metrics=current_metrics(
                     str(desired.get("run_id", "")) if desired else managed.run_id
                 ),
                 worker_capacity=worker_capacity(),
             )
+            desired_process_safe = False
             try:
                 desired = client.heartbeat(heartbeat)
                 received_desired = True
@@ -1063,9 +1251,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         worker_env_count = requested_worker_envs
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
+                if args.role == "dedicated":
+                    desired_process_safe = dedicated_process_matches_desired(
+                        managed,
+                        mode=mode,
+                        descriptor=descriptor,
+                        run_id=run_id,
+                        compatibility_key=compatibility_key,
+                        environment_args=environment_args,
+                        worker_env_count=worker_env_count,
+                    )
 
                 desired_build_id = str(desired.get("desired_build_id", ""))
                 active_build_id = str(active_build.get("build_id", "")) if active_build else ""
+
                 source_changed = file_sha256(Path(__file__).resolve()) != startup_source_sha
                 if source_changed and (
                     mode == "stopped"
@@ -1105,8 +1304,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if descriptor and not managed.alive():
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(
+                        runtime_command_template = _runtime_launch_template(
+                            args.runtime_cutover_pointer,
+                            str(active_build["build_id"]),
                             command_template,
+                            runtime_launch_commands,
+                        )
+                        command = render_command(
+                            runtime_command_template,
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
@@ -1128,6 +1333,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 and args.trainer_id == "central-learner"
                             ),
                             stop_progress=stopping_keepalive,
+                        )
+                        _write_runtime_state(
+                            args.runtime_state_file,
+                            build_id=str(active_build["build_id"]),
+                            command=command,
                         )
                         applied_revision = revision
                     elif descriptor and full_game_update_requires_deferred_restart(
@@ -1169,8 +1379,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     else:
                         entrypoint, active_build = builds.ensure(client, descriptor)
                         desired_sha = str(active_build["archive_sha256"])
-                        command = render_command(
+                        runtime_command_template = _runtime_launch_template(
+                            args.runtime_cutover_pointer,
+                            str(active_build["build_id"]),
                             command_template,
+                            runtime_launch_commands,
+                        )
+                        command = render_command(
+                            runtime_command_template,
                             entrypoint,
                             environment_args,
                             str(active_build["build_id"]),
@@ -1207,6 +1423,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 ),
                                 stop_progress=stopping_keepalive,
                             )
+                        if args.role == "dedicated":
+                            desired_process_safe = dedicated_process_matches_desired(
+                                managed,
+                                mode=mode,
+                                descriptor=active_build,
+                                run_id=run_id,
+                                compatibility_key=compatibility_key,
+                                environment_args=environment_args,
+                                worker_env_count=worker_env_count,
+                            )
+                        _write_runtime_state(
+                            args.runtime_state_file,
+                            build_id=str(active_build["build_id"]),
+                            command=managed.command or command,
+                        )
                         applied_revision = revision
                 else:
                     raise RuntimeError(f"unsupported desired mode {mode!r}")
@@ -1245,19 +1476,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except (ControlUnavailable, ControlRejected, OSError, ValueError, RuntimeError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 offline = last_contact <= 0 or time.monotonic() - last_contact > lease_seconds
-                write_local_state(
-                    state_file,
-                    desired=desired,
-                    online=False,
-                    last_error=last_error,
-                )
-                if args.role == "dedicated" and (offline or received_desired):
-                    if managed.alive():
+                try:
+                    write_local_state(
+                        state_file,
+                        desired=desired,
+                        online=bool(received_desired and not offline),
+                        last_error=last_error,
+                    )
+                except OSError as state_exc:
+                    print(
+                        "[Bees control] could not persist local diagnostic state: "
+                        f"{type(state_exc).__name__}: {state_exc}",
+                        file=sys.stderr,
+                    )
+
+                if args.role == "dedicated":
+                    if offline:
+                        if managed.alive():
+                            print(
+                                "[Bees control] server lease expired; stopping dedicated trainer.",
+                                file=sys.stderr,
+                            )
+                        managed.stop(progress_callback=stopping_keepalive)
+                    elif received_desired and not desired_process_safe:
+                        if managed.alive():
+                            print(
+                                "[Bees control] desired-state reconciliation failed and the "
+                                "running trainer no longer exactly matches server intent; "
+                                "stopping it until safe state can be applied.",
+                                file=sys.stderr,
+                            )
+                        managed.stop(progress_callback=stopping_keepalive)
+                    elif received_desired and desired_process_safe:
                         print(
-                            "[Bees control] server lease expired; stopping dedicated trainer.",
+                            "[Bees control] reconciliation error while the running trainer "
+                            "still exactly matches server intent; keeping it running and retrying: "
+                            + last_error,
                             file=sys.stderr,
                         )
-                    managed.stop(progress_callback=stopping_keepalive)
                 elif args.role == "full-game" and offline and managed.alive():
                     print(
                         "[Bees control] server lease expired; full game remains running in "

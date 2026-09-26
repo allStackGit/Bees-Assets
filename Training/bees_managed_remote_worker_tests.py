@@ -302,6 +302,51 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         self.assertEqual(command[command.index("--worker-envs-min") + 1], "12")
         self.assertEqual(command[command.index("--worker-envs-max") + 1], "12")
 
+    def test_runtime_stage_rejects_payload_that_disagrees_with_release_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime_archive = root / "runtime.zip"
+            runtime_archive.write_bytes(b"current-runtime")
+            bridge = root / "bridge"
+            bridge.write_bytes(b"same-bridge")
+            args = Namespace(
+                runtime_archive=str(runtime_archive),
+                tailnet_bridge=str(bridge),
+                worker_token_file=str(root / "worker.token"),
+                wan_token_file=str(root / "wan.token"),
+                bootstrap_token_file=str(root / "bootstrap.token"),
+                bootstrap_port=7151,
+            )
+            updater = managed.RuntimeUpdater(args, root / "install")
+            release = (
+                '{"build_id":"build-1","training_runtime":'
+                '{"archive_sha256":"' + "0" * 64 + '",'
+                '"runtime_version":"' + "a" * 64 + '"}}'
+            ).encode("utf-8")
+            with (
+                mock.patch.object(
+                    updater,
+                    "_fetch_bootstrap",
+                    return_value=(
+                        b"downloaded-runtime",
+                        b"worker-token",
+                        b"wan-token",
+                        b"same-bridge",
+                        release,
+                    ),
+                ),
+                mock.patch.object(
+                    managed,
+                    "_runtime_version_from_zip",
+                    return_value="a" * 64,
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "SHA-256 does not match"):
+                    updater._stage_once()
+
+            self.assertFalse((root / "worker.token").exists())
+            self.assertFalse((root / "wan.token").exists())
+
     def test_unhealthy_active_python_stages_repair_without_runtime_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
