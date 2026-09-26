@@ -748,6 +748,31 @@ class TrainingControlClientTests(unittest.TestCase):
                 {},
             )
 
+    def test_episode_metrics_prefers_bounded_sidecar_over_player_log(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "Player-0.log").write_text(
+                "RL 1v1 episode=1 timeout=True duration=9.0s "
+                "bee_tsv=100->0 human_tsv=100->100 "
+                "bee_fire_requests=1 bee_shots=1 bee_hits=0 bee_damage=0 "
+                "human_fire_requests=1 human_shots=1 human_hits=1 human_damage=10\n",
+                encoding="utf-8",
+            )
+            (root / "BeesEpisode-123.log").write_text(
+                "RL 1v1 episode=7 timeout=False duration=3.0s "
+                "bee_tsv=100->100 human_tsv=100->0 "
+                "bee_fire_requests=2 bee_shots=2 bee_hits=2 bee_damage=20 "
+                "human_fire_requests=1 human_shots=1 human_hits=0 human_damage=0\n",
+                encoding="utf-8",
+            )
+
+            metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
+
+            self.assertEqual(metrics["window_episodes"], 1)
+            self.assertEqual(metrics["last_episode"], 7)
+            self.assertEqual(metrics["bee_win_pct"], 100.0)
+            self.assertEqual(metrics["timeout_pct"], 0.0)
+
     def test_training_control_protocol_schema_matches_server_generation(self):
         self.assertEqual(control.CONTROL_SCHEMA_VERSION, 5)
 
