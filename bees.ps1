@@ -2812,13 +2812,88 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         ) + @($EnvironmentArgs)
         $argumentString=($arguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
 
+        $validationSucceeded=$false
         $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $candidate -WindowStyle Hidden -PassThru
-        if(-not $process.WaitForExit(60000)){
-            & taskkill /PID $process.Id /T /F *> $null
-            throw "RL environment validation timed out after 60 seconds. See $log"
+        $exited=$process.WaitForExit(60000)
+        $logText=''
+        if(Test-Path -LiteralPath $log -PathType Leaf){
+            try{$logText=Get-Content -LiteralPath $log -Raw -ErrorAction Stop}catch{$logText=''}
         }
-        if($process.ExitCode -ne 0){
-            throw "Invalid RL environment arguments; validator exited with code $($process.ExitCode). See $log"
+
+        if(-not $exited){
+            # Builds from before --rl-validate-options-only may ignore the new flag entirely.
+            # Their ordinary startup log is still authoritative because it is emitted only after
+            # the compiled option parser has completed semantic validation and applied the options.
+            if($logText -match 'RL training configuration '){
+                & taskkill /PID $process.Id /T /F *> $null
+                try{$null=$process.WaitForExit(5000)}catch{}
+                Write-Warning "Release $($Release.build_id) predates validation-only exit support; accepted environment arguments from its compiled startup validation marker."
+                $validationSucceeded=$true
+            } else {
+                & taskkill /PID $process.Id /T /F *> $null
+                throw "RL environment validation timed out after 60 seconds. See $log"
+            }
+        } elseif($process.ExitCode -eq 0){
+            if($logText -notmatch 'RL training command-line validation succeeded:'){
+                throw "RL environment validator exited successfully without its authoritative success marker. See $log"
+            }
+            $validationSucceeded=$true
+        } else {
+            $legacyValidationFlagRejected=(
+                $logText -match "Invalid RL training command-line configuration: Unknown RL training option '--rl-validate-options-only'\."
+            )
+            if(-not $legacyValidationFlagRejected){
+                throw "Invalid RL environment arguments; validator exited with code $($process.ExitCode). See $log"
+            }
+        }
+
+        if(-not $validationSucceeded){
+            # Compatibility path for already-built releases produced before the dedicated
+            # validation-only flag existed. Run the exact extracted player normally, wait for
+            # its pre-existing post-validation configuration marker, then terminate the probe.
+            # Invalid arguments still fail closed through the same compiled parser.
+            $legacyLog=Join-Path $LogsRoot "Training\rl-environment-validation-$($validationKey.Substring(0,12))-legacy.log"
+            Remove-Item -LiteralPath $legacyLog -Force -ErrorAction SilentlyContinue
+            $legacyArguments=@(
+                '-batchmode',
+                '-nographics',
+                '-logFile',$legacyLog
+            ) + @($EnvironmentArgs)
+            $legacyArgumentString=($legacyArguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+            Write-Warning "Release $($Release.build_id) predates --rl-validate-options-only; validating with its compiled startup parser instead."
+
+            $legacyProcess=Start-Process -FilePath $executable -ArgumentList $legacyArgumentString -WorkingDirectory $candidate -WindowStyle Hidden -PassThru
+            $legacyDeadline=[DateTime]::UtcNow.AddSeconds(60)
+            $legacySucceeded=$false
+            try {
+                while([DateTime]::UtcNow -lt $legacyDeadline){
+                    $legacyText=''
+                    if(Test-Path -LiteralPath $legacyLog -PathType Leaf){
+                        try{$legacyText=Get-Content -LiteralPath $legacyLog -Raw -ErrorAction Stop}catch{$legacyText=''}
+                    }
+                    if($legacyText -match 'Invalid RL training command-line configuration:'){
+                        throw "Invalid RL environment arguments; legacy compiled-build validator rejected the requested environment. See $legacyLog"
+                    }
+                    if($legacyText -match 'RL training configuration '){
+                        $legacySucceeded=$true
+                        break
+                    }
+                    if($legacyProcess.HasExited){ break }
+                    Start-Sleep -Milliseconds 200
+                }
+
+                if(-not $legacySucceeded){
+                    if($legacyProcess.HasExited){
+                        throw "Legacy RL environment validator exited with code $($legacyProcess.ExitCode) before reporting a validation result. See $legacyLog"
+                    }
+                    throw "Legacy RL environment validation timed out after 60 seconds. See $legacyLog"
+                }
+            } finally {
+                if(-not $legacyProcess.HasExited){
+                    & taskkill /PID $legacyProcess.Id /T /F *> $null
+                    try{$null=$legacyProcess.WaitForExit(5000)}catch{}
+                }
+            }
         }
 
         $temp="$stamp.new"

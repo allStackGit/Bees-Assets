@@ -1289,6 +1289,15 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         validator = source[validator_start:validator_end]
         self.assertIn("'--rl-validate-options-only'", validator)
         self.assertIn("$process.WaitForExit(60000)", validator)
+        self.assertIn(
+            "Unknown RL training option '--rl-validate-options-only'",
+            validator,
+        )
+        self.assertIn("RL training command-line validation succeeded:", validator)
+        self.assertIn("RL training configuration ", validator)
+        self.assertIn("$legacyProcess=Start-Process", validator)
+        self.assertIn("$legacyProcess.HasExited", validator)
+        self.assertIn("taskkill /PID $legacyProcess.Id /T /F", validator)
         self.assertIn("Invalid RL environment arguments", validator)
         self.assertIn("Install-AtomicFile $temp $stamp", validator)
         self.assertIn("Expand-Archive -LiteralPath $archivePath", validator)
