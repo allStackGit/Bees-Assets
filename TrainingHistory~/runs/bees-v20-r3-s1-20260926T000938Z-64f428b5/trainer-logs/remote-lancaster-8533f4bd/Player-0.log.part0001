@@ -1,4 +1,4 @@
-Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3468 MHz 
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3415 MHz 
 Available Memory: 3793 MB 
 Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
 System Language: en_US
@@ -20,7 +20,7 @@ NullGfxDevice:
     Renderer: Null Device
     Vendor:   Unity Technologies
 Begin MonoManager ReloadAssembly
-- Finished resetting the current domain, in  0.050 seconds
+- Finished resetting the current domain, in  0.049 seconds
 [Physics::Module] Selected backend.
 [Physics::Module] Name: PhysX
 [Physics::Module] Id: 0xf2b8ea05
@@ -42,10 +42,7 @@ Unity.AppUI.Core.Platform:Initialize()
 Unity.AppUI.Core.Platform:.cctor()
 
 The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
-UnloadTime: 0.871278 ms
+UnloadTime: 0.906588 ms
 UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
 Trying to automatically reconnect to the server with Level (attempt 1)
 Trying to automatically reconnect to the server with Level (attempt 2)
-Trying to automatically reconnect to the server with Level (attempt 3)
-Trying to automatically reconnect to the server with Level (attempt 4)
-Trying to automatically reconnect to the server with Level (attempt 5)

@@ -194,7 +194,7 @@ function Test-PythonCode([string]$Exe,[string]$Code){
 }
 
 function Prune-LearnerPythonRuntimes([string[]]$KeepExecutables=@(),[int]$KeepNewest=3){
-    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvBase=Join-Path $script:RuntimeRoot 'LearnerPython'
     if(-not(Test-Path -LiteralPath $venvBase -PathType Container)){ return }
     $keep=@{}
     $baseFull=[IO.Path]::GetFullPath($venvBase).TrimEnd('\') + '\'
@@ -269,7 +269,7 @@ function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
         [Environment]::NewLine +
         (Get-Content -LiteralPath $remoteRequirements -Raw)
     )
-    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvBase=Join-Path $script:RuntimeRoot 'LearnerPython'
     $venvRoot=Join-Path $venvBase $requirementsHash
     $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
     if(-not(Test-Path -LiteralPath $venvPython)){
@@ -1490,7 +1490,8 @@ function New-TrainingRunPlan(
         $planArgs+='--force-new'
         if($BuildId){ $planArgs+=@('--build-id',$BuildId) }
         $environmentArgsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
-        $planArgs+=@('--environment-args-json',$environmentArgsJson)
+        $environmentArgsBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($environmentArgsJson))
+        $planArgs+=@('--environment-args-base64',$environmentArgsBase64)
     }
     $null=Invoke-Checked $Python $planArgs $AssetsRoot
     Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
@@ -2788,7 +2789,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         $archiveSha + [Environment]::NewLine +
         $argsJson
     )
-    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
+    $validationRoot=Join-Path $script:RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
     if(Test-Path -LiteralPath $stamp -PathType Leaf){ return $validationProof }
 
@@ -3238,9 +3239,9 @@ function Invoke-Start {
         throw "Bees release tooling requires Python 3.10. Configured python resolved to '$bootstrapPython'."
     }
     $installedReleaseRuntime=Install-ReleaseTrainingRuntime $bootstrapPython $release -AllowLegacyPin
-    $runtimeRoot=[string]$installedReleaseRuntime.installed_root
+    $releaseRuntimeRoot=[string]$installedReleaseRuntime.installed_root
 
-    $pythonResult=@(Ensure-LearnerPython $config $runtimeRoot)
+    $pythonResult=@(Ensure-LearnerPython $config $releaseRuntimeRoot)
     if($pythonResult.Count -ne 1){
         throw "Learner Python resolver returned $($pythonResult.Count) values; expected exactly one executable path."
     }
@@ -3397,8 +3398,14 @@ function Invoke-Start {
     }
 
     Write-Host "Training requested: build=$($release.build_id) run=$($release.run_id) revision=$($desired.revision)"
-    if($staged.pending_release){
-        Write-Host "Release rollout: $($staged.pending_release.phase) incompatible=$($staged.pending_release.incompatible)"
+    $finalStatus=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
+    $finalPending=Get-ObjectPropertyValue (Get-ObjectPropertyValue $finalStatus 'desired') 'pending_release'
+    if($null -ne $finalPending){
+        $finalPhase=Get-ObjectPropertyValue $finalPending 'phase'
+        $finalIncompatible=Get-ObjectPropertyValue $finalPending 'incompatible'
+        Write-Host "Release rollout: $finalPhase incompatible=$finalIncompatible"
+    } else {
+        Write-Host 'Release rollout: complete'
     }
     Write-Host "Environment arguments: $(if($envArgs.Count){$envArgs -join ' '}else{'(none; defaults)'})"
     Start-Sleep -Seconds 1
@@ -3483,14 +3490,29 @@ function Invoke-Stop {
     }
 }
 
-function Get-LocalLearnerStats {
+function Get-LocalLearnerStats([string]$RunId='') {
     $elo=$null; $step=$null; $reward=$null; $averageStepsPerSecond=$null; $liveStepsPerSecond=$null
     $files=@()
-    foreach($root in @((Join-Path $LogsRoot 'Training'),(Join-Path $TrainingRoot 'trainer-results'))){
-        if(Test-Path -LiteralPath $root){
-            $files += @(Get-ChildItem -LiteralPath $root -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)
-        }
+    $operatorLogRoot=Join-Path $LogsRoot 'Training'
+    if(Test-Path -LiteralPath $operatorLogRoot){
+        # Operator logs are flat. Do not recursively walk historical validation/runtime trees.
+        $files += @(Get-ChildItem -LiteralPath $operatorLogRoot -Filter '*.log' -File -ErrorAction SilentlyContinue)
     }
+
+    $trainerResultsRoot=Join-Path $TrainingRoot 'trainer-results'
+    if($RunId){
+        $trainerResultsRoot=Join-Path $trainerResultsRoot $RunId
+    }
+    if(Test-Path -LiteralPath $trainerResultsRoot){
+        # The results tree is run-scoped and can accumulate thousands of checkpoints over time.
+        # Only the active run is relevant to the dashboard.
+        $files += @(Get-ChildItem -LiteralPath $trainerResultsRoot -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue)
+    }
+
+    # Reading 1,000 lines from every historical log made even a one-shot start/status command
+    # appear hung on long-lived installations. Current learner/service logs are continuously
+    # updated, so a small newest-first window is sufficient and keeps dashboard work bounded.
+    $files=@($files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 24)
     foreach($file in @($files | Sort-Object LastWriteTimeUtc,FullName)){
         $firstStep=$null; $firstElapsed=$null; $previousStep=$null; $previousElapsed=$null
         $fileAverageStepsPerSecond=$null; $fileLiveStepsPerSecond=$null
@@ -3739,7 +3761,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             }
         }
 
-        $l=Get-LocalLearnerStats
+        $l=Get-LocalLearnerStats ([string]$runId)
         $lines += ''
         $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  LearnerAvgStep/s={3}  LearnerLiveStep/s={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
         $lines += 'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'

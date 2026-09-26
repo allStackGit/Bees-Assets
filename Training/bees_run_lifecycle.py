@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -319,6 +320,11 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Persist the exact server-owned environment argument list for a forced-new operation.",
     )
+    plan.add_argument(
+        "--environment-args-base64",
+        default=None,
+        help="Base64-encoded UTF-8 JSON environment argument list for native-shell-safe transport.",
+    )
 
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
@@ -333,10 +339,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "plan":
         environment_args = None
-        if args.environment_args_json is not None:
+        if (
+            args.environment_args_json is not None
+            and args.environment_args_base64 is not None
+        ):
+            raise ValueError(
+                "specify only one of --environment-args-json or --environment-args-base64"
+            )
+        if args.environment_args_base64 is not None:
+            encoded = args.environment_args_base64.encode("ascii")
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            environment_args = json.loads(decoded)
+        elif args.environment_args_json is not None:
             environment_args = json.loads(args.environment_args_json)
-            if not isinstance(environment_args, list):
-                raise ValueError("--environment-args-json must contain a JSON list")
+        if environment_args is not None and not isinstance(environment_args, list):
+            raise ValueError("environment arguments must contain a JSON list")
         value = plan_run(
             Path(args.assets_root),
             Path(args.state),

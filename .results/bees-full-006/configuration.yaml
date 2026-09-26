@@ -14,7 +14,7 @@ behaviors:
       learning_rate_schedule: constant
       beta_schedule: constant
       epsilon_schedule: constant
-    checkpoint_interval: 250000
+    checkpoint_interval: 2000000
     network_settings:
       normalize: true
       hidden_units: 128
@@ -56,13 +56,13 @@ env_settings:
   - --rl-health-ratio
   - '.05'
   - --rl-map-size-min
-  - '96'
-  - --rl-map-size-max
   - '128'
+  - --rl-map-size-max
+  - '256'
   - --rl-episode-timeout
-  - '30'
+  - '60'
   - --rl-ships-per-side
-  - '2'
+  - '3'
   - --rl-bee-ship-types
   - Honeybee,Wasp,Hornet,Yellow Jacket,Leafcutter,Bumblebee,Beehive
   - --rl-human-ship-types
