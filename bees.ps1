@@ -2619,6 +2619,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
     $validationKey=Get-StringSha256 (
         ([string]$Release.build_id) + [Environment]::NewLine +
         $validatorSha + [Environment]::NewLine +
+        $archiveSha + [Environment]::NewLine +
         $argsJson
     )
     $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
