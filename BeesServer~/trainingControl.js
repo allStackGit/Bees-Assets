@@ -160,6 +160,10 @@ class TrainingControlStore {
             options.artifactRoot || path.join(__dirname, 'training-artifacts'));
         this.logRoot = path.resolve(
             options.logRoot || path.join(__dirname, 'training-logs'));
+        this.artifactRetentionBuilds = Number(options.artifactRetentionBuilds ?? 8);
+        if (!Number.isInteger(this.artifactRetentionBuilds) || this.artifactRetentionBuilds < 1) {
+            throw new Error('training-control artifactRetentionBuilds must be a positive integer');
+        }
         this.leaseSeconds = Number(options.leaseSeconds || DEFAULT_LEASE_SECONDS);
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
@@ -348,6 +352,38 @@ class TrainingControlStore {
 
     _catalogForRole(role) {
         return role === 'full-game' ? this.state.full_game_builds : this.state.builds;
+    }
+
+    _pruneArtifactCatalog() {
+        const protectedBuildIds = new Set();
+        if (this.state.canonical_build_id) protectedBuildIds.add(this.state.canonical_build_id);
+        if (this.state.pending_release?.build_id) protectedBuildIds.add(this.state.pending_release.build_id);
+        for (const trainer of this.trainers.values()) {
+            if (trainer.build_id) protectedBuildIds.add(trainer.build_id);
+            if (trainer.prepared_build_id) protectedBuildIds.add(trainer.prepared_build_id);
+        }
+
+        for (const catalog of [this.state.builds, this.state.full_game_builds]) {
+            for (const versions of Object.values(catalog)) {
+                const entries = Object.entries(versions || {});
+                const newest = new Set(
+                    entries.slice(-this.artifactRetentionBuilds).map(([buildId]) => buildId)
+                );
+                for (const [buildId, record] of entries) {
+                    if (protectedBuildIds.has(buildId) || newest.has(buildId)) continue;
+                    try {
+                        if (record.archive_path && fs.existsSync(record.archive_path)) {
+                            fs.unlinkSync(record.archive_path);
+                        }
+                    } catch (_) {
+                        // A worker may still have the immutable ZIP open. Keep both the file and
+                        // catalog entry; a later publication will retry pruning safely.
+                        continue;
+                    }
+                    delete versions[buildId];
+                }
+            }
+        }
     }
 
     _validateStoredBuilds(state) {
@@ -1075,6 +1111,7 @@ class TrainingControlStore {
         if (buildId === this.state.canonical_build_id) {
             this.state.revision++;
         }
+        this._pruneArtifactCatalog();
         this._persist();
         return publicBuildDescriptor(record);
     }
