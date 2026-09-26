@@ -82,6 +82,7 @@ class DiagnosticBenchmarkTests(unittest.TestCase):
             self.assertIn("--bees-rl-arenas-per-env=1", call["env_args"])
             self.assertIn("--rl-bee-ship-types=Wasp", call["env_args"])
             self.assertIn("--rl-human-ship-types=Gunship", call["env_args"])
+            self.assertIn("--rl-matchup-mode=fixed", call["env_args"])
             self.assertEqual(value["status"], "succeeded")
             self.assertTrue(value["deterministic_actions"])
             self.assertEqual(value["summary"]["matches"], 2)
