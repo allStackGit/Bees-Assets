@@ -300,6 +300,24 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+    def test_central_launch_quotes_spaced_equals_option_values(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Quote-Arg")
+        end = source.index("function Get-StringSha256", start)
+        block = source[start:end]
+
+        self.assertIn("$equals=$Value.IndexOf('=')", block)
+        self.assertIn("$Value.StartsWith('--')", block)
+        self.assertIn("$name=$Value.Substring(0,$equals + 1)", block)
+        self.assertIn("$argumentValue=$Value.Substring($equals + 1)", block)
+        self.assertIn("return $name + '\"' + $argumentValue + '\"'", block)
+
+        central_start = source.index("function Start-CentralAgentIfNeeded")
+        central_end = source.index("function Get-EnvironmentArgs", central_start)
+        central = source[central_start:central_end]
+        self.assertIn('"--unity-editor=$Unity"', central)
+        self.assertIn("$args|ForEach-Object{Quote-Arg ([string]$_)}", central)
+
     def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Wait-ReleaseRollout")
