@@ -17,6 +17,7 @@ import collections
 import os
 import queue
 import time
+import math
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -106,8 +107,8 @@ def _positive_float(value: str, flag: str) -> float:
         parsed = float(value)
     except ValueError as exc:
         raise SystemExit(f"{flag} requires a positive number; got {value!r}.") from exc
-    if parsed <= 0:
-        raise SystemExit(f"{flag} requires a positive number; got {value!r}.")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise SystemExit(f"{flag} requires a finite positive number; got {value!r}.")
     return parsed
 
 
