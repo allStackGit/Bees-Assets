@@ -8,6 +8,7 @@ against the server-advertised SHA-256 before it is extracted into a versioned di
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 import os
 import re
@@ -59,8 +60,8 @@ class TrainingControlClient:
             raise ValueError("training-control base URL must not be empty")
         if not self.token:
             raise ValueError("training-control token must not be empty")
-        if self.timeout <= 0:
-            raise ValueError("training-control timeout must be positive")
+        if not math.isfinite(self.timeout) or self.timeout <= 0:
+            raise ValueError("training-control timeout must be finite and positive")
 
     def _request(
         self,
