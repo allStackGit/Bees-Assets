@@ -431,6 +431,9 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
+        self.assertEqual(broker.active_actor_snapshot(), {})
+        with self.assertRaisesRegex(ValueError, "actor lease expired"):
+            broker.submit_trajectory_batch({"actor_id": actor_id})
         broker.register_actor(
             {
                 **broker.release_identity,
