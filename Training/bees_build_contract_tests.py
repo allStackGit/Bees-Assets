@@ -374,6 +374,36 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertNotIn("$venvRoot=Join-Path $RuntimeRoot 'LearnerPython'\n", block)
 
+    def test_operator_exposes_side_effect_free_robustness_qualification(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "[ValidateSet('build','server','start','stop','status','bundle','qualify')]",
+            source,
+        )
+        self.assertIn(
+            "$RobustnessQualificationScript=Join-Path $AssetsRoot "
+            "'Training\\bees_training_robustness_qualification.py'",
+            source,
+        )
+
+        start = source.index("function Invoke-Qualify")
+        end = source.index("switch($Command)", start)
+        block = source[start:end]
+        self.assertIn("Resolve-Python $config", block)
+        self.assertIn("$RobustnessQualificationScript", block)
+        self.assertIn("'--bees-root',$BeesRoot", block)
+        self.assertIn("'--assets-root',$AssetsRoot", block)
+        for forbidden in (
+            "Start-BeesServerIfNeeded",
+            "Stage-Release",
+            "Invoke-ControlPost",
+            "Prepare-RemoteBootstrap",
+            "Start-CentralAgentIfNeeded",
+            "Archive-TrainingRun",
+        ):
+            self.assertNotIn(forbidden, block)
+        self.assertIn("'qualify'{Invoke-Qualify}", source)
+
     def test_operator_script_parses_when_powershell_is_available(self):
         executable = shutil.which("powershell.exe") or shutil.which("pwsh")
         if executable is None:
