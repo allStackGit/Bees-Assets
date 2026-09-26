@@ -314,6 +314,8 @@ class ManagedBuildStore:
             installed = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return False
+        if not isinstance(installed, Mapping):
+            return False
         return (
             installed.get("archive_sha256") == descriptor["archive_sha256"]
             and installed.get("role") == descriptor["role"]
@@ -343,6 +345,8 @@ class ManagedBuildStore:
             try:
                 installed = json.loads(manifest_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
+                installed = {}
+            if not isinstance(installed, Mapping):
                 installed = {}
             if (
                 installed.get("archive_sha256") == descriptor["archive_sha256"]
