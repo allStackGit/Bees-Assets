@@ -273,6 +273,15 @@ namespace Assets.Scripts.Levels
 
         private void ResetInputs()
         {
+            // A release while paused or over another UI element can bypass the normal
+            // selection action. Always close and clear a drag box once the button is up.
+            if (_isLeftMouseDragging && !Input.GetMouseButton(LeftClick))
+            {
+                _isLeftMouseDragging = false;
+                Selector.Deactivate();
+                Selector.ClearSelectedShips();
+            }
+
             _rightMouseButtonUp = false;
             _leftMouseButtonUp = false;
             _scrollPositive = false;
@@ -334,10 +343,10 @@ namespace Assets.Scripts.Levels
             }
             else if (Input.GetMouseButtonUp(RightClick))
             {
-                if (EventSystem.IsPointerOverGameObject()) return;
-                _rightMouseButtonUp = true;
                 _isRightMouseDownPrior = false;
                 _isRightMouseDragging = false;
+                if (EventSystem.IsPointerOverGameObject()) return;
+                _rightMouseButtonUp = true;
             }
 
             if (Input.GetAxis("Mouse ScrollWheel") > 0) _scrollPositive = true;
