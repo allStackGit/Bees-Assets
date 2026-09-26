@@ -17,6 +17,7 @@ using UnityEngine;
 internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
 {
     private const int SummaryIntervalEpisodes = 10;
+    private const int FullEpisodeDiagnosticsInterval = 100;
 
     internal readonly struct EpisodeResult
     {
@@ -1218,26 +1219,32 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         string outcome = timedOut ? "timeout" : winningSide == 0 ? "draw" : $"side_{winningSide}_win";
         int beeSpawned = CountSpawnedShips(0);
         int humanSpawned = CountSpawnedShips(1);
-        string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
+        string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
         Debug.Log(
             $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
             $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
             $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
             $"bee_fire_requests={_beeFireRequestsThisEpisode} bee_shots={_beeShotsThisEpisode} bee_hits={_beeHitsThisEpisode} bee_damage={_beeDamageThisEpisode} " +
-            $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_no_enemy_visible={_beeNoEnemyVisibleSeconds:F2}s bee_no_enemy_visible_pct={beeNoEnemyVisibleFraction:P2} " +
-            $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
-            $"bee_contact_losses={_beeContactLossCount} bee_lost_contact={_beeLostContactSeconds:F2}s bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
-            $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} " +
-            $"bee_weapons={FormatWeaponActivity(0)} " +
-            $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
             $"human_fire_requests={_humanFireRequestsThisEpisode} human_shots={_humanShotsThisEpisode} human_hits={_humanHitsThisEpisode} human_damage={_humanDamageThisEpisode} " +
-            $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_no_enemy_visible={_humanNoEnemyVisibleSeconds:F2}s human_no_enemy_visible_pct={humanNoEnemyVisibleFraction:P2} " +
-            $"human_contact_to_fire={FormatTime(humanFirstContactToFire)} human_contact_to_end={FormatTime(humanFirstContactToEnd)} " +
-            $"human_contact_losses={_humanContactLossCount} human_lost_contact={_humanLostContactSeconds:F2}s human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
-            $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} " +
-            $"human_weapons={FormatWeaponActivity(1)} " +
-            $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
-            behaviorDiagnostics);
+            combatTelemetry);
+
+        if (_completedEpisodes % FullEpisodeDiagnosticsInterval == 0)
+        {
+            string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
+            Debug.Log(
+                $"RL 1v1 detail episode={result.EpisodeNumber} arena={GetArenaIndex()} " +
+                $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_no_enemy_visible={_beeNoEnemyVisibleSeconds:F2}s bee_no_enemy_visible_pct={beeNoEnemyVisibleFraction:P2} " +
+                $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
+                $"bee_contact_losses={_beeContactLossCount} bee_lost_contact={_beeLostContactSeconds:F2}s bee_first_fire={FormatTime(_beeFirstFireSeconds)} bee_first_hit={FormatTime(_beeFirstHitSeconds)} " +
+                $"bee_spawned={beeSpawned} bee_agent_coverage={_policyControlledShipIds[0].Count}/{_policyEligibleShipIds[0].Count} bee_weapons={FormatWeaponActivity(0)} " +
+                $"bee_rewards=terminal:{beeTerminal:F4},tsv:{_beeTsvRewardThisEpisode:F4},time:{beeTimeReward:F4},total:{result.BeeTotalReward:F4} " +
+                $"human_first_contact={FormatTime(_humanFirstContactSeconds)} human_no_enemy_visible={_humanNoEnemyVisibleSeconds:F2}s human_no_enemy_visible_pct={humanNoEnemyVisibleFraction:P2} " +
+                $"human_contact_to_fire={FormatTime(humanFirstContactToFire)} human_contact_to_end={FormatTime(humanFirstContactToEnd)} " +
+                $"human_contact_losses={_humanContactLossCount} human_lost_contact={_humanLostContactSeconds:F2}s human_first_fire={FormatTime(_humanFirstFireSeconds)} human_first_hit={FormatTime(_humanFirstHitSeconds)} " +
+                $"human_spawned={humanSpawned} human_agent_coverage={_policyControlledShipIds[1].Count}/{_policyEligibleShipIds[1].Count} human_weapons={FormatWeaponActivity(1)} " +
+                $"human_rewards=terminal:{humanTerminal:F4},tsv:{_humanTsvRewardThisEpisode:F4},time:{humanTimeReward:F4},total:{result.HumanTotalReward:F4} " +
+                behaviorDiagnostics);
+        }
         RlOneVsOneEpisodeDiagnostics.End(level);
 
         if (_completedEpisodes % SummaryIntervalEpisodes == 0)
