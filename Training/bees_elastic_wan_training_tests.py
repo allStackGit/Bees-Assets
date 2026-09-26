@@ -431,6 +431,15 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
+        with self.assertRaisesRegex(ValueError, "claimed by another remote process"):
+            broker.claim_actor(
+                {
+                    **broker.release_identity,
+                    "actor_key": "machine-a",
+                    "actor_instance_id": "old-process",
+                    "env_count": 8,
+                }
+            )
         self.assertEqual(broker.active_actor_snapshot(), {})
         with self.assertRaisesRegex(ValueError, "actor lease expired"):
             broker.submit_trajectory_batch({"actor_id": actor_id})
