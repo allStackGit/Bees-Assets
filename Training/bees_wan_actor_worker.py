@@ -544,6 +544,7 @@ class ActorSession:
         self._accepted_trajectories_total = 0
         self._learner_consumed_steps_total = 0
         self._last_throughput_write = 0.0
+        self._session_failure_telemetry = None
 
     def _write_throughput_metrics(self, *, force: bool = False) -> None:
         path = self._throughput_metrics_path
@@ -561,6 +562,9 @@ class ActorSession:
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
+            failure_snapshot = getattr(self._session_failure_telemetry, "snapshot", None)
+            if callable(failure_snapshot):
+                payload.update(failure_snapshot())
             payload.update(self.client.traffic_snapshot())
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
