@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as base
+from bees_process_safety import write_managed_health
 
 
 class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
@@ -51,6 +52,14 @@ class ZeroLocalElasticWanEnvManagerMixin(elastic.ElasticWanEnvManagerMixin):
             n_env,
         )
         self._bees_wan_broker.start()
+        write_managed_health(
+            "ready",
+            details={
+                "component": "elastic-wan-learner",
+                "local_envs": int(n_env),
+                "broker_port": int(options.broker_port),
+            },
+        )
         if n_env == 0:
             print(
                 "[Bees WAN] Exeter local_envs=0: PPO learner-only mode enabled; "
