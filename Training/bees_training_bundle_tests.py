@@ -436,6 +436,40 @@ class TrainingBundleTests(unittest.TestCase):
                     manifest["deterministic_benchmark"]["deterministic_actions"]
                 )
 
+    def test_failed_deterministic_benchmark_is_manifest_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_id = "bees-v20-benchmark-failed"
+            bees_root, assets_root = self._layout(root, run_id)
+            benchmark_json = root / "benchmark.json"
+            benchmark_json.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "timeout",
+                        "benchmark": "deterministic-wasp-vs-gunship-v1",
+                        "reason": "diagnostic benchmark exceeded 180 seconds",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = bundle.create_bundle(
+                bees_root=bees_root,
+                assets_root=assets_root,
+                log_percent=10.0,
+                benchmark_json=benchmark_json,
+            )
+
+            with zipfile.ZipFile(archive) as zipped:
+                manifest = json.loads(zipped.read("manifest.json"))
+                self.assertTrue(
+                    any(
+                        "deterministic diagnostic benchmark timeout" in warning
+                        for warning in manifest["warnings"]
+                    )
+                )
+
     def test_unified_operator_exposes_bundle_command(self) -> None:
         operator = (
             Path(__file__).resolve().parents[1] / "bees.ps1"
