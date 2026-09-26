@@ -176,6 +176,26 @@ class TrainingControlClientTests(unittest.TestCase):
                 python_executable.resolve(),
             )
 
+    def test_heartbeat_reports_release_preparation_error_separately(self):
+        heartbeat = control.default_heartbeat(
+            trainer_id="remote-a",
+            role="dedicated",
+            platform="LinuxPlayer",
+            process_state="running",
+            applied_revision=7,
+            build={"build_id": "old", "archive_sha256": "a" * 64},
+            prepared_build_id="",
+            preparation_error="runtime download failed",
+            last_error="runtime download failed",
+        )
+
+        self.assertEqual(
+            heartbeat["preparation_error"],
+            "runtime download failed",
+        )
+        self.assertEqual(heartbeat["last_error"], "runtime download failed")
+        self.assertEqual(heartbeat["prepared_build_id"], "")
+
     def test_worker_control_requests_fail_fast_inside_server_lease(self):
         self.assertEqual(
             agent._parser().get_default("request_timeout_seconds"),
