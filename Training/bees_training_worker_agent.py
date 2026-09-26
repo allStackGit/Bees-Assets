@@ -775,7 +775,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--runtime-ready-file", default="")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
-    parser.add_argument("--request-timeout-seconds", type=float, default=15.0)
+    parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
     parser.add_argument("--worker-envs", type=int, default=None)
     parser.add_argument("--worker-envs-min", type=int, default=1)
