@@ -3601,11 +3601,15 @@ function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $Adm
 
 function Invoke-Qualify {
     $config=Get-ClusterConfig
-    $python=Resolve-Python $config
+    $pythonResult=@(Ensure-LearnerPython $config)
+    if($pythonResult.Count -ne 1){
+        throw "Learner Python resolver returned $($pythonResult.Count) values for robustness qualification; expected one."
+    }
+    $python=[string]$pythonResult[0]
     if(-not(Test-Path -LiteralPath $RobustnessQualificationScript)){
         throw "Training robustness qualification helper is missing: $RobustnessQualificationScript"
     }
-    Write-Host 'Running local distributed-training robustness qualification. Live training/server state will not be changed.'
+    Write-Host 'Running local distributed-training robustness qualification. Live training/server/run state will not be changed.'
     Invoke-Checked $python @(
         $RobustnessQualificationScript,
         '--bees-root',$BeesRoot,
