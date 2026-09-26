@@ -100,6 +100,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ValidationOnlyControlFlagUsesTheSameAuthoritativeParser()
+        {
+            object options = Parse(
+                "--rl-validate-options-only",
+                "--rl-health-ratio=.5",
+                "--rl-map-size=60",
+                "--rl-ships-per-side=2",
+                "--rl-bee-ship-types=Wasp,Hornet",
+                "--rl-human-ship-types=Gunship,Frigate");
+
+            Assert.That(GetProperty(options, "HealthRatio"), Is.EqualTo(0.5f));
+            Assert.That(GetProperty(options, "MapSize"), Is.EqualTo(60f));
+            Assert.That(GetProperty(options, "ShipsPerSide"), Is.EqualTo(2));
+            AssertParseFails("--rl-validate-options-only", "--rl-typo=1");
+        }
+
+        [Test]
         public void InvalidOrAmbiguousRlOptionsFailInsteadOfSilentlyUsingDefaults()
         {
             AssertParseFails("--rl-health-ratio", "1.5");
