@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -590,8 +591,8 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
         raise ValueError("--generation-steps must be greater than zero")
     if args.num_envs < 0:
         raise ValueError("--num-envs must be zero or greater")
-    if args.retry_seconds <= 0:
-        raise ValueError("--retry-seconds must be greater than zero")
+    if not math.isfinite(args.retry_seconds) or args.retry_seconds <= 0:
+        raise ValueError("--retry-seconds must be finite and greater than zero")
     if not isinstance(args.run_id, str) or not args.run_id.strip():
         raise ValueError("--run-id must be non-empty")
     run_id = args.run_id.strip()
