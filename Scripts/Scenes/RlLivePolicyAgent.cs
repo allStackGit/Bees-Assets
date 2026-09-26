@@ -194,7 +194,27 @@ internal sealed class RlLivePolicyAgent : Agent
     {
         Instances.Remove(this);
         ReleaseShip();
+        ReleasePolicyFrameIfUnused(_level);
         base.OnDisable();
+    }
+
+    private static void ReleasePolicyFrameIfUnused(Level level)
+    {
+        if (level == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < Instances.Count; i++)
+        {
+            RlLivePolicyAgent agent = Instances[i];
+            if (agent != null && agent._level == level)
+            {
+                return;
+            }
+        }
+
+        RlPolicyCoordinateFrame.EndEpisode(level);
     }
 
     private void FixedUpdate()
