@@ -183,6 +183,80 @@ class ElasticBrokerTests(unittest.TestCase):
                 }
             )
 
+    def test_drain_is_fair_across_ready_actors(self):
+        broker, specs = self._broker()
+        for actor_id in (0, 1):
+            broker.register_actor(
+                {
+                    **broker.release_identity,
+                    "actor_id": actor_id,
+                    "env_count": 8,
+                    "control_epoch": 1,
+                    "behavior_specs": specs,
+                }
+            )
+
+        for step_count in (10, 11, 12, 13, 14):
+            broker._trajectory_batches.put_nowait(
+                {
+                    "actor_id": 0,
+                    "policy_versions": {},
+                    "control_epoch": broker.control_epoch,
+                    "trajectories": [object()],
+                    "step_count": step_count,
+                }
+            )
+        broker._trajectory_batches.put_nowait(
+            {
+                "actor_id": 1,
+                "policy_versions": {},
+                "control_epoch": broker.control_epoch,
+                "trajectories": [object()],
+                "step_count": 7,
+            }
+        )
+
+        drained = broker.drain_current_batches(2)
+
+        self.assertEqual([batch["actor_id"] for batch in drained], [0, 1])
+        state = broker.wait_state(
+            broker._policy_epoch,
+            broker.control_epoch,
+            0.0,
+        )
+        self.assertEqual(state["consumed_steps_by_actor"]["0"], 10)
+        self.assertEqual(state["consumed_steps_by_actor"]["1"], 7)
+        self.assertEqual(state["trajectory_queue_depth"], 4)
+
+    def test_fair_drain_rotates_first_actor_between_calls(self):
+        broker, specs = self._broker()
+        for actor_id in (0, 1):
+            broker.register_actor(
+                {
+                    **broker.release_identity,
+                    "actor_id": actor_id,
+                    "env_count": 8,
+                    "control_epoch": 1,
+                    "behavior_specs": specs,
+                }
+            )
+        for actor_id in (0, 1, 0, 1):
+            broker._trajectory_batches.put_nowait(
+                {
+                    "actor_id": actor_id,
+                    "policy_versions": {},
+                    "control_epoch": broker.control_epoch,
+                    "trajectories": [object()],
+                    "step_count": 1,
+                }
+            )
+
+        first = broker.drain_current_batches(1)
+        second = broker.drain_current_batches(1)
+
+        self.assertEqual(first[0]["actor_id"], 0)
+        self.assertEqual(second[0]["actor_id"], 1)
+
     def test_learner_consumption_counter_advances_only_when_batch_is_drained(self):
         broker, specs = self._broker()
         broker.register_actor(
