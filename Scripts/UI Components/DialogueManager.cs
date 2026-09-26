@@ -185,6 +185,22 @@ public class DialogueManager : MonoBehaviour
             }
         }
 
+        // Dialogue sections reuse DialogueLine instances from CutsceneManager's lists.
+        // Clear per-presentation flags before either displaying or skipping this section so a
+        // prior skip/completion cannot suppress prompts or leak state into a replay.
+        if (lines != null)
+        {
+            foreach (DialogueLine line in lines)
+            {
+                if (line == null)
+                {
+                    continue;
+                }
+                line.IsSkipped = false;
+                line.IsOver = false;
+            }
+        }
+
         _isLastDialogue = isLastDialogue;
         _isAdvancingDialogue = false;
         _playIntercomWhenPresented = false;
