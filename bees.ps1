@@ -2858,14 +2858,30 @@ function Invoke-CentralDiagnosticBenchmark(
         }
 
         $learnerPython=''
-        if(Test-Path -LiteralPath $CentralAgentStatePath){
+        $currentBuildId=([string](Get-ObjectPropertyValue $currentBuild 'build_id')).Trim()
+        if(Test-Path -LiteralPath $CentralRuntimeStatePath){
+            try {
+                $runtimeState=Get-Content -LiteralPath $CentralRuntimeStatePath -Raw | ConvertFrom-Json
+                $runtimeBuild=([string](Get-ObjectPropertyValue $runtimeState 'build_id')).Trim()
+                if($currentBuildId -and $runtimeBuild -ne $currentBuildId){
+                    $result.reason="central learner runtime/build identity is inconsistent: build=$currentBuildId runtime=$runtimeBuild"
+                    return
+                }
+                $learnerPython=[string](Get-ObjectPropertyValue $runtimeState 'python_executable')
+            } catch {
+                $result.reason="central learner active runtime state is unreadable: $CentralRuntimeStatePath"
+                return
+            }
+        }
+        if(-not $learnerPython -and (Test-Path -LiteralPath $CentralAgentStatePath)){
+            # Legacy fallback for a central supervisor that predates active-runtime reporting.
             try {
                 $centralState=Get-Content -LiteralPath $CentralAgentStatePath -Raw | ConvertFrom-Json
                 $learnerPython=[string](Get-ObjectPropertyValue $centralState 'learner_python')
             } catch { $learnerPython='' }
         }
         if(-not $learnerPython){
-            # Legacy fallback for central-agent state written before release-isolated environments.
+            # Final legacy fallback for pre-release-isolation central state.
             $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
         }
         if(-not(Test-Path -LiteralPath $learnerPython)){
