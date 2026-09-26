@@ -958,6 +958,13 @@ function Commit-TrainingRunPlan([string]$Python){
     ) $AssetsRoot
 }
 
+function Get-TrainingCompatibilityFingerprint([string]$Python){
+    Invoke-PythonJson $Python @(
+        $RunLifecycleScript,'fingerprint',
+        '--assets-root',$AssetsRoot
+    ) $AssetsRoot
+}
+
 function Ensure-RunLifecycleMatchesRelease([string]$Python,$Release){
     $releaseRun=([string]$Release.run_id).Trim()
     $releaseKey=([string]$Release.compatibility_key).Trim().ToLowerInvariant()
@@ -1165,6 +1172,13 @@ function Invoke-Build {
     Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl' $linux 'Bees RL Training.x86_64' "$date-rl-linux.log"
     if($FullGame){
         Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game 'Bees.exe' "$date-full-game-windows.log"
+    }
+
+    $postBuildFingerprint=Get-TrainingCompatibilityFingerprint $python
+    $postBuildKey=([string]$postBuildFingerprint.compatibility_key).Trim().ToLowerInvariant()
+    $plannedKey=([string]$plan.compatibility_key).Trim().ToLowerInvariant()
+    if(-not $postBuildKey -or $postBuildKey -ne $plannedKey){
+        throw "Training compatibility contract changed while Unity was building. Refusing to publish a mixed release. planned=$plannedKey current=$postBuildKey. Re-run the build from the current source."
     }
 
     $winZip=Join-Path $packageRoot 'rl-windows.zip'
