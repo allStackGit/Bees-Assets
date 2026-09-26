@@ -151,7 +151,16 @@ namespace Assets.Scripts.Server
                               response.RequestType == ConfigData.RequestTypes.GetSettings;
             if (isDataRead && response.Status >= 400)
             {
-                if (socket.GetStandingRequest(response.Hash) != null)
+                ServerRequest standingReadRequest = socket.GetStandingRequest(response.Hash);
+                if (response.Status == 403)
+                {
+                    if (standingReadRequest != null)
+                    {
+                        socket.StandingRequests.Remove(standingReadRequest);
+                    }
+                    Debug.LogWarning($"Server permanently rejected read request #{response.Hash}:{response.RequestType} with status {response.Status}; retiring it instead of retrying indefinitely.");
+                }
+                else if (standingReadRequest != null)
                 {
                     Debug.LogWarning($"Server rejected read request #{response.Hash}:{response.RequestType} with status {response.Status}; keeping it pending instead of treating it as missing data.");
                 }
