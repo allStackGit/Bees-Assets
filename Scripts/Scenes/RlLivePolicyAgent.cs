@@ -268,6 +268,8 @@ internal sealed class RlLivePolicyAgent : Agent
         RlOneVsOneAgent.SetCommunicationActions(_ship, continuous);
 
         ActionSegment<int> discrete = actions.DiscreteActions;
+        bool allowWeaponFire = RlOneVsOneAgent.SpecialActionAllowsWeaponFire(
+            discrete[RlOneVsOneAgent.SpecialActionBranch]);
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
         {
             int aimStart = RlOneVsOneAgent.WeaponAimContinuousActionStart +
@@ -278,11 +280,9 @@ internal sealed class RlLivePolicyAgent : Agent
                 _weaponAimDirections[slot] = aim.normalized;
             }
 
-            RlOneVsOneAgent.ApplyWeaponCommand(
-                _ship,
-                slot,
-                _weaponAimDirections[slot],
-                discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] == RlOneVsOneAgent.FireWeaponAction);
+            bool fire = allowWeaponFire &&
+                discrete[RlOneVsOneAgent.WeaponFireBranchStart + slot] == RlOneVsOneAgent.FireWeaponAction;
+            RlOneVsOneAgent.ApplyWeaponCommand(_ship, slot, _weaponAimDirections[slot], fire);
         }
 
         switch (discrete[RlOneVsOneAgent.SpecialActionBranch])
