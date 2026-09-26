@@ -178,6 +178,8 @@ def _windows_kill_job() -> int:
         ctypes.c_void_p,
         wintypes.DWORD,
     )
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = kernel32.CreateJobObjectW(None, None)
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -196,7 +198,8 @@ def _windows_kill_job() -> int:
         kernel32.CloseHandle(handle)
         raise ctypes.WinError(error)
 
-    _windows_job_handle = int(handle)
+    handle_value = getattr(handle, "value", handle)
+    _windows_job_handle = int(handle_value)
 
     def close_job() -> None:
         global _windows_job_handle
