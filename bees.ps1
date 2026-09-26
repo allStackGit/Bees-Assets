@@ -407,6 +407,19 @@ function Ensure-TailnetIdentity($Config){
     if(Test-Path -LiteralPath $TailnetGatewayStatePath){
         try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
     }
+    if($null -ne $gatewayState -and -not(Test-ManagedProcessIdentity $gatewayState)){
+        $launchStatus=[string](Get-ObjectPropertyValue $gatewayState 'status')
+        $ownerToken=[string](Get-ObjectPropertyValue $gatewayState 'owner_token')
+        if($launchStatus -eq 'launching' -and $ownerToken){
+            $recovered=Find-ManagedProcessByOwnerToken $bridge $ownerToken 'embedded tailnet gateway'
+            if($null -ne $recovered){
+                $gatewayState=Add-ManagedIdentityToState $gatewayState $recovered 'active'
+                Write-AtomicJsonFile $TailnetGatewayStatePath $gatewayState
+                Write-AtomicPidFile $TailnetGatewayPidPath ([int]$recovered.pid)
+                Write-Host "Recovered embedded tailnet gateway ownership before identity reconciliation (PID $($recovered.pid))."
+            }
+        }
+    }
     if($null -ne $gatewayState){
         if(Test-ManagedProcessIdentity $gatewayState){
             if(-not(Test-Path -LiteralPath $TailnetAddressPath)){
@@ -2300,6 +2313,20 @@ function Get-RunningCentralAgentPid {
     if(Test-Path -LiteralPath $CentralAgentStatePath){
         $state=$null
         try{$state=Get-Content -LiteralPath $CentralAgentStatePath -Raw|ConvertFrom-Json}catch{$state=$null}
+        if($null -ne $state -and -not(Test-ManagedProcessIdentity $state)){
+            $launchStatus=[string](Get-ObjectPropertyValue $state 'status')
+            $ownerToken=[string](Get-ObjectPropertyValue $state 'owner_token')
+            $supervisorPython=[string](Get-ObjectPropertyValue $state 'supervisor_python')
+            if($launchStatus -eq 'launching' -and $ownerToken -and $supervisorPython){
+                $recovered=Find-ManagedProcessByOwnerToken $supervisorPython $ownerToken 'central training supervisor'
+                if($null -ne $recovered){
+                    $state=Add-ManagedIdentityToState $state $recovered 'active'
+                    Write-AtomicJsonFile $CentralAgentStatePath $state
+                    Write-AtomicPidFile $CentralAgentPidPath ([int]$recovered.pid)
+                    Write-Host "Recovered central supervisor ownership before checkpoint-safety reconciliation (PID $($recovered.pid))."
+                }
+            }
+        }
         if($null -ne $state){
             if(Test-ManagedProcessIdentity $state){
                 return [int]$state.pid
