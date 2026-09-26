@@ -402,12 +402,15 @@ internal sealed class RlOneVsOneTrainingOptions
 
     private static RlOneVsOneMatchupMode ParseMatchupMode(string value)
     {
-        RlOneVsOneMatchupMode parsed;
-        if (!Enum.TryParse(value, true, out parsed) || !Enum.IsDefined(typeof(RlOneVsOneMatchupMode), parsed))
+        if (value.Equals("fixed", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException($"{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
+            return RlOneVsOneMatchupMode.Fixed;
         }
-        return parsed;
+        if (value.Equals("sampled", StringComparison.OrdinalIgnoreCase))
+        {
+            return RlOneVsOneMatchupMode.Sampled;
+        }
+        throw new ArgumentException($"\u0024{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
     }
 
     private static void ReplaceShipTypes(List<ConfigData.ShipTypes> destination, string value, string flag)
