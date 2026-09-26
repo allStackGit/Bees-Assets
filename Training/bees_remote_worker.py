@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import signal
 import subprocess
@@ -134,12 +135,26 @@ def _terminate(process: subprocess.Popen) -> None:
         return
     try:
         process.terminate()
+    except OSError:
+        if process.poll() is not None:
+            return
+    try:
         process.wait(timeout=10)
-    except Exception:
-        try:
-            process.kill()
-        except Exception:
-            pass
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        process.kill()
+    except OSError:
+        if process.poll() is not None:
+            return
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"remote worker child process {process.pid} did not stop after kill"
+        ) from exc
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -198,7 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not os.path.isfile(env_path):
         print(f"error: Unity environment executable does not exist: {env_path}", file=sys.stderr)
         return 2
-    if args.tunnel_startup_seconds < 0:
+    if not math.isfinite(args.tunnel_startup_seconds) or args.tunnel_startup_seconds < 0:
         print("error: --tunnel-startup-seconds must be non-negative", file=sys.stderr)
         return 2
 
@@ -260,11 +275,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             time.sleep(0.25)
         return 0
     finally:
-        for process in workers:
-            _terminate(process)
-        _terminate(tunnel)
+        cleanup_errors = []
+        for process in [*workers, tunnel]:
+            try:
+                _terminate(process)
+            except RuntimeError as exc:
+                cleanup_errors.append(str(exc))
         signal.signal(signal.SIGINT, old_sigint)
         signal.signal(signal.SIGTERM, old_sigterm)
+        if cleanup_errors:
+            raise RuntimeError(
+                "remote worker cleanup could not confirm child shutdown: "
+                + "; ".join(cleanup_errors)
+            )
 
 
 if __name__ == "__main__":
