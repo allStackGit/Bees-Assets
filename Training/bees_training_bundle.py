@@ -68,7 +68,7 @@ def resolve_run_id(
                 )
                 candidates.append(directories[0].name)
     for run_id in candidates:
-        if not RUN_ID_RE.fullmatch(run_id):
+        if run_id in {".", ".."} or not RUN_ID_RE.fullmatch(run_id):
             raise ValueError(f"unsafe training run id: {run_id!r}")
         return run_id
     raise ValueError("could not determine a training run id")
