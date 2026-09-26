@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+import time
 from typing import Any, Mapping, Sequence
 import zipfile
 
@@ -50,7 +53,7 @@ def _read_required_file(path: Path, label: str) -> bytes:
 
 def _runtime_version(runtime_zip: bytes) -> str:
     try:
-        with zipfile.ZipFile(__import__("io").BytesIO(runtime_zip), "r") as bundle:
+        with zipfile.ZipFile(io.BytesIO(runtime_zip), "r") as bundle:
             value = bundle.read(RUNTIME_VERSION_NAME).decode("ascii").strip().lower()
     except (KeyError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
         raise ValueError(f"training runtime archive has no valid version marker: {exc}") from exc
@@ -94,6 +97,18 @@ def _verify_runtime_matches_release(runtime_zip: bytes, release: Mapping[str, An
             f"expected {expected_version or '(missing)'} got {runtime_version}"
         )
     return runtime_sha, runtime_version
+
+
+def _replace_with_retry(source: Path, destination: Path) -> None:
+    deadline = time.monotonic() + 30.0
+    while True:
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
 
 
 def create_bundle(
@@ -146,7 +161,7 @@ def create_bundle(
         ) as bundle:
             for archive_name, key, mode in ENTRY_SPECS:
                 bundle.writestr(_zip_info(archive_name, mode), inputs[key])
-        os.replace(temporary, output)
+        _replace_with_retry(temporary, output)
     finally:
         try:
             temporary.unlink()
@@ -190,7 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             linux_bridge=Path(args.linux_bridge),
         )
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
-        print(f"bootstrap bundle error: {exc}", file=__import__("sys").stderr)
+        print(f"bootstrap bundle error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
