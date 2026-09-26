@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true,Position=0)]
-    [ValidateSet('build','server','start','stop','status','bundle')]
+    [ValidateSet('build','server','start','stop','status','bundle','qualify')]
     [string]$Command,
     [switch]$FullGame,
     [switch]$Force,
@@ -52,6 +52,7 @@ $RunLifecycleScript=Join-Path $AssetsRoot 'Training\bees_run_lifecycle.py'
 $ArchiveRunScript=Join-Path $AssetsRoot 'Training\bees_archive_training_run.py'
 $DiagnosticBundleScript=Join-Path $AssetsRoot 'Training\bees_training_bundle.py'
 $DiagnosticBenchmarkScript=Join-Path $AssetsRoot 'Training\bees_training_diagnostic_benchmark.py'
+$RobustnessQualificationScript=Join-Path $AssetsRoot 'Training\bees_training_robustness_qualification.py'
 $ReleaseRuntimeScript=Join-Path $AssetsRoot 'Training\bees_release_runtime.py'
 $BootstrapBundleScript=Join-Path $AssetsRoot 'Training\bees_bootstrap_bundle.py'
 $ReleaseRuntimeInstallRoot=Join-Path $RuntimeRoot 'TrainingReleases'
@@ -3598,6 +3599,20 @@ function Invoke-Bundle {
 
 function Invoke-Status { $config=Get-ClusterConfig; $admin=Ensure-TokenFile $AdminTokenPath; Show-Status $config $admin ([bool]$Once) }
 
+function Invoke-Qualify {
+    $config=Get-ClusterConfig
+    $python=Resolve-Python $config
+    if(-not(Test-Path -LiteralPath $RobustnessQualificationScript)){
+        throw "Training robustness qualification helper is missing: $RobustnessQualificationScript"
+    }
+    Write-Host 'Running local distributed-training robustness qualification. Live training/server state will not be changed.'
+    Invoke-Checked $python @(
+        $RobustnessQualificationScript,
+        '--bees-root',$BeesRoot,
+        '--assets-root',$AssetsRoot
+    ) $AssetsRoot | Out-Host
+}
+
 switch($Command){
     'build'{Invoke-Build}
     'server'{Invoke-Server}
@@ -3605,4 +3620,5 @@ switch($Command){
     'stop'{Invoke-Stop}
     'status'{Invoke-Status}
     'bundle'{Invoke-Bundle}
+    'qualify'{Invoke-Qualify}
 }
