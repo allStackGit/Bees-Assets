@@ -82,7 +82,7 @@ namespace Bees.Tests.EditMode
             string config = Read("Training", "continual_learning_config.json");
             string schema = Read("Scripts", "Scenes", "RlPolicySchema.cs");
 
-            Assert.That(config, Does.Contain("\"policy_abi_version\": 19"));
+            Assert.That(config, Does.Contain("\"policy_abi_version\": 20"));
             Assert.That(config, Does.Contain("\"observation_schema_version\": 11"));
             Assert.That(config, Does.Contain("\"telemetry_observation_size\": 7614"));
             Assert.That(config, Does.Contain("bees-rl-v20"));
