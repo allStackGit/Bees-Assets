@@ -145,6 +145,18 @@ class _FakeStore:
         return {"model_id": f"model-{kwargs['training_step']}"}
 
 
+class _FlakyStore(_FakeStore):
+    def __init__(self):
+        super().__init__()
+        self.attempts = 0
+
+    def register_model(self, path, **kwargs):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise RuntimeError("transient registry failure")
+        return super().register_model(path, **kwargs)
+
+
 class CandidateMonitorTests(unittest.TestCase):
     def make_monitor(self, root: Path, store: _FakeStore) -> wrapper.CandidateMonitor:
         return wrapper.CandidateMonitor(
@@ -207,6 +219,38 @@ class CandidateMonitorTests(unittest.TestCase):
 
             self.assertEqual(len(store.registrations), 1)
             self.assertEqual(store.registrations[0][1]["training_step"], 30000)
+
+
+    def test_failed_registration_is_retried_after_process_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            checkpoint = root / "BeesRL1v1-40000.onnx"
+            store = _FlakyStore()
+
+            first = self.make_monitor(root, store)
+            first.prime_existing()
+            checkpoint.write_bytes(b"candidate")
+            first.scan_once()
+            first.scan_once()
+
+            marker = checkpoint.with_name(
+                checkpoint.name + ".bees-candidate-pending.json"
+            )
+            self.assertTrue(marker.is_file())
+            self.assertEqual(store.attempts, 1)
+            self.assertTrue(first.errors)
+
+            restarted = self.make_monitor(root, store)
+            restarted.prime_existing()
+            restarted.scan_once()
+
+            self.assertEqual(store.attempts, 2)
+            self.assertEqual(len(store.registrations), 1)
+            self.assertEqual(
+                store.registrations[0][1]["training_step"],
+                40000,
+            )
+            self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
