@@ -752,6 +752,15 @@ class WanActorBroker:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
         if actor_id not in self.registered_actor_ids():
             raise ValueError("actor must register behavior specs before uploading trajectories")
+        batch_id = payload.get("batch_id")
+        if batch_id is not None and (
+            not isinstance(batch_id, str) or not batch_id or len(batch_id) > 64
+        ):
+            raise ValueError("trajectory batch_id must be a non-empty string up to 64 characters")
+        with self._condition:
+            duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+        if duplicate_count is not None:
+            return duplicate_count
         if payload.get("control_epoch") != self.control_epoch:
             raise StaleActorStateError(
                 f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
@@ -790,7 +799,11 @@ class WanActorBroker:
         with self._condition:
             if actor_id in self._cohort_blocked_actors:
                 raise queue.Full
-        self._trajectory_batches.put(item, timeout=10.0)
+            duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+            if duplicate_count is not None:
+                return duplicate_count
+            self._trajectory_batches.put_nowait(item)
+            self._remember_accepted_batch_locked(actor_id, batch_id, len(trajectories))
         return len(trajectories)
 
     def _batch_is_current(self, batch: Mapping[str, Any]) -> bool:
