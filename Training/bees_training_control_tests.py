@@ -273,6 +273,7 @@ class TrainingControlClientTests(unittest.TestCase):
                 compatibility_key="b" * 64,
                 state_file=Path("state.json"),
                 environment_args=(),
+                require_child_health=True,
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             launched = popen.call_args.args[0]
@@ -284,6 +285,12 @@ class TrainingControlClientTests(unittest.TestCase):
             self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
             self.assertEqual(environment[agent.COMPATIBILITY_KEY_ENV], "b" * 64)
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
+            self.assertTrue(
+                Path(environment["BEES_TRAINING_CHILD_HEALTH_FILE"]).as_posix().endswith(
+                    "child-health.json"
+                )
+            )
+            self.assertTrue(environment["BEES_TRAINING_CHILD_HEALTH_TOKEN"])
             self.assertTrue(
                 Path(environment[agent.THROUGHPUT_METRICS_ENV]).as_posix().endswith(
                     "worker-throughput.json"
