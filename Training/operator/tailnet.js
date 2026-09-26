@@ -367,7 +367,7 @@ async function startTailnetGatewayIfNeeded(config) {
     const ownerToken = crypto.randomBytes(16).toString('hex');
     const launchArgs = [...args, '--owner-token', ownerToken];
     const launchIntent = {
-        schema_version: 4,
+        schema_version: 3,
         status: 'launching',
         owner_token: ownerToken,
         executable_path: path.resolve(bridge),

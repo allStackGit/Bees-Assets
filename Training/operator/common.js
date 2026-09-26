@@ -91,13 +91,26 @@ function removeIfExists(target, options = {}) {
     }
 }
 
+function removeUtf8BomIfPresent(filePath) {
+    if (!exists(filePath)) return false;
+    const bytes = fs.readFileSync(filePath);
+    if (bytes.length < 3 || bytes[0] !== 0xEF || bytes[1] !== 0xBB || bytes[2] !== 0xBF) {
+        return false;
+    }
+    const temp = filePath + '.nobom-' + process.pid;
+    fs.writeFileSync(temp, bytes.subarray(3));
+    atomicReplace(temp, filePath);
+    return true;
+}
+
 function readText(filePath) {
     return fs.readFileSync(filePath, 'utf8');
 }
 
 function readJson(filePath, fallback = undefined) {
     try {
-        return JSON.parse(readText(filePath));
+        const text = readText(filePath).replace(/^\uFEFF/, '');
+        return JSON.parse(text);
     } catch (error) {
         if (fallback !== undefined && (error.code === 'ENOENT' || error instanceof SyntaxError)) {
             return fallback;
@@ -108,29 +121,49 @@ function readJson(filePath, fallback = undefined) {
 
 function atomicReplace(tempPath, destinationPath) {
     ensureDir(path.dirname(destinationPath));
-    try {
+    if (!exists(destinationPath) || process.platform !== 'win32') {
         fs.renameSync(tempPath, destinationPath);
         return;
-    } catch (error) {
-        if (process.platform !== 'win32' || !exists(destinationPath)) throw error;
     }
 
+    // Windows does not expose File.Replace directly through node:fs. Keep the atomic replacement
+    // guarantee by using the .NET primitive as a narrow OS adapter; paths travel through the
+    // environment, never through a quoted command string.
     const backup = destinationPath + '.swap-backup';
+    const ps = powershellExecutable();
+    const env = {
+        ...process.env,
+        BEES_ATOMIC_SOURCE: path.resolve(tempPath),
+        BEES_ATOMIC_DESTINATION: path.resolve(destinationPath),
+        BEES_ATOMIC_BACKUP: path.resolve(backup),
+    };
+    const script =
+        'Remove-Item -LiteralPath $env:BEES_ATOMIC_BACKUP -Force -ErrorAction SilentlyContinue;' +
+        '[IO.File]::Replace($env:BEES_ATOMIC_SOURCE,$env:BEES_ATOMIC_DESTINATION,$env:BEES_ATOMIC_BACKUP,$true);' +
+        'Remove-Item -LiteralPath $env:BEES_ATOMIC_BACKUP -Force -ErrorAction SilentlyContinue';
+
+    let lastError = '';
     for (let attempt = 0; attempt < 300; attempt++) {
-        removeIfExists(backup);
-        try {
-            fs.renameSync(destinationPath, backup);
-            fs.renameSync(tempPath, destinationPath);
-            removeIfExists(backup);
-            return;
-        } catch (error) {
-            try {
-                if (!exists(destinationPath) && exists(backup)) fs.renameSync(backup, destinationPath);
-            } catch (_) {}
-            if (attempt === 299) throw error;
-            sleepSync(100);
-        }
+        const result = spawnSync(
+            ps,
+            ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+            {
+                env,
+                encoding: 'utf8',
+                windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            },
+        );
+        if (!result.error && result.status === 0) return;
+        lastError = result.error
+            ? result.error.message
+            : String(result.stderr || result.stdout || '').trim();
+        if (attempt < 299) sleepSync(100);
     }
+    throw new Error(
+        'Atomic Windows file replacement failed for ' + destinationPath +
+        (lastError ? ': ' + lastError : '')
+    );
 }
 
 function writeTextAtomic(filePath, value, encoding = 'utf8') {
@@ -554,6 +587,7 @@ module.exports = {
     powershellExecutable,
     readJson,
     readTail,
+    removeUtf8BomIfPresent,
     readText,
     removeIfExists,
     requestJson,
