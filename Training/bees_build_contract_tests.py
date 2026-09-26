@@ -1250,6 +1250,43 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+
+    def test_failed_server_candidate_cleanup_requires_owner_proof_and_port_release(self):
+        source = read_operator("server.js")
+        start = source.index("async function cleanupFailedBeesServerCandidate")
+        end = source.index("async function startBeesServerRuntimeProcess", start)
+        block = source[start:end]
+
+        self.assertIn("testManagedProcessIdentity(identity, node)", block)
+        self.assertIn(
+            "findManagedProcessByOwnerToken(\n            node,\n            ownerToken,",
+            block,
+        )
+        self.assertIn("sha256Text('bees-managed-child:' + ownerToken)", block)
+        self.assertIn("'failed BeesServer candidate child'", block)
+        self.assertIn("await waitForTcpPortClosed(", block)
+        self.assertIn("Refusing rollback/retry", block)
+
+        launch = source[
+            source.index("async function startBeesServerRuntimeProcess"):
+            source.index("async function startBeesServerIfNeeded")
+        ]
+        identity_failure = launch.index(
+            "if (!identity || !samePath(identity.executable_path, node))"
+        )
+        cleanup = launch.index("await cleanupFailedBeesServerCandidate(", identity_failure)
+        throw = launch.index(
+            "Could not establish the BeesServer candidate process identity after launch.",
+            cleanup,
+        )
+        self.assertLess(identity_failure, cleanup)
+        self.assertLess(cleanup, throw)
+        self.assertNotIn(
+            "stopManagedProcessTree(identity, node, 'failed BeesServer candidate')",
+            launch,
+        )
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
