@@ -48,6 +48,19 @@ class ElasticActorSession(worker.ActorSession):
         interval = min(5.0, max(0.05, float(lease_seconds) / 3.0))
         if interval >= float(lease_seconds):
             raise RuntimeError("Elastic WAN actor lease is too short to renew safely")
+
+        request_timeout = getattr(self.client, "timeout", None)
+        if (
+            not isinstance(request_timeout, (int, float))
+            or isinstance(request_timeout, bool)
+            or not math.isfinite(float(request_timeout))
+            or float(request_timeout) <= 0
+        ):
+            raise RuntimeError("Elastic WAN actor has an invalid broker request timeout")
+        if interval + float(request_timeout) >= float(lease_seconds):
+            raise RuntimeError(
+                "Elastic WAN actor lease must exceed the renewal interval plus broker request timeout"
+            )
         self._claim_keeper_stop.clear()
         self._claim_keeper = threading.Thread(
             target=self._maintain_claim,
