@@ -1238,6 +1238,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("request.setTimeout(", block)
 
 
+
+    def test_control_health_probe_keeps_full_get_timeout(self):
+        source = read_operator("common.js")
+        start = source.index("async function testControl")
+        end = source.index("function powershellExecutable", start)
+        block = source[start:end]
+        self.assertIn(
+            "requestJson(baseUrl, token, 'GET', '/v1/status', null, 5000)",
+            block,
+        )
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
