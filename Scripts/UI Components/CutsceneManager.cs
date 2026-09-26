@@ -18,6 +18,9 @@ public class CutsceneManager : MonoBehaviour
     public Action EndDialogueAction;
     public bool HasEndDialogueAction = false;
     private bool _dialoguePresentationSuppressed;
+    private bool _dialogueSectionActive;
+
+    internal bool HasActiveDialogueSection => _dialogueSectionActive;
 
     public TimelineAsset PlutoIntroCutscene;
 
@@ -31,6 +34,7 @@ public class CutsceneManager : MonoBehaviour
         // Suppression belongs to the previous tutorial presentation; a new mission setup
         // must restore normal dialogue unless that mission suppresses it again deliberately.
         _dialoguePresentationSuppressed = false;
+        _dialogueSectionActive = false;
         if (endDialogueAction != null)
         {
             EndDialogueAction = endDialogueAction;
@@ -747,6 +751,7 @@ public class CutsceneManager : MonoBehaviour
             return;
         }
 
+        _dialogueSectionActive = true;
         HitDialogueBreak = false;
         ShowDialogue();
         DialogueManager.Setup(this);
@@ -757,11 +762,13 @@ public class CutsceneManager : MonoBehaviour
     public void BreakDialogue()
     {
         //Debug.Log("Breaking dialogue in cutscene manager.");
+        _dialogueSectionActive = false;
         HitDialogueBreak = true;
         DialogueManager.gameObject.SetActive(false);
     }
     public void EndDialogue()
     {
+        _dialogueSectionActive = false;
         DialogueManager.gameObject.SetActive(false);
         if (HasEndDialogueAction)
         {
