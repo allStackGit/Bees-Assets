@@ -45,6 +45,7 @@ $WorkerTokenPath=Join-Path $SecretsRoot 'training-worker.token'
 $AdminTokenPath=Join-Path $SecretsRoot 'training-admin.token'
 $WanTokenPath=Join-Path $SecretsRoot 'wan.token'
 $BootstrapTokenPath=Join-Path $SecretsRoot 'training-bootstrap.token'
+$EnvironmentValidationTokenPath=Join-Path $SecretsRoot 'training-environment-validation.token'
 $RunLifecycleRoot=Join-Path $TrainingRoot 'RunLifecycle'
 $RunStatePath=Join-Path $RunLifecycleRoot 'current.json'
 $RunPlanPath=Join-Path $RuntimeRoot 'pending-training-run.json'
@@ -1833,6 +1834,7 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 
 function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$AdminToken){
     $dbPasswordHash=if($env:BEES_DB_PASSWORD){Get-StringSha256 ([string]$env:BEES_DB_PASSWORD)}else{''}
+    $environmentValidationSecret=Ensure-TokenFile $EnvironmentValidationTokenPath
     $payload=[ordered]@{
         control_url=[string]$Config.controlUrl
         control_host=[string]$Config.controlHost
@@ -1840,6 +1842,7 @@ function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$Ad
         gameplay_port=[int]$GameplayServerPort
         worker_token_sha256=Get-StringSha256 $WorkerToken
         admin_token_sha256=Get-StringSha256 $AdminToken
+        environment_validation_secret_sha256=Get-StringSha256 $environmentValidationSecret
         control_state=Join-Path $TrainingRoot 'Control\state.json'
         artifact_root=Join-Path $TrainingRoot 'Control\Artifacts'
         log_root=Join-Path $TrainingRoot 'TrainerLogs'
@@ -1854,9 +1857,11 @@ function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$Ad
 }
 
 function Set-BeesServerLaunchEnvironment($Config,[string]$WorkerToken,[string]$AdminToken){
+    $environmentValidationSecret=Ensure-TokenFile $EnvironmentValidationTokenPath
     $env:BEES_TRAINING_CONTROL_ENABLED='1'
     $env:BEES_TRAINING_CONTROL_TOKEN=$WorkerToken
     $env:BEES_TRAINING_CONTROL_ADMIN_TOKEN=$AdminToken
+    $env:BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET=$environmentValidationSecret
     $env:BEES_TRAINING_CONTROL_HOST=[string]$Config.controlHost
     $env:BEES_TRAINING_CONTROL_PORT=[string]$Config.controlPort
     $env:BEES_TRAINING_CONTROL_STATE=Join-Path $TrainingRoot 'Control\state.json'
@@ -2162,6 +2167,20 @@ function Quote-Arg([string]$Value){
 function Get-StringSha256([string]$Value){
     $sha=[Security.Cryptography.SHA256]::Create()
     try{$bytes=[Text.Encoding]::UTF8.GetBytes($Value);([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+}
+
+function Get-HmacSha256([string]$Secret,[string]$Value){
+    if([string]::IsNullOrWhiteSpace($Secret) -or $Secret.Length -lt 32){
+        throw 'Environment validation secret must contain at least 32 characters.'
+    }
+    $hmac=New-Object Security.Cryptography.HMACSHA256
+    try {
+        $hmac.Key=[Text.Encoding]::UTF8.GetBytes($Secret)
+        $bytes=[Text.Encoding]::UTF8.GetBytes($Value)
+        ([BitConverter]::ToString($hmac.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+    } finally {
+        $hmac.Dispose()
+    }
 }
 
 
@@ -2590,8 +2609,9 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
             [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$_))
         }
     )
-    $validationProof=Get-StringSha256 (
-        "bees-environment-validation-v1`n" +
+    $validationSecret=Ensure-TokenFile $EnvironmentValidationTokenPath
+    $validationProof=Get-HmacSha256 $validationSecret (
+        "bees-environment-validation-v2`n" +
         ([string]$Release.build_id) + "`n" +
         $archiveSha + "`n" +
         ($encodedArgs -join "`n")
