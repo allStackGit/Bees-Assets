@@ -937,13 +937,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             offline = last_contact > 0 and now - last_contact > lease_seconds
             prepared_build_id, preparation_error = preparer.snapshot()
             if prepared_build_id and args.runtime_ready_file:
+                artifact_prepared_build_id = prepared_build_id
                 try:
                     runtime_ready_build = Path(args.runtime_ready_file).expanduser().read_text(
                         encoding="ascii"
                     ).strip()
                 except OSError:
                     runtime_ready_build = ""
-                if runtime_ready_build != prepared_build_id:
+                if runtime_ready_build != artifact_prepared_build_id:
+                    if not preparation_error:
+                        preparation_error = (
+                            "Unity artifact is prepared for "
+                            f"{artifact_prepared_build_id}, but the remote Python runtime "
+                            f"is ready for {runtime_ready_build or '(none)'}"
+                        )
                     prepared_build_id = ""
             heartbeat = default_heartbeat(
                 trainer_id=args.trainer_id,
