@@ -106,7 +106,7 @@ class ElasticActorSession(worker.ActorSession):
     def _stop_claim_keeper(self) -> None:
         self._claim_keeper_stop.set()
         if self._claim_keeper is not None:
-            # A delayed renewal must finish before a replacement session can claim this actor_key.
+            # A delayed renewal must finish before a replacement process can claim this actor_key.
             self._claim_keeper.join()
             self._claim_keeper = None
 
