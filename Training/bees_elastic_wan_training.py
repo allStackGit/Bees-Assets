@@ -767,6 +767,15 @@ class ElasticWanBroker(base.WanActorBroker):
             self._validate_dynamic_owner_locked(actor_id, payload)
             self._registrations[actor_id]["last_seen"] = time.monotonic()
             env_count = int(self._registrations[actor_id]["env_count"])
+            batch_id = payload.get("batch_id")
+            if batch_id is not None and (
+                not isinstance(batch_id, str) or not batch_id or len(batch_id) > 64
+            ):
+                raise ValueError(
+                    "trajectory batch_id must be a non-empty string up to 64 characters")
+            duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+            if duplicate_count is not None:
+                return duplicate_count
         if payload.get("control_epoch") != self.control_epoch:
             raise base.StaleActorStateError(
                 f"trajectory control epoch {payload.get('control_epoch')!r} != {self.control_epoch}"
@@ -811,7 +820,12 @@ class ElasticWanBroker(base.WanActorBroker):
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
             with self._condition:
+                duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
+                if duplicate_count is not None:
+                    return duplicate_count
                 self._trajectory_batches.put_nowait(item)
+                self._remember_accepted_batch_locked(
+                    actor_id, batch_id, len(trajectories))
         except queue.Full:
             self.diagnostics.observe_backpressure()
             raise
