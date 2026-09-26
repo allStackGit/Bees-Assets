@@ -270,7 +270,8 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.return_value = 0
 
         with (
-            mock.patch.object(agent.os, "name", "posix"),
+            mock.patch.object(agent, "_is_windows", return_value=False),
+            mock.patch.object(process_safety, "_is_windows", return_value=False),
             mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
             mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
@@ -328,7 +329,7 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             managed.stop()
 
-        killpg.assert_called_once_with(4242, signal.SIGTERM)
+        killpg.assert_called_once_with(4242, agent._POSIX_SIGTERM)
 
     def test_managed_process_retains_ownership_when_forced_stop_cannot_confirm_exit(self):
         fake = mock.Mock()
@@ -337,7 +338,7 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.side_effect = TimeoutError("still running")
 
         with (
-            mock.patch.object(agent.os, "name", "posix"),
+            mock.patch.object(agent, "_is_windows", return_value=False),
             mock.patch.object(agent.os, "killpg", create=True) as killpg,
         ):
             managed = agent.ManagedProcess()
@@ -350,8 +351,8 @@ class TrainingControlClientTests(unittest.TestCase):
         self.assertEqual(
             killpg.call_args_list,
             [
-                mock.call(4342, signal.SIGTERM),
-                mock.call(4342, signal.SIGKILL),
+                mock.call(4342, agent._POSIX_SIGTERM),
+                mock.call(4342, agent._POSIX_SIGKILL),
             ],
         )
         fake.kill.assert_called_once()
@@ -365,7 +366,8 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.wait.return_value = 0
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
                 mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
                 mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
@@ -402,7 +404,8 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.wait.return_value = 0
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
                 mock.patch.object(process_safety.subprocess, "Popen", return_value=fake) as popen,
                 mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent.time, "sleep"),
@@ -438,7 +441,8 @@ class TrainingControlClientTests(unittest.TestCase):
             fake.poll.return_value = None
 
             with (
-                mock.patch.object(agent.os, "name", "posix"),
+                mock.patch.object(agent, "_is_windows", return_value=False),
+                mock.patch.object(process_safety, "_is_windows", return_value=False),
                 mock.patch.object(process_safety.subprocess, "Popen", return_value=fake),
                 mock.patch.object(agent.os, "killpg", create=True) as killpg,
                 mock.patch.object(agent, "GRACEFUL_CHECKPOINT_STOP_SECONDS", 0.0),
