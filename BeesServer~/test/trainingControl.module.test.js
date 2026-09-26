@@ -1573,12 +1573,35 @@ test('same-run environment rollout is central-first and never exposes mixed desi
         assert.deepEqual(remote.environment_args, oldArgs);
         assert.deepEqual(central.environment_args, newArgs);
 
+        // Every trainer sees the new global control revision. A non-target may therefore
+        // acknowledge that revision while it is intentionally still running the old args.
+        // That must not count as a completed same-build environment cutover.
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'env-roll',
+            sha,
+            { appliedRevision: phaseRevision },
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        remote = store.stateFor({
+            trainerId: 'remote-a',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+        });
+        assert.deepEqual(remote.environment_args, oldArgs);
+        assert.deepEqual(store.state.pending_release.rolled_trainers, []);
+
         heartbeatDedicated(
             store,
             'central-learner',
             'env-roll',
             sha,
             { appliedRevision: phaseRevision },
+        );
+        assert.deepEqual(
+            store.state.pending_release.rolled_trainers,
+            ['central-learner'],
         );
         assert.equal(store._rollingTargetId(), 'remote-a');
 
