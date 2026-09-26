@@ -1275,7 +1275,22 @@ function Publish-Release($Config,[string]$AdminToken,$Release){
     }
 }
 
-function Quote-Arg([string]$Value){ if($Value -notmatch '[\s"]'){return $Value}; '"' + ($Value.Replace('"','\"')) + '"' }
+function Quote-Arg([string]$Value){
+    if($Value -notmatch '[\s"]'){ return $Value }
+
+    # Start-Process reparses its ArgumentList before creating the child process. Quoting an
+    # entire --name=value token can lose that quoting layer and split a spaced value such as
+    # --unity-editor=C:\Program Files\Unity\... into multiple argv entries. Preserve the option
+    # name outside the quotes and quote only the value.
+    $equals=$Value.IndexOf('=')
+    if($equals -gt 2 -and $Value.StartsWith('--')){
+        $name=$Value.Substring(0,$equals + 1)
+        $argumentValue=$Value.Substring($equals + 1).Replace('"','\"')
+        return $name + '"' + $argumentValue + '"'
+    }
+
+    '"' + ($Value.Replace('"','\"')) + '"'
+}
 
 function Get-StringSha256([string]$Value){
     $sha=[Security.Cryptography.SHA256]::Create()
