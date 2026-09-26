@@ -103,18 +103,23 @@ func TestWriteGatewayHealthCreatesAndRefreshesHeartbeat(t *testing.T) {
 }
 
 
-func TestGatewaySupervisorKeepsOwnerTokenOutOfChildArgs(t *testing.T) {
+func TestGatewaySupervisorUsesDistinctRecoverableChildOwnerToken(t *testing.T) {
 	args := []string{
 		"--state", "state",
 		"--owner-token", "owner-secret",
 		"--health-file=health.txt",
 		"--control-port", "7150",
 	}
+	ownerToken := managedFlagValue(args, "--owner-token")
 	childArgs := withoutManagedOwnerToken(args)
+	childArgs = append(childArgs, "--owner-token", ownerToken+".child")
 
+	if got := managedFlagValue(childArgs, "--owner-token"); got != "owner-secret.child" {
+		t.Fatalf("unexpected child owner token %q", got)
+	}
 	for _, value := range childArgs {
-		if value == "owner-secret" || value == "--owner-token" || strings.HasPrefix(value, "--owner-token=") {
-			t.Fatalf("owner token leaked into gateway child args: %#v", childArgs)
+		if value == "owner-secret" {
+			t.Fatalf("supervisor owner token leaked unchanged into child args: %#v", childArgs)
 		}
 	}
 	if got := managedFlagValue(childArgs, "--health-file"); got != "health.txt" {
