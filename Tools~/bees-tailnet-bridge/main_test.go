@@ -101,3 +101,23 @@ func TestWriteGatewayHealthCreatesAndRefreshesHeartbeat(t *testing.T) {
 		t.Fatalf("gateway heartbeat moved backwards: first=%v second=%v", first.ModTime(), second.ModTime())
 	}
 }
+
+
+func TestGatewaySupervisorKeepsOwnerTokenOutOfChildArgs(t *testing.T) {
+	args := []string{
+		"--state", "state",
+		"--owner-token", "owner-secret",
+		"--health-file=health.txt",
+		"--control-port", "7150",
+	}
+	childArgs := withoutManagedOwnerToken(args)
+
+	for _, value := range childArgs {
+		if value == "owner-secret" || value == "--owner-token" || strings.HasPrefix(value, "--owner-token=") {
+			t.Fatalf("owner token leaked into gateway child args: %#v", childArgs)
+		}
+	}
+	if got := managedFlagValue(childArgs, "--health-file"); got != "health.txt" {
+		t.Fatalf("unexpected health file %q", got)
+	}
+}
