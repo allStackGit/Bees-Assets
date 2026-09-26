@@ -11,6 +11,10 @@ namespace Assets.Scripts.UIComponents
     [DefaultExecutionOrder(30000)]
     internal sealed class PlutoTwoTutorialPresentationGuard : MonoBehaviour
     {
+        private readonly Vector3[] _statusCorners = new Vector3[4];
+        private readonly Vector3[] _canvasCorners = new Vector3[4];
+        private Stage _stage;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
         {
@@ -26,13 +30,16 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            Stage stage = FindObjectOfType<Stage>();
-            if (stage == null || stage.Menus == null)
+            if (_stage == null)
+            {
+                _stage = FindObjectOfType<Stage>();
+            }
+            if (_stage == null || _stage.Menus == null)
             {
                 return;
             }
 
-            CenterMissionStatus(stage);
+            CenterMissionStatus(_stage, _statusCorners, _canvasCorners);
         }
 
         private static bool IsPlutoTwoCampaign()
@@ -45,7 +52,7 @@ namespace Assets.Scripts.UIComponents
                     ConfigData.GameModes.Campaign) == 1;
         }
 
-        private static void CenterMissionStatus(Stage stage)
+        private static void CenterMissionStatus(Stage stage, Vector3[] statusCorners, Vector3[] canvasCorners)
         {
             if (stage.Menus.MissionStatus == null || !stage.Menus.MissionStatus.activeInHierarchy)
             {
@@ -60,8 +67,6 @@ namespace Assets.Scripts.UIComponents
                 return;
             }
 
-            Vector3[] statusCorners = new Vector3[4];
-            Vector3[] canvasCorners = new Vector3[4];
             statusRect.GetWorldCorners(statusCorners);
             canvasRect.GetWorldCorners(canvasCorners);
             float statusCenterX = (statusCorners[0].x + statusCorners[2].x) * 0.5f;
