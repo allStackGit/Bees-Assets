@@ -1099,9 +1099,17 @@ function Archive-TrainingRun([string]$Python,[string]$RunId,[string]$Reason){
     ) $AssetsRoot
 }
 
-function New-TrainingRunPlan([string]$Python,[switch]$ForceNew){
+function New-TrainingRunPlan(
+    [string]$Python,
+    [switch]$ForceNew,
+    [string]$BuildId='',
+    [string[]]$EnvironmentArgs=@()
+){
     if(-not(Test-Path -LiteralPath $RunLifecycleScript)){
         throw "Training run lifecycle helper is missing: $RunLifecycleScript"
+    }
+    if($BuildId -and -not $ForceNew){
+        throw '-BuildId is only valid for a forced-new training run plan.'
     }
     Ensure-Directory $RunLifecycleRoot
     Ensure-Directory $RuntimeRoot
@@ -1112,7 +1120,12 @@ function New-TrainingRunPlan([string]$Python,[switch]$ForceNew){
         '--state',$RunStatePath,
         '--out',$RunPlanPath
     )
-    if($ForceNew){ $planArgs+='--force-new' }
+    if($ForceNew){
+        $planArgs+='--force-new'
+        if($BuildId){ $planArgs+=@('--build-id',$BuildId) }
+        $environmentArgsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
+        $planArgs+=@('--environment-args-json',$environmentArgsJson)
+    }
     $null=Invoke-Checked $Python $planArgs $AssetsRoot
     Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
 }
@@ -1123,6 +1136,50 @@ function Commit-TrainingRunPlan([string]$Python){
         '--state',$RunStatePath,
         '--plan',$RunPlanPath
     ) $AssetsRoot
+}
+
+function Get-PendingForcedNewRunPlan {
+    if(-not(Test-Path -LiteralPath $RunPlanPath)){ return $null }
+    $plan=$null
+    try { $plan=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
+    catch { throw "Pending training run plan is unreadable: $RunPlanPath" }
+    if($null -eq $plan -or -not [bool](Get-ObjectPropertyValue $plan 'forced_new_run')){
+        return $null
+    }
+    $buildId=([string](Get-ObjectPropertyValue $plan 'build_id')).Trim()
+    if(-not $buildId){
+        throw "Pending forced-new run plan predates build-bound recovery and cannot be resumed safely: $RunPlanPath"
+    }
+    $environmentArgs=Get-ObjectPropertyValue $plan 'environment_args'
+    if($null -eq $environmentArgs){
+        throw "Pending forced-new run plan has no persisted environment arguments: $RunPlanPath"
+    }
+    $plan
+}
+
+function Convert-ReleaseToForcedRunPlan($Release,$Plan,[string]$OutgoingRun){
+    $copy=$Release | ConvertTo-Json -Depth 12 | ConvertFrom-Json
+    $copy | Add-Member -NotePropertyName run_id -NotePropertyValue ([string]$Plan.run_id) -Force
+    $copy | Add-Member -NotePropertyName previous_run_id -NotePropertyValue $OutgoingRun -Force
+    $copy | Add-Member -NotePropertyName compatibility_key -NotePropertyValue ([string]$Plan.compatibility_key) -Force
+    $copy | Add-Member -NotePropertyName incompatible -NotePropertyValue $true -Force
+    $copy | Add-Member -NotePropertyName contract -NotePropertyValue $Plan.contract -Force
+    $copy
+}
+
+function Complete-ForcedNewRunPlan($Plan,$Release){
+    if(-not(Test-Path -LiteralPath $RunPlanPath)){ return }
+    $current=$null
+    try { $current=Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json }
+    catch { throw "Pending training run plan is unreadable during completion: $RunPlanPath" }
+    if($null -eq $current -or
+        -not [bool](Get-ObjectPropertyValue $current 'forced_new_run') -or
+        ([string](Get-ObjectPropertyValue $current 'build_id')).Trim() -ne ([string]$Release.build_id).Trim() -or
+        ([string](Get-ObjectPropertyValue $current 'run_id')).Trim() -ne ([string]$Release.run_id).Trim() -or
+        ([string](Get-ObjectPropertyValue $current 'compatibility_key')).Trim().ToLowerInvariant() -ne ([string]$Release.compatibility_key).Trim().ToLowerInvariant()){
+        throw "Refusing to clear a forced-new run plan that no longer matches the completed release."
+    }
+    Remove-Item -LiteralPath $RunPlanPath -Force
 }
 
 function Get-TrainingCompatibilityFingerprint([string]$Python){
@@ -1281,6 +1338,10 @@ function Wait-ReleaseRollout(
 function Invoke-Build {
     $config=Get-ClusterConfig
     $python=Resolve-Python $config
+    $unfinishedForcedPlan=Get-PendingForcedNewRunPlan
+    if($null -ne $unfinishedForcedPlan){
+        throw "A forced new-run operation is still unfinished for build $($unfinishedForcedPlan.build_id) run=$($unfinishedForcedPlan.run_id). Run '.\Assets\bees.ps1 start' to resume it before creating another build."
+    }
     $sourceSha=Get-GitShortSha
     $unity=Resolve-UnityEditor $config
     Assert-UnityProjectAvailableForBatchBuild
@@ -2296,9 +2357,38 @@ function Invoke-Start {
     Ensure-RunLifecycleMatchesRelease $python $release
     Assert-CentralAgentCheckpointSafe
 
-    $forcedPlan=$null
+    $forcedPlan=Get-PendingForcedNewRunPlan
+    $resumeForcedNewRun=($null -ne $forcedPlan)
     $outgoingRun=$null
-    if($NewRun){
+
+    if($resumeForcedNewRun){
+        $planBuild=([string]$forcedPlan.build_id).Trim()
+        $planRun=([string]$forcedPlan.run_id).Trim()
+        $planKey=([string]$forcedPlan.compatibility_key).Trim().ToLowerInvariant()
+        $planPreviousRun=([string]$forcedPlan.previous_run_id).Trim()
+        $planPreviousKey=([string]$forcedPlan.previous_compatibility_key).Trim().ToLowerInvariant()
+        $releaseBuild=([string]$release.build_id).Trim()
+        $releaseRun=([string]$release.run_id).Trim()
+        $releaseKey=([string]$release.compatibility_key).Trim().ToLowerInvariant()
+
+        if($planBuild -ne $releaseBuild){
+            throw "Pending forced-new operation targets build $planBuild but latest release is $releaseBuild. Refusing to guess which release should own the run."
+        }
+        $outgoingRun=$planPreviousRun
+        $persistedEnvironmentArgs=@(Get-ObjectPropertyValue $forcedPlan 'environment_args')
+        $envArgs=@($persistedEnvironmentArgs | ForEach-Object {[string]$_})
+
+        if($releaseRun -eq $planRun -and $releaseKey -eq $planKey){
+            Write-Host "Resuming interrupted forced new-run operation: target=$planRun build=$planBuild."
+        } elseif($releaseRun -eq $planPreviousRun -and $releaseKey -eq $planPreviousKey){
+            $release=Convert-ReleaseToForcedRunPlan $release $forcedPlan $outgoingRun
+            Save-LatestRelease $release
+            Commit-TrainingRunPlan $python
+            Write-Host "Recovered forced new-run intent before release staging: target=$planRun build=$planBuild."
+        } else {
+            throw "Pending forced-new operation does not match either the latest release or its recorded predecessor. plan=$planRun previous=$planPreviousRun release=$releaseRun"
+        }
+    } elseif($NewRun){
         $status=Invoke-ControlGet "$($config.controlUrl)/v1/status" $admin
         $pending=$status.desired.pending_release
         if($pending){
@@ -2324,32 +2414,21 @@ function Invoke-Start {
         if(-not $outgoingRun){ $outgoingRun=([string]$release.run_id).Trim() }
         Archive-TrainingRun $python $outgoingRun 'forced-new-precutover'
 
-        $forcedPlan=New-TrainingRunPlan $python -ForceNew
+        $forcedPlan=New-TrainingRunPlan $python -ForceNew -BuildId ([string]$release.build_id) -EnvironmentArgs @($envArgs)
         if($forcedPlan.previous_run_id -and
             $outgoingRun -and
             ([string]$forcedPlan.previous_run_id) -ne $outgoingRun){
             throw "Run lifecycle state disagrees with active training run. lifecycle=$($forcedPlan.previous_run_id) active=$outgoingRun"
         }
-        $release=[pscustomobject]@{
-            schema_version=$release.schema_version
-            build_id=[string]$release.build_id
-            source_commit=[string]$release.source_commit
-            created_utc=[string]$release.created_utc
-            run_id=[string]$forcedPlan.run_id
-            previous_run_id=$outgoingRun
-            compatibility_key=[string]$forcedPlan.compatibility_key
-            incompatible=$true
-            contract=$forcedPlan.contract
-            artifacts=$release.artifacts
-            training_runtime=$release.training_runtime
-        }
-        # Persist the forced-run intent before the server can begin the incompatible cutover.
-        # If the shell dies after the release write but before the lifecycle commit, the retained
-        # run plan lets the next ordinary start complete that commit before staging anything.
+        $release=Convert-ReleaseToForcedRunPlan $release $forcedPlan $outgoingRun
+        # The forced plan is durable operation intent. Keep it until the replacement run is
+        # promoted and the outgoing run's terminal archive succeeds, so any later start can resume.
         Save-LatestRelease $release
         Commit-TrainingRunPlan $python
         Write-Host "Forcing fresh training run: $($release.run_id) (same build $($release.build_id))."
     }
+
+    $performForcedNewRun=($NewRun -or $resumeForcedNewRun)
 
     $unity=Resolve-UnityEditor $config
     $centralRuntime=Prepare-CentralReleaseRuntime $config $bootstrapPython $unity $release
@@ -2365,12 +2444,13 @@ function Invoke-Start {
         environment_args=@($envArgs)
     }
 
-    if($NewRun){
+    if($performForcedNewRun){
         $null=Wait-ReleaseRollout $config $admin ([string]$release.build_id) ([string]$release.run_id) ([string]$release.compatibility_key)
         if($outgoingRun){
             Start-Sleep -Seconds 2
             Archive-TrainingRun $python $outgoingRun 'forced-new-final'
         }
+        Complete-ForcedNewRunPlan $forcedPlan $release
         Write-Host "Forced new-run cutover complete. Active run: $($release.run_id)"
     }
 
