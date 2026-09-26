@@ -52,6 +52,17 @@ function producerAcceptedSteps(metrics) {
     return total;
 }
 
+function recentSessionFailureAgeSeconds(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const count = throughput.session_failures_total;
+    const age = throughput.seconds_since_last_session_failure;
+    if (!finiteInteger(count) || count <= 0) return null;
+    if (typeof age !== 'number' || !Number.isFinite(age) || age < 0) return null;
+    return age;
+}
+
 function initialStep(envs) {
     return Math.max(1, Math.min(4, Math.round(envs / 8)));
 }
@@ -288,6 +299,8 @@ class TrainingEnvOptimizer {
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = learnerConsumedSteps(record && record.metrics);
         const producedSteps = producerAcceptedSteps(record && record.metrics);
+        const sessionFailureAgeSeconds = recentSessionFailureAgeSeconds(
+            record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -352,13 +365,27 @@ class TrainingEnvOptimizer {
         const reportedError = typeof record.last_error === 'string'
             ? record.last_error.trim()
             : '';
+        const recentSessionFailure =
+            sessionFailureAgeSeconds !== null &&
+            sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
         const workerUnstable =
-            (processState && processState !== 'running') || Boolean(reportedError);
+            (processState && processState !== 'running') ||
+            Boolean(reportedError) ||
+            recentSessionFailure;
         if (workerUnstable) {
-            state.last_instability_ms = timestamp;
+            const sessionFailureAgeMs = recentSessionFailure
+                ? sessionFailureAgeSeconds * 1000
+                : 0;
+            const instabilityTime = recentSessionFailure
+                ? timestamp - sessionFailureAgeMs
+                : timestamp;
+            const holdUntil = recentSessionFailure
+                ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
+                : timestamp + this.instabilityHoldMs;
+            state.last_instability_ms = instabilityTime;
             state.instability_hold_until_ms = Math.max(
                 state.instability_hold_until_ms,
-                timestamp + this.instabilityHoldMs,
+                holdUntil,
             );
             if (probingAwayFromBaseline) {
                 this._abortProbe(
@@ -381,7 +408,9 @@ class TrainingEnvOptimizer {
             state.source_steps = totalSteps;
             state.last_decision = reportedError
                 ? 'holding env count after worker-reported error'
-                : 'holding env count after worker stopped unexpectedly';
+                : recentSessionFailure
+                    ? 'holding env count after WAN actor session failure'
+                    : 'holding env count after worker stopped unexpectedly';
             return this.snapshot(record.trainer_id);
         }
 
@@ -540,5 +569,6 @@ module.exports = {
     normalizeCapacity,
     learnerConsumedSteps,
     producerAcceptedSteps,
+    recentSessionFailureAgeSeconds,
     initialStep,
 };
