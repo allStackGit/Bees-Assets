@@ -33,6 +33,8 @@ namespace Assets.Scripts.UIComponents
         private bool _plutoTwoTutorialSeen;
         private bool _plutoTwoTutorialComplete;
         private bool _plutoTwoDialogueGated;
+        private bool _dialogueManagerEnabledBeforeGate;
+        private bool _dialogueBoxActiveBeforeGate;
         private bool _plutoThreeTimerAdjusted;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -321,7 +323,17 @@ namespace Assets.Scripts.UIComponents
             {
                 return;
             }
+            if (_plutoTwoDialogueGated && _gatedDialogueManager != manager)
+            {
+                RestorePlutoTwoDialogue();
+            }
 
+            if (!_plutoTwoDialogueGated)
+            {
+                _dialogueManagerEnabledBeforeGate = manager.enabled;
+                _dialogueBoxActiveBeforeGate =
+                    manager.DialogueBox != null && manager.DialogueBox.activeSelf;
+            }
             _gatedDialogueManager = manager;
             _plutoTwoDialogueGated = true;
             manager.enabled = false;
@@ -337,16 +349,24 @@ namespace Assets.Scripts.UIComponents
             {
                 _plutoTwoDialogueGated = false;
                 _gatedDialogueManager = null;
+                _dialogueManagerEnabledBeforeGate = false;
+                _dialogueBoxActiveBeforeGate = false;
                 return;
             }
 
-            _gatedDialogueManager.enabled = true;
-            if (_gatedDialogueManager.DialogueBox != null)
+            DialogueManager manager = _gatedDialogueManager;
+            manager.enabled = _dialogueManagerEnabledBeforeGate;
+            bool dialogueSectionActive = manager.CutsceneManager != null
+                ? manager.CutsceneManager.HasActiveDialogueSection
+                : _dialogueBoxActiveBeforeGate;
+            if (manager.DialogueBox != null)
             {
-                _gatedDialogueManager.DialogueBox.SetActive(true);
+                manager.DialogueBox.SetActive(dialogueSectionActive);
             }
             _plutoTwoDialogueGated = false;
             _gatedDialogueManager = null;
+            _dialogueManagerEnabledBeforeGate = false;
+            _dialogueBoxActiveBeforeGate = false;
         }
 
         private void RemoveSquadNumberHighlight()
