@@ -6,6 +6,8 @@ using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEngine;
 
 /// <summary>
@@ -19,6 +21,10 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     private const int EpisodeMetricsLogInterval = 10;
     private const int SummaryIntervalEpisodes = 100;
     private const int FullEpisodeDiagnosticsInterval = 1000;
+    private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;
+    private static readonly object TrainingDiagnosticLogLock = new object();
+    private static readonly Encoding TrainingDiagnosticEncoding = new UTF8Encoding(false);
+    private static bool _trainingDiagnosticWriteWarningEmitted;
 
     internal readonly struct EpisodeResult
     {
@@ -1223,7 +1229,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (_completedEpisodes == 1 || _completedEpisodes % EpisodeMetricsLogInterval == 0)
         {
             string combatTelemetry = RlOneVsOneCombatTelemetry.BuildEpisodeFields(level);
-            Debug.Log(
+            WriteTrainingDiagnostic(
                 $"RL 1v1 episode={result.EpisodeNumber} arena={GetArenaIndex()} outcome={outcome} bee_team={_beeTeamId} human_team={_humanTeamId} " +
                 $"ships_per_side={RlOneVsOneTrainingBootstrap.CurrentShipsPerSide} map_size={mapSize:F0} winner={winningSide} timeout={timedOut} duration={durationSeconds:F2}s " +
                 $"bee_tsv={_beeStartingTsv}->{beeFinalTsv} human_tsv={_humanStartingTsv}->{humanFinalTsv} " +
@@ -1235,7 +1241,7 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         if (_completedEpisodes == 1 || _completedEpisodes % FullEpisodeDiagnosticsInterval == 0)
         {
             string behaviorDiagnostics = RlOneVsOneEpisodeDiagnostics.BuildEpisodeFields(level, timedOut);
-            Debug.Log(
+            WriteTrainingDiagnostic(
                 $"RL 1v1 detail episode={result.EpisodeNumber} arena={GetArenaIndex()} " +
                 $"bee_first_contact={FormatTime(_beeFirstContactSeconds)} bee_no_enemy_visible={_beeNoEnemyVisibleSeconds:F2}s bee_no_enemy_visible_pct={beeNoEnemyVisibleFraction:P2} " +
                 $"bee_contact_to_fire={FormatTime(beeFirstContactToFire)} bee_contact_to_end={FormatTime(beeFirstContactToEnd)} " +
@@ -1299,11 +1305,51 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         float averageDuration = _completedEpisodes > 0 ? _totalDurationSeconds / _completedEpisodes : 0f;
         float beeHitRate = _beeShotsTotal > 0 ? (float)_beeHitsTotal / _beeShotsTotal : 0f;
         float humanHitRate = _humanShotsTotal > 0 ? (float)_humanHitsTotal / _humanShotsTotal : 0f;
-        Debug.Log(
+        WriteTrainingDiagnostic(
             $"RL 1v1 summary episodes={_completedEpisodes} arena={GetArenaIndex()} bee_record={_beeWins}-{_beeLosses} human_record={_humanWins}-{_humanLosses} " +
             $"draws={_draws} timeouts={_timeouts} avg_duration={averageDuration:F2}s " +
             $"bee_shots={_beeShotsTotal} bee_hits={_beeHitsTotal} bee_hit_rate={beeHitRate:P2} bee_damage={_beeDamageTotal} " +
             $"human_shots={_humanShotsTotal} human_hits={_humanHitsTotal} human_hit_rate={humanHitRate:P2} human_damage={_humanDamageTotal}");
+    }
+
+    private static void WriteTrainingDiagnostic(string message)
+    {
+        string logRoot = Environment.GetEnvironmentVariable("BEES_TRAINING_LOG_DIR");
+        if (string.IsNullOrWhiteSpace(logRoot))
+        {
+            Debug.Log(message);
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(logRoot);
+            int processId = System.Diagnostics.Process.GetCurrentProcess().Id;
+            string path = Path.Combine(logRoot, $"BeesEpisode-{processId}.log");
+            string line = message + Environment.NewLine;
+            int incomingBytes = TrainingDiagnosticEncoding.GetByteCount(line);
+            lock (TrainingDiagnosticLogLock)
+            {
+                if (File.Exists(path))
+                {
+                    long currentBytes = new FileInfo(path).Length;
+                    if (currentBytes + incomingBytes > TrainingDiagnosticMaxBytes)
+                    {
+                        File.WriteAllText(path, string.Empty, TrainingDiagnosticEncoding);
+                    }
+                }
+                File.AppendAllText(path, line, TrainingDiagnosticEncoding);
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!_trainingDiagnosticWriteWarningEmitted)
+            {
+                _trainingDiagnosticWriteWarningEmitted = true;
+                Debug.LogWarning($"RL training diagnostic sidecar failed; reverting to Unity log output: {exception.Message}");
+            }
+            Debug.Log(message);
+        }
     }
 
     private int GetArenaIndex()
