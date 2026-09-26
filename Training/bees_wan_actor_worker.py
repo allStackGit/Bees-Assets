@@ -976,7 +976,7 @@ class ActorSession:
             while True:
                 try:
                     trajectories.append(manager.trajectory_queue.get_nowait())
-                except manager.trajectory_queue.Empty:
+                except queue.Empty:
                     break
         return trajectories
 
