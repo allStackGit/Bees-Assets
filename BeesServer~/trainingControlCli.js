@@ -8,9 +8,9 @@ function usage() {
     return [
         'Usage:',
         '  node trainingControlCli.js status',
-        '  node trainingControlCli.js start [--build-id ID --run-id ID --compatibility-key SHA256 [--incompatible]] [--env-arg VALUE ...]',
+        '  node trainingControlCli.js start [--build-id ID --run-id ID --compatibility-key SHA256 [--incompatible]]',
         '  node trainingControlCli.js stop',
-        '  node trainingControlCli.js set-args [--env-arg VALUE ...]',
+        '  Environment/scenario argument changes must use bees.ps1 start -EnvArg so the compiled Unity build validates them before rollout.',
         '  node trainingControlCli.js activate-build --build-id ID --run-id ID --compatibility-key SHA256 [--incompatible]',
         '  node trainingControlCli.js publish-build --role dedicated|full-game --platform P --build-id ID --archive PATH --entrypoint RELATIVE_PATH',
         '',
@@ -126,6 +126,12 @@ async function main(argv = process.argv.slice(2)) {
         return 0;
     }
     const { command, values } = parseOptions(argv);
+    if (command === 'set-args' || values.envArgs.length) {
+        throw new Error(
+            'RL environment arguments require authoritative compiled-build validation; ' +
+            'use bees.ps1 start -EnvArg instead of trainingControlCli.js.'
+        );
+    }
     const baseUrl = process.env.BEES_TRAINING_CONTROL_URL || 'http://127.0.0.1:7150';
     const token = tokenFromEnvironment();
 
@@ -137,15 +143,16 @@ async function main(argv = process.argv.slice(2)) {
             const release = requireReleaseIdentity(values, 'start');
             await requestJson(baseUrl, token, 'POST', '/v1/admin/release', release);
         }
-        const patch = { training_enabled: true };
-        if (values.envArgs.length) patch.environment_args = values.envArgs;
-        result = await requestJson(baseUrl, token, 'POST', '/v1/admin/state', patch);
+        result = await requestJson(
+            baseUrl, token, 'POST', '/v1/admin/state', { training_enabled: true });
     } else if (command === 'stop') {
         result = await requestJson(
             baseUrl, token, 'POST', '/v1/admin/state', { training_enabled: false });
     } else if (command === 'set-args') {
-        result = await requestJson(
-            baseUrl, token, 'POST', '/v1/admin/state', { environment_args: values.envArgs });
+        throw new Error(
+            'RL environment arguments require authoritative compiled-build validation; ' +
+            'use bees.ps1 start -EnvArg instead of trainingControlCli.js.'
+        );
     } else if (command === 'activate-build') {
         result = await requestJson(
             baseUrl,
