@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import bees_wan_actor_training as base
+from bees_process_safety import write_managed_health
 
 
 MAX_REMOTE_ACTORS = 12
@@ -909,6 +910,14 @@ class ElasticWanEnvManagerMixin:
             n_env,
         )
         self._bees_wan_broker.start()
+        write_managed_health(
+            "ready",
+            details={
+                "component": "elastic-wan-learner",
+                "local_envs": int(n_env),
+                "broker_port": int(options.broker_port),
+            },
+        )
 
     def set_agent_manager(self, brain_name: str, manager: Any) -> None:
         from mlagents.trainers.env_manager import EnvManager
