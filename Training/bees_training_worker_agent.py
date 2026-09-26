@@ -606,8 +606,20 @@ class ManagedProcess:
                     f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
                 )
             return ""
-        if health.get("state") == "error":
+        state = str(health.get("state", ""))
+        if state == "error":
             return str(health.get("error") or "managed child reported an internal failure")
+        if (
+            state != "ready"
+            and self.started_monotonic > 0.0
+            and time.monotonic() - self.started_monotonic
+            >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+        ):
+            return (
+                "managed child remained in "
+                f"{state or 'unknown'} health for more than "
+                f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
+            )
         return ""
 
     def state(self, role: str, offline: bool = False) -> str:
