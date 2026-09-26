@@ -369,10 +369,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("bees_remote_requirements.txt", block)
         self.assertIn("$venvRoot=Join-Path $venvBase $requirementsHash", block)
         self.assertIn(
+            "$venvBase=Join-Path $script:RuntimeRoot 'LearnerPython'",
+            block,
+        )
+        self.assertIn(
             "Installing central learner dependencies for runtime $requirementsHash",
             block,
         )
-        self.assertNotIn("$venvRoot=Join-Path $RuntimeRoot 'LearnerPython'\n", block)
+        self.assertNotIn("$venvBase=Join-Path $RuntimeRoot 'LearnerPython'", block)
 
     def test_operator_exposes_side_effect_free_robustness_qualification(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
@@ -1425,7 +1429,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("[string]$BuildId=''", helpers)
         self.assertIn("[string[]]$EnvironmentArgs=@()", helpers)
         self.assertIn("'--build-id',$BuildId", helpers)
-        self.assertIn("'--environment-args-json',$environmentArgsJson", helpers)
+        self.assertIn(
+            "'--environment-args-base64',$environmentArgsBase64",
+            helpers,
+        )
+        self.assertNotIn(
+            "'--environment-args-json',$environmentArgsJson",
+            helpers,
+        )
         self.assertIn("function Get-PendingForcedNewRunPlan", helpers)
         self.assertIn("function Complete-ForcedNewRunPlan", helpers)
 
@@ -1439,6 +1450,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
         start = source.index("function Invoke-Start")
         invoke_start = source[start:]
+        self.assertIn(
+            "$releaseRuntimeRoot=[string]$installedReleaseRuntime.installed_root",
+            invoke_start,
+        )
+        self.assertNotIn(
+            "$runtimeRoot=[string]$installedReleaseRuntime.installed_root",
+            invoke_start,
+        )
         discover = invoke_start.index("$forcedPlan=Get-PendingForcedNewRunPlan")
         create = invoke_start.index("} elseif($NewRun){", discover)
         self.assertLess(discover, create)

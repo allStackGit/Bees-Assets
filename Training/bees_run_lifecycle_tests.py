@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import unittest
@@ -114,6 +115,35 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertNotEqual(second["run_id"], first["run_id"])
             self.assertEqual(second["compatibility_key"], first["compatibility_key"])
             self.assertEqual(second["contract"], first["contract"])
+
+    def test_cli_base64_environment_args_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            out = root / "plan.json"
+            expected = [
+                "--rl-ships-per-side=2",
+                "--rl-bee-ship-types=Honeybee,Hornet,Wasp,Leafcutter,Yellow Jacket,Bumblebee",
+                "--rl-health-ratio=.05",
+            ]
+            encoded = base64.b64encode(
+                json.dumps(expected, separators=(",", ":")).encode("utf-8")
+            ).decode("ascii")
+
+            result = lifecycle.main([
+                "plan",
+                "--assets-root", str(assets),
+                "--state", str(state),
+                "--out", str(out),
+                "--force-new",
+                "--build-id", "build-42",
+                "--environment-args-base64", encoded,
+            ])
+
+            self.assertEqual(result, 0)
+            plan = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(plan["environment_args"], expected)
 
     def test_forced_new_build_binding_rejects_unsafe_or_non_forced_use(self):
         with tempfile.TemporaryDirectory() as temp:

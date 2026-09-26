@@ -194,7 +194,7 @@ function Test-PythonCode([string]$Exe,[string]$Code){
 }
 
 function Prune-LearnerPythonRuntimes([string[]]$KeepExecutables=@(),[int]$KeepNewest=3){
-    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvBase=Join-Path $script:RuntimeRoot 'LearnerPython'
     if(-not(Test-Path -LiteralPath $venvBase -PathType Container)){ return }
     $keep=@{}
     $baseFull=[IO.Path]::GetFullPath($venvBase).TrimEnd('\') + '\'
@@ -269,7 +269,7 @@ function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
         [Environment]::NewLine +
         (Get-Content -LiteralPath $remoteRequirements -Raw)
     )
-    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvBase=Join-Path $script:RuntimeRoot 'LearnerPython'
     $venvRoot=Join-Path $venvBase $requirementsHash
     $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
     if(-not(Test-Path -LiteralPath $venvPython)){
@@ -1490,7 +1490,8 @@ function New-TrainingRunPlan(
         $planArgs+='--force-new'
         if($BuildId){ $planArgs+=@('--build-id',$BuildId) }
         $environmentArgsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
-        $planArgs+=@('--environment-args-json',$environmentArgsJson)
+        $environmentArgsBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($environmentArgsJson))
+        $planArgs+=@('--environment-args-base64',$environmentArgsBase64)
     }
     $null=Invoke-Checked $Python $planArgs $AssetsRoot
     Get-Content -LiteralPath $RunPlanPath -Raw | ConvertFrom-Json
@@ -2788,7 +2789,7 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         $archiveSha + [Environment]::NewLine +
         $argsJson
     )
-    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
+    $validationRoot=Join-Path $script:RuntimeRoot 'RlEnvironmentValidation'
     $stamp=Join-Path $validationRoot "$validationKey.ok"
     if(Test-Path -LiteralPath $stamp -PathType Leaf){ return $validationProof }
 
@@ -3238,9 +3239,9 @@ function Invoke-Start {
         throw "Bees release tooling requires Python 3.10. Configured python resolved to '$bootstrapPython'."
     }
     $installedReleaseRuntime=Install-ReleaseTrainingRuntime $bootstrapPython $release -AllowLegacyPin
-    $runtimeRoot=[string]$installedReleaseRuntime.installed_root
+    $releaseRuntimeRoot=[string]$installedReleaseRuntime.installed_root
 
-    $pythonResult=@(Ensure-LearnerPython $config $runtimeRoot)
+    $pythonResult=@(Ensure-LearnerPython $config $releaseRuntimeRoot)
     if($pythonResult.Count -ne 1){
         throw "Learner Python resolver returned $($pythonResult.Count) values; expected exactly one executable path."
     }
