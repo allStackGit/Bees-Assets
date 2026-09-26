@@ -181,3 +181,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `BrokerInvariantTests.test_discarded_batch_retry_is_rejected_as_stale` accepts a batch, resets control state, and retries the same payload; the broker must reject it as stale instead of acknowledging the dropped batch. `_discard_queued_batches_locked` now clears accepted-batch deduplication state with the generation-scoped queue/cohort state.  
 **Verification:** current implementation and regression were reviewed statically against the broker enqueue, generation invalidation, deduplication, and actor retry paths. The test was not executed; runtime validation remains pending.  
 **Invariant/knowledge:** a batch acknowledgement is valid only while that generation's queued/on-policy experience remains eligible for learner consumption. When policy/control changes invalidate queued batches, their deduplication acknowledgements must be invalidated too.
+
+### REG-019 — Pluto II tutorial wording bypassed the squad-number pointer
+**Area:** \`Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs\`, \`Scripts/Levels/Level.Campaign.Pluto.cs\`, \`Tests/EditMode/InitialDesignPresentationRegressionTests.cs\`, Pluto II tutorial feedback  
+**Symptom:** the squad-number tutorial page did not show the arrow pointing to the numbered squad controls.  
+**Root cause:** the UI guard matched the obsolete phrase “Squads are assigned number hotkeys”, while the live mission sequence says “select squads with the number hotkeys on your keyboard”. The phrase test therefore never selected the arrow-presentation branch.  
+**Permanent protection:** the matcher now keys on the stable “number hotkeys” phrase shared with the active tutorial copy. The presentation regression check ties that mission wording to the current guard predicate and arrow call. Its stale center-status assertion was also aligned to the current \`PlutoTwoTutorialPresentationGuard\` method signature.  
+**Verification:** mission wording, guard predicate, and pointer-presentation call were reviewed statically. No test or gameplay run was performed; runtime display remains unverified.  
+**Invariant/knowledge:** tutorial presentation predicates must match the actual authored page text; when mission copy changes, update any string-gated guard and its regression protection together.
