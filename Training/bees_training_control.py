@@ -122,7 +122,10 @@ class TrainingControlClient:
         if (
             not isinstance(lease_seconds, (int, float))
             or isinstance(lease_seconds, bool)
-            or not math.isfinite(lease_seconds)
+            or (
+                isinstance(lease_seconds, float)
+                and not math.isfinite(lease_seconds)
+            )
             or lease_seconds <= 0
         ):
             raise ControlRejected("training-control lease_seconds is invalid")
