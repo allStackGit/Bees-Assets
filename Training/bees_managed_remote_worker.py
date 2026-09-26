@@ -115,7 +115,7 @@ def _forward_process_output(process: subprocess.Popen) -> None:
 
 
 def _start_logged_process(command: Sequence[str]) -> tuple[subprocess.Popen, threading.Thread]:
-    process = subprocess.Popen(
+    process = popen_owned(
         list(command),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
