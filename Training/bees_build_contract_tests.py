@@ -67,7 +67,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
     def test_remote_worker_reports_runtime_preparation_blocker(self):
         source = TRAINING_WORKER_AGENT.read_text(encoding="utf-8")
         self.assertIn("Unity artifact is prepared for ", source)
-        self.assertIn("but the remote Python runtime ", source)
+        self.assertIn("but the Python runtime ", source)
         self.assertIn("runtime_ready_build or '(none)'", source)
 
     def test_powershell_operator_is_only_a_thin_node_shim(self):
@@ -849,7 +849,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(prepare, reconcile)
         self.assertLess(reconcile, stage)
         between = block[prepare:reconcile]
-        self.assertNotIn("if (tailnetBridgeChanged)", between)
+        self.assertIn("if (tailnetBridgeChanged)", between)
+        self.assertNotIn("await startTailnetGatewayIfNeeded(config)", between)
 
     def test_managed_process_ownership_is_distinct_from_desired_executable(self):
         common = read_operator("common.js")
