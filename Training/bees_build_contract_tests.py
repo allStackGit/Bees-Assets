@@ -335,6 +335,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("Central learner failed while rolling release", block)
         self.assertIn("central-agent.err.log", block)
         self.assertIn("central-agent.out.log", block)
+        self.assertIn("${BuildId}: $centralError", block)
+        self.assertNotIn("$BuildId: $centralError", block)
 
     def test_forced_new_run_waits_for_matching_compatible_pending_release(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
