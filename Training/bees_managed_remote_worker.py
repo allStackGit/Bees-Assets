@@ -583,22 +583,41 @@ def _prune_version_directories(
 ) -> None:
     if retain < 1 or not root.is_dir():
         return
+    try:
+        resolved_root = root.resolve()
+    except OSError:
+        return
+
     keep = set()
     for path in preserve_paths:
         candidate = _direct_version_root(root, Path(path))
         if candidate is not None:
-            keep.add(candidate)
+            try:
+                resolved_candidate = candidate.resolve()
+            except OSError:
+                continue
+            if resolved_candidate.parent == resolved_root:
+                keep.add(resolved_candidate)
 
     candidates = []
     try:
-        children = list(root.iterdir())
+        children = list(resolved_root.iterdir())
     except OSError:
         return
     for child in children:
-        if not child.is_dir() or child.name.endswith(".tmp"):
+        if child.name.endswith(".tmp"):
             continue
         try:
-            candidates.append((child.stat().st_mtime_ns, child.resolve()))
+            resolved_child = child.resolve()
+            # Prune only actual version directories directly inside the managed root.
+            # Resolving symlinks/junctions for deletion could otherwise escape this root.
+            if (
+                resolved_child != resolved_root / child.name
+                or resolved_child.parent != resolved_root
+                or not resolved_child.is_dir()
+            ):
+                continue
+            candidates.append((resolved_child.stat().st_mtime_ns, resolved_child))
         except OSError:
             continue
     candidates.sort(reverse=True)
