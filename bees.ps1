@@ -974,6 +974,18 @@ function Wait-ReleaseRollout(
                 $waiting += $detail
             }
         }
+        $centralFailure=$trainerRecords|Where-Object{
+            [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq 'central-learner' -and
+            [string](Get-ObjectPropertyValue $_ 'process_state') -eq 'stopped' -and
+            [string](Get-ObjectPropertyValue $_ 'last_error')
+        }|Select-Object -First 1
+        if($null -ne $centralFailure){
+            $centralError=[string](Get-ObjectPropertyValue $centralFailure 'last_error')
+            if($centralError -match '^managed process exited with code '){
+                throw "Central learner failed while rolling release $BuildId: $centralError. See $LogsRoot\Training\central-agent.err.log and central-agent.out.log."
+            }
+        }
+
         $progress="Waiting for release rollout: phase=$phase remaining=$(if($waiting.Count){$waiting -join '; '}else{'control state advancing'})"
         $now=[DateTime]::UtcNow
         if($progress -ne $lastProgress -or ($now - $lastProgressAt).TotalSeconds -ge 10){
