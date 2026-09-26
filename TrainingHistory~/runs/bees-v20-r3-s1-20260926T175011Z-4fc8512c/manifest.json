@@ -31,14 +31,14 @@
       "destination": "central-training-logs\\rl-environment-validation-1ed07ca4c6c9.log",
       "parts": [
         {
-          "bytes": 3490,
+          "bytes": 3296,
           "file": "rl-environment-validation-1ed07ca4c6c9.log.part0001",
-          "sha256": "05588dc3d45137ee1cb80b50f076aba5edb3d88dbc0b4c3f23085fecfa48ce12"
+          "sha256": "c6657c6de38b77a5e1ad3842df2e0bc21a7cef708fceb5239121a6dda94b4d95"
         }
       ],
       "source": "B:\\Bees\\Logs\\Training\\rl-environment-validation-1ed07ca4c6c9.log",
-      "source_bytes": 3490,
-      "source_sha256": "05588dc3d45137ee1cb80b50f076aba5edb3d88dbc0b4c3f23085fecfa48ce12"
+      "source_bytes": 3296,
+      "source_sha256": "c6657c6de38b77a5e1ad3842df2e0bc21a7cef708fceb5239121a6dda94b4d95"
     },
     {
       "destination": "central-training-logs\\rl-environment-validation-21ccde2540c7-legacy.log",
@@ -136,5 +136,5 @@
   "reason": "forced-new-precutover",
   "run_id": "bees-v20-r3-s1-20260926T175011Z-4fc8512c",
   "schema_version": 1,
-  "snapshot_utc": "2026-09-26T18:14:03.253762+00:00"
+  "snapshot_utc": "2026-09-26T18:20:07.109900+00:00"
 }
