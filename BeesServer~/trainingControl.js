@@ -10,7 +10,7 @@ const { TrainingEnvOptimizer, normalizeCapacity } = require('./trainingEnvOptimi
 const CONTROL_SCHEMA_VERSION = 5;
 const DEFAULT_PORT = 7150;
 const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_LEASE_SECONDS = 20;
+const DEFAULT_LEASE_SECONDS = 60;
 const VALID_ROLES = new Set(['dedicated', 'full-game']);
 
 function sha256File(filePath) {
