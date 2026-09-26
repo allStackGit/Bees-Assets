@@ -138,6 +138,14 @@ function normalizeEnvironmentArgs(value) {
     return value.map(String);
 }
 
+function environmentArgsIdentity(environmentArgs) {
+    const normalized = normalizeEnvironmentArgs(environmentArgs);
+    return crypto
+        .createHash('sha256')
+        .update(JSON.stringify(normalized), 'utf8')
+        .digest('hex');
+}
+
 function publicBuildDescriptor(record) {
     if (!record) return null;
     return {
@@ -822,11 +830,15 @@ class TrainingControlStore {
         const record = this._requiredTrainerRecord(spec);
         if (!record) return false;
         const artifact = this._catalogForRole('dedicated')[spec.platform]?.[pending.build_id];
+        const environmentMatches =
+            !Object.prototype.hasOwnProperty.call(pending, 'environment_args') ||
+            record.environment_id === environmentArgsIdentity(pending.environment_args);
         return Boolean(artifact) &&
             record.process_state === 'running' &&
             !record.last_error &&
             record.build_id === pending.build_id &&
             record.build_sha256 === artifact.archive_sha256 &&
+            environmentMatches &&
             record.applied_revision >= pending.phase_revision;
     }
 
@@ -845,17 +857,19 @@ class TrainingControlStore {
             .filter(spec => !rolled.has(spec.trainer_id));
         if (!remaining.length) return null;
 
-        const buildTransition = pending.build_id !== this.state.canonical_build_id;
         const environmentTransition =
             Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
             JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
-        // WAN admission is exact-build scoped. Switch the authoritative learner first so a
-        // remote moved to the pending build can immediately join the new broker session.
-        if (buildTransition || environmentTransition) {
+        // Environment semantics are learner-owned: move central first so its broker identity
+        // changes before any remote can contribute newly configured trajectories. Ordinary
+        // compatible code releases keep remotes first and central last, reducing optimizer
+        // interruption while remotes prestage/restart one at a time.
+        if (environmentTransition) {
             const central = remaining.find(spec => spec.trainer_id === 'central-learner');
             if (central) return central.trainer_id;
         }
-        return remaining[0].trainer_id;
+        const remote = remaining.find(spec => spec.trainer_id !== 'central-learner');
+        return remote ? remote.trainer_id : remaining[0].trainer_id;
     }
 
     _promotePendingRelease() {
@@ -1387,6 +1401,10 @@ class TrainingControlStore {
                 : '',
             applied_revision: Number.isInteger(payload.applied_revision) ? payload.applied_revision : -1,
             last_error: typeof payload.last_error === 'string' ? payload.last_error.slice(0, 2048) : '',
+            environment_id: (
+                typeof payload.environment_id === 'string' &&
+                /^[0-9a-f]{64}$/.test(payload.environment_id)
+            ) ? payload.environment_id : '',
             metrics: payload.metrics && typeof payload.metrics === 'object' && !Array.isArray(payload.metrics)
                 ? payload.metrics
                 : {},
@@ -1666,5 +1684,6 @@ module.exports = {
     startTrainingControl,
     startTrainingControlFromEnvironment,
     sha256File,
+    environmentArgsIdentity,
     environmentValidationKeyForRelease,
 };
