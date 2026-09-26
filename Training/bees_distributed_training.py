@@ -118,15 +118,22 @@ def _integer_trainer_arg(
 ) -> int:
     value: Optional[str] = None
     for index, argument in enumerate(argv):
-        if argument == flag:
-            if index + 1 >= len(argv):
-                raise SystemExit(f"{flag} requires a value.")
-            value = argv[index + 1]
+        if argument == "--env-args" or argument.startswith("--env-args="):
             break
+        if argument == flag:
+            if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+                raise SystemExit(f"{flag} requires a value.")
+            if value is not None:
+                raise SystemExit(f"{flag} may be specified only once.")
+            value = argv[index + 1]
+            continue
         prefix = flag + "="
         if argument.startswith(prefix):
+            if value is not None:
+                raise SystemExit(f"{flag} may be specified only once.")
             value = argument[len(prefix) :]
-            break
+            if not value:
+                raise SystemExit(f"{flag} requires a value.")
     if value is None:
         return default
     try:
@@ -139,18 +146,25 @@ def _integer_trainer_arg(
 
 
 def _string_trainer_arg(argv: Sequence[str], flag: str) -> Optional[str]:
+    value: Optional[str] = None
     for index, argument in enumerate(argv):
+        if argument == "--env-args" or argument.startswith("--env-args="):
+            break
         if argument == flag:
             if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
                 raise SystemExit(f"{flag} requires a value.")
-            return argv[index + 1]
+            if value is not None:
+                raise SystemExit(f"{flag} may be specified only once.")
+            value = argv[index + 1]
+            continue
         prefix = flag + "="
         if argument.startswith(prefix):
+            if value is not None:
+                raise SystemExit(f"{flag} may be specified only once.")
             value = argument[len(prefix) :]
             if not value:
                 raise SystemExit(f"{flag} requires a value.")
-            return value
-    return None
+    return value
 
 
 def training_topology(argv: Sequence[str], options: DistributedOptions) -> Tuple[int, int, Tuple[int, ...]]:
