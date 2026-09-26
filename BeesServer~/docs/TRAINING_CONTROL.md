@@ -149,7 +149,7 @@ The build command automatically stages a successful build into a control server 
 
 ## Managed BeesServer updates
 
-The operator records a deterministic SHA-256 content identity of the actual tracked plus untracked/non-ignored `BeesServer~` working-copy files when it launches the managed server. File bytes are hashed directly, and deleted tracked files are represented explicitly, so committed, dirty, added, and deleted source changes all alter the identity. Git-ignored runtime material such as `node_modules`, logs, `.vs`, table dumps, and training artifacts is excluded from this source identity; installed dependencies are tracked separately. `server`, `start`, and live-cluster `build` restart the managed BeesServer when that working-copy identity changes while preserving the persisted training desired state, artifact catalog, recently active dedicated trainer registry, and any active rollout barrier.
+The operator records a deterministic SHA-256 runtime identity for the managed BeesServer from the executable root-level JavaScript plus `package.json` and `package-lock.json`. Runtime code or dependency edits therefore refresh the server, while documentation, engineering notes, and files under the server test tree do not recycle a healthy control plane. This deliberately avoids disconnecting trainers merely because non-runtime repository material changed. `server`, `start`, and live-cluster `build` restart the managed BeesServer when that runtime identity changes while preserving the persisted training desired state, artifact catalog, recently active dedicated trainer registry, and any active rollout barrier.
 
 BeesServer dependency installation has its own SHA-256 stamp derived from both `package.json` and `package-lock.json`. `npm ci` runs when `node_modules` is missing or that dependency identity changes, and the stamp is removed before installation and written only after a successful install. A failed install therefore cannot make the next launch incorrectly treat partial dependencies as current.
 
@@ -177,6 +177,8 @@ The learner gateway exposes only these private tailnet services:
 - control, normally 7150
 - WAN rollout broker, normally 55051
 - bootstrap service, normally 7151
+
+The gateway process itself is reconciled idempotently. Re-running `start`, replacing the release/runtime ZIP, updating worker/WAN payload files, or changing release metadata does not restart a healthy gateway because the bootstrap handler reads those mutable payload paths per request. The gateway is restarted only when process-level configuration changes, such as its executable/helper identity, hostname, ports, distribution paths, or bootstrap credential identity. This keeps existing remote tailnet sessions alive across ordinary build/start operations.
 
 The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
 
