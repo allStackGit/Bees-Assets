@@ -109,7 +109,8 @@ namespace Bees.Tests.EditMode
             Assert.That(sequenceBlock, Does.Contain("Stage.Menus.TogglePausePanel();"));
 
             Assert.That(guardSource, Does.Contain("CenterMissionStatus(_stage, _statusCorners, _canvasCorners);"));
-            Assert.That(guardSource, Does.Contain("ConfigData.Configuration.UserSide, ConfigData.GameModes.Campaign) == 1;"));
+            Assert.That(guardSource, Does.Contain("ConfigData.Configuration.UserSide,"));
+            Assert.That(guardSource, Does.Not.Contain("ConfigData.Configuration.HumanSide,"));
             Assert.That(guardSource, Does.Not.Contain("dialogueManager.enabled"));
             Assert.That(guardSource, Does.Not.Contain("HoldDialogueUntilTutorialEnds"));
             Assert.That(guardSource, Does.Not.Contain("RepairOverscaledTutorialHighlight"));
