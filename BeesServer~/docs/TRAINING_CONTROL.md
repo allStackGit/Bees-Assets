@@ -287,9 +287,10 @@ Other lower-level commands remain:
 
 ```text
 node trainingControlCli.js status
-node trainingControlCli.js set-args --env-arg --rl-map-size --env-arg 128
 node trainingControlCli.js stop
 ```
+
+Environment/scenario changes intentionally do not have a raw CLI shortcut anymore: `trainingControlCli.js set-args` and `start --env-arg` fail before making a control request. Use `bees.ps1 start -EnvArg ...`, which runs the compiled-build validator and supplies the artifact-bound validation proof required by the release endpoint.
 
 Direct canonical-build mutation is rejected by the generic desired-state API because it would bypass run identity and staged rollout; canonical build changes must use the run-aware release endpoint.
 
