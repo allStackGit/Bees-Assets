@@ -253,11 +253,23 @@ namespace Assets.Scripts.Levels
 
             public int CompareTo(object other)
             {
-                return CompareTo((MapNode)other);
+                if (other == null)
+                {
+                    return 1;
+                }
+                if (!(other is MapNode node))
+                {
+                    throw new System.ArgumentException("Object must be a MapNode.", nameof(other));
+                }
+                return CompareTo(node);
             }
 
             public int CompareTo(MapNode other)
             {
+                if (ReferenceEquals(other, null))
+                {
+                    return 1;
+                }
                 return Id.CompareTo(other.Id);
             }
 
