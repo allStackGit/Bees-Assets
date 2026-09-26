@@ -17,6 +17,7 @@ import secrets
 import signal
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -28,6 +29,33 @@ import bees_wan_actor_worker as worker
 
 
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+
+
+class _SessionFailureTelemetry:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._count = 0
+        self._last_failure_monotonic: Optional[float] = None
+        self._last_failure_type = ""
+
+    def record(self, exc: BaseException) -> None:
+        with self._lock:
+            self._count += 1
+            self._last_failure_monotonic = time.monotonic()
+            self._last_failure_type = type(exc).__name__
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            age = (
+                None
+                if self._last_failure_monotonic is None
+                else max(0.0, time.monotonic() - self._last_failure_monotonic)
+            )
+            return {
+                "session_failures_total": self._count,
+                "seconds_since_last_session_failure": age,
+                "last_session_failure_type": self._last_failure_type,
+            }
 
 
 def _watch_managed_stop_request(
@@ -372,6 +400,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
+        failure_telemetry = _SessionFailureTelemetry()
         client = ElasticBrokerClient(
             args.broker_host,
             args.broker_port,
@@ -411,6 +440,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 actor_session.worker_offset = worker_offset
                 actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
+                actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
                     actor_session.run()
@@ -425,6 +455,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except KeyboardInterrupt:
                 stop.set()
             except Exception as exc:
+                failure_telemetry.record(exc)
+                if actor_session is not None:
+                    try:
+                        actor_session._write_throughput_metrics(force=True)
+                    except Exception:
+                        pass
                 _report_session_failure(exc, actor_session)
                 stop.wait(args.reconnect_seconds)
         return 0
