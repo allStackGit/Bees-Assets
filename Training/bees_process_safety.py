@@ -14,6 +14,7 @@ from pathlib import Path
 import secrets
 import signal
 import subprocess
+import sys
 import time
 from typing import Any, Mapping, MutableMapping, Optional, Sequence
 
@@ -97,17 +98,27 @@ def read_managed_health(path: Optional[Path], token: str) -> Optional[dict[str, 
     return dict(value)
 
 
-def _linux_owned_child_preexec(parent_pid: int, previous) -> None:
-    if previous is not None:
-        previous()
+def _owned_child_main(argv: Sequence[str]) -> int:
+    if len(argv) < 3 or argv[0] != "--owned-child" or argv[2] != "--":
+        raise SystemExit("invalid owned-child invocation")
+    try:
+        parent_pid = int(argv[1])
+    except ValueError as exc:
+        raise SystemExit("invalid owned-child parent pid") from exc
+    command = list(argv[3:])
+    if not command:
+        raise SystemExit("owned-child invocation requires a command")
+
     libc = ctypes.CDLL(None, use_errno=True)
     pr_set_pdeathsig = 1
     if libc.prctl(pr_set_pdeathsig, int(signal.SIGTERM), 0, 0, 0) != 0:
         errno_value = ctypes.get_errno()
         raise OSError(errno_value, "prctl(PR_SET_PDEATHSIG) failed")
-    # Close the race where the parent dies between fork() and prctl().
+    # Close the race where the owner dies between spawn and PR_SET_PDEATHSIG.
     if os.getppid() != parent_pid:
-        os._exit(74)
+        return 74
+    os.execvpe(command[0], command, os.environ)
+    return 127
 
 
 def _windows_kill_job() -> int:
@@ -226,11 +237,18 @@ def popen_owned(
             raise
         return process
 
-    parent_pid = os.getpid()
-    previous = kwargs.pop("preexec_fn", None)
+    if "preexec_fn" in kwargs:
+        raise ValueError("popen_owned does not accept preexec_fn")
+    wrapper = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--owned-child",
+        str(os.getpid()),
+        "--",
+        *[str(item) for item in command],
+    ]
+    return subprocess.Popen(wrapper, **kwargs)
 
-    def preexec() -> None:
-        _linux_owned_child_preexec(parent_pid, previous)
 
-    kwargs["preexec_fn"] = preexec
-    return subprocess.Popen(list(command), **kwargs)
+if __name__ == "__main__":
+    raise SystemExit(_owned_child_main(sys.argv[1:]))
