@@ -567,6 +567,8 @@ class ElasticWanBroker(base.WanActorBroker):
             existing = self._claims.get(actor_key)
             if existing is not None:
                 actor_id = int(existing["actor_id"])
+                if existing.get("actor_instance_id") != actor_instance_id:
+                    raise ValueError("actor slot is claimed by another remote process")
                 self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
                 existing["last_seen"] = now
                 existing["env_count"] = env_count
