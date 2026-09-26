@@ -26,6 +26,7 @@ class RobustnessQualificationTests(unittest.TestCase):
             "bees_elastic_wan_zero_local_tests.py",
             "bees_wan_actor_training_tests.py",
             "bees_continual_service_tests.py",
+            "bees_continual_train_tests.py",
             "bees_continual_elastic_wan_service_tests.py",
         }
         self.assertEqual(set(qualification.FOCUSED_PYTHON_SUITES), expected)
@@ -108,6 +109,7 @@ class RobustnessQualificationTests(unittest.TestCase):
 
             node = next(check for check in checks if check.name == "node:training-control")
             command = " ".join(node.command)
+            self.assertIn("startServerLauncher.module.test.js", command)
             self.assertIn("trainingControl.module.test.js", command)
             self.assertIn("trainingControlCli.module.test.js", command)
             self.assertIn("trainingEnvOptimizer.module.test.js", command)
