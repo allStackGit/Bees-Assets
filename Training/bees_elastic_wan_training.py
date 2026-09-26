@@ -820,9 +820,21 @@ class ElasticWanBroker(base.WanActorBroker):
             # Coordinate queue admission with the learner's fair snapshot drain. This keeps
             # requeueing of unselected batches lossless while producers continue concurrently.
             with self._condition:
+                active = self._active_snapshot_locked()
+                if actor_id not in active:
+                    raise ValueError(
+                        "actor lease expired while validating trajectories; re-register before uploading"
+                    )
+                self._validate_dynamic_owner_locked(actor_id, payload)
                 duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
                 if duplicate_count is not None:
                     return duplicate_count
+                if payload.get("control_epoch") != self._control_epoch:
+                    raise base.StaleActorStateError(
+                        "trajectory control epoch changed while validating the batch"
+                    )
+                self._validate_policy_versions(payload.get("policy_versions"))
+                self._registrations[actor_id]["last_seen"] = time.monotonic()
                 self._trajectory_batches.put_nowait(item)
                 self._remember_accepted_batch_locked(
                     actor_id, batch_id, len(trajectories))
