@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -91,7 +93,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
 
-    def test_operator_hashes_actual_server_and_training_runtime_bytes(self):
+    def test_operator_hashes_actual_server_bytes_and_pins_training_runtime_release(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("Get-GitTreeSha", source)
         self.assertIn(
@@ -103,27 +105,94 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn("sha256='missing'", source)
-        self.assertIn("$trainingSourceHash=Get-TrainingRuntimeSourceHash", source)
-        self.assertIn("$runtimeVersion=Get-DirectoryContentSha256 $staging", source)
+
         self.assertIn(
-            "Get-FileHash -LiteralPath $filePath -Algorithm SHA256",
+            "$ReleaseRuntimeScript=Join-Path $AssetsRoot "
+            "'Training\\bees_release_runtime.py'",
             source,
         )
         self.assertIn(
-            "Get-ChildItem -LiteralPath $sourceRoot -Filter '*.py' -File",
+            "$trainingRuntime=New-ReleaseTrainingRuntime "
+            "$python $buildId $sha $trainingRuntimeArchive",
             source,
+        )
+        self.assertIn("schema_version=3", source)
+        self.assertIn("training_runtime=$trainingRuntime", source)
+        self.assertIn("function Resolve-ReleaseTrainingRuntime", source)
+        self.assertIn("'--expected-sha256',$archiveSha", source)
+        self.assertIn("'--expected-version',$runtimeVersion", source)
+        self.assertIn(
+            "Copy-Item -LiteralPath $releaseRuntimeArchive "
+            "-Destination $runtimeZipTemp",
+            source,
+        )
+        self.assertNotIn("remote-runtime-staging", source)
+        self.assertNotIn("Get-TrainingRuntimeSourceHash", source)
+        self.assertNotIn("Get-DirectoryContentSha256", source)
+
+        central_start = source.index("function Start-CentralAgentIfNeeded")
+        central_end = source.index("function Get-EnvironmentArgs", central_start)
+        central = source[central_start:central_end]
+        self.assertIn("Install-ReleaseTrainingRuntime", central)
+        self.assertIn("$agent=Join-Path $runtimeRoot", central)
+        self.assertIn("$service=Join-Path $runtimeRoot", central)
+        self.assertIn('"--runtime-training-root=$runtimeRoot"', central)
+        self.assertIn("$runtimeVersion", central)
+        self.assertNotIn("Get-TrainingRuntimeSourceHash", central)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        self.assertIn("training_runtime=$release.training_runtime", invoke_start)
+        self.assertIn(
+            "Prepare-RemoteBootstrap $config $python $release",
+            invoke_start,
+        )
+        self.assertIn(
+            "Start-CentralAgentIfNeeded $config $python $unity $release",
+            invoke_start,
         )
 
-        prepare = source.index("function Prepare-RemoteBootstrap")
-        copied_runtime = source.index(
-            "Copy-Item -LiteralPath $RemoteRequirementsPath",
-            prepare,
+    def test_learner_python_is_isolated_by_release_requirements_identity(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Ensure-LearnerPython")
+        end = source.index("function Resolve-Node", start)
+        block = source[start:end]
+
+        self.assertIn("$RequirementsRoot", block)
+        self.assertIn("bees_learner_requirements.txt", block)
+        self.assertIn("bees_remote_requirements.txt", block)
+        self.assertIn("$venvRoot=Join-Path $venvBase $requirementsHash", block)
+        self.assertIn(
+            "Installing central learner dependencies for runtime $requirementsHash",
+            block,
         )
-        staged_hash = source.index(
-            "$runtimeVersion=Get-DirectoryContentSha256 $staging",
-            prepare,
+        self.assertNotIn("$venvRoot=Join-Path $RuntimeRoot 'LearnerPython'\n", block)
+
+    def test_operator_script_parses_when_powershell_is_available(self):
+        executable = shutil.which("powershell.exe") or shutil.which("pwsh")
+        if executable is None:
+            self.skipTest("PowerShell is not available in this test environment")
+
+        escaped = str(OPERATOR_SCRIPT.resolve()).replace("'", "''")
+        command = (
+            "$errors=$null;$tokens=$null;"
+            "[System.Management.Automation.Language.Parser]::ParseFile("
+            f"'{escaped}',[ref]$tokens,[ref]$errors)|Out-Null;"
+            "if($errors.Count -gt 0){"
+            "$errors|ForEach-Object{Write-Error $_.Message};exit 1"
+            "}"
         )
-        self.assertLess(copied_runtime, staged_hash)
+        completed = subprocess.run(
+            [executable, "-NoLogo", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stderr + completed.stdout,
+        )
 
     def test_operator_reinstalls_server_dependencies_when_package_identity_changes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
