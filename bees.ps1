@@ -440,12 +440,44 @@ function Start-TailnetGatewayIfNeeded($Config){
         if(-not(Test-Path -LiteralPath $path)){ throw "Tailnet gateway input is missing: $path" }
     }
 
+    $argList=@(
+        'gateway',
+        '--state',$state,
+        '--hostname',$hostname,
+        '--control-port',[string]$controlPort,
+        '--broker-port',[string]$brokerPort,
+        '--bootstrap-port',[string]$bootstrapPort,
+        '--runtime',$runtimeZip,
+        '--worker-token',$WorkerTokenPath,
+        '--wan-token',$WanTokenPath,
+        '--release',$LatestReleasePath,
+        '--windows-bridge',[string]$bridges.distribution_windows,
+        '--linux-bridge',[string]$bridges.distribution_linux,
+        '--bootstrap-token',$BootstrapTokenPath
+    )
+    # The gateway reads runtime/release/worker/WAN payload files for every bootstrap request,
+    # so replacing those files must not recycle an otherwise healthy private network endpoint.
+    # Restart only when process-level gateway configuration actually changes.
+    $bootstrapTokenSha=(Get-FileHash -LiteralPath $BootstrapTokenPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $gatewayConfigHash=Get-StringSha256 (
+        ([IO.Path]::GetFullPath($bridge)) + [Environment]::NewLine +
+        ($argList -join [Environment]::NewLine) + [Environment]::NewLine +
+        "bootstrap-token-sha256=$bootstrapTokenSha"
+    )
+
     $gatewayState=$null
     if(Test-Path -LiteralPath $TailnetGatewayStatePath){
         try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
     }
     if($null -ne $gatewayState){
         if(Test-ManagedProcessIdentity $gatewayState $bridge){
+            $recordedConfigHash=[string](Get-ObjectPropertyValue $gatewayState 'config_hash')
+            if($recordedConfigHash -eq $gatewayConfigHash){
+                $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
+                Write-Host ("Embedded tailnet gateway already healthy at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,[int]$gatewayState.pid)
+                return
+            }
+            Write-Host 'Embedded tailnet gateway configuration changed; restarting only the private gateway.'
             $null=Stop-ManagedProcessTree $gatewayState $bridge 'embedded tailnet gateway'
         } else {
             $livePid=Get-StateReferencedLivePid $gatewayState
@@ -465,21 +497,6 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
 
     Ensure-Directory (Split-Path -Parent $TailnetGatewayLogPath)
-    $argList=@(
-        'gateway',
-        '--state',$state,
-        '--hostname',$hostname,
-        '--control-port',[string]$controlPort,
-        '--broker-port',[string]$brokerPort,
-        '--bootstrap-port',[string]$bootstrapPort,
-        '--runtime',$runtimeZip,
-        '--worker-token',$WorkerTokenPath,
-        '--wan-token',$WanTokenPath,
-        '--release',$LatestReleasePath,
-        '--windows-bridge',[string]$bridges.distribution_windows,
-        '--linux-bridge',[string]$bridges.distribution_linux,
-        '--bootstrap-token',$BootstrapTokenPath
-    )
     $startArgs=@{
         FilePath=$bridge
         ArgumentList=$argList
@@ -505,10 +522,11 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
     $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
     [pscustomobject]@{
-        schema_version=1
+        schema_version=2
         pid=[int]$gatewayIdentity.pid
         process_start_utc=[string]$gatewayIdentity.process_start_utc
         executable_path=[string]$gatewayIdentity.executable_path
+        config_hash=$gatewayConfigHash
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $TailnetGatewayStatePath -Encoding UTF8
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
