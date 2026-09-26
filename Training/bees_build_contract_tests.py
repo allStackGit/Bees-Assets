@@ -219,14 +219,31 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("Get-TrainingRuntimeSourceHash", source)
         self.assertNotIn("Get-DirectoryContentSha256", source)
 
+        prepare_start = source.index("function Prepare-CentralReleaseRuntime")
+        prepare_end = source.index("function Get-CentralFallbackLaunchCommand", prepare_start)
+        prepare = source[prepare_start:prepare_end]
+        self.assertIn("Install-ReleaseTrainingRuntime", prepare)
+        self.assertIn("Ensure-LearnerPython $Config $runtimeRootPath", prepare)
+        self.assertIn("launch_command=@($launchCommand)", prepare)
+        self.assertIn("Install-AtomicFile $pointerTemp $CentralRuntimePointerPath", prepare)
+        self.assertIn(
+            "Install-AtomicFile $readyTemp $CentralRuntimeReadyBuildPath",
+            prepare,
+        )
+
         central_start = source.index("function Start-CentralAgentIfNeeded")
         central_end = source.index("function Get-EnvironmentArgs", central_start)
         central = source[central_start:central_end]
-        self.assertIn("Install-ReleaseTrainingRuntime", central)
-        self.assertIn("$agent=Join-Path $runtimeRoot", central)
-        self.assertIn("$service=Join-Path $runtimeRoot", central)
-        self.assertIn('"--runtime-training-root=$runtimeRoot"', central)
-        self.assertIn("$runtimeVersion", central)
+        self.assertIn(
+            "$agent=Join-Path $AssetsRoot 'Training\\bees_training_worker_agent.py'",
+            central,
+        )
+        self.assertIn("'--runtime-ready-file',$CentralRuntimeReadyBuildPath", central)
+        self.assertIn("'--runtime-cutover-pointer',$CentralRuntimePointerPath", central)
+        self.assertIn("'--runtime-state-file',$CentralRuntimeStatePath", central)
+        self.assertIn("runtime_cutover_capable=$true", central)
+        self.assertIn("$fallbackCommand", central)
+        self.assertNotIn("$agent=Join-Path $runtimeRoot", central)
         self.assertNotIn("Get-TrainingRuntimeSourceHash", central)
 
         start = source.index("function Invoke-Start")
@@ -237,8 +254,61 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             invoke_start,
         )
         self.assertIn(
-            "Start-CentralAgentIfNeeded $config $python $unity $release",
+            "$centralRuntime=Prepare-CentralReleaseRuntime "
+            "$config $bootstrapPython $unity $release",
             invoke_start,
+        )
+        self.assertIn(
+            "Start-CentralAgentIfNeeded $config $bootstrapPython "
+            "$unity $release $centralRuntime",
+            invoke_start,
+        )
+
+    def test_build_and_start_prepare_central_runtime_before_release_barrier(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        build_start = source.index("function Invoke-Build")
+        build_end = source.index("function Invoke-Server", build_start)
+        build = source[build_start:build_end]
+        prepare = build.index(
+            "$centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release"
+        )
+        central = build.index(
+            "Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime"
+        )
+        stage = build.index("$staged=Stage-Release", central)
+        self.assertLess(prepare, central)
+        self.assertLess(central, stage)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        prepare = invoke_start.index(
+            "$centralRuntime=Prepare-CentralReleaseRuntime "
+            "$config $bootstrapPython $unity $release"
+        )
+        central = invoke_start.index(
+            "Start-CentralAgentIfNeeded $config $bootstrapPython "
+            "$unity $release $centralRuntime"
+        )
+        stage = invoke_start.index("$staged=Stage-Release", central)
+        self.assertLess(prepare, central)
+        self.assertLess(central, stage)
+
+    def test_build_migrates_central_supervisor_before_new_release_identity_exists(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        migrate = block.index("$currentRelease=Get-LatestRelease")
+        plan = block.index("$plan=New-TrainingRunPlan")
+        new_release = block.index("$release=[pscustomobject]", plan)
+        self.assertLess(migrate, plan)
+        self.assertLess(migrate, new_release)
+        self.assertIn(
+            "Start-CentralAgentIfNeeded $config $python $unity "
+            "$currentRelease $currentCentralRuntime",
+            block,
         )
 
     def test_learner_python_is_isolated_by_release_requirements_identity(self):
@@ -625,7 +695,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         central = source[central_start:central_end]
         self.assertIn("if(Test-ManagedProcessIdentity $existing){", central)
         self.assertIn(
-            "(Test-ManagedProcessIdentity $existing $Python) -and",
+            "(Test-ManagedProcessIdentity $existing $BootstrapPython) -and",
             central,
         )
 
@@ -648,7 +718,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "Test-ManagedProcessIdentity $existing $Python",
+            "Test-ManagedProcessIdentity $existing $BootstrapPython",
             source,
         )
 
@@ -692,10 +762,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("$argumentValue=$Value.Substring($equals + 1)", block)
         self.assertIn("return $name + '\"' + $argumentValue + '\"'", block)
 
+        launch_start = source.index("function New-CentralLearnerLaunchCommand")
+        launch_end = source.index("function Prepare-CentralReleaseRuntime", launch_start)
+        launch = source[launch_start:launch_end]
+        self.assertIn('"--unity-editor=$Unity"', launch)
+
         central_start = source.index("function Start-CentralAgentIfNeeded")
         central_end = source.index("function Get-EnvironmentArgs", central_start)
         central = source[central_start:central_end]
-        self.assertIn('"--unity-editor=$Unity"', central)
         self.assertIn("$args|ForEach-Object{Quote-Arg ([string]$_)}", central)
 
     def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
