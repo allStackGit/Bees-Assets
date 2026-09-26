@@ -183,66 +183,54 @@ func bearerMatches(header, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }
 
-func zipFile(z *zip.Writer, archiveName, path string, mode os.FileMode) error {
+func snapshotRegularFile(path string) (*os.File, int64, func(), error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		return nil, 0, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("bootstrap source is not a regular file: %s", path)
+		return nil, 0, nil, fmt.Errorf("bootstrap source is not a regular file: %s", path)
 	}
 
-	// Snapshot the source to a private temporary file before writing to the HTTP response.
-	// On Windows, holding the mutable distribution file open while a slow WAN client reads
-	// the ZIP prevents the operator from atomically replacing that file during a build.
+	// Copy the atomic publication file to a private snapshot before replying. On Windows this
+	// closes the mutable bundle quickly, so the operator can publish the next generation even
+	// while a slow worker is still downloading the previous complete snapshot.
 	source, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, 0, nil, err
 	}
 	snapshot, err := os.CreateTemp("", "bees-bootstrap-snapshot-*")
 	if err != nil {
 		_ = source.Close()
-		return err
+		return nil, 0, nil, err
 	}
 	snapshotPath := snapshot.Name()
-	defer func() {
+	cleanup := func() {
 		_ = snapshot.Close()
 		_ = os.Remove(snapshotPath)
-	}()
+	}
 	if _, err = io.Copy(snapshot, source); err != nil {
 		_ = source.Close()
-		return err
+		cleanup()
+		return nil, 0, nil, err
 	}
 	if err = source.Close(); err != nil {
-		return err
+		cleanup()
+		return nil, 0, nil, err
+	}
+	snapshotInfo, err := snapshot.Stat()
+	if err != nil {
+		cleanup()
+		return nil, 0, nil, err
 	}
 	if _, err = snapshot.Seek(0, io.SeekStart); err != nil {
-		return err
+		cleanup()
+		return nil, 0, nil, err
 	}
-
-	header := &zip.FileHeader{
-		Name:   archiveName,
-		Method: zip.Store,
-	}
-	header.SetMode(mode)
-	header.Modified = time.Unix(0, 0).UTC()
-	writer, err := z.CreateHeader(header)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(writer, snapshot)
-	return err
+	return snapshot, snapshotInfo.Size(), cleanup, nil
 }
 
-func bootstrapHandler(
-	token,
-	runtimePath,
-	workerTokenPath,
-	wanTokenPath,
-	releasePath,
-	windowsBridgePath,
-	linuxBridgePath string,
-) http.Handler {
+func bootstrapHandler(token, bundlePath string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/bootstrap" {
 			http.NotFound(w, r)
@@ -253,44 +241,20 @@ func bootstrapHandler(
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		for _, path := range []string{
-			runtimePath,
-			workerTokenPath,
-			wanTokenPath,
-			releasePath,
-			windowsBridgePath,
-			linuxBridgePath,
-		} {
-			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-				http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
-				return
-			}
+
+		snapshot, size, cleanup, err := snapshotRegularFile(bundlePath)
+		if err != nil {
+			http.Error(w, "bootstrap payload is not ready", http.StatusServiceUnavailable)
+			return
 		}
+		defer cleanup()
 
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Disposition", "attachment; filename=bees-bootstrap.zip")
-		z := zip.NewWriter(w)
-		if err := zipFile(z, "bees-remote-runtime.zip", runtimePath, 0o644); err != nil {
-			log.Printf("[Bees tailnet] bootstrap runtime write failed: %v", err)
-		}
-		if err := zipFile(z, "training-worker.token", workerTokenPath, 0o600); err != nil {
-			log.Printf("[Bees tailnet] bootstrap worker token write failed: %v", err)
-		}
-		if err := zipFile(z, "wan.token", wanTokenPath, 0o600); err != nil {
-			log.Printf("[Bees tailnet] bootstrap WAN token write failed: %v", err)
-		}
-		if err := zipFile(z, "latest-training-release.json", releasePath, 0o600); err != nil {
-			log.Printf("[Bees tailnet] bootstrap release metadata write failed: %v", err)
-		}
-		if err := zipFile(z, "bees-tailnet-bridge-windows.exe", windowsBridgePath, 0o700); err != nil {
-			log.Printf("[Bees tailnet] bootstrap Windows bridge write failed: %v", err)
-		}
-		if err := zipFile(z, "bees-tailnet-bridge-linux", linuxBridgePath, 0o700); err != nil {
-			log.Printf("[Bees tailnet] bootstrap Linux bridge write failed: %v", err)
-		}
-		if err := z.Close(); err != nil {
-			log.Printf("[Bees tailnet] bootstrap zip close failed: %v", err)
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		if _, err := io.Copy(w, snapshot); err != nil {
+			log.Printf("[Bees tailnet] bootstrap snapshot write failed: %v", err)
 		}
 	})
 }
@@ -309,12 +273,7 @@ func runGateway(args []string) error {
 	controlPort := fs.Int("control-port", 7150, "tailnet port proxying learner control")
 	brokerPort := fs.Int("broker-port", 55051, "tailnet port proxying WAN broker")
 	bootstrapPort := fs.Int("bootstrap-port", 7151, "tailnet bootstrap port")
-	runtimePath := fs.String("runtime", "", "remote runtime zip path")
-	workerTokenPath := fs.String("worker-token", "", "worker token path")
-	wanTokenPath := fs.String("wan-token", "", "WAN token path")
-	releasePath := fs.String("release", "", "latest training release metadata path")
-	windowsBridgePath := fs.String("windows-bridge", "", "Windows bridge distribution path")
-	linuxBridgePath := fs.String("linux-bridge", "", "Linux bridge distribution path")
+	bootstrapBundlePath := fs.String("bootstrap-bundle", "", "atomic remote bootstrap bundle path")
 	bootstrapTokenPath := fs.String("bootstrap-token", "", "bootstrap bearer token file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -330,6 +289,15 @@ func runGateway(args []string) error {
 	token, err := loadSecret(*bootstrapTokenPath)
 	if err != nil {
 		return fmt.Errorf("bootstrap token: %w", err)
+	}
+	if strings.TrimSpace(*bootstrapBundlePath) == "" {
+		return errors.New("--bootstrap-bundle is required")
+	}
+	if info, err := os.Stat(*bootstrapBundlePath); err != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			return fmt.Errorf("bootstrap bundle: %w", err)
+		}
+		return fmt.Errorf("bootstrap bundle is not a regular file: %s", *bootstrapBundlePath)
 	}
 
 	s, err := server(c)
@@ -363,15 +331,7 @@ func runGateway(args []string) error {
 
 	go proxyListener(ctx, controlLn, localDial(fmt.Sprintf("127.0.0.1:%d", *controlPort)), "control")
 	go proxyListener(ctx, brokerLn, localDial(fmt.Sprintf("127.0.0.1:%d", *brokerPort)), "broker")
-	httpServer := &http.Server{Handler: bootstrapHandler(
-		token,
-		*runtimePath,
-		*workerTokenPath,
-		*wanTokenPath,
-		*releasePath,
-		*windowsBridgePath,
-		*linuxBridgePath,
-	)}
+	httpServer := &http.Server{Handler: bootstrapHandler(token, *bootstrapBundlePath)}
 	go func() {
 		if err := httpServer.Serve(bootstrapLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[Bees tailnet] bootstrap HTTP server failed: %v", err)
