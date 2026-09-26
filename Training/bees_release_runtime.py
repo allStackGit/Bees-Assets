@@ -130,7 +130,15 @@ def package_runtime(
         raise ValueError(f"Training directory does not exist: {training_root}")
 
     files = _runtime_source_files(training_root)
-    entries = _entries_from_files(files)
+    payloads = [(path, path.read_bytes()) for path in files]
+    entries = [
+        {
+            "path": path.name,
+            "size": len(payload),
+            "sha256": _sha256_bytes(payload),
+        }
+        for path, payload in payloads
+    ]
     runtime_version = _runtime_version(entries)
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -158,8 +166,8 @@ def package_runtime(
             compression=zipfile.ZIP_DEFLATED,
             compresslevel=9,
         ) as bundle:
-            for path in files:
-                bundle.writestr(_zip_info(path.name), path.read_bytes())
+            for path, payload in payloads:
+                bundle.writestr(_zip_info(path.name), payload)
             bundle.writestr(_zip_info(VERSION_NAME), version_bytes)
             bundle.writestr(_zip_info(MANIFEST_NAME), manifest_bytes)
         os.replace(temporary, output)
