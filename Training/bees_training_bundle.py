@@ -168,10 +168,11 @@ def _copy_metadata(
         return None
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+    captured_size = destination.stat().st_size
     return {
         "source": str(source),
-        "size_bytes": size,
-        "sha256": sha256_file(source),
+        "size_bytes": captured_size,
+        "sha256": sha256_file(destination),
     }
 
 
@@ -204,9 +205,8 @@ def _collect_log_group(
                     f"offset={offset} | included={included} =====\n"
                 ).encode("utf-8")
             )
-            with source.open("rb") as inp:
-                inp.seek(offset)
-                shutil.copyfileobj(inp, combined, length=1024 * 1024)
+            with destination.open("rb") as captured:
+                shutil.copyfileobj(captured, combined, length=1024 * 1024)
             combined.write(b"\n")
             records.append(
                 {
@@ -686,14 +686,14 @@ def create_bundle(
             destination = staging / archive_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(model, destination)
-            stat = model.stat()
+            stat = destination.stat()
             model_info = {
                 "archive_path": archive_path,
                 "source": str(model),
                 "selection": model_source,
                 "step": model_step,
                 "size_bytes": stat.st_size,
-                "sha256": sha256_file(model),
+                "sha256": sha256_file(destination),
                 "modified_utc": datetime.fromtimestamp(
                     stat.st_mtime,
                     tz=timezone.utc,
