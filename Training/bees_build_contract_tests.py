@@ -555,6 +555,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             server,
         )
 
+    def test_training_runtime_retention_preserves_active_staged_and_recent_roots(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Prune-ReleaseTrainingRuntimes")
+        end = source.index("function New-CentralLearnerLaunchCommand", start)
+        block = source[start:end]
+
+        self.assertIn("[int]$KeepNewest=4", block)
+        self.assertIn("$CentralRuntimePointerPath", block)
+        self.assertIn("$CentralRuntimeStatePath", block)
+        self.assertIn("$CentralAgentStatePath", block)
+        self.assertIn("'runtime_root','release_runtime_root'", block)
+        self.assertIn("$keep.ContainsKey($full)", block)
+        self.assertIn("Select-Object -First $KeepNewest", block)
+        self.assertIn("[DateTime]::UtcNow.AddHours(-1)", block)
+
+        prepare_start = source.index("function Prepare-CentralReleaseRuntime")
+        prepare_end = source.index("function Get-CentralFallbackLaunchCommand", prepare_start)
+        prepare = source[prepare_start:prepare_end]
+        self.assertIn(
+            "Prune-ReleaseTrainingRuntimes @($runtimeRootPath)",
+            prepare,
+        )
+
     def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Prune-BeesServerRuntimes")
