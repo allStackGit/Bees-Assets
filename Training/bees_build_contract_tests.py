@@ -528,6 +528,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "gameplay_port",
             "worker_token_sha256",
             "admin_token_sha256",
+            "environment_validation_secret_sha256",
             "control_state",
             "artifact_root",
             "log_root",
@@ -541,6 +542,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             self.assertIn(field, block)
         self.assertIn("Get-StringSha256 $WorkerToken", block)
         self.assertIn("Get-StringSha256 $AdminToken", block)
+        self.assertIn("Ensure-TokenFile $EnvironmentValidationTokenPath", block)
+        self.assertIn("Get-StringSha256 $environmentValidationSecret", block)
         self.assertNotIn("worker_token=$WorkerToken", block)
         self.assertNotIn("admin_token=$AdminToken", block)
 
@@ -1236,6 +1239,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("$process.WaitForExit(60000)", validator)
         self.assertIn("Invalid RL environment arguments", validator)
         self.assertIn("Install-AtomicFile $temp $stamp", validator)
+        self.assertIn("Get-HmacSha256 $validationSecret", validator)
+        self.assertIn("bees-environment-validation-v2", validator)
+        self.assertIn("Ensure-TokenFile $EnvironmentValidationTokenPath", validator)
+
+        launch_env_start = source.index("function Set-BeesServerLaunchEnvironment")
+        launch_env_end = source.index("function Write-BeesServerManagedState", launch_env_start)
+        launch_env = source[launch_env_start:launch_env_end]
+        self.assertIn(
+            "$env:BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET=$environmentValidationSecret",
+            launch_env,
+        )
 
         start = source.index("function Invoke-Start")
         invoke_start = source[start:]
