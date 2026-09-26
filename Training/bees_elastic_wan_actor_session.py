@@ -25,6 +25,8 @@ class ElasticActorSession(worker.ActorSession):
         self.topology_epoch = -1
         self._claim_keeper_stop = threading.Event()
         self._claim_keeper: Optional[threading.Thread] = None
+        self._state_change_lock = threading.Lock()
+        self._state_change_generation = 0
 
     def start(self) -> None:
         if (
@@ -160,9 +162,16 @@ class ElasticActorSession(worker.ActorSession):
                 f"total_envs={total_envs} rollout_horizons={horizons}."
             )
 
+    def _signal_state_changed(self) -> None:
+        with self._state_change_lock:
+            self._state_change_generation += 1
+            self._state_changed.set()
+
     def _synchronize_state(self, *, require_policy: bool = False) -> None:
-        # Base synchronization handles policy/control freshness and clears state_changed. Fetch one
-        # immediate state afterward so topology metadata is applied atomically before rollout resumes.
+        # Track notifications across the base synchronizer too: it clears state_changed internally,
+        # so a watcher event arriving during policy/control application could otherwise be erased.
+        with self._state_change_lock:
+            starting_generation = self._state_change_generation
         super()._synchronize_state(require_policy=require_policy)
         state = self.client.state(
             self.session_id,
@@ -173,7 +182,11 @@ class ElasticActorSession(worker.ActorSession):
         self._apply_live_rollout_horizons(state)
         self._apply_central_throughput(state)
         self._heartbeat()
-        self._state_changed.clear()
+        with self._state_change_lock:
+            if self._state_change_generation == starting_generation:
+                self._state_changed.clear()
+            else:
+                self._state_changed.set()
 
     def _watch_loop(self) -> None:
         while not self._upload_stop.is_set() and not self.stop.is_set():
@@ -196,7 +209,7 @@ class ElasticActorSession(worker.ActorSession):
                 if remote_control_epoch == self.control_epoch:
                     self._heartbeat()
                 if changed:
-                    self._state_changed.set()
+                    self._signal_state_changed()
                     while (
                         self._state_changed.is_set()
                         and not self._upload_stop.is_set()
