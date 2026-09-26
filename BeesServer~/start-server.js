@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -151,7 +152,11 @@ function runSupervisor(options) {
         consecutiveHealthFailures = 0;
         const childArgs = [...options.serverArgs];
         if (options.managedOwnerToken) {
-            childArgs.push('--bees-managed-child-token=' + options.managedOwnerToken + '.child');
+            const childToken = crypto
+                .createHash('sha256')
+                .update('bees-managed-child:' + options.managedOwnerToken, 'utf8')
+                .digest('hex');
+            childArgs.push('--bees-managed-child-token=' + childToken);
         }
         child = spawn(process.execPath, [serverPath, ...childArgs], {
             cwd: __dirname,
