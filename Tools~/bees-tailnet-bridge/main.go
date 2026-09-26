@@ -386,7 +386,12 @@ func serveGatewaySession(
 
 	if strings.TrimSpace(healthFile) != "" {
 		_ = os.Remove(healthFile)
-		defer os.Remove(healthFile)
+		healthDone := make(chan struct{})
+		defer func() {
+			sessionCancel()
+			<-healthDone
+			_ = os.Remove(healthFile)
+		}()
 		if err := writeGatewayHealth(
 			healthFile,
 			ip4,
@@ -397,6 +402,7 @@ func serveGatewaySession(
 			return fmt.Errorf("write gateway health: %w", err)
 		}
 		go func() {
+			defer close(healthDone)
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
 			for {
