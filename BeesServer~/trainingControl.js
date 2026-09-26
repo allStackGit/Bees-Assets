@@ -108,16 +108,27 @@ function requireRole(value) {
     return role;
 }
 
-function environmentValidationKeyForRelease(buildId, archiveSha256, environmentArgs) {
+function environmentValidationKeyForRelease(
+    buildId,
+    archiveSha256,
+    environmentArgs,
+    validationSecret,
+) {
+    if (typeof validationSecret !== 'string' || validationSecret.length < 32) {
+        throw new Error('environment validation secret must contain at least 32 characters');
+    }
     const encodedArgs = environmentArgs
         .map(value => Buffer.from(value, 'utf8').toString('base64'))
         .join('\n');
     const material =
-        'bees-environment-validation-v1\n' +
+        'bees-environment-validation-v2\n' +
         buildId + '\n' +
         archiveSha256 + '\n' +
         encodedArgs;
-    return crypto.createHash('sha256').update(material, 'utf8').digest('hex');
+    return crypto
+        .createHmac('sha256', Buffer.from(validationSecret, 'utf8'))
+        .update(material, 'utf8')
+        .digest('hex');
 }
 
 function normalizeEnvironmentArgs(value) {
@@ -161,6 +172,11 @@ class TrainingControlStore {
             throw new Error('training-control compatibleFailureGraceSeconds must be positive');
         }
         this.now = typeof options.now === 'function' ? options.now : () => Date.now();
+        this.environmentValidationSecret = String(
+            options.environmentValidationSecret ??
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET ??
+            ''
+        );
         this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
         this.state = this._loadState();
@@ -769,6 +785,12 @@ class TrainingControlStore {
                 this.state.canonical_build_id !== buildId
             );
         if (environmentValidationRequired) {
+            if (this.environmentValidationSecret.length < 32) {
+                throw Object.assign(
+                    new Error(
+                        'training control has no environment validation secret configured'),
+                    { statusCode: 503 });
+            }
             const windowsRecord = this.state.builds.WindowsPlayer &&
                 this.state.builds.WindowsPlayer[buildId];
             if (!windowsRecord) {
@@ -784,6 +806,7 @@ class TrainingControlStore {
                 buildId,
                 windowsRecord.archive_sha256,
                 effectiveEnvironmentArgs,
+                this.environmentValidationSecret,
             );
             if (
                 !/^[0-9a-f]{64}$/.test(suppliedValidationKey) ||
@@ -1386,6 +1409,9 @@ function startTrainingControl(options = {}) {
         artifactRoot: options.artifactRoot || process.env.BEES_TRAINING_ARTIFACT_ROOT,
         logRoot: options.logRoot || process.env.BEES_TRAINING_LOG_ROOT,
         leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
+        environmentValidationSecret:
+            options.environmentValidationSecret ||
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET,
     });
     const httpModule = options.httpModule || http;
     const server = httpModule.createServer(createTrainingControlHandler(store, token, adminToken));
