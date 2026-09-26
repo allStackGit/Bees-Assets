@@ -1407,12 +1407,20 @@ function Ensure-RunLifecycleMatchesRelease([string]$Python,$Release){
     throw "Run lifecycle state disagrees with latest release. lifecycle=$stateRun release=$releaseRun"
 }
 
-function Stage-Release($Config,[string]$AdminToken,$Release){
+function Stage-Release(
+    $Config,
+    [string]$AdminToken,
+    $Release,
+    [AllowNull()][string[]]$EnvironmentArgs=$null
+){
     $body=@{
         build_id=[string]$Release.build_id
         run_id=[string]$Release.run_id
         compatibility_key=[string]$Release.compatibility_key
         incompatible=[bool]$Release.incompatible
+    }
+    if($PSBoundParameters.ContainsKey('EnvironmentArgs')){
+        $body.environment_args=@($EnvironmentArgs)
     }
     Invoke-ControlPost "$($Config.controlUrl)/v1/admin/release" $AdminToken $body
 }
@@ -2832,10 +2840,17 @@ function Invoke-Start {
     Start-TailnetGatewayIfNeeded $config
     Start-CentralAgentIfNeeded $config $bootstrapPython $unity $release $centralRuntime
 
-    $staged=Stage-Release $config $admin $release
-    $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
-        training_enabled=$true
-        environment_args=@($envArgs)
+    if($performForcedNewRun){
+        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)
+        $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
+            training_enabled=$true
+        }
+    } else {
+        $staged=Stage-Release $config $admin $release
+        $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
+            training_enabled=$true
+            environment_args=@($envArgs)
+        }
     }
 
     if($performForcedNewRun){
