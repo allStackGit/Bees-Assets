@@ -1271,42 +1271,90 @@ function Invoke-ControlGet([string]$Url,[string]$Token){ Invoke-RestMethod -Meth
 function Invoke-ControlPost([string]$Url,[string]$Token,$Body){ Invoke-RestMethod -Method Post -Uri $Url -Headers @{Authorization="Bearer $Token"} -ContentType 'application/json' -Body ($Body|ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30 }
 function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet "$Base/v1/status" $Token;$true}catch{$false} }
 
+function Get-BeesServerLaunchConfigHash($Config,[string]$WorkerToken,[string]$AdminToken){
+    $dbPasswordHash=if($env:BEES_DB_PASSWORD){Get-StringSha256 ([string]$env:BEES_DB_PASSWORD)}else{''}
+    $payload=[ordered]@{
+        control_url=[string]$Config.controlUrl
+        control_host=[string]$Config.controlHost
+        control_port=[int]$Config.controlPort
+        gameplay_port=[int]$GameplayServerPort
+        worker_token_sha256=Get-StringSha256 $WorkerToken
+        admin_token_sha256=Get-StringSha256 $AdminToken
+        control_state=Join-Path $TrainingRoot 'Control\state.json'
+        artifact_root=Join-Path $TrainingRoot 'Control\Artifacts'
+        log_root=Join-Path $TrainingRoot 'TrainerLogs'
+        db_host=[string]$env:BEES_DB_HOST
+        db_user=[string]$env:BEES_DB_USER
+        db_password_sha256=$dbPasswordHash
+        db_name=[string]$env:BEES_DB_NAME
+        require_test_db=[string]$env:BEES_REQUIRE_TEST_DB
+        disable_background_jobs=[string]$env:BEES_DISABLE_BACKGROUND_JOBS
+    }
+    Get-StringSha256 ($payload|ConvertTo-Json -Compress -Depth 4)
+}
+
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
     $serverSourceHash=Get-BeesServerRuntimeSourceHash
+    $serverConfigHash=Get-BeesServerLaunchConfigHash $Config $WorkerToken $AdminToken
     $node=Resolve-Node $Config
-    $online=Test-Control $base $AdminToken
+    $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
 
-    if($online){
-        $managedState=$null
-        if(Test-Path -LiteralPath $ServerStatePath){
-            try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
-        }
-        $managedSourceHash=Get-ObjectPropertyValue $managedState 'source_hash'
-        if($null -eq $managedState){
-            throw 'BeesServer is online but has no managed process identity. Refusing an automatic restart because an unrelated process could now own the recorded PID.'
-        }
-        if(-not(Test-ManagedProcessIdentity $managedState)){
+    # Process ownership is authoritative even when the desired control URL/token has changed or
+    # the old control endpoint is unhealthy. Reconcile the recorded process first so configuration
+    # changes cannot orphan a server that the operator can still prove it owns.
+    $managedState=$null
+    $managedOwned=$false
+    if(Test-Path -LiteralPath $ServerStatePath){
+        try{$managedState=Get-Content -LiteralPath $ServerStatePath -Raw|ConvertFrom-Json}catch{$managedState=$null}
+    }
+    if($null -ne $managedState){
+        if(Test-ManagedProcessIdentity $managedState){
+            $managedOwned=$true
+        } else {
             $managedPid=Get-StateReferencedLivePid $managedState
             if($managedPid -gt 0){
                 throw "BeesServer state references live PID $managedPid but its PID/start-time/executable ownership does not match. Refusing to kill a possibly reused PID."
             }
-            throw 'BeesServer is online but its persisted managed process is no longer present. Refusing to guess which process owns the live server.'
+            Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
+            $managedState=$null
         }
+    } elseif(Test-Path -LiteralPath $ServerPidPath){
+        $legacyPid=0
+        [void][int]::TryParse((Get-Content -LiteralPath $ServerPidPath -Raw).Trim(),[ref]$legacyPid)
+        if($legacyPid -gt 0 -and (Get-Process -Id $legacyPid -ErrorAction SilentlyContinue)){
+            throw "BeesServer PID $legacyPid is from legacy PID-only state and cannot be proven safe to kill automatically. Stop that legacy server once, then rerun the command."
+        }
+        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+    }
+
+    $online=Test-Control $base $AdminToken
+    if($online){
+        if($null -eq $managedState -or -not $managedOwned){
+            throw 'BeesServer is online but has no matching managed process identity. Refusing an automatic restart because an unrelated process could own the live endpoint.'
+        }
+        $managedSourceHash=[string](Get-ObjectPropertyValue $managedState 'source_hash')
+        $managedConfigHash=[string](Get-ObjectPropertyValue $managedState 'config_hash')
         $serverExecutableMatches=Test-ManagedProcessIdentity $managedState $node
         if(
             $serverExecutableMatches -and
-            ([string]$managedSourceHash) -eq $serverSourceHash
+            $managedSourceHash -eq $serverSourceHash -and
+            $managedConfigHash -eq $serverConfigHash
         ){
             return
         }
-        Write-Host 'BeesServer executable/runtime changed; restarting the verified managed server without changing desired training state.'
+        Write-Host 'BeesServer executable/runtime/launch configuration changed; restarting the verified managed server without changing desired training state.'
+    } elseif($managedOwned){
+        Write-Host 'Managed BeesServer is not accepting the desired control endpoint/token; restarting the verified owned process to converge launch configuration.'
+    }
+
+    if($managedOwned){
         Assert-CentralAgentCheckpointSafe
         $null=Stop-ManagedProcessTree $managedState $node 'BeesServer'
         Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
 
-        $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
         while([DateTime]::UtcNow -lt $deadline){
             $open=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
@@ -1315,9 +1363,8 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         }
     }
 
-    $probeHost=if(([string]$Config.controlHost) -eq '0.0.0.0'){'127.0.0.1'}else{[string]$Config.controlHost}
     $controlPortOpen=Test-NetConnection -ComputerName $probeHost -Port ([int]$Config.controlPort) -InformationLevel Quiet -WarningAction SilentlyContinue
-    if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. Stop/reconfigure the existing server before starting another." }
+    if($controlPortOpen){ throw "Training-control port $($Config.controlPort) is already in use but did not accept this admin token. The process is not the verified managed BeesServer, so it will not be killed automatically." }
     $npm=Resolve-Npm
     Ensure-Directory $RuntimeRoot
     $dependencyHash=Get-BeesServerDependencyHash
@@ -1362,11 +1409,12 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
                 throw 'BeesServer became reachable but its launched process identity could not be verified. Refusing to record unsafe PID-only ownership.'
             }
             [pscustomobject]@{
-                schema_version=2
+                schema_version=3
                 pid=[int]$serverIdentity.pid
                 process_start_utc=[string]$serverIdentity.process_start_utc
                 executable_path=[string]$serverIdentity.executable_path
                 source_hash=$serverSourceHash
+                config_hash=$serverConfigHash
                 started_utc=[DateTime]::UtcNow.ToString('o')
             } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
             return
