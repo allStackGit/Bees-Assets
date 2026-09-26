@@ -1253,6 +1253,28 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             invoke_start[stage:],
         )
 
+    def test_live_build_and_recovery_validate_environment_before_staging(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        reconcile_start = source.index("function Reconcile-LatestReleaseBeforeBuild")
+        reconcile_end = source.index("function Invoke-Build", reconcile_start)
+        reconcile = source[reconcile_start:reconcile_end]
+        validate = reconcile.index("Assert-RlEnvironmentArgsValid $Release")
+        central_runtime = reconcile.index("Prepare-CentralReleaseRuntime", validate)
+        stage = reconcile.index("Stage-Release", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+        self.assertIn("$status=Invoke-ControlGet", reconcile[central_runtime:])
+
+        build_start = source.index("function Invoke-Build")
+        build_end = source.index("function Invoke-Server", build_start)
+        build = source[build_start:build_end]
+        validate = build.index("Assert-RlEnvironmentArgsValid $release")
+        central_runtime = build.index("Prepare-CentralReleaseRuntime", validate)
+        stage = build.index("$staged=Stage-Release", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+
     def test_gateway_and_central_launch_intent_is_durable_before_process_creation(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
 
