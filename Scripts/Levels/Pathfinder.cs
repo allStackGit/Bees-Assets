@@ -182,6 +182,16 @@ namespace Assets.Scripts.Levels
                     {
                         IsThreadActive[i] = true;
                         _staticRebuildBlockedSlots[i] = true;
+                        continue;
+                    }
+
+                    // The worker is searching a snapshot from before this obstacle change.
+                    // Let it finish against its private buffer, but reject its result and retry
+                    // the ship's latest destination after the static layer has been rebuilt.
+                    Ship activeShip = Ships[i];
+                    if (activeShip != null && activeShip.PathfindingRequestId == RequestIds[i])
+                    {
+                        InvalidatePathRequest(activeShip);
                     }
                 }
             }
