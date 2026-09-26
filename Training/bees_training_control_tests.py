@@ -521,6 +521,48 @@ class TrainingControlClientTests(unittest.TestCase):
             )
             self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
 
+    def test_training_log_uploader_caps_each_uploaded_file(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {}
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    return -len(current) - 1
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            (run / "Player-0.log").write_bytes(b"abcdefgh")
+            uploader = agent.TrainingLogUploader(root)
+            uploader.MAX_FILE_UPLOAD_BYTES = 4
+            client = UploadClient()
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                b"abcd",
+            )
+
     def test_episode_metrics_reset_when_run_changes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
