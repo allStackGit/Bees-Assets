@@ -104,10 +104,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         server_hash_start = source.index("function Get-BeesServerRuntimeSourceHash")
         server_hash_end = source.index("function Get-BeesServerDependencyHash", server_hash_start)
         server_hash = source[server_hash_start:server_hash_end]
-        self.assertIn("Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js' -File", server_hash)
-        self.assertIn("@('package.json','package-lock.json')", server_hash)
-        self.assertNotIn("docs", server_hash)
-        self.assertNotIn("test\\", server_hash)
+        for runtime_file in (
+            "start-server.js",
+            "server.js",
+            "siServerDev.js",
+            "serverContracts.js",
+            "database.js",
+            "gamePersistence.js",
+            "outcomeReservations.js",
+            "campaignCheckpoint.js",
+            "security.js",
+            "cachePersistence.js",
+            "rlDemonstrationUploads.js",
+            "rlTelemetryUploadSecurity.js",
+            "rlTelemetryUploads.js",
+            "rlModelDistributionSecurity.js",
+            "rlModelDistribution.js",
+            "trainingControl.js",
+            "trainingEnvOptimizer.js",
+            "package.json",
+            "package-lock.json",
+        ):
+            self.assertIn(f"'{runtime_file}'", server_hash)
+        self.assertNotIn("Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js'", server_hash)
         self.assertNotIn("Get-WorkingTreeContentSha256", source)
 
         self.assertIn(
@@ -204,12 +223,54 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         end = source.index("function Get-BeesServerDependencyHash", start)
         block = source[start:end]
 
-        self.assertIn("-Filter '*.js' -File", block)
         self.assertIn("'package.json'", block)
         self.assertIn("'package-lock.json'", block)
+        for non_runtime_file in (
+            "run-tests.js",
+            "testServerConfig.js",
+            "trainingControlCli.js",
+            "migrate.js",
+            "recover-tables.js",
+            "mediaServer.js",
+            "schemaMigrations.js",
+            "eslint.config.js",
+            "app.js",
+            "tst.js",
+        ):
+            self.assertNotIn(f"'{non_runtime_file}'", block)
         self.assertNotIn("AGENTS.md", block)
         self.assertNotIn("docs", block)
-        self.assertNotIn("Training_CONTROL", block)
+
+    def test_server_runtime_hash_matches_transitive_local_require_graph(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Get-BeesServerRuntimeSourceHash")
+        end = source.index("function Get-BeesServerDependencyHash", start)
+        block = source[start:end]
+        declared = set(re.findall(r"'([^']+\\.js)'", block))
+
+        server_root = ROOT / "BeesServer~"
+        discovered = set()
+        pending = ["start-server.js", "server.js", "siServerDev.js"]
+        while pending:
+            name = pending.pop()
+            if name in discovered:
+                continue
+            discovered.add(name)
+            text = (server_root / name).read_text(encoding="utf-8")
+            for dependency in re.findall(
+                r"""require\(\s*['"]\./([^'"]+)['"]\s*\)""",
+                text,
+            ):
+                dependency_name = (
+                    dependency if dependency.endswith(".js") else dependency + ".js"
+                )
+                self.assertTrue(
+                    (server_root / dependency_name).is_file(),
+                    f"Missing local runtime dependency {dependency_name} required by {name}",
+                )
+                pending.append(dependency_name)
+
+        self.assertEqual(declared, discovered)
 
     def test_operator_reinstalls_server_dependencies_when_package_identity_changes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
