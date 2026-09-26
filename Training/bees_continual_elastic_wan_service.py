@@ -116,7 +116,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             force_fresh=force_fresh,
         )
         command[1] = str(
-            options.assets_root / "Training" / "bees_continual_elastic_wan_auto_train.py"
+            options.runtime_training_root / "bees_continual_elastic_wan_auto_train.py"
         )
         wan_args = [
             f"{elastic.WAN_ACTORS_FLAG}={actor_options.max_actors}",
