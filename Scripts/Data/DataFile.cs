@@ -114,7 +114,7 @@ namespace Assets.Scripts.Data
                     if (standingRequest.Status == 1)
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
-                        SetServerContents(standingRequest.Response.Contents);
+                        SetStoredContents(standingRequest.Response.Contents);
                         _isDataLoaded = true;
                         _request = null;
                         return;
@@ -171,8 +171,8 @@ namespace Assets.Scripts.Data
         }
 
         /// <summary>
-        /// Server reads are allowed to surface malformed legacy data as a loaded-but-invalid
-        /// payload so UserData.WaitForData can rebuild that profile member from current defaults.
+        /// Stored reads may surface malformed legacy data as a loaded-but-invalid payload so
+        /// UserData.WaitForData can rebuild that profile member from current defaults.
         /// This tolerant path is intentionally separate from SetContents' atomic replacement
         /// contract.
         /// </summary>
