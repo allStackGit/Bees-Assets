@@ -181,7 +181,14 @@ def package_runtime(
 
 
 def _validate_member_name(name: str) -> None:
-    if not name or "\\" in name or name.startswith("/") or name.startswith("\\"):
+    if (
+        not name
+        or "\\" in name
+        or "/" in name
+        or ":" in name
+        or name.startswith(("/", "\\"))
+        or name.endswith(("/", "\\"))
+    ):
         raise ValueError(f"runtime archive contains unsafe member path: {name!r}")
     parts = Path(name).parts
     if len(parts) != 1 or any(part in ("", ".", "..") for part in parts):
@@ -357,7 +364,9 @@ def install_runtime(
                 _verify_installed(temporary, manifest, metadata["runtime_version"])
                 try:
                     os.replace(temporary, destination)
-                except FileExistsError:
+                except OSError:
+                    if not destination.exists():
+                        raise
                     _verify_installed(destination, manifest, metadata["runtime_version"])
             finally:
                 if temporary.exists():
