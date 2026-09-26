@@ -304,6 +304,57 @@ function writeBeesServerManagedState(
     writeTextAtomic(paths.serverPidPath, String(identity.pid), 'ascii');
 }
 
+async function cleanupFailedBeesServerCandidate(
+    config,
+    node,
+    ownerToken,
+    identity = null,
+) {
+    // Never kill a PID merely because the launcher reported it. If the captured identity still
+    // proves both process start/executable ownership, it is safe to stop directly. Otherwise,
+    // recover only processes that carry this launch's unguessable owner token.
+    if (identity && testManagedProcessIdentity(identity, node)) {
+        stopManagedProcessTree(identity, node, 'failed BeesServer candidate supervisor');
+    } else {
+        const supervisor = findManagedProcessByOwnerToken(
+            node,
+            ownerToken,
+            'failed BeesServer candidate supervisor',
+        );
+        if (supervisor) {
+            stopManagedProcessTree(
+                supervisor,
+                node,
+                'failed BeesServer candidate supervisor',
+            );
+        }
+    }
+
+    const childToken = sha256Text('bees-managed-child:' + ownerToken);
+    const orphan = findManagedProcessByOwnerToken(
+        node,
+        childToken,
+        'failed BeesServer candidate child',
+    );
+    if (orphan) {
+        stopManagedProcessTree(orphan, node, 'failed BeesServer candidate child');
+    }
+
+    const probeHost = controlProbeHost(config);
+    const closed = await waitForTcpPortClosed(
+        probeHost,
+        Number(config.controlPort),
+        15000,
+    );
+    if (!closed) {
+        throw new Error(
+            'Training-control port ' + config.controlPort +
+            ' remained occupied after failed BeesServer candidate cleanup. ' +
+            'Refusing rollback/retry because the remaining listener cannot be proven to belong to the failed candidate.'
+        );
+    }
+}
+
 async function startBeesServerRuntimeProcess(
     config,
     node,
@@ -338,9 +389,12 @@ async function startBeesServerRuntimeProcess(
 
     const identity = getProcessIdentity(launchedPid);
     if (!identity || !samePath(identity.executable_path, node)) {
-        if (identity) {
-            try { stopManagedProcessTree(identity, node, 'failed BeesServer candidate'); } catch (_) {}
-        }
+        await cleanupFailedBeesServerCandidate(
+            config,
+            node,
+            ownerToken,
+            identity,
+        );
         throw new Error('Could not establish the BeesServer candidate process identity after launch.');
     }
 
@@ -371,6 +425,12 @@ async function startBeesServerRuntimeProcess(
             return identity;
         }
         if (!testManagedProcessIdentity(identity, node)) {
+            await cleanupFailedBeesServerCandidate(
+                config,
+                node,
+                ownerToken,
+                null,
+            );
             throw new Error(
                 'BeesServer candidate PID ' + launchedPid +
                 ' exited before the control endpoint became healthy. Check ' + serverLog + '.'
@@ -379,9 +439,12 @@ async function startBeesServerRuntimeProcess(
         await sleep(500);
     }
 
-    if (testManagedProcessIdentity(identity, node)) {
-        try { stopManagedProcessTree(identity, node, 'unhealthy BeesServer candidate'); } catch (_) {}
-    }
+    await cleanupFailedBeesServerCandidate(
+        config,
+        node,
+        ownerToken,
+        identity,
+    );
     throw new Error(
         'BeesServer candidate did not become reachable at ' + config.controlUrl +
         ' within ' + timeoutSeconds + ' seconds. Check ' + serverLog + '.'
