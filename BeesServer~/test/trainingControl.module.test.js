@@ -781,6 +781,147 @@ test('compatible rolling skips an expired target and advances to the next live t
     });
 });
 
+test('compatible rollout does not re-add a pruned trainer that reconnects mid-rollout', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'rejoin-old');
+        publishDedicatedBuild(store, root, 'rejoin-new');
+        store.stageRelease({
+            buildId: 'rejoin-old',
+            runId: 'rejoin-run',
+            compatibilityKey: '9'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'rejoin-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'rejoin-new',
+            runId: 'rejoin-run',
+            compatibilityKey: '9'.repeat(64),
+            incompatible: false,
+        });
+        for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-new' },
+            );
+        }
+
+        now = 9000;
+        for (const trainerId of ['remote-b', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-new' },
+            );
+        }
+        now = 11001;
+        store.status();
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+
+        // The expired worker can reconnect and keep using the semantically compatible old
+        // canonical release, but it must not make the in-flight barrier grow again.
+        const rejoined = heartbeatDedicated(store, 'remote-a', 'rejoin-old', oldSha);
+        assert.equal(rejoined.desired_build_id, 'rejoin-old');
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-b', 'central-learner'],
+        );
+    });
+});
+
+test('late trainer does not expand a compatible rollout snapshot', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'late-compatible-old');
+        publishDedicatedBuild(store, root, 'late-compatible-new');
+        store.stageRelease({
+            buildId: 'late-compatible-old',
+            runId: 'late-compatible-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'central-learner', 'late-compatible-old', oldSha);
+        store.stageRelease({
+            buildId: 'late-compatible-new',
+            runId: 'late-compatible-run',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+
+        heartbeatDedicated(
+            store,
+            'remote-late',
+            'late-compatible-old',
+            oldSha,
+            { preparedBuildId: 'late-compatible-new' },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+    });
+});
+
+test('late trainer still joins an incompatible stop barrier', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'late-incompatible-old');
+        publishDedicatedBuild(store, root, 'late-incompatible-new');
+        store.stageRelease({
+            buildId: 'late-incompatible-old',
+            runId: 'late-incompatible-old-run',
+            compatibilityKey: 'b'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        heartbeatDedicated(store, 'central-learner', 'late-incompatible-old', oldSha);
+        store.stageRelease({
+            buildId: 'late-incompatible-new',
+            runId: 'late-incompatible-new-run',
+            compatibilityKey: 'c'.repeat(64),
+            incompatible: true,
+        });
+
+        heartbeatDedicated(
+            store,
+            'remote-late',
+            'late-incompatible-old',
+            oldSha,
+            { preparedBuildId: 'late-incompatible-new' },
+        );
+
+        assert.deepEqual(
+            store.state.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-late', 'central-learner'],
+        );
+    });
+});
+
 test('incompatible rollout never drops an expired required trainer', () => {
     withTempDir(root => {
         let now = 1000;
