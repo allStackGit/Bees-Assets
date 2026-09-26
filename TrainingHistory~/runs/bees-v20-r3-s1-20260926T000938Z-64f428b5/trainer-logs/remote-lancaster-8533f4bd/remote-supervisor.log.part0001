@@ -4,3 +4,977 @@
 [Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+/home/larry/.local/share/bees-training/.venv/lib/python3.10/site-packages/mlagents/torch_utils/torch.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=TimeoutError: timed out
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=TimeoutError: timed out
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=TimeoutError: timed out
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=TimeoutError: timed out
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=TimeoutError: timed out
+[Bees WAN actor] session failed: RuntimeError: WAN broker rejected POST /claim: 400 invalid-request: actor semantic release identity does not match the authoritative learner session; reconnecting.
+[Bees remote] staged worker update runtime=09c2bd62ee67 bridge=a75d014ae476.
+[Bees remote] activating staged worker runtime 09c2bd62ee67 at this trainer's rollout turn.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=1 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+/home/larry/.local/share/bees-training/.venv/lib/python3.10/site-packages/mlagents/torch_utils/torch.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+[Bees WAN actor] learner assigned actor slot 1.
+[Bees WAN actor] launching 2 Unity environments base_port=5005 logs=/home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=stopped envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=-1 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup runtime_update_error=URLError: <urlopen error [Errno 111] Connection refused>
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: connecting to learner; trainer=remote-lancaster-8533f4bd envs=2
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: connecting to learner; trainer=remote-lancaster-8533f4bd envs=2
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-0.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3433 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.049 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.884515 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-1.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3411 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.049 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.839573 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] session failed: UnityTimeOutException: The Unity environment took too long to respond. Make sure that :
+	 The environment does not need user interaction to launch
+	 The Agents' Behavior Parameters > Behavior Type is set to "Default"
+	 The environment and the Python interface have compatible versions.
+	 If you're running on a headless server without graphics support, turn off display by either passing --no-graphics option or build your Unity executable as server build.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees WAN actor] learner assigned actor slot 1.
+[Bees WAN actor] launching 2 Unity environments base_port=5005 logs=/home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=STALE envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=STALE envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-0.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3392 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.051 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.925004 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-1.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3444 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.048 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.851300 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] session failed: UnityTimeOutException: The Unity environment took too long to respond. Make sure that :
+	 The environment does not need user interaction to launch
+	 The Agents' Behavior Parameters > Behavior Type is set to "Default"
+	 The environment and the Python interface have compatible versions.
+	 If you're running on a headless server without graphics support, turn off display by either passing --no-graphics option or build your Unity executable as server build.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees WAN actor] learner assigned actor slot 1.
+[Bees WAN actor] launching 2 Unity environments base_port=5005 logs=/home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=measuring
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-0.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3433 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.049 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.877090 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-1.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3392 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.049 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.880174 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] session failed: UnityTimeOutException: The Unity environment took too long to respond. Make sure that :
+	 The environment does not need user interaction to launch
+	 The Agents' Behavior Parameters > Behavior Type is set to "Default"
+	 The environment and the Python interface have compatible versions.
+	 If you're running on a headless server without graphics support, turn off display by either passing --no-graphics option or build your Unity executable as server build.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees WAN actor] learner assigned actor slot 1.
+[Bees WAN actor] launching 2 Unity environments base_port=5005 logs=/home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-0.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3392 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.051 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 1.057626 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-1.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3392 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.051 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 1.247407 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] session failed: UnityTimeOutException: The Unity environment took too long to respond. Make sure that :
+	 The environment does not need user interaction to launch
+	 The Agents' Behavior Parameters > Behavior Type is set to "Default"
+	 The environment and the Python interface have compatible versions.
+	 If you're running on a headless server without graphics support, turn off display by either passing --no-graphics option or build your Unity executable as server build.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees WAN actor] learner assigned actor slot 1.
+[Bees WAN actor] launching 2 Unity environments base_port=5005 logs=/home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5.
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
+[WARNING] Environment timed out shutting down. Killing...
+[WARNING] Environment timed out shutting down. Killing...
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-0.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3468 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.050 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.871278 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] Unity log tail /home/larry/.local/share/bees-training/ManagedBuilds/logs/bees-v20-r3-s1-20260926T000938Z-64f428b5/Player-1.log:
+Processor: Intel(R) Core(TM) i5-2500 CPU @ 3.30GHz, 4 core(s) @ 3468 MHz 
+Available Memory: 3793 MB 
+Linux Kernel and distribution: Linux 6.1 Debian GNU/Linux 12 64bit
+System Language: en_US
+Keyboard Layout: us
+Mono path[0] = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Managed'
+Mono config path = '/home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Failed to open plugin: /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Plugins: Couldn't open /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/Plugins/x86_64/libAppUINativePlugin.so, error: libgtk-3.so.0: cannot open shared object file: No such file or directory
+Initialize engine version: 6000.5.4f1 (d550df8bd089)
+[Subsystems] Discovering subsystems at path /home/larry/.local/share/bees-training/ManagedBuilds/builds/dedicated-LinuxPlayer-2026-09-25-173601-b698a1e1ee57-4af079f0c2974c52/Bees RL Training_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.051 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+<b>[App UI]</b> Unable to find an AppUISettings instance, creating a default one...
+DllNotFoundException: libgtk-3.so.0: cannot open shared object file: No such file or directory assembly:<unknown assembly> type:<unknown type> member:(null)
+  at (wrapper managed-to-native) Unity.AppUI.Core.LinuxPlatformImpl.NativeAppUI_Initialize(Unity.AppUI.Core.LinuxPlatformImpl/PluginConfigData&)
+  at Unity.AppUI.Core.LinuxPlatformImpl.Setup () [0x00023] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.LinuxPlatformImpl..ctor () [0x00006] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+  at Unity.AppUI.Core.Platform.Initialize () [0x00009] in <ac8a3b71c96f4296841d6ce720728d43>:0 
+UnityEngine.DebugLogHandler:Internal_LogException_Injected(Exception, IntPtr)
+UnityEngine.DebugLogHandler:Internal_LogException(Exception, Object)
+UnityEngine.DebugLogHandler:LogException(Exception, Object)
+UnityEngine.Logger:LogException(Exception, Object)
+UnityEngine.Debug:LogException(Exception)
+Unity.AppUI.Core.Platform:Initialize()
+Unity.AppUI.Core.Platform:.cctor()
+
+The referenced script on this Behaviour (Game Object 'Debug Logger') is missing!
+UnloadTime: 0.904482 ms
+UI Audio: DontDestroyOnLoad only works for root GameObjects or components on root GameObjects.
+Trying to automatically reconnect to the server with Level (attempt 1)
+Trying to automatically reconnect to the server with Level (attempt 2)
+Trying to automatically reconnect to the server with Level (attempt 3)
+Trying to automatically reconnect to the server with Level (attempt 4)
+Trying to automatically reconnect to the server with Level (attempt 5)
+[Bees WAN actor] session failed: UnityTimeOutException: The Unity environment took too long to respond. Make sure that :
+	 The environment does not need user interaction to launch
+	 The Agents' Behavior Parameters > Behavior Type is set to "Default"
+	 The environment and the Python interface have compatible versions.
+	 If you're running on a headless server without graphics support, turn off display by either passing --no-graphics option or build your Unity executable as server build.; reconnecting.
+[Bees remote] status: learner=connected trainer=remote-lancaster-8533f4bd state=running envs=2 build=2026-09-25-173601-b698a1e1ee57 rev=26 optimizer=stable learner_sps=0.0
