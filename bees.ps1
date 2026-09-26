@@ -2225,9 +2225,14 @@ function Invoke-CentralDiagnosticBenchmark(
 
         $finished=$process.WaitForExit(180000)
         if(-not $finished){
+            $treeKilled=$false
             try {
                 & taskkill.exe /PID $process.Id /T /F *> $null
+                $treeKilled=($LASTEXITCODE -eq 0)
             } catch {
+                $treeKilled=$false
+            }
+            if(-not $treeKilled){
                 try{$process.Kill()}catch{}
             }
             $result.status='timeout'
