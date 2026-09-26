@@ -479,6 +479,21 @@ class TrainingControlClientTests(unittest.TestCase):
             ["taskkill", "/PID", "5252", "/T", "/F"],
         )
 
+    def test_worker_log_retention_keeps_current_and_two_recent_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "logs"
+            root.mkdir()
+            for index in range(5):
+                run = root / f"run-{index}"
+                run.mkdir()
+                (run / "marker").write_text(str(index), encoding="utf-8")
+
+            agent._prune_run_log_directories(root, "run-0")
+
+            remaining = {path.name for path in root.iterdir() if path.is_dir()}
+            self.assertIn("run-0", remaining)
+            self.assertLessEqual(len(remaining), agent.MAX_RETAINED_RUN_LOG_DIRS)
+
     def test_training_log_uploader_flushes_only_selected_run(self):
         class UploadClient:
             def __init__(self):
