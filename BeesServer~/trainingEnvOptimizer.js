@@ -42,6 +42,15 @@ function learnerConsumedSteps(metrics) {
     return total;
 }
 
+function producerAcceptedSteps(metrics) {
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+    const throughput = metrics.throughput;
+    if (!throughput || typeof throughput !== 'object' || Array.isArray(throughput)) return null;
+    const total = throughput.accepted_steps_total;
+    if (!finiteInteger(total) || total < 0) return null;
+    return total;
+}
+
 function initialStep(envs) {
     return Math.max(1, Math.min(4, Math.round(envs / 8)));
 }
@@ -92,6 +101,7 @@ class TrainingEnvOptimizer {
             phase_started_ms: now,
             measurement_started_ms: null,
             measurement_start_steps: null,
+            measurement_start_produced_steps: null,
             source_steps: null,
             last_sps: null,
             last_decision: 'collecting baseline',
@@ -113,6 +123,7 @@ class TrainingEnvOptimizer {
         state.phase_started_ms = now;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
+        state.measurement_start_produced_steps = null;
         state.source_steps = totalSteps;
         if (reason) state.last_decision = reason;
     }
@@ -150,6 +161,7 @@ class TrainingEnvOptimizer {
         state.phase_started_ms = now;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
+        state.measurement_start_produced_steps = null;
         state.source_steps = null;
         state.last_decision = 'probing ' + state.baseline_envs + '->' + target;
         return true;
@@ -188,6 +200,7 @@ class TrainingEnvOptimizer {
         state.cooldown_until_ms = now + this.cooldownMs;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
+        state.measurement_start_produced_steps = null;
         state.source_steps = null;
         state.metrics_missing_since_ms = null;
         state.last_decision = reason + '; backing off to ' + state.baseline_envs + ' envs';
@@ -247,6 +260,7 @@ class TrainingEnvOptimizer {
         state.cooldown_until_ms = now + this.cooldownMs;
         state.measurement_started_ms = null;
         state.measurement_start_steps = null;
+        state.measurement_start_produced_steps = null;
         state.source_steps = null;
         state.last_decision = (materiallyWorse ? 'backing off' : 'no material gain') +
             ' from ' + capacity.current_envs + ' envs (' + sps.toFixed(1) + ' vs ' +
@@ -260,6 +274,7 @@ class TrainingEnvOptimizer {
         const timestamp = Number.isFinite(now) ? now : Date.now();
         const capacity = normalizeCapacity(record && record.worker_capacity);
         const totalSteps = learnerConsumedSteps(record && record.metrics);
+        const producedSteps = producerAcceptedSteps(record && record.metrics);
         const contextKey = String(context.contextKey || '');
         if (this.activeProbeTrainerId && this.activeProbeTrainerId !== record?.trainer_id) {
             const active = this.states.get(this.activeProbeTrainerId);
@@ -309,6 +324,7 @@ class TrainingEnvOptimizer {
             state.phase_started_ms = timestamp;
             state.measurement_started_ms = null;
             state.measurement_start_steps = null;
+            state.measurement_start_produced_steps = null;
             state.source_steps = totalSteps;
             return this.snapshot(record.trainer_id);
         }
@@ -393,6 +409,7 @@ class TrainingEnvOptimizer {
             state.phase = 'measuring';
             state.measurement_started_ms = timestamp;
             state.measurement_start_steps = totalSteps;
+            state.measurement_start_produced_steps = producedSteps;
             state.last_decision = 'measuring learner-consumed steps';
             return this.snapshot(record.trainer_id);
         }
@@ -401,6 +418,29 @@ class TrainingEnvOptimizer {
             const elapsed = timestamp - state.measurement_started_ms;
             if (elapsed < this.measurementMs) return this.snapshot(record.trainer_id);
             const delta = totalSteps - state.measurement_start_steps;
+            const producedDelta =
+                producedSteps !== null &&
+                state.measurement_start_produced_steps !== null
+                    ? producedSteps - state.measurement_start_produced_steps
+                    : null;
+            if (producedDelta !== null && producedDelta < 0) {
+                this._resetMeasurement(
+                    state,
+                    timestamp,
+                    totalSteps,
+                    'producer throughput counter restarted',
+                );
+                return this.snapshot(record.trainer_id);
+            }
+            if (delta === 0 && producedDelta !== null && producedDelta > 0) {
+                this._resetMeasurement(
+                    state,
+                    timestamp,
+                    totalSteps,
+                    'worker produced rollouts but none were learner-consumed; retrying fair measurement',
+                );
+                return this.snapshot(record.trainer_id);
+            }
             const sps = elapsed > 0 ? (delta * 1000) / elapsed : 0;
             this._finishMeasurement(state, capacity, timestamp, sps);
             return this.snapshot(record.trainer_id);
@@ -437,5 +477,6 @@ module.exports = {
     TrainingEnvOptimizer,
     normalizeCapacity,
     learnerConsumedSteps,
+    producerAcceptedSteps,
     initialStep,
 };
