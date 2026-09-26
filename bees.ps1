@@ -1575,7 +1575,7 @@ function Reconcile-LatestReleaseBeforeBuild(
     $currentEnvironmentArgs=@(
         $preflightStatus.desired.environment_args | ForEach-Object {[string]$_}
     )
-    Assert-RlEnvironmentArgsValid $Release @($currentEnvironmentArgs)
+    $environmentValidationKey=Assert-RlEnvironmentArgsValid $Release @($currentEnvironmentArgs)
 
     $centralRuntime=Prepare-CentralReleaseRuntime $Config $Python $Unity $Release
     Start-CentralAgentIfNeeded $Config $Python $Unity $Release $centralRuntime
@@ -1616,7 +1616,7 @@ function Reconcile-LatestReleaseBeforeBuild(
     Prepare-RemoteBootstrap $Config $Python $Release
     Publish-Release $Config $AdminToken $Release
     Start-TailnetGatewayIfNeeded $Config
-    $staged=Stage-Release $Config $AdminToken $Release
+    $staged=Stage-Release $Config $AdminToken $Release -EnvironmentArgs @($currentEnvironmentArgs) -EnvironmentValidationKey $environmentValidationKey
     if($staged.pending_release){
         $null=Wait-ReleaseRollout $Config $AdminToken $releaseBuild $releaseRun $releaseKey
     } else {
@@ -1786,7 +1786,7 @@ function Invoke-Build {
             $preStageEnvironmentArgs=@(
                 $preStageStatus.desired.environment_args | ForEach-Object {[string]$_}
             )
-            Assert-RlEnvironmentArgsValid $release @($preStageEnvironmentArgs)
+            $environmentValidationKey=Assert-RlEnvironmentArgsValid $release @($preStageEnvironmentArgs)
             Assert-CentralAgentCheckpointSafe
             $centralRuntime=Prepare-CentralReleaseRuntime $config $python $unity $release
             Start-CentralAgentIfNeeded $config $python $unity $release $centralRuntime
@@ -1801,7 +1801,7 @@ function Invoke-Build {
                 Start-TailnetGatewayIfNeeded $config
             }
             Publish-Release $config $admin $release
-            $staged=Stage-Release $config $admin $release
+            $staged=Stage-Release $config $admin $release -EnvironmentArgs @($preStageEnvironmentArgs) -EnvironmentValidationKey $environmentValidationKey
             Write-Host "Release staged: build=$buildId phase=$(if($staged.pending_release){$staged.pending_release.phase}else{'active'})"
             if([bool]$release.incompatible){
                 $null=Wait-ReleaseRollout $config $admin $buildId ([string]$release.run_id) ([string]$release.compatibility_key)
@@ -2980,9 +2980,10 @@ function Invoke-Start {
     $forcedPlan=Get-PendingForcedNewRunPlan
     $resumeForcedNewRun=($null -ne $forcedPlan)
     $outgoingRun=$null
+    $environmentValidationKey=''
 
     if(-not $resumeForcedNewRun){
-        Assert-RlEnvironmentArgsValid $release @($envArgs)
+        $environmentValidationKey=Assert-RlEnvironmentArgsValid $release @($envArgs)
     }
 
     if($resumeForcedNewRun){
@@ -3014,7 +3015,7 @@ function Invoke-Start {
         } else {
             $envArgs=@(@($persistedEnvironmentArgs) | ForEach-Object {[string]$_})
         }
-        Assert-RlEnvironmentArgsValid $release @($envArgs)
+        $environmentValidationKey=Assert-RlEnvironmentArgsValid $release @($envArgs)
 
         if($releaseRun -eq $planRun -and $releaseKey -eq $planKey){
             Write-Host "Resuming interrupted forced new-run operation: target=$planRun build=$planBuild."
@@ -3077,7 +3078,7 @@ function Invoke-Start {
     Start-CentralAgentIfNeeded $config $bootstrapPython $unity $release $centralRuntime
 
     if($performForcedNewRun){
-        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)
+        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs) -EnvironmentValidationKey $environmentValidationKey
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$true
         }
@@ -3101,7 +3102,7 @@ function Invoke-Start {
             }
         }
 
-        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)
+        $staged=Stage-Release $config $admin $release -EnvironmentArgs @($envArgs) -EnvironmentValidationKey $environmentValidationKey
         $desired=Invoke-ControlPost "$($config.controlUrl)/v1/admin/state" $admin @{
             training_enabled=$true
         }
