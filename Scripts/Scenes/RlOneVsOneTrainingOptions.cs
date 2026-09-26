@@ -410,7 +410,7 @@ internal sealed class RlOneVsOneTrainingOptions
         {
             return RlOneVsOneMatchupMode.Sampled;
         }
-        throw new ArgumentException($"\u0024{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
+        throw new ArgumentException($"{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
     }
 
     private static void ReplaceShipTypes(List<ConfigData.ShipTypes> destination, string value, string flag)
