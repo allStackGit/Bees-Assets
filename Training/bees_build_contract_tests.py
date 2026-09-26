@@ -659,9 +659,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("Embedded tailnet gateway already healthy", block)
         self.assertIn("return", block)
         self.assertIn("config_hash=$gatewayConfigHash", block)
+        self.assertIn("'--bootstrap-bundle',$BootstrapBundlePath", block)
         self.assertIn(
-            "The gateway reads runtime/release/worker/WAN payload files "
-            "for every bootstrap request",
+            "The complete worker bootstrap is one atomically replaced outer ZIP",
+            block,
+        )
+        self.assertNotIn("'--runtime',$runtimeZip", block)
+        self.assertNotIn("'--worker-token',$WorkerTokenPath", block)
+        self.assertNotIn("'--wan-token',$WanTokenPath", block)
+        self.assertNotIn("'--release',$LatestReleasePath", block)
+        self.assertNotIn(
+            "Get-FileHash -LiteralPath $BootstrapBundlePath",
             block,
         )
         keep = block.index("$recordedConfigHash -eq $gatewayConfigHash")
@@ -670,6 +678,34 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "'embedded tailnet gateway'"
         )
         self.assertLess(keep, stop)
+
+    def test_remote_bootstrap_is_published_as_one_atomic_generation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "$BootstrapBundleScript=Join-Path $AssetsRoot "
+            "'Training\\bees_bootstrap_bundle.py'",
+            source,
+        )
+        self.assertIn(
+            "$BootstrapBundlePath=Join-Path $RemoteRoot "
+            "'bees-bootstrap-bundle.zip'",
+            source,
+        )
+        start = source.index("function Prepare-RemoteBootstrap")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        self.assertIn("$bootstrapBundle=Invoke-PythonJson $Python", block)
+        self.assertIn("$BootstrapBundleScript", block)
+        self.assertIn("'--output',$BootstrapBundlePath", block)
+        self.assertIn("'--runtime',$releaseRuntimeArchive", block)
+        self.assertIn("'--release',$LatestReleasePath", block)
+        self.assertIn("'--windows-bridge',$windowsBridge", block)
+        self.assertIn("'--linux-bridge',$linuxBridge", block)
+        self.assertIn(
+            "Published bootstrap bundle build identity disagrees with release",
+            block,
+        )
 
     def test_managed_process_ownership_is_distinct_from_desired_executable(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
