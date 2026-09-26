@@ -2522,6 +2522,65 @@ function Start-CentralAgentIfNeeded(
 
 function Get-EnvironmentArgs($Config){ if($null -ne $EnvArg -and $EnvArg.Count -gt 0){return @($EnvArg)}; if($null -eq $Config.environmentArgs){return @()}; @($Config.environmentArgs|ForEach-Object{[string]$_}) }
 
+function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
+    $windowsArtifact=@(
+        $Release.artifacts | Where-Object {
+            ([string]$_.role) -eq 'dedicated' -and
+            ([string]$_.platform) -eq 'WindowsPlayer'
+        } | Select-Object -First 1
+    )
+    if($windowsArtifact.Count -ne 1){
+        throw 'Latest release has no local dedicated Windows artifact for RL environment validation.'
+    }
+    $artifact=$windowsArtifact[0]
+    $folder=[IO.Path]::GetFullPath([string]$artifact.folder)
+    $entrypoint=[string]$artifact.entrypoint
+    $executable=Join-Path $folder $entrypoint
+    if(-not(Test-Path -LiteralPath $executable -PathType Leaf)){
+        throw "RL environment validator executable is missing: $executable"
+    }
+
+    $argsJson=ConvertTo-Json -InputObject @($EnvironmentArgs) -Compress
+    $validationKey=Get-StringSha256 (
+        ([string]$Release.build_id) + [Environment]::NewLine + $argsJson
+    )
+    $validationRoot=Join-Path $RuntimeRoot 'RlEnvironmentValidation'
+    $stamp=Join-Path $validationRoot "$validationKey.ok"
+    if(Test-Path -LiteralPath $stamp -PathType Leaf){ return }
+
+    Ensure-Directory $validationRoot
+    Ensure-Directory (Join-Path $LogsRoot 'Training')
+    $log=Join-Path $LogsRoot "Training\rl-environment-validation-$($validationKey.Substring(0,12)).log"
+    $arguments=@(
+        '-batchmode',
+        '-nographics',
+        '-logFile',$log,
+        '--rl-validate-options-only'
+    ) + @($EnvironmentArgs)
+    $argumentString=($arguments|ForEach-Object{Quote-Arg ([string]$_)}) -join ' '
+
+    $process=Start-Process -FilePath $executable -ArgumentList $argumentString -WorkingDirectory $folder -WindowStyle Hidden -PassThru
+    if(-not $process.WaitForExit(60000)){
+        & taskkill /PID $process.Id /T /F *> $null
+        throw "RL environment validation timed out after 60 seconds. See $log"
+    }
+    if($process.ExitCode -ne 0){
+        throw "Invalid RL environment arguments; validator exited with code $($process.ExitCode). See $log"
+    }
+
+    $temp="$stamp.new"
+    $stampText=(
+        "build=" + [string]$Release.build_id + [Environment]::NewLine +
+        "args_sha256=" + $validationKey + [Environment]::NewLine
+    )
+    [IO.File]::WriteAllText(
+        $temp,
+        $stampText,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $temp $stamp
+}
+
 function Escape-SingleQuoted([string]$Value){ $Value.Replace("'","''") }
 function Escape-BashDoubleQuoted([string]$Value){
     if($Value -notmatch '^[A-Za-z0-9_@.:/%~+\-]+$'){
