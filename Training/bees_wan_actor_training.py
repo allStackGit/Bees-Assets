@@ -207,14 +207,26 @@ def decode_payload(data: bytes) -> Any:
     if not isinstance(data, (bytes, bytearray)) or len(data) > MAX_COMPRESSED_PAYLOAD_BYTES:
         raise ValueError("WAN actor payload exceeds compressed size limit")
     decompressor = zlib.decompressobj()
-    raw = decompressor.decompress(bytes(data), MAX_DECOMPRESSED_PAYLOAD_BYTES + 1)
-    if len(raw) > MAX_DECOMPRESSED_PAYLOAD_BYTES:
-        raise ValueError("WAN actor payload exceeds decompressed size limit")
-    if decompressor.unconsumed_tail:
-        raise ValueError("WAN actor payload exceeds decompressed size limit")
-    raw += decompressor.flush()
-    if len(raw) > MAX_DECOMPRESSED_PAYLOAD_BYTES:
-        raise ValueError("WAN actor payload exceeds decompressed size limit")
+    pending = bytes(data)
+    raw = bytearray()
+    while True:
+        remaining = MAX_DECOMPRESSED_PAYLOAD_BYTES - len(raw)
+        chunk = decompressor.decompress(pending, remaining + 1)
+        raw.extend(chunk)
+        if len(raw) > MAX_DECOMPRESSED_PAYLOAD_BYTES:
+            raise ValueError("WAN actor payload exceeds decompressed size limit")
+        pending = decompressor.unconsumed_tail
+        if pending:
+            continue
+        if decompressor.eof:
+            break
+        if decompressor.needs_input:
+            raise ValueError("WAN actor payload is an incomplete compressed stream")
+        # zlib consumed the input but still has buffered output. Drain it under
+        # the same strict bound before accepting the payload.
+        pending = b""
+    if decompressor.unused_data:
+        raise ValueError("WAN actor payload contains trailing data after the compressed stream")
     return pickle.loads(raw)
 
 
