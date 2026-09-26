@@ -862,6 +862,25 @@ function Get-WorkingTreeContentSha256([string]$RelativePath){
     Get-StringSha256 (@($manifest|Sort-Object name)|ConvertTo-Json -Compress -Depth 3)
 }
 
+function Get-BeesServerRuntimeSourceHash {
+    $entries=@(
+        Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js' -File |
+            ForEach-Object {
+                [pscustomobject]@{
+                    name=$_.Name
+                    path=$_.FullName
+                }
+            }
+    )
+    foreach($name in @('package.json','package-lock.json')){
+        $entries += [pscustomobject]@{
+            name=$name
+            path=(Join-Path $ServerRoot $name)
+        }
+    }
+    Get-NamedFileSetSha256 $entries
+}
+
 function Get-BeesServerDependencyHash {
     Get-NamedFileSetSha256 @(
         [pscustomobject]@{name='package.json';path=(Join-Path $ServerRoot 'package.json')},
@@ -1230,7 +1249,7 @@ function Test-Control([string]$Base,[string]$Token){ try{$null=Invoke-ControlGet
 
 function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminToken){
     $base=[string]$Config.controlUrl
-    $serverSourceHash=Get-WorkingTreeContentSha256 'BeesServer~'
+    $serverSourceHash=Get-BeesServerRuntimeSourceHash
     $node=Resolve-Node $Config
     $online=Test-Control $base $AdminToken
 
