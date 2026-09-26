@@ -333,6 +333,8 @@ class WanActorBroker:
         }
         self._trajectory_batches: queue.Queue = queue.Queue(maxsize=options.max_queued_batches)
         self._cohort_blocked_actors = set()
+        self._cohort_pending_batches: List[Mapping[str, Any]] = []
+        self._cohort_pending_generation: Optional[Tuple[Any, ...]] = None
         self._accepted_batch_ids: Dict[int, OrderedDict] = {}
         self._server: Optional[http.server.ThreadingHTTPServer] = None
         self._server_thread: Optional[threading.Thread] = None
@@ -665,6 +667,8 @@ class WanActorBroker:
 
     def _discard_queued_batches_locked(self) -> None:
         self._cohort_blocked_actors.clear()
+        self._cohort_pending_batches.clear()
+        self._cohort_pending_generation = None
         while True:
             try:
                 self._trajectory_batches.get_nowait()
@@ -847,30 +851,33 @@ class WanActorBroker:
         """
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
-            self._cohort_blocked_actors.clear()
             required = min(self.options.min_actors, len(self._registrations))
             generation = (
                 self._control_epoch,
                 tuple(sorted(self._policy_versions_locked().items())),
             )
+            if self._cohort_pending_generation != generation:
+                self._cohort_pending_batches.clear()
+                self._cohort_blocked_actors.clear()
+                self._cohort_pending_generation = generation
+            elif not self._cohort_pending_batches:
+                # A successful previous return has now been consumed by the learner.
+                self._cohort_blocked_actors.clear()
+            selected: List[Mapping[str, Any]] = list(self._cohort_pending_batches)
+            actors = {int(batch["actor_id"]) for batch in selected}
         if required <= 0:
             raise RuntimeError("WAN actor cohort requested before any actor registered")
-
-        selected: List[Mapping[str, Any]] = []
-        actors = set()
         while len(actors) < required:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                with self._condition:
-                    self._cohort_blocked_actors.clear()
+                # Keep already accepted batches blocked and pending across retries. Dropping
+                # them here would silently discard on-policy experience after acknowledging it.
                 raise TimeoutError(
                     f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
                 )
             try:
                 batch = self._trajectory_batches.get(timeout=remaining)
             except queue.Empty as exc:
-                with self._condition:
-                    self._cohort_blocked_actors.clear()
                 raise TimeoutError(
                     f"WAN actor cohort timed out with {len(actors)}/{required} distinct actors."
                 ) from exc
@@ -885,8 +892,10 @@ class WanActorBroker:
                     # Start a fresh cohort so the learner never mixes epochs.
                     selected.clear()
                     actors.clear()
+                    self._cohort_pending_batches.clear()
                     self._cohort_blocked_actors.clear()
                     generation = current_generation
+                    self._cohort_pending_generation = generation
                     required = min(self.options.min_actors, len(self._registrations))
                 if not self._batch_is_current(batch):
                     continue
@@ -896,10 +905,12 @@ class WanActorBroker:
                 # Admission normally limits each actor to one queued batch, but retaining a
                 # duplicate here protects trajectories accepted by a request racing that limit.
                 selected.append(batch)
+                self._cohort_pending_batches.append(batch)
                 if actor_id not in actors:
                     actors.add(actor_id)
                     self._cohort_blocked_actors.add(actor_id)
                 if len(actors) >= required:
+                    self._cohort_pending_batches.clear()
                     return tuple(selected)
 
         return tuple(selected)
