@@ -112,6 +112,7 @@ def build_checks(
                         node,
                         "--test",
                         str(server_root / "test" / "trainingControl.module.test.js"),
+                        str(server_root / "test" / "trainingEnvOptimizer.module.test.js"),
                     ),
                     cwd=server_root,
                 )
