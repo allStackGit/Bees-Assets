@@ -112,7 +112,7 @@ B:\Bees\Assets\TrainingHistory~\runs\<run-id>\
 
 The trailing `~` keeps the history outside Unity import while allowing Git to track it. Training logs are split into 48 MiB parts so individual tracked files remain below GitHub's per-file hard limit. Each snapshot contains a manifest with hashes and captured byte lengths.
 
-The archive command then creates a Git commit containing only that run-history path and pushes the current branch to `origin`. If the Git commit or push fails, `build` stops before compilation rather than silently proceeding with unprotected logs.
+The archive command then creates a Git commit containing only that run-history path and pushes the current branch to `origin`. Push uses a bounded retry/backoff budget so a transient network failure does not immediately abort an otherwise healthy build. The safety rule remains fail-closed: if the Git commit fails or the archive still cannot be pushed after the retry budget, `build` stops before compilation rather than silently proceeding with unprotected logs.
 
 During an incompatible cutover, dedicated trainers stop only after the replacement is fully staged. The central learner first requests a graceful ML-Agents interruption and remains leased as `stopping` while ML-Agents writes its final checkpoint, ONNX export, `timers.json`, and training status. Each trainer fully flushes its outgoing run-scoped logs to the learner before reporting `stopped`. After the new run is promoted, the old run is snapshotted again so the terminal log tail is committed as well. If central checkpoint finalization does not complete, the cutover fails closed: the old learner remains authoritative and is not force-killed.
 
