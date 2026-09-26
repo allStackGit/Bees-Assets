@@ -125,13 +125,15 @@ Publishing a build and activating it are separate operations.
 For a compatible release:
 
 1. The old release keeps training.
-2. Every active dedicated trainer downloads and verifies the new Unity build in the background.
-3. Remote supervisors also fetch the matching Python runtime, worker/WAN credentials, release metadata, and embedded tailnet helper over the existing private bootstrap channel.
-4. A trainer reports the release prepared only when its Unity artifact and required remote runtime are ready.
-5. Once all active trainers are prepared, the server rolls dedicated trainers one at a time.
-6. Trainers already moved to the pending release stay there while the remaining trainers update.
-7. The central learner is ordered after remote trainers.
-8. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied. After every required dedicated trainer has provided that healthy acknowledgement, the release becomes canonical.
+2. The server snapshots the currently active/recently leased dedicated trainers into a rollout barrier. After any explicit restart-recollection window closes, that compatible membership is frozen and can only shrink.
+3. Every trainer in that snapshot downloads and verifies the new Unity build and release-owned training runtime in the background.
+4. Remote supervisors also fetch worker/WAN credentials, release metadata, and the embedded tailnet helper over the existing private bootstrap channel.
+5. A trainer reports the release prepared only when its Unity artifact and required remote runtime are ready.
+6. Once all still-required trainers are prepared, the server rolls dedicated trainers one at a time.
+7. A required trainer whose dedicated control lease genuinely expires is removed from the compatible barrier. A late or returning trainer does not re-expand the in-flight barrier; it stays on the semantically compatible canonical build until promotion, then reconciles to the new canonical release.
+8. Trainers already moved to the pending release stay there while the remaining trainers update.
+9. The central learner is ordered after remote trainers.
+10. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied. After every remaining required dedicated trainer has provided that healthy acknowledgement, the release becomes canonical.
 
 For an incompatible release:
 
@@ -155,7 +157,7 @@ BeesServer dependency installation has its own SHA-256 stamp derived from both `
 
 If the control port is occupied by a server that was not launched/recorded by the Bees operator, the script refuses to kill it automatically. Stop that unmanaged server once and rerun the command; subsequent source refreshes can then be automatic.
 
-Managed-process ownership is never inferred from PID existence alone. BeesServer, the central learner, and the embedded tailnet gateway persist the process PID, exact process start time, and executable path. Automatic restart/stop re-reads the live process and requires all three values to match before terminating a process tree. A stale PID that has been reused by another process therefore fails closed instead of being killed. Legacy PID-only records are also fail-closed: if their recorded PID is still live, the operator refuses to terminate it automatically and requires that one legacy process to be stopped once before it is relaunched under identity-safe state.
+Managed-process ownership is never inferred from PID existence alone. BeesServer, the central learner, and the embedded tailnet gateway persist the process PID, exact process start time, and executable path. Automatic restart/stop first proves that all three persisted values still match the live process. Ownership is intentionally separate from desired executable/configuration identity: once the persisted identity proves the process is ours, a legitimate Node path, release-specific Python path, tailnet helper path, or command/config change may safely replace that owned process. A stale PID that has been reused by another process still fails closed and is never killed. Legacy PID-only records are also fail-closed: if their recorded PID is still live, the operator refuses to terminate it automatically and requires that one legacy process to be stopped once before it is relaunched under identity-safe state.
 
 ## Private remote workers
 
@@ -178,7 +180,7 @@ The learner gateway exposes only these private tailnet services:
 - WAN rollout broker, normally 55051
 - bootstrap service, normally 7151
 
-The gateway process itself is reconciled idempotently. Re-running `start`, replacing the release/runtime ZIP, updating worker/WAN payload files, or changing release metadata does not restart a healthy gateway because the bootstrap handler reads those mutable payload paths per request. The gateway is restarted only when process-level configuration changes, such as its executable/helper identity, hostname, ports, distribution paths, or bootstrap credential identity. This keeps existing remote tailnet sessions alive across ordinary build/start operations.
+The gateway process itself is reconciled idempotently. Re-running `start`, replacing the release/runtime ZIP, updating worker/WAN payload files, or changing release metadata does not restart a healthy gateway because the bootstrap handler reads those mutable payload paths per request. The gateway is restarted only when process-level configuration changes, such as its executable/helper identity, hostname, ports, distribution paths, or bootstrap credential identity. This keeps existing remote tailnet sessions alive across ordinary build/start operations. When the persisted gateway process is already live, `start` also reuses that authenticated tsnet identity instead of starting a second one-shot `auth` process against the same state directory.
 
 The bootstrap endpoint requires its own bearer token. It serves the current remote Python runtime, worker token, WAN token, release metadata, and versioned Windows/Linux tailnet helper. It never serves the admin token.
 
