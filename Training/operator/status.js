@@ -10,7 +10,7 @@ const {
     sleep,
 } = require('./common');
 
-function listLogFiles(root, recursive, limit = 4000) {
+function listLogFiles(root, recursive, limit = Number.POSITIVE_INFINITY) {
     if (!fs.existsSync(root)) return [];
     const found = [];
     const queue = [root];
@@ -295,6 +295,14 @@ async function getStatusFrameLines(config, adminToken) {
                 HWin: episodes && metrics.human_win_pct != null ? number(metrics.human_win_pct, 1, '%') : '-',
                 Draw: episodes && metrics.draw_pct != null ? number(metrics.draw_pct, 1, '%') : '-',
                 Dur: episodes && metrics.avg_duration_s != null ? number(metrics.avg_duration_s, 1, 's') : '-',
+                'BHit/Sh': episodes && metrics.bee_hits_per_shot != null ? number(metrics.bee_hits_per_shot, 3) : '-',
+                'HHit/Sh': episodes && metrics.human_hits_per_shot != null ? number(metrics.human_hits_per_shot, 3) : '-',
+                BAim: episodes && metrics.bee_aim_error_deg != null ? number(metrics.bee_aim_error_deg, 1, 'deg') : '-',
+                HAim: episodes && metrics.human_aim_error_deg != null ? number(metrics.human_aim_error_deg, 1, 'deg') : '-',
+                'B<5': episodes && metrics.bee_aim_within_5_pct != null ? number(metrics.bee_aim_within_5_pct, 1, '%') : '-',
+                'H<5': episodes && metrics.human_aim_within_5_pct != null ? number(metrics.human_aim_within_5_pct, 1, '%') : '-',
+                BAligned: episodes && metrics.bee_turret_aligned_pct != null ? number(metrics.bee_turret_aligned_pct, 1, '%') : '-',
+                HAligned: episodes && metrics.human_turret_aligned_pct != null ? number(metrics.human_turret_aligned_pct, 1, '%') : '-',
                 Error: String(record.last_error || ''),
             };
         });
@@ -303,7 +311,8 @@ async function getStatusFrameLines(config, adminToken) {
             lines.push(...table(rows, [
                 'Trainer', 'Role', 'Platform', 'State', 'Envs', 'OptExp/s',
                 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
-                'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'Error',
+                'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
+                'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
             ]));
         } else {
             lines.push('No managed trainers/gameplay builds have checked in.');
