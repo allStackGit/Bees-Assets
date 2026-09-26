@@ -487,6 +487,19 @@ function Start-TailnetGatewayIfNeeded($Config){
     if(Test-Path -LiteralPath $TailnetGatewayStatePath){
         try{$gatewayState=Get-Content -LiteralPath $TailnetGatewayStatePath -Raw|ConvertFrom-Json}catch{$gatewayState=$null}
     }
+    if($null -ne $gatewayState -and -not(Test-ManagedProcessIdentity $gatewayState)){
+        $launchStatus=[string](Get-ObjectPropertyValue $gatewayState 'status')
+        $ownerToken=[string](Get-ObjectPropertyValue $gatewayState 'owner_token')
+        if($launchStatus -eq 'launching' -and $ownerToken){
+            $recovered=Find-ManagedProcessByOwnerToken $bridge $ownerToken 'embedded tailnet gateway'
+            if($null -ne $recovered){
+                $gatewayState=Add-ManagedIdentityToState $gatewayState $recovered 'active'
+                Write-AtomicJsonFile $TailnetGatewayStatePath $gatewayState
+                Write-AtomicPidFile $TailnetGatewayPidPath ([int]$recovered.pid)
+                Write-Host "Recovered embedded tailnet gateway ownership after interrupted launch (PID $($recovered.pid))."
+            }
+        }
+    }
     if($null -ne $gatewayState){
         if(Test-ManagedProcessIdentity $gatewayState){
             $recordedConfigHash=[string](Get-ObjectPropertyValue $gatewayState 'config_hash')
@@ -516,9 +529,22 @@ function Start-TailnetGatewayIfNeeded($Config){
     }
 
     Ensure-Directory (Split-Path -Parent $TailnetGatewayLogPath)
+    $gatewayOwnerToken=[Guid]::NewGuid().ToString('N')
+    $launchArgList=@($argList + @('--owner-token',$gatewayOwnerToken))
+    $launchIntent=[pscustomobject]@{
+        schema_version=3
+        status='launching'
+        owner_token=$gatewayOwnerToken
+        executable_path=[IO.Path]::GetFullPath($bridge)
+        config_hash=$gatewayConfigHash
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    }
+    Write-AtomicJsonFile $TailnetGatewayStatePath $launchIntent
+    Remove-Item -LiteralPath $TailnetGatewayPidPath -Force -ErrorAction SilentlyContinue
+
     $startArgs=@{
         FilePath=$bridge
-        ArgumentList=$argList
+        ArgumentList=$launchArgList
         WorkingDirectory=$AssetsRoot
         RedirectStandardOutput=$TailnetGatewayLogPath
         RedirectStandardError=$TailnetGatewayErrPath
@@ -539,15 +565,9 @@ function Start-TailnetGatewayIfNeeded($Config){
         try{$p.Kill()}catch{}
         throw 'Could not establish the embedded tailnet gateway process identity after launch.'
     }
-    $p.Id | Set-Content -LiteralPath $TailnetGatewayPidPath -NoNewline -Encoding ASCII
-    [pscustomobject]@{
-        schema_version=2
-        pid=[int]$gatewayIdentity.pid
-        process_start_utc=[string]$gatewayIdentity.process_start_utc
-        executable_path=[string]$gatewayIdentity.executable_path
-        config_hash=$gatewayConfigHash
-        started_utc=[DateTime]::UtcNow.ToString('o')
-    }|ConvertTo-Json|Set-Content -LiteralPath $TailnetGatewayStatePath -Encoding UTF8
+    $activeGatewayState=Add-ManagedIdentityToState $launchIntent $gatewayIdentity 'active'
+    Write-AtomicJsonFile $TailnetGatewayStatePath $activeGatewayState
+    Write-AtomicPidFile $TailnetGatewayPidPath ([int]$gatewayIdentity.pid)
     $tailnetIp=(Get-Content -LiteralPath $TailnetAddressPath -Raw).Trim()
     Write-Host ("Embedded tailnet gateway online at {0}: control={1} broker={2} bootstrap={3} (PID {4})." -f $tailnetIp,$controlPort,$brokerPort,$bootstrapPort,$p.Id)
 }
