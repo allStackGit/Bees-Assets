@@ -32,18 +32,12 @@ const {
     pruneReleaseTrainingRuntimes,
 } = require('./runtime');
 
-function newCentralLearnerLaunchCommand(config, learnerPython, unity, runtimeRoot) {
+function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
     const service = path.join(runtimeRoot, 'bees_continual_elastic_wan_service.py');
     const trainerConfig = path.join(runtimeRoot, 'rl_1v1_config.yaml');
     const continualConfig = path.join(runtimeRoot, 'continual_learning_config.json');
-    for (const required of [learnerPython, service, trainerConfig, continualConfig]) {
-        if (!exists(required)) throw new Error('Central release runtime is missing: ' + required);
-    }
-
     const telemetry = path.join(paths.trainingRoot, 'Telemetry');
     const models = path.join(paths.trainingRoot, 'Models');
-    ensureDir(telemetry);
-    ensureDir(models);
 
     // Keep every argv item separate. No shell/string reparse is permitted in this path.
     return [
@@ -69,6 +63,27 @@ function newCentralLearnerLaunchCommand(config, learnerPython, unity, runtimeRoo
         '--bees-wan-broker-port', String(config.brokerPort),
         '--bees-wan-auth-token-file', paths.wanTokenPath,
     ];
+}
+
+function newCentralLearnerLaunchCommand(config, learnerPython, unity, runtimeRoot) {
+    const argv = buildCentralLearnerArgv(
+        config,
+        learnerPython,
+        unity,
+        runtimeRoot,
+    );
+    const required = [
+        argv[0],
+        path.join(runtimeRoot, 'bees_continual_elastic_wan_service.py'),
+        path.join(runtimeRoot, 'rl_1v1_config.yaml'),
+        path.join(runtimeRoot, 'continual_learning_config.json'),
+    ];
+    for (const item of required) {
+        if (!exists(item)) throw new Error('Central release runtime is missing: ' + item);
+    }
+    ensureDir(path.join(paths.trainingRoot, 'Telemetry'));
+    ensureDir(path.join(paths.trainingRoot, 'Models'));
+    return argv;
 }
 
 function prepareCentralReleaseRuntime(config, bootstrapPython, unity, release) {
@@ -413,7 +428,7 @@ async function startCentralAgentIfNeeded(
     ];
 
     const launchIntent = {
-        schema_version: 5,
+        schema_version: 4,
         status: 'launching',
         owner_token: ownerToken,
         executable_path: path.resolve(bootstrapPython),
@@ -479,6 +494,7 @@ async function startCentralAgentIfNeeded(
 
 module.exports = {
     assertCentralAgentCheckpointSafe,
+    buildCentralLearnerArgv,
     getCentralFallbackLaunchCommand,
     getRunningCentralAgentPid,
     newCentralLearnerLaunchCommand,
