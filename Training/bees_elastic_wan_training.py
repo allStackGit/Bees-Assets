@@ -443,6 +443,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "actor_count": self.options.max_actors,
             "envs_per_actor": MAX_ENVS_PER_ACTOR,
             "min_actors": self.options.min_actors,
+            "actor_lease_seconds": float(self.options.actor_lease_seconds),
             "run_id": str(self.run_options.checkpoint_settings.run_id),
             "release_identity": dict(self.release_identity),
             "run_options": self.run_options,
@@ -577,6 +578,9 @@ class ElasticWanBroker(base.WanActorBroker):
 
             for actor_id, record in tuple(self._registrations.items()):
                 if record.get("actor_key") == actor_key:
+                    if record.get("actor_instance_id") == actor_instance_id:
+                        record["last_seen"] = now
+                        return int(actor_id)
                     self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
                     self._claims[actor_key] = {
                         "actor_id": int(actor_id),
