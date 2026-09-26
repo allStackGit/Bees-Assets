@@ -595,7 +595,11 @@ class TrainingLogUploader:
         if not run_root.is_dir():
             return False
         for log_path in sorted(run_root.rglob("*")):
-            if not log_path.is_file() or log_path.suffix.lower() not in (".log", ".txt", ".json"):
+            if (
+                not log_path.is_file()
+                or log_path.is_symlink()
+                or log_path.suffix.lower() not in (".log", ".txt", ".json")
+            ):
                 continue
             try:
                 size = log_path.stat().st_size
