@@ -78,6 +78,19 @@ def _python_suites(training_root: Path, full_python: bool) -> tuple[str, ...]:
     )
 
 
+def _operator_js_files(training_root: Path) -> tuple[Path, ...]:
+    entrypoint = training_root / "bees_operator.js"
+    operator_root = training_root / "operator"
+    if not entrypoint.is_file():
+        raise ValueError(f"required Node operator entrypoint is missing: {entrypoint}")
+    if not operator_root.is_dir():
+        raise ValueError(f"required Node operator module directory is missing: {operator_root}")
+    modules = tuple(sorted(operator_root.glob("*.js")))
+    if not modules:
+        raise ValueError(f"Node operator module directory contains no JavaScript files: {operator_root}")
+    return (entrypoint, *modules)
+
+
 def build_checks(
     *,
     bees_root: Path,
@@ -106,8 +119,17 @@ def build_checks(
         )
 
     if not skip_node:
+        operator_js_files = _operator_js_files(training_root)
         node = shutil.which("node")
         if not node:
+            checks.append(
+                Check(
+                    name="node:operator-syntax",
+                    command=(),
+                    cwd=training_root,
+                    required=True,
+                )
+            )
             checks.append(
                 Check(
                     name="node:training-control",
@@ -117,6 +139,14 @@ def build_checks(
                 )
             )
         else:
+            for operator_file in operator_js_files:
+                checks.append(
+                    Check(
+                        name=f"node:operator-syntax:{operator_file.relative_to(training_root)}",
+                        command=(node, "--check", str(operator_file)),
+                        cwd=training_root,
+                    )
+                )
             checks.append(
                 Check(
                     name="node:training-control",
