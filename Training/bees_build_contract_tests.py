@@ -335,6 +335,21 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertNotIn("$cap.current_envs", block)
         self.assertNotIn("$opt.measured_sps", block)
 
+    def test_live_gateway_reuses_tailnet_identity_without_duplicate_auth(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Ensure-TailnetIdentity")
+        end = source.index("function Start-TailnetGatewayIfNeeded", start)
+        block = source[start:end]
+
+        self.assertIn("Test-ManagedProcessIdentity $gatewayState", block)
+        self.assertIn("reusing the live gateway state", block)
+        self.assertIn("Refusing to start a second tsnet server", block)
+        reuse = block.index("reusing the live gateway state")
+        authenticate = block.index(
+            "Invoke-Checked $bridge @('auth','--state',$state"
+        )
+        self.assertLess(reuse, authenticate)
+
     def test_idempotent_start_keeps_healthy_tailnet_gateway_running(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Start-TailnetGatewayIfNeeded")
@@ -360,6 +375,34 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "'embedded tailnet gateway'"
         )
         self.assertLess(keep, stop)
+
+    def test_managed_process_ownership_is_distinct_from_desired_executable(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Stop-ManagedProcessTree")
+        end = source.index("function Get-RunningCentralAgentPid", start)
+        stop_block = source[start:end]
+
+        self.assertIn(
+            "if(-not(Test-ManagedProcessIdentity $State)){",
+            stop_block,
+        )
+        self.assertIn(
+            "desired executable changed; safely replacing verified owned process",
+            stop_block,
+        )
+        self.assertNotIn(
+            "if(-not(Test-ManagedProcessIdentity $State $ExpectedExecutable)){",
+            stop_block,
+        )
+
+        central_start = source.index("function Start-CentralAgentIfNeeded")
+        central_end = source.index("function Get-EnvironmentArgs", central_start)
+        central = source[central_start:central_end]
+        self.assertIn("if(Test-ManagedProcessIdentity $existing){", central)
+        self.assertIn(
+            "(Test-ManagedProcessIdentity $existing $Python) -and",
+            central,
+        )
 
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
