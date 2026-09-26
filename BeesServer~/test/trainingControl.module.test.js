@@ -1755,7 +1755,7 @@ test('compatible remote failure grace survives training-control restart', () => 
     });
 });
 
-test('incompatible rollout never drops an expired required trainer', () => {
+test('incompatible rollout drops an expired remote after its fail-closed lease', () => {
     withTempDir(root => {
         let now = 1000;
         const store = new TrainingControlStore({
@@ -1793,6 +1793,8 @@ test('incompatible rollout never drops an expired required trainer', () => {
         }
         assert.equal(store.state.pending_release.phase, 'stopping');
 
+        // The remote disappears. The central learner remains fresh and finishes its
+        // authoritative checkpoint/stop acknowledgement before the remote lease expires.
         now = 9000;
         heartbeatDedicated(
             store,
@@ -1808,12 +1810,138 @@ test('incompatible rollout never drops an expired required trainer', () => {
         now = 11001;
         const desired = store.status().desired;
 
+        assert.equal(desired.pending_release, null);
+        assert.equal(desired.canonical_build_id, 'stale-incompatible-new');
+        assert.equal(desired.run_id, 'stale-incompatible-new-run');
+    });
+});
+
+test('incompatible rollout never bypasses an expired central learner', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'stale-central-old');
+        publishDedicatedBuild(store, root, 'stale-central-new');
+        store.stageRelease({
+            buildId: 'stale-central-old',
+            runId: 'stale-central-old-run',
+            compatibilityKey: 'e'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'stale-central-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'stale-central-new',
+            runId: 'stale-central-new-run',
+            compatibilityKey: 'f'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'stale-central-old',
+                oldSha,
+                { preparedBuildId: 'stale-central-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        now = 9000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'stale-central-old',
+            oldSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'stale-central-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 11001;
+        const desired = store.status().desired;
+
         assert.equal(desired.pending_release.phase, 'stopping');
         assert.deepEqual(
             desired.pending_release.required_trainers.map(item => item.trainer_id),
             ['remote-a', 'central-learner'],
         );
-        assert.equal(desired.canonical_build_id, 'stale-incompatible-old');
+        assert.equal(desired.canonical_build_id, 'stale-central-old');
+    });
+});
+
+test('expired incompatible remote that reconnects before promotion rejoins stop barrier', () => {
+    withTempDir(root => {
+        let now = 1000;
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+            leaseSeconds: 10,
+            now: () => now,
+        });
+        const oldSha = publishDedicatedBuild(store, root, 'rejoin-incompatible-old');
+        publishDedicatedBuild(store, root, 'rejoin-incompatible-new');
+        store.stageRelease({
+            buildId: 'rejoin-incompatible-old',
+            runId: 'rejoin-incompatible-old-run',
+            compatibilityKey: '1'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(store, trainerId, 'rejoin-incompatible-old', oldSha);
+        }
+        store.stageRelease({
+            buildId: 'rejoin-incompatible-new',
+            runId: 'rejoin-incompatible-new-run',
+            compatibilityKey: '2'.repeat(64),
+            incompatible: true,
+        });
+        for (const trainerId of ['remote-a', 'central-learner']) {
+            heartbeatDedicated(
+                store,
+                trainerId,
+                'rejoin-incompatible-old',
+                oldSha,
+                { preparedBuildId: 'rejoin-incompatible-new' },
+            );
+        }
+        assert.equal(store.state.pending_release.phase, 'stopping');
+
+        now = 11001;
+        let desired = store.status().desired;
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['central-learner'],
+        );
+
+        now = 12000;
+        heartbeatDedicated(
+            store,
+            'remote-a',
+            'rejoin-incompatible-old',
+            oldSha,
+            {
+                processState: 'running',
+                preparedBuildId: 'rejoin-incompatible-new',
+                appliedRevision: store.state.revision,
+            },
+        );
+        desired = store.status().desired;
+        assert.equal(desired.pending_release.phase, 'stopping');
+        assert.deepEqual(
+            desired.pending_release.required_trainers.map(item => item.trainer_id),
+            ['remote-a', 'central-learner'],
+        );
+        assert.equal(desired.canonical_build_id, 'rejoin-incompatible-old');
     });
 });
 
