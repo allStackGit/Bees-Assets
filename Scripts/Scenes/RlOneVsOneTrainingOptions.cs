@@ -27,6 +27,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string BeeShipTypesFlag = "--rl-bee-ship-types";
     internal const string HumanShipTypesFlag = "--rl-human-ship-types";
     internal const string MatchupModeFlag = "--rl-matchup-mode";
+    internal const string ValidationOnlyFlag = "--rl-validate-options-only";
 
     internal const float DefaultHealthRatio = 0.25f;
     internal const float DefaultMapSize = 30f;
@@ -166,6 +167,10 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadOption(argument, MatchupModeFlag, args, ref i, out value))
             {
                 options.MatchupMode = ParseMatchupMode(value);
+            }
+            else if (argument.Equals(ValidationOnlyFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                // Validation-only is an operator/preflight control flag, not an environment value.
             }
             else if (argument.StartsWith("--rl-", StringComparison.OrdinalIgnoreCase))
             {
