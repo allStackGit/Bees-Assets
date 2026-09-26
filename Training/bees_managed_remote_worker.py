@@ -734,6 +734,33 @@ class RuntimeUpdater:
         staged_build_id = str(release.get("build_id", ""))
         if not staged_build_id:
             raise ValueError("bootstrap release metadata has no build_id")
+
+        release_runtime = release.get("training_runtime")
+        if release_runtime is not None:
+            if not isinstance(release_runtime, Mapping):
+                raise ValueError("bootstrap release training_runtime metadata is invalid")
+            expected_runtime_sha = str(
+                release_runtime.get("archive_sha256", "")
+            ).strip().lower()
+            expected_runtime_version = str(
+                release_runtime.get("runtime_version", "")
+            ).strip().lower()
+            if (
+                len(expected_runtime_sha) != 64
+                or any(ch not in "0123456789abcdef" for ch in expected_runtime_sha)
+            ):
+                raise ValueError("bootstrap release training runtime SHA-256 is invalid")
+            if not _valid_runtime_version(expected_runtime_version):
+                raise ValueError("bootstrap release training runtime version is invalid")
+            if runtime_sha != expected_runtime_sha:
+                raise ValueError(
+                    "downloaded training runtime SHA-256 does not match release metadata"
+                )
+            if runtime_version != expected_runtime_version:
+                raise ValueError(
+                    "downloaded training runtime version does not match release metadata"
+                )
+
         bridge_path = Path(self.args.tailnet_bridge).expanduser().resolve()
         bridge_sha = hashlib.sha256(bridge_bytes).hexdigest()
         current_bridge_sha = _sha256_file(bridge_path) if bridge_path.is_file() else ""
