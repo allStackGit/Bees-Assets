@@ -1938,11 +1938,11 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                     $envDisplay="$($cap.current_envs)->$($opt.desired_envs)"
                 }
             }
-            $learnerSps='-'
+            $optimizerExperienceSps='-'
             if($opt -and $null -ne $opt.measured_sps){
-                $learnerSps=('{0:N0}'-f[double]$opt.measured_sps)
+                $optimizerExperienceSps=('{0:N0}'-f[double]$opt.measured_sps)
             }elseif($opt -and $null -ne $opt.baseline_sps){
-                $learnerSps=('{0:N0}'-f[double]$opt.baseline_sps)
+                $optimizerExperienceSps=('{0:N0}'-f[double]$opt.baseline_sps)
             }
             [pscustomobject]@{
                 Trainer=$_.trainer_id
@@ -1950,7 +1950,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 Platform=$_.platform
                 State=if($_.stale){'STALE'}else{$_.process_state}
                 Envs=$envDisplay
-                SPS=$learnerSps
+                'OptExp/s'=$optimizerExperienceSps
                 SentGiB=if($null -ne $sentBytes){'{0:N2}'-f([double]$sentBytes/1GB)}else{'-'}
                 RecvGiB=if($null -ne $receivedBytes){'{0:N2}'-f([double]$receivedBytes/1GB)}else{'-'}
                 'MiB/s'=if($null -ne $networkMibPerS){'{0:N2}'-f[double]$networkMibPerS}else{'-'}
@@ -1973,7 +1973,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
             }
         })
         if($rows.Count){
-            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,SPS,SentGiB,RecvGiB,'MiB/s',Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,'BHit/Sh','HHit/Sh',BAim,HAim,'B<5','H<5',Error -AutoSize|Out-String -Width 340).TrimEnd()
+            $table=($rows|Format-Table Trainer,Role,Platform,State,Envs,'OptExp/s',SentGiB,RecvGiB,'MiB/s',Opt,Build,Rev,Age,Timeout,BWin,HWin,Draw,Dur,'BHit/Sh','HHit/Sh',BAim,HAim,'B<5','H<5',Error -AutoSize|Out-String -Width 340).TrimEnd()
             if($table){
                 $lines += @($table -split "\r?\n")
             }
@@ -1992,7 +1992,8 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
 
         $l=Get-LocalLearnerStats
         $lines += ''
-        $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  AvgSPS={3}  LiveSPS={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
+        $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  LearnerAvgStep/s={3}  LearnerLiveStep/s={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
+        $lines += 'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
     } catch {
         $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
     }
