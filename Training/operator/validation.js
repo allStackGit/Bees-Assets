@@ -51,17 +51,28 @@ function extractZip(python, archive, destination) {
 }
 
 function spawnValidationProcess(executable, args, cwd) {
-    return spawn(executable, args.map(String), {
+    const child = spawn(executable, args.map(String), {
         cwd,
         windowsHide: true,
         detached: process.platform !== 'win32',
         stdio: 'ignore',
     });
+    child.on('error', error => {
+        child.spawnError = error;
+    });
+    return child;
+}
+
+function throwIfSpawnFailed(child, label) {
+    if (child && child.spawnError) {
+        throw new Error('Could not start ' + label + ': ' + child.spawnError.message);
+    }
 }
 
 async function waitForExitOrMarker(child, logPath, timeoutMs, marker) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+        throwIfSpawnFailed(child, 'RL environment validator');
         if (child.exitCode !== null || child.signalCode !== null) {
             return { exited: true, code: child.exitCode, logText: exists(logPath) ? readText(logPath) : '' };
         }
@@ -71,6 +82,7 @@ async function waitForExitOrMarker(child, logPath, timeoutMs, marker) {
         }
         await sleep(200);
     }
+    throwIfSpawnFailed(child, 'RL environment validator');
     return {
         exited: child.exitCode !== null || child.signalCode !== null,
         code: child.exitCode,
@@ -220,6 +232,7 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
             const deadline = Date.now() + 60000;
             let legacySucceeded = false;
             while (Date.now() < deadline) {
+                throwIfSpawnFailed(child, 'legacy RL environment validator');
                 const text = exists(legacyLog) ? readText(legacyLog) : '';
                 if (/Invalid RL training command-line configuration:/.test(text)) {
                     killProcessTree(child);
