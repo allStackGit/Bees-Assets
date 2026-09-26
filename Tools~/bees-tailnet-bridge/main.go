@@ -470,7 +470,11 @@ func withoutManagedOwnerToken(args []string) []string {
 }
 
 func runGatewaySupervisor(args []string) error {
+	ownerToken := managedFlagValue(args, "--owner-token")
 	childArgs := withoutManagedOwnerToken(args)
+	if strings.TrimSpace(ownerToken) != "" {
+		childArgs = append(childArgs, "--owner-token", ownerToken+".child")
+	}
 	healthFile := managedFlagValue(childArgs, "--health-file")
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
