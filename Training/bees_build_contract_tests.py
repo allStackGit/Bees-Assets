@@ -643,9 +643,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         prepare_end = source.index("function Get-BeesServerDependencyHash", prepare_start)
         prepare = source[prepare_start:prepare_end]
 
-        self.assertIn("Invoke-Checked $npm @('ci') $candidate", prepare)
-        self.assertIn("Invoke-Checked $Node @('--check'", prepare)
+        self.assertIn(
+            "Invoke-Checked $npm @('ci') $candidate | Out-Host",
+            prepare,
+        )
+        self.assertIn(
+            "Invoke-Checked $Node @('--check',(Join-Path $candidate $name)) "
+            "$candidate | Out-Host",
+            prepare,
+        )
         self.assertIn("runtime.loadLegacyRuntime()", prepare)
+        self.assertIn(") $candidate | Out-Host", prepare)
         self.assertIn(
             "Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node",
             prepare,
