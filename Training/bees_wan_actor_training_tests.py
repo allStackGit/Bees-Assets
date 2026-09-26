@@ -449,6 +449,21 @@ class BrokerInvariantTests(unittest.TestCase):
         with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
             self.broker.submit_trajectory_batch(payload)
 
+    def test_stale_generation_takes_precedence_over_duplicate_ack(self):
+        payload = self._payload(0, "agent_2-12")
+        payload["batch_id"] = "lookup-straddled-reset"
+        self.assertEqual(self.broker.submit_trajectory_batch(payload), 1)
+        self.broker.request_reset({"difficulty": 2})
+
+        # Model a duplicate lookup that captured its result just before reset invalidated
+        # the generation. A stale-generation retry must still be rejected.
+        with self.broker._condition:
+            self.broker._remember_accepted_batch_locked(
+                payload["actor_id"], payload["batch_id"], len(payload["trajectories"])
+            )
+        with self.assertRaisesRegex(wan.StaleActorStateError, "control epoch"):
+            self.broker.submit_trajectory_batch(payload)
+
     def test_behavior_spec_mismatch_between_actors_fails_closed(self):
         different = FakeBehaviorSpec()
         different.observation_specs = (FakeObservationSpec((5,)),)
