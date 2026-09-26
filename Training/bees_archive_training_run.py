@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
@@ -186,6 +187,35 @@ def _run_git(
     )
 
 
+def _push_with_retry(
+    assets_root: Path,
+    *,
+    git_executable: str,
+    attempts: int = 4,
+    sleeper=time.sleep,
+) -> None:
+    if attempts < 1:
+        raise ValueError("push attempts must be positive")
+    last_output = ""
+    for attempt in range(1, attempts + 1):
+        push = _run_git(
+            assets_root,
+            ["push", "origin", "HEAD"],
+            git_executable=git_executable,
+            check=False,
+        )
+        if push.returncode == 0:
+            return
+        last_output = push.stdout.strip()
+        if attempt < attempts:
+            sleeper(float(2 ** (attempt - 1)))
+    raise RuntimeError(
+        "training log commit was created locally but push to GitHub failed after "
+        f"{attempts} attempts; build is stopping so the archive is not silently "
+        f"left unprotected. {last_output}"
+    )
+
+
 def commit_and_push(
     assets_root: Path,
     history_root: Path,
@@ -216,17 +246,10 @@ def commit_and_push(
     )
     if commit.returncode != 0:
         raise RuntimeError("training log git commit failed: " + commit.stdout.strip())
-    push = _run_git(
+    _push_with_retry(
         assets_root,
-        ["push", "origin", "HEAD"],
         git_executable=git_executable,
-        check=False,
     )
-    if push.returncode != 0:
-        raise RuntimeError(
-            "training log commit was created locally but push to GitHub failed; "
-            "build is stopping so the archive is not silently left unprotected. " + push.stdout.strip()
-        )
 
 
 def _parser() -> argparse.ArgumentParser:
