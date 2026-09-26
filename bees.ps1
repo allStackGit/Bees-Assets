@@ -1973,7 +1973,61 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
         $lines += "Build:  $($d.canonical_build_id)   Run: $($d.run_id)"
         $lines += "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
         if($d.pending_release){
-            $lines += "Pending release: build=$($d.pending_release.build_id) phase=$($d.pending_release.phase) incompatible=$($d.pending_release.incompatible)"
+            $pending=$d.pending_release
+            $lines += "Pending release: build=$($pending.build_id) phase=$($pending.phase) incompatible=$($pending.incompatible)"
+            $required=@(Get-ObjectPropertyValue $pending 'required_trainers')
+            $trainerRecords=@($s.trainers)
+            $blockers=@()
+            foreach($requiredTrainer in $required){
+                $requiredId=[string](Get-ObjectPropertyValue $requiredTrainer 'trainer_id')
+                $requiredPlatform=[string](Get-ObjectPropertyValue $requiredTrainer 'platform')
+                $record=@($trainerRecords|Where-Object{
+                    [string](Get-ObjectPropertyValue $_ 'trainer_id') -eq $requiredId
+                }|Select-Object -First 1)
+                if($record.Count -eq 0){
+                    $blockers += "$requiredId[$requiredPlatform]: missing/no heartbeat"
+                    continue
+                }
+                $r=$record[0]
+                $stale=[bool](Get-ObjectPropertyValue $r 'stale')
+                $age=Get-ObjectPropertyValue $r 'age_seconds'
+                $build=[string](Get-ObjectPropertyValue $r 'build_id')
+                $prepared=[string](Get-ObjectPropertyValue $r 'prepared_build_id')
+                $state=[string](Get-ObjectPropertyValue $r 'process_state')
+                $rev=Get-ObjectPropertyValue $r 'applied_revision'
+                $error=[string](Get-ObjectPropertyValue $r 'last_error')
+                $ready=($build -eq [string]$pending.build_id -or $prepared -eq [string]$pending.build_id)
+                if($pending.phase -eq 'preparing' -and -not $ready){
+                    $reason=if($stale){'STALE'}else{'not prepared'}
+                    $blockers += ("{0}[{1}]: {2} state={3} age={4:N1}s build={5} prepared={6} rev={7}{8}" -f
+                        $requiredId,$requiredPlatform,$reason,$state,[double]$age,
+                        $(if($build){$build}else{'-'}),
+                        $(if($prepared){$prepared}else{'-'}),
+                        $(if($null -ne $rev){$rev}else{'-'}),
+                        $(if($error){" error=$error"}else{''}))
+                }elseif($pending.phase -eq 'rolling' -and
+                        ($stale -or $build -ne [string]$pending.build_id -or $state -ne 'running' -or $error)){
+                    $blockers += ("{0}[{1}]: rollout state={2} age={3:N1}s build={4} prepared={5} rev={6}{7}" -f
+                        $requiredId,$requiredPlatform,$state,[double]$age,
+                        $(if($build){$build}else{'-'}),
+                        $(if($prepared){$prepared}else{'-'}),
+                        $(if($null -ne $rev){$rev}else{'-'}),
+                        $(if($error){" error=$error"}else{''}))
+                }elseif($pending.phase -eq 'stopping' -and
+                        ($stale -or $state -ne 'stopped')){
+                    $blockers += ("{0}[{1}]: stop state={2} age={3:N1}s build={4} rev={5}{6}" -f
+                        $requiredId,$requiredPlatform,$state,[double]$age,
+                        $(if($build){$build}else{'-'}),
+                        $(if($null -ne $rev){$rev}else{'-'}),
+                        $(if($error){" error=$error"}else{''}))
+                }
+            }
+            if($blockers.Count){
+                $lines += "Rollout blockers:"
+                $lines += @($blockers|ForEach-Object{"  $_"})
+            }else{
+                $lines += "Rollout blockers: none visible; waiting for the control state machine to advance."
+            }
         }
         $ea=@($d.environment_args)
         $lines += "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"
