@@ -997,6 +997,7 @@ class ActorSession:
                 # One actor generally emits one compact cohort batch. The 256-trajectory ceiling can
                 # represent 32 environments with up to eight policy agents each (e.g. 4v4) while the
                 # bounded queue still provides backpressure when Exeter is saturated.
+                discard_remaining = False
                 for start in range(0, len(trajectories), MAX_TRAJECTORIES_PER_UPLOAD):
                     payload = {
                         "session_id": self.session_id,
@@ -1006,13 +1007,32 @@ class ActorSession:
                         "trajectories": trajectories[start : start + MAX_TRAJECTORIES_PER_UPLOAD],
                     }
                     while not self.stop.is_set():
+                        if self._session_changed.is_set():
+                            discard_remaining = True
+                            break
+                        if self._stale.is_set():
+                            # A broker stale-actor response means this actor no longer owns the
+                            # lease. Do not keep retrying batches that cannot be accepted.
+                            discard_remaining = True
+                            break
+                        if self._state_changed.is_set():
+                            # A topology-only update keeps these completed trajectories valid.
+                            # Synchronize before retrying a full bounded queue; policy/control
+                            # changes make the captured batch stale and require discarding it.
+                            self._synchronize_state()
+                            if (
+                                payload["control_epoch"] != self.control_epoch
+                                or payload["policy_versions"] != self.policy_versions
+                            ):
+                                discard_remaining = True
+                                break
                         try:
                             self._upload_queue.put(payload, timeout=0.5)
                             break
                         except queue.Full:
                             self._raise_thread_error()
-                            if self._session_changed.is_set() or self._state_changed.is_set():
-                                break
+                    if discard_remaining:
+                        break
 
 
 def _parser() -> argparse.ArgumentParser:
