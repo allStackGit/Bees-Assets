@@ -198,6 +198,24 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
         self.assertNotIn("$m.bee_aim_samples", block)
         self.assertNotIn("$m.human_aim_samples", block)
+        self.assertIn(
+            "$cap=Get-ObjectPropertyValue $record 'worker_capacity'",
+            block,
+        )
+        self.assertIn(
+            "$opt=Get-ObjectPropertyValue $record 'env_optimizer'",
+            block,
+        )
+        self.assertIn(
+            "$currentEnvs=Get-ObjectPropertyValue $cap 'current_envs'",
+            block,
+        )
+        self.assertIn(
+            "$measuredSps=Get-ObjectPropertyValue $opt 'measured_sps'",
+            block,
+        )
+        self.assertNotIn("$cap.current_envs", block)
+        self.assertNotIn("$opt.measured_sps", block)
 
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
