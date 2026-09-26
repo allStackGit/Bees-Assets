@@ -122,7 +122,15 @@ namespace Assets.Scripts.Entities.Ships
 
         public void NearbyAsteroidDoubleCheck()
         {
-            NearbyAsteroids.RemoveAll(asteroid => asteroid == null || asteroid.IsDead);
+            for (int i = NearbyAsteroids.Count - 1; i >= 0; i--)
+            {
+                CollisionAsteroid asteroid = NearbyAsteroids[i];
+                if (asteroid == null || asteroid.IsDead)
+                {
+                    ClearTurretAsteroidTarget(asteroid);
+                    NearbyAsteroids.RemoveAt(i);
+                }
+            }
             if (NearbyAsteroids.Count > 0)
             {
                 // This timer runs every second while dynamic asteroids remain nearby. Invalidating
@@ -140,9 +148,8 @@ namespace Assets.Scripts.Entities.Ships
             }
         }
 
-        public void LeftNearbyAsteroid(CollisionAsteroid asteroid)
+        private void ClearTurretAsteroidTarget(CollisionAsteroid asteroid)
         {
-            NearbyAsteroids.Remove(asteroid);
             for (int i = 0; i < Turrets.Count; i++)
             {
                 var turret = Turrets[i];
@@ -153,6 +160,12 @@ namespace Assets.Scripts.Entities.Ships
                     turret.IsFiringAtAsteroid = false;
                 }
             }
+        }
+
+        public void LeftNearbyAsteroid(CollisionAsteroid asteroid)
+        {
+            NearbyAsteroids.Remove(asteroid);
+            ClearTurretAsteroidTarget(asteroid);
         }
 
         public void HandleSupersededPathfindingRequest()
