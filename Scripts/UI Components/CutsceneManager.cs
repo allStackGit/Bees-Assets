@@ -28,6 +28,9 @@ public class CutsceneManager : MonoBehaviour
 
     public void Setup(Action endDialogueAction)
     {
+        // Suppression belongs to the previous tutorial presentation; a new mission setup
+        // must restore normal dialogue unless that mission suppresses it again deliberately.
+        _dialoguePresentationSuppressed = false;
         if (endDialogueAction != null)
         {
             EndDialogueAction = endDialogueAction;
