@@ -590,6 +590,14 @@ class TrainingControlStore {
         }
 
         if (pending.phase === 'rolling') {
+            // Reaching rolling already proves every required trainer prepared this compatible
+            // release. If training is then disabled, no trainer should be required to restart just
+            // to acknowledge the new build before canonical promotion; doing so would strand the
+            // rollout because desired_mode is now stopped. Promote the fully staged compatible
+            // release and let stopped/rejoining trainers converge on that canonical build later.
+            if (!this.state.training_enabled && !pending.incompatible) {
+                return this._promotePendingRelease();
+            }
             if (pending.required_trainers.every(
                 spec => this._trainerHealthyOnPending(spec, pending))) {
                 return this._promotePendingRelease();
@@ -735,6 +743,7 @@ class TrainingControlStore {
             this.state.revision++;
             this._persist();
         }
+        this._advanceRollout();
         return this.desiredState();
     }
 
