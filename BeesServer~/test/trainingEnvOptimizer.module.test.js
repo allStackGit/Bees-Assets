@@ -19,12 +19,14 @@ function record(
         max = 64,
         processState = 'running',
         accepted = consumed,
+        lastError = '',
     } = {},
 ) {
     return {
         trainer_id: trainerId,
         role: 'dedicated',
         process_state: processState,
+        last_error: lastError,
         worker_capacity: {
             auto,
             current_envs: envs,
@@ -244,6 +246,73 @@ test('optimizer backs off a probe that never produces learner-consumed-step metr
 
     state = update(optimizer, 'remote-a', 8, 0, 1120, { max: 16 });
     assert.equal(state.probing, false);
+});
+
+test('optimizer holds a recovered worker before probing again after a reported failure', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        retestMs: 1000,
+        instabilityHoldMs: 10_000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        8,
+        0,
+        0,
+        { max: 16, lastError: 'Unity communicator stopped' },
+    );
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, false);
+    assert.equal(state.stability_hold_until_ms, 10_000);
+
+    state = update(optimizer, 'remote-a', 8, 500, 5_000, { max: 16 });
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.probing, false);
+
+    state = update(optimizer, 'remote-a', 8, 1000, 10_001, { max: 16 });
+    assert.equal(state.phase, 'warmup');
+    assert.match(state.decision, /collecting fresh baseline/);
+
+    state = update(optimizer, 'remote-a', 8, 1000, 10_002, { max: 16 });
+    assert.equal(state.phase, 'measuring');
+    state = update(optimizer, 'remote-a', 8, 2000, 11_002, { max: 16 });
+    assert.equal(state.baseline_envs, 8);
+    assert.equal(state.desired_envs, 9);
+    assert.equal(state.probing, true);
+});
+
+test('planned env-count transition does not create an instability hold', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16 });
+    let state = update(optimizer, 'remote-a', 8, 1000, 1000, { max: 16 });
+    assert.equal(state.desired_envs, 9);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        1000,
+        1001,
+        { max: 16, processState: 'stopped' },
+    );
+    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.stability_hold_until_ms, 0);
+
+    state = update(optimizer, 'remote-a', 9, 0, 1010, { max: 16 });
+    assert.equal(state.phase, 'warmup');
+    assert.equal(state.stability_hold_until_ms, 0);
 });
 
 test('optimizer resets safely when a worker advertises new env bounds', () => {
