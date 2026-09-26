@@ -667,7 +667,25 @@ namespace Assets.Scripts.Levels
                     _checkForMiniMapNavigation_hit = _minimapNavigationResults[_checkForMiniMapNavigation_j];
                     if (_checkForMiniMapNavigation_hit.gameObject.name == "Camera Collider")
                     {
-                        _minimapPoint = _checkForMiniMapNavigation_hit.gameObject.transform.InverseTransformPoint(_checkForMiniMapNavigation_hit.screenPosition);
+                        RectTransform cameraColliderRect =
+                            _checkForMiniMapNavigation_hit.gameObject.transform as RectTransform;
+                        Canvas minimapCanvas = cameraColliderRect != null
+                            ? cameraColliderRect.GetComponentInParent<Canvas>()
+                            : null;
+                        Camera canvasCamera = minimapCanvas != null &&
+                            minimapCanvas.renderMode != RenderMode.ScreenSpaceOverlay
+                            ? minimapCanvas.worldCamera
+                            : null;
+                        if (cameraColliderRect == null ||
+                            !RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                                cameraColliderRect,
+                                _checkForMiniMapNavigation_eventData.position,
+                                canvasCamera,
+                                out _minimapPoint))
+                        {
+                            continue;
+                        }
+
                         _viewportPoint = _minimapPoint + _checkForMiniMapNavigation_half;
                         _viewportWorldPoint = Stage.MiniMapCamera.ViewportToWorldPoint(_viewportPoint);
                         _localizedPoint = _viewportWorldPoint - Level.GetPosition();
