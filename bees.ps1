@@ -2143,6 +2143,76 @@ function Get-ObjectPropertyValue($Object,[string]$Name){
     return $property.Value
 }
 
+function Write-AtomicJsonFile([string]$Path,$Value){
+    $temp="$Path.new"
+    [IO.File]::WriteAllText(
+        $temp,
+        ($Value|ConvertTo-Json -Depth 10) + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $temp $Path
+}
+
+function Write-AtomicPidFile([string]$Path,[int]$Id){
+    $temp="$Path.new"
+    [IO.File]::WriteAllText(
+        $temp,
+        ([string]$Id),
+        (New-Object Text.ASCIIEncoding)
+    )
+    Install-AtomicFile $temp $Path
+}
+
+function Add-ManagedIdentityToState($State,$Identity,[string]$Status='active'){
+    $value=[ordered]@{}
+    if($null -ne $State){
+        foreach($property in $State.PSObject.Properties){
+            $value[$property.Name]=$property.Value
+        }
+    }
+    $value.pid=[int]$Identity.pid
+    $value.process_start_utc=[string]$Identity.process_start_utc
+    $value.executable_path=[string]$Identity.executable_path
+    $value.status=$Status
+    [pscustomobject]$value
+}
+
+function Find-ManagedProcessByOwnerToken(
+    [string]$ExpectedExecutable,
+    [string]$OwnerToken,
+    [string]$Label
+){
+    if([string]::IsNullOrWhiteSpace($OwnerToken)){ return $null }
+    $expected=[IO.Path]::GetFullPath($ExpectedExecutable)
+    $matches=@(
+        Get-CimInstance Win32_Process -ErrorAction Stop |
+            Where-Object {
+                $_.ExecutablePath -and
+                [string]::Equals(
+                    [IO.Path]::GetFullPath([string]$_.ExecutablePath),
+                    $expected,
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -and
+                ([string]$_.CommandLine).Contains($OwnerToken)
+            }
+    )
+    if($matches.Count -gt 1){
+        $ids=($matches|ForEach-Object{[string]$_.ProcessId}) -join ','
+        throw "Multiple $Label processes claim managed owner token $OwnerToken (PIDs $ids). Refusing ambiguous recovery."
+    }
+    if($matches.Count -eq 0){ return $null }
+    $identity=Get-ProcessIdentity ([int]$matches[0].ProcessId)
+    if($null -eq $identity -or -not [string]::Equals(
+        [string]$identity.executable_path,
+        $expected,
+        [StringComparison]::OrdinalIgnoreCase
+    )){
+        throw "Recovered $Label process does not match its persisted executable identity."
+    }
+    $identity
+}
+
+
 function Test-ManagedProcessIdentity($State,[string]$ExpectedExecutable=''){
     $pidValue=Get-ObjectPropertyValue $State 'pid'
     $processStartUtc=Get-ObjectPropertyValue $State 'process_start_utc'
