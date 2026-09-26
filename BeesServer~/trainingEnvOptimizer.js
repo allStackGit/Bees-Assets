@@ -368,21 +368,24 @@ class TrainingEnvOptimizer {
         const recentSessionFailure =
             sessionFailureAgeSeconds !== null &&
             sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
-        const workerUnstable =
-            (processState && processState !== 'running') ||
-            Boolean(reportedError) ||
-            recentSessionFailure;
+        const currentProcessFailure =
+            (processState && processState !== 'running') || Boolean(reportedError);
+        const workerUnstable = currentProcessFailure || recentSessionFailure;
         if (workerUnstable) {
-            const sessionFailureAgeMs = recentSessionFailure
+            const useSessionFailureTime = recentSessionFailure && !currentProcessFailure;
+            const sessionFailureAgeMs = useSessionFailureTime
                 ? sessionFailureAgeSeconds * 1000
                 : 0;
-            const instabilityTime = recentSessionFailure
+            const instabilityTime = useSessionFailureTime
                 ? timestamp - sessionFailureAgeMs
                 : timestamp;
-            const holdUntil = recentSessionFailure
+            const holdUntil = useSessionFailureTime
                 ? timestamp + Math.max(0, this.instabilityHoldMs - sessionFailureAgeMs)
                 : timestamp + this.instabilityHoldMs;
-            state.last_instability_ms = instabilityTime;
+            state.last_instability_ms = Math.max(
+                state.last_instability_ms ?? Number.NEGATIVE_INFINITY,
+                instabilityTime,
+            );
             state.instability_hold_until_ms = Math.max(
                 state.instability_hold_until_ms,
                 holdUntil,
