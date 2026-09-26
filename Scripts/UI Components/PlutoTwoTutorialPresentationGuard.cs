@@ -48,7 +48,7 @@ namespace Assets.Scripts.UIComponents
                 ConfigData.UserProgressData != null &&
                 ConfigData.Configuration != null &&
                 ConfigData.UserProgressData.GetCurrentLevel(
-                    ConfigData.Configuration.UserSide,
+                    ConfigData.Configuration.HumanSide,
                     ConfigData.GameModes.Campaign) == 1;
         }
 
