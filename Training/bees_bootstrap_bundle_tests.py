@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 import bees_bootstrap_bundle as bootstrap
@@ -48,6 +49,25 @@ class BootstrapBundleTests(unittest.TestCase):
         linux = root / "bridge-linux"
         linux.write_bytes(b"linux-bridge")
         return runtime, worker, wan, release, windows, linux, runtime_sha, version
+
+    def test_atomic_replace_retries_transient_windows_sharing_violation(self):
+        with (
+            mock.patch.object(
+                bootstrap.os,
+                "replace",
+                side_effect=[PermissionError("busy"), None],
+            ) as replace,
+            mock.patch.object(
+                bootstrap.time,
+                "monotonic",
+                side_effect=[0.0, 0.1],
+            ),
+            mock.patch.object(bootstrap.time, "sleep") as sleep,
+        ):
+            bootstrap._replace_with_retry(Path("source.tmp"), Path("bundle.zip"))
+
+        self.assertEqual(replace.call_count, 2)
+        sleep.assert_called_once_with(0.1)
 
     def test_bundle_contains_one_consistent_release_snapshot(self):
         with tempfile.TemporaryDirectory() as temp_dir:
