@@ -300,6 +300,21 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+    def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Wait-ReleaseRollout")
+        end = source.index("function Invoke-Build", start)
+        block = source[start:end]
+
+        self.assertIn("Waiting for release rollout: phase=", block)
+        self.assertIn("Release rollout complete: build=", block)
+        self.assertIn("A different release became pending while waiting", block)
+        self.assertIn("Release rollout ended without activating the expected identity", block)
+        self.assertIn("$trainerRecords=@($status.trainers)", block)
+        self.assertIn("$prepared=[string](Get-ObjectPropertyValue $r 'prepared_build_id')", block)
+        self.assertIn("$stale=[bool](Get-ObjectPropertyValue $r 'stale')", block)
+        self.assertIn("($now - $lastProgressAt).TotalSeconds -ge 10", block)
+
     def test_forced_new_run_waits_for_matching_compatible_pending_release(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         start = source.index("function Invoke-Start")
