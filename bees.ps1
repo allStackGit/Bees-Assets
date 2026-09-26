@@ -2180,15 +2180,31 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
     )
     try {
         $s=Invoke-ControlGet "$($Config.controlUrl)/v1/status" $AdminToken
-        $d=$s.desired
-        $lines += "Server: ONLINE   Training: $($d.training_enabled)   Revision: $($d.revision)"
-        $lines += "Build:  $($d.canonical_build_id)   Run: $($d.run_id)"
+    } catch {
+        $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
+        return $lines
+    }
+
+    try {
+        $d=Get-ObjectPropertyValue $s 'desired'
+        if($null -eq $d){ throw 'status payload has no desired state object' }
+        $trainingEnabled=Get-ObjectPropertyValue $d 'training_enabled'
+        $revision=Get-ObjectPropertyValue $d 'revision'
+        $canonicalBuildId=Get-ObjectPropertyValue $d 'canonical_build_id'
+        $runId=Get-ObjectPropertyValue $d 'run_id'
+        $pending=Get-ObjectPropertyValue $d 'pending_release'
+        $trainerValue=Get-ObjectPropertyValue $s 'trainers'
+        $trainerRecords=if($null -eq $trainerValue){@()}else{@($trainerValue)}
+
+        $lines += "Server: ONLINE   Training: $trainingEnabled   Revision: $revision"
+        $lines += "Build:  $canonicalBuildId   Run: $runId"
         $lines += "Cluster: local_envs=$($Config.numLocalEnvs) max_remote=$($Config.maxRemoteActors) broker_port=$($Config.brokerPort)"
-        if($d.pending_release){
-            $pending=$d.pending_release
-            $lines += "Pending release: build=$($pending.build_id) phase=$($pending.phase) incompatible=$($pending.incompatible)"
+        if($null -ne $pending){
+            $pendingBuildId=Get-ObjectPropertyValue $pending 'build_id'
+            $pendingPhase=Get-ObjectPropertyValue $pending 'phase'
+            $pendingIncompatible=Get-ObjectPropertyValue $pending 'incompatible'
+            $lines += "Pending release: build=$pendingBuildId phase=$pendingPhase incompatible=$pendingIncompatible"
             $required=@(Get-ObjectPropertyValue $pending 'required_trainers')
-            $trainerRecords=@($s.trainers)
             $blockers=@()
             foreach($requiredTrainer in $required){
                 $requiredId=[string](Get-ObjectPropertyValue $requiredTrainer 'trainer_id')
@@ -2208,9 +2224,9 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 $state=[string](Get-ObjectPropertyValue $r 'process_state')
                 $rev=Get-ObjectPropertyValue $r 'applied_revision'
                 $error=[string](Get-ObjectPropertyValue $r 'last_error')
-                $ready=($build -eq [string]$pending.build_id -or $prepared -eq [string]$pending.build_id)
+                $ready=($build -eq [string]$pendingBuildId -or $prepared -eq [string]$pendingBuildId)
                 $phaseRevision=Get-ObjectPropertyValue $pending 'phase_revision'
-                if($pending.phase -eq 'preparing' -and ($stale -or -not $ready)){
+                if($pendingPhase -eq 'preparing' -and ($stale -or -not $ready)){
                     $reason=if($stale){'STALE'}else{'not prepared'}
                     $blockers += ("{0}[{1}]: {2} state={3} age={4:N1}s build={5} prepared={6} rev={7}{8}" -f
                         $requiredId,$requiredPlatform,$reason,$state,[double]$age,
@@ -2218,8 +2234,8 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
                         $(if($error){" error=$error"}else{''}))
-                }elseif($pending.phase -eq 'rolling' -and
-                        ($stale -or $build -ne [string]$pending.build_id -or $state -ne 'running' -or
+                }elseif($pendingPhase -eq 'rolling' -and
+                        ($stale -or $build -ne [string]$pendingBuildId -or $state -ne 'running' -or
                          $error -or ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: rollout state={2} age={3:N1}s build={4} prepared={5} rev={6}{7}" -f
                         $requiredId,$requiredPlatform,$state,[double]$age,
@@ -2227,7 +2243,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                         $(if($prepared){$prepared}else{'-'}),
                         $(if($null -ne $rev){$rev}else{'-'}),
                         $(if($error){" error=$error"}else{''}))
-                }elseif($pending.phase -eq 'stopping' -and
+                }elseif($pendingPhase -eq 'stopping' -and
                         ($stale -or $state -ne 'stopped' -or
                          ($null -ne $phaseRevision -and [int]$rev -lt [int]$phaseRevision))){
                     $blockers += ("{0}[{1}]: stop state={2} age={3:N1}s build={4} rev={5}{6}" -f
@@ -2244,11 +2260,12 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
                 $lines += "Rollout blockers: none visible; waiting for the control state machine to advance."
             }
         }
-        $ea=@($d.environment_args)
+        $environmentArgs=Get-ObjectPropertyValue $d 'environment_args'
+        $ea=if($null -eq $environmentArgs){@()}else{@($environmentArgs)}
         $lines += "Env:    $(if($ea.Count){$ea -join ' '}else{'(none)'})"
         $lines += ''
 
-        $rows=@($s.trainers|ForEach-Object{
+        $rows=@($trainerRecords|ForEach-Object{
             $record=$_
             $m=Get-ObjectPropertyValue $record 'metrics'
             $cap=Get-ObjectPropertyValue $record 'worker_capacity'
@@ -2337,7 +2354,7 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
 
         $expected=@($Config.expectedTrainers)
         if($expected.Count){
-            $present=@($s.trainers|ForEach-Object{[string]$_.trainer_id})
+            $present=@($trainerRecords|ForEach-Object{[string](Get-ObjectPropertyValue $_ 'trainer_id')})
             $missing=@($expected|Where-Object{$present -notcontains [string]$_})
             if($missing.Count){
                 $lines += "WARNING: Expected trainers not connected: $($missing -join ', ')"
@@ -2349,7 +2366,9 @@ function Get-StatusFrameLines($Config,[string]$AdminToken){
         $lines += ("Learner logs: Step={0}  ELO={1}  MeanReward={2}  LearnerAvgStep/s={3}  LearnerLiveStep/s={4}" -f $(if($null -eq $l.Step){'-'}else{$l.Step}),$(if($null -eq $l.ELO){'-'}else{'{0:N1}'-f$l.ELO}),$(if($null -eq $l.MeanReward){'-'}else{'{0:N3}'-f$l.MeanReward}),$(if($null -eq $l.AverageStepsPerSecond){'-'}else{'{0:N1}'-f$l.AverageStepsPerSecond}),$(if($null -eq $l.LiveStepsPerSecond){'-'}else{'{0:N1}'-f$l.LiveStepsPerSecond}))
         $lines += 'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
     } catch {
-        $lines += "Server: OFFLINE/UNREACHABLE - $($_.Exception.Message)"
+        $lines += ''
+        $lines += "Dashboard: RENDER ERROR - $($_.Exception.GetType().Name): $($_.Exception.Message)"
+        $lines += 'Control endpoint: RESPONDED. The server is reachable; only this status snapshot failed to render completely.'
     }
     $lines
 }
