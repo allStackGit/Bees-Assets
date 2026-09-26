@@ -22,6 +22,11 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
+from bees_process_safety import (
+    configure_child_health,
+    popen_owned,
+    read_managed_health,
+)
 from bees_training_control import (
     ControlRejected,
     ControlUnavailable,
@@ -43,6 +48,7 @@ THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
+CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
@@ -572,15 +578,47 @@ class ManagedProcess:
         self.graceful_checkpoint = False
         self.graceful_remote_stop = False
         self.stop_request_file: Optional[Path] = None
+        self.health_file: Optional[Path] = None
+        self.health_token = ""
+        self.health_required = False
+        self.started_monotonic = 0.0
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def health(self) -> Optional[dict[str, Any]]:
+        if not self.health_required:
+            return {"state": "ready", "error": ""}
+        return read_managed_health(self.health_file, self.health_token)
+
+    def health_error(self) -> str:
+        if not self.health_required or not self.alive():
+            return ""
+        health = self.health()
+        if health is None:
+            if (
+                self.started_monotonic > 0.0
+                and time.monotonic() - self.started_monotonic
+                >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+            ):
+                return (
+                    "managed child has not published ready health within "
+                    f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
+                )
+            return ""
+        if health.get("state") == "error":
+            return str(health.get("error") or "managed child reported an internal failure")
+        return ""
 
     def state(self, role: str, offline: bool = False) -> str:
         if not self.alive():
             return "stopped"
         if role == "full-game" and offline:
             return "inference-offline"
+        if self.health_required:
+            health = self.health()
+            if health is None or health.get("state") != "ready":
+                return "starting"
         return "running"
 
     def start(
@@ -597,6 +635,7 @@ class ManagedProcess:
         worker_env_count: Optional[int] = None,
         graceful_checkpoint: bool = False,
         graceful_remote_stop: bool = False,
+        require_child_health: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
         self.stop(progress_callback=stop_progress)
@@ -615,6 +654,13 @@ class ManagedProcess:
         environment[BUILD_ID_ENV] = build_id
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
         environment["PYTHONUNBUFFERED"] = "1"
+        health_file = state_file.parent / "child-health.json"
+        health_token = ""
+        if require_child_health:
+            health_token = configure_child_health(environment, health_file)
+        else:
+            environment.pop("BEES_TRAINING_CHILD_HEALTH_FILE", None)
+            environment.pop("BEES_TRAINING_CHILD_HEALTH_TOKEN", None)
         throughput_metrics_file = state_file.parent / "worker-throughput.json"
         try:
             throughput_metrics_file.unlink()
@@ -641,7 +687,7 @@ class ManagedProcess:
             environment[MANAGED_STOP_FILE_ENV] = str(stop_request_file)
         else:
             environment.pop(MANAGED_STOP_FILE_ENV, None)
-        self.process = subprocess.Popen(
+        self.process = popen_owned(
             list(command),
             env=environment,
             start_new_session=(os.name != "nt"),
@@ -660,6 +706,10 @@ class ManagedProcess:
         self.stop_request_file = (
             stop_request_file if graceful_checkpoint or graceful_remote_stop else None
         )
+        self.health_file = health_file if require_child_health else None
+        self.health_token = health_token
+        self.health_required = bool(require_child_health)
+        self.started_monotonic = time.monotonic()
 
     def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
         process = self.process
@@ -1332,6 +1382,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
                             ),
+                            require_child_health=(args.role == "dedicated"),
                             stop_progress=stopping_keepalive,
                         )
                         _write_runtime_state(
@@ -1421,6 +1472,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     args.role == "dedicated"
                                     and args.trainer_id != "central-learner"
                                 ),
+                                require_child_health=(args.role == "dedicated"),
                                 stop_progress=stopping_keepalive,
                             )
                         if args.role == "dedicated":
