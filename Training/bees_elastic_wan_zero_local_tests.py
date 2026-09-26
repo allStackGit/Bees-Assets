@@ -182,6 +182,7 @@ class ZeroLocalBrokerTests(unittest.TestCase):
                 elastic.BUILD_ID_ENV: "zero-local-build",
                 elastic.RUN_ID_ENV: "zero-local-test",
                 elastic.COMPATIBILITY_KEY_ENV: "e" * 64,
+                elastic.ENVIRONMENT_ID_ENV: "f" * 64,
             },
             clear=False,
         ):
