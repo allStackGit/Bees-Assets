@@ -1287,6 +1287,23 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         )
 
 
+
+    def test_central_fallback_selection_fails_closed_without_control_state(self):
+        source = read_operator("central.js")
+        start = source.index("async function getCentralFallbackLaunchCommand")
+        end = source.index("function getRunningCentralAgentPid", start)
+        block = source[start:end]
+
+        self.assertIn("if (!exists(paths.adminTokenPath))", block)
+        self.assertIn("if (!admin)", block)
+        self.assertIn("status = await getStatus(config, admin)", block)
+        self.assertIn(
+            "Cannot choose a safe central fallback runtime because canonical training-control state is unavailable",
+            block,
+        )
+        self.assertNotIn("catch (_) {\n            canonicalBuild = ''", block)
+
+
     def test_operator_script_parses_when_powershell_is_available(self):
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
