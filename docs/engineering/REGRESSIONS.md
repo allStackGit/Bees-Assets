@@ -173,3 +173,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** live inference now uses `SpecialActionAllowsWeaponFire` before applying each weapon-fire action, keeping deployment semantics aligned with the trained policy.  
 **Verification:** both action dispatch paths were reviewed statically. No tests or gameplay were run.  
 **Invariant/knowledge:** training, evaluation, and production inference must interpret each action branch combination identically.
+
+### REG-018 — Discarded WAN batches remained acknowledged for retry
+**Area:** `Training/bees_wan_actor_training.py`, `Training/bees_wan_actor_training_tests.py`, WAN actor learner queue and epoch transitions  
+**Symptom:** an actor could believe a batch had been accepted after a policy/control change discarded that batch from the learner queue, silently losing completed on-policy experience when the initial HTTP response was lost and retried.  
+**Root cause:** the broker records `batch_id` in its accepted-batch deduplication map when queueing the batch. Generation changes drained the trajectory queue and cohort state but kept those acknowledgements. Duplicate detection ran before stale-epoch validation, so a retry returned success although the original batch was no longer available to the learner.  
+**Permanent protection:** `BrokerInvariantTests.test_discarded_batch_retry_is_rejected_as_stale` accepts a batch, resets control state, and retries the same payload; the broker must reject it as stale instead of acknowledging the dropped batch. `_discard_queued_batches_locked` now clears accepted-batch deduplication state with the generation-scoped queue/cohort state.  
+**Verification:** current implementation and regression were reviewed statically against the broker enqueue, generation invalidation, deduplication, and actor retry paths. The test was not executed; runtime validation remains pending.  
+**Invariant/knowledge:** a batch acknowledgement is valid only while that generation's queued/on-policy experience remains eligible for learner consumption. When policy/control changes invalidate queued batches, their deduplication acknowledgements must be invalidated too.
