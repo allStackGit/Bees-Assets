@@ -697,7 +697,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
         self.assertIn("$bootstrapBundle=Invoke-PythonJson $Python", block)
         self.assertIn("$BootstrapBundleScript", block)
-        self.assertIn("'--output',$BootstrapBundlePath", block)
+        self.assertIn("'--output',$bootstrapBundleCandidate", block)
         self.assertIn("'--runtime',$releaseRuntimeArchive", block)
         self.assertIn("'--release',$LatestReleasePath", block)
         self.assertIn("'--windows-bridge',$windowsBridge", block)
@@ -705,6 +705,36 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn(
             "Published bootstrap bundle build identity disagrees with release",
             block,
+        )
+        self.assertIn(
+            "$windowsLauncherCandidate=Join-Path $RuntimeRoot "
+            "'bees-remote-worker.candidate.cmd'",
+            block,
+        )
+        self.assertIn(
+            "$linuxLauncherCandidate=Join-Path $RuntimeRoot "
+            "'bees-remote-worker.candidate.sh'",
+            block,
+        )
+        windows_publish = block.index(
+            "Install-AtomicFile $windowsLauncherCandidate "
+            "(Join-Path $RemoteRoot 'bees-remote-worker.cmd')"
+        )
+        linux_publish = block.index(
+            "Install-AtomicFile $linuxLauncherCandidate "
+            "(Join-Path $RemoteRoot 'bees-remote-worker.sh')"
+        )
+        bundle_publish = block.index(
+            "Install-AtomicFile $bootstrapBundleCandidate $BootstrapBundlePath"
+        )
+        self.assertLess(windows_publish, bundle_publish)
+        self.assertLess(linux_publish, bundle_publish)
+
+        early_cleanup = block[: block.index("$windowsLauncherCandidate=")]
+        self.assertNotIn(
+            "Get-ChildItem -LiteralPath $RemoteRoot -Filter "
+            "'bees-remote-worker-*.cmd'",
+            early_cleanup,
         )
 
     def test_managed_process_ownership_is_distinct_from_desired_executable(self):
