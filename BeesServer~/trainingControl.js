@@ -282,11 +282,10 @@ class TrainingControlStore {
                 pending.environment_args = normalizeEnvironmentArgs(pending.environment_args);
             }
             if (!Array.isArray(pending.rolled_trainers)) {
+                // Schema-5 states written before explicit rolling acknowledgements did not
+                // persist this list. Replaying an already-completed trainer is safe; guessing
+                // an acknowledgement after restart is not.
                 pending.rolled_trainers = [];
-            } else {
-                pending.rolled_trainers = pending.rolled_trainers
-                    .filter(value => typeof value === 'string' && value)
-                    .slice(0, 1024);
             }
             const trainerIds = new Set();
             for (const trainer of pending.required_trainers) {
@@ -302,6 +301,17 @@ class TrainingControlStore {
                     throw new Error('training-control pending release trainer barrier is invalid');
                 }
                 trainerIds.add(trainer.trainer_id);
+            }
+            const rolledTrainerIds = new Set();
+            for (const trainerId of pending.rolled_trainers) {
+                if (typeof trainerId !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+                    !trainerIds.has(trainerId) ||
+                    rolledTrainerIds.has(trainerId)) {
+                    throw new Error(
+                        'training-control pending release rolling acknowledgements are invalid');
+                }
+                rolledTrainerIds.add(trainerId);
             }
         }
         if (!Array.isArray(parsed.known_dedicated_trainers)) {
@@ -608,6 +618,9 @@ class TrainingControlStore {
         }
         if (!changed) return false;
         pending.required_trainers = kept;
+        const keptIds = new Set(kept.map(spec => spec.trainer_id));
+        pending.rolled_trainers = (pending.rolled_trainers || [])
+            .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
         this._persist();
         return true;
@@ -650,6 +663,9 @@ class TrainingControlStore {
         }
         if (!changed) return false;
         pending.required_trainers = kept;
+        const keptIds = new Set(kept.map(spec => spec.trainer_id));
+        pending.rolled_trainers = (pending.rolled_trainers || [])
+            .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
         this._persist();
         return true;
