@@ -681,6 +681,10 @@ class WanActorBroker:
         self._cohort_blocked_actors.clear()
         self._cohort_pending_batches.clear()
         self._cohort_pending_generation = None
+        # Deduplication acknowledgements are valid only within the generation that
+        # accepted them. A retry from an invalidated generation must be rejected as
+        # stale instead of being acknowledged after its queued trajectory was dropped.
+        self._accepted_batch_ids.clear()
         while True:
             try:
                 self._trajectory_batches.get_nowait()
