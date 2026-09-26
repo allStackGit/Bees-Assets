@@ -781,17 +781,17 @@ internal sealed class RlOneVsOneAgent : Agent
 
         _lastRewardedEpisode = result.EpisodeNumber;
         int assignedTeam = _side == ConfigData.Configuration.BeeSide ? result.BeeTeamId : result.HumanTeamId;
-        if (_teamId != assignedTeam || !_hasParticipatedThisEpisode)
+        bool isAssignedParticipant = _teamId == assignedTeam && _hasParticipatedThisEpisode;
+        if (isAssignedParticipant)
         {
-            return;
+            AddReward(_side == ConfigData.Configuration.BeeSide
+                ? result.BeeTerminalReward + result.BeeTimeReward
+                : result.HumanTerminalReward + result.HumanTimeReward);
         }
 
-        AddReward(_side == ConfigData.Configuration.BeeSide
-            ? result.BeeTerminalReward + result.BeeTimeReward
-            : result.HumanTerminalReward + result.HumanTimeReward);
-
-        // Timeouts are explicit terminal losses in this environment, not external truncations.
-        // End normally so PPO does not bootstrap through a game-terminal state.
+        // Every team agent must close at the Unity arena boundary. Otherwise an inactive team
+        // carries its ML-Agents episode across the arena reset and joins unrelated battles into one
+        // trajectory. Only the team that acted receives the terminal reward above.
         EndEpisode();
     }
 
