@@ -275,7 +275,10 @@ class TrainingControlClientTests(unittest.TestCase):
                 environment_args=(),
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
-            self.assertTrue(callable(popen.call_args.kwargs["preexec_fn"]))
+            launched = popen.call_args.args[0]
+            self.assertIn("bees_process_safety.py", launched[1])
+            self.assertIn("--owned-child", launched)
+            self.assertEqual(launched[-2:], ["python", "worker.py"])
             environment = popen.call_args.kwargs["env"]
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
             self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
