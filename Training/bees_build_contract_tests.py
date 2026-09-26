@@ -338,6 +338,72 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
 
         self.assertEqual(declared, discovered)
 
+    def test_server_start_reconciles_owned_process_before_endpoint_health(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Start-BeesServerIfNeeded")
+        end = source.index("function Get-LatestRelease", start)
+        block = source[start:end]
+
+        load_state = block.index("if(Test-Path -LiteralPath $ServerStatePath)")
+        prove_owned = block.index("if(Test-ManagedProcessIdentity $managedState)")
+        probe_control = block.index("$online=Test-Control $base $AdminToken")
+        restart_owned = block.index("elseif($managedOwned)")
+        stop_owned = block.index(
+            "Stop-ManagedProcessTree $managedState $node 'BeesServer'"
+        )
+
+        self.assertLess(load_state, prove_owned)
+        self.assertLess(prove_owned, probe_control)
+        self.assertLess(probe_control, restart_owned)
+        self.assertLess(restart_owned, stop_owned)
+        self.assertIn(
+            "Managed BeesServer is not accepting the desired control endpoint/token",
+            block,
+        )
+        self.assertIn(
+            "The process is not the verified managed BeesServer, so it will not be killed automatically.",
+            block,
+        )
+        self.assertIn("config_hash=$serverConfigHash", block)
+        self.assertIn("schema_version=3", block)
+
+    def test_server_launch_config_identity_covers_control_tokens_and_runtime_inputs(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Get-BeesServerLaunchConfigHash")
+        end = source.index("function Start-BeesServerIfNeeded", start)
+        block = source[start:end]
+
+        for field in (
+            "control_url",
+            "control_host",
+            "control_port",
+            "gameplay_port",
+            "worker_token_sha256",
+            "admin_token_sha256",
+            "control_state",
+            "artifact_root",
+            "log_root",
+            "db_host",
+            "db_user",
+            "db_password_sha256",
+            "db_name",
+            "require_test_db",
+            "disable_background_jobs",
+        ):
+            self.assertIn(field, block)
+        self.assertIn("Get-StringSha256 $WorkerToken", block)
+        self.assertIn("Get-StringSha256 $AdminToken", block)
+        self.assertNotIn("worker_token=$WorkerToken", block)
+        self.assertNotIn("admin_token=$AdminToken", block)
+
+        server_start = source.index("function Start-BeesServerIfNeeded")
+        server_end = source.index("function Get-LatestRelease", server_start)
+        server = source[server_start:server_end]
+        self.assertIn(
+            "$managedConfigHash -eq $serverConfigHash",
+            server,
+        )
+
     def test_operator_reinstalls_server_dependencies_when_package_identity_changes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
