@@ -34,7 +34,7 @@ DEFAULT_ENV_ARGS = (
     "--rl-map-size=32",
     "--rl-episode-timeout=30",
     "--rl-health-ratio=0.05",
-    "--rl-matchup-mode=sampled",
+    "--rl-matchup-mode=fixed",
 )
 
 
