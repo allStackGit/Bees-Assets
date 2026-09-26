@@ -107,9 +107,23 @@ namespace Assets.Scripts.Levels
             return DIAGONAL_COST * Mathf.Min(xDistance, yDistance) + HORIZONTAL_COST * Mathf.Abs(xDistance - yDistance);
         }
 
+        private readonly struct HeapEntry
+        {
+            public readonly int Node;
+            public readonly int TotalCost;
+            public readonly int HeuristicCost;
+
+            public HeapEntry(int node, int totalCost, int heuristicCost)
+            {
+                Node = node;
+                TotalCost = totalCost;
+                HeuristicCost = heuristicCost;
+            }
+        }
+
         private class IntMinHeap
         {
-            private readonly List<int> _nodes = new List<int>();
+            private readonly List<HeapEntry> _nodes = new List<HeapEntry>();
             private int[] _totalCost;
             private int[] _heuristicCost;
 
@@ -129,25 +143,26 @@ namespace Assets.Scripts.Levels
 
             public void Push(int node)
             {
-                _nodes.Add(node);
+                HeapEntry entry = new HeapEntry(node, _totalCost[node], _heuristicCost[node]);
+                _nodes.Add(entry);
                 int index = _nodes.Count - 1;
                 while (index > 0)
                 {
                     int parentIndex = (index - 1) / 2;
-                    if (IsHigherPriority(_nodes[parentIndex], node))
+                    if (IsHigherPriority(_nodes[parentIndex], entry))
                     {
                         break;
                     }
                     _nodes[index] = _nodes[parentIndex];
                     index = parentIndex;
                 }
-                _nodes[index] = node;
+                _nodes[index] = entry;
             }
 
-            public int Pop()
+            public HeapEntry Pop()
             {
-                int result = _nodes[0];
-                int last = _nodes[_nodes.Count - 1];
+                HeapEntry result = _nodes[0];
+                HeapEntry last = _nodes[_nodes.Count - 1];
                 _nodes.RemoveAt(_nodes.Count - 1);
                 if (_nodes.Count == 0)
                 {
@@ -175,11 +190,11 @@ namespace Assets.Scripts.Levels
                 return result;
             }
 
-            private bool IsHigherPriority(int a, int b)
+            private bool IsHigherPriority(HeapEntry a, HeapEntry b)
             {
-                if (_totalCost[a] != _totalCost[b]) return _totalCost[a] < _totalCost[b];
-                if (_heuristicCost[a] != _heuristicCost[b]) return _heuristicCost[a] < _heuristicCost[b];
-                return a < b;
+                if (a.TotalCost != b.TotalCost) return a.TotalCost < b.TotalCost;
+                if (a.HeuristicCost != b.HeuristicCost) return a.HeuristicCost < b.HeuristicCost;
+                return a.Node < b.Node;
             }
         }
 
@@ -297,8 +312,10 @@ namespace Assets.Scripts.Levels
 
             while (open.Count > 0 && Totals[threadIndex].Elapsed.TotalSeconds < TimeLimit)
             {
-                int currentIndex = open.Pop();
-                if (closedStamp[currentIndex] == searchStamp)
+                HeapEntry entry = open.Pop();
+                int currentIndex = entry.Node;
+                if (entry.TotalCost != costs[currentIndex] || entry.HeuristicCost != tieBreakers[currentIndex] ||
+                    closedStamp[currentIndex] == searchStamp)
                 {
                     continue;
                 }
