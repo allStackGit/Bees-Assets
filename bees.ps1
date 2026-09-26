@@ -1091,7 +1091,7 @@ function Prepare-BeesServerRuntime([string]$Node){
     if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
         return [pscustomobject]@{
             source_hash=$sourceHash
-            dependency_hash=Get-BeesServerDependencyHash
+            dependency_hash=Get-BeesServerDependencyHash $runtimeRoot
             runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
         }
     }
@@ -1107,6 +1107,7 @@ function Prepare-BeesServerRuntime([string]$Node){
             Copy-Item -LiteralPath $source -Destination (Join-Path $candidate $name)
         }
 
+        $dependencyHash=Get-BeesServerDependencyHash $candidate
         $npm=Resolve-Npm
         Write-Host "Pre-staging BeesServer runtime $($sourceHash.Substring(0,12)) while the current server remains online..."
         Invoke-Checked $npm @('ci') $candidate
@@ -1135,7 +1136,7 @@ function Prepare-BeesServerRuntime([string]$Node){
         $ready=[ordered]@{
             schema_version=1
             source_hash=$sourceHash
-            dependency_hash=Get-BeesServerDependencyHash
+            dependency_hash=$dependencyHash
             prepared_utc=[DateTime]::UtcNow.ToString('o')
         }
         [IO.File]::WriteAllText(
@@ -1183,15 +1184,15 @@ function Prepare-BeesServerRuntime([string]$Node){
     }
     [pscustomobject]@{
         source_hash=$sourceHash
-        dependency_hash=Get-BeesServerDependencyHash
+        dependency_hash=Get-BeesServerDependencyHash $runtimeRoot
         runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
     }
 }
 
-function Get-BeesServerDependencyHash {
+function Get-BeesServerDependencyHash([string]$Root=$ServerRoot){
     Get-NamedFileSetSha256 @(
-        [pscustomobject]@{name='package.json';path=(Join-Path $ServerRoot 'package.json')},
-        [pscustomobject]@{name='package-lock.json';path=(Join-Path $ServerRoot 'package-lock.json')}
+        [pscustomobject]@{name='package.json';path=(Join-Path $Root 'package.json')},
+        [pscustomobject]@{name='package-lock.json';path=(Join-Path $Root 'package-lock.json')}
     )
 }
 
