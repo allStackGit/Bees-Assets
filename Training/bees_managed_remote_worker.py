@@ -41,6 +41,8 @@ REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
+MAX_RETAINED_RUNTIME_VERSIONS = 4
+MAX_RETAINED_VENV_VERSIONS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -546,6 +548,51 @@ def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
             shutil.rmtree(temporary, ignore_errors=True)
 
 
+def _direct_version_root(root: Path, path: Path) -> Optional[Path]:
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return None
+    if not relative.parts:
+        return None
+    return (root / relative.parts[0]).resolve()
+
+
+def _prune_version_directories(
+    root: Path,
+    *,
+    preserve_paths: Sequence[Path],
+    retain: int,
+) -> None:
+    if retain < 1 or not root.is_dir():
+        return
+    keep = set()
+    for path in preserve_paths:
+        candidate = _direct_version_root(root, Path(path))
+        if candidate is not None:
+            keep.add(candidate)
+
+    candidates = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name.endswith(".tmp"):
+            continue
+        try:
+            candidates.append((child.stat().st_mtime_ns, child.resolve()))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    keep.update(path for _, path in candidates[:retain])
+
+    for _, path in candidates:
+        if path in keep:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
 class RuntimeUpdater:
     def __init__(self, args: argparse.Namespace, install_root: Path) -> None:
         self.args = args
@@ -830,6 +877,16 @@ class RuntimeUpdater:
             self.ready_build_path,
             (staged_build_id + "\n").encode("ascii"),
             0o600,
+        )
+        _prune_version_directories(
+            self.versions_root,
+            preserve_paths=[Path(__file__).resolve().parent, runtime_root],
+            retain=MAX_RETAINED_RUNTIME_VERSIONS,
+        )
+        _prune_version_directories(
+            self.install_root / "VenvVersions",
+            preserve_paths=[Path(sys.executable).resolve(), staged_python],
+            retain=MAX_RETAINED_VENV_VERSIONS,
         )
         update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
         if not active_dependencies_ok:
