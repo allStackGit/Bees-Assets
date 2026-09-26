@@ -94,6 +94,11 @@ internal sealed class RlOneVsOneAgent : Agent
     private bool _hasBoundShip;
     private bool _hasParticipatedThisEpisode;
     private long _boundRuntimeShipId;
+    private Squad _boundSquad;
+    private bool _previousSquadUserControlled;
+    private bool _previousSquadHiveMindControlled;
+    private bool _previousCanAcceptUserInput;
+    private bool _hasStoredSquadControlState;
     private float _nextMiningActionTime;
     private float _nextHealingActionTime;
     private readonly Vector2[] _weaponAimDirections = new Vector2[MaxWeaponSlots];
@@ -855,11 +860,16 @@ internal sealed class RlOneVsOneAgent : Agent
         _nextMiningActionTime = 0f;
         _nextHealingActionTime = 0f;
         ResetWeaponAimDirections();
-        if (_ship.Squad != null)
+        _boundSquad = _ship.Squad;
+        if (_boundSquad != null)
         {
-            _ship.Squad.IsUserControlled = false;
-            _ship.Squad.IsHiveMindControlled = true;
-            _ship.Squad.CanAcceptUserInput = false;
+            _previousSquadUserControlled = _boundSquad.IsUserControlled;
+            _previousSquadHiveMindControlled = _boundSquad.IsHiveMindControlled;
+            _previousCanAcceptUserInput = _boundSquad.CanAcceptUserInput;
+            _hasStoredSquadControlState = true;
+            _boundSquad.IsUserControlled = false;
+            _boundSquad.IsHiveMindControlled = true;
+            _boundSquad.CanAcceptUserInput = false;
         }
 
         _ship.IsRlPolicyControlled = true;
@@ -962,6 +972,14 @@ internal sealed class RlOneVsOneAgent : Agent
                 _ship.Turrets[i].ClearRlControl();
             }
         }
+        if (_hasStoredSquadControlState && _boundSquad != null)
+        {
+            _boundSquad.IsUserControlled = _previousSquadUserControlled;
+            _boundSquad.IsHiveMindControlled = _previousSquadHiveMindControlled;
+            _boundSquad.CanAcceptUserInput = _previousCanAcceptUserInput;
+        }
+        _boundSquad = null;
+        _hasStoredSquadControlState = false;
         _ship = null;
     }
 
