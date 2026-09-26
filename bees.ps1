@@ -828,40 +828,6 @@ function Get-NamedFileSetSha256([object[]]$Entries){
     Get-StringSha256 ($ordered|ConvertTo-Json -Compress -Depth 3)
 }
 
-function Get-WorkingTreeContentSha256([string]$RelativePath){
-    $git=Resolve-Git
-    Push-Location $AssetsRoot
-    try {
-        $paths=@(& $git ls-files --cached --others --exclude-standard -- $RelativePath)
-        if($LASTEXITCODE -ne 0){ throw "git ls-files failed for $RelativePath." }
-    } finally {
-        Pop-Location
-    }
-    $manifest=@()
-    foreach($repoPath in @($paths|Sort-Object -Unique)){
-        if(-not $repoPath){ continue }
-        $normalized=([string]$repoPath).Replace('\','/')
-        $fullPath=Join-Path $AssetsRoot $normalized
-        if(Test-Path -LiteralPath $fullPath -PathType Leaf){
-            $info=Get-Item -LiteralPath $fullPath
-            $manifest += [pscustomobject]@{
-                name=$normalized
-                length=[int64]$info.Length
-                sha256=(Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
-            }
-        } else {
-            # A tracked file deleted from the working tree must also change the identity.
-            $manifest += [pscustomobject]@{
-                name=$normalized
-                length=[int64]-1
-                sha256='missing'
-            }
-        }
-    }
-    if($manifest.Count -eq 0){ throw "Working-tree content set is empty: $RelativePath" }
-    Get-StringSha256 (@($manifest|Sort-Object name)|ConvertTo-Json -Compress -Depth 3)
-}
-
 function Get-BeesServerRuntimeSourceHash {
     $entries=@(
         Get-ChildItem -LiteralPath $ServerRoot -Filter '*.js' -File |
