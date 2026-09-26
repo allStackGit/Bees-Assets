@@ -473,7 +473,7 @@ class TrainingControlClientTests(unittest.TestCase):
         fake.wait.return_value = 0
 
         with (
-            mock.patch.object(agent.os, "name", "nt"),
+            mock.patch.object(agent, "_is_windows", return_value=True),
             mock.patch.object(agent.subprocess, "run") as run,
         ):
             managed = agent.ManagedProcess()
