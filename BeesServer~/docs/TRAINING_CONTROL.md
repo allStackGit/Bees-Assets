@@ -23,6 +23,9 @@ cd B:\Bees
 .\Assets\bees.ps1 bundle -LogPercent 10
 ```
 
+`Assets\\bees.ps1` is deliberately only the PowerShell compatibility/UX shim. It validates the public PowerShell parameter surface, resolves the configured Node executable, forwards the command as structured argv to `Training/bees_operator.js`, and propagates its exit code. Distributed-training orchestration does **not** belong in PowerShell. The Node operator is split by responsibility under `Training/operator/` (`commands.js`, `build.js`, `server.js`, `central.js`, `tailnet.js`, `control.js`, `runtime.js`, `validation.js`, `status.js`, and `diagnostics.js`), while specialized Python helpers remain responsible for ML-Agents/runtime packaging/run-lifecycle work. Process launches use structured argv arrays rather than shell-quoted command strings.
+
+
 `server` starts or refreshes BeesServer in test mode on TCP `7146`. The Unity Editor connects to this endpoint at `seagrams7.softether.net:7146`, and test mode does not require Steam authentication. No Unity build is required.
 
 `build` always creates Windows and Linux RL builds. Add `-FullGame` to also create the managed Windows gameplay build. Build folders remain outside both Git and Unity import, for example:
@@ -262,13 +265,13 @@ Before a real training operation, the operator can run the focused distributed-t
 .\Assets\bees.ps1 qualify
 ```
 
-The gate runs the focused Python orchestration/runtime/bootstrap/control suites, the BeesServer training-control Node suite, the whole `bees.ps1` PowerShell parse contract when PowerShell is available, and the tailnet bridge Go tests when a Go toolchain is available. It is intended to catch operator syntax regressions, release/runtime identity drift, resumability errors, worker/control lease regressions, WAN slot/reconnect issues, bootstrap publication problems, and control-state rollout failures before they reach an expensive training run. Missing Node is a qualification failure because server control is mandatory; missing Go is reported as a skip because the operator can bootstrap the pinned portable Go toolchain during an actual bridge build.
+The gate runs the focused Python orchestration/runtime/bootstrap/control suites (including the thin-`bees.ps1`/Node-operator architecture and lifecycle contract suite), the BeesServer training-control Node suite, the PowerShell shim parse contract when PowerShell is available, and the tailnet bridge Go tests when a Go toolchain is available. It is intended to catch operator syntax regressions, release/runtime identity drift, resumability errors, worker/control lease regressions, WAN slot/reconnect issues, bootstrap publication problems, and control-state rollout failures before they reach an expensive training run. Missing Node is a qualification failure because server control is mandatory; missing Go is reported as a skip because the operator can bootstrap the pinned portable Go toolchain during an actual bridge build.
 
 The qualification command is observational with respect to the live cluster: it does not start BeesServer, stage a release, change training state, create a run, restart a trainer, archive a run, or publish a bootstrap generation. It reuses or prepares the managed learner Python dependency environment for the current training requirements so WAN/ML-Agents-adjacent tests run against the dependencies the training stack actually expects; that local dependency cache preparation is the only setup side effect.
 
 ## Lower-level control CLI
 
-`bees.ps1` is the normal operator interface. `trainingControlCli.js` remains available for diagnostics and unusual deployments.
+`bees.ps1` remains the normal operator interface, but it delegates implementation to `Training/bees_operator.js` and `Training/operator/*.js`. `trainingControlCli.js` remains available for diagnostics and unusual deployments.
 
 Artifact publication is still explicit:
 
