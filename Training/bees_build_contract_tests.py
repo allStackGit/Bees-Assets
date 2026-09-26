@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "Editor" / "BeesCommandLineBuild.cs"
 OPERATOR_SCRIPT = ROOT / "bees.ps1"
 REMOTE_BOOTSTRAP_SCRIPT = ROOT / "Training" / "bees_remote_bootstrap.ps1"
+TRAINING_WORKER_AGENT = ROOT / "Training" / "bees_training_worker_agent.py"
 
 
 class BeesCommandLineBuildSourceTests(unittest.TestCase):
@@ -74,6 +75,21 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         reset = block.index("Reset-BuildDirectory $win")
         self.assertLess(preflight, archive)
         self.assertLess(preflight, reset)
+
+    def test_remote_worker_reports_runtime_preparation_blocker(self):
+        source = TRAINING_WORKER_AGENT.read_text(encoding="utf-8")
+        self.assertIn(
+            "Unity artifact is prepared for ",
+            source,
+        )
+        self.assertIn(
+            "but the remote Python runtime ",
+            source,
+        )
+        self.assertIn(
+            "runtime_ready_build or '(none)'",
+            source,
+        )
 
     def test_operator_hashes_actual_server_and_training_runtime_bytes(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
