@@ -1780,6 +1780,45 @@ function Set-BeesServerLaunchEnvironment($Config,[string]$WorkerToken,[string]$A
     $env:BEES_TEST_TRAINING_CONTROL_ENABLED='1'
 }
 
+function Write-BeesServerManagedState(
+    $Identity,
+    [string]$SourceHash,
+    [string]$DependencyHash,
+    [string]$RuntimeRoot,
+    [string]$ConfigHash,
+    [string]$Status,
+    [string]$RollbackReason=''
+){
+    $state=[ordered]@{
+        schema_version=5
+        pid=[int]$Identity.pid
+        process_start_utc=[string]$Identity.process_start_utc
+        executable_path=[string]$Identity.executable_path
+        source_hash=$SourceHash
+        dependency_hash=$DependencyHash
+        runtime_root=[IO.Path]::GetFullPath($RuntimeRoot)
+        config_hash=$ConfigHash
+        status=$Status
+        started_utc=[DateTime]::UtcNow.ToString('o')
+    }
+    if($RollbackReason){$state.rollback_reason=$RollbackReason}
+    $temp="$ServerStatePath.new"
+    [IO.File]::WriteAllText(
+        $temp,
+        ($state|ConvertTo-Json -Depth 6) + [Environment]::NewLine,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    Install-AtomicFile $temp $ServerStatePath
+
+    $pidTemp="$ServerPidPath.new"
+    [IO.File]::WriteAllText(
+        $pidTemp,
+        ([string]$Identity.pid),
+        (New-Object Text.ASCIIEncoding)
+    )
+    Install-AtomicFile $pidTemp $ServerPidPath
+}
+
 function Start-BeesServerRuntimeProcess(
     $Config,
     [string]$Node,
@@ -1787,6 +1826,8 @@ function Start-BeesServerRuntimeProcess(
     [string]$WorkerToken,
     [string]$AdminToken,
     [string]$ServerLog,
+    $RuntimeIdentity,
+    [string]$RollbackReason='',
     [int]$TimeoutSeconds=30
 ){
     $base=[string]$Config.controlUrl
@@ -1827,9 +1868,12 @@ function Start-BeesServerRuntimeProcess(
         throw 'Could not establish the BeesServer candidate process identity after launch.'
     }
 
+    Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'starting' $RollbackReason
+
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while([DateTime]::UtcNow -lt $deadline){
         if(Test-Control $base $AdminToken){
+            Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'active' $RollbackReason
             return $identity
         }
         if(-not(Test-ManagedProcessIdentity $identity $Node)){
@@ -1920,8 +1964,6 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     if($managedOwned){
         Assert-CentralAgentCheckpointSafe
         $null=Stop-ManagedProcessTree $managedState $node 'BeesServer'
-        Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
 
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
         while([DateTime]::UtcNow -lt $deadline){
@@ -1943,8 +1985,14 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
     $previousRuntimeRoot=if($null -ne $previousState){([string](Get-ObjectPropertyValue $previousState 'runtime_root')).Trim()}else{''}
     $previousDependencyHash=if($null -ne $previousState){[string](Get-ObjectPropertyValue $previousState 'dependency_hash')}else{''}
 
+    $serverRuntimeIdentity=[pscustomobject]@{
+        source_hash=$serverSourceHash
+        dependency_hash=$serverDependencyHash
+        runtime_root=$serverRuntimeRoot
+        config_hash=$serverConfigHash
+    }
     try {
-        $serverIdentity=Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot $WorkerToken $AdminToken $serverLog
+        $serverIdentity=Start-BeesServerRuntimeProcess $Config $node $serverRuntimeRoot $WorkerToken $AdminToken $serverLog $serverRuntimeIdentity
     } catch {
         $replacementError=$_.Exception.Message
         $rollbackError=''
@@ -1957,20 +2005,13 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         ){
             Write-Warning "Replacement BeesServer failed after cutover; restoring previously verified runtime $previousSourceHash."
             try {
-                $rollbackIdentity=Start-BeesServerRuntimeProcess $Config $node $previousRuntimeRoot $WorkerToken $AdminToken $serverLog
-                [pscustomobject]@{
-                    schema_version=4
-                    pid=[int]$rollbackIdentity.pid
-                    process_start_utc=[string]$rollbackIdentity.process_start_utc
-                    executable_path=[string]$rollbackIdentity.executable_path
+                $rollbackRuntimeIdentity=[pscustomobject]@{
                     source_hash=$previousSourceHash
                     dependency_hash=$previousDependencyHash
                     runtime_root=[IO.Path]::GetFullPath($previousRuntimeRoot)
                     config_hash=$previousConfigHash
-                    started_utc=[DateTime]::UtcNow.ToString('o')
-                    rollback_reason=$replacementError
-                } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
-                $rollbackIdentity.pid | Set-Content -LiteralPath $ServerPidPath -NoNewline
+                }
+                $rollbackIdentity=Start-BeesServerRuntimeProcess $Config $node $previousRuntimeRoot $WorkerToken $AdminToken $serverLog $rollbackRuntimeIdentity $replacementError
                 Prune-BeesServerRuntimes @($previousRuntimeRoot)
                 $rolledBack=$true
             } catch {
@@ -1986,18 +2027,6 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         throw
     }
 
-    $serverIdentity.pid | Set-Content -LiteralPath $ServerPidPath -NoNewline
-    [pscustomobject]@{
-        schema_version=4
-        pid=[int]$serverIdentity.pid
-        process_start_utc=[string]$serverIdentity.process_start_utc
-        executable_path=[string]$serverIdentity.executable_path
-        source_hash=$serverSourceHash
-        dependency_hash=$serverDependencyHash
-        runtime_root=$serverRuntimeRoot
-        config_hash=$serverConfigHash
-        started_utc=[DateTime]::UtcNow.ToString('o')
-    } | ConvertTo-Json | Set-Content -LiteralPath $ServerStatePath -Encoding UTF8
     Prune-BeesServerRuntimes @($serverRuntimeRoot)
 }
 
