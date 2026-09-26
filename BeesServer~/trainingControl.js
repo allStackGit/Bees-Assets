@@ -740,6 +740,29 @@ class TrainingControlStore {
             }
             kept.push(spec);
         }
+
+        // A platform that simply disappears by lease expiry is no longer an active rollout
+        // target. Keep requirements for healthy canaries and for platforms that still have a
+        // live/quarantined candidate, but do not let ordinary worker churn deadlock the release.
+        const healthyPlatforms = new Set(pending.healthy_remote_platforms || []);
+        const keptPlatforms = new Set(
+            kept
+                .filter(spec => spec.trainer_id !== 'central-learner')
+                .map(spec => spec.platform));
+        const activeRemotePlatforms = new Set(
+            this._activeDedicatedTrainers()
+                .filter(record => record.trainer_id !== 'central-learner')
+                .map(record => record.platform));
+        const requiredPlatforms = pending.required_remote_platforms || [];
+        const retainedPlatforms = requiredPlatforms.filter(
+            platform => healthyPlatforms.has(platform) ||
+                keptPlatforms.has(platform) ||
+                activeRemotePlatforms.has(platform));
+        if (retainedPlatforms.length !== requiredPlatforms.length) {
+            pending.required_remote_platforms = retainedPlatforms;
+            changed = true;
+        }
+
         if (!changed) return false;
         pending.required_trainers = kept;
         const keptIds = new Set(kept.map(spec => spec.trainer_id));
@@ -822,10 +845,13 @@ class TrainingControlStore {
             .filter(spec => !rolled.has(spec.trainer_id));
         if (!remaining.length) return null;
 
+        const buildTransition = pending.build_id !== this.state.canonical_build_id;
         const environmentTransition =
             Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
             JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
-        if (environmentTransition) {
+        // WAN admission is exact-build scoped. Switch the authoritative learner first so a
+        // remote moved to the pending build can immediately join the new broker session.
+        if (buildTransition || environmentTransition) {
             const central = remaining.find(spec => spec.trainer_id === 'central-learner');
             if (central) return central.trainer_id;
         }
