@@ -206,6 +206,9 @@ public class DialogueManager : MonoBehaviour
         _playIntercomWhenPresented = false;
         dialogueLines.Clear();
         _currentLine = null;
+        // A new section supersedes any typewriter or delayed-advance coroutine from the prior one,
+        // including when this section is empty and DisplayNextLine has nothing to dequeue.
+        StopAllCoroutines();
 
         if (ConfigData.SkipDialogue)
         {
