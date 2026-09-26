@@ -403,7 +403,7 @@ internal sealed class RlOneVsOneTrainingOptions
     private static RlOneVsOneMatchupMode ParseMatchupMode(string value)
     {
         RlOneVsOneMatchupMode parsed;
-        if (!Enum.TryParse(value, true, out parsed))
+        if (!Enum.TryParse(value, true, out parsed) || !Enum.IsDefined(typeof(RlOneVsOneMatchupMode), parsed))
         {
             throw new ArgumentException($"{MatchupModeFlag} value '{value}' must be 'fixed' or 'sampled'.");
         }
