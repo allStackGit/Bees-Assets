@@ -207,3 +207,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** matchup-mode parsing now requires a defined `Fixed` or `Sampled` value. `RlOneVsOneTrainingOptionsTests.InvalidOrAmbiguousRlOptionsFailInsteadOfSilentlyUsingDefaults` covers both numeric zero and an out-of-range numeric value.  
 **Verification:** the parser and focused regression protection were reviewed statically. Tests were not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** command-line enum options must reject undefined numeric enum values as well as unrecognized names.
+
+
+### REG-022 — Pluto II mission status was not centered for Bee-side campaigns
+**Area:** `Scripts/UI Components/PlutoTwoTutorialPresentationGuard.cs`, campaign presentation  
+**Symptom:** the Pluto II mission-status centering adjustment did not run for a player progressing through the Bee-side campaign.  
+**Root cause:** the guard checked campaign progress for `HumanSide`, although mission setup and the campaign feedback guard select progress using `UserSide`.  
+**Permanent protection:** the centering guard now reads the active player's campaign progress. `InitialDesignPresentationRegressionTests.PlutoTwoTutorialOwnsSizingAndDialogueOrderBeforeRendering` protects use of `UserSide` and rejects the prior `HumanSide` lookup.  
+**Verification:** campaign mission setup, guard condition, and source-level regression protection were reviewed statically. Tests and gameplay were not run, per the static-only audit constraint.  
+**Invariant/knowledge:** campaign-specific presentation guards must read the same side-specific progress as mission setup.
