@@ -78,6 +78,37 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(preflight, archive)
         self.assertLess(preflight, reset)
 
+    def test_build_pins_release_runtime_before_unity_compilation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Invoke-Build")
+        end = source.index("function Invoke-Server", start)
+        block = source[start:end]
+
+        package_root = block.index(
+            "$packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId"
+        )
+        pin_runtime = block.index(
+            "$trainingRuntime=New-ReleaseTrainingRuntime "
+            "$python $buildId $sha $trainingRuntimeArchive"
+        )
+        windows_build = block.index(
+            "Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsRl'"
+        )
+        linux_build = block.index(
+            "Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildLinuxRl'"
+        )
+
+        self.assertLess(package_root, pin_runtime)
+        self.assertLess(pin_runtime, windows_build)
+        self.assertLess(pin_runtime, linux_build)
+        self.assertEqual(
+            block.count(
+                "$trainingRuntime=New-ReleaseTrainingRuntime "
+                "$python $buildId $sha $trainingRuntimeArchive"
+            ),
+            1,
+        )
+
     def test_remote_worker_reports_runtime_preparation_blocker(self):
         source = TRAINING_WORKER_AGENT.read_text(encoding="utf-8")
         self.assertIn(
