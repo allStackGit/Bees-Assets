@@ -149,6 +149,19 @@ test('desired state is persisted and maps stop to inference for full games only'
     });
 });
 
+test('default training-control lease tolerates transient control outages', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        const desired = store.stateFor({
+            trainerId: 'remote-a', role: 'dedicated', platform: 'LinuxPlayer',
+        });
+        assert.equal(desired.lease_seconds, 60);
+    });
+});
+
 test('heartbeats retain machine-readable lease status', () => {
     withTempDir(root => {
         let now = 1000;
