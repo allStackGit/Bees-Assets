@@ -1220,6 +1220,14 @@ class TrainingControlStore {
             }
             fs.renameSync(temporary, destination);
         }
+        const storedStats = fs.lstatSync(destination);
+        if (
+            storedStats.isSymbolicLink() ||
+            !storedStats.isFile() ||
+            sha256File(destination) !== archiveSha256
+        ) {
+            throw new Error('existing canonical build artifact failed SHA-256 verification');
+        }
         const record = {
             role,
             platform,
