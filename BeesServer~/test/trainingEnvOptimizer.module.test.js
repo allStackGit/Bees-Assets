@@ -20,6 +20,8 @@ function record(
         processState = 'running',
         accepted = consumed,
         lastError = '',
+        sessionFailures = 0,
+        failureAgeSeconds = null,
     } = {},
 ) {
     return {
@@ -37,6 +39,8 @@ function record(
             throughput: {
                 learner_consumed_steps_total: consumed,
                 accepted_steps_total: accepted,
+                session_failures_total: sessionFailures,
+                seconds_since_last_session_failure: failureAgeSeconds,
             },
         },
     };
@@ -285,6 +289,61 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.baseline_envs, 8);
     assert.equal(state.desired_envs, 9);
     assert.equal(state.probing, true);
+});
+
+test('recent internal WAN actor failure holds probes without extending the hold each heartbeat', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        instabilityHoldMs: 10_000,
+    });
+
+    let state = update(
+        optimizer,
+        'remote-a',
+        8,
+        100,
+        20_000,
+        {
+            max: 16,
+            sessionFailures: 2,
+            failureAgeSeconds: 4,
+        },
+    );
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 26_000);
+    assert.match(state.decision, /WAN actor session failure/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        200,
+        22_000,
+        {
+            max: 16,
+            sessionFailures: 2,
+            failureAgeSeconds: 6,
+        },
+    );
+    assert.equal(state.phase, 'stability-hold');
+    assert.equal(state.stability_hold_until_ms, 26_000);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        300,
+        26_001,
+        {
+            max: 16,
+            sessionFailures: 2,
+            failureAgeSeconds: 10.001,
+        },
+    );
+    assert.equal(state.phase, 'warmup');
+    assert.match(state.decision, /collecting fresh baseline/);
 });
 
 test('planned env-count transition does not create an instability hold', () => {
