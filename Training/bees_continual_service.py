@@ -46,6 +46,7 @@ _DEPLOYMENT_ID = re.compile(r"^deploy-[0-9a-f]{24}$")
 class ServiceOptions:
     root: Path
     assets_root: Path
+    runtime_training_root: Path
     training_env: Path
     telemetry_quarantine: Path
     model_distribution_root: Path
@@ -272,7 +273,7 @@ def training_command(
     config = write_generation_config(options, index)
     command = [
         options.python_executable,
-        str(options.assets_root / "Training" / "bees_continual_auto_train.py"),
+        str(options.runtime_training_root / "bees_continual_auto_train.py"),
         str(config),
         f"--env={options.training_env}",
         f"--run-id={options.run_id}",
@@ -300,7 +301,7 @@ def training_command(
 def release_command(options: ServiceOptions) -> list[str]:
     command = [
         options.python_executable,
-        str(options.assets_root / "Training" / "bees_continual_release.py"),
+        str(options.runtime_training_root / "bees_continual_release.py"),
         f"--root={options.root}",
         f"--env={options.training_env}",
         f"--training-run-id={options.run_id}",
@@ -314,7 +315,7 @@ def release_command(options: ServiceOptions) -> list[str]:
 def stage_command(options: ServiceOptions) -> list[str]:
     return [
         options.python_executable,
-        str(options.assets_root / "Training" / "bees_continual_unity_bundle.py"),
+        str(options.runtime_training_root / "bees_continual_unity_bundle.py"),
         f"--root={options.root}",
         f"--assets-root={options.assets_root}",
         f"--config={options.continual_config}",
@@ -339,7 +340,7 @@ def unity_build_command(options: ServiceOptions, output: Path) -> list[str]:
 def hot_publish_command(options: ServiceOptions, metadata: Path) -> list[str]:
     return [
         options.python_executable,
-        str(options.assets_root / "Training" / "bees_continual_hot_bundle.py"),
+        str(options.runtime_training_root / "bees_continual_hot_bundle.py"),
         f"--root={options.root}",
         f"--bundle-metadata={metadata}",
         f"--distribution-root={options.model_distribution_root}",
@@ -535,6 +536,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--root", required=True)
     parser.add_argument("--assets-root", default=str(default_assets))
+    parser.add_argument("--runtime-training-root", default=None)
     parser.add_argument("--training-env", required=True)
     parser.add_argument("--telemetry-quarantine", required=True)
     parser.add_argument("--model-distribution-root", required=True)
@@ -583,10 +585,25 @@ def parse_options(argv: Optional[Sequence[str]] = None) -> ServiceOptions:
     telemetry.mkdir(parents=True, exist_ok=True)
     distribution = Path(args.model_distribution_root).expanduser().resolve()
     distribution.mkdir(parents=True, exist_ok=True)
+    assets_root = _required_path(args.assets_root, "Assets root", directory=True)
+    runtime_training_root = (
+        _required_path(
+            args.runtime_training_root,
+            "Training runtime root",
+            directory=True,
+        )
+        if args.runtime_training_root
+        else _required_path(
+            str(assets_root / "Training"),
+            "Training runtime root",
+            directory=True,
+        )
+    )
 
     return ServiceOptions(
         root=root,
-        assets_root=_required_path(args.assets_root, "Assets root", directory=True),
+        assets_root=assets_root,
+        runtime_training_root=runtime_training_root,
         training_env=_required_path(args.training_env, "Training environment", file=True),
         telemetry_quarantine=telemetry,
         model_distribution_root=distribution,
