@@ -452,6 +452,18 @@ class TrainingControlStore {
             }
             return false;
         }
+
+        // Compatible rollout membership is a shrinking snapshot. Trainers that appear after
+        // staging (or return after their lease expired and they were pruned) can continue on the
+        // compatible canonical release and reconcile after promotion; they must not re-expand and
+        // deadlock the in-flight barrier. The only compatible exception is the explicit
+        // recollection window used when a restart/migration staged with no known trainers.
+        if (!pending.incompatible && pending.collect_until_ms <= this.now()) {
+            return false;
+        }
+
+        // Incompatible run cutovers remain strict: any dedicated trainer that appears before
+        // promotion must join the stop barrier so old-run training cannot survive the cutover.
         pending.required_trainers.push({
             trainer_id: record.trainer_id,
             platform: record.platform,
