@@ -200,6 +200,10 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("LearnerAvgStep/s", block)
         self.assertIn("LearnerLiveStep/s", block)
         self.assertIn("OptExp/s is the last per-worker optimizer consumption sample", block)
+        self.assertIn("Rollout blockers:", block)
+        self.assertIn("'prepared_build_id'", block)
+        self.assertIn("missing/no heartbeat", block)
+        self.assertIn("not prepared", block)
         self.assertIn(
             "$beeAimSamples=Get-ObjectPropertyValue $m 'bee_aim_samples'",
             block,
