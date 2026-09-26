@@ -193,6 +193,61 @@ function Test-PythonCode([string]$Exe,[string]$Code){
     }
 }
 
+function Prune-LearnerPythonRuntimes([string[]]$KeepExecutables=@(),[int]$KeepNewest=3){
+    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    if(-not(Test-Path -LiteralPath $venvBase -PathType Container)){ return }
+    $keep=@{}
+    $baseFull=[IO.Path]::GetFullPath($venvBase).TrimEnd('\') + '\'
+
+    foreach($executable in @($KeepExecutables)){
+        if(-not $executable){ continue }
+        try {
+            $full=[IO.Path]::GetFullPath([string]$executable)
+            if($full.StartsWith($baseFull,[StringComparison]::OrdinalIgnoreCase)){
+                $relative=$full.Substring($baseFull.Length)
+                $separator=$relative.IndexOfAny([char[]]@('\','/'))
+                $name=if($separator -ge 0){$relative.Substring(0,$separator)}else{$relative}
+                if($name){
+                    $keep[[IO.Path]::GetFullPath((Join-Path $venvBase $name)).TrimEnd('\')]=1
+                }
+            }
+        } catch {}
+    }
+
+    foreach($statePath in @($CentralRuntimePointerPath,$CentralRuntimeStatePath,$CentralAgentStatePath)){
+        if(-not(Test-Path -LiteralPath $statePath -PathType Leaf)){ continue }
+        try {
+            $state=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
+            foreach($property in @('python_executable','learner_python')){
+                $python=([string](Get-ObjectPropertyValue $state $property)).Trim()
+                if(-not $python){ continue }
+                $full=[IO.Path]::GetFullPath($python)
+                if($full.StartsWith($baseFull,[StringComparison]::OrdinalIgnoreCase)){
+                    $relative=$full.Substring($baseFull.Length)
+                    $separator=$relative.IndexOfAny([char[]]@('\','/'))
+                    $name=if($separator -ge 0){$relative.Substring(0,$separator)}else{$relative}
+                    if($name){
+                        $keep[[IO.Path]::GetFullPath((Join-Path $venvBase $name)).TrimEnd('\')]=1
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    $directories=@(
+        Get-ChildItem -LiteralPath $venvBase -Directory -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+    foreach($directory in @($directories|Select-Object -First $KeepNewest)){
+        try{$keep[[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')]=1}catch{}
+    }
+    foreach($directory in $directories){
+        $full=[IO.Path]::GetFullPath($directory.FullName).TrimEnd('\')
+        if($keep.ContainsKey($full)){ continue }
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
     $requirementsRootPath=if($RequirementsRoot){[IO.Path]::GetFullPath($RequirementsRoot)}else{Join-Path $AssetsRoot 'Training'}
     $learnerRequirements=Join-Path $requirementsRootPath 'bees_learner_requirements.txt'
@@ -238,6 +293,7 @@ function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
         $requirementsHash | Set-Content -LiteralPath $stampPath -NoNewline -Encoding ASCII
     }
 
+    Prune-LearnerPythonRuntimes @($venvPython)
     [IO.Path]::GetFullPath($venvPython)
 }
 
