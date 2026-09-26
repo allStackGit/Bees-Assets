@@ -390,9 +390,11 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         end = source.index("switch($Command)", start)
         block = source[start:end]
         self.assertIn("Ensure-LearnerPython $config", block)
+        self.assertIn("Resolve-UnityEditor $config", block)
         self.assertIn("$RobustnessQualificationScript", block)
         self.assertIn("'--bees-root',$BeesRoot", block)
         self.assertIn("'--assets-root',$AssetsRoot", block)
+        self.assertIn("'--unity-editor',$unity", block)
         for forbidden in (
             "Start-BeesServerIfNeeded",
             "Stage-Release",

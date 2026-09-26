@@ -4079,6 +4079,7 @@ function Invoke-Qualify {
         throw "Learner Python resolver returned $($pythonResult.Count) values for robustness qualification; expected one."
     }
     $python=[string]$pythonResult[0]
+    $unity=Resolve-UnityEditor $config
     if(-not(Test-Path -LiteralPath $RobustnessQualificationScript)){
         throw "Training robustness qualification helper is missing: $RobustnessQualificationScript"
     }
@@ -4086,7 +4087,8 @@ function Invoke-Qualify {
     Invoke-Checked $python @(
         $RobustnessQualificationScript,
         '--bees-root',$BeesRoot,
-        '--assets-root',$AssetsRoot
+        '--assets-root',$AssetsRoot,
+        '--unity-editor',$unity
     ) $AssetsRoot | Out-Host
 }
 
