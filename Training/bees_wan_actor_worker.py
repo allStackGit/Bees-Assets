@@ -29,6 +29,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -1000,6 +1001,7 @@ class ActorSession:
                 discard_remaining = False
                 for start in range(0, len(trajectories), MAX_TRAJECTORIES_PER_UPLOAD):
                     payload = {
+                        "batch_id": uuid.uuid4().hex,
                         "session_id": self.session_id,
                         "actor_id": self.actor_id,
                         "control_epoch": self.control_epoch,
