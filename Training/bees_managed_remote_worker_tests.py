@@ -505,6 +505,21 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertTrue(log.is_file())
             self.assertIn("session failed", log.read_text(encoding="utf-8"))
 
+    def test_run_scoped_log_sink_rotates_when_bounded_size_is_reached(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "logs"
+            sink = managed._RunScopedLogSink(root)
+            sink.MAX_BYTES = 8
+            sink.set_run_id("run-1")
+
+            sink.write("12345678")
+            sink.write("AB")
+
+            current = root / "run-1" / "remote-supervisor.log"
+            rotated = current.with_name(current.name + ".1")
+            self.assertEqual(current.read_text(encoding="utf-8"), "AB")
+            self.assertEqual(rotated.read_text(encoding="utf-8"), "12345678")
+
     def test_status_summary_assigns_supervisor_log_to_active_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
