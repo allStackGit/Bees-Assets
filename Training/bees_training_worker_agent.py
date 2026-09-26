@@ -1157,8 +1157,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw_argv)
     startup_source_sha = file_sha256(Path(__file__).resolve())
-    if args.heartbeat_seconds <= 0 or args.request_timeout_seconds <= 0:
-        print("error: heartbeat and request timeout must be positive", file=sys.stderr)
+    if (
+        not math.isfinite(args.heartbeat_seconds)
+        or not math.isfinite(args.request_timeout_seconds)
+        or args.heartbeat_seconds <= 0
+        or args.request_timeout_seconds <= 0
+    ):
+        print("error: heartbeat and request timeout must be finite positive values", file=sys.stderr)
         return 2
     if args.worker_envs is not None:
         if (
