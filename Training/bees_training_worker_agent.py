@@ -53,7 +53,7 @@ EPISODE_LOG_PATTERN = re.compile(
 
 def _episode_numeric_field(line: str, key: str) -> Optional[float]:
     match = re.search(
-        rf"\\b{re.escape(key)}=(-?[0-9]+(?:\\.[0-9]+)?)(?:deg|%)?",
+        rf"\b{re.escape(key)}=(-?[0-9]+(?:\.[0-9]+)?)(?:deg|%)?",
         line,
     )
     return float(match.group(1)) if match else None
