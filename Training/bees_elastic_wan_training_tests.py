@@ -431,7 +431,10 @@ class ElasticBrokerTests(unittest.TestCase):
             ),
             actor_id,
         )
-        self.assertNotIn("machine-a", broker._claims)
+        self.assertEqual(
+            broker._claims["machine-a"]["actor_instance_id"],
+            "new-process",
+        )
         self.assertEqual(
             broker.session_payload()["actor_lease_seconds"],
             broker.options.actor_lease_seconds,
@@ -459,6 +462,13 @@ class ElasticBrokerTests(unittest.TestCase):
                 "behavior_specs": specs,
             }
         )
+        self.assertEqual(
+            broker.claim_actor(
+                {**broker.release_identity, "actor_key": "machine-a", "actor_instance_id": "new-process", "env_count": 8}
+            ),
+            actor_id,
+        )
+        self.assertNotIn("machine-a", broker._claims)
         with self.assertRaisesRegex(ValueError, "another remote process"):
             broker.acknowledge_reset(
                 {
