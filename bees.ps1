@@ -1964,8 +1964,10 @@ function Write-BeesServerManagedState(
     [string]$RuntimeRoot,
     [string]$ConfigHash,
     [string]$Status,
-    [string]$RollbackReason=''
+    [string]$RollbackReason='',
+    [string]$OwnerToken=''
 ){
+    $resolvedOwnerToken=if($OwnerToken){$OwnerToken}else{([string](Get-ObjectPropertyValue $Identity 'owner_token')).Trim()}
     $state=[ordered]@{
         schema_version=5
         pid=[int]$Identity.pid
@@ -1975,6 +1977,7 @@ function Write-BeesServerManagedState(
         dependency_hash=$DependencyHash
         runtime_root=[IO.Path]::GetFullPath($RuntimeRoot)
         config_hash=$ConfigHash
+        owner_token=$resolvedOwnerToken
         status=$Status
         started_utc=[DateTime]::UtcNow.ToString('o')
     }
@@ -2014,10 +2017,11 @@ function Start-BeesServerRuntimeProcess(
     }
 
     Set-BeesServerLaunchEnvironment $Config $WorkerToken $AdminToken
+    $serverOwnerToken=[Guid]::NewGuid().ToString('N')
     $launchedPid=0
     Push-Location $RuntimeRoot
     try {
-        $output=@(& $Node $launcher '--background' "--log=$ServerLog" 'test' ([string]$GameplayServerPort) 2>&1)
+        $output=@(& $Node $launcher '--background' '--managed-owner-token' $serverOwnerToken "--log=$ServerLog" 'test' ([string]$GameplayServerPort) 2>&1)
         if($LASTEXITCODE -ne 0){
             throw "BeesServer launcher failed: $($output -join [Environment]::NewLine)"
         }
@@ -2045,12 +2049,12 @@ function Start-BeesServerRuntimeProcess(
         throw 'Could not establish the BeesServer candidate process identity after launch.'
     }
 
-    Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'starting' $RollbackReason
+    Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'starting' $RollbackReason $serverOwnerToken
 
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while([DateTime]::UtcNow -lt $deadline){
         if(Test-Control $base $AdminToken){
-            Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'active' $RollbackReason
+            Write-BeesServerManagedState $identity ([string]$RuntimeIdentity.source_hash) ([string]$RuntimeIdentity.dependency_hash) ([string]$RuntimeIdentity.runtime_root) ([string]$RuntimeIdentity.config_hash) 'active' $RollbackReason $serverOwnerToken
             return $identity
         }
         if(-not(Test-ManagedProcessIdentity $identity $Node)){
@@ -2089,13 +2093,32 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
         if(Test-ManagedProcessIdentity $managedState){
             $managedOwned=$true
         } else {
-            $managedPid=Get-StateReferencedLivePid $managedState
-            if($managedPid -gt 0){
-                throw "BeesServer state references live PID $managedPid but its PID/start-time/executable ownership does not match. Refusing to kill a possibly reused PID."
+            $serverOwnerToken=([string](Get-ObjectPropertyValue $managedState 'owner_token')).Trim()
+            if($serverOwnerToken){
+                $recovered=Find-ManagedProcessByOwnerToken $node $serverOwnerToken 'BeesServer supervisor'
+                if($null -ne $recovered){
+                    $managedState=Add-ManagedIdentityToState $managedState $recovered ([string](Get-ObjectPropertyValue $managedState 'status'))
+                    Write-BeesServerManagedState $managedState ([string](Get-ObjectPropertyValue $managedState 'source_hash')) ([string](Get-ObjectPropertyValue $managedState 'dependency_hash')) ([string](Get-ObjectPropertyValue $managedState 'runtime_root')) ([string](Get-ObjectPropertyValue $managedState 'config_hash') ([string](Get-ObjectPropertyValue $managedState 'status')) ([string](Get-ObjectPropertyValue $managedState 'rollback_reason')) $serverOwnerToken
+                    $managedOwned=$true
+                    Write-Host "Recovered BeesServer supervisor ownership after interrupted state reconciliation (PID $($recovered.pid))."
+                }
             }
-            Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
-            $managedState=$null
+            if(-not $managedOwned){
+                $managedPid=Get-StateReferencedLivePid $managedState
+                if($managedPid -gt 0){
+                    throw "BeesServer state references live PID $managedPid but its PID/start-time/executable ownership does not match. Refusing to kill a possibly reused PID."
+                }
+                if($serverOwnerToken){
+                    $orphanChild=Find-ManagedProcessByOwnerToken $node ($serverOwnerToken + '.child') 'orphaned BeesServer child'
+                    if($null -ne $orphanChild){
+                        Write-Host "Stopping orphaned BeesServer child PID $($orphanChild.pid) left by a dead supervisor."
+                        $null=Stop-ManagedProcessTree $orphanChild $node 'orphaned BeesServer child'
+                    }
+                }
+                Remove-Item -LiteralPath $ServerPidPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $ServerStatePath -Force -ErrorAction SilentlyContinue
+                $managedState=$null
+            }
         }
     } elseif(Test-Path -LiteralPath $ServerPidPath){
         $legacyPid=0
