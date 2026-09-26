@@ -185,12 +185,15 @@ function Test-PythonCode([string]$Exe,[string]$Code){
     }
 }
 
-function Ensure-LearnerPython($Config){
-    if(-not(Test-Path -LiteralPath $LearnerRequirementsPath)){
-        throw "Learner Python requirements are missing: $LearnerRequirementsPath"
+function Ensure-LearnerPython($Config,[string]$RequirementsRoot=''){
+    $requirementsRootPath=if($RequirementsRoot){[IO.Path]::GetFullPath($RequirementsRoot)}else{Join-Path $AssetsRoot 'Training'}
+    $learnerRequirements=Join-Path $requirementsRootPath 'bees_learner_requirements.txt'
+    $remoteRequirements=Join-Path $requirementsRootPath 'bees_remote_requirements.txt'
+    if(-not(Test-Path -LiteralPath $learnerRequirements)){
+        throw "Learner Python requirements are missing: $learnerRequirements"
     }
-    if(-not(Test-Path -LiteralPath $RemoteRequirementsPath)){
-        throw "Shared Python requirements are missing: $RemoteRequirementsPath"
+    if(-not(Test-Path -LiteralPath $remoteRequirements)){
+        throw "Shared Python requirements are missing: $remoteRequirements"
     }
 
     $basePython=Resolve-Python $Config
@@ -198,27 +201,29 @@ function Ensure-LearnerPython($Config){
         throw "Bees learner requires Python 3.10. Configured python resolved to '$basePython'."
     }
 
-    $venvRoot=Join-Path $RuntimeRoot 'LearnerPython'
+    $requirementsHash=Get-StringSha256 (
+        (Get-Content -LiteralPath $learnerRequirements -Raw) +
+        [Environment]::NewLine +
+        (Get-Content -LiteralPath $remoteRequirements -Raw)
+    )
+    $venvBase=Join-Path $RuntimeRoot 'LearnerPython'
+    $venvRoot=Join-Path $venvBase $requirementsHash
     $venvPython=Join-Path $venvRoot 'Scripts\python.exe'
     if(-not(Test-Path -LiteralPath $venvPython)){
-        Write-Host "Creating managed learner Python environment at $venvRoot..."
+        Write-Host "Creating release-isolated learner Python environment at $venvRoot..."
+        Ensure-Directory $venvBase
         Invoke-Checked $basePython @('-m','venv',$venvRoot) $AssetsRoot | Out-Host
     }
 
-    $requirementsHash=Get-StringSha256 (
-        (Get-Content -LiteralPath $LearnerRequirementsPath -Raw) +
-        [Environment]::NewLine +
-        (Get-Content -LiteralPath $RemoteRequirementsPath -Raw)
-    )
     $stampPath=Join-Path $venvRoot 'bees-requirements.sha256'
     $currentStamp=if(Test-Path -LiteralPath $stampPath){(Get-Content -LiteralPath $stampPath -Raw).Trim()}else{''}
     $preflight='import sys, mlagents, torch, numpy, onnxruntime; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)'
     $importsOk=($currentStamp -eq $requirementsHash) -and (Test-PythonCode $venvPython $preflight)
 
     if(-not $importsOk){
-        Write-Host 'Installing/updating central learner Python dependencies...'
-        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $AssetsRoot | Out-Host
-        Invoke-Checked $venvPython @('-m','pip','install','-r',$LearnerRequirementsPath) $AssetsRoot | Out-Host
+        Write-Host "Installing central learner dependencies for runtime $requirementsHash..."
+        Invoke-Checked $venvPython @('-m','pip','install','--upgrade','pip') $requirementsRootPath | Out-Host
+        Invoke-Checked $venvPython @('-m','pip','install','-r',$learnerRequirements) $requirementsRootPath | Out-Host
         if(-not(Test-PythonCode $venvPython $preflight)){
             throw 'Central learner Python dependency preflight failed after installation.'
         }
@@ -1622,6 +1627,9 @@ function Start-CentralAgentIfNeeded($Config,[string]$Python,[string]$Unity,$Rele
         process_start_utc=[string]$identity.process_start_utc
         executable_path=[string]$identity.executable_path
         command_hash=$commandHash
+        learner_python=[IO.Path]::GetFullPath($Python)
+        release_runtime_root=[IO.Path]::GetFullPath($runtimeRoot)
+        release_runtime_version=$runtimeVersion
         graceful_checkpoint_shutdown=$true
         started_utc=[DateTime]::UtcNow.ToString('o')
     }|ConvertTo-Json|Set-Content -LiteralPath $CentralAgentStatePath -Encoding UTF8
@@ -1913,7 +1921,14 @@ function Invoke-Start {
     # pre-fix release in place before the gateway serves it.
     Remove-Utf8BomIfPresent $LatestReleasePath
 
-    $pythonResult=@(Ensure-LearnerPython $config)
+    $bootstrapPython=Resolve-Python $config
+    if(-not(Test-PythonCode $bootstrapPython 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)')){
+        throw "Bees release tooling requires Python 3.10. Configured python resolved to '$bootstrapPython'."
+    }
+    $installedReleaseRuntime=Install-ReleaseTrainingRuntime $bootstrapPython $release -AllowLegacyPin
+    $runtimeRoot=[string]$installedReleaseRuntime.installed_root
+
+    $pythonResult=@(Ensure-LearnerPython $config $runtimeRoot)
     if($pythonResult.Count -ne 1){
         throw "Learner Python resolver returned $($pythonResult.Count) values; expected exactly one executable path."
     }
@@ -1923,7 +1938,6 @@ function Invoke-Start {
     }
 
     Ensure-RunLifecycleMatchesRelease $python $release
-    $null=Resolve-ReleaseTrainingRuntime $python $release -AllowLegacyPin
     Assert-CentralAgentCheckpointSafe
 
     $forcedPlan=$null
@@ -2531,7 +2545,17 @@ function Invoke-CentralDiagnosticBenchmark(
             return
         }
 
-        $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
+        $learnerPython=''
+        if(Test-Path -LiteralPath $CentralAgentStatePath){
+            try {
+                $centralState=Get-Content -LiteralPath $CentralAgentStatePath -Raw | ConvertFrom-Json
+                $learnerPython=[string](Get-ObjectPropertyValue $centralState 'learner_python')
+            } catch { $learnerPython='' }
+        }
+        if(-not $learnerPython){
+            # Legacy fallback for central-agent state written before release-isolated environments.
+            $learnerPython=Join-Path $RuntimeRoot 'LearnerPython\Scripts\python.exe'
+        }
         if(-not(Test-Path -LiteralPath $learnerPython)){
             $result.reason="managed learner Python is unavailable: $learnerPython"
             return
