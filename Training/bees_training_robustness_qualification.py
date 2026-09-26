@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
 from typing import Sequence
+import xml.etree.ElementTree as ET
 
 
 FOCUSED_PYTHON_SUITES = (
@@ -30,7 +32,13 @@ FOCUSED_PYTHON_SUITES = (
     "bees_elastic_wan_zero_local_tests.py",
     "bees_wan_actor_training_tests.py",
     "bees_continual_service_tests.py",
+    "bees_continual_train_tests.py",
+    "bees_mlagents_learn_tests.py",
     "bees_continual_elastic_wan_service_tests.py",
+)
+
+UNITY_REQUIRED_TEST = (
+    "RlPolicySchemaContractTests.ContinualLearningConfigTracksFrozenPolicyAbi"
 )
 
 
@@ -40,6 +48,8 @@ class Check:
     command: tuple[str, ...]
     cwd: Path
     required: bool = True
+    result_xml: Path | None = None
+    required_test_substring: str | None = None
 
 
 def _resolve_go(bees_root: Path) -> str | None:
@@ -75,6 +85,8 @@ def build_checks(
     full_python: bool,
     skip_node: bool,
     skip_go: bool,
+    unity_editor: str | None = None,
+    skip_unity: bool = False,
 ) -> list[Check]:
     training_root = assets_root / "Training"
     server_root = assets_root / "BeesServer~"
@@ -111,11 +123,46 @@ def build_checks(
                     command=(
                         node,
                         "--test",
+                        str(server_root / "test" / "startServerLauncher.module.test.js"),
                         str(server_root / "test" / "trainingControl.module.test.js"),
+                        str(server_root / "test" / "trainingControlCli.module.test.js"),
+                        str(server_root / "test" / "trainingEnvOptimizer.module.test.js"),
                     ),
                     cwd=server_root,
                 )
             )
+
+    if not skip_unity:
+        unity_results = bees_root / "Logs" / "TrainingQualification" / "BeesFoundationEditMode.xml"
+        unity_log = bees_root / "Logs" / "TrainingQualification" / "BeesFoundationEditMode.log"
+        checks.append(
+            Check(
+                name="unity:bees-foundation-editmode",
+                command=(
+                    (
+                        str(unity_editor),
+                        "-batchmode",
+                        "-nographics",
+                        "-projectPath",
+                        str(bees_root),
+                        "-runTests",
+                        "-testPlatform",
+                        "EditMode",
+                        "-testCategory",
+                        "BeesFoundation",
+                        "-testResults",
+                        str(unity_results),
+                        "-logFile",
+                        str(unity_log),
+                    )
+                    if unity_editor
+                    else ()
+                ),
+                cwd=bees_root,
+                result_xml=unity_results,
+                required_test_substring=UNITY_REQUIRED_TEST,
+            )
+        )
 
     if not skip_go:
         go = _resolve_go(bees_root)
@@ -140,6 +187,50 @@ def build_checks(
     return checks
 
 
+def _validate_unity_results(
+    result_path: Path,
+    required_test_substring: str | None,
+) -> tuple[bool, str]:
+    if not result_path.is_file():
+        return False, f"Unity test results were not written: {result_path}"
+    try:
+        root = ET.parse(result_path).getroot()
+    except (OSError, ET.ParseError) as exc:
+        return False, f"Unity test results are unreadable: {exc}"
+
+    try:
+        failed = int(root.attrib.get("failed", "-1"))
+        passed = int(root.attrib.get("passed", "0"))
+    except ValueError:
+        return False, "Unity test result totals are malformed"
+    if failed != 0 or passed <= 0:
+        return False, f"Unity EditMode suite reported passed={passed} failed={failed}"
+
+    if required_test_substring:
+        matched = False
+        for case in root.findall(".//test-case"):
+            identity = " ".join(
+                value
+                for value in (
+                    case.attrib.get("fullname"),
+                    case.attrib.get("name"),
+                )
+                if value
+            )
+            if (
+                required_test_substring in identity and
+                case.attrib.get("result") == "Passed"
+            ):
+                matched = True
+                break
+        if not matched:
+            return False, (
+                "Unity EditMode results did not contain the required passing RL contract test: "
+                + required_test_substring
+            )
+    return True, ""
+
+
 def _run_check(check: Check) -> tuple[bool, float]:
     if not check.command:
         if check.required:
@@ -147,6 +238,13 @@ def _run_check(check: Check) -> tuple[bool, float]:
             return False, 0.0
         print(f"[SKIP] {check.name}: executable is unavailable")
         return True, 0.0
+
+    if check.result_xml is not None:
+        check.result_xml.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            check.result_xml.unlink()
+        except FileNotFoundError:
+            pass
 
     print(f"[RUN ] {check.name}", flush=True)
     started = time.monotonic()
@@ -157,6 +255,14 @@ def _run_check(check: Check) -> tuple[bool, float]:
     )
     elapsed = time.monotonic() - started
     if completed.returncode == 0:
+        if check.result_xml is not None:
+            valid, detail = _validate_unity_results(
+                check.result_xml,
+                check.required_test_substring,
+            )
+            if not valid:
+                print(f"[FAIL] {check.name}: {detail} ({elapsed:.1f}s)", flush=True)
+                return False, elapsed
         print(f"[PASS] {check.name} ({elapsed:.1f}s)", flush=True)
         return True, elapsed
     print(
@@ -182,6 +288,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--skip-node", action="store_true")
     parser.add_argument("--skip-go", action="store_true")
+    parser.add_argument(
+        "--unity-editor",
+        default=None,
+        help="path to the Unity Editor executable used for EditMode qualification",
+    )
+    parser.add_argument("--skip-unity", action="store_true")
     return parser
 
 
@@ -200,12 +312,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
+        unity_editor = None
+        if not args.skip_unity:
+            explicit_unity = args.unity_editor or os.environ.get("BEES_UNITY_EDITOR")
+            if explicit_unity:
+                candidate = Path(explicit_unity).expanduser().resolve()
+                if candidate.is_file():
+                    unity_editor = str(candidate)
+            if unity_editor is None:
+                discovered = shutil.which("Unity") or shutil.which("Unity.exe")
+                if discovered:
+                    unity_editor = discovered
         checks = build_checks(
             bees_root=bees_root,
             assets_root=assets_root,
             full_python=bool(args.full_python),
             skip_node=bool(args.skip_node),
             skip_go=bool(args.skip_go),
+            unity_editor=unity_editor,
+            skip_unity=bool(args.skip_unity),
         )
     except ValueError as exc:
         print(f"qualification error: {exc}", file=sys.stderr)

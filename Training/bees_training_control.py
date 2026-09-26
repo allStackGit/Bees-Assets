@@ -251,6 +251,8 @@ def _safe_zip_member(root: Path, name: str) -> Path:
 
 
 class ManagedBuildStore:
+    MAX_RETAINED_BUILDS = 4
+
     def __init__(self, root: str | os.PathLike[str]):
         self.root = Path(root).expanduser().resolve()
         self.builds = self.root / "builds"
@@ -350,6 +352,7 @@ class ManagedBuildStore:
             ):
                 if activate:
                     self._set_current(descriptor, entrypoint)
+                self._prune({install})
                 return entrypoint, descriptor
 
         temp_parent = Path(tempfile.mkdtemp(prefix=".bees-build-", dir=str(self.builds)))
@@ -395,7 +398,49 @@ class ManagedBuildStore:
         entrypoint = _safe_zip_member(install, descriptor["entrypoint"])
         if activate:
             self._set_current(descriptor, entrypoint)
+        self._prune({install})
         return entrypoint, descriptor
+
+    def _prune(self, preserve: set[Path]) -> None:
+        keep = {path.resolve() for path in preserve}
+        current = self.current()
+        if current:
+            raw_entrypoint = str(current.get("entrypoint", "")).strip()
+            if raw_entrypoint:
+                try:
+                    relative = Path(raw_entrypoint).resolve().relative_to(self.builds)
+                    if relative.parts:
+                        keep.add((self.builds / relative.parts[0]).resolve())
+                except (OSError, ValueError):
+                    pass
+
+        candidates = []
+        try:
+            children = list(self.builds.iterdir())
+        except OSError:
+            return
+        for child in children:
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            if not (child / ".bees-build.json").is_file():
+                continue
+            try:
+                modified = child.stat().st_mtime_ns
+            except OSError:
+                continue
+            candidates.append((modified, child.resolve()))
+        candidates.sort(reverse=True)
+        keep.update(path for _, path in candidates[: self.MAX_RETAINED_BUILDS])
+
+        for _, path in candidates:
+            if path in keep:
+                continue
+            try:
+                shutil.rmtree(path)
+            except OSError:
+                # A previous build can still be briefly open during a compatible cutover.
+                # Retention is best-effort and will retry after the next materialization.
+                continue
 
     def _set_current(self, descriptor: Mapping[str, Any], entrypoint: Path) -> None:
         self.root.mkdir(parents=True, exist_ok=True)

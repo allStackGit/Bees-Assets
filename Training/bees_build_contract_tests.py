@@ -390,9 +390,11 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         end = source.index("switch($Command)", start)
         block = source[start:end]
         self.assertIn("Ensure-LearnerPython $config", block)
+        self.assertIn("Resolve-UnityEditor $config", block)
         self.assertIn("$RobustnessQualificationScript", block)
         self.assertIn("'--bees-root',$BeesRoot", block)
         self.assertIn("'--assets-root',$AssetsRoot", block)
+        self.assertIn("'--unity-editor',$unity", block)
         for forbidden in (
             "Start-BeesServerIfNeeded",
             "Stage-Release",
@@ -528,6 +530,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "gameplay_port",
             "worker_token_sha256",
             "admin_token_sha256",
+            "environment_validation_secret_sha256",
             "control_state",
             "artifact_root",
             "log_root",
@@ -541,6 +544,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             self.assertIn(field, block)
         self.assertIn("Get-StringSha256 $WorkerToken", block)
         self.assertIn("Get-StringSha256 $AdminToken", block)
+        self.assertIn("Ensure-TokenFile $EnvironmentValidationTokenPath", block)
+        self.assertIn("Get-StringSha256 $environmentValidationSecret", block)
         self.assertNotIn("worker_token=$WorkerToken", block)
         self.assertNotIn("admin_token=$AdminToken", block)
 
@@ -551,6 +556,48 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "$managedConfigHash -eq $serverConfigHash",
             server,
         )
+
+    def test_training_runtime_retention_preserves_active_staged_and_recent_roots(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Prune-ReleaseTrainingRuntimes")
+        end = source.index("function New-CentralLearnerLaunchCommand", start)
+        block = source[start:end]
+
+        self.assertIn("[int]$KeepNewest=4", block)
+        self.assertIn("$CentralRuntimePointerPath", block)
+        self.assertIn("$CentralRuntimeStatePath", block)
+        self.assertIn("$CentralAgentStatePath", block)
+        self.assertIn("'runtime_root','release_runtime_root'", block)
+        self.assertIn("$keep.ContainsKey($full)", block)
+        self.assertIn("Select-Object -First $KeepNewest", block)
+        self.assertIn("[DateTime]::UtcNow.AddHours(-1)", block)
+
+        prepare_start = source.index("function Prepare-CentralReleaseRuntime")
+        prepare_end = source.index("function Get-CentralFallbackLaunchCommand", prepare_start)
+        prepare = source[prepare_start:prepare_end]
+        self.assertIn(
+            "Prune-ReleaseTrainingRuntimes @($runtimeRootPath)",
+            prepare,
+        )
+
+    def test_learner_python_retention_preserves_active_staged_and_recent_envs(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        start = source.index("function Prune-LearnerPythonRuntimes")
+        end = source.index("function Ensure-LearnerPython", start)
+        block = source[start:end]
+
+        self.assertIn("[int]$KeepNewest=3", block)
+        self.assertIn("$CentralRuntimePointerPath", block)
+        self.assertIn("$CentralRuntimeStatePath", block)
+        self.assertIn("$CentralAgentStatePath", block)
+        self.assertIn("'python_executable','learner_python'", block)
+        self.assertIn("$keep.ContainsKey($full)", block)
+        self.assertIn("Select-Object -First $KeepNewest", block)
+
+        ensure_start = source.index("function Ensure-LearnerPython")
+        ensure_end = source.index("function Resolve-Node", ensure_start)
+        ensure = source[ensure_start:ensure_end]
+        self.assertIn("Prune-LearnerPythonRuntimes @($venvPython)", ensure)
 
     def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
@@ -1044,8 +1091,13 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "'gateway-state.json'",
             source,
         )
-        self.assertGreaterEqual(source.count("process_start_utc=[string]"), 3)
-        self.assertGreaterEqual(source.count("executable_path=[string]"), 3)
+        self.assertGreaterEqual(source.count("process_start_utc=[string]"), 2)
+        self.assertGreaterEqual(source.count("executable_path=[string]"), 2)
+        self.assertIn("function Add-ManagedIdentityToState", source)
+        self.assertIn("Write-AtomicJsonFile $TailnetGatewayStatePath", source)
+        self.assertIn("Write-AtomicJsonFile $CentralAgentStatePath", source)
+        self.assertNotIn("|Set-Content -LiteralPath $CentralAgentStatePath", source)
+        self.assertNotIn("|Set-Content -LiteralPath $TailnetGatewayStatePath", source)
         self.assertIn(
             "Stop-ManagedProcessTree $gatewayState $bridge "
             "'embedded tailnet gateway'",
@@ -1108,7 +1160,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         central_start = source.index("function Start-CentralAgentIfNeeded")
         central_end = source.index("function Get-EnvironmentArgs", central_start)
         central = source[central_start:central_end]
-        self.assertIn("$args|ForEach-Object{Quote-Arg ([string]$_)}", central)
+        self.assertIn("$launchArgs|ForEach-Object{Quote-Arg ([string]$_)}", central)
 
     def test_release_wait_reports_live_progress_and_rejects_identity_drift(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
@@ -1181,6 +1233,171 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             "Ensure-RunLifecycleMatchesRelease $python $release",
             invoke_start,
         )
+
+    def test_forced_new_run_stages_environment_args_atomically(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        stage_start = source.index("function Stage-Release")
+        stage_end = source.index("function Wait-ReleaseRollout", stage_start)
+        stage = source[stage_start:stage_end]
+        self.assertIn("[AllowNull()][string[]]$EnvironmentArgs=$null", stage)
+        self.assertIn("$PSBoundParameters.ContainsKey('EnvironmentArgs')", stage)
+        self.assertIn("$body.environment_args=@($EnvironmentArgs)", stage)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        forced = invoke_start.index("if($performForcedNewRun){")
+        forced_stage = invoke_start.index(
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)",
+            forced,
+        )
+        forced_state = invoke_start.index(
+            'Invoke-ControlPost "$($config.controlUrl)/v1/admin/state"',
+            forced_stage,
+        )
+        forced_block_end = invoke_start.index("} else {", forced_state)
+        self.assertNotIn("environment_args=@($envArgs)", invoke_start[forced_state:forced_block_end])
+
+        ordinary_stage = invoke_start.index(
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)",
+            forced_block_end,
+        )
+        ordinary_state = invoke_start.index(
+            'Invoke-ControlPost "$($config.controlUrl)/v1/admin/state"',
+            ordinary_stage,
+        )
+        self.assertNotIn(
+            "environment_args=@($envArgs)",
+            invoke_start[ordinary_state:invoke_start.index("}", ordinary_state) + 1],
+        )
+        self.assertIn(
+            "Wait-ReleaseRollout $config $admin",
+            invoke_start[ordinary_stage:],
+        )
+
+    def test_environment_args_are_validated_before_any_run_or_control_mutation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        validator_start = source.index("function Assert-RlEnvironmentArgsValid")
+        validator_end = source.index("function Escape-SingleQuoted", validator_start)
+        validator = source[validator_start:validator_end]
+        self.assertIn("'--rl-validate-options-only'", validator)
+        self.assertIn("$process.WaitForExit(60000)", validator)
+        self.assertIn("Invalid RL environment arguments", validator)
+        self.assertIn("Install-AtomicFile $temp $stamp", validator)
+        self.assertIn("Expand-Archive -LiteralPath $archivePath", validator)
+        self.assertIn("-WorkingDirectory $candidate", validator)
+        self.assertIn("Remove-Item -LiteralPath $candidate -Recurse -Force", validator)
+        self.assertNotIn("$artifact.folder", validator)
+        self.assertIn("Get-HmacSha256 $validationSecret", validator)
+        self.assertIn("bees-environment-validation-v2", validator)
+        self.assertIn("Ensure-TokenFile $EnvironmentValidationTokenPath", validator)
+
+        launch_env_start = source.index("function Set-BeesServerLaunchEnvironment")
+        launch_env_end = source.index("function Write-BeesServerManagedState", launch_env_start)
+        launch_env = source[launch_env_start:launch_env_end]
+        self.assertIn(
+            "$env:BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET=$environmentValidationSecret",
+            launch_env,
+        )
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        first_validation = invoke_start.index(
+            "Assert-RlEnvironmentArgsValid $release @($envArgs)"
+        )
+        new_plan = invoke_start.index("New-TrainingRunPlan $python -ForceNew")
+        stage = invoke_start.index(
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)"
+        )
+        self.assertLess(first_validation, new_plan)
+        self.assertLess(first_validation, stage)
+        self.assertNotIn(
+            "environment_args=@($envArgs)",
+            invoke_start[stage:],
+        )
+
+    def test_live_build_and_recovery_validate_environment_before_staging(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        reconcile_start = source.index("function Reconcile-LatestReleaseBeforeBuild")
+        reconcile_end = source.index("function Invoke-Build", reconcile_start)
+        reconcile = source[reconcile_start:reconcile_end]
+        validate = reconcile.index("Assert-RlEnvironmentArgsValid $Release")
+        central_runtime = reconcile.index("Prepare-CentralReleaseRuntime", validate)
+        stage = reconcile.index("Stage-Release", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+        self.assertIn("$status=Invoke-ControlGet", reconcile[central_runtime:])
+
+        build_start = source.index("function Invoke-Build")
+        build_end = source.index("function Invoke-Server", build_start)
+        build = source[build_start:build_end]
+        validate = build.index("Assert-RlEnvironmentArgsValid $release")
+        central_runtime = build.index("Prepare-CentralReleaseRuntime", validate)
+        stage = build.index("$staged=Stage-Release", central_runtime)
+        self.assertLess(validate, central_runtime)
+        self.assertLess(central_runtime, stage)
+
+    def test_gateway_and_central_launch_intent_is_durable_before_process_creation(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        gateway_start = source.index("function Start-TailnetGatewayIfNeeded")
+        gateway_end = source.index("function Invoke-Checked", gateway_start)
+        gateway = source[gateway_start:gateway_end]
+        gateway_intent = gateway.index("Write-AtomicJsonFile $TailnetGatewayStatePath $launchIntent")
+        gateway_launch = gateway.index("$p=Start-Process @startArgs")
+        gateway_finalize = gateway.index(
+            "Write-AtomicJsonFile $TailnetGatewayStatePath $activeGatewayState"
+        )
+        self.assertLess(gateway_intent, gateway_launch)
+        self.assertLess(gateway_launch, gateway_finalize)
+        self.assertIn("Find-ManagedProcessByOwnerToken $bridge", gateway)
+        self.assertIn("'--owner-token',$gatewayOwnerToken", gateway)
+
+        central_start = source.index("function Start-CentralAgentIfNeeded")
+        central_end = source.index("function Get-EnvironmentArgs", central_start)
+        central = source[central_start:central_end]
+        central_intent = central.index("Write-AtomicJsonFile $CentralAgentStatePath $launchIntent")
+        central_launch = central.index("$p=Start-Process", central_intent)
+        central_finalize = central.index(
+            "Write-AtomicJsonFile $CentralAgentStatePath $activeCentralState"
+        )
+        self.assertLess(central_intent, central_launch)
+        self.assertLess(central_launch, central_finalize)
+        self.assertIn("Find-ManagedProcessByOwnerToken $BootstrapPython", central)
+        self.assertIn("'--owner-token',$centralOwnerToken", central)
+
+        identity_start = source.index("function Ensure-TailnetIdentity")
+        identity_end = source.index("function Start-TailnetGatewayIfNeeded", identity_start)
+        identity = source[identity_start:identity_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $bridge", identity)
+
+        running_start = source.index("function Get-RunningCentralAgentPid")
+        running_end = source.index("function Assert-CentralAgentCheckpointSafe", running_start)
+        running = source[running_start:running_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $supervisorPython", running)
+
+    def test_learner_infrastructure_supervisors_have_recoverable_child_ownership(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+
+        gateway_start = source.index("function Start-TailnetGatewayIfNeeded")
+        gateway_end = source.index("function Invoke-Checked", gateway_start)
+        gateway = source[gateway_start:gateway_end]
+        self.assertIn("'gateway-supervisor'", gateway)
+        self.assertIn('Get-StringSha256 ("bees-managed-child:" + $ownerToken)', gateway)
+        self.assertIn("'orphaned embedded tailnet gateway child'", gateway)
+
+        server_start = source.index("function Start-BeesServerRuntimeProcess")
+        server_end = source.index("function Start-BeesServerIfNeeded", server_start)
+        server_launch = source[server_start:server_end]
+        self.assertIn("'--managed-owner-token' $serverOwnerToken", server_launch)
+        self.assertIn("$serverOwnerToken=[Guid]::NewGuid().ToString('N')", server_launch)
+
+        reconcile_start = source.index("function Start-BeesServerIfNeeded")
+        reconcile_end = source.index("function Get-LatestRelease", reconcile_start)
+        reconcile = source[reconcile_start:reconcile_end]
+        self.assertIn("Find-ManagedProcessByOwnerToken $node $serverOwnerToken 'BeesServer supervisor'", reconcile)
+        self.assertIn('Get-StringSha256 ("bees-managed-child:" + $serverOwnerToken)', reconcile)
+        self.assertIn("'orphaned BeesServer child'", reconcile)
 
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")

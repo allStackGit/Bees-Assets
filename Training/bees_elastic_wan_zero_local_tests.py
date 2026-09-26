@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import unittest
 from unittest import mock
 from types import SimpleNamespace
@@ -127,6 +128,13 @@ class ZeroLocalArgumentTests(unittest.TestCase):
                 ["--num-envs=0", "--num-envs=32"]
             )
 
+    def test_zero_local_learner_publishes_ready_health_after_broker_start(self):
+        source = Path(zero_local.__file__).read_text(encoding="utf-8")
+        initializer = source.index("def _bees_elastic_initialize")
+        broker_start = source.index("self._bees_wan_broker.start()", initializer)
+        health_ready = source.index('write_managed_health(\n            "ready"', broker_start)
+        self.assertLess(broker_start, health_ready)
+
     def test_remote_actor_accepts_worker_base_zero(self):
         session = {
             "max_actors": 12,
@@ -174,6 +182,7 @@ class ZeroLocalBrokerTests(unittest.TestCase):
                 elastic.BUILD_ID_ENV: "zero-local-build",
                 elastic.RUN_ID_ENV: "zero-local-test",
                 elastic.COMPATIBILITY_KEY_ENV: "e" * 64,
+                elastic.ENVIRONMENT_ID_ENV: "f" * 64,
             },
             clear=False,
         ):

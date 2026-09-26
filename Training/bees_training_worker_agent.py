@@ -9,11 +9,13 @@ unavailable. When control returns, the worker reconciles build/config state and 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -22,6 +24,11 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
+from bees_process_safety import (
+    configure_child_health,
+    popen_owned,
+    read_managed_health,
+)
 from bees_training_control import (
     ControlRejected,
     ControlUnavailable,
@@ -42,8 +49,43 @@ MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 THROUGHPUT_METRICS_ENV = "BEES_TRAINING_THROUGHPUT_FILE"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
+ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
+CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
+
+
+MAX_RETAINED_RUN_LOG_DIRS = 3
+
+
+def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
+    if not root.is_dir():
+        return
+    current = str(current_run_id or "").strip()
+    candidates = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name == current:
+            continue
+        try:
+            candidates.append((child.stat().st_mtime_ns, child))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    for _, path in candidates[MAX_RETAINED_RUN_LOG_DIRS - 1:]:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def environment_args_identity(environment_args: Sequence[str]) -> str:
+    payload = json.dumps(
+        [str(value) for value in environment_args],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 EPISODE_LOG_PATTERN = re.compile(
     r"RL 1v1 episode=(\d+).*?timeout=(True|False) duration=([\d.]+)s "
     r"bee_tsv=(\d+)->(\d+) human_tsv=(\d+)->(\d+).*?"
@@ -78,7 +120,9 @@ class EpisodeLogMetrics:
             self._pending.clear()
         scan_root = self.root / run_id if run_id else self.root
         if scan_root.is_dir():
-            for log_path in sorted(scan_root.rglob("Player-*.log")):
+            bounded_logs = sorted(scan_root.rglob("BeesEpisode-*.log"))
+            log_paths = bounded_logs or sorted(scan_root.rglob("Player-*.log"))
+            for log_path in log_paths:
                 self._read_new(log_path)
         return self.snapshot()
 
@@ -452,6 +496,7 @@ class BackgroundBuildPreparer:
 
 class TrainingLogUploader:
     CHUNK_BYTES = 1024 * 1024
+    MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -495,9 +540,13 @@ class TrainingLogUploader:
                     next_offset = -next_offset - 1
                 position = next_offset
                 self._positions[log_path] = position
-            if size <= position:
+            if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
-            amount = min(budget, size - position)
+            amount = min(
+                budget,
+                size - position,
+                self.MAX_FILE_UPLOAD_BYTES - position,
+            )
             try:
                 with log_path.open("rb") as handle:
                     handle.seek(position)
@@ -572,15 +621,59 @@ class ManagedProcess:
         self.graceful_checkpoint = False
         self.graceful_remote_stop = False
         self.stop_request_file: Optional[Path] = None
+        self.health_file: Optional[Path] = None
+        self.health_token = ""
+        self.health_required = False
+        self.started_monotonic = 0.0
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def health(self) -> Optional[dict[str, Any]]:
+        if not self.health_required:
+            return {"state": "ready", "error": ""}
+        return read_managed_health(self.health_file, self.health_token)
+
+    def health_error(self) -> str:
+        if not self.health_required or not self.alive():
+            return ""
+        health = self.health()
+        if health is None:
+            if (
+                self.started_monotonic > 0.0
+                and time.monotonic() - self.started_monotonic
+                >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+            ):
+                return (
+                    "managed child has not published ready health within "
+                    f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
+                )
+            return ""
+        state = str(health.get("state", ""))
+        if state == "error":
+            return str(health.get("error") or "managed child reported an internal failure")
+        if (
+            state != "ready"
+            and self.started_monotonic > 0.0
+            and time.monotonic() - self.started_monotonic
+            >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+        ):
+            return (
+                "managed child remained in "
+                f"{state or 'unknown'} health for more than "
+                f"{CHILD_HEALTH_STARTUP_GRACE_SECONDS:g} seconds"
+            )
+        return ""
 
     def state(self, role: str, offline: bool = False) -> str:
         if not self.alive():
             return "stopped"
         if role == "full-game" and offline:
             return "inference-offline"
+        if self.health_required:
+            health = self.health()
+            if health is None or health.get("state") != "ready":
+                return "starting"
         return "running"
 
     def start(
@@ -597,6 +690,7 @@ class ManagedProcess:
         worker_env_count: Optional[int] = None,
         graceful_checkpoint: bool = False,
         graceful_remote_stop: bool = False,
+        require_child_health: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
         self.stop(progress_callback=stop_progress)
@@ -614,7 +708,15 @@ class ManagedProcess:
         environment["BEES_TRAINING_RUN_ID"] = str(run_id)
         environment[BUILD_ID_ENV] = build_id
         environment[COMPATIBILITY_KEY_ENV] = compatibility_key
+        environment[ENVIRONMENT_ID_ENV] = environment_args_identity(environment_args)
         environment["PYTHONUNBUFFERED"] = "1"
+        health_file = state_file.parent / "child-health.json"
+        health_token = ""
+        if require_child_health:
+            health_token = configure_child_health(environment, health_file)
+        else:
+            environment.pop("BEES_TRAINING_CHILD_HEALTH_FILE", None)
+            environment.pop("BEES_TRAINING_CHILD_HEALTH_TOKEN", None)
         throughput_metrics_file = state_file.parent / "worker-throughput.json"
         try:
             throughput_metrics_file.unlink()
@@ -623,8 +725,10 @@ class ManagedProcess:
         environment[THROUGHPUT_METRICS_ENV] = str(throughput_metrics_file)
         if not run_id:
             raise ValueError("managed training process requires a non-empty run_id")
-        log_dir = state_file.parent / "logs" / run_id
+        logs_root = state_file.parent / "logs"
+        log_dir = logs_root / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
+        _prune_run_log_directories(logs_root, str(run_id))
         environment["BEES_TRAINING_LOG_DIR"] = str(log_dir)
         environment["BEES_TRAINING_MODEL_SNAPSHOT_REQUEST_FILE"] = str(
             state_file.parent / "model-snapshot.request"
@@ -641,7 +745,7 @@ class ManagedProcess:
             environment[MANAGED_STOP_FILE_ENV] = str(stop_request_file)
         else:
             environment.pop(MANAGED_STOP_FILE_ENV, None)
-        self.process = subprocess.Popen(
+        self.process = popen_owned(
             list(command),
             env=environment,
             start_new_session=(os.name != "nt"),
@@ -660,6 +764,10 @@ class ManagedProcess:
         self.stop_request_file = (
             stop_request_file if graceful_checkpoint or graceful_remote_stop else None
         )
+        self.health_file = health_file if require_child_health else None
+        self.health_token = health_token
+        self.health_required = bool(require_child_health)
+        self.started_monotonic = time.monotonic()
 
     def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
         process = self.process
@@ -882,6 +990,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--shutdown-request-file", default="")
+    parser.add_argument(
+        "--owner-token",
+        default="",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--worker-envs", type=int, default=None)
     parser.add_argument("--worker-envs-min", type=int, default=1)
     parser.add_argument("--worker-envs-max", type=int, default=64)
@@ -1332,6 +1445,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.role == "dedicated"
                                 and args.trainer_id == "central-learner"
                             ),
+                            require_child_health=(args.role == "dedicated"),
                             stop_progress=stopping_keepalive,
                         )
                         _write_runtime_state(
@@ -1421,6 +1535,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                     args.role == "dedicated"
                                     and args.trainer_id != "central-learner"
                                 ),
+                                require_child_health=(args.role == "dedicated"),
                                 stop_progress=stopping_keepalive,
                             )
                         if args.role == "dedicated":

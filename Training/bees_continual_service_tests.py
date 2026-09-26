@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from unittest import mock
 
 import bees_continual_release as release_module
 import bees_continual_service as service
+import bees_process_safety as process_safety
 
 
 class ContinualServiceTests(unittest.TestCase):
@@ -302,6 +304,7 @@ class ContinualServiceTests(unittest.TestCase):
                 calls.append(list(command))
                 return mock.Mock(returncode=7)
 
+            health_path = Path(temp_dir) / "managed-health.json"
             with (
                 mock.patch.object(
                     service,
@@ -314,6 +317,14 @@ class ContinualServiceTests(unittest.TestCase):
                     return_value="deploy-" + "a" * 24,
                 ),
                 mock.patch.object(service, "publish_current_hot_bundle") as publish,
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        process_safety.HEALTH_FILE_ENV: str(health_path),
+                        process_safety.HEALTH_TOKEN_ENV: "test-health-token",
+                    },
+                    clear=False,
+                ),
             ):
                 result = service.run_service(
                     options,
@@ -322,6 +333,10 @@ class ContinualServiceTests(unittest.TestCase):
                 )
 
             self.assertEqual(result, 2)
+            health = json.loads(health_path.read_text(encoding="utf-8"))
+            self.assertEqual(health["token"], "test-health-token")
+            self.assertEqual(health["state"], "error")
+            self.assertIn("status 7", health["error"])
             publish.assert_not_called()
             self.assertEqual(len(calls), 1)
             self.assertTrue(

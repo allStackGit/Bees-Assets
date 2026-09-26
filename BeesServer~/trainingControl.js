@@ -108,6 +108,29 @@ function requireRole(value) {
     return role;
 }
 
+function environmentValidationKeyForRelease(
+    buildId,
+    archiveSha256,
+    environmentArgs,
+    validationSecret,
+) {
+    if (typeof validationSecret !== 'string' || validationSecret.length < 32) {
+        throw new Error('environment validation secret must contain at least 32 characters');
+    }
+    const encodedArgs = environmentArgs
+        .map(value => Buffer.from(value, 'utf8').toString('base64'))
+        .join('\n');
+    const material =
+        'bees-environment-validation-v2\n' +
+        buildId + '\n' +
+        archiveSha256 + '\n' +
+        encodedArgs;
+    return crypto
+        .createHmac('sha256', Buffer.from(validationSecret, 'utf8'))
+        .update(material, 'utf8')
+        .digest('hex');
+}
+
 function normalizeEnvironmentArgs(value) {
     if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
         throw Object.assign(new Error('environment_args must be an array of strings'), { statusCode: 400 });
@@ -137,6 +160,10 @@ class TrainingControlStore {
             options.artifactRoot || path.join(__dirname, 'training-artifacts'));
         this.logRoot = path.resolve(
             options.logRoot || path.join(__dirname, 'training-logs'));
+        this.artifactRetentionBuilds = Number(options.artifactRetentionBuilds ?? 8);
+        if (!Number.isInteger(this.artifactRetentionBuilds) || this.artifactRetentionBuilds < 1) {
+            throw new Error('training-control artifactRetentionBuilds must be a positive integer');
+        }
         this.leaseSeconds = Number(options.leaseSeconds || DEFAULT_LEASE_SECONDS);
         if (!Number.isFinite(this.leaseSeconds) || this.leaseSeconds <= 0) {
             throw new Error('training-control leaseSeconds must be positive');
@@ -149,6 +176,11 @@ class TrainingControlStore {
             throw new Error('training-control compatibleFailureGraceSeconds must be positive');
         }
         this.now = typeof options.now === 'function' ? options.now : () => Date.now();
+        this.environmentValidationSecret = String(
+            options.environmentValidationSecret ??
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET ??
+            ''
+        );
         this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
         this.state = this._loadState();
@@ -253,6 +285,12 @@ class TrainingControlStore {
             if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
                 pending.environment_args = normalizeEnvironmentArgs(pending.environment_args);
             }
+            if (!Array.isArray(pending.rolled_trainers)) {
+                // Schema-5 states written before explicit rolling acknowledgements did not
+                // persist this list. Replaying an already-completed trainer is safe; guessing
+                // an acknowledgement after restart is not.
+                pending.rolled_trainers = [];
+            }
             const trainerIds = new Set();
             for (const trainer of pending.required_trainers) {
                 if (!trainer || typeof trainer !== 'object' || Array.isArray(trainer) ||
@@ -267,6 +305,66 @@ class TrainingControlStore {
                     throw new Error('training-control pending release trainer barrier is invalid');
                 }
                 trainerIds.add(trainer.trainer_id);
+            }
+            const rolledTrainerIds = new Set();
+            for (const trainerId of pending.rolled_trainers) {
+                if (typeof trainerId !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+                    !trainerIds.has(trainerId) ||
+                    rolledTrainerIds.has(trainerId)) {
+                    throw new Error(
+                        'training-control pending release rolling acknowledgements are invalid');
+                }
+                rolledTrainerIds.add(trainerId);
+            }
+
+            const derivedRemotePlatforms = [...new Set(
+                pending.required_trainers
+                    .filter(trainer => trainer.trainer_id !== 'central-learner')
+                    .map(trainer => trainer.platform),
+            )].sort();
+            if (!Array.isArray(pending.required_remote_platforms)) {
+                pending.required_remote_platforms = derivedRemotePlatforms;
+            }
+            const requiredRemotePlatforms = new Set();
+            for (const platform of pending.required_remote_platforms) {
+                if (typeof platform !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(platform) ||
+                    requiredRemotePlatforms.has(platform)) {
+                    throw new Error(
+                        'training-control pending release remote platform barrier is invalid');
+                }
+                requiredRemotePlatforms.add(platform);
+            }
+            if (!Array.isArray(pending.healthy_remote_platforms)) {
+                pending.healthy_remote_platforms = derivedRemotePlatforms.filter(
+                    platform => pending.required_trainers.some(
+                        trainer => trainer.trainer_id !== 'central-learner' &&
+                            trainer.platform === platform &&
+                            rolledTrainerIds.has(trainer.trainer_id)));
+            }
+            const healthyRemotePlatforms = new Set();
+            for (const platform of pending.healthy_remote_platforms) {
+                if (typeof platform !== 'string' ||
+                    !requiredRemotePlatforms.has(platform) ||
+                    healthyRemotePlatforms.has(platform)) {
+                    throw new Error(
+                        'training-control pending release healthy remote platforms are invalid');
+                }
+                healthyRemotePlatforms.add(platform);
+            }
+            if (!Array.isArray(pending.quarantined_trainers)) {
+                pending.quarantined_trainers = [];
+            }
+            const quarantinedTrainerIds = new Set();
+            for (const trainerId of pending.quarantined_trainers) {
+                if (typeof trainerId !== 'string' ||
+                    !/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+                    quarantinedTrainerIds.has(trainerId)) {
+                    throw new Error(
+                        'training-control pending release quarantine is invalid');
+                }
+                quarantinedTrainerIds.add(trainerId);
             }
         }
         if (!Array.isArray(parsed.known_dedicated_trainers)) {
@@ -303,6 +401,46 @@ class TrainingControlStore {
 
     _catalogForRole(role) {
         return role === 'full-game' ? this.state.full_game_builds : this.state.builds;
+    }
+
+    _pruneArtifactCatalog() {
+        const protectedBuildIds = new Set();
+        const staleArtifactPaths = [];
+        if (this.state.canonical_build_id) protectedBuildIds.add(this.state.canonical_build_id);
+        if (this.state.pending_release?.build_id) protectedBuildIds.add(this.state.pending_release.build_id);
+        for (const trainer of this.trainers.values()) {
+            if (trainer.build_id) protectedBuildIds.add(trainer.build_id);
+            if (trainer.prepared_build_id) protectedBuildIds.add(trainer.prepared_build_id);
+        }
+
+        for (const catalog of [this.state.builds, this.state.full_game_builds]) {
+            for (const versions of Object.values(catalog)) {
+                const entries = Object.entries(versions || {});
+                const newest = new Set(
+                    entries.slice(-this.artifactRetentionBuilds).map(([buildId]) => buildId)
+                );
+                for (const [buildId, record] of entries) {
+                    if (protectedBuildIds.has(buildId) || newest.has(buildId)) continue;
+                    if (record.archive_path) staleArtifactPaths.push(record.archive_path);
+                    delete versions[buildId];
+                }
+            }
+        }
+        return staleArtifactPaths;
+    }
+
+    _deletePrunedArtifacts(paths) {
+        for (const archivePath of paths) {
+            try {
+                if (archivePath && fs.existsSync(archivePath)) {
+                    fs.unlinkSync(archivePath);
+                }
+            } catch (_) {
+                // Catalog state is already durable before deletion. An open file may therefore
+                // remain as an harmless orphan rather than making persisted state reference a
+                // missing artifact. A later maintenance/startup pass may remove such leftovers.
+            }
+        }
     }
 
     _validateStoredBuilds(state) {
@@ -472,7 +610,19 @@ class TrainingControlStore {
         // deadlock the in-flight barrier. The only compatible exception is the explicit
         // recollection window used when a restart/migration staged with no known trainers.
         if (!pending.incompatible && pending.collect_until_ms <= this.now()) {
-            return false;
+            const requiredPlatforms = new Set(pending.required_remote_platforms || []);
+            const healthyPlatforms = new Set(pending.healthy_remote_platforms || []);
+            const quarantined = new Set(pending.quarantined_trainers || []);
+            const platformHasCandidate = pending.required_trainers.some(
+                spec => spec.trainer_id !== 'central-learner' &&
+                    spec.platform === record.platform);
+            const replacementPlatformCanary =
+                record.trainer_id !== 'central-learner' &&
+                !quarantined.has(record.trainer_id) &&
+                requiredPlatforms.has(record.platform) &&
+                !healthyPlatforms.has(record.platform) &&
+                !platformHasCandidate;
+            if (!replacementPlatformCanary) return false;
         }
 
         // Incompatible run cutovers remain strict: any dedicated trainer that appears before
@@ -510,6 +660,18 @@ class TrainingControlStore {
                 record.build_id === pending.build_id ||
                 record.prepared_build_id === pending.build_id);
         });
+    }
+
+    _remotePlatformCoverageSatisfied(pending) {
+        if (!pending || pending.incompatible || !this.state.training_enabled) return true;
+        const required = Array.isArray(pending.required_remote_platforms)
+            ? pending.required_remote_platforms
+            : [];
+        const healthy = new Set(
+            Array.isArray(pending.healthy_remote_platforms)
+                ? pending.healthy_remote_platforms
+                : []);
+        return required.every(platform => healthy.has(platform));
     }
 
     _pruneExpiredCompatibleBarrierTrainers(pending) {
@@ -562,6 +724,13 @@ class TrainingControlStore {
                     spec.failure_since_ms = now;
                     changed = true;
                 } else if (now - spec.failure_since_ms >= failureGraceMs) {
+                    if (!Array.isArray(pending.quarantined_trainers)) {
+                        pending.quarantined_trainers = [];
+                    }
+                    if (!pending.quarantined_trainers.includes(spec.trainer_id)) {
+                        pending.quarantined_trainers.push(spec.trainer_id);
+                        pending.quarantined_trainers.sort();
+                    }
                     changed = true;
                     continue;
                 }
@@ -571,8 +740,34 @@ class TrainingControlStore {
             }
             kept.push(spec);
         }
+
+        // A platform that simply disappears by lease expiry is no longer an active rollout
+        // target. Keep requirements for healthy canaries and for platforms that still have a
+        // live/quarantined candidate, but do not let ordinary worker churn deadlock the release.
+        const healthyPlatforms = new Set(pending.healthy_remote_platforms || []);
+        const keptPlatforms = new Set(
+            kept
+                .filter(spec => spec.trainer_id !== 'central-learner')
+                .map(spec => spec.platform));
+        const activeRemotePlatforms = new Set(
+            this._activeDedicatedTrainers()
+                .filter(record => record.trainer_id !== 'central-learner')
+                .map(record => record.platform));
+        const requiredPlatforms = pending.required_remote_platforms || [];
+        const retainedPlatforms = requiredPlatforms.filter(
+            platform => healthyPlatforms.has(platform) ||
+                keptPlatforms.has(platform) ||
+                activeRemotePlatforms.has(platform));
+        if (retainedPlatforms.length !== requiredPlatforms.length) {
+            pending.required_remote_platforms = retainedPlatforms;
+            changed = true;
+        }
+
         if (!changed) return false;
         pending.required_trainers = kept;
+        const keptIds = new Set(kept.map(spec => spec.trainer_id));
+        pending.rolled_trainers = (pending.rolled_trainers || [])
+            .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
         this._persist();
         return true;
@@ -615,6 +810,9 @@ class TrainingControlStore {
         }
         if (!changed) return false;
         pending.required_trainers = kept;
+        const keptIds = new Set(kept.map(spec => spec.trainer_id));
+        pending.rolled_trainers = (pending.rolled_trainers || [])
+            .filter(trainerId => keptIds.has(trainerId));
         this.state.revision++;
         this._persist();
         return true;
@@ -642,9 +840,22 @@ class TrainingControlStore {
     _rollingTargetId() {
         const pending = this.state.pending_release;
         if (!pending || pending.phase !== 'rolling') return null;
+        const rolled = new Set(pending.rolled_trainers || []);
         const remaining = pending.required_trainers
-            .filter(spec => !this._trainerHealthyOnPending(spec, pending));
-        return remaining.length ? remaining[0].trainer_id : null;
+            .filter(spec => !rolled.has(spec.trainer_id));
+        if (!remaining.length) return null;
+
+        const buildTransition = pending.build_id !== this.state.canonical_build_id;
+        const environmentTransition =
+            Object.prototype.hasOwnProperty.call(pending, 'environment_args') &&
+            JSON.stringify(pending.environment_args) !== JSON.stringify(this.state.environment_args);
+        // WAN admission is exact-build scoped. Switch the authoritative learner first so a
+        // remote moved to the pending build can immediately join the new broker session.
+        if (buildTransition || environmentTransition) {
+            const central = remaining.find(spec => spec.trainer_id === 'central-learner');
+            if (central) return central.trainer_id;
+        }
+        return remaining[0].trainer_id;
     }
 
     _promotePendingRelease() {
@@ -672,8 +883,13 @@ class TrainingControlStore {
 
         if (pending.phase === 'preparing') {
             if (!this._allDedicatedPrepared(pending)) return false;
-            if (pending.required_trainers.length === 0 ||
-                (!this.state.training_enabled && !pending.incompatible)) {
+            if (pending.required_trainers.length === 0) {
+                if (this._remotePlatformCoverageSatisfied(pending)) {
+                    return this._promotePendingRelease();
+                }
+                return false;
+            }
+            if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
             pending.phase = pending.incompatible ? 'stopping' : 'rolling';
@@ -695,8 +911,39 @@ class TrainingControlStore {
             if (!this.state.training_enabled && !pending.incompatible) {
                 return this._promotePendingRelease();
             }
+
+            // A rollout acknowledgement is valid only for the trainer that was explicitly assigned
+            // the current rolling slot. All trainers observe the shared control revision, including
+            // trainers deliberately left on the old environment arguments. Therefore
+            // build_id+applied_revision alone cannot identify a completed same-build config cutover.
+            const rollingTargetId = this._rollingTargetId();
+            if (rollingTargetId) {
+                const targetSpec = pending.required_trainers.find(
+                    spec => spec.trainer_id === rollingTargetId);
+                if (targetSpec && this._trainerHealthyOnPending(targetSpec, pending)) {
+                    let changed = false;
+                    if (!pending.rolled_trainers.includes(rollingTargetId)) {
+                        pending.rolled_trainers.push(rollingTargetId);
+                        changed = true;
+                    }
+                    if (targetSpec.trainer_id !== 'central-learner' &&
+                        (pending.required_remote_platforms || []).includes(targetSpec.platform) &&
+                        !(pending.healthy_remote_platforms || []).includes(targetSpec.platform)) {
+                        pending.healthy_remote_platforms.push(targetSpec.platform);
+                        pending.healthy_remote_platforms.sort();
+                        changed = true;
+                    }
+                    if (changed) {
+                        this.state.revision++;
+                        this._persist();
+                    }
+                }
+            }
+
+            const rolled = new Set(pending.rolled_trainers || []);
             if (pending.required_trainers.every(
-                spec => this._trainerHealthyOnPending(spec, pending))) {
+                spec => rolled.has(spec.trainer_id)) &&
+                this._remotePlatformCoverageSatisfied(pending)) {
                 return this._promotePendingRelease();
             }
             return false;
@@ -717,6 +964,7 @@ class TrainingControlStore {
         compatibilityKey,
         incompatible = false,
         environmentArgs = undefined,
+        environmentValidationKey = undefined,
     }) {
         buildId = requireString(buildId, 'build_id', 128);
         runId = requireString(runId, 'run_id', 128);
@@ -737,6 +985,49 @@ class TrainingControlStore {
                 new Error('release build has no published platform artifact'),
                 { statusCode: 409 });
         }
+        const effectiveEnvironmentArgs = releaseEnvironmentArgs === undefined
+            ? this.state.environment_args
+            : releaseEnvironmentArgs;
+        const environmentValidationRequired =
+            releaseEnvironmentArgs !== undefined ||
+            (
+                effectiveEnvironmentArgs.length > 0 &&
+                this.state.canonical_build_id !== buildId
+            );
+        if (environmentValidationRequired) {
+            if (this.environmentValidationSecret.length < 32) {
+                throw Object.assign(
+                    new Error(
+                        'training control has no environment validation secret configured'),
+                    { statusCode: 503 });
+            }
+            const windowsRecord = this.state.builds.WindowsPlayer &&
+                this.state.builds.WindowsPlayer[buildId];
+            if (!windowsRecord) {
+                throw Object.assign(
+                    new Error(
+                        'environment validation requires a published dedicated WindowsPlayer artifact'),
+                    { statusCode: 409 });
+            }
+            const suppliedValidationKey = typeof environmentValidationKey === 'string'
+                ? environmentValidationKey.trim().toLowerCase()
+                : '';
+            const expectedValidationKey = environmentValidationKeyForRelease(
+                buildId,
+                windowsRecord.archive_sha256,
+                effectiveEnvironmentArgs,
+                this.environmentValidationSecret,
+            );
+            if (
+                !/^[0-9a-f]{64}$/.test(suppliedValidationKey) ||
+                suppliedValidationKey !== expectedValidationKey
+            ) {
+                throw Object.assign(
+                    new Error(
+                        'release environment_args are missing authoritative compiled-build validation'),
+                    { statusCode: 409 });
+            }
+        }
         const missingTargets = this._missingActiveTargets(buildId);
         if (missingTargets.length > 0) {
             throw Object.assign(
@@ -749,15 +1040,19 @@ class TrainingControlStore {
             this.state.run_id === runId &&
             this.state.compatibility_key === compatibilityKey &&
             this.state.pending_release === null) {
-            if (releaseEnvironmentArgs !== undefined &&
+            const environmentChanged =
+                releaseEnvironmentArgs !== undefined &&
                 JSON.stringify(releaseEnvironmentArgs) !==
-                    JSON.stringify(this.state.environment_args)) {
+                    JSON.stringify(this.state.environment_args);
+            if (!environmentChanged) {
+                return this.desiredState();
+            }
+            if (incompatible) {
                 throw Object.assign(
                     new Error(
-                        'canonical release environment_args differ from the requested release transition'),
+                        'same-run environment-only transitions must use compatible rolling rollout'),
                     { statusCode: 409 });
             }
-            return this.desiredState();
         }
         const existingPending = this.state.pending_release;
         const requestedEnvironmentIdentity = releaseEnvironmentArgs === undefined
@@ -794,6 +1089,11 @@ class TrainingControlStore {
         }
 
         const requiredTrainers = this._releaseBarrierTrainers();
+        const requiredRemotePlatforms = [...new Set(
+            requiredTrainers
+                .filter(trainer => trainer.trainer_id !== 'central-learner')
+                .map(trainer => trainer.platform),
+        )].sort();
         this.state.pending_release = {
             build_id: buildId,
             run_id: runId,
@@ -804,6 +1104,10 @@ class TrainingControlStore {
                 : { environment_args: [...releaseEnvironmentArgs] }),
             phase: 'preparing',
             required_trainers: requiredTrainers,
+            rolled_trainers: [],
+            required_remote_platforms: requiredRemotePlatforms,
+            healthy_remote_platforms: [],
+            quarantined_trainers: [],
             phase_revision: this.state.revision + 1,
             collect_until_ms: (
                 this.state.training_enabled && requiredTrainers.length === 0
@@ -869,6 +1173,13 @@ class TrainingControlStore {
         if (Object.prototype.hasOwnProperty.call(patch, 'environment_args')) {
             const args = normalizeEnvironmentArgs(patch.environment_args);
             if (JSON.stringify(args) !== JSON.stringify(this.state.environment_args)) {
+                if (this.state.canonical_build_id) {
+                    throw Object.assign(
+                        new Error(
+                            'environment_args are rollout-owned once a canonical build exists; ' +
+                            'stage the canonical release with validated environment_args instead'),
+                        { statusCode: 409 });
+                }
                 this.state.environment_args = args;
                 changed = true;
             }
@@ -939,7 +1250,9 @@ class TrainingControlStore {
         if (buildId === this.state.canonical_build_id) {
             this.state.revision++;
         }
+        const prunedArtifactPaths = this._pruneArtifactCatalog();
         this._persist();
+        this._deletePrunedArtifacts(prunedArtifactPaths);
         return publicBuildDescriptor(record);
     }
 
@@ -984,16 +1297,21 @@ class TrainingControlStore {
 
         const catalog = this._catalogForRole(role);
         let desiredBuildId = this.state.canonical_build_id;
+        let desiredEnvironmentArgs = this.state.environment_args;
         let forcedStop = false;
         const pending = this.state.pending_release;
         if (role === 'dedicated' && pending) {
             if (pending.phase === 'rolling') {
-                const current = this.trainers.get(trainerId);
-                const alreadyRolled = current && current.build_id === pending.build_id;
+                const alreadyRolled = (pending.rolled_trainers || [])
+                    .includes(trainerId);
                 const recollecting = pending.collect_until_ms > this.now();
-                if (alreadyRolled ||
-                    (!recollecting && this._rollingTargetId() === trainerId)) {
+                const isRollingTarget = !recollecting &&
+                    this._rollingTargetId() === trainerId;
+                if (alreadyRolled || isRollingTarget) {
                     desiredBuildId = pending.build_id;
+                    if (Object.prototype.hasOwnProperty.call(pending, 'environment_args')) {
+                        desiredEnvironmentArgs = pending.environment_args;
+                    }
                 }
             } else if (pending.phase === 'stopping') {
                 forcedStop = true;
@@ -1024,7 +1342,7 @@ class TrainingControlStore {
             revision: this.state.revision,
             training_enabled: this.state.training_enabled,
             desired_mode: desiredMode,
-            environment_args: [...this.state.environment_args],
+            environment_args: [...desiredEnvironmentArgs],
             worker_env_count: workerEnvCount,
             env_optimizer: envOptimizer,
             canonical_build_id: this.state.canonical_build_id,
@@ -1229,6 +1547,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                         body, 'environment_args')
                         ? body.environment_args
                         : undefined,
+                    environmentValidationKey: Object.prototype.hasOwnProperty.call(
+                        body, 'environment_validation_key')
+                        ? body.environment_validation_key
+                        : undefined,
                 }));
                 return;
             }
@@ -1306,6 +1628,9 @@ function startTrainingControl(options = {}) {
         artifactRoot: options.artifactRoot || process.env.BEES_TRAINING_ARTIFACT_ROOT,
         logRoot: options.logRoot || process.env.BEES_TRAINING_LOG_ROOT,
         leaseSeconds: options.leaseSeconds || process.env.BEES_TRAINING_CONTROL_LEASE_SECONDS,
+        environmentValidationSecret:
+            options.environmentValidationSecret ||
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET,
     });
     const httpModule = options.httpModule || http;
     const server = httpModule.createServer(createTrainingControlHandler(store, token, adminToken));
@@ -1341,4 +1666,5 @@ module.exports = {
     startTrainingControl,
     startTrainingControlFromEnvironment,
     sha256File,
+    environmentValidationKeyForRelease,
 };

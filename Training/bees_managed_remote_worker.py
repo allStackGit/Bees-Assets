@@ -31,6 +31,8 @@ import urllib.request
 import uuid
 import zipfile
 
+from bees_process_safety import popen_owned
+
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 MAX_ENVS_PER_ACTOR = 64
@@ -39,11 +41,15 @@ REMOTE_MEMORY_PER_ENV_BYTES = 1 * 1024 * 1024 * 1024
 REMOTE_PID_FILE = "remote-worker.pid"
 REMOTE_STOP_REQUEST_FILE = "remote-worker.stop"
 REMOTE_WORKER_AGENT_STOP_REQUEST_FILE = "worker-agent-stop.request"
+MAX_RETAINED_RUNTIME_VERSIONS = 4
+MAX_RETAINED_VENV_VERSIONS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 class _RunScopedLogSink:
     """Mirror supervisor/child console output into the run-scoped uploaded log tree."""
+
+    MAX_BYTES = 16 * 1024 * 1024
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -67,6 +73,15 @@ class _RunScopedLogSink:
             path = self.root / run_id / "remote-supervisor.log"
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
+                encoded_size = len(value.encode("utf-8", errors="replace"))
+                current_size = path.stat().st_size if path.is_file() else 0
+                if current_size > 0 and current_size + encoded_size > self.MAX_BYTES:
+                    rotated = path.with_name(path.name + ".1")
+                    try:
+                        rotated.unlink()
+                    except FileNotFoundError:
+                        pass
+                    os.replace(path, rotated)
                 with path.open("a", encoding="utf-8", errors="replace") as handle:
                     handle.write(value)
             except OSError:
@@ -113,7 +128,7 @@ def _forward_process_output(process: subprocess.Popen) -> None:
 
 
 def _start_logged_process(command: Sequence[str]) -> tuple[subprocess.Popen, threading.Thread]:
-    process = subprocess.Popen(
+    process = popen_owned(
         list(command),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -544,6 +559,56 @@ def _safe_extract_runtime(runtime_zip: bytes, destination: Path) -> None:
             shutil.rmtree(temporary, ignore_errors=True)
 
 
+def _direct_version_root(root: Path, path: Path) -> Optional[Path]:
+    # Do not resolve interpreter symlinks here. Linux venv/bin/python commonly points at
+    # a base interpreter outside the venv; resolving it would make an active managed venv
+    # look unrelated to VenvVersions and eligible for deletion.
+    root_absolute = Path(os.path.abspath(os.fspath(root)))
+    path_absolute = Path(os.path.abspath(os.fspath(path)))
+    try:
+        relative = path_absolute.relative_to(root_absolute)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+    return root_absolute / relative.parts[0]
+
+
+def _prune_version_directories(
+    root: Path,
+    *,
+    preserve_paths: Sequence[Path],
+    retain: int,
+) -> None:
+    if retain < 1 or not root.is_dir():
+        return
+    keep = set()
+    for path in preserve_paths:
+        candidate = _direct_version_root(root, Path(path))
+        if candidate is not None:
+            keep.add(candidate)
+
+    candidates = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name.endswith(".tmp"):
+            continue
+        try:
+            candidates.append((child.stat().st_mtime_ns, child.resolve()))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    keep.update(path for _, path in candidates[:retain])
+
+    for _, path in candidates:
+        if path in keep:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
 class RuntimeUpdater:
     def __init__(self, args: argparse.Namespace, install_root: Path) -> None:
         self.args = args
@@ -828,6 +893,16 @@ class RuntimeUpdater:
             self.ready_build_path,
             (staged_build_id + "\n").encode("ascii"),
             0o600,
+        )
+        _prune_version_directories(
+            self.versions_root,
+            preserve_paths=[Path(__file__).resolve().parent, runtime_root],
+            retain=MAX_RETAINED_RUNTIME_VERSIONS,
+        )
+        _prune_version_directories(
+            self.install_root / "VenvVersions",
+            preserve_paths=[Path(sys.executable).absolute(), staged_python],
+            retain=MAX_RETAINED_VENV_VERSIONS,
         )
         update_parts = [f"runtime={runtime_sha[:12]}", f"bridge={bridge_sha[:12]}"]
         if not active_dependencies_ok:
@@ -1204,7 +1279,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             worker_log_thread: Optional[threading.Thread] = None
             runtime_cutover: Optional[Path] = None
             try:
-                tailnet = subprocess.Popen(_tailnet_forward_command(args))
+                tailnet = popen_owned(_tailnet_forward_command(args))
                 if not _wait_for_private_transport(
                     args,
                     tailnet,

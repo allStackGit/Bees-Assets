@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import bees_wan_actor_training as base
+from bees_process_safety import write_managed_health
 
 
 MAX_REMOTE_ACTORS = 12
@@ -44,6 +45,7 @@ WAN_LEASE_SECONDS_FLAG = "--bees-wan-actor-lease-seconds"
 BUILD_ID_ENV = "BEES_TRAINING_BUILD_ID"
 RUN_ID_ENV = "BEES_TRAINING_RUN_ID"
 COMPATIBILITY_KEY_ENV = "BEES_TRAINING_COMPATIBILITY_KEY"
+ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 
 
 @dataclass(frozen=True)
@@ -393,6 +395,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self.remote_worker_base = self.local_envs
         build_id = os.environ.get(BUILD_ID_ENV, "").strip()
         compatibility_key = os.environ.get(COMPATIBILITY_KEY_ENV, "").strip().lower()
+        environment_id = os.environ.get(ENVIRONMENT_ID_ENV, "").strip().lower()
         run_id = str(run_options.checkpoint_settings.run_id).strip()
         environment_run_id = os.environ.get(RUN_ID_ENV, "").strip()
         if not build_id:
@@ -401,6 +404,10 @@ class ElasticWanBroker(base.WanActorBroker):
             ch not in "0123456789abcdef" for ch in compatibility_key
         ):
             raise RuntimeError("Elastic WAN learner requires a 64-hex compatibility identity")
+        if len(environment_id) != 64 or any(
+            ch not in "0123456789abcdef" for ch in environment_id
+        ):
+            raise RuntimeError("Elastic WAN learner requires a 64-hex environment identity")
         if not run_id:
             raise RuntimeError("Elastic WAN learner requires a non-empty run identity")
         if environment_run_id and environment_run_id != run_id:
@@ -412,6 +419,7 @@ class ElasticWanBroker(base.WanActorBroker):
             "build_id": build_id,
             "run_id": run_id,
             "compatibility_key": compatibility_key,
+            "environment_id": environment_id,
         }
         self._reference_behavior_specs: Optional[Dict[str, Any]] = None
         self._reference_signatures: Optional[Dict[str, Any]] = None
@@ -441,11 +449,15 @@ class ElasticWanBroker(base.WanActorBroker):
         }
 
     def _validate_release_identity(self, payload: Mapping[str, Any]) -> None:
+        actual_build_id = str(payload.get("build_id", "")).strip()
         actual_run_id = str(payload.get("run_id", "")).strip()
         actual_compatibility_key = str(payload.get("compatibility_key", "")).strip().lower()
+        actual_environment_id = str(payload.get("environment_id", "")).strip().lower()
         if (
-            actual_run_id != self.release_identity["run_id"]
+            actual_build_id != self.release_identity["build_id"]
+            or actual_run_id != self.release_identity["run_id"]
             or actual_compatibility_key != self.release_identity["compatibility_key"]
+            or actual_environment_id != self.release_identity["environment_id"]
         ):
             raise ValueError(
                 "actor semantic release identity does not match the authoritative learner session"
@@ -909,6 +921,14 @@ class ElasticWanEnvManagerMixin:
             n_env,
         )
         self._bees_wan_broker.start()
+        write_managed_health(
+            "ready",
+            details={
+                "component": "elastic-wan-learner",
+                "local_envs": int(n_env),
+                "broker_port": int(options.broker_port),
+            },
+        )
 
     def set_agent_manager(self, brain_name: str, manager: Any) -> None:
         from mlagents.trainers.env_manager import EnvManager

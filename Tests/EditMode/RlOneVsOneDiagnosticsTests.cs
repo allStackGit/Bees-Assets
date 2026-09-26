@@ -13,7 +13,13 @@ namespace Bees.Tests.EditMode
         {
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
 
-            Assert.That(coordinator, Does.Contain("SummaryIntervalEpisodes = 10"));
+            Assert.That(coordinator, Does.Contain("EpisodeMetricsLogInterval = 10"));
+            Assert.That(coordinator, Does.Contain("SummaryIntervalEpisodes = 100"));
+            Assert.That(coordinator, Does.Contain("FullEpisodeDiagnosticsInterval = 1000"));
+            Assert.That(coordinator, Does.Contain("TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L"));
+            Assert.That(coordinator, Does.Contain("BEES_TRAINING_LOG_DIR"));
+            Assert.That(coordinator, Does.Contain("BeesEpisode-"));
+            Assert.That(coordinator, Does.Contain("WriteTrainingDiagnostic("));
             Assert.That(coordinator, Does.Contain("BeeShotsFired"));
             Assert.That(coordinator, Does.Contain("BeeShotsHit"));
             Assert.That(coordinator, Does.Contain("BeeDamageDealt"));
@@ -126,8 +132,12 @@ namespace Bees.Tests.EditMode
                 "Episode output should aggregate Carrier information instead of listing runtime entity IDs.");
             Assert.That(diagnostics, Does.Not.Contain("Striker#"),
                 "Episode output should aggregate Striker reloads instead of listing every child runtime ID.");
+            Assert.That(coordinator, Does.Contain("_completedEpisodes % EpisodeMetricsLogInterval == 0"),
+                "Compact episode telemetry should be sampled rather than emitted for every high-speed episode.");
+            Assert.That(coordinator, Does.Contain("_completedEpisodes % FullEpisodeDiagnosticsInterval == 0"),
+                "Full behavior diagnostics should be retained on a much lower-frequency detail cadence.");
             Assert.That(CountOccurrences(coordinator, "behaviorDiagnostics"), Is.GreaterThanOrEqualTo(2),
-                "The coordinator should build and append compact behavior diagnostics to the existing episode line.");
+                "The coordinator should still build and emit aggregated behavior diagnostics on the detail cadence.");
         }
 
         [Test]

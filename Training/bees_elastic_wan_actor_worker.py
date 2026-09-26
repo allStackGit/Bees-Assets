@@ -26,6 +26,7 @@ import bees_elastic_wan_actor_session as elastic_session
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
 import bees_wan_actor_worker as worker
+from bees_process_safety import write_managed_health
 
 
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
@@ -195,6 +196,7 @@ class ElasticBrokerClient(worker.BrokerClient):
         build_id: str,
         run_id: str,
         compatibility_key: str,
+        environment_id: str,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
@@ -206,6 +208,7 @@ class ElasticBrokerClient(worker.BrokerClient):
             "build_id": str(build_id),
             "run_id": str(run_id),
             "compatibility_key": str(compatibility_key).lower(),
+            "environment_id": str(environment_id).lower(),
         }
         self.actor_instance_id = secrets.token_hex(16)
 
@@ -299,16 +302,22 @@ def _managed_release_identity() -> dict[str, str]:
     build_id = os.environ.get(elastic.BUILD_ID_ENV, "").strip()
     run_id = os.environ.get(elastic.RUN_ID_ENV, "").strip()
     compatibility_key = os.environ.get(elastic.COMPATIBILITY_KEY_ENV, "").strip().lower()
+    environment_id = os.environ.get(elastic.ENVIRONMENT_ID_ENV, "").strip().lower()
     if not build_id or not run_id:
         raise RuntimeError("managed WAN actor is missing build/run identity")
     if len(compatibility_key) != 64 or any(
         ch not in "0123456789abcdef" for ch in compatibility_key
     ):
         raise RuntimeError("managed WAN actor is missing a valid compatibility identity")
+    if len(environment_id) != 64 or any(
+        ch not in "0123456789abcdef" for ch in environment_id
+    ):
+        raise RuntimeError("managed WAN actor is missing a valid environment identity")
     return {
         "build_id": build_id,
         "run_id": run_id,
         "compatibility_key": compatibility_key,
+        "environment_id": environment_id,
     }
 
 
@@ -319,11 +328,15 @@ def _validate_session_release_identity(
     actual = session.get("release_identity")
     if not isinstance(actual, Mapping):
         raise RuntimeError("Elastic WAN session is missing release identity")
+    build_id = str(actual.get("build_id", "")).strip()
     run_id = str(actual.get("run_id", "")).strip()
     compatibility_key = str(actual.get("compatibility_key", "")).strip().lower()
+    environment_id = str(actual.get("environment_id", "")).strip().lower()
     if (
-        run_id != str(expected.get("run_id", "")).strip()
+        build_id != str(expected.get("build_id", "")).strip()
+        or run_id != str(expected.get("run_id", "")).strip()
         or compatibility_key != str(expected.get("compatibility_key", "")).strip().lower()
+        or environment_id != str(expected.get("environment_id", "")).strip().lower()
     ):
         raise RuntimeError(
             "Elastic WAN learner semantic release identity does not match this managed actor"
@@ -431,6 +444,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build_id=release_identity["build_id"],
             run_id=release_identity["run_id"],
             compatibility_key=release_identity["compatibility_key"],
+            environment_id=release_identity["environment_id"],
         )
         while not stop.is_set():
             actor_session = None
@@ -464,6 +478,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
+                    write_managed_health(
+                        "ready",
+                        details={
+                            "component": "elastic-wan-actor",
+                            "actor_id": int(actor_id),
+                            "env_count": int(args.envs),
+                        },
+                    )
                     session_started_monotonic = time.monotonic()
                     actor_session.run()
                 finally:
@@ -473,6 +495,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
             except worker.BrokerUnavailable as exc:
+                write_managed_health(
+                    "error",
+                    error=f"BrokerUnavailable: {exc}",
+                    details={"component": "elastic-wan-actor"},
+                )
                 delay = reconnect_backoff.next_delay()
                 print(
                     f"[Bees WAN actor] central trainer unavailable: {exc}; "
@@ -489,6 +516,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ):
                     reconnect_backoff.reset()
                 failure_telemetry.record(exc)
+                write_managed_health(
+                    "error",
+                    error=f"{type(exc).__name__}: {exc}",
+                    details={"component": "elastic-wan-actor"},
+                )
                 if actor_session is not None:
                     try:
                         actor_session._write_throughput_metrics(force=True)

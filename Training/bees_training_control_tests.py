@@ -9,6 +9,7 @@ from unittest import mock
 import zipfile
 from pathlib import Path
 
+import bees_process_safety as process_safety
 import bees_training_control as control
 import bees_training_worker_agent as agent
 import bees_remote_worker as remote_worker
@@ -202,6 +203,63 @@ class TrainingControlClientTests(unittest.TestCase):
             5.0,
         )
 
+    def test_environment_args_identity_is_ordered_and_deterministic(self):
+        first = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
+        second = agent.environment_args_identity(("--rl-map-size=32", "--rl-health-ratio=.25"))
+        reordered = agent.environment_args_identity(("--rl-health-ratio=.25", "--rl-map-size=32"))
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 64)
+        self.assertNotEqual(first, reordered)
+
+    def test_dedicated_child_health_gates_running_state_and_surfaces_errors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            fake = mock.Mock()
+            fake.poll.return_value = None
+
+            managed = agent.ManagedProcess()
+            managed.process = fake
+            managed.health_required = True
+            managed.health_file = health_path
+            managed.health_token = "health-token"
+            managed.started_monotonic = agent.time.monotonic()
+
+            self.assertEqual(managed.state("dedicated"), "starting")
+            self.assertEqual(managed.health_error(), "")
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "ready",
+                        "error": "",
+                        "updated_unix_seconds": 1.0,
+                        "pid": 123,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(managed.state("dedicated"), "running")
+            self.assertEqual(managed.health_error(), "")
+
+            health_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "health-token",
+                        "state": "error",
+                        "error": "trainer failed to initialize",
+                        "updated_unix_seconds": 2.0,
+                        "pid": 123,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(managed.state("dedicated"), "starting")
+            self.assertEqual(managed.health_error(), "trainer failed to initialize")
+
     def test_managed_process_uses_separate_posix_process_group_and_stops_tree(self):
         fake = mock.Mock()
         fake.pid = 4242
@@ -223,13 +281,28 @@ class TrainingControlClientTests(unittest.TestCase):
                 compatibility_key="b" * 64,
                 state_file=Path("state.json"),
                 environment_args=(),
+                require_child_health=True,
             )
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            launched = popen.call_args.args[0]
+            self.assertIn("bees_process_safety.py", launched[1])
+            self.assertIn("--owned-child", launched)
+            self.assertEqual(launched[-2:], ["python", "worker.py"])
             environment = popen.call_args.kwargs["env"]
             self.assertEqual(environment["BEES_TRAINING_RUN_ID"], "run-a")
             self.assertEqual(environment[agent.BUILD_ID_ENV], "build-a")
             self.assertEqual(environment[agent.COMPATIBILITY_KEY_ENV], "b" * 64)
+            self.assertEqual(
+                environment[agent.ENVIRONMENT_ID_ENV],
+                agent.environment_args_identity(()),
+            )
             self.assertEqual(environment["PYTHONUNBUFFERED"], "1")
+            self.assertTrue(
+                Path(environment["BEES_TRAINING_CHILD_HEALTH_FILE"]).as_posix().endswith(
+                    "child-health.json"
+                )
+            )
+            self.assertTrue(environment["BEES_TRAINING_CHILD_HEALTH_TOKEN"])
             self.assertTrue(
                 Path(environment[agent.THROUGHPUT_METRICS_ENV]).as_posix().endswith(
                     "worker-throughput.json"
@@ -406,6 +479,21 @@ class TrainingControlClientTests(unittest.TestCase):
             ["taskkill", "/PID", "5252", "/T", "/F"],
         )
 
+    def test_worker_log_retention_keeps_current_and_two_recent_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "logs"
+            root.mkdir()
+            for index in range(5):
+                run = root / f"run-{index}"
+                run.mkdir()
+                (run / "marker").write_text(str(index), encoding="utf-8")
+
+            agent._prune_run_log_directories(root, "run-0")
+
+            remaining = {path.name for path in root.iterdir() if path.is_dir()}
+            self.assertIn("run-0", remaining)
+            self.assertLessEqual(len(remaining), agent.MAX_RETAINED_RUN_LOG_DIRS)
+
     def test_training_log_uploader_flushes_only_selected_run(self):
         class UploadClient:
             def __init__(self):
@@ -447,6 +535,48 @@ class TrainingControlClientTests(unittest.TestCase):
                 b"old-data",
             )
             self.assertNotIn(("worker-a", "run-new", "Player-0.log"), client.files)
+
+    def test_training_log_uploader_caps_each_uploaded_file(self):
+        class UploadClient:
+            def __init__(self):
+                self.files = {}
+
+            def upload_log_chunk(
+                self,
+                *,
+                trainer_id,
+                run_id,
+                relative_path,
+                offset,
+                data,
+                reset=False,
+            ):
+                key = (trainer_id, run_id, relative_path)
+                current = self.files.get(key, b"")
+                if reset:
+                    current = b""
+                if len(current) != offset:
+                    return -len(current) - 1
+                current += data
+                self.files[key] = current
+                return len(current)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / "run"
+            run.mkdir()
+            (run / "Player-0.log").write_bytes(b"abcdefgh")
+            uploader = agent.TrainingLogUploader(root)
+            uploader.MAX_FILE_UPLOAD_BYTES = 4
+            client = UploadClient()
+
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+            uploader.flush_all(client, trainer_id="worker-a", run_id="run")
+
+            self.assertEqual(
+                client.files[("worker-a", "run", "Player-0.log")],
+                b"abcd",
+            )
 
     def test_episode_metrics_reset_when_run_changes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -618,6 +748,31 @@ class TrainingControlClientTests(unittest.TestCase):
                 {},
             )
 
+    def test_episode_metrics_prefers_bounded_sidecar_over_player_log(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "Player-0.log").write_text(
+                "RL 1v1 episode=1 timeout=True duration=9.0s "
+                "bee_tsv=100->0 human_tsv=100->100 "
+                "bee_fire_requests=1 bee_shots=1 bee_hits=0 bee_damage=0 "
+                "human_fire_requests=1 human_shots=1 human_hits=1 human_damage=10\n",
+                encoding="utf-8",
+            )
+            (root / "BeesEpisode-123.log").write_text(
+                "RL 1v1 episode=7 timeout=False duration=3.0s "
+                "bee_tsv=100->100 human_tsv=100->0 "
+                "bee_fire_requests=2 bee_shots=2 bee_hits=2 bee_damage=20 "
+                "human_fire_requests=1 human_shots=1 human_hits=0 human_damage=0\n",
+                encoding="utf-8",
+            )
+
+            metrics = agent.EpisodeLogMetrics(root, window=10).refresh()
+
+            self.assertEqual(metrics["window_episodes"], 1)
+            self.assertEqual(metrics["last_episode"], 7)
+            self.assertEqual(metrics["bee_win_pct"], 100.0)
+            self.assertEqual(metrics["timeout_pct"], 0.0)
+
     def test_training_control_protocol_schema_matches_server_generation(self):
         self.assertEqual(control.CONTROL_SCHEMA_VERSION, 5)
 
@@ -731,6 +886,35 @@ class TrainingControlClientTests(unittest.TestCase):
                 (root / "managed" / "current.json").read_text(encoding="utf-8")
             )
             self.assertEqual(current["build_id"], "build-prepared")
+
+    def test_managed_build_retention_bounds_immutable_install_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = control.ManagedBuildStore(root / "managed")
+            store.MAX_RETAINED_BUILDS = 2
+            latest = None
+            for index in range(4):
+                archive = root / f"build-{index}.zip"
+                with zipfile.ZipFile(archive, "w") as bundle:
+                    bundle.writestr("Bees.x86_64", f"binary-{index}".encode("ascii"))
+                descriptor = {
+                    "role": "dedicated",
+                    "platform": "LinuxPlayer",
+                    "build_id": f"build-{index}",
+                    "archive_sha256": control.file_sha256(archive),
+                    "archive_size_bytes": archive.stat().st_size,
+                    "entrypoint": "Bees.x86_64",
+                    "artifact_url": f"/v1/artifact/dedicated/LinuxPlayer/build-{index}",
+                }
+                latest, _ = store.prepare(FakeClient(archive), descriptor)
+
+            installed = [
+                path for path in (root / "managed" / "builds").iterdir()
+                if path.is_dir() and not path.name.startswith(".")
+            ]
+            self.assertLessEqual(len(installed), 2)
+            self.assertIsNotNone(latest)
+            self.assertTrue(latest.is_file())
 
     def test_managed_build_rejects_archive_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:

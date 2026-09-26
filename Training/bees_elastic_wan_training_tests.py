@@ -127,6 +127,7 @@ class ElasticBrokerTests(unittest.TestCase):
                 elastic.BUILD_ID_ENV: "elastic-build",
                 elastic.RUN_ID_ENV: "elastic-test",
                 elastic.COMPATIBILITY_KEY_ENV: "c" * 64,
+                elastic.ENVIRONMENT_ID_ENV: "e" * 64,
             },
             clear=False,
         ):
@@ -305,7 +306,7 @@ class ElasticBrokerTests(unittest.TestCase):
             "actor_instance_id": "process-stale",
             "env_count": 8,
         }
-        payload["compatibility_key"] = "d" * 64
+        payload["build_id"] = "elastic-build-other"
         with self.assertRaisesRegex(ValueError, "release identity"):
             broker.claim_actor(payload)
         self.assertEqual(broker.active_actor_snapshot(), {})
@@ -315,16 +316,44 @@ class ElasticBrokerTests(unittest.TestCase):
             "build_id": "build-a",
             "run_id": "run-a",
             "compatibility_key": "a" * 64,
+            "environment_id": "e" * 64,
         }
         session = {"release_identity": dict(expected)}
         actor_worker._validate_session_release_identity(session, expected)
 
-        # Compatible rolling releases may use a different executable build while preserving
-        # the same semantic run lineage.
+        # Policy/checkpoint compatibility may remain unchanged across builds, but rollout actors
+        # must never mix trajectories from two compiled simulation builds in one learner session.
         session["release_identity"]["build_id"] = "build-b"
-        actor_worker._validate_session_release_identity(session, expected)
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            actor_worker._validate_session_release_identity(session, expected)
 
+        session["release_identity"]["build_id"] = "build-a"
         session["release_identity"]["compatibility_key"] = "b" * 64
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            actor_worker._validate_session_release_identity(session, expected)
+
+    def test_claim_rejects_actor_from_a_different_environment(self):
+        broker, _specs = self._broker()
+        payload = {
+            **broker.release_identity,
+            "actor_key": "machine-env-stale",
+            "actor_instance_id": "process-env-stale",
+            "env_count": 8,
+        }
+        payload["environment_id"] = "f" * 64
+        with self.assertRaisesRegex(ValueError, "release identity"):
+            broker.claim_actor(payload)
+        self.assertEqual(broker.active_actor_snapshot(), {})
+
+    def test_actor_rejects_session_from_a_different_environment(self):
+        expected = {
+            "build_id": "build-a",
+            "run_id": "run-a",
+            "compatibility_key": "a" * 64,
+            "environment_id": "e" * 64,
+        }
+        session = {"release_identity": dict(expected)}
+        session["release_identity"]["environment_id"] = "f" * 64
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             actor_worker._validate_session_release_identity(session, expected)
 

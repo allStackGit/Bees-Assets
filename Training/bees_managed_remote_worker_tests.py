@@ -115,6 +115,17 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
         with mock.patch.object(managed.subprocess, "run", return_value=completed):
             self.assertFalse(managed._python_remote_dependencies_ok(Path("/tmp/python")))
 
+    def test_supervisor_launches_worker_through_owned_process_container(self):
+        process = mock.Mock()
+        process.stdout = io.StringIO("")
+        with mock.patch.object(managed, "popen_owned", return_value=process) as owned:
+            returned, thread = managed._start_logged_process(["python", "worker.py"])
+            thread.join(timeout=1.0)
+
+        self.assertIs(returned, process)
+        owned.assert_called_once()
+        self.assertEqual(owned.call_args.args[0], ["python", "worker.py"])
+
     def test_terminate_raises_when_child_exit_cannot_be_confirmed(self):
         process = mock.Mock()
         process.pid = 7331
@@ -494,6 +505,21 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertTrue(log.is_file())
             self.assertIn("session failed", log.read_text(encoding="utf-8"))
 
+    def test_run_scoped_log_sink_rotates_when_bounded_size_is_reached(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "logs"
+            sink = managed._RunScopedLogSink(root)
+            sink.MAX_BYTES = 8
+            sink.set_run_id("run-1")
+
+            sink.write("12345678")
+            sink.write("AB")
+
+            current = root / "run-1" / "remote-supervisor.log"
+            rotated = current.with_name(current.name + ".1")
+            self.assertEqual(current.read_text(encoding="utf-8"), "AB")
+            self.assertEqual(rotated.read_text(encoding="utf-8"), "12345678")
+
     def test_status_summary_assigns_supervisor_log_to_active_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -541,6 +567,54 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             self.assertTrue(
                 (root / "logs" / "bees-v20-active" / "remote-supervisor.log").is_file()
             )
+
+
+    def test_version_directory_retention_preserves_symlinked_active_venv(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "versions"
+            root.mkdir(parents=True)
+            base = Path(temp) / "base-python"
+            base.write_bytes(b"")
+            active = root / "old-active" / "bin" / "python"
+            active.parent.mkdir(parents=True)
+            try:
+                active.symlink_to(base)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+            for index in range(3):
+                version = root / f"new-{index}"
+                version.mkdir()
+                (version / "marker").write_text(str(index), encoding="utf-8")
+
+            managed._prune_version_directories(
+                root,
+                preserve_paths=[active],
+                retain=1,
+            )
+
+            self.assertTrue(active.parent.parent.is_dir())
+
+    def test_version_directory_retention_preserves_active_and_newest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "versions"
+            root.mkdir(parents=True)
+            versions = []
+            for index in range(5):
+                version = root / f"v{index}"
+                version.mkdir()
+                (version / "marker").write_text(str(index), encoding="utf-8")
+                versions.append(version)
+
+            managed._prune_version_directories(
+                root,
+                preserve_paths=[versions[0] / "marker", versions[-1] / "marker"],
+                retain=2,
+            )
+
+            remaining = {path.name for path in root.iterdir() if path.is_dir()}
+            self.assertIn("v0", remaining)
+            self.assertIn("v4", remaining)
+            self.assertLessEqual(len(remaining), 3)
 
 
 if __name__ == "__main__":

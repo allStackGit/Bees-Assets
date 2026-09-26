@@ -39,6 +39,25 @@ internal static class RlOneVsOneTrainingBootstrap
 
     private static RlOneVsOneTrainingOptions _runtimeOptions;
 
+    private static bool ValidationOnlyRequested
+    {
+        get
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(
+                    args[i],
+                    RlOneVsOneTrainingOptions.ValidationOnlyFlag,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     internal static bool IsDedicatedTrainingRuntime =>
         ShouldApply(SceneManager.GetActiveScene().name);
 
@@ -239,6 +258,18 @@ internal static class RlOneVsOneTrainingBootstrap
 
         try
         {
+            if (ValidationOnlyRequested)
+            {
+                RlOneVsOneTrainingOptions options = RuntimeOptions;
+                stage.IsTrainingNueralNetwork = false;
+                Debug.Log($"RL training command-line validation succeeded: {options.Describe()}");
+                if (!Application.isEditor)
+                {
+                    Application.Quit(0);
+                }
+                return false;
+            }
+
             Apply(stage);
             return true;
         }
