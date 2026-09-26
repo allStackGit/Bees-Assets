@@ -1182,6 +1182,42 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             invoke_start,
         )
 
+    def test_forced_new_run_stages_environment_args_atomically(self):
+        source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
+        stage_start = source.index("function Stage-Release")
+        stage_end = source.index("function Wait-ReleaseRollout", stage_start)
+        stage = source[stage_start:stage_end]
+        self.assertIn("[AllowNull()][string[]]$EnvironmentArgs=$null", stage)
+        self.assertIn("$PSBoundParameters.ContainsKey('EnvironmentArgs')", stage)
+        self.assertIn("$body.environment_args=@($EnvironmentArgs)", stage)
+
+        start = source.index("function Invoke-Start")
+        invoke_start = source[start:]
+        forced = invoke_start.index("if($performForcedNewRun){")
+        forced_stage = invoke_start.index(
+            "Stage-Release $config $admin $release -EnvironmentArgs @($envArgs)",
+            forced,
+        )
+        forced_state = invoke_start.index(
+            'Invoke-ControlPost "$($config.controlUrl)/v1/admin/state"',
+            forced_stage,
+        )
+        forced_block_end = invoke_start.index("} else {", forced_state)
+        self.assertNotIn("environment_args=@($envArgs)", invoke_start[forced_state:forced_block_end])
+
+        ordinary_stage = invoke_start.index(
+            "Stage-Release $config $admin $release",
+            forced_block_end,
+        )
+        ordinary_state = invoke_start.index(
+            'Invoke-ControlPost "$($config.controlUrl)/v1/admin/state"',
+            ordinary_stage,
+        )
+        self.assertIn(
+            "environment_args=@($envArgs)",
+            invoke_start[ordinary_state:invoke_start.index("}", ordinary_state) + 1],
+        )
+
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
 
