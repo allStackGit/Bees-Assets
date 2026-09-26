@@ -1065,8 +1065,17 @@ function Prune-BeesServerRuntimes([string[]]$KeepRoots=@(),[int]$KeepNewest=3){
         try{$keep[[IO.Path]::GetFullPath([string]$root).TrimEnd('\')]=1}catch{}
     }
 
+    $allDirectories=@(
+        Get-ChildItem -LiteralPath $ServerReleaseRoot -Directory -ErrorAction SilentlyContinue
+    )
+    $staleCandidateCutoff=[DateTime]::UtcNow.AddHours(-1)
+    foreach($candidate in @($allDirectories|Where-Object{
+        $_.Name -like '*.candidate-*' -and $_.LastWriteTimeUtc -lt $staleCandidateCutoff
+    })){
+        Remove-Item -LiteralPath $candidate.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $directories=@(
-        Get-ChildItem -LiteralPath $ServerReleaseRoot -Directory -ErrorAction SilentlyContinue |
+        $allDirectories |
             Where-Object{$_.Name -notlike '*.candidate-*'} |
             Sort-Object LastWriteTimeUtc -Descending
     )
@@ -1081,7 +1090,26 @@ function Prune-BeesServerRuntimes([string[]]$KeepRoots=@(),[int]$KeepNewest=3){
     }
 }
 
-function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSourceHash){
+function Test-BeesServerRuntimeLoad([string]$Node,[string]$RuntimeRoot){
+    if(-not $Node){ return $true }
+    Push-Location $RuntimeRoot
+    try {
+        $previousErrorAction=$ErrorActionPreference
+        try {
+            $ErrorActionPreference='SilentlyContinue'
+            & $Node -e "const runtime=require('./server'); runtime.loadLegacyRuntime();" *> $null
+            return ($LASTEXITCODE -eq 0)
+        } catch {
+            return $false
+        } finally {
+            $ErrorActionPreference=$previousErrorAction
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSourceHash,[string]$Node=''){
     if(-not(Test-Path -LiteralPath $RuntimeRoot -PathType Container)){ return $false }
     $readyPath=Join-Path $RuntimeRoot 'bees-server-runtime.json'
     $nodeModules=Join-Path $RuntimeRoot 'node_modules'
@@ -1102,7 +1130,8 @@ function Test-BeesServerStagedRuntime([string]$RuntimeRoot,[string]$ExpectedSour
                 }
             }
         )
-        return ((Get-NamedFileSetSha256 $entries) -eq $ExpectedSourceHash)
+        if((Get-NamedFileSetSha256 $entries) -ne $ExpectedSourceHash){ return $false }
+        return (Test-BeesServerRuntimeLoad $Node $RuntimeRoot)
     } catch {
         return $false
     }
@@ -1112,7 +1141,7 @@ function Prepare-BeesServerRuntime([string]$Node){
     $sourceHash=Get-BeesServerRuntimeSourceHash
     Ensure-Directory $ServerReleaseRoot
     $runtimeRoot=Join-Path $ServerReleaseRoot $sourceHash
-    if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
+    if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node){
         return [pscustomobject]@{
             source_hash=$sourceHash
             dependency_hash=Get-BeesServerDependencyHash $runtimeRoot
@@ -1170,7 +1199,7 @@ function Prepare-BeesServerRuntime([string]$Node){
         )
 
         if(Test-Path -LiteralPath $runtimeRoot){
-            if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash){
+            if(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node){
                 Remove-Item -LiteralPath $candidate -Recurse -Force
             } else {
                 $activeState=$null
@@ -1203,7 +1232,7 @@ function Prepare-BeesServerRuntime([string]$Node){
         }
     }
 
-    if(-not(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash)){
+    if(-not(Test-BeesServerStagedRuntime $runtimeRoot $sourceHash $Node)){
         throw "BeesServer staged runtime failed post-install verification: $runtimeRoot"
     }
     [pscustomobject]@{
@@ -2004,7 +2033,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
             $previousRuntimeRoot -and
             $previousConfigHash -eq $serverConfigHash -and
             $previousSourceHash -and
-            (Test-BeesServerStagedRuntime $previousRuntimeRoot $previousSourceHash)
+            (Test-BeesServerStagedRuntime $previousRuntimeRoot $previousSourceHash $node)
         ){
             Write-Warning "Replacement BeesServer failed after cutover; restoring previously verified runtime $previousSourceHash."
             try {
