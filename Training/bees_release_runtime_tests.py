@@ -81,6 +81,30 @@ class ReleaseRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(again["installed_root"], installed["installed_root"])
 
+    def test_test_only_python_changes_do_not_change_runtime_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            training = self._training_root(root)
+            test_only = training / "temporary_tests.py"
+            test_only.write_text("VALUE = 'first'\n", encoding="utf-8")
+            first = runtime.package_runtime(
+                assets_root=root / "Assets",
+                output=root / "first.zip",
+                build_id="build-a",
+                source_commit="a",
+            )
+            test_only.write_text("VALUE = 'second'\n", encoding="utf-8")
+            second = runtime.package_runtime(
+                assets_root=root / "Assets",
+                output=root / "second.zip",
+                build_id="build-b",
+                source_commit="b",
+            )
+
+            self.assertEqual(first["runtime_version"], second["runtime_version"])
+            with zipfile.ZipFile(root / "second.zip", "r") as bundle:
+                self.assertNotIn("temporary_tests.py", bundle.namelist())
+
     def test_source_change_changes_runtime_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -123,6 +147,14 @@ class ReleaseRuntimeTests(unittest.TestCase):
                 bundle.writestr(runtime.VERSION_NAME, b"x")
             with self.assertRaisesRegex(ValueError, "unsafe member path"):
                 runtime.verify_runtime(unsafe)
+
+            windows_drive = root / "unsafe-drive.zip"
+            with zipfile.ZipFile(windows_drive, "w") as bundle:
+                bundle.writestr("C:escape.py", b"x")
+                bundle.writestr(runtime.MANIFEST_NAME, b"{}")
+                bundle.writestr(runtime.VERSION_NAME, b"x")
+            with self.assertRaisesRegex(ValueError, "unsafe member path"):
+                runtime.verify_runtime(windows_drive)
 
 
 if __name__ == "__main__":
