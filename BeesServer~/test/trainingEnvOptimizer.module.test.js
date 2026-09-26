@@ -6,13 +6,20 @@ const {
     TrainingEnvOptimizer,
     normalizeCapacity,
     learnerConsumedSteps,
+    producerAcceptedSteps,
 } = require('../trainingEnvOptimizer');
 
 function record(
     trainerId,
     envs,
     consumed,
-    { auto = true, min = 1, max = 64, processState = 'running' } = {},
+    {
+        auto = true,
+        min = 1,
+        max = 64,
+        processState = 'running',
+        accepted = consumed,
+    } = {},
 ) {
     return {
         trainer_id: trainerId,
@@ -27,6 +34,7 @@ function record(
         metrics: {
             throughput: {
                 learner_consumed_steps_total: consumed,
+                accepted_steps_total: accepted,
             },
         },
     };
@@ -58,6 +66,14 @@ test('capacity and learner-consumed-step metrics reject malformed values', () =>
     );
     assert.equal(
         learnerConsumedSteps({ throughput: { accepted_steps_total: 999999 } }),
+        null,
+    );
+    assert.equal(
+        producerAcceptedSteps({ throughput: { accepted_steps_total: 77 } }),
+        77,
+    );
+    assert.equal(
+        producerAcceptedSteps({ throughput: { accepted_steps_total: -1 } }),
         null,
     );
 });
@@ -92,6 +108,53 @@ test('optimizer measures learner-consumed steps, increases envs, and keeps an im
     assert.equal(state.baseline_sps, 1100);
     assert.equal(state.desired_envs, 10);
     assert.match(state.decision, /probing 9->10/);
+});
+
+test('optimizer retries a starved sample instead of treating producer activity as zero useful throughput', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 0,
+        measurementMs: 1000,
+        cooldownMs: 0,
+        retestMs: 60_000,
+    });
+
+    update(optimizer, 'remote-a', 8, 0, 0, { max: 16, accepted: 0 });
+    let state = update(
+        optimizer,
+        'remote-a',
+        8,
+        0,
+        1000,
+        { max: 16, accepted: 900 },
+    );
+
+    assert.equal(state.baseline_envs, null);
+    assert.equal(state.baseline_sps, null);
+    assert.equal(state.desired_envs, 8);
+    assert.equal(state.phase, 'warmup');
+    assert.match(state.decision, /produced rollouts but none were learner-consumed/);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        0,
+        1001,
+        { max: 16, accepted: 900 },
+    );
+    assert.equal(state.phase, 'measuring');
+
+    state = update(
+        optimizer,
+        'remote-a',
+        8,
+        850,
+        2001,
+        { max: 16, accepted: 1750 },
+    );
+    assert.equal(state.baseline_envs, 8);
+    assert.equal(state.baseline_sps, 850);
+    assert.equal(state.desired_envs, 9);
 });
 
 test('optimizer backs off a slower probe before another worker may probe', () => {
