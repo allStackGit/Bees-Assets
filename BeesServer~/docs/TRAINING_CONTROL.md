@@ -140,7 +140,7 @@ For a compatible release or same-run static environment-argument change:
 9. Trainers already moved to the pending release/configuration stay there while the remaining trainers update.
 10. For ordinary compatible code releases, remote trainers remain ordered before the central learner; environment-only transitions use the central-first rule above so the authoritative broker switches semantic environment identity before accepting newly configured actors.
 11. Rollout completion is tracked as an explicit persisted acknowledgement for the trainer currently assigned the one-at-a-time rolling slot. Merely observing/echoing the shared control revision cannot mark a non-target trainer rolled; this is required for same-build environment changes because non-target trainers intentionally keep the old arguments while still seeing the new control revision.
-12. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied while it owns the rolling slot. After every remaining required dedicated trainer has provided that acknowledgement, the release becomes canonical.
+12. A trainer counts as successfully rolled only after it heartbeats the exact pending build/hash as `running`, with no reported error, and with the rollout revision applied while it owns the rolling slot. When the pending release changes environment arguments, that heartbeat must also report the SHA-256 identity of the exact pending ordered argument list; a cached heartbeat from the old arguments cannot complete the rollout. After every remaining required dedicated trainer has provided that acknowledgement, the release becomes canonical.
 
 For an incompatible release:
 
