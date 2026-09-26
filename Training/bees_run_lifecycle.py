@@ -214,6 +214,7 @@ def plan_run(
     *,
     force_new: bool = False,
     build_id: Optional[str] = None,
+    environment_args: Optional[Sequence[str]] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
     if build_id is not None:
@@ -221,6 +222,15 @@ def plan_run(
             raise ValueError("build_id must contain only safe release-id characters")
         if not force_new:
             raise ValueError("build_id is only valid for a forced-new run plan")
+    normalized_environment_args: Optional[list[str]] = None
+    if environment_args is not None:
+        if not force_new:
+            raise ValueError("environment_args are only valid for a forced-new run plan")
+        normalized_environment_args = []
+        for argument in environment_args:
+            if not isinstance(argument, str) or not argument:
+                raise ValueError("environment_args must contain non-empty strings")
+            normalized_environment_args.append(argument)
     payload = contract_payload(assets_root)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
@@ -242,6 +252,7 @@ def plan_run(
         "new_run": new_run,
         "forced_new_run": bool(force_new),
         "build_id": build_id,
+        "environment_args": normalized_environment_args,
         "contract": payload,
     }
 
@@ -303,6 +314,11 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Bind a forced-new operation to the exact existing release build.",
     )
+    plan.add_argument(
+        "--environment-args-json",
+        default=None,
+        help="Persist the exact server-owned environment argument list for a forced-new operation.",
+    )
 
     commit = sub.add_parser("commit")
     commit.add_argument("--state", required=True)
@@ -316,11 +332,17 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "plan":
+        environment_args = None
+        if args.environment_args_json is not None:
+            environment_args = json.loads(args.environment_args_json)
+            if not isinstance(environment_args, list):
+                raise ValueError("--environment-args-json must contain a JSON list")
         value = plan_run(
             Path(args.assets_root),
             Path(args.state),
             force_new=bool(args.force_new),
             build_id=args.build_id,
+            environment_args=environment_args,
         )
         _atomic_json(Path(args.out), value)
         print(json.dumps(value, sort_keys=True))
