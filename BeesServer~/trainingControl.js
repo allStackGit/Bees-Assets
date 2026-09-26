@@ -356,6 +356,7 @@ class TrainingControlStore {
 
     _pruneArtifactCatalog() {
         const protectedBuildIds = new Set();
+        const staleArtifactPaths = [];
         if (this.state.canonical_build_id) protectedBuildIds.add(this.state.canonical_build_id);
         if (this.state.pending_release?.build_id) protectedBuildIds.add(this.state.pending_release.build_id);
         for (const trainer of this.trainers.values()) {
@@ -371,17 +372,24 @@ class TrainingControlStore {
                 );
                 for (const [buildId, record] of entries) {
                     if (protectedBuildIds.has(buildId) || newest.has(buildId)) continue;
-                    try {
-                        if (record.archive_path && fs.existsSync(record.archive_path)) {
-                            fs.unlinkSync(record.archive_path);
-                        }
-                    } catch (_) {
-                        // A worker may still have the immutable ZIP open. Keep both the file and
-                        // catalog entry; a later publication will retry pruning safely.
-                        continue;
-                    }
+                    if (record.archive_path) staleArtifactPaths.push(record.archive_path);
                     delete versions[buildId];
                 }
+            }
+        }
+        return staleArtifactPaths;
+    }
+
+    _deletePrunedArtifacts(paths) {
+        for (const archivePath of paths) {
+            try {
+                if (archivePath && fs.existsSync(archivePath)) {
+                    fs.unlinkSync(archivePath);
+                }
+            } catch (_) {
+                // Catalog state is already durable before deletion. An open file may therefore
+                // remain as an harmless orphan rather than making persisted state reference a
+                // missing artifact. A later maintenance/startup pass may remove such leftovers.
             }
         }
     }
@@ -1111,8 +1119,9 @@ class TrainingControlStore {
         if (buildId === this.state.canonical_build_id) {
             this.state.revision++;
         }
-        this._pruneArtifactCatalog();
+        const prunedArtifactPaths = this._pruneArtifactCatalog();
         this._persist();
+        this._deletePrunedArtifacts(prunedArtifactPaths);
         return publicBuildDescriptor(record);
     }
 
