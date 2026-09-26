@@ -251,6 +251,20 @@ class WanOptionTests(unittest.TestCase):
         ]
         self.assertEqual(actor._trajectory_step_count(trajectories), 5)
 
+    def test_actor_collects_trajectories_until_queue_empty(self):
+        trajectory = FakeTrajectory("Behavior?team=0", "agent_0-1")
+        session = object.__new__(actor.ActorSession)
+        session.manager = SimpleNamespace(
+            agent_managers={
+                "Behavior?team=0": SimpleNamespace(
+                    trajectory_queue=queue.Queue()
+                )
+            }
+        )
+        session.manager.agent_managers["Behavior?team=0"].trajectory_queue.put(trajectory)
+
+        self.assertEqual(session._collect_trajectories(), [trajectory])
+
     def test_actor_publishes_accepted_step_metrics_atomically(self):
         with tempfile.TemporaryDirectory() as temp:
             metrics_path = Path(temp) / "throughput.json"
