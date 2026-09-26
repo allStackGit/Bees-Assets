@@ -171,6 +171,10 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("RecvGiB", block)
         self.assertIn("'MiB/s'", block)
         self.assertIn("/1GB", block)
+        self.assertIn("'OptExp/s'", block)
+        self.assertIn("LearnerAvgStep/s", block)
+        self.assertIn("LearnerLiveStep/s", block)
+        self.assertIn("OptExp/s is the last per-worker optimizer consumption sample", block)
 
     def test_operator_persists_identity_for_every_managed_process_owner(self):
         source = OPERATOR_SCRIPT.read_text(encoding="utf-8")
