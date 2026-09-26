@@ -804,7 +804,7 @@ test('compatible rolling skips an expired target and advances to the next live t
             now: () => now,
         });
         const oldSha = publishDedicatedBuild(store, root, 'stale-roll-old');
-        const newSha = publishDedicatedBuild(store, root, 'stale-roll-new');
+        publishDedicatedBuild(store, root, 'stale-roll-new');
         store.stageRelease({
             buildId: 'stale-roll-old',
             runId: 'stale-roll-run',
@@ -831,18 +831,6 @@ test('compatible rolling skips an expired target and advances to the next live t
             );
         }
         assert.equal(store.state.pending_release.phase, 'rolling');
-        assert.equal(store._rollingTargetId(), 'central-learner');
-
-        heartbeatDedicated(
-            store,
-            'central-learner',
-            'stale-roll-new',
-            newSha,
-            {
-                preparedBuildId: 'stale-roll-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
         assert.equal(store._rollingTargetId(), 'remote-a');
 
         now = 9000;
@@ -856,12 +844,9 @@ test('compatible rolling skips an expired target and advances to the next live t
         heartbeatDedicated(
             store,
             'central-learner',
-            'stale-roll-new',
-            newSha,
-            {
-                preparedBuildId: 'stale-roll-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
+            'stale-roll-old',
+            oldSha,
+            { preparedBuildId: 'stale-roll-new' },
         );
         now = 11001;
         const desired = store.status().desired;
@@ -881,7 +866,6 @@ test('compatible rolling skips an expired target and advances to the next live t
         );
     });
 });
-
 test('compatible rollout does not re-add a pruned trainer that reconnects mid-rollout', () => {
     withTempDir(root => {
         let now = 1000;
@@ -1048,7 +1032,6 @@ test('compatible rollout converges across worker loss, server restart, and worke
         for (const trainerId of ['remote-a', 'remote-b', 'central-learner']) {
             heartbeatDedicated(store, trainerId, 'resilience-old', oldSha);
         }
-
         store.stageRelease({
             buildId: 'resilience-new',
             runId: 'resilience-run',
@@ -1065,25 +1048,8 @@ test('compatible rollout converges across worker loss, server restart, and worke
             );
         }
         assert.equal(store.state.pending_release.phase, 'rolling');
-        assert.equal(store._rollingTargetId(), 'central-learner');
-
-        heartbeatDedicated(
-            store,
-            'central-learner',
-            'resilience-new',
-            newSha,
-            {
-                preparedBuildId: 'resilience-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        assert.deepEqual(
-            store.state.pending_release.rolled_trainers,
-            ['central-learner'],
-        );
         assert.equal(store._rollingTargetId(), 'remote-a');
 
-        // remote-a disappears. The healthy members keep their leases while it expires.
         now = 9000;
         heartbeatDedicated(
             store,
@@ -1095,12 +1061,9 @@ test('compatible rollout converges across worker loss, server restart, and worke
         heartbeatDedicated(
             store,
             'central-learner',
-            'resilience-new',
-            newSha,
-            {
-                preparedBuildId: 'resilience-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
+            'resilience-old',
+            oldSha,
+            { preparedBuildId: 'resilience-new' },
         );
         now = 11001;
         store.status();
@@ -1110,17 +1073,44 @@ test('compatible rollout converges across worker loss, server restart, and worke
         );
         assert.equal(store._rollingTargetId(), 'remote-b');
 
-        // BeesServer dies/restarts after the learner has rolled. Persisted state must not promote
-        // until the surviving remote re-registers healthy on the exact pending build.
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
         now = 12000;
         store = new TrainingControlStore(options);
         assert.equal(store.state.canonical_build_id, 'resilience-old');
         assert.equal(store.state.pending_release.phase, 'rolling');
-        assert.deepEqual(
-            store.state.pending_release.rolled_trainers,
-            ['central-learner'],
+        assert.deepEqual(store.state.pending_release.rolled_trainers, ['remote-b']);
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        heartbeatDedicated(
+            store,
+            'remote-b',
+            'resilience-new',
+            newSha,
+            {
+                preparedBuildId: 'resilience-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
         );
-        assert.equal(store._rollingTargetId(), 'remote-b');
+        const centralDesired = heartbeatDedicated(
+            store,
+            'central-learner',
+            'resilience-old',
+            oldSha,
+            { preparedBuildId: 'resilience-new' },
+        );
+        assert.equal(centralDesired.desired_build_id, 'resilience-new');
 
         heartbeatDedicated(
             store,
@@ -1132,45 +1122,17 @@ test('compatible rollout converges across worker loss, server restart, and worke
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
-        const remoteDesired = heartbeatDedicated(
-            store,
-            'remote-b',
-            'resilience-old',
-            oldSha,
-            { preparedBuildId: 'resilience-new' },
-        );
-        assert.equal(remoteDesired.desired_build_id, 'resilience-new');
-
-        heartbeatDedicated(
-            store,
-            'remote-b',
-            'resilience-new',
-            newSha,
-            {
-                preparedBuildId: 'resilience-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
         assert.equal(store.state.canonical_build_id, 'resilience-new');
         assert.equal(store.state.pending_release, null);
 
-        // The machine that was absent during promotion rejoins on the old compatible build.
-        // It must be told to converge to canonical without reopening the completed rollout.
-        const rejoined = heartbeatDedicated(
-            store,
-            'remote-a',
-            'resilience-old',
-            oldSha,
-        );
+        const rejoined = heartbeatDedicated(store, 'remote-a', 'resilience-old', oldSha);
         assert.equal(rejoined.desired_build_id, 'resilience-new');
         assert.equal(rejoined.pending_release, null);
         heartbeatDedicated(store, 'remote-a', 'resilience-new', newSha);
-        const remoteA = store.status().trainers.find(
-            record => record.trainer_id === 'remote-a');
+        const remoteA = store.status().trainers.find(record => record.trainer_id === 'remote-a');
         assert.equal(remoteA.build_id, 'resilience-new');
     });
 });
-
 test('disabling training during compatible rolling promotes the fully prepared release', () => {
     withTempDir(root => {
         const store = new TrainingControlStore({
@@ -2065,48 +2027,6 @@ test('compatible rolling skips a persistently crashing remote but never central 
                 { preparedBuildId: 'roll-fail-new' },
             );
         }
-        assert.equal(store._rollingTargetId(), 'central-learner');
-
-        // Central owns the optimizer/checkpoint lineage and can never age out of the rollout.
-        heartbeatDedicated(
-            store,
-            'central-learner',
-            'roll-fail-new',
-            newSha,
-            {
-                processState: 'stopped',
-                preparedBuildId: 'roll-fail-new',
-                lastError: 'central launch failed',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        now = 20000;
-        heartbeatDedicated(
-            store,
-            'central-learner',
-            'roll-fail-new',
-            newSha,
-            {
-                processState: 'stopped',
-                preparedBuildId: 'roll-fail-new',
-                lastError: 'central launch failed',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
-        assert.equal(store._rollingTargetId(), 'central-learner');
-        assert.equal(store.state.canonical_build_id, 'roll-fail-old');
-
-        // Once central recovers, remotes roll against the exact new learner session.
-        heartbeatDedicated(
-            store,
-            'central-learner',
-            'roll-fail-new',
-            newSha,
-            {
-                preparedBuildId: 'roll-fail-new',
-                appliedRevision: store.state.pending_release.phase_revision,
-            },
-        );
         assert.equal(store._rollingTargetId(), 'remote-bad');
 
         heartbeatDedicated(
@@ -2121,7 +2041,7 @@ test('compatible rolling skips a persistently crashing remote but never central 
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
-        now = 25001;
+        now = 7001;
         heartbeatDedicated(
             store,
             'remote-bad',
@@ -2138,10 +2058,7 @@ test('compatible rolling skips a persistently crashing remote but never central 
             store.state.pending_release.required_trainers.map(item => item.trainer_id),
             ['remote-good', 'central-learner'],
         );
-        assert.deepEqual(
-            store.state.pending_release.quarantined_trainers,
-            ['remote-bad'],
-        );
+        assert.deepEqual(store.state.pending_release.quarantined_trainers, ['remote-bad']);
         assert.equal(store._rollingTargetId(), 'remote-good');
 
         heartbeatDedicated(
@@ -2154,11 +2071,50 @@ test('compatible rolling skips a persistently crashing remote but never central 
                 appliedRevision: store.state.pending_release.phase_revision,
             },
         );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'central launch failed',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        now = 14002;
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                processState: 'stopped',
+                preparedBuildId: 'roll-fail-new',
+                lastError: 'central launch failed',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
+        assert.equal(store._rollingTargetId(), 'central-learner');
+        assert.equal(store.state.canonical_build_id, 'roll-fail-old');
+
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'roll-fail-new',
+            newSha,
+            {
+                preparedBuildId: 'roll-fail-new',
+                appliedRevision: store.state.pending_release.phase_revision,
+            },
+        );
         assert.equal(store.state.pending_release, null);
         assert.equal(store.state.canonical_build_id, 'roll-fail-new');
     });
 });
-
 test('compatible rollout requires a healthy canary for every active remote platform', () => {
     withTempDir(root => {
         let now = 1000;
