@@ -583,7 +583,7 @@ function Start-TailnetGatewayIfNeeded($Config){
             }
         }
         if(-not(Test-ManagedProcessIdentity $gatewayState) -and $ownerToken){
-            $orphanChild=Find-ManagedProcessByOwnerToken $bridge ($ownerToken + '.child') 'orphaned embedded tailnet gateway child'
+            $orphanChild=Find-ManagedProcessByOwnerToken $bridge (Get-StringSha256 ("bees-managed-child:" + $ownerToken)) 'orphaned embedded tailnet gateway child'
             if($null -ne $orphanChild){
                 Write-Host "Stopping orphaned embedded tailnet gateway child PID $($orphanChild.pid) left by a dead supervisor."
                 $null=Stop-ManagedProcessTree $orphanChild $bridge 'orphaned embedded tailnet gateway child'
@@ -2172,7 +2172,7 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
                     throw "BeesServer state references live PID $managedPid but its PID/start-time/executable ownership does not match. Refusing to kill a possibly reused PID."
                 }
                 if($serverOwnerToken){
-                    $orphanChild=Find-ManagedProcessByOwnerToken $node ($serverOwnerToken + '.child') 'orphaned BeesServer child'
+                    $orphanChild=Find-ManagedProcessByOwnerToken $node (Get-StringSha256 ("bees-managed-child:" + $serverOwnerToken)) 'orphaned BeesServer child'
                     if($null -ne $orphanChild){
                         Write-Host "Stopping orphaned BeesServer child PID $($orphanChild.pid) left by a dead supervisor."
                         $null=Stop-ManagedProcessTree $orphanChild $node 'orphaned BeesServer child'
