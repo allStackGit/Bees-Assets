@@ -72,8 +72,8 @@ namespace Assets.Scripts
         }
 
         /// <summary>
-        /// Checks how much time has passed and calls the action if necessary. Must be called from outside of the method since it's not directly tied to Update()
-        /// Returns true when the action has completed. Runs in scaled time.
+        /// Checks how much time has passed and calls the action if necessary. Must be called from outside of the method since it's not directly tied to Update().
+        /// Returns true only when the current timer configuration completed and was not replaced by its callback. Runs in scaled time.
         /// </summary>
         public bool Update()
         {
@@ -82,6 +82,7 @@ namespace Assets.Scripts
                 return false;
             }
 
+            int updateGeneration = _reuseGeneration;
             Elapsed += Time.deltaTime;
 
             if (StartImmediate)
@@ -91,23 +92,22 @@ namespace Assets.Scripts
                 StartImmediate = false;
                 Elapsed = 0;
                 Action();
-                return true;
+                return _reuseGeneration == updateGeneration;
             }
 
             if (Elapsed > Length)
             {
-                int updateGeneration = _reuseGeneration;
                 float completedLength = Length;
                 Action();
 
-                // A callback is allowed to cancel/reuse this same timer and add the new
-                // configuration back to the Level. Reuse() starts a new interval at zero;
-                // the old Update invocation must not subtract its completed interval from
-                // that new generation's freshly reset elapsed state.
-                if (_reuseGeneration == updateGeneration)
+                // A callback may cancel/reuse this timer and re-register its new schedule.
+                // Keep the new schedule registered, and do not change its fresh elapsed time.
+                if (_reuseGeneration != updateGeneration)
                 {
-                    Elapsed -= completedLength;
+                    return false;
                 }
+
+                Elapsed -= completedLength;
                 return true;
             }
             return false;
