@@ -1256,6 +1256,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             build=active_build,
             prepared_build_id="",
             last_error=last_error,
+            environment_id=(
+                environment_args_identity(managed.environment_args)
+                if managed.alive()
+                else ""
+            ),
             worker_capacity=worker_capacity(),
         )
         try:
@@ -1332,6 +1337,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 prepared_build_id=prepared_build_id,
                 preparation_error=preparation_error,
                 last_error=last_error or preparation_error,
+                environment_id=(
+                    environment_args_identity(managed.environment_args)
+                    if managed.alive()
+                    else ""
+                ),
                 metrics=current_metrics(
                     str(desired.get("run_id", "")) if desired else managed.run_id
                 ),
