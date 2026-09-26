@@ -570,7 +570,7 @@ function Reset-BuildDirectory([string]$Path){
 }
 
 function Get-UnityProcessesForProject([string]$ProjectPath){
-    $normalized=[IO.Path]::GetFullPath($ProjectPath).TrimEnd('\\')
+    $normalized=[IO.Path]::GetFullPath($ProjectPath).TrimEnd([char[]]"\\/")
     $matches=@()
     try {
         foreach($process in @(Get-CimInstance Win32_Process -Filter "Name = 'Unity.exe'" -ErrorAction SilentlyContinue)){
@@ -1954,6 +1954,9 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
             $managedConfigHash -eq $serverConfigHash -and
             $runtimeMatches
         ){
+            if(([string](Get-ObjectPropertyValue $managedState 'status')) -ne 'active'){
+                Write-BeesServerManagedState $managedState $serverSourceHash $serverDependencyHash $serverRuntimeRoot $serverConfigHash 'active'
+            }
             return
         }
         Write-Host 'BeesServer executable/runtime/launch configuration changed; restarting the verified managed server without changing desired training state.'
