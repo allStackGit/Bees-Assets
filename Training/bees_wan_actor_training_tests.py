@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import queue
 import tempfile
+import threading
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -543,6 +544,55 @@ class RemoteActorHelperTests(unittest.TestCase):
         self.assertEqual(envs, 32)
         with self.assertRaisesRegex(RuntimeError, "outside central actor count"):
             actor._validate_session(session, 2)
+
+
+class WanActorBackpressureTests(unittest.TestCase):
+    def test_topology_update_during_backpressure_preserves_completed_batch(self):
+        session = actor.ActorSession.__new__(actor.ActorSession)
+        session.stop = threading.Event()
+        session._session_changed = threading.Event()
+        session._state_changed = threading.Event()
+        session._stale = threading.Event()
+        session._thread_error = queue.Queue()
+        session.session_id = "session-a"
+        session.actor_id = 0
+        session.control_epoch = 2
+        session.policy_versions = {"BeesRL1v1": 3}
+
+        class QueueWithTopologyUpdate(queue.Queue):
+            def __init__(self):
+                super().__init__(maxsize=1)
+                self.put_attempts = 0
+
+            def put(self, item, block=True, timeout=None):
+                self.put_attempts += 1
+                if self.put_attempts == 1:
+                    session._state_changed.set()
+                    raise queue.Full
+                result = super().put(item, block=block, timeout=timeout)
+                session.stop.set()
+                return result
+
+        upload_queue = QueueWithTopologyUpdate()
+        session._upload_queue = upload_queue
+        session._synchronize_state = lambda: session._state_changed.clear()
+
+        trajectory_queue = queue.Queue()
+        trajectory = FakeTrajectory("BeesRL1v1", "0-agent", count=1)
+        trajectory_queue.put(trajectory)
+        session.manager = SimpleNamespace(
+            get_steps=lambda: [],
+            process_steps=lambda _steps: None,
+            agent_managers={"BeesRL1v1": SimpleNamespace(trajectory_queue=trajectory_queue)},
+        )
+
+        session.run()
+
+        uploaded = upload_queue.get_nowait()
+        self.assertEqual(uploaded["trajectories"], [trajectory])
+        self.assertEqual(upload_queue.put_attempts, 2)
+
+
 
 
 if __name__ == "__main__":
