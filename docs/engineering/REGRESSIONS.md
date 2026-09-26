@@ -164,3 +164,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** minimap navigation now converts the pointer through `RectTransformUtility.ScreenPointToLocalPointInRectangle`, using the canvas camera when needed, before mapping the local point to viewport coordinates.  
 **Verification:** the input path and `Prefabs/UI/Mini Map Canvas.prefab` were reviewed statically; the prefab uses a screen-space overlay canvas. No test or gameplay run was performed.  
 **Invariant/knowledge:** screen pointer coordinates must be converted with the target RectTransform and its canvas camera before viewport mapping.
+
+
+### REG-017 — Live RL inference fired weapons during the Healing action
+**Area:** `Scripts/Scenes/RlOneVsOneAgent.cs`, `Scripts/Scenes/RlLivePolicyAgent.cs`, shared combat policy actions  
+**Symptom:** a deployed policy could fire while selecting Healing even though the training adapter suppressed weapon fire for that same action combination.  
+**Root cause:** live inference applied each weapon-fire branch without consulting the special-action compatibility rule used during training.  
+**Permanent protection:** live inference now uses `SpecialActionAllowsWeaponFire` before applying each weapon-fire action, keeping deployment semantics aligned with the trained policy.  
+**Verification:** both action dispatch paths were reviewed statically. No tests or gameplay were run.  
+**Invariant/knowledge:** training, evaluation, and production inference must interpret each action branch combination identically.
