@@ -1457,13 +1457,36 @@ class TrainingControlStore {
             throw Object.assign(new Error('log chunk must be at most 1 MiB'), { statusCode: 413 });
         }
         const root = path.join(this.logRoot, runId, trainerId);
-        const destination = path.resolve(root, relativePath);
-        const resolvedRoot = path.resolve(root) + path.sep;
-        if (!destination.startsWith(resolvedRoot)) {
-            throw Object.assign(new Error('trainer log path escapes its run root'), { statusCode: 400 });
+        fs.mkdirSync(root, { recursive: true });
+        let parent = root;
+        const pathParts = relativePath.split('/');
+        for (const part of pathParts.slice(0, -1)) {
+            parent = path.join(parent, part);
+            try {
+                const stats = fs.lstatSync(parent);
+                if (stats.isSymbolicLink() || !stats.isDirectory()) {
+                    throw Object.assign(
+                        new Error('trainer log path traverses a non-directory or symlink'),
+                        { statusCode: 400 });
+                }
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+                fs.mkdirSync(parent);
+            }
         }
-        fs.mkdirSync(path.dirname(destination), { recursive: true });
-        let current = fs.existsSync(destination) ? fs.statSync(destination).size : 0;
+        const destination = path.join(parent, pathParts[pathParts.length - 1]);
+        let current = 0;
+        try {
+            const stats = fs.lstatSync(destination);
+            if (stats.isSymbolicLink() || !stats.isFile()) {
+                throw Object.assign(
+                    new Error('trainer log destination must be a regular file'),
+                    { statusCode: 400 });
+            }
+            current = stats.size;
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
         if (reset) {
             if (offset !== 0) {
                 const error = Object.assign(
