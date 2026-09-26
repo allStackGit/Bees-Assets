@@ -83,7 +83,10 @@ namespace Assets.Scripts.Levels
                                 () => hasSeenFleetMessages,
                                 () =>
                                 {
-                                    float endTime = Time.time + 300.49f;
+                                    const float evacuationDurationSeconds = 300.49f;
+                                    const float evacuationIntervalSeconds = 5f;
+                                    float evacuationStartTime = Time.time;
+                                    float endTime = evacuationStartTime + evacuationDurationSeconds;
                                     float timeLeft = endTime - Time.time;
                                     TMP_Text clockText = Stage.Menus.Clock.transform.GetChild(0).GetComponent<TMP_Text>();
                                     TMP_Text counterText = Stage.Menus.Counter.transform.GetChild(0).GetComponent<TMP_Text>();
@@ -96,6 +99,11 @@ namespace Assets.Scripts.Levels
                                     clock.Reuse(1f, () =>
                                     {
                                         timeLeft = endTime - Time.time;
+                                        // Derive the cumulative count from elapsed mission time so a delayed timer update cannot skip an evacuation interval.
+                                        personnelEvacuated = Mathf.Clamp(
+                                            Mathf.FloorToInt((Time.time - evacuationStartTime) / evacuationIntervalSeconds),
+                                            0,
+                                            Mathf.FloorToInt(evacuationDurationSeconds / evacuationIntervalSeconds));
                                         int minutesLeft = Mathf.FloorToInt(timeLeft / 60f);
                                         int secondsLeft = Mathf.FloorToInt(timeLeft % 60f);
                                         personnelLost = (humanTarget.MaxHealth - humanTarget.Health) / 200;
@@ -119,7 +127,6 @@ namespace Assets.Scripts.Levels
                                         }
                                         else
                                         {
-                                            if (Mathf.RoundToInt(timeLeft) % 5 == 0) personnelEvacuated++;
                                             counterText.text = $"{personnelEvacuated}";
                                             clockText.text = $"{minutesLeft}:{secondsLeft:D2}";
                                         }
