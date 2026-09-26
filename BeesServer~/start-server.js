@@ -27,6 +27,7 @@ const DEVELOPMENT_DATABASE = Object.freeze({
 function parseLauncherOptions(argv = process.argv.slice(2)) {
     let background = false;
     let supervisor = false;
+    let managedOwnerToken = '';
     let logFile = null;
     const serverArgs = [];
 
@@ -38,6 +39,17 @@ function parseLauncherOptions(argv = process.argv.slice(2)) {
         }
         if (argument === SUPERVISOR_FLAG) {
             supervisor = true;
+            continue;
+        }
+        if (argument === '--managed-owner-token') {
+            const next = argv[index + 1];
+            if (next === undefined) throw new Error('--managed-owner-token requires a value');
+            managedOwnerToken = String(next);
+            index++;
+            continue;
+        }
+        if (argument.startsWith('--managed-owner-token=')) {
+            managedOwnerToken = argument.slice('--managed-owner-token='.length);
             continue;
         }
         if (argument === '--log') {
@@ -60,7 +72,7 @@ function parseLauncherOptions(argv = process.argv.slice(2)) {
         serverArgs.push(argument);
     }
 
-    return { background, supervisor, logFile, serverArgs };
+    return { background, supervisor, managedOwnerToken, logFile, serverArgs };
 }
 
 function openLog(logFile) {
@@ -137,7 +149,11 @@ function runSupervisor(options) {
         if (stopping) return;
         startedAt = Date.now();
         consecutiveHealthFailures = 0;
-        child = spawn(process.execPath, [serverPath, ...options.serverArgs], {
+        const childArgs = [...options.serverArgs];
+        if (options.managedOwnerToken) {
+            childArgs.push('--bees-managed-child-token=' + options.managedOwnerToken + '.child');
+        }
+        child = spawn(process.execPath, [serverPath, ...childArgs], {
             cwd: __dirname,
             detached: false,
             stdio: 'inherit',
@@ -235,7 +251,14 @@ function launchServer(options = parseLauncherOptions()) {
         const stdio = log ? ['ignore', log.fd, log.fd] : 'ignore';
         const supervisor = spawn(
             process.execPath,
-            [__filename, SUPERVISOR_FLAG, ...options.serverArgs],
+            [
+                __filename,
+                SUPERVISOR_FLAG,
+                ...(options.managedOwnerToken
+                    ? ['--managed-owner-token', options.managedOwnerToken]
+                    : []),
+                ...options.serverArgs,
+            ],
             {
                 cwd: __dirname,
                 detached: true,
