@@ -2097,8 +2097,15 @@ function Start-BeesServerIfNeeded($Config,[string]$WorkerToken,[string]$AdminTok
             if($serverOwnerToken){
                 $recovered=Find-ManagedProcessByOwnerToken $node $serverOwnerToken 'BeesServer supervisor'
                 if($null -ne $recovered){
-                    $managedState=Add-ManagedIdentityToState $managedState $recovered ([string](Get-ObjectPropertyValue $managedState 'status'))
-                    Write-BeesServerManagedState $managedState ([string](Get-ObjectPropertyValue $managedState 'source_hash')) ([string](Get-ObjectPropertyValue $managedState 'dependency_hash')) ([string](Get-ObjectPropertyValue $managedState 'runtime_root')) ([string](Get-ObjectPropertyValue $managedState 'config_hash') ([string](Get-ObjectPropertyValue $managedState 'status')) ([string](Get-ObjectPropertyValue $managedState 'rollback_reason')) $serverOwnerToken
+                    $savedStatus=([string](Get-ObjectPropertyValue $managedState 'status')).Trim()
+                    if(-not $savedStatus){$savedStatus='starting'}
+                    $savedSourceHash=[string](Get-ObjectPropertyValue $managedState 'source_hash')
+                    $savedDependencyHash=[string](Get-ObjectPropertyValue $managedState 'dependency_hash')
+                    $savedRuntimeRoot=[string](Get-ObjectPropertyValue $managedState 'runtime_root')
+                    $savedConfigHash=[string](Get-ObjectPropertyValue $managedState 'config_hash')
+                    $savedRollbackReason=[string](Get-ObjectPropertyValue $managedState 'rollback_reason')
+                    $managedState=Add-ManagedIdentityToState $managedState $recovered $savedStatus
+                    Write-BeesServerManagedState $managedState $savedSourceHash $savedDependencyHash $savedRuntimeRoot $savedConfigHash $savedStatus $savedRollbackReason $serverOwnerToken
                     $managedOwned=$true
                     Write-Host "Recovered BeesServer supervisor ownership after interrupted state reconciliation (PID $($recovered.pid))."
                 }
