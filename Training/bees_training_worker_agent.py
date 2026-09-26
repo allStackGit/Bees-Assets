@@ -1183,6 +1183,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 applied_revision=applied_revision,
                 build=active_build,
                 prepared_build_id=prepared_build_id,
+                preparation_error=preparation_error,
                 last_error=last_error or preparation_error,
                 metrics=current_metrics(
                     str(desired.get("run_id", "")) if desired else managed.run_id
