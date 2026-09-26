@@ -342,12 +342,26 @@ def _terminate(process: Optional[subprocess.Popen]) -> None:
         return
     try:
         process.terminate()
+    except OSError:
+        if process.poll() is not None:
+            return
+    try:
         process.wait(timeout=10)
-    except Exception:
-        try:
-            process.kill()
-        except Exception:
-            pass
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        process.kill()
+    except OSError:
+        if process.poll() is not None:
+            return
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"WAN actor child process {process.pid} did not stop after kill"
+        ) from exc
 
 
 def _wait_for_broker(client: BrokerClient, stop: threading.Event, delay: float) -> Mapping[str, Any]:
