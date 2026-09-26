@@ -217,7 +217,7 @@ internal sealed class RlLivePolicyAgent : Agent
         }
 
         _decisionCounter++;
-        if (_decisionCounter >= RlOneVsOneTrainingOptions.DefaultDecisionPeriod)
+        if (_decisionCounter >= RlOneVsOneTrainingBootstrap.CurrentDecisionPeriod)
         {
             _decisionCounter = 0;
             RequestDecision();
