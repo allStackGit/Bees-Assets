@@ -132,7 +132,14 @@ class TrainingControlClient:
             raise ControlRejected("training-control environment_args is invalid")
         if not isinstance(canonical_build_id, str) or not isinstance(desired_build_id, str):
             raise ControlRejected("training-control build identity is invalid")
-        if not isinstance(run_id, str) or not isinstance(compatibility_key, str):
+        if (
+            not isinstance(run_id, str)
+            or (run_id and (
+                run_id in {".", ".."}
+                or re.fullmatch(r"[A-Za-z0-9._-]+", run_id) is None
+            ))
+            or not isinstance(compatibility_key, str)
+        ):
             raise ControlRejected("training-control run identity is invalid")
         if worker_env_count is not None and (
             not isinstance(worker_env_count, int)
