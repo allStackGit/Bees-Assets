@@ -2591,10 +2591,10 @@ function Assert-RlEnvironmentArgsValid($Release,[string[]]$EnvironmentArgs){
         }
     )
     $validationProof=Get-StringSha256 (
-        "bees-environment-validation-v1" + [Environment]::NewLine +
-        ([string]$Release.build_id) + [Environment]::NewLine +
-        $archiveSha + [Environment]::NewLine +
-        ($encodedArgs -join [Environment]::NewLine)
+        "bees-environment-validation-v1`n" +
+        ([string]$Release.build_id) + "`n" +
+        $archiveSha + "`n" +
+        ($encodedArgs -join "`n")
     )
     $validationKey=Get-StringSha256 (
         ([string]$Release.build_id) + [Environment]::NewLine +
