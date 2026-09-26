@@ -1465,10 +1465,20 @@ test('compatible remote failure grace survives training-control restart', () => 
                 lastError: 'persistent staging failure',
             },
         );
-
         assert.deepEqual(
             store.state.pending_release.required_trainers.map(item => item.trainer_id),
             ['central-learner'],
+        );
+        assert.equal(store.state.pending_release.phase, 'preparing');
+
+        // Server restart intentionally forgets live heartbeat records. The still-required
+        // checkpoint owner must re-register before the barrier can advance.
+        heartbeatDedicated(
+            store,
+            'central-learner',
+            'fail-restart-old',
+            oldSha,
+            { preparedBuildId: 'fail-restart-new' },
         );
         assert.equal(store.state.pending_release.phase, 'rolling');
     });
