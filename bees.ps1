@@ -1144,6 +1144,19 @@ function Invoke-Build {
     $win=Join-Path $BuildsRoot "$date RL Windows"
     $linux=Join-Path $BuildsRoot "$date RL Linux"
     $game=Join-Path $BuildsRoot "$date Full Game Windows"
+
+    # Pin the release's Python/config runtime before Unity compilation begins. A developer can
+    # keep editing the working tree while a long build runs without silently changing the
+    # runtime bytes that will later be paired with these Unity artifacts.
+    $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
+    if(Test-Path -LiteralPath $packageRoot){
+        if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }
+        Remove-Item -LiteralPath $packageRoot -Recurse -Force
+    }
+    Ensure-Directory $packageRoot
+    $trainingRuntimeArchive=Join-Path $packageRoot 'training-runtime.zip'
+    $trainingRuntime=New-ReleaseTrainingRuntime $python $buildId $sha $trainingRuntimeArchive
+
     Reset-BuildDirectory $win
     Reset-BuildDirectory $linux
     if($FullGame){ Reset-BuildDirectory $game }
@@ -1154,12 +1167,6 @@ function Invoke-Build {
         Invoke-UnityBuild $unity 'BeesCommandLineBuild.BuildWindowsFullGame' $game 'Bees.exe' "$date-full-game-windows.log"
     }
 
-    $packageRoot=Join-Path (Join-Path $BuildsRoot 'Packages') $buildId
-    if(Test-Path -LiteralPath $packageRoot){
-        if(-not $Force){ throw "Package directory exists: $packageRoot. Use -Force." }
-        Remove-Item -LiteralPath $packageRoot -Recurse -Force
-    }
-    Ensure-Directory $packageRoot
     $winZip=Join-Path $packageRoot 'rl-windows.zip'
     $linuxZip=Join-Path $packageRoot 'rl-linux.zip'
     Package-Build $python $win $winZip 'Bees RL Training.exe'
@@ -1182,9 +1189,6 @@ function Invoke-Build {
             archive=$gameZip;entrypoint='Bees.exe'
         }
     }
-
-    $trainingRuntimeArchive=Join-Path $packageRoot 'training-runtime.zip'
-    $trainingRuntime=New-ReleaseTrainingRuntime $python $buildId $sha $trainingRuntimeArchive
 
     $previousRunId=$null
     if($plan.previous_run_id){ $previousRunId=[string]$plan.previous_run_id }
