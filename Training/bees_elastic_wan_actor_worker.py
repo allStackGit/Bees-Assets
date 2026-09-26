@@ -26,6 +26,7 @@ import bees_elastic_wan_actor_session as elastic_session
 import bees_elastic_wan_training as elastic
 import bees_wan_actor_training as wan
 import bees_wan_actor_worker as worker
+from bees_process_safety import write_managed_health
 
 
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
@@ -464,6 +465,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
+                    write_managed_health(
+                        "ready",
+                        details={
+                            "component": "elastic-wan-actor",
+                            "actor_id": int(actor_id),
+                            "env_count": int(args.envs),
+                        },
+                    )
                     session_started_monotonic = time.monotonic()
                     actor_session.run()
                 finally:
@@ -473,6 +482,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
             except worker.BrokerUnavailable as exc:
+                write_managed_health(
+                    "error",
+                    error=f"BrokerUnavailable: {exc}",
+                    details={"component": "elastic-wan-actor"},
+                )
                 delay = reconnect_backoff.next_delay()
                 print(
                     f"[Bees WAN actor] central trainer unavailable: {exc}; "
@@ -489,6 +503,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ):
                     reconnect_backoff.reset()
                 failure_telemetry.record(exc)
+                write_managed_health(
+                    "error",
+                    error=f"{type(exc).__name__}: {exc}",
+                    details={"component": "elastic-wan-actor"},
+                )
                 if actor_session is not None:
                     try:
                         actor_session._write_throughput_metrics(force=True)
