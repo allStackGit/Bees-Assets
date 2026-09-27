@@ -233,7 +233,15 @@ class TrainingControlClient:
         )
         return self._decode_state(body)
 
-    def download_artifact(self, artifact_url: str, destination: Path) -> None:
+    def download_artifact(
+        self,
+        artifact_url: str,
+        destination: Path,
+        *,
+        max_bytes: int,
+    ) -> None:
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+            raise ValueError("training-control artifact size limit must be a positive integer")
         request = urllib.request.Request(
             self.base_url + artifact_url,
             method="GET",
@@ -241,8 +249,28 @@ class TrainingControlClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=max(self.timeout, 60.0)) as response:
+                content_length = response.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        advertised_length = int(content_length)
+                    except ValueError:
+                        advertised_length = None
+                    if advertised_length is not None and advertised_length > max_bytes:
+                        raise ValueError(
+                            "training-control artifact exceeds its declared size limit"
+                        )
                 with destination.open("wb") as output:
-                    shutil.copyfileobj(response, output, length=1024 * 1024)
+                    total_bytes = 0
+                    while True:
+                        chunk = response.read(min(1024 * 1024, max_bytes - total_bytes + 1))
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > max_bytes:
+                            raise ValueError(
+                                "training-control artifact exceeds its declared size limit"
+                            )
+                        output.write(chunk)
                     output.flush()
                     os.fsync(output.fileno())
         except urllib.error.HTTPError as exc:
@@ -380,7 +408,11 @@ class ManagedBuildStore:
         extracted = temp_parent / "content"
         extracted.mkdir()
         try:
-            client.download_artifact(descriptor["artifact_url"], archive)
+            client.download_artifact(
+                descriptor["artifact_url"],
+                archive,
+                max_bytes=descriptor["archive_size_bytes"],
+            )
             if archive.stat().st_size != descriptor["archive_size_bytes"]:
                 raise ValueError("downloaded build archive size does not match server descriptor")
             actual_sha = file_sha256(archive)
