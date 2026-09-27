@@ -730,3 +730,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** each arena now owns a coordinate-frame RNG derived from `CoordinateFrameStreamSalt`; it advances across that arena's episodes while remaining independent of other arenas. Scene-load and test resets clear both cached frames and RNGs. `RlScenarioSeedTests.RuntimeScenarioSamplersUseMlAgentsRootAndStableArenaStreams` requires this seeded stream and rejects the prior unseeded RNG; stream-derivation coverage also checks separation from matchup and map-size RNGs.  
 **Verification:** statically traced evaluation root initialization, arena and stream seed derivation, frame creation and episode invalidation. Regression guards were updated but not run; no tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** every stochastic input that changes seeded evaluation observations or action transforms must use a private deterministic arena stream.
+
+### REG-084 — PPO compatibility layout guard expected removed discrete branches
+**Area:** `Training/bees_mlagents_ppo_compat_tests.py`, `Training/bees_mlagents_ppo_compat.py`, frozen RL action ABI  
+**Symptom:** the PPO compatibility layout assertion expected nine discrete branches, including three 65-action branches, although the compatibility mask, agent action definition, and frozen policy schema define six branches: five binary weapon-fire branches and one five-action special branch. Running the test would reject the current ABI before checking the compatibility behavior.  
+**Root cause:** the expected branch tuple was stale after the action contract was reduced to the six-branch ABI; it no longer matched either the production declaration or policy schema v20.  
+**Permanent protection:** the expected tuple now explicitly matches `(2, 2, 2, 2, 2, 5)`, preserving an independent assertion of the frozen branch shape.  
+**Verification:** compared the test assertion against `BEES_DISCRETE_BRANCHES`, `RlOneVsOneAgent.CreateDiscreteBranchSizes()`, and `RlPolicySchema`'s v20 contract. The corrected test was not run, per the static-only audit scope.  
+**Invariant/knowledge:** PPO compatibility guards must assert the frozen action layout, not obsolete branches or action slots.
