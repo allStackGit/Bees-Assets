@@ -130,7 +130,6 @@ namespace Bees.Tests.EditMode
             RuntimeAssembly.SetField(range, "Collider", rangePhysics);
 
             GameObject mapObjectGameObject = CreateObject("Tracker Map Object");
-            mapObjectGameObject.tag = "Object";
             BoxCollider2D mapCollider = mapObjectGameObject.AddComponent<BoxCollider2D>();
             object mapObject = mapObjectGameObject.AddComponent(RuntimeAssembly.GetType("MapObject"));
             RuntimeAssembly.SetField(mapObject, "Id", 41001 + _objects.Count);
