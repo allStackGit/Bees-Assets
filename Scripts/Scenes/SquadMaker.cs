@@ -191,6 +191,64 @@ namespace Assets.Scripts.Scenes
                    session.TrySetRandomShipTypes(beeTypes, humanTypes);
         }
 
+        private bool TryStageMultiplayerLaunchConfiguration()
+        {
+            MatchSession session = MultiplayerLobbySession ??
+                ConfigData.PeekPendingFreePlayMatchSession();
+            if (session == null || !session.HasRemotePeer)
+            {
+                return true;
+            }
+
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
+                !session.IsConfiguring ||
+                !session.IsLocalAuthority ||
+                ConfigData.LevelOptions == null ||
+                !RefreshHostingRandomShipTypes(session))
+            {
+                return false;
+            }
+
+            List<SavedSquad> chosenSquads = ConfigData.LevelOptions.ChosenSquads;
+            for (int i = 0; i < chosenSquads.Count; i++)
+            {
+                SavedSquad squad = chosenSquads[i];
+                if (squad == null)
+                {
+                    return false;
+                }
+
+                int ownerPlayerId = session.ResolveSquadOwner(squad, squad.Side);
+                if (ownerPlayerId == MatchSession.UnownedPlayerId)
+                {
+                    ownerPlayerId = session.GetSolePlayerIdForSide(squad.Side);
+                    if (ownerPlayerId == MatchSession.UnownedPlayerId ||
+                        !session.TryAssignSavedSquadOwner(squad, ownerPlayerId))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            if (!session.TrySetLevelOptions(
+                    ConfigData.LevelOptions,
+                    ConfigData.Configuration.UserSide,
+                    ConfigData.Configuration.AISide) ||
+                !session.TryCreateCanonicalLevelOptions(
+                    ConfigData.Configuration.UserSide,
+                    ConfigData.Configuration.AISide,
+                    out LevelOptions canonicalLevelOptions))
+            {
+                return false;
+            }
+
+            ConfigData.LevelOptions = canonicalLevelOptions;
+            ConfigData.ChooseRandomLevel = false;
+            ConfigData.TrySetPendingFreePlayMatchSession(session);
+            MultiplayerLobbySession = session;
+            return true;
+        }
+
         public bool StartHostingMultiplayerLobby(MatchSession session)
         {
             if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
@@ -2375,6 +2433,14 @@ namespace Assets.Scripts.Scenes
             }
 
             //ConfigData.SquadsChosenForLevel.ForEach((s) => Debug.Log(s.ToString()));
+            if (!TryStageMultiplayerLaunchConfiguration())
+            {
+                Debug.LogError(
+                    "Multiplayer Free Play configuration is incomplete or inconsistent; refusing to start an unsynchronized battle.");
+                _startingLevel = false;
+                return;
+            }
+
             _nextScene = "Space";
             Invoke(nameof(LoadScene), .5f);
             //SceneManager.LoadSceneAsync("RL Tiny Box", LoadSceneMode.Single); // [alert] [rl-training]

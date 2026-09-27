@@ -1182,7 +1182,15 @@ namespace Assets.Scripts.Levels
             List<SavedSquad> aiInitial = new List<SavedSquad>();
             if (source.EnemySquads != null)
             {
-                aiInitial.AddRange(source.EnemySquads.Where(squad => squad != null));
+                for (int i = 0; i < source.EnemySquads.Count; i++)
+                {
+                    SavedSquad squad = source.EnemySquads[i];
+                    if (squad != null &&
+                        ResolveSquadOwner(squad, squad.Side) == UnownedPlayerId)
+                    {
+                        aiInitial.Add(squad);
+                    }
+                }
             }
             if (source.EnemyExistingSquads != null)
             {

@@ -427,8 +427,29 @@ public class Stage : Scene
             ConfigData.SwapSides();
         }
 
+        if (MatchSession.HasRemotePeer)
+        {
+            if (!MatchSession.TryCreateCanonicalLevelOptions(
+                    ConfigData.Configuration.UserSide,
+                    ConfigData.Configuration.AISide,
+                    out LevelOptions canonicalLevelOptions))
+            {
+                throw new InvalidOperationException(
+                    "Configured online Free Play match is missing canonical level data.");
+            }
+
+            ConfigData.LevelOptions = canonicalLevelOptions;
+            ConfigData.ChooseRandomLevel = false;
+        }
+
         if (!MatchSession.TryBeginBattle())
         {
+            if (MatchSession.HasRemotePeer)
+            {
+                throw new InvalidOperationException(
+                    "Configured online Free Play match could not enter battle phase.");
+            }
+
             Debug.LogError("Could not start configured Free Play match session. Falling back to solo ownership.");
             MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
             MatchSession.TryBeginBattle();
