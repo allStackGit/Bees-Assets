@@ -323,3 +323,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** remote workers now use the spec's pinned args and reject a nonempty control environment value when it differs. `bees_distributed_training_tests.py` covers matching and conflicting values. Tests were added but not run, per the static-only audit constraint.  
 **Verification:** the remote command consumes `controlled_environment_args(spec["unity_args"])`; spec identity validation covers the pinned args, and static review confirmed mismatches fail before SSH or Unity children are launched. No tests or runtime checks were run.  
 **Invariant/knowledge:** environment arguments that affect rollout distribution must remain bound to the remote session identity; inherited process state cannot override the hashed spec.
+
+
+### REG-035 — Worker recovery discarded completed rollout steps
+**Area:** `Training/bees_mlagents_learn.py`, batched ML-Agents environment stepping  \
+**Symptom:** if an environment worker exited while ready responses were being drained, successful step responses already consumed from healthy workers were removed from the batch and never postprocessed.  
+**Root cause:** the custom `SubprocessEnvManager._step` recovery branch cleared its accumulated step list and worker set on `ENV_EXITED`, even though those queue responses had already advanced healthy Unity environments.  
+**Permanent protection:** failed-worker recovery now preserves completed healthy-worker responses and returns them for postprocessing before the next step cycle. `FastEnvManagerTests.test_worker_exit_does_not_discard_other_consumed_step_results` protects this ordering and queued restart response. The test was added but not run, per the static-only audit constraint.  
+**Verification:** the queue-drain and recovery control flow were reviewed statically; successful responses remain in the returned batch, while restart handling schedules subsequent work. No tests or runtime checks were run.  
+**Invariant/knowledge:** once a worker step response is consumed, preserve and postprocess its rollout result even if another worker fails during the same drain.
