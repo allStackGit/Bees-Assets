@@ -261,6 +261,15 @@ class ElasticBrokerClient(worker.BrokerClient):
     def reset_ack(self, payload: Mapping[str, Any]) -> None:
         super().reset_ack(self._owned_payload(payload))
 
+    def release(self, session_id: str) -> None:
+        status, _headers, _body = self._request(
+            "POST",
+            "/release",
+            payload=self._owned_payload({"session_id": session_id}),
+        )
+        if status != 200:
+            raise RuntimeError(f"Unexpected WAN broker release status {status}")
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
