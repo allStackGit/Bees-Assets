@@ -161,6 +161,33 @@ function number(value, digits = 1, suffix = '') {
     return Number(value).toFixed(digits) + suffix;
 }
 
+function statusError(record) {
+    const current = String(record.last_error || record.preparation_error || '').trim();
+    if (current) return current;
+
+    const throughput = record.metrics && record.metrics.throughput;
+    if (!throughput || typeof throughput !== 'object') return '';
+
+    const count = Number(throughput.session_failures_total);
+    const ageSeconds = Number(throughput.seconds_since_last_session_failure);
+    const failureType = String(throughput.last_session_failure_type || '').trim();
+    if (
+        !Number.isInteger(count) ||
+        count <= 0 ||
+        !Number.isFinite(ageSeconds) ||
+        ageSeconds < 0 ||
+        !failureType
+    ) {
+        return '';
+    }
+
+    let age;
+    if (ageSeconds < 60) age = Math.round(ageSeconds) + 's';
+    else if (ageSeconds < 3600) age = (ageSeconds / 60).toFixed(1) + 'm';
+    else age = (ageSeconds / 3600).toFixed(1) + 'h';
+    return 'WAN session x' + count + ', ' + age + ' ago: ' + failureType;
+}
+
 function table(rows, columns) {
     if (!rows.length) return [];
     const widths = {};
@@ -371,13 +398,13 @@ async function getStatusFrameLines(config, adminToken) {
                 'H<5': episodes && metrics.human_aim_within_5_pct != null ? number(metrics.human_aim_within_5_pct, 1, '%') : '-',
                 BAligned: episodes && metrics.bee_turret_aligned_pct != null ? number(metrics.bee_turret_aligned_pct, 1, '%') : '-',
                 HAligned: episodes && metrics.human_turret_aligned_pct != null ? number(metrics.human_turret_aligned_pct, 1, '%') : '-',
-                Error: String(record.last_error || ''),
+                Error: statusError(record),
             };
         });
 
         if (rows.length) {
             lines.push(...table(rows, [
-                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'OptExp/s',
+                'Trainer', 'Role', 'Platform', 'State', 'Envs', 'LiveExp/s', 'OptExp/s',
                 'SentGiB', 'RecvGiB', 'MiB/s', 'Opt', 'Build', 'Rev', 'Age',
                 'Timeout', 'BWin', 'HWin', 'Draw', 'Dur', 'BHit/Sh', 'HHit/Sh',
                 'BAim', 'HAim', 'B<5', 'H<5', 'BAligned', 'HAligned', 'Error',
@@ -443,5 +470,6 @@ module.exports = {
     getStatusFrameLines,
     rolloutBlockers,
     showStatus,
+    statusError,
     table,
 };
