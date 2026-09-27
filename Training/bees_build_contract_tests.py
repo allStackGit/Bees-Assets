@@ -455,7 +455,7 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
     def test_status_reads_authoritative_run_scoped_learner_live_log(self):
         status = read_operator("status.js")
         self.assertIn("paths.centralAgentInstallRoot", status)
-        self.assertIn("'learner-live.log'", (ROOT / "Training" / "bees_mlagents_learn.py").read_text(encoding="utf-8"))
+        self.assertIn("learner-live.log", (ROOT / "Training" / "bees_mlagents_learn.py").read_text(encoding="utf-8"))
         self.assertIn("'logs',\n            runId", status)
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
 
