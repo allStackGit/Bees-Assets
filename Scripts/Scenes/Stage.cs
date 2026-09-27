@@ -663,6 +663,13 @@ public class Stage : Scene
     new void Update()
     {
         base.Update();
+        if (IsFinalized && MatchSession != null && MatchSession.Phase == Assets.Scripts.Levels.MatchSessionPhase.Battle)
+        {
+            for (int levelIndex = 0; levelIndex < Levels.Count; levelIndex++)
+            {
+                Levels[levelIndex].State?.ProcessQueuedPlayerCommands();
+            }
+        }
         if (!IsTraining && IsFinalized && IsPlayerControlling)
         {
             InputManager.Update();

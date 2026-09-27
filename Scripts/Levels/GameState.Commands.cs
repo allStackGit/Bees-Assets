@@ -15,10 +15,86 @@ namespace Assets.Scripts.Levels
         private readonly List<StoredCommand> _targetingCommands = new List<StoredCommand>();
         private readonly List<Squad> _targetedSquads = new List<Squad>();
         private readonly HashSet<Squad> _squadsAwaitingCommandSet = new HashSet<Squad>(ReferenceIdentityComparer<Squad>.Instance);
+        private readonly Queue<PlayerCommandEnvelope> _queuedPlayerCommands = new Queue<PlayerCommandEnvelope>();
+        private readonly object _queuedPlayerCommandsLock = new object();
+        public const int MaxQueuedPlayerCommands = 1024;
+        public const int MaxPlayerCommandsPerFrame = 64;
 
         public int AddUserCommand()
         {
             return UserCommands++;
+        }
+
+        public bool QueueReceivedPlayerCommand(PlayerCommandEnvelope command)
+        {
+            if (command == null || command.PlayerId <= MatchSession.UnownedPlayerId ||
+                command.Sequence <= 0 || command.SquadCommandId <= 0)
+            {
+                return false;
+            }
+
+            PlayerCommandEnvelope queuedCopy = new PlayerCommandEnvelope(
+                command.PlayerId,
+                command.Sequence,
+                command.Kind,
+                command.SquadCommandId,
+                command.TargetSquadCommandId,
+                command.PointA,
+                command.PointB);
+
+            lock (_queuedPlayerCommandsLock)
+            {
+                if (_queuedPlayerCommands.Count >= MaxQueuedPlayerCommands)
+                {
+                    return false;
+                }
+
+                _queuedPlayerCommands.Enqueue(queuedCopy);
+                return true;
+            }
+        }
+
+        public int ProcessQueuedPlayerCommands(int maxCommands = MaxPlayerCommandsPerFrame)
+        {
+            if (maxCommands <= 0)
+            {
+                return 0;
+            }
+            if (GameOver || LevelEnded)
+            {
+                ClearQueuedPlayerCommands();
+                return 0;
+            }
+            if (IsPaused)
+            {
+                return 0;
+            }
+
+            int processed = 0;
+            while (processed < maxCommands)
+            {
+                PlayerCommandEnvelope command;
+                lock (_queuedPlayerCommandsLock)
+                {
+                    if (_queuedPlayerCommands.Count == 0)
+                    {
+                        break;
+                    }
+                    command = _queuedPlayerCommands.Dequeue();
+                }
+
+                TryExecutePlayerCommand(command);
+                processed++;
+            }
+            return processed;
+        }
+
+        public void ClearQueuedPlayerCommands()
+        {
+            lock (_queuedPlayerCommandsLock)
+            {
+                _queuedPlayerCommands.Clear();
+            }
         }
 
         public bool TryIssuePlayerCommand(

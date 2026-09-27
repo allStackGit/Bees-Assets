@@ -177,6 +177,7 @@ namespace Assets.Scripts.Levels
             ShipsById.Clear();
             Squads.Clear();
             ClearSquadsAwaitingHiveMindCommands();
+            ClearQueuedPlayerCommands();
             PastCommands.Clear();
             OutcomeIdToPastCommandIndex.Clear();
             SelectedSquads.Clear();
