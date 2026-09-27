@@ -535,6 +535,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             source,
         )
 
+    def test_managed_child_crash_loop_uses_command_aware_backoff(self):
+        source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MANAGED_RESTART_BACKOFF_SECONDS", source)
+        self.assertIn("def restart_delay(self, command: Sequence[str])", source)
+        self.assertIn("def record_exit(self, code: Optional[int])", source)
+        self.assertIn("restart_delay = self.restart_delay(command)", source)
+        self.assertIn("command_changed = tuple(command) != self.command", source)
+        self.assertIn("restart_delay = managed.record_exit(code)", source)
+        self.assertIn("unless desired launch changes", source)
+
     def test_episode_status_sidecar_records_every_episode_with_bounded_storage(self):
         source = (ROOT / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs").read_text(
             encoding="utf-8"
