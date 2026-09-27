@@ -18,6 +18,9 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
             str(name): wan._behavior_spec_signature(spec)
             for name, spec in behavior_specs.items()
         }
+        # Keep validation and pinning in one critical section. Otherwise a remote registration
+        # can slip between this check and the parent method that makes local specs authoritative.
+        # The broker condition uses an RLock, so the parent setter can safely re-enter it.
         with self._condition:
             self._active_snapshot_locked()
             for actor_id, record in self._registrations.items():
@@ -26,7 +29,7 @@ class SlotSafeElasticWanBroker(elastic.ElasticWanBroker):
                         f"remote actor {actor_id} registered behavior specifications that differ "
                         "from Exeter's local training environments"
                     )
-        super().set_reference_behavior_specs(behavior_specs)
+            super().set_reference_behavior_specs(behavior_specs)
 
     @staticmethod
     def _payload_instance_id(payload: Mapping[str, Any]) -> str:
