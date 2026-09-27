@@ -29,6 +29,33 @@ namespace Assets.Scripts.Server
             return true;
         }
 
+        public bool AddBounded(ServerRequest request, int maximumCount)
+        {
+            if (maximumCount < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maximumCount));
+            }
+            if (request == null || FindIndexByHash(request.Hash) >= 0)
+            {
+                return false;
+            }
+
+            _requests.Add(request);
+            if (_requests.Count > maximumCount)
+            {
+                int oldestIndex = 0;
+                for (int i = 1; i < _requests.Count; i++)
+                {
+                    if (_requests[i].StartTime < _requests[oldestIndex].StartTime)
+                    {
+                        oldestIndex = i;
+                    }
+                }
+                _requests.RemoveAt(oldestIndex);
+            }
+            return true;
+        }
+
         public bool Remove(ServerRequest request)
         {
             if (request == null)
