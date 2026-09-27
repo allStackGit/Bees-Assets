@@ -402,13 +402,16 @@ namespace Assets.Scripts.Levels
 
         public bool TrySetPeerTransportIdentity(int peerId, string transportIdentity)
         {
-            if (!IsConfiguring)
+            if (!IsConfiguring || string.IsNullOrWhiteSpace(transportIdentity))
             {
                 return false;
             }
 
             MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
-            if (peer == null)
+            if (peer == null ||
+                _peers.Any(candidate =>
+                    candidate.Id != peerId &&
+                    string.Equals(candidate.TransportIdentity, transportIdentity, StringComparison.Ordinal)))
             {
                 return false;
             }
@@ -611,6 +614,8 @@ namespace Assets.Scripts.Levels
             MatchPeer peer = _peers.FirstOrDefault(candidate => candidate.Id == peerId);
             return peer == null ? string.Empty : peer.TransportIdentity;
         }
+
+        public bool HasRemotePeer => _peers.Any(peer => !peer.IsLocal);
 
         public bool IsLocalAuthority =>
             _peers.Any(peer => peer.Id == AuthorityPeerId && peer.IsLocal);

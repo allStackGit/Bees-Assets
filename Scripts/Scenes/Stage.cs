@@ -35,6 +35,7 @@ public class Stage : Scene
     /// to Campaign and Challenge, where this remains null.
     /// </summary>
     public MatchSession MatchSession;
+    private IMultiplayerTransport _multiplayerTransport;
     /// <summary>
     /// Whether or not the game will be rendered and visual objects should be used
     /// </summary>
@@ -425,6 +426,24 @@ public class Stage : Scene
         }
     }
 
+    private void SetupMultiplayerTransport()
+    {
+        _multiplayerTransport?.Dispose();
+        _multiplayerTransport = null;
+
+        if (MatchSession == null || !MatchSession.HasRemotePeer)
+        {
+            return;
+        }
+
+        _multiplayerTransport = SteamMultiplayerTransportFactory.Create(this, MatchSession);
+        if (_multiplayerTransport == null)
+        {
+            Debug.LogWarning(
+                "Online multiplayer peers are configured, but Steam networking is unavailable or incomplete.");
+        }
+    }
+
     protected override void FinalizeSceneWithUserData()
     {
         //Debug.Log($"Finalize scene");
@@ -527,6 +546,7 @@ public class Stage : Scene
         }
 
         SetupLevels();
+        SetupMultiplayerTransport();
 
         if (HasAsteroids)
         {
@@ -698,6 +718,7 @@ public class Stage : Scene
     new void Update()
     {
         base.Update();
+        _multiplayerTransport?.Update();
         if (IsFinalized && MatchSession != null && MatchSession.Phase == Assets.Scripts.Levels.MatchSessionPhase.Battle)
         {
             for (int levelIndex = 0; levelIndex < Levels.Count; levelIndex++)
@@ -742,4 +763,10 @@ public class Stage : Scene
     {
         FixedUpdates++;
     }
+    private void OnDestroy()
+    {
+        _multiplayerTransport?.Dispose();
+        _multiplayerTransport = null;
+    }
+
 }
