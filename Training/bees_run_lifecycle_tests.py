@@ -45,6 +45,10 @@ class RunLifecycleTests(unittest.TestCase):
         (scenes / "RlCombatPerception.cs").write_text("perception-v1\n", encoding="utf-8")
         (scenes / "RlOneVsOneAgent.cs").write_text("actions-v1\n", encoding="utf-8")
         (scenes / "RlOneVsOneEpisodeCoordinator.cs").write_text(
+            "private const int EpisodeMetricsLogInterval = 10;\n"
+            "private const int SummaryIntervalEpisodes = 100;\n"
+            "private const int FullEpisodeDiagnosticsInterval = 1000;\n"
+            "private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;\n"
             "episode-coordinator-v1\n",
             encoding="utf-8",
         )
@@ -219,6 +223,64 @@ class RunLifecycleTests(unittest.TestCase):
             self.assertNotEqual(second["run_id"], first["run_id"])
             self.assertNotEqual(second["compatibility_key"], first["compatibility_key"])
 
+    def test_episode_diagnostic_cadence_change_keeps_run_compatible(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            first = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, first)
+
+            coordinator = (
+                assets / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs"
+            )
+            coordinator.write_text(
+                coordinator.read_text(encoding="utf-8").replace(
+                    "EpisodeMetricsLogInterval = 10",
+                    "EpisodeMetricsLogInterval = 1",
+                ),
+                encoding="utf-8",
+            )
+
+            second = lifecycle.plan_run(assets, state)
+            self.assertFalse(second["incompatible"])
+            self.assertFalse(second["new_run"])
+            self.assertEqual(second["run_id"], first["run_id"])
+            self.assertEqual(second["compatibility_key"], first["compatibility_key"])
+
+    def test_recover_active_run_requires_current_source_to_match_authoritative_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assets = self._assets(root)
+            state = root / "current.json"
+            original = lifecycle.plan_run(assets, state)
+            lifecycle.commit_plan(state, original)
+
+            recovered = lifecycle.recover_active_run(
+                assets,
+                state,
+                run_id="bees-existing-run",
+                expected_compatibility_key=original["compatibility_key"],
+            )
+            self.assertEqual(recovered["run_id"], "bees-existing-run")
+            self.assertEqual(
+                recovered["compatibility_key"],
+                original["compatibility_key"],
+            )
+
+            reward = assets / "Scripts" / "Scenes" / "RlOneVsOneReward.cs"
+            reward.write_text("reward-v2\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError,
+                "refusing lifecycle recovery",
+            ):
+                lifecycle.recover_active_run(
+                    assets,
+                    state,
+                    run_id="bees-existing-run",
+                    expected_compatibility_key=original["compatibility_key"],
+                )
+
     def test_episode_reward_coordinator_change_creates_new_run(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -229,7 +291,14 @@ class RunLifecycleTests(unittest.TestCase):
             coordinator = (
                 assets / "Scripts" / "Scenes" / "RlOneVsOneEpisodeCoordinator.cs"
             )
-            coordinator.write_text("episode-coordinator-v2\n", encoding="utf-8")
+            coordinator.write_text(
+                "private const int EpisodeMetricsLogInterval = 10;\n"
+                "private const int SummaryIntervalEpisodes = 100;\n"
+                "private const int FullEpisodeDiagnosticsInterval = 1000;\n"
+                "private const long TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L;\n"
+                "episode-coordinator-v2\n",
+                encoding="utf-8",
+            )
             second = lifecycle.plan_run(assets, state)
             self.assertTrue(second["incompatible"])
             self.assertNotEqual(second["run_id"], first["run_id"])
