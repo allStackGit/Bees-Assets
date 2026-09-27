@@ -9,7 +9,7 @@
   "maxRemoteActors": 12,
   "minRemoteActors": 0,
   "brokerPort": 55051,
-  "generationSteps": 1000000,
+  "generationSteps": 20000000,
   "environmentArgs": [],
   "expectedTrainers": [],
   "remoteInstallRoot": "%LOCALAPPDATA%\\BeesTraining",
