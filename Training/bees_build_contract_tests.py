@@ -222,6 +222,24 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertEqual(argv[index + 1], spaced)
         self.assertFalse(any(value.startswith("--unity-editor=") for value in argv))
 
+    def test_server_restart_reconciles_persisted_active_training(self):
+        source = read_operator("commands.js")
+        helper_start = source.index(
+            "async function reconcilePersistedTrainingAfterServerStart"
+        )
+        server_start = source.index("async function invokeServer()", helper_start)
+        helper = source[helper_start:server_start]
+        server = source[server_start:source.index("async function invokeStart", server_start)]
+
+        self.assertIn("status.desired.training_enabled", helper)
+        self.assertIn("prepareCentralReleaseRuntime(", helper)
+        self.assertIn("startCentralAgentIfNeeded(", helper)
+        self.assertIn("ensureTokenFile(paths.wanTokenPath)", helper)
+        self.assertIn(
+            "await reconcilePersistedTrainingAfterServerStart(config, admin)",
+            server,
+        )
+
     def test_environment_validation_uses_argv_array_without_powershell_reparse(self):
         source = read_operator("validation.js")
         self.assertIn("spawn(executable, args.map(String)", source)
