@@ -738,3 +738,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the independent layout assertion now requires 16 continuous actions and `(2, 2, 2, 2, 2, 5)` discrete branch sizes.  
 **Verification:** compared the test against the compatibility module's action constants, `RlOneVsOneAgent.CreateDiscreteBranchSizes()`, and `RlPolicySchema`'s v20 contract. The corrected test was not run, per the static-only audit scope.  
 **Invariant/knowledge:** PPO compatibility guards must assert every dimension of the frozen action ABI, including continuous communication channels, and must not retain obsolete slots.
+### REG-085 — deferred campaign triggers survived a level rebuild
+**Area:** `Scripts/Levels/Level.Campaign.Shared.cs`, campaign trigger graph lifecycle  
+**Symptom:** a campaign level rebuilt on the same `Level` instance could retain triggers queued in `NextTriggers` from the prior mission. `ResetRuntimeState` cancels timers, then `SetTriggers` previously cleared only active triggers; the next trigger poll would append the stale deferred entries to the new mission.  
+**Root cause:** trigger rebuild cleared the active queue but not the deferred queue.  
+**Fix:** `SetTriggers` now clears both trigger collections before configuring the current mission.  
+**Permanent protection:** `CampaignTriggerStructureTests.RebuildingCampaignTriggersDiscardsDeferredTriggersFromThePreviousLevel` guards both clears and their ordering. The regression test was not run, per the static-only audit scope.  
+**Invariant/knowledge:** rebuilding a mission trigger graph must discard both active and deferred triggers from the previous level.
