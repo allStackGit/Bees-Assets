@@ -1522,7 +1522,11 @@ class TrainingControlStore {
         runId = requireString(runId, 'run_id', 128);
         relativePath = requireString(relativePath, 'path', 1024).replace(/\\/g, '/');
         if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            trainerId === '.' ||
+            trainerId === '..' ||
             !/^[A-Za-z0-9._-]+$/.test(runId) ||
+            runId === '.' ||
+            runId === '..' ||
             relativePath.startsWith('/') ||
             relativePath.split('/').some(part => !part || part === '.' || part === '..')) {
             throw Object.assign(new Error('trainer log identity/path is unsafe'), { statusCode: 400 });
