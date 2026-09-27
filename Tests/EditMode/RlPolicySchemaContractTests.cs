@@ -147,6 +147,7 @@ namespace Bees.Tests.EditMode
         {
             string agent = Read("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string perception = Read("Scripts", "Scenes", "RlCombatPerception.cs");
+            string lifecycle = Read("Scripts", "Entities", "Ships", "Ship.Lifecycle.cs");
 
             Assert.That(agent, Does.Contain("private static readonly Dictionary<Ship, Vector4> ShipCommunications"));
             Assert.That(agent, Does.Contain("ResetCommunication(_ship);"));
@@ -156,6 +157,8 @@ namespace Bees.Tests.EditMode
             Assert.That(agent, Does.Contain("ShipCommunications[ship] = new Vector4("));
             Assert.That(agent, Does.Contain("ShipCommunications.Remove(ship);"));
             Assert.That(agent, Does.Contain("ShipCommunications.TryGetValue(ally, out Vector4 communication)"));
+            Assert.That(lifecycle, Does.Contain("RlOneVsOneAgent.ClearCommunication(this);"),
+                "Pooled ship reuse must not expose communication from its previous lifecycle.");
             Assert.That(perception, Does.Contain("AddAllySlots(sensor, _allyCandidates, MaxObservedAllies, origin, frameQuarterTurns);"));
             Assert.That(perception, Does.Contain("AddEntitySlots(sensor, _enemyCandidates, MaxObservedEnemies, origin, frameQuarterTurns);"),
                 "Enemy observations must not receive the private allied communication tail.");
