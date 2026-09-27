@@ -9,6 +9,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 ## Audit status
 
 - Uranus II now resolves the simultaneous-elimination case once, honoring the campaign tie rule (player loss), and its post-close dialogue continuation is driven after normal level polling stops. Confirmed from the trigger loop, `CloseLevel`, and level update lifecycle; source changes only, no tests or runtime checks run.
+- Neptune II's AI-elimination trigger now excludes simultaneous player elimination, preventing win/loss callbacks from both running in one trigger pass. This follows the same tie-as-player-loss rule; verified by static trigger-order analysis only.
 - Malformed profile recovery now catches a failed write of fallback defaults, keeps profile readiness false, and reports controlled unavailability rather than letting the storage exception escape. Source review only; no tests or runtime validation were performed.
 - Complete clean finding passes since the latest production changes: **0 / 2**. BUG-001 is resolved as REG-089: authorization-denied profile reads now receive terminal failure status and are not retried. Regression cases were added but remain unrun.
 - REG-094 closes a training-log path traversal by rejecting `.` and `..` trainer/run path components; focused source regression cases were added but remain unrun.
