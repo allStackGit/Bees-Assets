@@ -13,7 +13,7 @@ namespace Bees.Tests.EditMode
         {
             string coordinator = ReadSource("Scripts", "Scenes", "RlOneVsOneEpisodeCoordinator.cs");
 
-            Assert.That(coordinator, Does.Contain("EpisodeMetricsLogInterval = 10"));
+            Assert.That(coordinator, Does.Contain("EpisodeMetricsLogInterval = 1"));
             Assert.That(coordinator, Does.Contain("SummaryIntervalEpisodes = 100"));
             Assert.That(coordinator, Does.Contain("FullEpisodeDiagnosticsInterval = 1000"));
             Assert.That(coordinator, Does.Contain("TrainingDiagnosticMaxBytes = 8L * 1024L * 1024L"));
@@ -133,7 +133,7 @@ namespace Bees.Tests.EditMode
             Assert.That(diagnostics, Does.Not.Contain("Striker#"),
                 "Episode output should aggregate Striker reloads instead of listing every child runtime ID.");
             Assert.That(coordinator, Does.Contain("_completedEpisodes % EpisodeMetricsLogInterval == 0"),
-                "Compact episode telemetry should be sampled rather than emitted for every high-speed episode.");
+                "Compact per-episode telemetry should remain behind the explicit cadence gate.");
             Assert.That(coordinator, Does.Contain("_completedEpisodes % FullEpisodeDiagnosticsInterval == 0"),
                 "Full behavior diagnostics should be retained on a much lower-frequency detail cadence.");
             Assert.That(CountOccurrences(coordinator, "behaviorDiagnostics"), Is.GreaterThanOrEqualTo(2),
