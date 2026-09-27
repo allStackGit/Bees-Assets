@@ -225,3 +225,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `Training/bees_elastic_wan_training_tests.py` requires session shutdown to wait for the claim-keeper thread to finish before clearing its reference. `_stop_claim_keeper` now joins without a shorter timeout; the keeper's broker request has the configured finite timeout.  
 **Verification:** focused regression coverage was added but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** a session must not release actor-slot lifecycle ownership while an authenticated claim renewal is still in flight.
+
+### REG-024 — Same-build rollout accepted a stale environment configuration
+**Area:** `BeesServer~/trainingControl.js`, dedicated worker heartbeat identity  
+**Symptom:** during a same-build environment-argument transition, a central learner could be marked rolled using its applied revision and build identity while still running the previous arguments. The remote actor could then roll to the new arguments and trigger promotion, leaving the learner and actor on different environment configurations.  
+**Root cause:** rollout health checks did not bind the heartbeat to the environment arguments of the live managed process.  
+**Permanent protection:** dedicated workers now report a SHA-256 identity for their active environment arguments. The server requires that identity to match the pending arguments before accepting a rollout acknowledgement. The focused server regression covers a stale central heartbeat followed by a correctly configured acknowledgement.  
+**Verification:** regression coverage was added but not executed, per the static-only audit constraint.  
+**Invariant/knowledge:** promote a same-build environment transition only after every required trainer proves its live process has the pending ordered argument list.
