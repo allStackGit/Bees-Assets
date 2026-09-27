@@ -170,24 +170,21 @@ namespace Assets.Scripts.Server
                 int generation = Interlocked.Increment(ref _socketGeneration);
                 NativeWebSocket.WebSocket socket = new NativeWebSocket.WebSocket(_websocketURL, "game");
                 _nativeWebSocket = socket;
-                socket.OnOpen += () =>
+                socket.OnOpen += () => EnqueueNativeMainThread(generation, socket, () =>
                 {
-                    if (!IsCurrentNativeSocket(generation, socket)) return;
                     Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
                     Open();
-                };
-                socket.OnError += error =>
+                });
+                socket.OnError += error => EnqueueNativeMainThread(generation, socket, () =>
                 {
-                    if (!IsCurrentNativeSocket(generation, socket)) return;
                     Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
                     Error(error);
-                };
-                socket.OnClose += (e) =>
+                });
+                socket.OnClose += e => EnqueueNativeMainThread(generation, socket, () =>
                 {
-                    if (!IsCurrentNativeSocket(generation, socket)) return;
                     Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
                     Close();
-                };
+                });
                 socket.OnMessage += bytes =>
                 {
                     if (IsCurrentNativeSocket(generation, socket))
@@ -202,11 +199,11 @@ namespace Assets.Scripts.Server
                 }
                 catch (Exception error)
                 {
-                    if (IsCurrentNativeSocket(generation, socket))
+                    EnqueueNativeMainThread(generation, socket, () =>
                     {
                         Interlocked.Exchange(ref _connectionAttemptInFlight, 0);
                         Error(error.Message);
-                    }
+                    });
                 }
             }
         }
@@ -221,6 +218,20 @@ namespace Assets.Scripts.Server
         {
             return generation == Volatile.Read(ref _socketGeneration) &&
                    ReferenceEquals(socket, _nativeWebSocket);
+        }
+
+        private void EnqueueNativeMainThread(
+            int generation,
+            NativeWebSocket.WebSocket socket,
+            Action action)
+        {
+            MainThreadActions.Enqueue(() =>
+            {
+                if (IsCurrentNativeSocket(generation, socket))
+                {
+                    action();
+                }
+            });
         }
 
         private void EnqueueMainThread(int generation, WebSocketSharp.WebSocket socket, Action action)
