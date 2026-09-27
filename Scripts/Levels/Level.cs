@@ -25,6 +25,7 @@ namespace Assets.Scripts.Levels
     public partial class Level: MonoBehaviour
     {
         public GameState State;
+        public int MatchLevelId;
         // If the Hive Mind is active, get commands from the server.
         // Dedicated ML-Agents training is owned by the RlOneVsOne policy adapters.
         public bool HasObstacles, ActivateCollisionAsteroids, ActivateMining, ActivateFogOfWar, ActivateLoadingShipsMidLevel;
@@ -86,10 +87,11 @@ namespace Assets.Scripts.Levels
         public int MaxMinerals;
 
 
-        public void Setup(Stage stage, string name)
+        public void Setup(Stage stage, string name, int matchLevelId = 1)
         {
             Stage = stage;
             Name = name;
+            MatchLevelId = matchLevelId > 0 ? matchLevelId : 1;
             gameObject.name = $"Level - {Name}";
 
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)

@@ -35,7 +35,12 @@ namespace Assets.Scripts.Levels
 
         public bool QueueReceivedPlayerCommandPacket(int sourcePeerId, byte[] payload)
         {
-            if (!MultiplayerProtocol.TryDeserializeCommand(payload, MatchId, out PlayerCommandEnvelope command))
+            if (!MultiplayerProtocol.TryDeserializeCommand(
+                    payload,
+                    MatchId,
+                    out int matchLevelId,
+                    out PlayerCommandEnvelope command) ||
+                matchLevelId != MatchLevelId)
             {
                 return false;
             }
@@ -651,17 +656,18 @@ namespace Assets.Scripts.Levels
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
-            "v", "match", "type", "player", "seq", "kind", "squad", "target",
+            "v", "match", "type", "level", "player", "seq", "kind", "squad", "target",
             "ax", "ay", "bx", "by"
         };
 
         public static bool TrySerializeCommand(
             Guid matchId,
+            int matchLevelId,
             PlayerCommandEnvelope command,
             out byte[] payload)
         {
             payload = null;
-            if (matchId == Guid.Empty || !IsValidCommand(command))
+            if (matchId == Guid.Empty || matchLevelId <= 0 || !IsValidCommand(command))
             {
                 return false;
             }
@@ -671,6 +677,7 @@ namespace Assets.Scripts.Levels
                 ["v"] = Version,
                 ["match"] = matchId.ToString("N"),
                 ["type"] = CommandPacketType,
+                ["level"] = matchLevelId,
                 ["player"] = command.PlayerId,
                 ["seq"] = command.Sequence,
                 ["kind"] = (int)command.Kind,
@@ -695,8 +702,10 @@ namespace Assets.Scripts.Levels
         public static bool TryDeserializeCommand(
             byte[] payload,
             Guid expectedMatchId,
+            out int matchLevelId,
             out PlayerCommandEnvelope command)
         {
+            matchLevelId = 0;
             command = null;
             if (expectedMatchId == Guid.Empty ||
                 payload == null ||
@@ -734,6 +743,8 @@ namespace Assets.Scripts.Levels
                 !TryReadString(json, "match", out string matchText) ||
                 !Guid.TryParseExact(matchText, "N", out Guid matchId) ||
                 matchId != expectedMatchId ||
+                !TryReadInt64(json, "level", out long matchLevelIdValue) ||
+                matchLevelIdValue <= 0 || matchLevelIdValue > int.MaxValue ||
                 !TryReadInt64(json, "player", out long playerIdValue) ||
                 playerIdValue <= MatchSession.UnownedPlayerId ||
                 playerIdValue > int.MaxValue ||
@@ -765,6 +776,7 @@ namespace Assets.Scripts.Levels
                 return false;
             }
 
+            matchLevelId = (int)matchLevelIdValue;
             command = parsed;
             return true;
         }

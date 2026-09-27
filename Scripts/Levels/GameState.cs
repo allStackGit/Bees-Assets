@@ -44,6 +44,7 @@ namespace Assets.Scripts.Levels
 
         public int UserCommands, AICommands;
         public Guid MatchId { get; private set; }
+        public int MatchLevelId { get; private set; }
         public bool IsPaused;
         public bool GameOver;
         public bool LevelEnded;
@@ -113,6 +114,7 @@ namespace Assets.Scripts.Levels
             MatchId = Stage != null && Stage.MatchSession != null
                 ? Stage.MatchSession.MatchId
                 : Guid.Empty;
+            MatchLevelId = Level != null ? Level.MatchLevelId : 0;
         }
 
         public HashSet<MapObject> GetPlayerVisibleMapObjects(int side)

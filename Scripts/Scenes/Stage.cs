@@ -384,7 +384,7 @@ public class Stage : Scene
     {
         for (_setup_i = 0; _setup_i < Levels.Count; _setup_i++)
         {
-            Levels[_setup_i].Setup(this, $"Level - #{_setup_i}");
+            Levels[_setup_i].Setup(this, $"Level - #{_setup_i}", _setup_i + 1);
         }
     }
 
@@ -671,6 +671,30 @@ public class Stage : Scene
     // Update is called once per frame
     private Vector2 _followingShipPosition;
     private Vector3 _oldCameraPosition;
+    public bool TryRouteReceivedPlayerCommandPacket(int sourcePeerId, byte[] payload)
+    {
+        if (MatchSession == null ||
+            !Assets.Scripts.Levels.MultiplayerProtocol.TryDeserializeCommand(
+                payload,
+                MatchSession.MatchId,
+                out int matchLevelId,
+                out Assets.Scripts.Levels.PlayerCommandEnvelope command))
+        {
+            return false;
+        }
+
+        for (int levelIndex = 0; levelIndex < Levels.Count; levelIndex++)
+        {
+            Level level = Levels[levelIndex];
+            if (level != null && level.State != null && level.State.MatchLevelId == matchLevelId)
+            {
+                return level.State.QueueReceivedPlayerCommand(sourcePeerId, command);
+            }
+        }
+
+        return false;
+    }
+
     new void Update()
     {
         base.Update();
