@@ -35,6 +35,24 @@ class EpisodeLogMetricsTests(unittest.TestCase):
 
 
 class BackgroundBuildPreparerTests(unittest.TestCase):
+    def test_retry_clears_stale_prepared_marker(self):
+        preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
+        preparer.builds = mock.Mock()
+        preparer.builds.is_prepared.return_value = False
+        preparer.client = mock.Mock()
+        preparer._lock = threading.Lock()
+        preparer._thread = None
+        preparer._requested_build_id = "build-a"
+        preparer.prepared_build_id = "build-a"
+        preparer.last_error = "previous preparation completed"
+
+        thread = mock.Mock()
+        with mock.patch.object(worker.threading, "Thread", return_value=thread):
+            preparer.request({"build_id": "build-a"})
+
+        self.assertEqual(preparer.prepared_build_id, "")
+        thread.start.assert_called_once_with()
+
     def test_wait_for_build_heartbeats_and_can_yield_for_new_state(self):
         preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
         preparer._lock = threading.Lock()
