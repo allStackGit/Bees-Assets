@@ -33,7 +33,13 @@ namespace Assets.Scripts.Levels
         public List<MiningAsteroid> MiningAsteroidsToRelease = new List<MiningAsteroid>();
         public List<FogOfWarVision> FogOfWarVisions = new List<FogOfWarVision>();
         public List<TargetingSquadMarker> TargetingSquadMarkers = new List<TargetingSquadMarker>();
+        // Primary-local compatibility view used by existing campaign/UI code.
         public HashSet<MapObject> PlayerVisibleMapObjects = new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance);
+        private readonly HashSet<MapObject>[] _nonPrimaryPlayerVisibleMapObjectsBySide =
+        {
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance),
+            new HashSet<MapObject>(ReferenceIdentityComparer<MapObject>.Instance)
+        };
 
         public int UserCommands, AICommands;
         public bool IsPaused;
@@ -102,6 +108,21 @@ namespace Assets.Scripts.Levels
         {
             Level = level;
             Stage = Level.Stage;
+        }
+
+        public HashSet<MapObject> GetPlayerVisibleMapObjects(int side)
+        {
+            if (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide)
+            {
+                return null;
+            }
+
+            if (ConfigData.Configuration != null && side == ConfigData.Configuration.UserSide)
+            {
+                return PlayerVisibleMapObjects;
+            }
+
+            return _nonPrimaryPlayerVisibleMapObjectsBySide[side - 1];
         }
 
         public void RecordPlayerShipLost(ConfigData.ShipTypes shipType)
@@ -183,6 +204,10 @@ namespace Assets.Scripts.Levels
             SelectedSquads.Clear();
             ResetPlayerSelectionState();
             PlayerVisibleMapObjects.Clear();
+            for (int side = 0; side < _nonPrimaryPlayerVisibleMapObjectsBySide.Length; side++)
+            {
+                _nonPrimaryPlayerVisibleMapObjectsBySide[side].Clear();
+            }
             Obstacles.Clear();
             FogOfWarVisions.Clear();
             for (int side = 0; side < 2; side++)

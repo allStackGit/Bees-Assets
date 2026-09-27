@@ -11,7 +11,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
     /// </summary>
     public sealed class MapObjectVisibilityTracker : MonoBehaviour
     {
-        private readonly HashSet<RangeCollider> _sources = new HashSet<RangeCollider>();
+        private readonly HashSet<RangeCollider>[] _sourcesBySide =
+        {
+            new HashSet<RangeCollider>(),
+            new HashSet<RangeCollider>()
+        };
         private readonly List<MapObject> _visibleSurvivors = new List<MapObject>();
         private MapObject _mapObject;
         private GameState _state;
@@ -39,13 +43,21 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            if (!_state.PlayerVisibleMapObjects.Contains(_mapObject))
+            int side = GetSourceSide(source);
+            HashSet<MapObject> visibleObjects = _state.GetPlayerVisibleMapObjects(side);
+            if (visibleObjects == null)
             {
-                _sources.Clear();
+                return;
             }
 
-            _sources.Add(source);
-            _state.PlayerVisibleMapObjects.Add(_mapObject);
+            HashSet<RangeCollider> sources = _sourcesBySide[side - 1];
+            if (!visibleObjects.Contains(_mapObject))
+            {
+                sources.Clear();
+            }
+
+            sources.Add(source);
+            visibleObjects.Add(_mapObject);
         }
 
         public void RemoveSource(RangeCollider source)
@@ -55,18 +67,31 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 return;
             }
 
-            _sources.Remove(source);
-            if (_sources.Count == 0)
+            for (int sideIndex = 0; sideIndex < _sourcesBySide.Length; sideIndex++)
             {
-                RemoveFromVisibleSet();
+                HashSet<RangeCollider> sources = _sourcesBySide[sideIndex];
+                if (sources.Remove(source) && sources.Count == 0)
+                {
+                    RemoveFromVisibleSet(sideIndex + 1);
+                }
             }
+        }
+
+        private static int GetSourceSide(RangeCollider source)
+        {
+            return source != null && source.Weapon != null && source.Weapon.Ship != null
+                ? source.Weapon.Ship.Side
+                : 0;
         }
 
         private void Initialize(MapObject mapObject, GameState state)
         {
             if (_mapObject != null && (_mapObject != mapObject || _state != state))
             {
-                _sources.Clear();
+                for (int sideIndex = 0; sideIndex < _sourcesBySide.Length; sideIndex++)
+                {
+                    _sourcesBySide[sideIndex].Clear();
+                }
             }
             _mapObject = mapObject;
             _state = state;
@@ -79,8 +104,11 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         /// </summary>
         internal void HandleOwnerUnavailable()
         {
-            RemoveFromVisibleSet();
-            _sources.Clear();
+            for (int sideIndex = 0; sideIndex < _sourcesBySide.Length; sideIndex++)
+            {
+                RemoveFromVisibleSet(sideIndex + 1);
+                _sourcesBySide[sideIndex].Clear();
+            }
         }
 
         private void OnDisable()
@@ -96,7 +124,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             _state = null;
         }
 
-        private void RemoveFromVisibleSet()
+        private void RemoveFromVisibleSet(int side)
         {
             if (_state == null || ReferenceEquals(_mapObject, null))
             {
@@ -104,10 +132,14 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             }
 
             // Unity objects can enter their special destroyed state before managed teardown
-            // completes. Rebuild the same public set by managed reference identity instead of
+            // completes. Rebuild the side-owned set by managed reference identity instead of
             // relying on Unity equality/hash behavior during disable/destruction. Reuse the
             // survivor buffer so the robust path does not reintroduce per-removal allocations.
-            HashSet<MapObject> visibleObjects = _state.PlayerVisibleMapObjects;
+            HashSet<MapObject> visibleObjects = _state.GetPlayerVisibleMapObjects(side);
+            if (visibleObjects == null)
+            {
+                return;
+            }
             _visibleSurvivors.Clear();
             foreach (MapObject candidate in visibleObjects)
             {

@@ -117,6 +117,7 @@ namespace Bees.Tests.EditMode
             GameObject shipObject = CreateObject("Tracker Ship");
             object ship = shipObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Ship"));
             RuntimeAssembly.SetField(ship, "Level", level);
+            RuntimeAssembly.SetField(ship, "Side", 1);
 
             GameObject weaponObject = CreateObject("Tracker Weapon");
             object weapon = weaponObject.AddComponent(RuntimeAssembly.GetType("Assets.Scripts.Entities.Ships.Weapons.Weapon"));
@@ -161,6 +162,35 @@ namespace Bees.Tests.EditMode
                 MapObject = mapObject;
                 MapCollider = mapCollider;
             }
+        }
+
+        [Test]
+        public void VisibilitySourcesRemainIsolatedBySide()
+        {
+            Fixture first = CreateFixture();
+            Fixture second = CreateFixture();
+
+            object firstLevel = RuntimeAssembly.GetField(first.MapObject, "Level");
+            RuntimeAssembly.SetField(second.MapObject, "Level", firstLevel);
+            object secondWeapon = RuntimeAssembly.GetField(second.Range, "Weapon");
+            object secondShip = RuntimeAssembly.GetField(secondWeapon, "Ship");
+            RuntimeAssembly.SetField(secondShip, "Level", firstLevel);
+            RuntimeAssembly.SetField(secondShip, "Side", 2);
+
+            object primaryVisible = RuntimeAssembly.GetField(first.State, "PlayerVisibleMapObjects");
+            object sideTwoVisible = RuntimeAssembly.Invoke(first.State, "GetPlayerVisibleMapObjects", 2);
+
+            RuntimeAssembly.Invoke(first.Range, "OnTriggerEnter2D", first.MapCollider);
+            Assert.That(RuntimeAssembly.GetCount(primaryVisible), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetCount(sideTwoVisible), Is.Zero);
+
+            RuntimeAssembly.Invoke(second.Range, "OnTriggerEnter2D", second.MapCollider);
+            Assert.That(RuntimeAssembly.GetCount(primaryVisible), Is.EqualTo(1));
+            Assert.That(RuntimeAssembly.GetCount(sideTwoVisible), Is.EqualTo(1));
+
+            RuntimeAssembly.Invoke(first.Range, "OnTriggerExit2D", first.MapCollider);
+            Assert.That(RuntimeAssembly.GetCount(primaryVisible), Is.Zero);
+            Assert.That(RuntimeAssembly.GetCount(sideTwoVisible), Is.EqualTo(1));
         }
     }
 }
