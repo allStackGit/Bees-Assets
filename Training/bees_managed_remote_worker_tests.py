@@ -212,6 +212,14 @@ class ManagedRemoteWorkerTests(unittest.TestCase):
             ("", ""),
             ("build-1", ""),
         ]
+        updater.staged.return_value = (
+            "",
+            None,
+            None,
+            None,
+            "",
+            "",
+        )
         with (
             mock.patch.object(
                 managed,
