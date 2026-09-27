@@ -224,6 +224,42 @@ function resolveCommand(command) {
     return path.resolve(first);
 }
 
+function npmInvocationFromCommand(npmCommand, node = process.execPath) {
+    const resolvedNpm = path.resolve(String(npmCommand));
+    if (!/\.(?:cmd|bat)$/i.test(resolvedNpm)) {
+        return {
+            executable: resolvedNpm,
+            args: [],
+        };
+    }
+
+    // Node cannot reliably spawn Windows command shims directly with shell=false. Do not
+    // reintroduce cmd.exe quoting: npm's installer shim lives beside its JavaScript CLI, so
+    // execute that CLI through the already-selected Node runtime with a structured argv array.
+    const npmCli = path.join(
+        path.dirname(resolvedNpm),
+        'node_modules',
+        'npm',
+        'bin',
+        'npm-cli.js',
+    );
+    if (!exists(npmCli)) {
+        throw new Error(
+            'npm Windows shim was found at ' + resolvedNpm +
+            ', but its sibling JavaScript CLI is missing: ' + npmCli
+        );
+    }
+    return {
+        executable: path.resolve(node),
+        args: [path.resolve(npmCli)],
+    };
+}
+
+function resolveNpmInvocation(node = process.execPath) {
+    const npmCommand = resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    return npmInvocationFromCommand(npmCommand, node);
+}
+
 function loadConfig() {
     if (!exists(paths.configPath)) {
         throw new Error('Tracked training configuration is missing: ' + paths.configPath);
@@ -627,8 +663,10 @@ module.exports = {
     requestJson,
     resolveCommand,
     resolveGit,
+    resolveNpmInvocation,
     resolvePython,
     resolveUnityEditor,
+    npmInvocationFromCommand,
     runChecked,
     runSync,
     samePath,
