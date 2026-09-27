@@ -494,6 +494,46 @@ class ContinualServiceTests(unittest.TestCase):
                 any("bees_continual_auto_train.py" in item for item in calls[0])
             )
 
+    def test_failure_retry_honors_managed_shutdown_before_restarting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            options = self._options(root)
+            options = service.ServiceOptions(
+                **{**options.__dict__, "once": False}
+            )
+
+            with (
+                mock.patch.object(
+                    service,
+                    "current_compatible_champion_id",
+                    return_value=None,
+                ),
+                mock.patch.object(
+                    service,
+                    "current_deployment_id",
+                    return_value="deploy-" + "a" * 24,
+                ),
+                mock.patch.object(
+                    service,
+                    "training_command",
+                    side_effect=ValueError("synthetic config conflict"),
+                ),
+                mock.patch.object(
+                    service,
+                    "_managed_stop_requested",
+                    side_effect=[False, True],
+                ),
+            ):
+                result = service.run_service(
+                    options,
+                    runner=lambda *_args, **_kwargs: mock.Mock(returncode=0),
+                    sleeper=lambda _seconds: self.fail(
+                        "shutdown should stop the retry loop before sleeping"
+                    ),
+                )
+
+            self.assertEqual(result, 130)
+
     def test_training_phase_reports_service_ready_while_optimizer_runs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
