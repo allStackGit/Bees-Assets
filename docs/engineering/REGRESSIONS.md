@@ -1097,6 +1097,14 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
 
 
+### REG-124 — Pluto II campaign guard rewrote live tooltip sequence text
+**Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, `UpdatePlutoTwo`
+**Symptom:** A polling campaign guard could replace the text of Pluto II's active multipage tooltip after the tooltip controller had installed the current page.
+**Root cause:** `UpdatePlutoTwo` applied its singular “ships’ range” correction directly to `TooltipText.text` on every update, including while the sequence controller owned the active page.
+**Fix:** Preserve page detection and dialogue gating, but restrict text correction and settings color markup to ordinary tooltips. Active sequence pages are no longer rewritten by the polling guard.
+**Permanent protection:** While `Tooltip.IsSequenceActive` is true, the tooltip sequence controller owns the page text. Presentation guards may inspect page text but must not replace it.
+**Verification:** Static call-path review confirmed `ShowSequencePage` sets the page text and this guard was the only other Pluto II code path that rewrote that component during the sequence. The guard now checks `IsSequenceActive` before writing. This is a concrete ownership fix, but it does not by itself prove the reported repeated-“s” symptom is fully resolved. No tests, builds, Unity, simulations, or runtime checks were run.
+
 ### REG-123 — Bees option extraction consumed Unity-side arguments
 **Area:** `Training/bees_mlagents_learn.py`, `_extract_bees_options`
 **Symptom:** a Bees-specific option token occurring after ML-Agents' `--env-args` delimiter was removed from the Unity argument list, along with its value when applicable.
