@@ -34,7 +34,7 @@ namespace Assets.Scripts.Levels
                 ConfigData.CurrentShips.GetSquadByComposition(this, ConfigData.ShipTypes.YellowJacket, 4, true, true),
             }, new Vector2(-250, -250), Vector2.zero);
 
-            State.GetHumanShips().ForEach(ship =>
+            State.GetShips(ConfigData.Configuration.UserSide).ForEach(ship =>
             {
                 if (ship.ShipType != ConfigData.ShipTypes.Scout)
                 {
