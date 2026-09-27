@@ -264,7 +264,11 @@ class RlModelDistributionManager {
         }
 
         const cached = this.pointerCache.get(platform);
-        if (cached && cached.pointerMtimeMs === pointerStats.mtimeMs && cached.pointerSize === pointerStats.size) {
+        if (cached &&
+            cached.pointerMtimeMs === pointerStats.mtimeMs &&
+            cached.pointerCtimeMs === pointerStats.ctimeMs &&
+            cached.pointerIno === pointerStats.ino &&
+            cached.pointerSize === pointerStats.size) {
             let bundleStats;
             try {
                 bundleStats = await fsp.stat(cached.bundlePath);
@@ -276,7 +280,9 @@ class RlModelDistributionManager {
                 throw error;
             }
             if (bundleStats.isFile() && bundleStats.size === cached.bundleSizeBytes &&
-                bundleStats.mtimeMs === cached.bundleMtimeMs) {
+                bundleStats.mtimeMs === cached.bundleMtimeMs &&
+                bundleStats.ctimeMs === cached.bundleCtimeMs &&
+                bundleStats.ino === cached.bundleIno) {
                 return cached;
             }
             this.pointerCache.delete(platform);
@@ -335,8 +341,12 @@ class RlModelDistributionManager {
             bundleSha256: identity.bundle_sha256,
             bundleSizeBytes: identity.bundle_size_bytes,
             pointerMtimeMs: pointerStats.mtimeMs,
+            pointerCtimeMs: pointerStats.ctimeMs,
+            pointerIno: pointerStats.ino,
             pointerSize: pointerStats.size,
             bundleMtimeMs: bundleStats.mtimeMs,
+            bundleCtimeMs: bundleStats.ctimeMs,
+            bundleIno: bundleStats.ino,
         };
         this.pointerCache.set(platform, record);
         return record;
