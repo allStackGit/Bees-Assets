@@ -311,6 +311,8 @@ def release_command(options: ServiceOptions) -> list[str]:
     ]
     if options.competency_suite is not None:
         command.append(f"--competency-suite={options.competency_suite}")
+    for value in options.environment_args:
+        command.append(f"--env-arg={value}")
     return command
 
 
@@ -500,6 +502,13 @@ def run_service(
                 phase = "release"
 
             if phase == "release":
+                write_managed_health(
+                    "ready",
+                    details={
+                        "phase": "release",
+                        "generation_index": index,
+                    },
+                )
                 print(f"[Bees continuous] evaluating/releasing {generation_id(index)}")
                 _run(release_command(options), options, runner)
                 state["phase"] = "publish"
@@ -507,6 +516,13 @@ def run_service(
                 phase = "publish"
 
             if phase == "publish":
+                write_managed_health(
+                    "ready",
+                    details={
+                        "phase": "publish",
+                        "generation_index": index,
+                    },
+                )
                 deployment = current_deployment_id(options)
                 if deployment is None:
                     raise RuntimeError("Release phase left no validated current deployment.")
