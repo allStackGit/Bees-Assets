@@ -742,6 +742,7 @@ def create_bundle(
             "run_id": resolved_run,
             "log_percent": log_percent,
             "learner_step": learner_step,
+            "reported_learner_step": reported_learner_step,
             "model_step": model_step,
             "model_lag_steps": model_lag_steps,
             "model_snapshot": snapshot_value,
