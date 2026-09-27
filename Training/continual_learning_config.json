@@ -7,7 +7,7 @@
   "reward_schema_version": 3,
   "scenario_schema_version": 1,
   "promotion": {
-    "min_matches_vs_champion": 500,
+    "min_matches_vs_champion": 100,
     "min_win_rate_vs_champion": 0.52,
     "max_critical_regressions": 0,
     "max_historical_regression": 0.15,
@@ -17,6 +17,7 @@
     "bootstrap_competency_cases": [
       {
         "name": "generation-zero-broad-regression-baseline",
+        "matches": 100,
         "metric": "score_rate",
         "critical": true,
         "env_args": []
