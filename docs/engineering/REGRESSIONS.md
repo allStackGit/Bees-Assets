@@ -341,3 +341,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the service contract now hashes the sorted production Python sources and dependency manifests under the configured runtime training root, and includes that root's resolved path plus the configured Python executable. Test modules are excluded. `ContinualServiceTests.test_changed_runtime_training_code_cannot_resume_same_run_id` changes the trainer wrapper between state save and load and requires resume to fail closed. The test was added but not run, per the static-only audit constraint.  
 **Verification:** the source-file selection, deterministic relative-path/content hashing, persisted contract comparison, and regression case were reviewed statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** resumable optimizer state must remain bound to the code and configuration that produce its rollouts and updates.  
+
+
+### REG-037 — Worker restart backoff ignored changes to the desired launch
+**Area:** `Training/bees_training_worker_agent.py`, managed child restart identity  \
+**Symptom:** after repeated early exits, a corrected worker configuration that reused the same command could remain delayed by the previous launch's backoff.  
+**Root cause:** backoff reset compared only the command tuple even though build identity, run identity, compatibility key, environment arguments, worker count, health/shutdown modes, and state-file path also define the launched process.  
+**Permanent protection:** the worker clears backoff when any launch-defining value changes, then applies the delay only to a repeat of the same launch. `ManagedProcessRestartTests.test_changed_environment_args_bypass_same_command_backoff` exercises the unchanged-command case; the source-contract regression also protects build identity and state-file comparisons. Tests were added but not run, per the static-only audit constraint.  
+**Verification:** desired launch values, stored child identity, restart delay, and process start ordering were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** restart backoff belongs to a complete launch identity, not merely the executable command line.  
