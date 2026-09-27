@@ -65,12 +65,19 @@ function requiredSha256(value, label) {
     return normalized;
 }
 
+function isInsideRoot(root, resolved) {
+    const relative = path.relative(root, resolved);
+    return relative !== '' &&
+        relative !== '..' &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative);
+}
+
 function resolveInsideRoot(root, relativePath) {
     if (typeof relativePath !== 'string' || !relativePath || path.isAbsolute(relativePath)) return null;
     const normalizedRoot = path.resolve(root);
     const resolved = path.resolve(normalizedRoot, relativePath);
-    if (resolved === normalizedRoot || !resolved.startsWith(`${normalizedRoot}${path.sep}`)) return null;
-    return resolved;
+    return isInsideRoot(normalizedRoot, resolved) ? resolved : null;
 }
 
 function sha256File(filePath) {
@@ -245,7 +252,25 @@ class RlModelDistributionManager {
     }
 
     async _loadCurrent(platform) {
-        const pointerPath = path.join(this.root, `current-${platform}.json`);
+        const configuredPointerPath = path.join(this.root, `current-${platform}.json`);
+        let rootPath;
+        let pointerPath;
+        try {
+            rootPath = await fsp.realpath(this.root);
+            pointerPath = await fsp.realpath(configuredPointerPath);
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                throw new RlModelDistributionError(
+                    404,
+                    'model-not-published',
+                    `No RL model is currently published for ${platform}.`,
+                );
+            }
+            throw error;
+        }
+        if (!isInsideRoot(rootPath, pointerPath)) {
+            throw new RlModelDistributionError(500, 'distribution-corrupt', 'RL model pointer escapes the distribution root.');
+        }
         let pointerStats;
         try {
             pointerStats = await fsp.stat(pointerPath);
@@ -269,9 +294,9 @@ class RlModelDistributionManager {
             cached.pointerCtimeMs === pointerStats.ctimeMs &&
             cached.pointerIno === pointerStats.ino &&
             cached.pointerSize === pointerStats.size) {
-            let bundleStats;
+            let cachedBundlePath;
             try {
-                bundleStats = await fsp.stat(cached.bundlePath);
+                cachedBundlePath = await fsp.realpath(cached.bundlePath);
             } catch (error) {
                 this.pointerCache.delete(platform);
                 if (error?.code === 'ENOENT') {
@@ -279,7 +304,22 @@ class RlModelDistributionManager {
                 }
                 throw error;
             }
-            if (bundleStats.isFile() && bundleStats.size === cached.bundleSizeBytes &&
+            if (!isInsideRoot(rootPath, cachedBundlePath)) {
+                this.pointerCache.delete(platform);
+                throw new RlModelDistributionError(500, 'distribution-corrupt', 'Published RL model bundle escapes the distribution root.');
+            }
+            let bundleStats;
+            try {
+                bundleStats = await fsp.stat(cachedBundlePath);
+            } catch (error) {
+                this.pointerCache.delete(platform);
+                if (error?.code === 'ENOENT') {
+                    throw new RlModelDistributionError(500, 'distribution-corrupt', 'Published RL model bundle is missing.');
+                }
+                throw error;
+            }
+            if (cachedBundlePath === cached.bundlePath &&
+                bundleStats.isFile() && bundleStats.size === cached.bundleSizeBytes &&
                 bundleStats.mtimeMs === cached.bundleMtimeMs &&
                 bundleStats.ctimeMs === cached.bundleCtimeMs &&
                 bundleStats.ino === cached.bundleIno) {
@@ -313,9 +353,20 @@ class RlModelDistributionManager {
             identity.bundle_size_bytes <= 0 || identity.bundle_size_bytes > this.maxBundleBytes) {
             throw new RlModelDistributionError(500, 'distribution-corrupt', 'RL model pointer identity is malformed or incompatible.');
         }
-        const bundlePath = resolveInsideRoot(this.root, identity.bundle_path);
+        let bundlePath = resolveInsideRoot(this.root, identity.bundle_path);
         if (!bundlePath) {
             throw new RlModelDistributionError(500, 'distribution-corrupt', 'RL model pointer bundle path escapes the distribution root.');
+        }
+        try {
+            bundlePath = await fsp.realpath(bundlePath);
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                throw new RlModelDistributionError(500, 'distribution-corrupt', 'Published RL model bundle is missing.');
+            }
+            throw error;
+        }
+        if (!isInsideRoot(rootPath, bundlePath)) {
+            throw new RlModelDistributionError(500, 'distribution-corrupt', 'Published RL model bundle escapes the distribution root.');
         }
         let bundleStats;
         try {
