@@ -1075,3 +1075,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** every child process created by the remote launcher must be covered by its shutdown cleanup scope. No test was added or run under the user's static-analysis-only instruction.
 **Verification:** statically traced signal-handler installation, tunnel startup, each early return, and the final child cleanup. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** establish shutdown ownership before spawning a child process so asynchronous termination cannot strand it.
+
+
+### REG-121 — Worker recovery could pair stale observations with reset environments
+**Area:** `Training/bees_mlagents_learn.py`, `_install_fast_env_manager.fast_step`
+**Symptom:** if a worker failed after another worker response had already been accepted in the current fast step, cohort recovery reset every environment but the manager retained and later postprocessed that pre-reset response. The stale response replaced the healthy worker's fresh reset observation in `previous_step`; its next action could therefore be selected from an observation that no longer matched the actual Unity state.
+**Root cause:** `_restart_failed_workers` resets the full environment cohort, while the custom fast-step path preserved already-collected results and selectively requeued only unfinished workers.
+**Fix:** after cohort restart, clear collected responses and worker IDs, then queue every worker from its reset observation. This follows the upstream recovery contract, which discards pending steps after resetting all environments.
+**Permanent protection:** any full-cohort reset invalidates every pre-reset response; all workers must resume from their post-reset observations. No test was added or run under the user's static-analysis-only instruction.
+**Verification:** statically traced the Bees fast-step recovery path, the pinned ML-Agents `_restart_failed_workers` and `reset` behavior, response postprocessing, and AgentManager step/action association. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** a response is valid only for the environment state that produced it; after cohort reset, pre-reset responses must not be published into current worker state.
