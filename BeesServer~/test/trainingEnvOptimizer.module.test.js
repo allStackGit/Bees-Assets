@@ -273,6 +273,7 @@ test('optimizer holds a recovered worker before probing again after a reported f
     assert.equal(state.desired_envs, 8);
     assert.equal(state.probing, false);
     assert.equal(state.stability_hold_until_ms, 10_000);
+    assert.match(state.last_instability_reason, /Unity communicator stopped/);
 
     state = update(optimizer, 'remote-a', 8, 500, 5_000, { max: 16 });
     assert.equal(state.phase, 'stability-hold');
@@ -314,6 +315,7 @@ test('recent internal WAN actor failure holds probes without extending the hold 
     assert.equal(state.phase, 'stability-hold');
     assert.equal(state.stability_hold_until_ms, 26_000);
     assert.match(state.decision, /WAN actor session failure/);
+    assert.equal(state.last_instability_reason, 'WAN actor session failure');
 
     state = update(
         optimizer,
