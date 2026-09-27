@@ -700,9 +700,9 @@ namespace Assets.Scripts.Levels
                         StartNodes[threadIndex] = GridNodes[threadIndex][startX][startY];
                         EndNodes[threadIndex] = GridNodes[threadIndex][endX][endY];
                     }
-                    catch (Exception e)
+                    catch
                     {
-                        throw e;
+                        throw;
                     }
                     Ships[threadIndex] = ship;
                     BTFindPath(threadIndex);
