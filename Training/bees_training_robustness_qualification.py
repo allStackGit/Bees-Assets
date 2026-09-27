@@ -264,7 +264,7 @@ def _validate_unity_results(
     return True, ""
 
 
-def _unity_failed_cases(result_path: Path, maximum_cases: int = 12) -> tuple[str, ...]:
+def _unity_failed_cases(result_path: Path, maximum_cases: int = 50) -> tuple[str, ...]:
     if not result_path.is_file():
         return ()
     try:
@@ -272,14 +272,22 @@ def _unity_failed_cases(result_path: Path, maximum_cases: int = 12) -> tuple[str
     except (OSError, ET.ParseError):
         return ()
 
+    failed = [
+        case for case in root.findall(".//test-case")
+        if case.attrib.get("result") == "Failed"
+    ]
     details: list[str] = []
-    for case in root.findall(".//test-case"):
-        if case.attrib.get("result") != "Failed":
-            continue
+    for case in failed[:maximum_cases]:
         identity = case.attrib.get("fullname") or case.attrib.get("name") or "(unnamed test)"
-        details.append(identity)
-        if len(details) >= maximum_cases:
-            break
+        message = ""
+        failure = case.find("failure")
+        if failure is not None:
+            message_node = failure.find("message")
+            if message_node is not None and message_node.text:
+                message = " ".join(message_node.text.split())
+        details.append(identity + (f": {message}" if message else ""))
+    if len(failed) > maximum_cases:
+        details.append(f"... {len(failed) - maximum_cases} additional failed tests omitted")
     return tuple(details)
 
 
