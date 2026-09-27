@@ -170,15 +170,6 @@ namespace Assets.Scripts.Scenes
 
 
 
-        public bool StartHostingMultiplayerLobby(MatchSession session)
-        {
-            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
-                session == null ||
-                !session.IsConfiguring)
-            {
-                return false;
-            }
-
         private bool RefreshHostingRandomShipTypes(MatchSession session)
         {
             if (session == null || !session.IsConfiguring || !session.IsLocalAuthority)
@@ -199,6 +190,15 @@ namespace Assets.Scripts.Scenes
                    humanTypes != null &&
                    session.TrySetRandomShipTypes(beeTypes, humanTypes);
         }
+
+        public bool StartHostingMultiplayerLobby(MatchSession session)
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
+                session == null ||
+                !session.IsConfiguring)
+            {
+                return false;
+            }
 
             if (!RefreshHostingRandomShipTypes(session))
             {
