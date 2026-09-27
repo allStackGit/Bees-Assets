@@ -368,5 +368,19 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("GetSquad().IsPlayerControlled && GetSquad().IsLockedOn", source);
             StringAssert.DoesNotContain("GetSquad().IsUserControlled && GetSquad().IsLockedOn", source);
         }
+
+        [Test]
+        public void TacticalInputUsesPlayerAuthorizationGateway()
+        {
+            string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
+            string source = File.ReadAllText(inputPath);
+
+            StringAssert.Contains("TryPlayerGuardSquad(", source);
+            StringAssert.Contains("TryPlayerPatrolSquad(", source);
+            StringAssert.Contains("TryPlayerFullRetreat(", source);
+            StringAssert.Contains("TryPlayerHealSquad(", source);
+            StringAssert.DoesNotContain("squad.UserGuard(ship.Squad)", source);
+            StringAssert.DoesNotContain("squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition", source);
+        }
     }
 }
