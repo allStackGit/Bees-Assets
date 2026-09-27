@@ -895,3 +895,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that each served chunk must come from the same file identity and observed metadata as the hash-verified bundle record.  
 **Verification:** statically traced pointer loading, bundle hashing, cached metadata, per-chunk open/stat/read, and deployment/hash response fields. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** validating an artifact before opening it is insufficient if later reads do not revalidate that the opened file is unchanged.
+
+
+### REG-102 — Idle telemetry uploads retained quota for bytes never received
+**Area:** `BeesServer~/rlTelemetryUploads.js`, upload quota and idle-session cleanup  
+**Symptom:** begin reserves quota for the declared full payload. If a partial upload expired before completion, cleanup removed its session and partial file but left the full reservation charged until the rate window expired, even when most of the payload had never arrived.  
+**Root cause:** the quota reservation was not retained on the session for expiry cleanup to reconcile against `nextOffset`.  
+**Fix:** retain the reservation reference on each session and release only `totalBytes - nextOffset` when an idle session expires. Bytes already accepted remain charged; completed or invalid full uploads remain charged for the received payload.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that expiring an incomplete session releases its unreceived reservation bytes while preserving charges for accepted bytes.  
+**Verification:** statically traced begin-time quota reservation, successful chunk offset advancement, completion, and idle cleanup. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** reservations for declared transfer size must be reconciled with bytes actually accepted when an incomplete transfer is discarded.
