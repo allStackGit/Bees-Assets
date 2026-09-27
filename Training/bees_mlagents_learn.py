@@ -807,6 +807,7 @@ def main() -> None:
     # setup step fails, earlier patches must not leak into another invocation in
     # this Python process.
     original_value_estimate_key = None
+    value_estimate_patch_installed = False
     original_queue_steps = None
     original_env_step = None
     original_process_step_infos = None
@@ -821,6 +822,7 @@ def main() -> None:
 
     try:
         original_value_estimate_key = install_value_estimate_key_fix()
+        value_estimate_patch_installed = True
         print("[Bees RL] PPO value-estimate/return buffer key separation: enabled")
 
         if torch_threads is not None:
@@ -873,7 +875,8 @@ def main() -> None:
             RLTrainer._maybe_save_model = original_maybe_save_model
         if original_torch_load is not None:
             torch_utils.torch.load = original_torch_load
-        restore_value_estimate_key(original_value_estimate_key)
+        if value_estimate_patch_installed:
+            restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
         if original_env_step is not None:
