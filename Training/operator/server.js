@@ -17,7 +17,7 @@ const {
     readJson,
     removeIfExists,
     requestJson,
-    resolveCommand,
+    resolveNpmInvocation,
     runSync,
     samePath,
     sha256Text,
@@ -173,9 +173,9 @@ function prepareBeesServerRuntime(node = process.execPath) {
         }
 
         const dependencyHash = getBeesServerDependencyHash(candidate);
-        const npm = resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm');
+        const npm = resolveNpmInvocation(node);
         console.log('Pre-staging BeesServer runtime ' + sourceHash.slice(0, 12) + ' while the current server remains online...');
-        const install = runSync(npm, ['ci'], { cwd: candidate });
+        const install = runSync(npm.executable, [...npm.args, 'ci'], { cwd: candidate });
         if (install.stdout) process.stdout.write(String(install.stdout));
         if (install.stderr) process.stderr.write(String(install.stderr));
 
