@@ -139,6 +139,47 @@ test('concurrent chunks for one upload are serialized in request order', async t
     assert.equal(completed.Completed, true);
 });
 
+test('idle cleanup preserves a demonstration while a chunk operation is in flight', async t => {
+    let now = 1000;
+    const { manager, context } = await fixture(t, {
+        now: () => now,
+        uploadIdleTimeoutMs: 100,
+    });
+    const bytes = Buffer.from('slow-demonstration-chunk');
+    const begin = await manager.handle(beginRequest(bytes), context);
+
+    let releaseChunk;
+    let announceChunkStarted;
+    const chunkStarted = new Promise(resolve => { announceChunkStarted = resolve; });
+    const chunkGate = new Promise(resolve => { releaseChunk = resolve; });
+    const writeChunk = manager._chunkUnlocked.bind(manager);
+    manager._chunkUnlocked = async (params, session) => {
+        announceChunkStarted();
+        await chunkGate;
+        return writeChunk(params, session);
+    };
+
+    const chunk = manager.handle(chunkRequest(begin.UploadId, 0, bytes), context);
+    await chunkStarted;
+    now += 101;
+
+    const expiredCount = await manager.cleanupExpired();
+    const sessionRetained = manager.sessions.has(begin.UploadId);
+    releaseChunk();
+    let progress;
+    let chunkError;
+    try {
+        progress = await chunk;
+    } catch (error) {
+        chunkError = error;
+    }
+
+    assert.equal(expiredCount, 0);
+    assert.equal(sessionRetained, true);
+    assert.equal(chunkError, undefined);
+    assert.equal(progress.NextOffset, bytes.length);
+});
+
 test('same content has one active finalization path before completion', async t => {
     const { manager, context } = await fixture(t);
     const bytes = Buffer.from('same-active-native-demo');
