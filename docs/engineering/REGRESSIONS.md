@@ -272,13 +272,12 @@ Manual-only protection is acceptable only when the record explains why determini
 
 
 ### REG-029 — Pluto II ships-range tooltip gained repeated trailing letters
-**Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, Pluto II campaign tutorial tooltip  \\
-**Symptom:** the tooltip changed “ships’ range” to “ships’ ranges” on every frame, causing repeated trailing “s” characters (and the same issue for ASCII apostrophes).  \\
-**Root cause:** the singular phrase remained a substring of the pluralized phrase, so the per-frame replacement was not idempotent.  \\
-**Permanent protection:** the replacement now requires a word boundary after “range”; once the text is plural, the singular pattern no longer matches.  \\
-**Verification:** the regex and its repeated per-frame application were reviewed statically for both apostrophe forms. No tests or runtime checks were run, per the static-only audit constraint.  \\
-**Invariant/knowledge:** per-frame UI text corrections must not match their own output.
-
+**Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, Pluto II squad-controls tooltip
+**Symptom:** a later page in the first Pluto II multipage tooltip displayed repeated trailing “s” characters; returning to the page reproduced the issue.
+**Root cause:** `UpdatePlutoTwo` rewrote the live tooltip text during polling to pluralize “ships’ range.” A page revisit reloads its authored source text, so a runtime correction can be applied again.
+**Fix:** removed runtime tooltip-text correction from the polling guard and authored “ships’ ranges” directly in the affected page. Page changes now display the exact source string.
+**Permanent protection:** campaign presentation guards do not rewrite tooltip TMP text. Tooltip page wording is corrected in the page source.
+**Verification:** static review confirms the Pluto II guard no longer writes `TooltipText.text`, while `ShowSequencePage` assigns the authored page string on every visit. No tests or runtime checks were run, per the static-only audit constraint.
 
 ### REG-030 — Non-finite telemetry watcher interval stopped refreshes
 **Area:** `Training/bees_continual_auto_train.py`, automatic public telemetry watcher configuration  \
@@ -1123,11 +1122,11 @@ Manual-only protection is acceptable only when the record explains why determini
 
 ### REG-124 — Pluto II campaign guard rewrote live tooltip sequence text
 **Area:** `Scripts/UI Components/CampaignFeedbackAdjustmentGuard.cs`, `UpdatePlutoTwo`
-**Symptom:** A polling campaign guard could replace the text of Pluto II's active multipage tooltip after the tooltip controller had installed the current page.
-**Root cause:** `UpdatePlutoTwo` applied its singular “ships’ range” correction directly to `TooltipText.text` on every update, including while the sequence controller owned the active page.
-**Fix:** Preserve page detection and dialogue gating, but restrict text correction and settings color markup to ordinary tooltips. Active sequence pages are no longer rewritten by the polling guard.
-**Permanent protection:** While `Tooltip.IsSequenceActive` is true, the tooltip sequence controller owns the page text. Presentation guards may inspect page text but must not replace it.
-**Verification:** Static call-path review confirmed `ShowSequencePage` sets the page text and this guard was the only other Pluto II code path that rewrote that component during the sequence. The guard now checks `IsSequenceActive` before writing. This is a concrete ownership fix, but it does not by itself prove the reported repeated-“s” symptom is fully resolved. No tests, builds, Unity, simulations, or runtime checks were run.
+**Symptom:** Polling campaign feedback could alter the text in Pluto II's active tutorial sequence, including the page whose range wording was being corrected.
+**Root cause:** The guard maintained its own text rewrite alongside `Tooltip.ShowSequencePage`, creating two writers for one TMP component. The sequence restores authored text on page changes, so the polling correction could run again when revisiting a page.
+**Fix:** Removed all tooltip-text writes from the campaign feedback guard and corrected the plural wording in the Pluto II page source. Settings emphasis remains authored by the tooltip content; page detection and dialogue gating are unchanged.
+**Permanent protection:** Tooltip controllers own tooltip page text. Campaign presentation guards may inspect it but must not rewrite it, whether or not a sequence is currently active.
+**Verification:** Static call-path review confirms `ShowSequencePage` is the only writer for sequence page text and always reloads the authored page. The affected source string is plural, and `UpdatePlutoTwo` contains no text assignment. No tests, builds, Unity, simulations, or runtime checks were run.
 
 ### REG-123 — Bees option extraction consumed Unity-side arguments
 **Area:** `Training/bees_mlagents_learn.py`, `_extract_bees_options`
