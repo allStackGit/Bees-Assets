@@ -77,6 +77,29 @@ def encoded_result(*, version=EVALUATION_PROTOCOL_VERSION, winner_team=0, timed_
     return payload
 
 
+def validated_summary(
+    matches,
+    wins,
+    losses,
+    draws,
+    timeouts,
+    duration,
+):
+    return MatchSummary(
+        matches=matches,
+        wins=wins,
+        losses=losses,
+        draws=draws,
+        timeouts=timeouts,
+        total_duration_seconds=duration,
+        candidate_starting_tsv=max(1, matches * 10),
+        candidate_final_tsv=max(0, matches * 5),
+        opponent_starting_tsv=max(1, matches * 10),
+        opponent_final_tsv=max(0, matches * 5),
+        telemetry_validated=True,
+    )
+
+
 def result(episode, winner, *, timeout=False):
     return EpisodeResult(
         episode_number=episode,
@@ -411,8 +434,8 @@ class ContinualEvaluateTests(unittest.TestCase):
                 candidate_name = Path(kwargs["candidate_model_path"]).stem
                 opponent_name = Path(kwargs["opponent_model_path"]).stem
                 if candidate_name == "champion" and opponent_name == "history":
-                    return MatchSummary(kwargs["matches"], 1, 0, 2, 0, 30.0)
-                return MatchSummary(
+                    return validated_summary(kwargs["matches"], 1, 0, 2, 0, 30.0)
+                return validated_summary(
                     kwargs["matches"], kwargs["matches"], 0, 0, 0, 20.0
                 )
 
@@ -456,10 +479,10 @@ class ContinualEvaluateTests(unittest.TestCase):
                 candidate_name = Path(kwargs["candidate_model_path"]).stem
                 opponent_name = Path(kwargs["opponent_model_path"]).stem
                 if candidate_name == "champion" and opponent_name == "history":
-                    return MatchSummary(kwargs["matches"], 3, 0, 0, 0, 10.0)
+                    return validated_summary(kwargs["matches"], 3, 0, 0, 0, 10.0)
                 if opponent_name == "history":
-                    return MatchSummary(kwargs["matches"], 1, 2, 0, 0, 10.0)
-                return MatchSummary(
+                    return validated_summary(kwargs["matches"], 1, 2, 0, 0, 10.0)
+                return validated_summary(
                     kwargs["matches"], kwargs["matches"], 0, 0, 0, 10.0
                 )
 
