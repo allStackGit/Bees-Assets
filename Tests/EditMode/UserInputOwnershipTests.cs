@@ -354,13 +354,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void LocalMovementUsesSameAuthorizationGatewayAsRemoteCommands()
+        public void LocalMovementUsesSameCommandEnvelopeAsRemoteCommands()
         {
             string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
-            string source = File.ReadAllText(inputPath);
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string inputSource = File.ReadAllText(inputPath);
+            string commandSource = File.ReadAllText(commandPath);
 
-            StringAssert.Contains("Level.State.TryPlayerMoveSquad(", source);
-            StringAssert.DoesNotContain("_moveSquads_selectedSquads[_moveSquads_i].Move(", source);
+            StringAssert.Contains("Level.State.TryIssuePlayerCommand(", inputSource);
+            StringAssert.Contains("PlayerCommandKind.Move", inputSource);
+            StringAssert.Contains("return TryPlayerMoveSquad(", commandSource);
+            StringAssert.DoesNotContain("_moveSquads_selectedSquads[_moveSquads_i].Move(", inputSource);
         }
 
         [Test]
@@ -374,17 +378,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
-        public void TacticalInputUsesPlayerAuthorizationGateway()
+        public void TacticalInputUsesPlayerCommandEnvelope()
         {
             string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
-            string source = File.ReadAllText(inputPath);
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string inputSource = File.ReadAllText(inputPath);
+            string commandSource = File.ReadAllText(commandPath);
 
-            StringAssert.Contains("TryPlayerGuardSquad(", source);
-            StringAssert.Contains("TryPlayerPatrolSquad(", source);
-            StringAssert.Contains("TryPlayerFullRetreat(", source);
-            StringAssert.Contains("TryPlayerHealSquad(", source);
-            StringAssert.DoesNotContain("squad.UserGuard(ship.Squad)", source);
-            StringAssert.DoesNotContain("squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition", source);
+            StringAssert.Contains("PlayerCommandKind.Guard", inputSource);
+            StringAssert.Contains("PlayerCommandKind.Patrol", inputSource);
+            StringAssert.Contains("PlayerCommandKind.FullRetreat", inputSource);
+            StringAssert.Contains("PlayerCommandKind.Heal", inputSource);
+            StringAssert.Contains("return TryPlayerGuardSquad(", commandSource);
+            StringAssert.Contains("return TryPlayerPatrolSquad(", commandSource);
+            StringAssert.Contains("return TryPlayerFullRetreat(", commandSource);
+            StringAssert.Contains("return TryPlayerHealSquad(", commandSource);
+            StringAssert.DoesNotContain("squad.UserGuard(ship.Squad)", inputSource);
+            StringAssert.DoesNotContain("squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition", inputSource);
         }
 
         [Test]
@@ -423,6 +433,77 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains(".CommandSquadId", inputSource);
             StringAssert.Contains("selectedSquad.CommandSquadId", interactionSource);
             StringAssert.Contains("Squad.CommandSquadId", interactionSource);
+        }
+
+        [Test]
+        public void MatchLobbyLocksPlayerAndLoadoutConfigurationOnceBattleBegins()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+            object squad = RuntimeAssembly.CreateUninitialized("Assets.Scripts.Data.SavedSquad");
+            RuntimeAssembly.SetField(squad, "Side", 1);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 2, 2, false), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", squad, 1), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryBeginBattle"), Is.EqualTo(true));
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 3, 1, false), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "RemovePlayer", 2), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "TrySetPlayerSide", 1, 2), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAssignSavedSquadOwner", squad, 1), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "EndBattle"), Is.EqualTo(true));
+        }
+
+        [Test]
+        public void MatchCommandSequenceRejectsDuplicatesAndNonBattleCommands()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true);
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocatePlayerCommandSequence", 1), Is.EqualTo(0L));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 1L), Is.EqualTo(false));
+
+            Assert.That(RuntimeAssembly.Invoke(session, "TryBeginBattle"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocatePlayerCommandSequence", 1), Is.EqualTo(1L));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocatePlayerCommandSequence", 1), Is.EqualTo(2L));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 1L), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 1L), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryAcceptPlayerCommandSequence", 1, 2L), Is.EqualTo(true));
+        }
+
+        [Test]
+        public void FreePlayMatchSessionHandoffIsOneShotAndSoloEntryClearsStaleLobby()
+        {
+            string configPath = Path.Combine(Application.dataPath, "Scripts", "ConfigData.cs");
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string menuPath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "MainMenu.cs");
+            string configSource = File.ReadAllText(configPath);
+            string stageSource = File.ReadAllText(stagePath);
+            string menuSource = File.ReadAllText(menuPath);
+
+            StringAssert.Contains("_pendingFreePlayMatchSession = null;", configSource);
+            StringAssert.Contains("ConfigData.ConsumePendingFreePlayMatchSession()", stageSource);
+            StringAssert.Contains("ConfigData.ClearPendingFreePlayMatchSession();", menuSource);
+            StringAssert.Contains("MatchSession.TryBeginBattle()", stageSource);
+        }
+
+        [Test]
+        public void PlayerCommandEnvelopeIsSequencedAndDispatchesOnlyThroughAuthorizedGateways()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string source = File.ReadAllText(commandPath);
+
+            StringAssert.Contains("[Serializable]", source);
+            StringAssert.Contains("public long Sequence;", source);
+            StringAssert.Contains("TryAcceptPlayerCommandSequence(command.PlayerId, command.Sequence)", source);
+            StringAssert.Contains("return TryPlayerMoveSquad(", source);
+            StringAssert.Contains("return TryPlayerTargetEnemy(", source);
+            StringAssert.Contains("return TryPlayerGuardSquad(", source);
+            StringAssert.Contains("return TryPlayerPatrolSquad(", source);
+            StringAssert.Contains("return TryPlayerFullRetreat(", source);
+            StringAssert.Contains("return TryPlayerHealSquad(", source);
         }
     }
 }

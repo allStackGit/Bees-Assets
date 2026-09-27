@@ -22,8 +22,10 @@ namespace Bees.Tests.EditMode
             Assert.That(interaction, Does.Contain("_lastEnemyRightClickFrame == Time.frameCount"));
             Assert.That(interaction, Does.Not.Contain("AreStaticallyConnected("),
                 "Right-click input must not lazily flood-fill the pathfinder grid on Unity's main thread.");
-            Assert.That(interaction, Does.Contain("TryPlayerTargetEnemy("),
-                "Enemy clicks must pass through player ownership authorization.");
+            Assert.That(interaction, Does.Contain("PlayerCommandKind.TargetEnemy"),
+                "Enemy clicks must enter the shared player command envelope.");
+            Assert.That(playerCommands, Does.Contain("return TryPlayerTargetEnemy("),
+                "The command envelope must dispatch enemy targeting through ownership authorization.");
             Assert.That(playerCommands, Does.Contain("squad.UserTargetEnemy(enemySquad);"),
                 "Authorized enemy clicks must still use composition-aware dispatch so Barge squads can charge.");
 
