@@ -692,10 +692,6 @@ namespace Assets.Scripts.Levels
             {
                 MatchLobbySquadSnapshot squad = snapshot.Squads[i];
                 if (squad == null ||
-                    string.IsNullOrWhiteSpace(squad.OwnershipToken) ||
-                    !Guid.TryParseExact(squad.OwnershipToken, "N", out Guid ownershipToken) ||
-                    ownershipToken == Guid.Empty ||
-                    !ownershipTokens.Add(ownershipToken) ||
                     !Enum.IsDefined(typeof(MatchLobbySquadRole), squad.Role) ||
                     !IsValidLobbySquadOwner(squad, playerSides) ||
                     squad.TransientSquadId >= 0 ||
@@ -714,6 +710,19 @@ namespace Assets.Scripts.Levels
                     squad.Ships.Count > MaxLobbyShipsPerSquad)
                 {
                     return false;
+                }
+
+                if ((MatchLobbySquadRole)squad.Role == MatchLobbySquadRole.Player)
+                {
+                    if (!Guid.TryParseExact(
+                            squad.OwnershipToken,
+                            "N",
+                            out Guid ownershipToken) ||
+                        ownershipToken == Guid.Empty ||
+                        !ownershipTokens.Add(ownershipToken))
+                    {
+                        return false;
+                    }
                 }
 
                 for (int shipIndex = 0; shipIndex < squad.Ships.Count; shipIndex++)
