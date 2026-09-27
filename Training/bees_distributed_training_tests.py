@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import bees_distributed_training as distributed
@@ -125,6 +127,16 @@ class DistributedOptionTests(unittest.TestCase):
                 ["--rl-map-size", "96", "--rl-health=0.5"],
             )
             self.assertEqual(len(spec["identity_sha256"]), 64)
+
+    def test_controlled_environment_args_cannot_override_pinned_spec(self):
+        pinned = ("--rl-map-size", "96", "--rl-health=0.5")
+        with patch.dict(os.environ, {remote.CONTROL_ENV_ARGS_VARIABLE: json.dumps(list(pinned))}):
+            self.assertEqual(remote.controlled_environment_args(pinned), pinned)
+
+        conflicting = ("--rl-map-size", "128")
+        with patch.dict(os.environ, {remote.CONTROL_ENV_ARGS_VARIABLE: json.dumps(list(conflicting))}):
+            with self.assertRaisesRegex(ValueError, "pinned remote session spec"):
+                remote.controlled_environment_args(pinned)
 
     def test_remote_spec_tampering_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
