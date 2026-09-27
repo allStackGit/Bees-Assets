@@ -218,6 +218,29 @@ test('declared byte quota and active-session limits are enforced before upload g
     );
 });
 
+test('expired uploader quota records are pruned without expiring active uploads', async t => {
+    let now = 1000;
+    const { manager, context } = await fixture(t, {
+        now: () => now,
+        rateWindowMs: 100,
+        uploadIdleTimeoutMs: 1000,
+    });
+    const bytes = payloadBytes();
+    await manager.handle(beginRequest(bytes), context);
+    await manager.handle(beginRequest(bytes), {
+        userId: '76561198000000001',
+        connectionId: '18',
+    });
+    assert.equal(manager.userQuotas.size, 2);
+    assert.equal(manager.sessions.size, 2);
+
+    now += 101;
+    await manager.cleanupExpired();
+
+    assert.equal(manager.userQuotas.size, 0);
+    assert.equal(manager.sessions.size, 2);
+});
+
 test('idle cleanup preserves an upload while a chunk operation is in flight', async t => {
     let now = 1000;
     const { manager, context } = await fixture(t, {
