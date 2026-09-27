@@ -82,6 +82,14 @@ def _prune_run_log_directories(root: Path, current_run_id: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def heartbeat_last_error(
+    last_error: str,
+    preparation_error: str,
+    managed_health_error: str,
+) -> str:
+    return str(last_error or preparation_error or managed_health_error or "")
+
+
 def environment_args_identity(environment_args: Sequence[str]) -> str:
     payload = json.dumps(
         [str(value) for value in environment_args],
@@ -1388,7 +1396,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 build=active_build,
                 prepared_build_id=prepared_build_id,
                 preparation_error=preparation_error,
-                last_error=last_error or preparation_error,
+                last_error=heartbeat_last_error(
+                    last_error,
+                    preparation_error,
+                    managed.health_error(),
+                ),
                 environment_id=(
                     environment_args_identity(managed.environment_args)
                     if managed.alive()
