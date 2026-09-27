@@ -747,6 +747,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(prepare, central)
         self.assertLess(central, stage)
 
+    def test_canonical_release_reconciliation_does_not_restart_central_before_rebuild(self):
+        source = read_operator("build.js")
+        start = source.index("async function reconcileLatestReleaseBeforeBuild")
+        end = source.index("async function invokeBuild", start)
+        block = source[start:end]
+        canonical = block.index("String(preflightDesired.canonical_build_id || '').trim() === releaseBuild")
+        early_return = block.index("return {};", canonical)
+        prepare = block.index("prepareCentralReleaseRuntime(", early_return)
+        self.assertLess(canonical, early_return)
+        self.assertLess(early_return, prepare)
+
     def test_build_reconciles_previous_release_before_new_release_identity_exists(self):
         source = read_operator("build.js")
         start = source.index("async function invokeBuild")
