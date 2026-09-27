@@ -991,3 +991,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced actor startup registration, 30-second state long-polls, broker lease renewal, startup actor counting, batch acceptance, and dynamic cohort thresholds. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** transport liveness and trajectory production are separate signals; a quiet actor can be alive, while a terminated actor must eventually leave the active cohort count.
 
+### REG-112 — WAN actor could register against a stale control epoch
+**Area:** `Training/bees_wan_actor_training.py`, `WanActorBroker.register_actor`
+**Symptom:** an actor registration racing a central reset or environment-parameter update could pass the initial epoch check and then commit after the central control epoch had advanced.
+**Root cause:** the control epoch was checked before acquiring the broker condition lock, but not rechecked while committing registration.
+**Fix:** registration now revalidates the submitted control epoch under the same lock used to store the actor registration.
+**Permanent protection:** source invariant: actor registration must match the current control epoch at the instant it is committed. No tests were run or added under the static-only audit instruction.
+**Verification:** statically traced registration validation, lock acquisition, central control updates, and registration commit. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** optimistic validation before a shared-state lock must be repeated under the lock when the shared state can change before commit.
+
