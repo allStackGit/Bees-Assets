@@ -1010,3 +1010,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** missing-version responses must terminate the current settings request rather than start another identical lookup. Static source analysis only; no tests were run or added.
 **Verification:** traced the server's exact-version null response, Unity's settings response handling, and the settings wait/retry branch. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** an authoritative not-found result is terminal for a versioned lookup; transient failures must be represented distinctly and retain retry behavior.
+
+
+### REG-114 — Public range query could overwrite cached strategy order
+**Area:** `Scripts/Entities/Ships/Weapons/Weapon.cs`, Pluto II campaign targeting
+**Symptom:** a caller of `GetEnemyShipsWithinRange()` could replace the list stored as the weapon's cached targeting queue without setting the cache dirty flag. Pluto II polls this public method from a campaign trigger, so strategies whose order is meant to persist (including random, most/least powerful, and preferred target) could silently lose their ordering.
+**Root cause:** the public range-query result buffer and internal cached targeting queue referenced the same mutable list.
+**Fix:** range queries and targeting now use separate reusable buffers; the internal cached order is no longer mutated by public range polling.
+**Permanent protection:** never expose a mutable scratch buffer that is also owned as a semantic cache. Static source trace only; no tests were run or added.
+**Verification:** traced `Weapon.MakeSortedTargetingList`, cache invalidation flags, the public range-query caller in Pluto II, and the new independent buffer flow. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** scratch-list reuse is safe only when the scratch storage is not aliased by a long-lived cache or external caller.
