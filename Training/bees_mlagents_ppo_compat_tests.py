@@ -24,7 +24,7 @@ SPEC.loader.exec_module(compat)
 class InactiveContinuousActionMaskTests(unittest.TestCase):
     def test_action_layout_matches_current_five_weapon_policy(self):
         self.assertEqual(compat.BEES_WEAPON_SLOTS, 5)
-        self.assertEqual(compat.BEES_CONTINUOUS_ACTIONS, 12)
+        self.assertEqual(compat.BEES_CONTINUOUS_ACTIONS, 16)
         self.assertEqual(compat.BEES_DISCRETE_BRANCHES, (2,) * 5 + (5,))
 
     def tearDown(self):
