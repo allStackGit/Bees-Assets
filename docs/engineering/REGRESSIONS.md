@@ -410,4 +410,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Root cause:** `start()` treated an already-exited process as an ordinary stopped child; only the heartbeat polling loop called `record_exit()`.  
 **Permanent protection:** a same-launch start now records a dead child's exit before evaluating its backoff. The replacement path also rechecks backoff if the child exits between the first check and `stop()`. `ManagedProcessRestartTests.test_same_launch_records_exit_observed_before_restart` protects the missed-poll case. The test was added but not run, per the static-only audit constraint.  
 **Verification:** same-launch identity comparison, exit accounting, restart deadline, and the focused regression case were reviewed statically. No tests or runtime checks were run.  
-**Invariant/knowledge:** every unexpected child exit observed before a same-launch replacement contributes to that launch's backoff; unrelated control revisions do not clear it.  
+**Invariant/knowledge:** every unexpected child exit observed before a same-launch replacement contributes to that launch's backoff; unrelated control revisions do not clear it.
+
+### REG-046 — Build preparation raced activation of the same artifact
+**Area:** `Training/bees_training_worker_agent.py`, background build preparation and desired-build installation  \
+**Symptom:** during a rolling release, the server can return the pending artifact as both `build` and `prepare_build`. The supervisor could then call `ManagedBuildStore.prepare()` on its background thread while `ensure()` installed the same artifact on the main thread, both replacing the same install directory.  \
+**Root cause:** server state intentionally returns the pending build for preparation and, once that trainer becomes the rolling target, returns that same build as its active desired build. The worker store had no same-artifact serialization.  \
+**Permanent protection:** when preparation and the active training target identify the same role/platform/build/hash, the supervisor waits for any in-flight matching preparation before activating the build. It still reports preparation readiness to the server. `BackgroundBuildPreparerTests.test_wait_for_build_joins_only_matching_preparation` protects the synchronization rule. The test was added but not run, per the static-only audit constraint.  \
+**Verification:** current server `stateFor()` rollout phases, worker request/install ordering, and same-build join behavior were reviewed statically. No tests or runtime checks were run.  \
+**Invariant/knowledge:** one shared build install identity must not be prepared and activated concurrently; matching background preparation must finish before activation.  \
