@@ -576,11 +576,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** traced `StopMoving` resetting `TargetCoordinates` to zero and clearing `HasTargetCoordinates`, and traced path assembly setting `FinalDestination` while `IsFollowingPath` is true. The new guard and focused regression source were reread after the edits. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** movement deduplication must use an active command's destination, not default/stale target coordinates or an intermediate path waypoint.
 
-### REG-065 — Pluto IV fleet tutorial described Human-side ship types
+### REG-065 — Pluto IV fleet tutorials described Human-side ship types
 **Area:** `Scripts/Levels/Level.Campaign.Pluto4.cs`, `Scripts/Levels/GameState.Queries.cs`, Bluer Pastures tutorial dialogue selection  
 **Symptom:** Pluto IV conditionally included dialogue about Dreadnoughts, Gunships, Frigates, and Scouts by inspecting the Human side. When the configured user plays as Bee, those messages described the opposing fleet rather than the user's fleet. The campaign catalog maps mission 3 to `Pluto4BluerPasturesCampaign`, so this affects the active mission implementation.  
 **Root cause:** the mission called `GetHumanShipTypes()` for user-facing fleet dialogue even though campaign ownership is controlled by `Configuration.UserSide`.  
-**Permanent protection:** added `GameState.GetUserShipTypes()` and changed the active Pluto IV mission to use it. `CampaignTriggerStructureTests.PlutoFourFleetTutorialUsesConfiguredUserSide` guards both the caller and the helper's side source. The regression guard was added but not run, per the static-only audit scope.  
+**Permanent protection:** added `GameState.GetUserShipTypes()` and changed both the active catalog mission and the retained public legacy Pluto IV implementation to use it. `CampaignTriggerStructureTests.PlutoFourFleetTutorialUsesConfiguredUserSide` guards both callers and the helper's side source. The regression guard was added but not run, per the static-only audit scope.  
 **Verification:** traced campaign mission ID 3 to `Pluto4BluerPasturesCampaign`, confirmed `GetHumanShipTypes()` resolves to `HumanSide`, and reviewed the selected dialogue lines about the commander’s fleet. The changed source and regression guard were reread after editing. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** player-facing campaign tutorial content about the user's fleet must derive from `Configuration.UserSide`, which may differ from `HumanSide`.
 
