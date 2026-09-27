@@ -56,8 +56,18 @@ namespace Bees.Tests.EditMode
             Assert.That(triggerCloseGuard, Is.GreaterThan(triggerAction));
             Assert.That(timerCallback, Is.GreaterThanOrEqualTo(0));
             Assert.That(timerCloseGuard, Is.GreaterThan(timerCallback));
-            StringAssert.Contains("break;", triggerLoop.Substring(triggerCloseGuard));
-            StringAssert.Contains("break;", timerLoop.Substring(timerCloseGuard));
+
+            int triggerGuardOpen = triggerLoop.IndexOf("{", triggerCloseGuard);
+            int triggerGuardClose = triggerLoop.IndexOf("}", triggerGuardOpen);
+            int triggerBreak = triggerLoop.IndexOf("break;", triggerGuardOpen);
+            int timerGuardOpen = timerLoop.IndexOf("{", timerCloseGuard);
+            int timerGuardClose = timerLoop.IndexOf("}", timerGuardOpen);
+            int timerBreak = timerLoop.IndexOf("break;", timerGuardOpen);
+
+            Assert.That(triggerBreak, Is.GreaterThan(triggerGuardOpen));
+            Assert.That(triggerBreak, Is.LessThan(triggerGuardClose));
+            Assert.That(timerBreak, Is.GreaterThan(timerGuardOpen));
+            Assert.That(timerBreak, Is.LessThan(timerGuardClose));
         }
 
         [Test]
