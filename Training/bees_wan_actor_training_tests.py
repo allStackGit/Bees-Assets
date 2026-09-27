@@ -642,5 +642,36 @@ class WanActorBackpressureTests(unittest.TestCase):
 
 
 
+class ActorPolicyVersionTests(unittest.TestCase):
+    def test_applied_snapshot_version_is_not_taken_from_older_state(self):
+        behavior = "BeesRL1v1?team=0"
+
+        class FakeTemplate:
+            def load_weights(self, _weights):
+                pass
+
+            def set_step(self, _step):
+                pass
+
+        template = FakeTemplate()
+        session = actor.ActorSession.__new__(actor.ActorSession)
+        session.session_id = "session-a"
+        session.client = SimpleNamespace(
+            policy_with_version=lambda *_args: (
+                {"kind": "torch", "weights": {}, "step": 10},
+                8,
+            )
+        )
+        session.templates = {behavior: template}
+        session.manager = SimpleNamespace(set_policy=mock.Mock())
+        session.policy_versions = {}
+
+        applied_version = session._apply_policy(behavior, 7)
+
+        self.assertEqual(applied_version, 8)
+        self.assertEqual(session.policy_versions[behavior], 8)
+        session.manager.set_policy.assert_called_once_with(behavior, template)
+
+
 if __name__ == "__main__":
     unittest.main()
