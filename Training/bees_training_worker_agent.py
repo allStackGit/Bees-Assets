@@ -54,6 +54,8 @@ ENVIRONMENT_ID_ENV = "BEES_TRAINING_ENVIRONMENT_ID"
 GRACEFUL_CHECKPOINT_STOP_SECONDS = 120.0
 CHILD_HEALTH_STARTUP_GRACE_SECONDS = 30.0
 GRACEFUL_REMOTE_STOP_SECONDS = 20.0
+MANAGED_RESTART_STABLE_SECONDS = 60.0
+MANAGED_RESTART_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
 
 
 MAX_RETAINED_RUN_LOG_DIRS = 3
@@ -635,9 +637,42 @@ class ManagedProcess:
         self.health_token = ""
         self.health_required = False
         self.started_monotonic = 0.0
+        self.restart_failure_streak = 0
+        self.restart_not_before_monotonic = 0.0
+        self.last_exit_code: Optional[int] = None
 
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def restart_delay(self, command: Sequence[str]) -> float:
+        if tuple(command) != self.command:
+            return 0.0
+        return max(0.0, self.restart_not_before_monotonic - time.monotonic())
+
+    def record_exit(self, code: Optional[int]) -> float:
+        now = time.monotonic()
+        uptime = (
+            max(0.0, now - self.started_monotonic)
+            if self.started_monotonic > 0.0
+            else 0.0
+        )
+        if uptime >= MANAGED_RESTART_STABLE_SECONDS:
+            self.restart_failure_streak = 0
+        self.restart_failure_streak += 1
+        index = min(
+            self.restart_failure_streak - 1,
+            len(MANAGED_RESTART_BACKOFF_SECONDS) - 1,
+        )
+        delay = MANAGED_RESTART_BACKOFF_SECONDS[index]
+        self.restart_not_before_monotonic = now + delay
+        self.last_exit_code = code
+        self.process = None
+        return delay
+
+    def clear_restart_backoff(self) -> None:
+        self.restart_failure_streak = 0
+        self.restart_not_before_monotonic = 0.0
+        self.last_exit_code = None
 
     def health(self) -> Optional[dict[str, Any]]:
         if not self.health_required:
@@ -703,7 +738,16 @@ class ManagedProcess:
         require_child_health: bool = False,
         stop_progress: Optional[Callable[[], None]] = None,
     ) -> None:
+        restart_delay = self.restart_delay(command)
+        if restart_delay > 0.0:
+            raise RuntimeError(
+                "managed process restart deferred for "
+                f"{restart_delay:.1f}s after repeated early exits"
+            )
+        command_changed = tuple(command) != self.command
         self.stop(progress_callback=stop_progress)
+        if command_changed:
+            self.clear_restart_backoff()
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
@@ -1672,9 +1716,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     break
                 if managed.process is not None and managed.process.poll() is not None:
                     code = managed.process.returncode
-                    managed.process = None
-                    if code not in (0, None):
-                        last_error = f"managed process exited with code {code}"
+                    restart_delay = managed.record_exit(code)
+                    last_error = (
+                        f"managed process exited with code {code}; "
+                        f"retrying in {restart_delay:.0f}s unless desired launch changes"
+                    )
                     break
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
         return 0
