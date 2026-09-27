@@ -3,6 +3,7 @@ using Assets.Scripts.Levels;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -23,6 +24,9 @@ namespace Assets.Scripts.UIComponents
         private const string ShootingColorHex = "#FFB347";
         private static readonly Color FlightColor = new Color(0.36f, 0.78f, 1f, 1f);
         private static readonly Color ShootingColor = new Color(1f, 0.70f, 0.28f, 1f);
+        private static readonly Regex SingularShipsRange = new Regex(
+            @"ships([’']) range\\b",
+            RegexOptions.CultureInvariant);
         private static readonly FieldInfo DialogueTimerField = typeof(Level).GetField(
             "_dialogueTimer",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -124,8 +128,7 @@ namespace Assets.Scripts.UIComponents
             if (activeTooltip != null && activeTooltip.TooltipText != null)
             {
                 string correctedText = activeTooltip.TooltipText.text;
-                correctedText = correctedText.Replace("ships’ range", "ships’ ranges");
-                correctedText = correctedText.Replace("ships' range", "ships' ranges");
+                correctedText = SingularShipsRange.Replace(correctedText, "ships$1 ranges");
 
                 if (settingsPage)
                 {
