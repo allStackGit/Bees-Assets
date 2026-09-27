@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+import errno
 import json
 import os
 from pathlib import Path
@@ -22,9 +23,47 @@ from typing import Any, Mapping, MutableMapping, Optional, Sequence
 HEALTH_FILE_ENV = "BEES_TRAINING_CHILD_HEALTH_FILE"
 HEALTH_TOKEN_ENV = "BEES_TRAINING_CHILD_HEALTH_TOKEN"
 VALID_HEALTH_STATES = frozenset(("starting", "ready", "error"))
+ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.4)
 
 _windows_job_handle: Optional[int] = None
 
+
+
+def atomic_write_text(
+    path: Path,
+    value: str,
+    *,
+    encoding: str = "utf-8",
+) -> None:
+    """Atomically publish text while tolerating brief Windows sharing violations."""
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(
+        path.name + f".tmp-{os.getpid()}-{secrets.token_hex(6)}"
+    )
+    try:
+        temporary.write_text(value, encoding=encoding)
+        for attempt in range(len(ATOMIC_REPLACE_RETRY_DELAYS) + 1):
+            try:
+                os.replace(temporary, path)
+                return
+            except OSError as exc:
+                transient = (
+                    isinstance(exc, PermissionError)
+                    or getattr(exc, "winerror", None) in (5, 32, 33)
+                    or getattr(exc, "errno", None)
+                    in (errno.EACCES, errno.EPERM, errno.EBUSY)
+                )
+                if not transient or attempt >= len(ATOMIC_REPLACE_RETRY_DELAYS):
+                    raise
+                time.sleep(ATOMIC_REPLACE_RETRY_DELAYS[attempt])
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
 def configure_child_health(
     environment: MutableMapping[str, str],
@@ -66,20 +105,14 @@ def write_managed_health(
     }
     if details:
         value["details"] = dict(details)
-    temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_text(
+        atomic_write_text(
+            path,
             json.dumps(value, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        os.replace(temporary, path)
         return True
     except OSError:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
         return False
 
 
