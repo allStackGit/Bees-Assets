@@ -1085,3 +1085,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** any full-cohort reset invalidates every pre-reset response; all workers must resume from their post-reset observations. No test was added or run under the user's static-analysis-only instruction.
 **Verification:** statically traced the Bees fast-step recovery path, the pinned ML-Agents `_restart_failed_workers` and `reset` behavior, response postprocessing, and AgentManager step/action association. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** a response is valid only for the environment state that produced it; after cohort reset, pre-reset responses must not be published into current worker state.
+
+
+### REG-122 — Unity behavior name could escape the diagnostic model directory
+**Area:** `Training/bees_mlagents_learn.py`, `_handle_model_snapshot_request`
+**Symptom:** a behavior name containing path separators and parent-directory components was interpolated directly into the diagnostic model output path, allowing the export path to resolve outside the configured model directory.
+**Root cause:** the snapshot filename treated an externally supplied Unity `BehaviorName` as a safe single path component; ML-Agents exposes this name as an unrestricted string.
+**Fix:** generate a bounded filename label from ASCII alphanumeric and safe punctuation, and add a short SHA-256 suffix so distinct behavior names remain distinguishable without preserving path separators.
+**Permanent protection:** dynamic behavior identifiers must be sanitized before use as filesystem path components. No test was added or run under the user's static-analysis-only instruction.
+**Verification:** inspected ML-Agents `BehaviorParameters.BehaviorName` (raw get/set string, no path validation) and traced how the snapshot path is passed to model export. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
