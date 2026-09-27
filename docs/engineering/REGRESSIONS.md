@@ -952,3 +952,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced screen-to-world input, map-local `Ship.GetPosition`/turret positions, angle calculation, projectile launch, marker parenting, and all manual aim overrides. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** convert between world and map-local coordinates at input boundaries; never mix them in angle or transform calculations.
 
+### REG-108 — Concurrent WAN telemetry could interrupt learner reporting
+**Area:** `Training/bees_elastic_wan_training.py`, remote rollout rate diagnostics  
+**Symptom:** the learner's environment-manager step reports capacity by iterating the remote sample deque while threaded HTTP handlers append and prune it. Concurrent mutation during iteration can raise a runtime error and abort the training step even though the diagnostics are informational.  
+**Root cause:** the diagnostics deque is written by concurrent broker request threads and read/pruned by the learner thread without shared synchronization.  
+**Fix:** guard remote sample append/prune and rate calculation with the same lock so reporting cannot iterate a concurrently mutating deque.  
+**Permanent protection:** source invariant: all access that mutates or iterates the shared remote sample deque uses `_remote_samples_lock`. Tests were not run or added under the static-only audit instruction.  
+**Verification:** statically traced threaded broker request handling, `observe_remote_batch`, `report_capacity` in the environment-manager step, and `remote_rate` iteration. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** locks must cover iteration as well as mutation of shared collections when producers run on request threads.
+
