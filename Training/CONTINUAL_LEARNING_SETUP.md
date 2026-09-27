@@ -240,7 +240,7 @@ The immutable report records candidate/baseline score rates and pressure-weighte
 
 ## Permanent competency suite and promotion
 
-When `promotion.min_competency_cases` is greater than zero, the autonomous release service requires a permanent competency contract. For a new compatibility generation, `promotion.bootstrap_competency_cases` provides the source-controlled case templates; the service binds those templates exactly once to the first compatible champion and pins the resolved immutable suite in the registry. Existing registries that predate this behavior are repaired the same way only when no suite has ever been pinned. Later releases reuse the pinned registry contract directly.
+When `promotion.min_competency_cases` is greater than zero, the autonomous release service requires a permanent competency contract. For a new compatibility generation, `promotion.bootstrap_competency_cases` provides the source-controlled case templates; the service binds those templates exactly once to the first compatible champion and pins the resolved immutable suite in the registry. A bootstrap template may omit `matches` and `minimum`; those values then inherit the already-authoritative `min_matches_vs_champion` and `min_win_rate_vs_champion` promotion settings. The default v20 template deliberately has no extra environment overrides, so it creates a broad permanent generation-zero regression reference over the run's normal evaluation distribution without inventing a separate threshold. Existing registries that predate this behavior are repaired the same way only when no suite has ever been pinned. Later releases reuse the pinned registry contract directly.
 
 Manual pinning remains available for an intentionally curated suite:
 
