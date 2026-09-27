@@ -1143,3 +1143,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Fix:** clear that ship's communication as part of `Ship.ClearData`, before the reused object is registered into its new level state.
 **Permanent protection:** pooled ship reset clears state keyed by the `Ship` instance; allied perception remains the only observation path that appends private communication. The existing policy-schema contract test now asserts the lifecycle cleanup call.
 **Verification:** static trace confirms `Setup` assigns the new runtime ID, calls `ClearData`, then registers the ship; communication observations are emitted only for ally slots. The focused source contract was added but not run. No runtime validation was performed.
+
+### REG-131 — Fresh elastic actor startup was treated as hung
+**Area:** `Training/bees_training_worker_agent.py` managed-child health and `Training/bees_elastic_wan_actor_worker.py` startup
+**Symptom:** an elastic actor that was still initializing Unity or synchronizing its first policy could be marked failed after 30 seconds even while startup made progress, causing the managed supervisor to stop it.
+**Root cause:** supervisor health state used elapsed time since process launch and ignored the child health timestamp; the actor did not refresh a `starting` health record through the long initialization phases.
+**Fix:** accept `starting` only while the token-authenticated child health timestamp is fresh, fail closed when that timestamp goes stale, and periodically publish startup health with the current startup phase until the actor is ready.
+**Permanent protection:** static regression cases cover fresh versus stale `starting` health, continued supervisor `starting` state after the launch grace, periodic phase refresh, and a ready state while waiting for the central broker.
+**Verification:** source-flow review only. Regression tests were added but not run, and no runtime checks were performed.
