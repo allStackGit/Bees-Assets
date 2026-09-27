@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import bees_elastic_wan_actor_session as actor_session
 import bees_elastic_wan_actor_worker as actor_worker
 import bees_elastic_wan_training as elastic
 
@@ -67,6 +68,28 @@ class ElasticWanOptionTests(unittest.TestCase):
                     "--bees-wan-envs-per-actor=32",
                 ]
             )
+
+
+class ElasticActorThroughputTests(unittest.TestCase):
+    def test_consumed_step_updates_publish_recent_rate(self):
+        session = actor_session.ElasticActorSession.__new__(
+            actor_session.ElasticActorSession
+        )
+        session.actor_id = 0
+        session._throughput_lock = actor_session.worker.threading.Lock()
+        session._learner_consumed_steps_total = 0
+        session._learner_consumed_steps_per_sec = None
+        session._last_consumed_sample = (100.0, 1000)
+        session._write_throughput_metrics = mock.Mock()
+
+        with mock.patch.object(actor_session.time, "monotonic", return_value=102.0):
+            session._apply_central_throughput(
+                {"consumed_steps_by_actor": {"0": 1200}}
+            )
+
+        self.assertEqual(session._learner_consumed_steps_total, 1200)
+        self.assertAlmostEqual(session._learner_consumed_steps_per_sec, 100.0)
+        session._write_throughput_metrics.assert_called_once_with()
 
 
 class ElasticActorHealthTests(unittest.TestCase):
