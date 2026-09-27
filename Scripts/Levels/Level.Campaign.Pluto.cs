@@ -526,7 +526,7 @@ namespace Assets.Scripts.Levels
                                         {
                                             "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen.",
                                             "If you need to select multiple squads, click and drag the mouse over the squads.",
-                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ range at any time by holding R.",
+                                            "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ ranges at any time by holding R.",
                                             "You can manually fire towards your cursor with any selected ships by pressing F."
                                         }, true, () =>
                                         {
