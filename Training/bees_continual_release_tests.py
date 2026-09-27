@@ -451,6 +451,63 @@ class ReleaseCycleTests(unittest.TestCase):
         )
         self.assertEqual(pinned["cases"][0]["env_args"], [])
 
+    def test_source_controlled_match_revision_updates_only_auto_pinned_match_count(self):
+        first = self.bootstrap()
+        initial_config = copy.deepcopy(TEST_CONFIG)
+        initial_config["promotion"]["min_competency_cases"] = 1
+        initial_config["promotion"]["min_matches_vs_champion"] = 500
+        initial_config["promotion"]["min_win_rate_vs_champion"] = 0.52
+        initial_config["promotion"]["bootstrap_competency_cases"] = [
+            {
+                "name": "broad-regression-baseline",
+                "matches": 500,
+                "metric": "score_rate",
+                "critical": True,
+                "env_args": [],
+            }
+        ]
+        initial_store = ContinualLearningStore(self.root, initial_config)
+        initial_store.initialize()
+        initial_store.pin_competency_suite(
+            {
+                "schema_version": 1,
+                "cases": [
+                    {
+                        "name": "broad-regression-baseline",
+                        "opponent_model_id": first["model_id"],
+                        "matches": 500,
+                        "minimum": 0.52,
+                        "metric": "score_rate",
+                        "critical": True,
+                        "env_args": [],
+                    }
+                ],
+            }
+        )
+
+        revised_config = copy.deepcopy(initial_config)
+        revised_config["promotion"]["min_matches_vs_champion"] = 100
+        revised_config["promotion"]["bootstrap_competency_cases"][0]["matches"] = 100
+        revised_store = ContinualLearningStore(self.root, revised_config)
+        revised_store.initialize()
+
+        result = run_release_cycle(
+            revised_store,
+            environment_path="unused-test-environment",
+            evaluator=self.passing_evaluator,
+            publisher=self.publisher,
+            health_checker=self.health_checker,
+        )
+
+        self.assertEqual(result["status"], "idle")
+        pinned = revised_store.permanent_competency_suite()
+        self.assertEqual(pinned["cases"][0]["matches"], 100)
+        self.assertEqual(pinned["cases"][0]["opponent_model_id"], first["model_id"])
+        self.assertEqual(pinned["cases"][0]["minimum"], 0.52)
+        self.assertEqual(pinned["cases"][0]["metric"], "score_rate")
+        self.assertTrue(pinned["cases"][0]["critical"])
+        self.assertEqual(pinned["cases"][0]["env_args"], [])
+
     def test_generation_zero_bootstrap_also_pins_source_controlled_competency_baseline(self):
         strict_config = copy.deepcopy(TEST_CONFIG)
         strict_config["promotion"]["min_competency_cases"] = 1
