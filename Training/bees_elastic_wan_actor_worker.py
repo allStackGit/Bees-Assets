@@ -52,6 +52,52 @@ class _ReconnectBackoff:
         return delay
 
 
+class _StartupHealthHeartbeat:
+    def __init__(self, *, actor_id: int, env_count: int, interval_seconds: float = 5.0) -> None:
+        self.actor_id = int(actor_id)
+        self.env_count = int(env_count)
+        self.interval_seconds = max(1.0, float(interval_seconds))
+        self._phase = "starting-session"
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="bees-wan-startup-health",
+            daemon=True,
+        )
+
+    def _publish(self) -> None:
+        with self._lock:
+            phase = self._phase
+        write_managed_health(
+            "starting",
+            details={
+                "component": "elastic-wan-actor",
+                "phase": phase,
+                "actor_id": self.actor_id,
+                "env_count": self.env_count,
+            },
+        )
+
+    def start(self) -> None:
+        self._publish()
+        self._thread.start()
+
+    def set_phase(self, phase: str) -> None:
+        with self._lock:
+            self._phase = str(phase)
+        self._publish()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=self.interval_seconds + 1.0)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            self._publish()
+
+
 class _SessionFailureTelemetry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -470,12 +516,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         while not stop.is_set():
             actor_session = None
             session_started_monotonic: Optional[float] = None
+            startup_health: Optional[_StartupHealthHeartbeat] = None
             try:
+                write_managed_health(
+                    "ready",
+                    details={
+                        "component": "elastic-wan-actor",
+                        "phase": "waiting-for-central",
+                        "env_count": int(args.envs),
+                    },
+                )
                 raw_session = worker._wait_for_broker(client, stop, args.reconnect_seconds)
                 session_id = raw_session.get("session_id")
                 if not isinstance(session_id, str) or not session_id:
                     raise RuntimeError("Elastic WAN session is missing session_id")
                 _validate_session_release_identity(raw_session, release_identity)
+                write_managed_health(
+                    "starting",
+                    details={
+                        "component": "elastic-wan-actor",
+                        "phase": "claiming-session",
+                        "env_count": int(args.envs),
+                    },
+                )
                 actor_id = client.claim(session_id)
                 print(f"[Bees WAN actor] learner assigned actor slot {actor_id}.")
                 session, worker_offset, _capacity_envs = _elastic_session(
@@ -483,6 +546,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     actor_id=actor_id,
                     env_count=args.envs,
                 )
+                startup_health = _StartupHealthHeartbeat(
+                    actor_id=actor_id,
+                    env_count=args.envs,
+                )
+                startup_health.start()
                 actor_session = elastic_session.ElasticActorSession(
                     client,
                     session,
@@ -493,12 +561,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     graphics=args.graphics,
                     stop=stop,
                     upload_queue_size=args.upload_queue,
+                    startup_health=startup_health.set_phase,
                 )
                 actor_session.worker_offset = worker_offset
                 actor_session.total_envs = int(raw_session["remote_worker_base"]) + args.envs
                 actor_session._session_failure_telemetry = failure_telemetry
                 try:
                     actor_session.start()
+                    startup_health.stop()
+                    startup_health = None
                     write_managed_health(
                         "ready",
                         details={
@@ -510,6 +581,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     session_started_monotonic = time.monotonic()
                     actor_session.run()
                 finally:
+                    if startup_health is not None:
+                        startup_health.stop()
                     actor_session.close()
             except worker.BrokerSessionChanged:
                 reconnect_backoff.reset()
