@@ -370,6 +370,9 @@ async function getStatusFrameLines(config, adminToken) {
         lines.push(
             'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
         );
+        lines.push(
+            'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
+        );
     } catch (error) {
         lines.push('');
         lines.push('Dashboard: RENDER ERROR - ' + error.name + ': ' + error.message);
