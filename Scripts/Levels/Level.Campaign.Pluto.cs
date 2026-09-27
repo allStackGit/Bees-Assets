@@ -462,6 +462,22 @@ namespace Assets.Scripts.Levels
                             GameObject pointerB = null;
                             if (ConfigData.UserProgressData.ShowToolTips)
                             {
+                                if (basicTooltip == null)
+                                {
+                                    basicTooltip = Instantiate(
+                                        Stage.Menus.TooltipPrefab,
+                                        Stage.Menus.UIOverlay.transform).GetComponent<Tooltip>();
+                                }
+                                if (highlightTooltipObject == null)
+                                {
+                                    highlightTooltipObject = Instantiate(
+                                        Stage.Menus.HighlightTooltipPrefab,
+                                        Map.transform);
+                                    highlightTooltipObject.transform.position = scoutSquad.GetPosition();
+                                    highlightTooltipObject.transform.localScale = new Vector2(
+                                        scoutSquad.GetWidth() + 2,
+                                        scoutSquad.GetHeight() + 2);
+                                }
                                 highlightTooltipObject.SetActive(false);
                                 basicTooltip.Place(new Vector2(-175, -150), new Vector2(150, 225));
                                 basicTooltip.Show("Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options.", true);
