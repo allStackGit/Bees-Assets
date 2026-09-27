@@ -36,7 +36,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (IsFiringManually)
                 {
-                    TargetPoint = Stage.InputManager.GetMousePosition();
+                    TargetPoint = GetManualTargetPoint();
                     IsAlignedWithTargetPoint = RotateShipTowardsTargetPoint(GetDegreesTowardsPoint(TargetPoint));
                 }
                 else
@@ -61,7 +61,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
             {
                 if (IsFiringManually)
                 {
-                    TargetPoint = Stage.InputManager.GetMousePosition();
+                    TargetPoint = GetManualTargetPoint();
                     IsAlignedWithTargetPoint = Utilities.IsRotatedTowards(this, GetDegreesTowardsPoint(TargetPoint));
                 }
                 else if (ShouldFire)
