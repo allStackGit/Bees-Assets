@@ -218,6 +218,21 @@ test('declared byte quota and active-session limits are enforced before upload g
     );
 });
 
+test('failed partial-file creation releases its reserved upload quota', async t => {
+    const uploadId = 'rl-telemetry-upload-failed-create';
+    const { root, manager, context } = await fixture(t, {
+        randomUUID: () => 'failed-create',
+    });
+    await manager._ensureInitialized();
+    await fsp.mkdir(path.join(root, 'partial', `${uploadId}.json.partial`));
+    const bytes = payloadBytes();
+
+    await assert.rejects(manager.handle(beginRequest(bytes), context));
+    assert.equal(manager.userQuotas.has(context.userId), false);
+    assert.equal(manager.sessions.size, 0);
+    assert.equal(manager.logicalUploads.size, 0);
+});
+
 test('expired uploader quota records are pruned without expiring active uploads', async t => {
     let now = 1000;
     const { manager, context } = await fixture(t, {
