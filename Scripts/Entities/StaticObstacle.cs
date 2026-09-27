@@ -54,6 +54,11 @@ namespace Assets.Scripts.Entities
 
         public virtual void ShipCollision(Ship ship)
         {
+            if (ship == null || Level == null || ship.Level != Level)
+            {
+                return;
+            }
+
             //Debug.Log($"{Name} was hit by {ship.Name}");
             if (ship.ShipType == ConfigData.ShipTypes.Barge)
             {
