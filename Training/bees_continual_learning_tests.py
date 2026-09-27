@@ -212,6 +212,63 @@ class PromotionTests(StoreTestCase):
         with self.assertRaises(continual.PromotionError):
             self.store.promote(second["model_id"], evaluation["report_id"])
 
+    def test_valid_failed_champion_short_circuit_skips_downstream_coverage_requirements(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+
+        report = self.passing_report(second["model_id"], first["model_id"])
+        report["candidate_vs_champion"] = self.behavior_summary(
+            wins=4,
+            losses=6,
+            draws=0,
+        )
+        report["historical"] = []
+        report["competencies"] = []
+        report["evaluator"]["short_circuit"] = {
+            "reason": continual.CHAMPION_GATE_SHORT_CIRCUIT,
+            "observed_score_rate": 0.4,
+            "minimum_score_rate": 0.52,
+        }
+        report = apply_behavior_sanity(report)
+
+        evaluation = self.store.record_evaluation(report)
+
+        self.assertFalse(evaluation["passed"])
+        self.assertTrue(
+            any("champion win rate 0.4000 below 0.5200" in reason for reason in evaluation["reasons"])
+        )
+        self.assertFalse(
+            any("missing historical opponents" in reason for reason in evaluation["reasons"])
+        )
+        self.assertFalse(
+            any("competency cases" in reason for reason in evaluation["reasons"])
+        )
+
+    def test_champion_short_circuit_cannot_bypass_a_passing_champion_gate(self):
+        first = self.register("first.onnx", b"first", 100)
+        self.promote_first(first)
+        second = self.register("second.onnx", b"second", 200, parent=first["model_id"])
+
+        report = self.passing_report(second["model_id"], first["model_id"])
+        report["evaluator"]["short_circuit"] = {
+            "reason": continual.CHAMPION_GATE_SHORT_CIRCUIT,
+            "observed_score_rate": 0.6,
+            "minimum_score_rate": 0.52,
+        }
+        report = apply_behavior_sanity(report)
+
+        evaluation = self.store.record_evaluation(report)
+
+        self.assertFalse(evaluation["passed"])
+        self.assertTrue(
+            any(
+                "champion short-circuit requires a complete champion gate that is below threshold"
+                in reason
+                for reason in evaluation["reasons"]
+            )
+        )
+
     def test_evaluation_becomes_stale_when_champion_changes(self):
         first = self.register("first.onnx", b"first", 100)
         self.promote_first(first)
