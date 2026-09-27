@@ -101,14 +101,7 @@ namespace Assets.Scripts.Entities.Ships
                     FogOfWarVision.Kill(3, false);
                 }
 
-                if (WeaponsThatHaveUsWithinRange.Count > 0)
-                {
-                    foreach (Weapon weapon in WeaponsThatHaveUsWithinRange)
-                    {
-                        weapon.ShipsWithinRange.Remove(Id);
-                    }
-                    WeaponsThatHaveUsWithinRange.Clear();
-                }
+                RemoveFromIncomingWeaponRanges();
 
                 // Own all common death accounting here. Do not also increment ShipsLost or
                 // set FleetShip.IsDead in this special path; LogKilledStats already does it.
