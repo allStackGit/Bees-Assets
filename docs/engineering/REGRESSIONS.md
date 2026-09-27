@@ -935,12 +935,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** shared queue membership and per-actor admission state must change atomically under the same lock.
 
 ### REG-106 — Distinct path endpoints could compare equal
-**Area:** `Scripts/Levels/Pathfinder.Models.cs`, `Path.Equals` and hash identity  
-**Symptom:** paths with different start coordinates could compare equal when decimal string concatenation produced the same legacy ID, causing equality-based collections or duplicate checks to alias unrelated routes. Typed equality checks against null could also throw.  
-**Root cause:** the path identity string concatenated four integers without separators, and equality/hash semantics trusted that ambiguous value rather than the endpoint tuple.  
-**Fix:** both object and typed equality compare the four endpoint coordinates directly, and hashing uses the same tuple; comparisons against null return false. The legacy `Id` property remains for compatibility and is not used for equality.  
-**Permanent protection:** the source invariant is that path equality and hash codes derive from the same four endpoint coordinates; tests were not run or added under the static-only audit instruction.  
-**Verification:** statically inspected the old collision case `(1, 23) -> (4, 5)` versus `(12, 3) -> (4, 5)`, and confirmed both equality and hashing now use the coordinate tuple. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Area:** `Scripts/Levels/Pathfinder.Models.cs`, `Path.Equals`, hash identity, and equality operators  
+**Symptom:** paths with different start coordinates could compare equal when decimal string concatenation produced the same legacy ID, causing `==` comparisons and equality-based collections to alias unrelated routes. Typed equality checks against null could also throw.  
+**Root cause:** the path identity string concatenated four integers without separators. Although typed/object equality and hashing had been changed to use the endpoint tuple, the overloaded `==` operator still compared the ambiguous legacy `Id`.  
+**Fix:** object and typed equality plus `==` compare the four endpoint coordinates, hashing uses the same tuple, and comparisons against null return false. The legacy `Id` remains for compatibility and no longer controls equality.  
+**Permanent protection:** the source invariant is that all equality paths and hash codes derive from the same four endpoint coordinates; tests were not run or added under the static-only audit instruction.  
+**Verification:** statically inspected the collision case `(1, 23) -> (4, 5)` versus `(12, 3) -> (4, 5)` and confirmed object equality, typed equality, `==`, and hashing now use the coordinate tuple. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** identifiers formed by concatenating variable-width numeric fields are ambiguous; value equality should compare the structured fields directly.
 
 ### REG-107 — Manual weapon aim mixed world and map-local coordinates
