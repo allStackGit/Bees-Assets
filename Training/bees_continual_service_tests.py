@@ -75,6 +75,20 @@ class ContinualServiceTests(unittest.TestCase):
                 timeout=service.MANAGED_INTERRUPTIBLE_STOP_SECONDS
             )
 
+    def test_windows_interruptible_phase_terminates_owned_release_process(self):
+        fake = mock.Mock()
+        fake.poll.return_value = None
+        fake.wait.return_value = 0
+
+        with mock.patch.object(service.os, "name", "nt"):
+            service._stop_interruptible_managed_child(fake)
+
+        fake.terminate.assert_called_once_with()
+        fake.kill.assert_not_called()
+        fake.wait.assert_called_once_with(
+            timeout=service.MANAGED_INTERRUPTIBLE_STOP_SECONDS
+        )
+
     def test_interruptible_phase_escalates_if_graceful_termination_does_not_exit(self):
         fake = mock.Mock()
         fake.pid = 8181
