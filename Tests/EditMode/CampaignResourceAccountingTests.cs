@@ -64,6 +64,30 @@ namespace Bees.Tests.EditMode
                 "WinningSide == ConfigData.Configuration.AISide || !ConfigData.CurrentShips.HasShipsOfType(ConfigData.ShipTypes.Factory)"));
         }
 
+        [Test]
+        public void PlutoEvacuationScoreIncludesTheTerminalTimerTick()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.Campaign.Pluto.cs");
+            string source = File.ReadAllText(path);
+            string method = ExtractMethodBody(source, "Pluto4BluerPastures");
+
+            int evacuationUpdate = method.IndexOf(
+                "personnelEvacuated = Mathf.Clamp",
+                StringComparison.Ordinal);
+            int terminalCheck = method.IndexOf(
+                "if (timeLeft <= 0 || personnelLost >= 15)",
+                StringComparison.Ordinal);
+            int scoreAssignment = method.IndexOf(
+                "_questPoints = personnelEvacuated;",
+                StringComparison.Ordinal);
+
+            Assert.That(evacuationUpdate, Is.GreaterThanOrEqualTo(0));
+            Assert.That(terminalCheck, Is.GreaterThan(evacuationUpdate),
+                "The final interval count must be refreshed before checking mission termination.");
+            Assert.That(scoreAssignment, Is.GreaterThan(terminalCheck),
+                "The terminal score must use the count refreshed for the ending tick.");
+        }
+
         private static string ExtractMethodBody(string source, string methodName)
         {
             int signature = source.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
