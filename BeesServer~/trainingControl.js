@@ -1714,5 +1714,6 @@ module.exports = {
     startTrainingControl,
     startTrainingControlFromEnvironment,
     sha256File,
+    environmentArgsIdentity,
     environmentValidationKeyForRelease,
 };
