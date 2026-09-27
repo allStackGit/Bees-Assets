@@ -531,24 +531,6 @@ class ElasticWanBroker(base.WanActorBroker):
         for actor_key in stale:
             self._claims.pop(actor_key, None)
 
-    def _fence_previous_actor_instance_locked(
-        self, actor_key: str, actor_instance_id: str, now: float
-    ) -> None:
-        fenced = [
-            actor_id
-            for actor_id, record in self._registrations.items()
-            if record.get("actor_key") == actor_key
-            and record.get("actor_instance_id") != actor_instance_id
-        ]
-        if not fenced:
-            return
-        for actor_id in fenced:
-            self._registrations.pop(actor_id, None)
-        self._topology_epoch += 1
-        active = self._active_snapshot_locked(now=now)
-        self.diagnostics.topology_changed(len(active), sum(active.values()))
-        self._condition.notify_all()
-
     def claim_actor(self, payload: Mapping[str, Any]) -> int:
         self._validate_release_identity(payload)
         actor_key = payload.get("actor_key")
@@ -571,25 +553,31 @@ class ElasticWanBroker(base.WanActorBroker):
                 actor_id = int(existing["actor_id"])
                 if existing.get("actor_instance_id") != actor_instance_id:
                     raise ValueError("actor slot is claimed by another remote process")
-                self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
                 existing["last_seen"] = now
                 existing["env_count"] = env_count
-                existing["actor_instance_id"] = actor_instance_id
+                record = self._registrations.get(actor_id)
+                if (
+                    record is not None
+                    and record.get("actor_key") == actor_key
+                    and record.get("actor_instance_id") == actor_instance_id
+                ):
+                    # Claim renewal is also registration liveness. Keep both leases in
+                    # sync when the actor is otherwise idle or waiting for backpressure.
+                    record["last_seen"] = now
                 return actor_id
 
             for actor_id, record in tuple(self._registrations.items()):
                 if record.get("actor_key") == actor_key:
                     if record.get("actor_instance_id") == actor_instance_id:
                         record["last_seen"] = now
+                        self._claims[actor_key] = {
+                            "actor_id": int(actor_id),
+                            "env_count": env_count,
+                            "actor_instance_id": actor_instance_id,
+                            "last_seen": now,
+                        }
                         return int(actor_id)
-                    self._fence_previous_actor_instance_locked(actor_key, actor_instance_id, now)
-                    self._claims[actor_key] = {
-                        "actor_id": int(actor_id),
-                        "env_count": env_count,
-                        "actor_instance_id": actor_instance_id,
-                        "last_seen": now,
-                    }
-                    return int(actor_id)
+                    raise ValueError("actor slot is claimed by another remote process")
 
             occupied = set(self._registrations)
             occupied.update(int(claim["actor_id"]) for claim in self._claims.values())
@@ -632,12 +620,12 @@ class ElasticWanBroker(base.WanActorBroker):
             not isinstance(actor_key, str) or not actor_key or len(actor_key) > 128
         ):
             raise ValueError("actor_key must be a non-empty string up to 128 characters")
-        if actor_key is not None and (
+        if (
             not isinstance(actor_instance_id, str)
             or not actor_instance_id
             or len(actor_instance_id) > 128
         ):
-            raise ValueError("actor_instance_id must identify automatically assigned actors")
+            raise ValueError("actor_instance_id must identify the registered process")
 
         now = time.monotonic()
         with self._condition:
@@ -666,8 +654,11 @@ class ElasticWanBroker(base.WanActorBroker):
                     raise ValueError("actor claim does not match requested slot or process")
                 if previous is not None and previous.get("actor_key") not in (None, actor_key):
                     raise ValueError("actor slot is owned by another remote machine")
-            elif previous is not None and previous.get("actor_key") is not None:
-                raise ValueError("actor slot is owned by an automatically assigned remote machine")
+            elif previous is not None:
+                if previous.get("actor_key") is not None:
+                    raise ValueError("actor slot is owned by an automatically assigned remote machine")
+                if previous.get("actor_instance_id") != actor_instance_id:
+                    raise ValueError("actor slot is already registered by another process")
             reference = self._reference_signatures
             if reference is None and self._registrations:
                 reference = next(iter(self._registrations.values()))["signatures"]
@@ -684,8 +675,8 @@ class ElasticWanBroker(base.WanActorBroker):
                 "registered_at": now,
                 "last_seen": now,
             }
-            if actor_key is not None:
-                self._claims.pop(actor_key, None)
+            # Retain the owner lease after registration so a late previous process
+            # cannot reclaim this actor_key after the replacement has registered.
             if changed:
                 self._topology_epoch += 1
                 snapshot = self._active_snapshot_locked(now=now)
@@ -748,8 +739,6 @@ class ElasticWanBroker(base.WanActorBroker):
         if record is None:
             raise ValueError("actor is not registered")
         actor_key = record.get("actor_key")
-        if actor_key is None:
-            return
         if (
             payload.get("actor_key") != actor_key
             or payload.get("actor_instance_id") != record.get("actor_instance_id")
