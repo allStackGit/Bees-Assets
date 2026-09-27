@@ -374,3 +374,10 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** normal Ship and FireBarge cleanup now share one incoming-range cleanup method invoked for both death and retreat. It invalidates each weapon's targeting queue when it removes the ship. `CombatLifecycleIntegrationTests` covers both lethal damage and `EndKill()` return cleanup.  
 **Verification:** the regression assertion was added and the death and retreat cleanup paths were reviewed statically. Tests and runtime validation were not run per the code-analysis-only instruction.  
 **Invariant/knowledge:** any mutation of a weapon's range candidate set outside `RangeCollider` enter/exit callbacks must also invalidate `HasCachedChanged`.
+### REG-041 — Deactivated weapon retained ship range contacts
+**Area:** `Scripts/Entities/Ships/Weapons/RangeCollider.cs`, pooled weapon and ship range registries  
+**Symptom:** a ship or weapon leaving active play could leave candidate entries in `Weapon.ShipsWithinRange` and reverse weapon references on candidate ships, retaining stale targeting state until physics exit callbacks happened.  
+**Root cause:** `RangeCollider.Deactivate` cleared map-object visibility contacts but relied on trigger-exit callbacks to clean ship contacts while disabling its collider. The weapon dictionary and each ship's `WeaponsThatHaveUsWithinRange` are separately maintained registries, so disabling the collider alone did not guarantee both were cleared.  
+**Permanent protection:** deactivation now removes the weapon from every candidate ship's reverse set, clears the candidate dictionary, and invalidates the targeting queue. `CombatLifecycleIntegrationTests.DeactivatingRangeColliderClearsBothShipRangeRegistries` covers both registry cleanup and cache invalidation.  
+**Verification:** source and regression assertion reviewed statically; tests and runtime checks were not run under the code-analysis-only instruction.  
+**Invariant/knowledge:** disabling a range collider must synchronously clear its ship contacts and reverse ownership rather than relying on later physics callbacks.
