@@ -796,7 +796,24 @@ class ManagedProcess:
             return "inference-offline"
         if self.health_required:
             health = self.health()
-            if health is None or health.get("state") != "ready":
+            if health is None:
+                if (
+                    self.started_monotonic > 0.0
+                    and time.monotonic() - self.started_monotonic
+                    >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+                ):
+                    return "error"
+                return "starting"
+            health_state = str(health.get("state", ""))
+            if health_state == "error":
+                return "error"
+            if health_state != "ready":
+                if (
+                    self.started_monotonic > 0.0
+                    and time.monotonic() - self.started_monotonic
+                    >= CHILD_HEALTH_STARTUP_GRACE_SECONDS
+                ):
+                    return "error"
                 return "starting"
         return "running"
 
@@ -1466,6 +1483,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             now = time.monotonic()
             offline = last_contact > 0 and now - last_contact > lease_seconds
             prepared_build_id, preparation_error = preparer.snapshot()
+            child_health_error = managed.health_error()
             if prepared_build_id and args.runtime_ready_file:
                 artifact_prepared_build_id = prepared_build_id
                 try:
@@ -1508,12 +1526,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 trainer_id=args.trainer_id,
                 role=args.role,
                 platform=args.platform,
-                process_state=managed.state(args.role, offline=offline),
+                process_state=(
+                    "error"
+                    if child_health_error
+                    else managed.state(args.role, offline=offline)
+                ),
                 applied_revision=applied_revision,
                 build=active_build,
                 prepared_build_id=prepared_build_id,
                 preparation_error=preparation_error,
-                last_error=last_error or preparation_error,
+                last_error=last_error or preparation_error or child_health_error,
                 environment_id=(
                     environment_args_identity(managed.environment_args)
                     if managed.alive()
@@ -1534,7 +1556,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 received_desired = True
                 lease_seconds = received_lease_seconds
                 last_contact = time.monotonic()
-                last_error = ""
+                last_error = child_health_error
 
                 mode = str(desired["desired_mode"])
                 revision = int(desired["revision"])
