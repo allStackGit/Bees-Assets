@@ -802,50 +802,62 @@ def main() -> None:
             "this version guard."
         )
 
-    original_value_estimate_key = install_value_estimate_key_fix()
-    print("[Bees RL] PPO value-estimate/return buffer key separation: enabled")
-
-    if torch_threads is not None:
-        torch_utils.torch.set_num_threads(torch_threads)
-        print(f"[Bees RL] PyTorch intra-op threads: {torch_threads}")
-
+    # Install every process-wide patch inside the cleanup scope. In particular,
+    # batching setup patches several ML-Agents classes in sequence; if a later
+    # setup step fails, earlier patches must not leak into another invocation in
+    # this Python process.
+    original_value_estimate_key = None
     original_queue_steps = None
     original_env_step = None
     original_process_step_infos = None
     original_worker = None
-    if batch_inference:
-        original_worker = _install_sampled_worker_timers()
-        original_queue_steps = _install_batched_inference(
-            cpu_inference=cpu_inference
-        )
-        original_env_step, original_process_step_infos = _install_fast_env_manager()
-        print("[Bees RL] Cross-worker policy inference batching: enabled")
-        print("[Bees RL] Slim subprocess action IPC: enabled")
-        print(
-            f"[Bees RL] Worker timer transfer: every "
-            f"{WORKER_TIMER_SAMPLE_STEPS} steps"
-        )
-        print("[Bees RL] Blocking Unity-worker wait: enabled")
-        if cpu_inference:
-            print(
-                "[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; "
-                "environment inference uses synchronized CPU actor replicas"
-            )
-
-    original_torch_load = torch_utils.torch.load
-
-    def device_safe_torch_load(*args, **kwargs):
-        kwargs.setdefault("map_location", torch_utils.default_device())
-        return original_torch_load(*args, **kwargs)
-
+    original_torch_load = None
     previous_argv = sys.argv
-    previous_sigbreak_handler = _install_windows_break_interrupt()
-    managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
-    original_maybe_save_model = _install_model_snapshot_requests()
-    live_log_streams = _install_managed_live_log()
-    torch_utils.torch.load = device_safe_torch_load
-    sys.argv = [previous_argv[0], *trainer_args]
+    previous_sigbreak_handler = None
+    managed_stop_event = None
+    managed_stop_watcher = None
+    original_maybe_save_model = None
+    live_log_streams = None
+
     try:
+        original_value_estimate_key = install_value_estimate_key_fix()
+        print("[Bees RL] PPO value-estimate/return buffer key separation: enabled")
+
+        if torch_threads is not None:
+            torch_utils.torch.set_num_threads(torch_threads)
+            print(f"[Bees RL] PyTorch intra-op threads: {torch_threads}")
+
+        if batch_inference:
+            original_worker = _install_sampled_worker_timers()
+            original_queue_steps = _install_batched_inference(
+                cpu_inference=cpu_inference
+            )
+            original_env_step, original_process_step_infos = _install_fast_env_manager()
+            print("[Bees RL] Cross-worker policy inference batching: enabled")
+            print("[Bees RL] Slim subprocess action IPC: enabled")
+            print(
+                f"[Bees RL] Worker timer transfer: every "
+                f"{WORKER_TIMER_SAMPLE_STEPS} steps"
+            )
+            print("[Bees RL] Blocking Unity-worker wait: enabled")
+            if cpu_inference:
+                print(
+                    "[Bees RL] Hybrid devices: trainer/optimizer uses --torch-device; "
+                    "environment inference uses synchronized CPU actor replicas"
+                )
+
+        original_torch_load = torch_utils.torch.load
+
+        def device_safe_torch_load(*args, **kwargs):
+            kwargs.setdefault("map_location", torch_utils.default_device())
+            return original_torch_load(*args, **kwargs)
+
+        previous_sigbreak_handler = _install_windows_break_interrupt()
+        managed_stop_event, managed_stop_watcher = _start_managed_stop_watcher()
+        original_maybe_save_model = _install_model_snapshot_requests()
+        live_log_streams = _install_managed_live_log()
+        torch_utils.torch.load = device_safe_torch_load
+        sys.argv = [previous_argv[0], *trainer_args]
         learn.main()
     finally:
         sys.argv = previous_argv
@@ -859,8 +871,10 @@ def main() -> None:
         if original_maybe_save_model is not None:
             from mlagents.trainers.trainer.rl_trainer import RLTrainer
             RLTrainer._maybe_save_model = original_maybe_save_model
-        torch_utils.torch.load = original_torch_load
-        restore_value_estimate_key(original_value_estimate_key)
+        if original_torch_load is not None:
+            torch_utils.torch.load = original_torch_load
+        if original_value_estimate_key is not None or original_value_estimate_key is None:
+            restore_value_estimate_key(original_value_estimate_key)
         if original_queue_steps is not None:
             SubprocessEnvManager._queue_steps = original_queue_steps
         if original_env_step is not None:
