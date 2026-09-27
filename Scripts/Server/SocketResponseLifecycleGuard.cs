@@ -161,7 +161,14 @@ namespace Assets.Scripts.Server
                               response.RequestType == ConfigData.RequestTypes.GetSettings;
             if (isDataRead && response.Status >= 400)
             {
-                if (socket.GetStandingRequest(response.Hash) != null)
+                ServerRequest readRequest = socket.GetStandingRequest(response.Hash);
+                if (response.Status == 403 && readRequest != null)
+                {
+                    // Authorization denial cannot be repaired by resending the same identity-bound request.
+                    readRequest.Status = response.Status;
+                    Debug.LogWarning($"Server denied profile read #{response.Hash}:{response.RequestType} with status 403; marking it terminal without treating it as missing data.");
+                }
+                else if (readRequest != null)
                 {
                     Debug.LogWarning($"Server rejected read request #{response.Hash}:{response.RequestType} with status {response.Status}; keeping it pending instead of treating it as missing data.");
                 }
