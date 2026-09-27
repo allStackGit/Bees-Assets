@@ -559,3 +559,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** all four lookups now use `UserSide`. `InitialDesignPresentationRegressionTests.PlutoTwoTutorialOwnsSizingAndDialogueOrderBeforeRendering` isolates the Pluto II mission block and requires user-side lookups while rejecting hard-coded Human-side lookups.  
 **Verification:** statically compared the mission's spawn side, four squad lookups, and existing campaign-side selection logic. The regression test was updated but not run; no Unity or gameplay checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** campaign tutorials must bind to the configured user side, which may be Bee or Human; hard-coded Human-side squad ownership is invalid.
+
+### REG-063 — Cached distance targeting priorities became stale
+**Area:** `Scripts/Entities/Ships/Weapons/Weapon.cs`, Closest/Furthest shooting strategies  
+**Symptom:** weapons using Closest or Furthest could keep ranking targets by their old positions after ships moved, while all candidates remained in range.  
+**Root cause:** cached targeting order was dynamically refreshed for changing damage/health priorities, but not for Closest/Furthest, even though target distance changes continuously.  
+**Permanent protection:** cached queues now recalculate distance keys and resort for both Closest and Furthest. `TargetingStrategyConsistencyTests.ClosestAndFurthestTargetPriorityRefreshesForCachedQueues` protects the dynamic-priority contract.  
+**Verification:** statically traced cached-queue reuse, priority refresh, distance-key recomputation, and target selection. The regression test was added but not run; no combat or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** target ranking strategies whose inputs change during movement must refresh when reusing a cached candidate set.
