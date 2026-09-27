@@ -6596,3 +6596,531 @@
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] central generation changed; reconnecting to the next trainer session.
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 1 Unity environments base_port=5005 logs=C:\Users\David\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260926T184018Z-4fc8512c.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=1.
+[Bees WAN actor] joined session=d258544c2ff0e3f427c1107e3af190526574c116343a788d actor=0 workers=0-0 local_envs=1 total_envs=1 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees control] server lease expired; stopping dedicated trainer.
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold error=ControlUnavailable: timed out runtime_update_error=ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold error=ControlUnavailable: timed out runtime_update_error=ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 1 Unity environments base_port=5005 logs=C:\Users\David\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260926T184018Z-4fc8512c.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold runtime_update_error=ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold runtime_update_error=ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 1} control_epoch=2.
+[Bees WAN actor] joined session=d258544c2ff0e3f427c1107e3af190526574c116343a788d actor=0 workers=0-0 local_envs=1 total_envs=1 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 2} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] central trainer unavailable: [WinError 10054] An existing connection was forcibly closed by the remote host; retrying in 5.0s.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] learner assigned actor slot 0.
+[Bees WAN actor] launching 1 Unity environments base_port=5005 logs=C:\Users\David\AppData\Local\BeesTraining\ManagedBuilds\logs\bees-v20-r3-s1-20260926T184018Z-4fc8512c.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 2} control_epoch=2.
+[Bees WAN actor] joined session=d258544c2ff0e3f427c1107e3af190526574c116343a788d actor=0 workers=0-0 local_envs=1 total_envs=1 rollout_horizons={'BeesRL1v1?team=0': 2048, 'BeesRL1v1?team=1': 2048} device=cpu.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=starting envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 1, 'BeesRL1v1?team=1': 3} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 2, 'BeesRL1v1?team=1': 3} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 2, 'BeesRL1v1?team=1': 4} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 3, 'BeesRL1v1?team=1': 4} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
