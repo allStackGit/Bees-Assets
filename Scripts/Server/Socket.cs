@@ -912,12 +912,12 @@ namespace Assets.Scripts.Server
             {
                 _handleMatchupResponse_squad = _handleMatchupResponse_standingRequest.Squad;
                 _handleMatchupResponse_level = _handleMatchupResponse_standingRequest.Level;
-                _handleMatchupResponse_level.RecordSimulationInput("hivemind-matchup-response", message);
                 if (CanApplySquadResponse(
                     _handleMatchupResponse_level,
                     _handleMatchupResponse_squad,
                     _handleMatchupResponse_standingRequest.SquadId))
                 {
+                    _handleMatchupResponse_level.RecordSimulationInput("hivemind-matchup-response", message);
                     ConfigData.MatchupStrategyTypes matchupType;
                     long outcomeId = _handleMatchupResponse_matchupResponse.OutcomeId;
                     if (!Utilities.ConvertMatchupStrategyNameToType.TryGetValue(
@@ -991,12 +991,12 @@ namespace Assets.Scripts.Server
             {
                 _tempSquad = _strategicStandingRequest.Squad;
                 _handleStrategicCommandResponse_level = _strategicStandingRequest.Level;
-                _handleStrategicCommandResponse_level.RecordSimulationInput("hivemind-command-response", message);
                 if (CanApplySquadResponse(
                     _handleStrategicCommandResponse_level,
                     _tempSquad,
                     _strategicStandingRequest.SquadId))
                 {
+                    _handleStrategicCommandResponse_level.RecordSimulationInput("hivemind-command-response", message);
                     if (string.IsNullOrWhiteSpace(_commandResponse.Name) ||
                         !Utilities.ConvertCommandNameToType.TryGetValue(
                             _commandResponse.Name,
