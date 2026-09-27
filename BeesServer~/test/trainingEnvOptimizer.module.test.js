@@ -346,6 +346,28 @@ test('recent internal WAN actor failure holds probes without extending the hold 
     assert.match(state.decision, /collecting fresh baseline/);
 });
 
+test('fresh worker startup does not create an instability hold before a baseline exists', () => {
+    const optimizer = new TrainingEnvOptimizer({
+        warmupMs: 1000,
+        measurementMs: 1000,
+        instabilityHoldMs: 10_000,
+    });
+
+    const state = update(
+        optimizer,
+        'remote-a',
+        1,
+        0,
+        0,
+        { max: 16, processState: 'starting' },
+    );
+
+    assert.equal(state.phase, 'warmup');
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.equal(state.last_instability_ms, null);
+    assert.match(state.decision, /collecting baseline/);
+});
+
 test('planned env-count transition does not create an instability hold', () => {
     const optimizer = new TrainingEnvOptimizer({
         warmupMs: 0,
