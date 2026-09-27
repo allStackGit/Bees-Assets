@@ -534,6 +534,7 @@ class TrainingLogUploader:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._positions: dict[Path, int] = {}
+        self._file_identities: dict[Path, Optional[tuple[int, int]]] = {}
 
     def flush_once(
         self,
@@ -561,11 +562,21 @@ class TrainingLogUploader:
                 continue
             relative = log_path.relative_to(run_root).as_posix()
             try:
-                size = log_path.stat().st_size
+                file_stat = log_path.stat()
+                size = file_stat.st_size
             except OSError:
                 continue
+            identity = (int(file_stat.st_dev), int(file_stat.st_ino))
+            if identity[1] == 0:
+                identity = None
+            previous_identity = self._file_identities.get(log_path)
+            identity_changed = (
+                previous_identity is not None
+                and identity is not None
+                and previous_identity != identity
+            )
             position = self._positions.get(log_path, 0)
-            if size < position:
+            if identity_changed or size < position:
                 next_offset = client.upload_log_chunk(
                     trainer_id=trainer_id,
                     run_id=run_id,
@@ -578,6 +589,7 @@ class TrainingLogUploader:
                     next_offset = -next_offset - 1
                 position = next_offset
                 self._positions[log_path] = position
+            self._file_identities[log_path] = identity
             if size <= position or position >= self.MAX_FILE_UPLOAD_BYTES:
                 continue
             amount = min(
