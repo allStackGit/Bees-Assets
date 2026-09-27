@@ -12,6 +12,23 @@ from unittest import mock
 
 import bees_managed_remote_worker as managed
 import bees_process_safety as process_safety
+import bees_training_worker_agent as worker_agent
+
+
+class WorkerAgentHealthTests(unittest.TestCase):
+    def test_managed_child_health_error_is_reported_when_no_stronger_error_exists(self):
+        self.assertEqual(
+            worker_agent.heartbeat_last_error("", "", "child failed"),
+            "child failed",
+        )
+        self.assertEqual(
+            worker_agent.heartbeat_last_error("control failed", "", "child failed"),
+            "control failed",
+        )
+        self.assertEqual(
+            worker_agent.heartbeat_last_error("", "prepare failed", "child failed"),
+            "prepare failed",
+        )
 
 
 class ManagedRemoteWorkerTests(unittest.TestCase):
