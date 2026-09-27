@@ -130,6 +130,41 @@ class ManagedLiveLogTests(unittest.TestCase):
             self.assertIn("Step: 5000", content)
             self.assertIn("warning-line", content)
 
+    def test_managed_live_log_rebinds_existing_console_logging_handler(self):
+        with tempfile.TemporaryDirectory() as temp:
+            original_stderr = launcher.sys.stderr
+            logger = launcher.logging.getLogger("bees-test-managed-live-log")
+            logger.setLevel(launcher.logging.INFO)
+            logger.propagate = False
+            handler = launcher.logging.StreamHandler(original_stderr)
+            logger.addHandler(handler)
+            try:
+                with mock.patch.dict(
+                    launcher.os.environ,
+                    {launcher.MANAGED_LOG_DIR_ENV: temp},
+                    clear=False,
+                ):
+                    state = launcher._install_managed_live_log()
+                    try:
+                        self.assertIsNot(handler.stream, original_stderr)
+                        logger.info(
+                            "[INFO] BeesRL1v1. Step: 10,000. Time Elapsed: 20.0 s. "
+                            "Mean Reward: 0.5. ELO: 1201.0."
+                        )
+                    finally:
+                        launcher._restore_managed_live_log(state)
+
+                self.assertIs(handler.stream, original_stderr)
+                content = (
+                    Path(temp) / launcher.LIVE_LEARNER_LOG_NAME
+                ).read_text(encoding="utf-8")
+                self.assertIn("Step: 10,000", content)
+                self.assertIn("Time Elapsed: 20.0 s", content)
+            finally:
+                logger.removeHandler(handler)
+                handler.close()
+
+
 class ManagedStopWatcherTests(unittest.TestCase):
     def test_stop_file_interrupts_trainer_main_thread_once(self):
         with tempfile.TemporaryDirectory() as temp:
