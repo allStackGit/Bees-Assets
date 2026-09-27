@@ -14,7 +14,7 @@ namespace Assets.Scripts.Levels
 
         private void OnTriggerEnter2D(Collider2D collision)
         {
-            Ship ship = collision.GetComponent<Ship>();
+            Ship ship = collision.GetComponent<Ship>() ?? collision.GetComponentInParent<Ship>();
             Level owningLevel = GetComponentInParent<Level>();
             if (ship == null || ship.IsDead || owningLevel == null || ship.Level != owningLevel)
             {
@@ -30,7 +30,7 @@ namespace Assets.Scripts.Levels
 
         private void OnTriggerExit2D(Collider2D collision)
         {
-            Ship ship = collision.GetComponent<Ship>();
+            Ship ship = collision.GetComponent<Ship>() ?? collision.GetComponentInParent<Ship>();
             if (ship != null)
             {
                 Ships.Remove(ship);
