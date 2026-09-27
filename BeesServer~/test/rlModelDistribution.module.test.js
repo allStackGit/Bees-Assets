@@ -113,7 +113,7 @@ test('same-size pointer replacement with preserved modification time refreshes t
 
     const replacementDeploymentId = `deploy-${'e'.repeat(24)}`;
     f.pointer.identity.deployment_id = replacementDeploymentId;
-    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\n`);
     await fsp.utimes(f.pointerPath, preservedTime, preservedTime);
 
     const refreshed = await f.manager.handle(
