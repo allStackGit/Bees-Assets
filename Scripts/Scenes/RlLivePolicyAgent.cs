@@ -493,6 +493,38 @@ internal sealed class RlLivePolicyAgent : Agent
         }
     }
 
+    private bool HasTouchingBeehiveWithCapacity(Ship ship)
+    {
+        if (ship == null || ship.Level == null || ship.Level.State == null || ship.Collider == null)
+        {
+            return false;
+        }
+
+        List<Ship> allies = ship.Level.State.GetShips(ship.Side);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (!(allies[i] is Beehive beehive) || beehive.IsDead || beehive.HealCollider == null ||
+                !beehive.HealCollider.IsTouching(ship.Collider))
+            {
+                continue;
+            }
+            if (beehive.ShipsHealingHere.Contains(ship) || beehive.ShipsHealingHere.Count < 4)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void ReleaseHealingReservation()
+    {
+        if (_reservedHealingBeehive != null && _ship != null)
+        {
+            _reservedHealingBeeehive.ShipsHealingHere.Remove(_ship);
+        }
+        _reservedHealingBeeehive = null;
+    }
+
     private Beehive FindTouchingBeehive()
     {
         Beehive selected = null;
