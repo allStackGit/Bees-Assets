@@ -132,7 +132,7 @@ namespace Assets.Scripts.Levels
         public void SelectedCarrierTrigger()
         {
             if (!ConfigData.UserProgressData.HasSeenCarrierIntro &&
-                State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier))
+                State.GetUserShipTypes().Contains(ConfigData.ShipTypes.Carrier))
             {
                 State.SelectSquads(State.GetSquadsBySide(ConfigData.Configuration.UserSide)
                     .Where(squad => squad.IsCarrierSquad)
