@@ -253,6 +253,18 @@ class ContinualServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed for this run-id"):
                 service.load_state(options)
 
+    def test_changed_runtime_training_code_cannot_resume_same_run_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            trainer_module = options.runtime_training_root / "bees_continual_auto_train.py"
+            trainer_module.write_text("TRAINER_REVISION = 1\\n", encoding="utf-8")
+            state = service.load_state(options)
+            service.save_state(options, state)
+
+            trainer_module.write_text("TRAINER_REVISION = 2\\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "changed for this run-id"):
+                service.load_state(options)
+
     def test_state_is_run_scoped_and_preserves_each_run_phase(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
