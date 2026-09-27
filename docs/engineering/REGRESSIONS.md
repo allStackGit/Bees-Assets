@@ -1057,3 +1057,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** a source-level regression guard verifies that trigger and timer loops check connection state and break after callback execution. The cross-cutting lifecycle invariant is recorded in `docs/engineering/INVARIANTS.md`. The test was added but not run under the static-only audit instruction.
 **Verification:** traced `CloseLevel()` disconnection, the same-frame iteration behavior, Uranus I's discovery and terminal triggers, and Uranus II's separate continuation component. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** callbacks already captured in the current frame snapshot must respect lifecycle closure immediately, not only on the next frame.
+
+### REG-119 — POSIX learner signal exits were misreported
+**Area:** `Training/bees_process_safety.py`, `_owned_child_main`
+**Symptom:** when a learner exited due to a signal and its process group no longer existed, the guardian returned the negative subprocess status as an ordinary Python exit code instead of preserving signal termination.
+**Root cause:** cleanup returned immediately from the `ProcessLookupError` branch, bypassing the following signal re-delivery logic.
+**Fix:** cleanup now continues into signal-status handling when no process group remains.
+**Permanent protection:** preserve the child's signal exit status even when process-group cleanup finds no remaining descendants. No test was added or run under the user's static-analysis-only instruction.
+**Verification:** statically traced the learner return code, process-group cleanup, `SystemExit` caller, and intended signal re-delivery path. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** guardian cleanup must not bypass exit-status translation when the process group disappears between child exit and cleanup.
