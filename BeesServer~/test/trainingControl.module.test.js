@@ -155,6 +155,44 @@ test('environment argument identity is ordered and stable across trainer/server 
     assert.notEqual(environmentArgsIdentity(first), environmentArgsIdentity(reordered));
 });
 
+test('rejected heartbeat persistence does not advance env optimizer state', () => {
+    withTempDir(root => {
+        const store = new TrainingControlStore({
+            statePath: path.join(root, 'state.json'),
+            artifactRoot: path.join(root, 'artifacts'),
+        });
+        publishDedicatedBuild(store, root, 'optimizer-build');
+        store.stageRelease({
+            buildId: 'optimizer-build',
+            runId: 'run-optimizer-build',
+            compatibilityKey: 'a'.repeat(64),
+            incompatible: false,
+        });
+        store.setDesiredState({ training_enabled: true });
+        assert.equal(store.envOptimizer.snapshot('remote-auto'), null);
+
+        store._persist = () => {
+            throw new Error('synthetic control-state write failure');
+        };
+        assert.throws(() => store.heartbeat({
+            trainer_id: 'remote-auto',
+            role: 'dedicated',
+            platform: 'WindowsPlayer',
+            process_state: 'running',
+            worker_capacity: {
+                auto: true,
+                current_envs: 2,
+                min_envs: 1,
+                max_envs: 4,
+            },
+            metrics: {},
+        }), /synthetic control-state write failure/);
+
+        assert.equal(store.envOptimizer.snapshot('remote-auto'), null);
+        assert.equal(store.trainers.has('remote-auto'), false);
+    });
+});
+
 test('artifact retention prunes old unreferenced build archives', () => {
     withTempDir(root => {
         const statePath = path.join(root, 'state.json');
