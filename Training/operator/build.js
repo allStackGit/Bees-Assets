@@ -303,14 +303,24 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
     const validationKey = await assertRlEnvironmentArgsValid(
         config, release, environmentArgs, python
     );
+    const releaseBuild = String(release.build_id || '').trim();
+    const releaseRun = String(release.run_id || '').trim();
+    const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
+    const preflightDesired = preflight.desired || {};
+    const preflightPending = preflightDesired.pending_release;
+    if (
+        !preflightPending &&
+        String(preflightDesired.canonical_build_id || '').trim() === releaseBuild &&
+        String(preflightDesired.run_id || '').trim() === releaseRun &&
+        String(preflightDesired.compatibility_key || '').trim().toLowerCase() === releaseKey
+    ) {
+        return {};
+    }
 
     const centralRuntime = prepareCentralReleaseRuntime(config, python, unity, release);
     await startCentralAgentIfNeeded(config, python, unity, release, centralRuntime);
     const status = await getStatus(config, adminToken);
     const pending = status.desired && status.desired.pending_release;
-    const releaseBuild = String(release.build_id || '').trim();
-    const releaseRun = String(release.run_id || '').trim();
-    const releaseKey = String(release.compatibility_key || '').trim().toLowerCase();
 
     if (pending) {
         const pendingBuild = String(pending.build_id || '').trim();
