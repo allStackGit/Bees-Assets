@@ -729,8 +729,8 @@ class RuntimeUpdater:
         if self._started:
             self.request_refresh()
             return
-        self._started = True
         self._thread.start()
+        self._started = True
 
     def request_refresh(self) -> None:
         self._refresh.set()
@@ -1413,22 +1413,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     original_stderr = sys.stderr
     sys.stdout = _RunScopedTee(original_stdout, log_sink)
     sys.stderr = _RunScopedTee(original_stderr, log_sink)
-    updater = RuntimeUpdater(args, install_root)
+    updater: Optional[RuntimeUpdater] = None
     stop = [False]
-    shutdown_watcher = threading.Thread(
-        target=_watch_shutdown_request,
-        args=(shutdown_request_file, stop),
-        name="bees-remote-shutdown-watcher",
-        daemon=True,
-    )
-    shutdown_watcher.start()
+    shutdown_watcher: Optional[threading.Thread] = None
+    old_sigint = None
+    old_sigterm = None
 
     def request_stop(_signum: int, _frame: object) -> None:
         stop[0] = True
 
-    old_sigint = signal.signal(signal.SIGINT, request_stop)
-    old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
+        # The PID file and output tees are already active. Put every later startup
+        # step under this cleanup scope so a RuntimeUpdater, watcher, or signal
+        # initialization failure cannot leave stale supervisor state behind.
+        updater = RuntimeUpdater(args, install_root)
+        shutdown_watcher = threading.Thread(
+            target=_watch_shutdown_request,
+            args=(shutdown_request_file, stop),
+            name="bees-remote-shutdown-watcher",
+            daemon=True,
+        )
+        shutdown_watcher.start()
+        old_sigint = signal.signal(signal.SIGINT, request_stop)
+        old_sigterm = signal.signal(signal.SIGTERM, request_stop)
+
         while not stop[0]:
             tailnet: Optional[subprocess.Popen] = None
             worker: Optional[subprocess.Popen] = None
@@ -1570,15 +1578,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     finally:
         stop[0] = True
-        shutdown_watcher.join(timeout=1.0)
-        updater.stop()
+        if shutdown_watcher is not None and shutdown_watcher.is_alive():
+            shutdown_watcher.join(timeout=1.0)
+        if updater is not None:
+            updater.stop()
         try:
             shutdown_request_file.unlink()
         except FileNotFoundError:
             pass
         _clear_pid_file_if_owned(pid_file, os.getpid())
-        signal.signal(signal.SIGINT, old_sigint)
-        signal.signal(signal.SIGTERM, old_sigterm)
+        if old_sigint is not None:
+            signal.signal(signal.SIGINT, old_sigint)
+        if old_sigterm is not None:
+            signal.signal(signal.SIGTERM, old_sigterm)
         sys.stdout = original_stdout
         sys.stderr = original_stderr
 
