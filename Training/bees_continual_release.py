@@ -105,12 +105,59 @@ def _normalized_competency_contract(cases: Sequence[CompetencyCase]) -> Dict[str
     return {"schema_version": 1, "cases": normalized}
 
 
+def _bootstrap_competency_contract(
+    store: ContinualLearningStore,
+    baseline_model_id: str,
+) -> Optional[Dict[str, Any]]:
+    promotion = store.config["promotion"]
+    minimum_cases = int(promotion.get("min_competency_cases", 1))
+    if minimum_cases <= 0:
+        return None
+
+    existing = store.permanent_competency_suite()
+    if existing is not None:
+        return existing
+
+    templates = promotion.get("bootstrap_competency_cases")
+    if not isinstance(templates, list) or len(templates) < minimum_cases:
+        raise ReleaseError(
+            "Automatic release is blocked because no permanent competency suite is pinned and "
+            "promotion.bootstrap_competency_cases does not define enough source-controlled "
+            "bootstrap cases."
+        )
+
+    cases: List[Dict[str, Any]] = []
+    for index, template in enumerate(templates):
+        if not isinstance(template, Mapping):
+            raise ReleaseError(
+                f"promotion.bootstrap_competency_cases[{index}] must be an object."
+            )
+        case = dict(template)
+        if "opponent_model_id" in case:
+            raise ReleaseError(
+                "Source-controlled bootstrap competency cases must not hard-code "
+                "opponent_model_id; the first compatible champion is bound exactly once."
+            )
+        case["opponent_model_id"] = baseline_model_id
+        cases.append(case)
+
+    store.pin_competency_suite({"schema_version": 1, "cases": cases})
+    pinned = store.permanent_competency_suite()
+    if pinned is None:
+        raise ReleaseError("Permanent competency suite pinning did not persist.")
+    print(
+        "[Bees continual release] pinned source-controlled permanent competency suite "
+        f"against baseline champion {baseline_model_id} with {len(pinned['cases'])} case(s)."
+    )
+    return pinned
+
+
 def _validate_competency_source(
     store: ContinualLearningStore,
-    competency_suite: Optional[os.PathLike[str] | str],
+    competency_suite: Optional[os.PathLike[str] | str | Mapping[str, Any]],
     *,
     competency_default_matches: Optional[int],
-) -> None:
+) -> Optional[os.PathLike[str] | str | Mapping[str, Any]]:
     promotion = store.config["promotion"]
     minimum_cases = int(promotion.get("min_competency_cases", 1))
     pinned = store.permanent_competency_suite()
@@ -119,13 +166,12 @@ def _validate_competency_source(
         raise ReleaseError(
             "Automatic release is blocked because no permanent competency suite is pinned."
         )
-    if minimum_cases > 0 and competency_suite is None:
-        raise ReleaseError(
-            "Automatic release requires --competency-suite so evaluation can reproduce the pinned "
-            "permanent competency contract."
-        )
-    if competency_suite is None:
-        return
+
+    source: Optional[os.PathLike[str] | str | Mapping[str, Any]] = (
+        competency_suite if competency_suite is not None else pinned
+    )
+    if source is None:
+        return None
 
     default_matches = (
         int(competency_default_matches)
@@ -135,13 +181,14 @@ def _validate_competency_source(
     if default_matches <= 0:
         raise ReleaseError("competency_default_matches must be positive.")
     actual = _normalized_competency_contract(
-        load_competency_suite(competency_suite, default_matches=default_matches)
+        load_competency_suite(source, default_matches=default_matches)
     )
     if pinned is not None and actual != pinned:
         raise ReleaseError(
             "The supplied competency suite does not exactly match the pinned permanent competency "
             "suite; refusing to evaluate or reject candidates under the wrong gate."
         )
+    return source
 
 
 def _validate_recorded_result(candidate_model_id: str, value: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -246,6 +293,7 @@ def run_release_cycle(
                 f"{str(training_run_id).strip()}."
             ),
         )
+        _bootstrap_competency_contract(store, candidate_id)
         deployment = dict(publisher(store))
         if deployment.get("model_id") != candidate_id:
             raise ReleaseError(
@@ -279,7 +327,8 @@ def run_release_cycle(
             ],
         }
 
-    _validate_competency_source(
+    _bootstrap_competency_contract(store, champion_id)
+    competency_source = _validate_competency_source(
         store,
         competency_suite,
         competency_default_matches=competency_default_matches,
@@ -313,7 +362,7 @@ def run_release_cycle(
             candidate_model_id=candidate_id,
             environment_path=environment_path,
             env_args=env_args,
-            competency_suite=competency_suite,
+            competency_suite=competency_source,
             champion_matches=champion_matches,
             historical_matches=historical_matches,
             competency_default_matches=competency_default_matches,
