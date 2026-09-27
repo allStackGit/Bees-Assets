@@ -680,13 +680,10 @@ namespace Assets.Scripts
             return (uint)raw & ((1 << 21) - 1);
         }
 
-        private static uint _ctr;
-        private static long _id;
         public static long Unique53Hash()
         {
-            _ctr = (uint)Interlocked.Increment(ref _counter);
-            _id = (_clientId << 32) | _ctr;
-            return _id;
+            uint counter = unchecked((uint)Interlocked.Increment(ref _counter));
+            return (_clientId << 32) | counter;
         }
 
         private static int _shuffle_n;
