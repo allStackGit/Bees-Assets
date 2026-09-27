@@ -419,3 +419,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** when preparation and the active training target identify the same role/platform/build/hash, the supervisor waits for any in-flight matching preparation before activating the build. It still reports preparation readiness to the server. `BackgroundBuildPreparerTests.test_wait_for_build_joins_only_matching_preparation` protects the synchronization rule. The test was added but not run, per the static-only audit constraint.  \
 **Verification:** current server `stateFor()` rollout phases, worker request/install ordering, and same-build join behavior were reviewed statically. No tests or runtime checks were run.  \
 **Invariant/knowledge:** one shared build install identity must not be prepared and activated concurrently; matching background preparation must finish before activation.  \
+
+### REG-047 — Non-finite continual checkpoint scan interval
+**Area:** `Training/bees_continual_train.py`, candidate checkpoint monitor configuration  
+**Symptom:** `--continual-scan-seconds=nan` or an infinite value passed the “positive number” validation. The candidate monitor then received an invalid/unbounded thread wait interval, which could stop periodic checkpoint discovery during training.  
+**Root cause:** the parser rejected values `<= 0` but did not reject non-finite floating-point values.  
+**Permanent protection:** scan intervals must now be finite and positive. `ContinualOptionTests.test_scan_interval_rejects_non_finite_values` covers NaN and both infinities. The test was added but not run, per the static-only audit constraint.  
+**Verification:** the option parser’s float conversion, finite/positive guard, and its use as the monitor thread wait interval were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** any numeric duration passed to a blocking thread wait must reject NaN and infinities as well as zero and negative values.  
