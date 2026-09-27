@@ -310,6 +310,11 @@ namespace Assets.Scripts.Levels
             return GetShipTypes(ConfigData.Configuration.HumanSide);
         }
 
+        public HashSet<ConfigData.ShipTypes> GetUserShipTypes()
+        {
+            return GetShipTypes(ConfigData.Configuration.UserSide);
+        }
+
         public List<Ship> GetBeeShips()
         {
             return GetShips(ConfigData.Configuration.BeeSide);
