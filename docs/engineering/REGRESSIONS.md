@@ -875,3 +875,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that every post-PID startup operation is covered by the supervisor finalizer and updater start state reflects a successfully started thread.  
 **Verification:** statically traced PID creation, tee installation, updater construction/start/stop, watcher lifecycle, signal registration/restoration, and stop/PID file cleanup. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** a supervisor must clean up its published identity and process-global state when any later initialization step fails; thread lifecycle flags must describe completed OS thread creation.
+
+
+### REG-100 — Environment-count mismatch hid optimizer worker failures
+**Area:** `BeesServer~/trainingEnvOptimizer.js`, automatic worker-capacity probes  
+**Symptom:** while a probed worker reported an environment count different from the optimizer's desired count, `update()` returned before examining `process_state` and `last_error`. A failed or unstable worker could therefore retain the cluster-wide probe slot and prevent other workers from being optimized.  
+**Root cause:** the restart-wait early return preceded worker-instability classification.  
+**Fix:** classify startup/failure state before returning for an environment-count mismatch. A process reported as starting remains expected during a count transition; explicit failures now reach the existing probe-abort and stability-hold logic. The mismatch wait records its start only when entering that phase.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that failure telemetry is evaluated before an environment-count transition can short-circuit optimizer updates.  
+**Verification:** statically traced capacity transition, process-state and error classification, probe abort, rollback-to-baseline, and cluster probe ownership. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** restart waits must not mask explicit worker failures; shared optimizer locks must be released or rolled back through the instability path when a probe worker fails.
