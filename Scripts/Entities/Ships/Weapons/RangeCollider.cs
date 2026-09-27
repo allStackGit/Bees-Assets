@@ -43,6 +43,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                     !_shipEnter.IsDead &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    Weapon.Ship.Level != null &&
                     _shipEnter.Level == Weapon.Ship.Level &&
                     _shipEnter.Side != Weapon.Ship.Side &&
                     !Weapon.ShipsWithinRange.ContainsKey(_shipEnter.Id))
@@ -64,6 +65,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (mapObject != null &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    Weapon.Ship.Level != null &&
                     mapObject.Level == Weapon.Ship.Level)
                 {
                     if (_visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
@@ -92,6 +94,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (_shipExit != null &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    Weapon.Ship.Level != null &&
                     _shipExit.Level == Weapon.Ship.Level &&
                     Weapon.ShipsWithinRange.Remove(_shipExit.Id))
                 {
@@ -108,6 +111,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (_projectileExit != null &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    Weapon.Ship.Level != null &&
                     _projectileExit.Level == Weapon.Ship.Level &&
                     _projectileExit.Weapon != null &&
                     _projectileExit.Weapon.Equals(Weapon)
@@ -124,6 +128,7 @@ namespace Assets.Scripts.Entities.Ships.Weapons
                 if (mapObject != null &&
                     Weapon != null &&
                     Weapon.Ship != null &&
+                    Weapon.Ship.Level != null &&
                     mapObject.Level == Weapon.Ship.Level &&
                     _visibleMapObjectContacts.TryGetValue(mapObject, out int contacts))
                 {
