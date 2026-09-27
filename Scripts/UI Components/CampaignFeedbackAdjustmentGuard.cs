@@ -127,19 +127,28 @@ namespace Assets.Scripts.UIComponents
 
             if (activeTooltip != null && activeTooltip.TooltipText != null)
             {
-                string correctedText = activeTooltip.TooltipText.text;
-                correctedText = SingularShipsRange.Replace(correctedText, "ships$1 ranges");
-
                 if (settingsPage)
                 {
-                    correctedText = ColorizePlutoTwoSettings(correctedText);
                     KeepFirstPlayerSquadSelected();
                     MatchAndColorSettingsArrows();
                 }
 
-                if (activeTooltip.TooltipText.text != correctedText)
+                // Tooltip owns text for a multipage sequence. Do not replace live page content
+                // from this polling guard; page changes already refresh the canonical text.
+                if (!activeTooltip.IsSequenceActive)
                 {
-                    activeTooltip.TooltipText.text = correctedText;
+                    string correctedText = activeTooltip.TooltipText.text;
+                    correctedText = SingularShipsRange.Replace(correctedText, "ships$1 ranges");
+
+                    if (settingsPage)
+                    {
+                        correctedText = ColorizePlutoTwoSettings(correctedText);
+                    }
+
+                    if (activeTooltip.TooltipText.text != correctedText)
+                    {
+                        activeTooltip.TooltipText.text = correctedText;
+                    }
                 }
             }
 
