@@ -305,3 +305,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** normal request logging now retains only command/matchup history and caps it at the same 4,096 entries kept during level reset. Explicit `WatchServerRequests` mode preserves the full diagnostic history. `SocketResponseLifecycleGuardTests.BoundedRequestHistoryRetainsTheNewestRequests` protects the bounded collection’s retention and duplicate behavior; the test was added but not run, per the static-only audit constraint.  
 **Verification:** request creation, stale-squad lookup, and existing level-reset retention were traced statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** process-wide historical request tracking must stay bounded during normal play while retaining the newest entries needed for late-response ownership checks.  
+
+
+### REG-033 — Distributed topology could allocate ports beyond TCP range
+**Area:** `Training/bees_distributed_training.py`, ML-Agents worker port allocation  \
+**Symptom:** a topology with a high `--base-port` and multiple environments could reach launch with one or more worker ports above 65535; local-only topologies bypassed the external-worker port validation entirely.  
+**Root cause:** `training_topology` validated only that the base port was positive. The separate external-port check covered only selected remote workers, not the complete local and remote worker-ID span.  
+**Permanent protection:** `training_topology` now rejects configurations when the final allocated worker port exceeds 65535. `bees_distributed_training_tests.py` covers local and mixed-topology overflow plus the highest valid two-worker boundary. Tests were added but not run, per the static-only audit constraint.  
+**Verification:** ML-Agents assigns each worker a port offset from the base port; the topology's complete worker-ID range is contiguous from zero through `num_envs - 1`. Static review confirmed the upper bound is checked before factory/worker launch. No tests or runtime checks were run.  
+**Invariant/knowledge:** validate the full span of environment ports for every distributed topology, including local-only configurations.
