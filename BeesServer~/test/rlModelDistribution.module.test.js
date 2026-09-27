@@ -200,7 +200,7 @@ test('model bundle symlink cannot escape the configured distribution root', asyn
         throw error;
     }
     f.pointer.identity.bundle_path = relativeBundle;
-    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+    await fsp.writeFile(f.pointerPath, `${JSON.stringify(f.pointer, null, 2)}\n`);
 
     await assert.rejects(
         f.manager.handle(currentRequest(f.platform), f.context),
@@ -213,7 +213,7 @@ test('model pointer symlink cannot escape the configured distribution root', asy
     const f = await fixture(t);
     const outsidePath = path.join(os.tmpdir(), `${path.basename(f.root)}-outside-pointer.json`);
     t.after(() => fsp.rm(outsidePath, { force: true }));
-    await fsp.writeFile(outsidePath, `${JSON.stringify(f.pointer, null, 2)}\\n`);
+    await fsp.writeFile(outsidePath, `${JSON.stringify(f.pointer, null, 2)}\n`);
     await fsp.unlink(f.pointerPath);
     try {
         await fsp.symlink(outsidePath, f.pointerPath, 'file');
