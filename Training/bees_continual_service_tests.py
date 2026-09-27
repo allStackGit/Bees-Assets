@@ -261,6 +261,12 @@ class ContinualServiceTests(unittest.TestCase):
             state = service.load_state(options)
             service.save_state(options, state)
 
+            changed_python = service.ServiceOptions(
+                **{**options.__dict__, "python_executable": "other-python"}
+            )
+            with self.assertRaisesRegex(ValueError, "changed for this run-id"):
+                service.load_state(changed_python)
+
             trainer_module.write_text("TRAINER_REVISION = 2\\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "changed for this run-id"):
                 service.load_state(options)
