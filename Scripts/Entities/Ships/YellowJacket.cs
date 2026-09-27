@@ -84,7 +84,8 @@ namespace Assets.Scripts.Entities.Ships
         }
         private void Detonate()
         {
-            if (ContactedShip == null || ContactedShip.IsDead || ContactedShip.Side == Side)
+            if (ContactedShip == null || ContactedShip.IsDead ||
+                Level == null || ContactedShip.Level != Level || ContactedShip.Side == Side)
             {
                 ContactedShip = null;
                 return;
