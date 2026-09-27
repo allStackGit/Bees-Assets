@@ -53,6 +53,14 @@ class ContinualOptionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             wrapper.extract_continual_options(["--continual-magic=true"])
 
+    def test_scan_interval_rejects_non_finite_values(self):
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                with self.assertRaises(SystemExit):
+                    wrapper.extract_continual_options(
+                        [f"--continual-scan-seconds={value}"]
+                    )
+
 
 class RunContextTests(unittest.TestCase):
     def test_infers_run_result_directory_and_yaml(self):
