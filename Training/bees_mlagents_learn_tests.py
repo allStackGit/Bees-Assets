@@ -104,6 +104,32 @@ class BeesOptionParsingTests(unittest.TestCase):
         )
 
 
+class ManagedLiveLogTests(unittest.TestCase):
+    def test_managed_live_log_tees_stdout_and_stderr_to_run_scoped_sidecar(self):
+        with tempfile.TemporaryDirectory() as temp:
+            original_stdout = launcher.sys.stdout
+            original_stderr = launcher.sys.stderr
+            with mock.patch.dict(
+                launcher.os.environ,
+                {launcher.MANAGED_LOG_DIR_ENV: temp},
+                clear=False,
+            ):
+                streams = launcher._install_managed_live_log()
+                try:
+                    launcher.sys.stdout.write("[INFO] BeesRL1v1. Step: 5000. Mean Reward: 0.4\n")
+                    launcher.sys.stderr.write("warning-line\n")
+                    launcher.sys.stdout.flush()
+                    launcher.sys.stderr.flush()
+                finally:
+                    launcher._restore_managed_live_log(streams)
+
+            self.assertIs(launcher.sys.stdout, original_stdout)
+            self.assertIs(launcher.sys.stderr, original_stderr)
+            live = Path(temp) / launcher.LIVE_LEARNER_LOG_NAME
+            content = live.read_text(encoding="utf-8")
+            self.assertIn("Step: 5000", content)
+            self.assertIn("warning-line", content)
+
 class ManagedStopWatcherTests(unittest.TestCase):
     def test_stop_file_interrupts_trainer_main_thread_once(self):
         with tempfile.TemporaryDirectory() as temp:
