@@ -196,7 +196,9 @@ class RlModelDistributionManager {
                 if (!openedStats.isFile() ||
                     openedStats.dev !== record.bundleDev ||
                     openedStats.ino !== record.bundleIno ||
-                    openedStats.size !== record.bundleSizeBytes) {
+                    openedStats.size !== record.bundleSizeBytes ||
+                    openedStats.mtimeMs !== record.bundleMtimeMs ||
+                    openedStats.ctimeMs !== record.bundleCtimeMs) {
                     this.pointerCache.delete(platform);
                     throw new RlModelDistributionError(
                         503,
