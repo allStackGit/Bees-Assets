@@ -218,6 +218,38 @@ test('declared byte quota and active-session limits are enforced before upload g
     );
 });
 
+test('idle cleanup preserves an upload while a chunk operation is in flight', async t => {
+    let now = 1000;
+    const { manager, context } = await fixture(t, {
+        now: () => now,
+        uploadIdleTimeoutMs: 100,
+    });
+    const bytes = payloadBytes();
+    const begin = await manager.handle(beginRequest(bytes), context);
+
+    let releaseChunk;
+    let announceChunkStarted;
+    const chunkStarted = new Promise(resolve => { announceChunkStarted = resolve; });
+    const chunkGate = new Promise(resolve => { releaseChunk = resolve; });
+    const writeChunk = manager._chunkUnlocked.bind(manager);
+    manager._chunkUnlocked = async (params, session) => {
+        announceChunkStarted();
+        await chunkGate;
+        return writeChunk(params, session);
+    };
+
+    const chunk = manager.handle(chunkRequest(begin.UploadId, 0, bytes), context);
+    await chunkStarted;
+    now += 101;
+
+    assert.equal(await manager.cleanupExpired(), 0);
+    assert.equal(manager.sessions.has(begin.UploadId), true);
+
+    releaseChunk();
+    const progress = await chunk;
+    assert.equal(progress.NextOffset, bytes.length);
+});
+
 test('completed exact upload deduplicates on a later begin', async t => {
     const { manager, context } = await fixture(t);
     const bytes = payloadBytes();
