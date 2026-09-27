@@ -240,7 +240,9 @@ The immutable report records candidate/baseline score rates and pressure-weighte
 
 ## Permanent competency suite and promotion
 
-When `promotion.min_competency_cases` is greater than zero, pin the trusted permanent suite before recording promotion-eligible evaluations:
+When `promotion.min_competency_cases` is greater than zero, the autonomous release service requires a permanent competency contract. For a new compatibility generation, `promotion.bootstrap_competency_cases` provides the source-controlled case templates; the service binds those templates exactly once to the first compatible champion and pins the resolved immutable suite in the registry. Existing registries that predate this behavior are repaired the same way only when no suite has ever been pinned. Later releases reuse the pinned registry contract directly.
+
+Manual pinning remains available for an intentionally curated suite:
 
 ```powershell
 python Training\bees_continual_learning.py `
@@ -248,7 +250,7 @@ python Training\bees_continual_learning.py `
   pin-competency-suite <suite.json>
 ```
 
-Use `--replace` only for an intentional suite revision. Replacing the suite changes the promotion-policy fingerprint and invalidates older promotion evidence.
+Use `--replace` only for an intentional suite revision. Replacing the suite changes the promotion-policy fingerprint and invalidates older promotion evidence. The autonomous service never replaces an existing pinned suite from the bootstrap templates.
 
 A current-ABI suite uses model IDs from the same v20 registry, for example:
 
