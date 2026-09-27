@@ -161,13 +161,22 @@ def _ensure_results_dir(argv: Sequence[str]) -> List[str]:
     """Use Unity-ignored .results unless the caller explicitly chooses a path."""
 
     trainer_args = list(argv)
+    env_args_index = next(
+        (index for index, argument in enumerate(trainer_args) if argument == "--env-args"),
+        len(trainer_args),
+    )
+    trainer_options = trainer_args[:env_args_index]
     if any(
         argument == RESULTS_DIR_FLAG
         or argument.startswith(RESULTS_DIR_FLAG + "=")
-        for argument in trainer_args
+        for argument in trainer_options
     ):
         return trainer_args
-    return [*trainer_args, f"{RESULTS_DIR_FLAG}={DEFAULT_RESULTS_DIR}"]
+    return [
+        *trainer_options,
+        f"{RESULTS_DIR_FLAG}={DEFAULT_RESULTS_DIR}",
+        *trainer_args[env_args_index:],
+    ]
 
 
 class _CpuInferenceActorCache:
