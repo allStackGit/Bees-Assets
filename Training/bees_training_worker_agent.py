@@ -1553,10 +1553,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         for key in ("role", "platform", "build_id", "archive_sha256")
                     )
                 )
+                preparer.request(prepare_descriptor)
                 if preparing_launch_target:
                     preparer.wait_for_build(prepare_descriptor)
-                else:
-                    preparer.request(prepare_descriptor)
                 if args.role == "dedicated":
                     desired_process_safe = dedicated_process_matches_desired(
                         managed,
