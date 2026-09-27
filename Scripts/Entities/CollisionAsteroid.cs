@@ -167,15 +167,9 @@ namespace Assets.Scripts.Entities
             if (!IsDead)
             {
                 IsDead = true;
+                ClearNearbyShipReferences();
                 if (!endKill)
                 {
-                    if (!HasDroppedDestructionAnimation)
-                    {
-                        foreach (Ship ship in NearbyShips)
-                        {
-                            ship.LeftNearbyAsteroid(this);
-                        }
-                    }
                     SpawnBreakAwayAsteroids();
                 }
                 Level.State.RemoveObstacle(this);
@@ -196,6 +190,26 @@ namespace Assets.Scripts.Entities
                     Level.State.AsteroidsToRelease.Add(this);
                 }
             }
+        }
+
+        private void ClearNearbyShipReferences()
+        {
+            foreach (Ship ship in NearbyShips)
+            {
+                if (ship != null)
+                {
+                    ship.LeftNearbyAsteroid(this);
+                }
+            }
+            foreach (Ship ship in TouchingShips)
+            {
+                if (ship != null && !NearbyShips.Contains(ship))
+                {
+                    ship.LeftNearbyAsteroid(this);
+                }
+            }
+            NearbyShips.Clear();
+            TouchingShips.Clear();
         }
 
         private CollisionAsteroid _asteroidShard;
