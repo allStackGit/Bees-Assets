@@ -66,6 +66,50 @@ class InactiveContinuousActionMaskTests(unittest.TestCase):
         self.assertTrue(torch.all(activity[1, 2:10] == 1.0))
         self.assertTrue(torch.all(activity[1, 10:] == 0.0))
 
+    def test_masked_entropy_sums_only_active_continuous_dimensions(self):
+        from mlagents.torch_utils import torch
+
+        action_spec = self._bees_action_spec()
+        masks = torch.ones((1, sum(compat.BEES_DISCRETE_BRANCHES)))
+        for slot in range(1, compat.BEES_WEAPON_SLOTS):
+            masks[0, slot * 2 + 1] = 0.0
+
+        class ContinuousDistribution:
+            std = torch.full((1, compat.BEES_CONTINUOUS_ACTIONS), 0.5)
+
+            @staticmethod
+            def log_prob(actions):
+                return torch.zeros_like(actions)
+
+        action_model = SimpleNamespace(action_spec=action_spec)
+        actions = SimpleNamespace(
+            continuous_tensor=torch.zeros((1, compat.BEES_CONTINUOUS_ACTIONS))
+        )
+        dists = SimpleNamespace(continuous=ContinuousDistribution(), discrete=None)
+        _log_probs, entropy = compat._masked_action_log_probs_and_entropy(
+            action_model,
+            actions,
+            dists,
+            masks,
+        )
+
+        per_dimension_entropy = 0.5 * torch.log(
+            2 * math.pi * math.e * ContinuousDistribution.std**2
+            + compat.ACTION_ENTROPY_EPSILON
+        )
+        activity = compat._build_bees_continuous_activity_mask(
+            action_spec,
+            masks,
+            ContinuousDistribution.std,
+        )
+        expected = (per_dimension_entropy * activity).sum(dim=1)
+
+        self.assertAlmostEqual(
+            float(entropy[0].item()),
+            float(expected[0].item()),
+            places=6,
+        )
+
     def test_policy_loss_ignores_masked_dimensions_but_uses_active_ones(self):
         from mlagents.torch_utils import torch
 
