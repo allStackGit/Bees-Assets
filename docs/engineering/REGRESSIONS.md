@@ -314,3 +314,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `training_topology` now rejects configurations when the final allocated worker port exceeds 65535. `bees_distributed_training_tests.py` covers local and mixed-topology overflow plus the highest valid two-worker boundary. Tests were added but not run, per the static-only audit constraint.  
 **Verification:** ML-Agents assigns each worker a port offset from the base port; the topology's complete worker-ID range is contiguous from zero through `num_envs - 1`. Static review confirmed the upper bound is checked before factory/worker launch. No tests or runtime checks were run.  
 **Invariant/knowledge:** validate the full span of environment ports for every distributed topology, including local-only configurations.
+
+
+### REG-034 — Remote rollout worker could override its pinned environment args
+**Area:** `Training/bees_remote_worker.py`, distributed worker session identity  \
+**Symptom:** an inherited `BEES_TRAINING_ENV_ARGS_JSON` value could silently replace the Unity arguments from the hashed remote session spec, allowing remote environments to sample a different scenario/configuration from the central learner.  
+**Root cause:** the helper treated the control environment variable as an unconditional override and never compared it with the identity-protected `unity_args` in the session spec.  
+**Permanent protection:** remote workers now use the spec's pinned args and reject a nonempty control environment value when it differs. `bees_distributed_training_tests.py` covers matching and conflicting values. Tests were added but not run, per the static-only audit constraint.  
+**Verification:** the remote command consumes `controlled_environment_args(spec["unity_args"])`; spec identity validation covers the pinned args, and static review confirmed mismatches fail before SSH or Unity children are launched. No tests or runtime checks were run.  
+**Invariant/knowledge:** environment arguments that affect rollout distribution must remain bound to the remote session identity; inherited process state cannot override the hashed spec.
