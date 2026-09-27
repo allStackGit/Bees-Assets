@@ -16,6 +16,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Cancellation/teardown must not strand worker-slot ownership or let completed stale work publish later.
 - Orderly WAN actor shutdown drains queued rollout uploads for a bounded period and joins the uploader before releasing its exact process-owned lease; crashes or broker outages recover through lease expiry.
 - Managed child restart backoff is tied to the complete launch identity and must account for each unexpected exit observed before replacement; a shared control revision alone does not reset it.
+- Background preparation and activation must not materialize the same build identity concurrently into a shared install path; finish matching preparation before activation.
 - Deterministic evidence must not rely on unordered collection iteration or cosmetic/global random-state side effects.
 
 ## Maps, prefabs, scenes, and assets
