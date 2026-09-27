@@ -684,20 +684,21 @@ namespace Bees.Tests.EditMode
 
             Guid matchId = Guid.NewGuid();
             MethodInfo serialize = protocolType.GetMethod("TrySerializeCommand", BindingFlags.Public | BindingFlags.Static);
-            object[] serializeArgs = { matchId, command, null };
+            object[] serializeArgs = { matchId, 3, command, null };
             Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
-            byte[] payload = (byte[])serializeArgs[2];
+            byte[] payload = (byte[])serializeArgs[3];
             Assert.That(payload, Is.Not.Null.And.Not.Empty);
 
             MethodInfo deserialize = protocolType.GetMethod("TryDeserializeCommand", BindingFlags.Public | BindingFlags.Static);
-            object[] deserializeArgs = { payload, matchId, null };
+            object[] deserializeArgs = { payload, matchId, 0, null };
             Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
-            object parsed = deserializeArgs[2];
+            Assert.That(deserializeArgs[2], Is.EqualTo(3));
+            object parsed = deserializeArgs[3];
             Assert.That(RuntimeAssembly.GetField(parsed, "PlayerId"), Is.EqualTo(2));
             Assert.That(RuntimeAssembly.GetField(parsed, "Sequence"), Is.EqualTo(7L));
             Assert.That(RuntimeAssembly.GetField(parsed, "SquadCommandId"), Is.EqualTo(41L));
 
-            object[] wrongMatchArgs = { payload, Guid.NewGuid(), null };
+            object[] wrongMatchArgs = { payload, Guid.NewGuid(), 0, null };
             Assert.That((bool)deserialize.Invoke(null, wrongMatchArgs), Is.False);
         }
 
@@ -709,14 +710,14 @@ namespace Bees.Tests.EditMode
             Guid matchId = Guid.NewGuid();
 
             byte[] oversized = new byte[4097];
-            object[] oversizedArgs = { oversized, matchId, null };
+            object[] oversizedArgs = { oversized, matchId, 0, null };
             Assert.That((bool)deserialize.Invoke(null, oversizedArgs), Is.False);
 
             string unknownFieldJson =
                 "{\"v\":1,\"match\":\"" + matchId.ToString("N") +
-                "\",\"type\":\"command\",\"player\":2,\"seq\":1,\"kind\":0," +
+                "\",\"type\":\"command\",\"level\":1,\"player\":2,\"seq\":1,\"kind\":0," +
                 "\"squad\":1,\"target\":0,\"ax\":0,\"ay\":0,\"bx\":0,\"by\":0,\"extra\":1}";
-            object[] unknownArgs = { System.Text.Encoding.UTF8.GetBytes(unknownFieldJson), matchId, null };
+            object[] unknownArgs = { System.Text.Encoding.UTF8.GetBytes(unknownFieldJson), matchId, 0, null };
             Assert.That((bool)deserialize.Invoke(null, unknownArgs), Is.False);
         }
 
@@ -848,6 +849,32 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("TryDequeueOutgoingPlayerCommand", commandSource);
             StringAssert.Contains("_outgoingPlayerCommands.Clear();", commandSource);
             StringAssert.Contains("ClearQueuedPlayerCommands();", stateSource);
+        }
+
+        [Test]
+        public void MatchLevelIdsAreAssignedBeforeGameStateCapturesRoutingIdentity()
+        {
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string levelPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Level.cs");
+            string statePath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.cs");
+            string stageSource = File.ReadAllText(stagePath);
+            string levelSource = File.ReadAllText(levelPath);
+            string stateSource = File.ReadAllText(statePath);
+
+            StringAssert.Contains("Levels[_setup_i].Setup(this, $\"Level - #{_setup_i}\", _setup_i + 1);", stageSource);
+            StringAssert.Contains("MatchLevelId = matchLevelId > 0 ? matchLevelId : 1;", levelSource);
+            StringAssert.Contains("MatchLevelId = Level != null ? Level.MatchLevelId : 0;", stateSource);
+        }
+
+        [Test]
+        public void StageRoutesDecodedPacketToMatchingLevelBeforeQueueAdmission()
+        {
+            string stagePath = Path.Combine(Application.dataPath, "Scripts", "Scenes", "Stage.cs");
+            string source = File.ReadAllText(stagePath);
+
+            StringAssert.Contains("out int matchLevelId", source);
+            StringAssert.Contains("level.State.MatchLevelId == matchLevelId", source);
+            StringAssert.Contains("return level.State.QueueReceivedPlayerCommand(sourcePeerId, command);", source);
         }
     }
 }
