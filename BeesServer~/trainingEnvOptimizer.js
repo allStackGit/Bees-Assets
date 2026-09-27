@@ -365,6 +365,18 @@ class TrainingEnvOptimizer {
         const reportedError = typeof record.last_error === 'string'
             ? record.last_error.trim()
             : '';
+
+        // Reaching the requested env count does not mean the restarted worker is ready yet.
+        // Keep a planned env-count transition in awaiting-restart while child health still
+        // reports "starting"; begin warmup only after the process reports "running".
+        if (
+            state.phase === 'awaiting-restart' &&
+            processState === 'starting' &&
+            !reportedError
+        ) {
+            state.last_decision = 'waiting for planned worker restart to become running';
+            return this.snapshot(record.trainer_id);
+        }
         const recentSessionFailure =
             sessionFailureAgeSeconds !== null &&
             sessionFailureAgeSeconds * 1000 < this.instabilityHoldMs;
