@@ -374,7 +374,7 @@ namespace Assets.Scripts.Levels
                 {
                     return false;
                 }
-                return a.Id == b.Id;
+                return a.Equals(b);
             }
 
             public static bool operator !=(Path a, Path b)
