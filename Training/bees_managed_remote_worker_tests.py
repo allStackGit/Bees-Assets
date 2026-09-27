@@ -31,6 +31,51 @@ class WorkerAgentHealthTests(unittest.TestCase):
         )
 
 
+    def test_fresh_starting_health_does_not_become_error_from_process_age(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            health_path.write_text(
+                '{"schema_version":1,"token":"token","state":"starting",'
+                '"error":"","updated_unix_seconds":1000.0,"pid":123}\n',
+                encoding="utf-8",
+            )
+            managed_process = worker_agent.ManagedProcess()
+            managed_process.process = mock.Mock()
+            managed_process.process.poll.return_value = None
+            managed_process.health_required = True
+            managed_process.health_file = health_path
+            managed_process.health_token = "token"
+            managed_process.started_monotonic = 1.0
+
+            with mock.patch.object(worker_agent.time, "time", return_value=1005.0):
+                self.assertEqual(managed_process.health_error(), "")
+
+    def test_stale_starting_health_is_reported_as_hung_startup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            health_path = root / "child-health.json"
+            health_path.write_text(
+                '{"schema_version":1,"token":"token","state":"starting",'
+                '"error":"","updated_unix_seconds":1000.0,"pid":123}\n',
+                encoding="utf-8",
+            )
+            managed_process = worker_agent.ManagedProcess()
+            managed_process.process = mock.Mock()
+            managed_process.process.poll.return_value = None
+            managed_process.health_required = True
+            managed_process.health_file = health_path
+            managed_process.health_token = "token"
+
+            with mock.patch.object(
+                worker_agent.time,
+                "time",
+                return_value=1000.0 + worker_agent.CHILD_HEALTH_STALE_SECONDS + 1.0,
+            ):
+                error = managed_process.health_error()
+
+            self.assertIn("startup health has not refreshed", error)
+
 class WorkerTrafficMetricsTests(unittest.TestCase):
     def test_persisted_network_totals_fill_session_gap_for_same_run(self):
         with tempfile.TemporaryDirectory() as temp:
