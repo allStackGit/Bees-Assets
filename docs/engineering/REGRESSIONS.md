@@ -251,3 +251,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** the guard now prunes destroyed managers every frame using Unity's destroyed-object null semantics before campaign-mode filtering, so cleanup also runs after leaving the campaign.  \
 **Verification:** source-level lifecycle trace confirmed scene managers are added per scene and the override guard is installed with `DontDestroyOnLoad`; fix was inspected after commit. No tests or runtime checks were run, per the static-only audit constraint.  \
 **Invariant/knowledge:** persistent Unity services that key collections by scene objects must prune destroyed wrappers even when the active mode changes.
+
+
+### REG-027 — WAN actor reconnected before session threads had stopped
+**Area:** `Training/bees_wan_actor_worker.py`, actor session shutdown  \
+**Symptom:** an actor session could return from `close()` after a two-second join timeout while its uploader or state watcher remained inside a broker request, allowing the reconnect loop to start another session with the same actor identity and throughput output.  \
+**Root cause:** broker calls use a 30-second socket timeout, but shutdown waited only two seconds for the background threads.  \
+**Permanent protection:** `close()` now joins each started watcher/uploader thread before the session can be replaced and before final throughput metrics are written.  \
+**Verification:** source inspection confirmed both threads use `BrokerClient`, whose `urlopen` call has a finite configured timeout, and the reconnect loop creates the next session only after `close()` returns. No tests or runtime checks were run, per the static-only audit constraint.  \
+**Invariant/knowledge:** an actor must finish background ownership of broker requests and per-actor output before its process starts a replacement session.
