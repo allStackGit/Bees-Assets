@@ -149,6 +149,28 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     if not command:
         raise SystemExit("owned-child invocation requires a command")
 
+    child: Optional[subprocess.Popen] = None
+    termination_started: Optional[float] = None
+    child_group_kill_sent = False
+
+    def signal_child_group(signal_number: int) -> None:
+        if child is None:
+            return
+        try:
+            os.killpg(child.pid, signal_number)
+        except ProcessLookupError:
+            pass
+
+    def owner_terminated(_signum, _frame) -> None:
+        nonlocal termination_started
+        if termination_started is None:
+            termination_started = time.monotonic()
+            signal_child_group(signal.SIGTERM)
+
+    # Keep this process as the owner guardian instead of execing the learner. The learner runs in
+    # its own process group so its ML-Agents environment workers can be stopped as one unit.
+    signal.signal(signal.SIGTERM, owner_terminated)
+
     libc = ctypes.CDLL(None, use_errno=True)
     pr_set_pdeathsig = 1
     if libc.prctl(pr_set_pdeathsig, int(signal.SIGTERM), 0, 0, 0) != 0:
@@ -157,8 +179,51 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     # Close the race where the owner dies between spawn and PR_SET_PDEATHSIG.
     if os.getppid() != parent_pid:
         return 74
-    os.execvpe(command[0], command, os.environ)
-    return 127
+
+    child = subprocess.Popen(
+        command,
+        close_fds=False,
+        start_new_session=True,
+    )
+    if termination_started is not None:
+        signal_child_group(signal.SIGTERM)
+
+    while True:
+        try:
+            return_code = child.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if (
+                termination_started is not None
+                and not child_group_kill_sent
+                and time.monotonic() - termination_started >= 10.0
+            ):
+                signal_child_group(signal.SIGKILL)
+                child_group_kill_sent = True
+
+    # A learner may exit while one of its environment workers remains alive. Retire any such
+    # descendants before reporting that the owned launch has finished.
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return return_code
+
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(child.pid, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            pass
+        time.sleep(0.025)
+    else:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    return return_code
 
 
 def _windows_kill_job() -> int:
@@ -294,6 +359,8 @@ def popen_owned(
         "--",
         *[str(item) for item in command],
     ]
+    # Isolate the guardian so its parent-death handler can safely signal only this launch.
+    kwargs["start_new_session"] = True
     return subprocess.Popen(wrapper, **kwargs)
 
 
