@@ -17,6 +17,23 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void RebuildingCampaignTriggersDiscardsDeferredTriggersFromThePreviousLevel()
+        {
+            string shared = Read("Level.Campaign.Shared.cs");
+            int start = shared.IndexOf("private void SetTriggers()");
+            int end = shared.IndexOf("public void EasterEggTriggers()", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string rebuild = shared.Substring(start, end - start);
+
+            StringAssert.Contains("Triggers.Clear();", rebuild);
+            StringAssert.Contains("NextTriggers.Clear();", rebuild);
+            Assert.That(
+                rebuild.IndexOf("NextTriggers.Clear();"),
+                Is.GreaterThan(rebuild.IndexOf("Triggers.Clear();")));
+        }
+
+        [Test]
         public void LegacyCampaignTriggerFileIsOnlyACompatibilityStub()
         {
             string legacy = Read("LeveLTriggers.cs");
