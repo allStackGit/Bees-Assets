@@ -933,3 +933,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The invariant is that a selected actor is blocked before another upload can pass admission.
 **Verification:** statically traced concurrent admission, queue removal, actor blocking, timeout retention, and generation invalidation. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** shared queue membership and per-actor admission state must change atomically under the same lock.
+
+### REG-106 — Distinct path endpoints could compare equal
+**Area:** `Scripts/Levels/Pathfinder.Models.cs`, `Path.Equals` and hash identity  
+**Symptom:** paths with different start coordinates could compare equal when decimal string concatenation produced the same legacy ID, causing equality-based collections or duplicate checks to alias unrelated routes. Typed equality checks against null could also throw.  
+**Root cause:** the path identity string concatenated four integers without separators, and equality/hash semantics trusted that ambiguous value rather than the endpoint tuple.  
+**Fix:** compare and hash the four endpoint coordinates directly; return false for a typed null comparison. The legacy `Id` property remains for compatibility and is not used for equality.  
+**Permanent protection:** the source invariant is that path equality and hash codes derive from the same four endpoint coordinates; tests were not run or added under the static-only audit instruction.  
+**Verification:** statically inspected the old collision case `(1, 23) -> (4, 5)` versus `(12, 3) -> (4, 5)`, and confirmed both equality and hashing now use the coordinate tuple. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** identifiers formed by concatenating variable-width numeric fields are ambiguous; value equality should compare the structured fields directly.
+
