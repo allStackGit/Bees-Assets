@@ -287,3 +287,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** parsing now requires a finite positive interval. `AutomaticPublicTrainerOptionTests.test_watch_interval_must_be_finite` covers `nan`, `inf`, and `-inf`; the test was added but not run, per the static-only audit constraint.  
 **Verification:** parser validation and the watcher’s `Event.wait(options.watch_seconds)` use were traced statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** every duration passed into a blocking wait must be finite and positive.  
+
+
+### REG-031 — Continual service resumed a checkpoint under a changed contract
+**Area:** `Training/bees_continual_service.py`, persistent optimizer/checkpoint lineage  \
+**Symptom:** reusing a service `run_id` after changing its trainer config, continual compatibility config, training build, or environment arguments could resume the old ML-Agents checkpoint under the new training contract.  
+**Root cause:** phase state and checkpoints were keyed by `run_id` alone; the service checked that a checkpoint existed but did not verify the configuration and environment that created it.  
+**Permanent protection:** the service now persists a SHA-256 contract identity covering both configs, the training executable, game build label, generation size, environment count, and ordered environment arguments. Mismatches fail closed with guidance to use a new `--run-id`; legacy progressed state without an identity also fails closed. `ContinualServiceTests.test_changed_training_contract_cannot_resume_same_run_id` protects config drift. The test was added but not run, per the static-only audit constraint.  
+**Verification:** state loading, checkpoint discovery, and the service's `--resume` decision were traced statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** an optimizer checkpoint may resume only when its persisted training contract still matches the active service configuration.  
