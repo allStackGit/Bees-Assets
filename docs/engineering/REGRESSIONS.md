@@ -567,3 +567,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** cached queues now recalculate distance keys and resort for both Closest and Furthest. `TargetingStrategyConsistencyTests.ClosestAndFurthestTargetPriorityRefreshesForCachedQueues` protects the dynamic-priority contract.  
 **Verification:** statically traced cached-queue reuse, priority refresh, distance-key recomputation, and target selection. The regression test was added but not run; no combat or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** target ranking strategies whose inputs change during movement must refresh when reusing a cached candidate set.
+
+### REG-064 — Destination deduplication ignored stopped ships and path endpoints
+**Area:** `Scripts/Entities/Ships/Ship.Movement.cs`, obstacle-aware movement order deduplication  
+**Symptom:** with obstacle pathfinding enabled, a new destination close to the origin could be discarded after a ship stopped because the shortcut compared the requested destination to default/reset `TargetCoordinates` even though the ship had no active coordinate target. During path following, the same shortcut also compared against the current waypoint instead of the route's final destination.  
+**Root cause:** `MoveToPoint` treated `TargetCoordinates` as a valid deduplication key without checking `HasTargetCoordinates`, and did not use `FinalDestination` when following a path.  
+**Permanent protection:** the shortcut now runs only when a coordinate target is active and compares against `FinalDestination` while following a path, otherwise against `TargetCoordinates`. `MovementStaleStateTests.DestinationDeduplicationRequiresAnActiveMovementTarget` guards the source contract. The regression guard was added but not run, per the static-only audit scope.  
+**Verification:** traced `StopMoving` resetting `TargetCoordinates` to zero and clearing `HasTargetCoordinates`, and traced path assembly setting `FinalDestination` while `IsFollowingPath` is true. The new guard and focused regression source were reread after the edits. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** movement deduplication must use an active command's destination, not default/stale target coordinates or an intermediate path waypoint.
