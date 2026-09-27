@@ -174,6 +174,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": 0,
+                "actor_instance_id": "manual-process-0",
                 "env_count": 1,
                 "control_epoch": 1,
                 "behavior_specs": specs,
@@ -183,6 +184,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": 1,
+                "actor_instance_id": "manual-process-1",
                 "env_count": 64,
                 "control_epoch": 1,
                 "behavior_specs": specs,
@@ -197,6 +199,7 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": 0,
+                    "actor_instance_id": "manual-process-0",
                     "env_count": 65,
                     "control_epoch": 1,
                     "behavior_specs": specs,
@@ -210,8 +213,9 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "actor_instance_id": f"manual-process-actor_id",
-                "env_count": 8,
+                    "actor_instance_id": f"manual-process-{actor_id}",
+
+                    "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
                 }
@@ -256,8 +260,9 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "actor_instance_id": f"manual-process-actor_id",
-                "env_count": 8,
+                    "actor_instance_id": f"manual-process-{actor_id}",
+
+                    "env_count": 8,
                     "control_epoch": 1,
                     "behavior_specs": specs,
                 }
@@ -285,6 +290,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": 0,
+                "actor_instance_id": "manual-process-0",
                 "env_count": 8,
                 "control_epoch": 1,
                 "behavior_specs": specs,
@@ -375,6 +381,7 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": 0,
+                "actor_instance_id": "manual-process-0",
                 "env_count": 8,
                 "control_epoch": 1,
                 "behavior_specs": specs,
@@ -457,7 +464,6 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
-                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "process-a",
                 "env_count": 8,
@@ -507,7 +513,6 @@ class ElasticBrokerTests(unittest.TestCase):
                 {
                     **broker.release_identity,
                     "actor_id": actor_id,
-                    "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-b",
                     "actor_instance_id": "process-b",
                     "env_count": 8,
@@ -531,7 +536,6 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
-                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "old-process",
                 "env_count": 8,
@@ -576,7 +580,6 @@ class ElasticBrokerTests(unittest.TestCase):
             {
                 **broker.release_identity,
                 "actor_id": actor_id,
-                "actor_instance_id": f"manual-process-actor_id",
                 "actor_key": "machine-a",
                 "actor_instance_id": "new-process",
                 "env_count": 8,
