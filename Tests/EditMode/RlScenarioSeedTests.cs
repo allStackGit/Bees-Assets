@@ -18,23 +18,29 @@ namespace Bees.Tests.EditMode
             MethodInfo derive = seedType.GetMethod("Derive", flags);
             FieldInfo matchupSaltField = seedType.GetField("MatchupStreamSalt", flags);
             FieldInfo mapSaltField = seedType.GetField("MapSizeStreamSalt", flags);
+            FieldInfo coordinateFrameSaltField = seedType.GetField("CoordinateFrameStreamSalt", flags);
 
             Assert.That(derive, Is.Not.Null);
             Assert.That(matchupSaltField, Is.Not.Null);
             Assert.That(mapSaltField, Is.Not.Null);
+            Assert.That(coordinateFrameSaltField, Is.Not.Null);
 
             int matchupSalt = (int)matchupSaltField.GetRawConstantValue();
             int mapSalt = (int)mapSaltField.GetRawConstantValue();
+            int coordinateFrameSalt = (int)coordinateFrameSaltField.GetRawConstantValue();
             object[] arenaZeroMatchup = { 731947, 0, matchupSalt };
 
             int first = (int)derive.Invoke(null, arenaZeroMatchup);
             int repeated = (int)derive.Invoke(null, arenaZeroMatchup);
             int otherArena = (int)derive.Invoke(null, new object[] { 731947, 1, matchupSalt });
             int otherStream = (int)derive.Invoke(null, new object[] { 731947, 0, mapSalt });
+            int otherCoordinateStream = (int)derive.Invoke(null, new object[] { 731947, 0, coordinateFrameSalt });
 
             Assert.That(repeated, Is.EqualTo(first));
             Assert.That(otherArena, Is.Not.EqualTo(first));
             Assert.That(otherStream, Is.Not.EqualTo(first));
+            Assert.That(otherCoordinateStream, Is.Not.EqualTo(first));
+            Assert.That(otherCoordinateStream, Is.Not.EqualTo(otherStream));
         }
 
         [Test]
@@ -93,6 +99,7 @@ namespace Bees.Tests.EditMode
             string mapSizes = ReadSource("Scripts", "Scenes", "RlOneVsOneArenaMapSizeState.cs");
             string scenarioSeed = ReadSource("Scripts", "Scenes", "RlOneVsOneScenarioSeed.cs");
             string identity = ReadSource("Scripts", "Scenes", "RlEpisodeShipIdentity.cs");
+            string policyAgent = ReadSource("Scripts", "Scenes", "RlOneVsOneAgent.cs");
             string evaluationChannel = ReadSource("Scripts", "Scenes", "RlOneVsOneEvaluationSideChannel.cs");
 
             Assert.That(evaluationChannel, Does.Contain("_ = Academy.Instance;"),
@@ -109,6 +116,10 @@ namespace Bees.Tests.EditMode
                 "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.IdentityStreamSalt)"),
                 "Evaluation ship-identity permutations must use their deterministic private scenario stream.");
             Assert.That(identity, Does.Not.Contain("Guid.NewGuid"));
+            Assert.That(policyAgent, Does.Contain(
+                "RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.CoordinateFrameStreamSalt)"),
+                "Seeded evaluation coordinate frames must use an isolated deterministic arena stream.");
+            Assert.That(policyAgent, Does.Not.Contain("FrameRandom = new System.Random(System.Guid.NewGuid()"));
             Assert.That(matchups, Does.Not.Contain("Guid.NewGuid"));
             Assert.That(mapSizes, Does.Not.Contain("Guid.NewGuid"));
         }
