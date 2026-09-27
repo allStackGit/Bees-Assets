@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import os
+import queue
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +32,24 @@ class ElasticActorClaimShutdownTests(unittest.TestCase):
         self.assertTrue(session._claim_keeper_stop.is_set())
         keeper.join.assert_called_once_with()
         self.assertIsNone(session._claim_keeper)
+
+    def test_upload_loop_drains_queued_batch_after_shutdown_signal(self):
+        session = actor_worker.ActorSession.__new__(actor_worker.ActorSession)
+        session._upload_stop = threading.Event()
+        session._upload_stop.set()
+        session._upload_drain_deadline = time.monotonic() + 1.0
+        session._upload_queue = queue.Queue()
+        session._upload_queue.put({"trajectories": [object()]})
+        session.stop = threading.Event()
+        session.stop.set()
+        session.client = mock.Mock()
+        session._record_accepted_trajectories = mock.Mock()
+
+        session._upload_loop()
+
+        session.client.trajectories.assert_called_once()
+        session._record_accepted_trajectories.assert_called_once()
+
 
     def test_orderly_close_drains_session_then_stops_and_releases_lease(self):
         session = actor_session.ElasticActorSession.__new__(
