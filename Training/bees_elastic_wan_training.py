@@ -160,6 +160,15 @@ def extract_elastic_wan_options(argv: Sequence[str]) -> Tuple[List[str], Elastic
 
     index = 0
     while index < len(argv):
+        if argv[index] == "--env-args":
+            # Unity owns every token after this marker; WAN flags there are game arguments.
+            cleaned.extend(argv[index:])
+            break
+        if argv[index].startswith("--env-args="):
+            raise SystemExit(
+                "Use --env-args as a separate token so elastic WAN flags cannot consume Unity arguments."
+            )
+
         matched = False
         for flag, key, converter in specs:
             raw, next_index = _read_value(argv, index, flag)
