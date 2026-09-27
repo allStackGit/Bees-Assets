@@ -240,6 +240,19 @@ class ContinualServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.parse_environment_args_json('[""]')
 
+    def test_changed_training_contract_cannot_resume_same_run_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            options = self._options(Path(temp_dir))
+            state = service.load_state(options)
+            service.save_state(options, state)
+
+            options.continual_config.write_text(
+                '{"reward_schema_version": 3}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "changed for this run-id"):
+                service.load_state(options)
+
     def test_state_is_run_scoped_and_preserves_each_run_phase(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
