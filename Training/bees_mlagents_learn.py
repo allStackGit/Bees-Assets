@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import _thread
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -657,8 +658,19 @@ def _handle_model_snapshot_request(trainer, request_path: Path, response_path: P
         step = int(trainer.get_step)
         model_root = Path(str(trainer.model_saver.model_path)).expanduser().resolve()
         model_root.mkdir(parents=True, exist_ok=True)
+        brain_name = str(trainer.brain_name)
+        safe_brain_name = "".join(
+            character
+            if character.isascii()
+            and (character.isalnum() or character in "._-")
+            else "_"
+            for character in brain_name
+        ).strip("._-")[:48] or "behavior"
+        brain_name_digest = hashlib.sha256(
+            brain_name.encode("utf-8", errors="replace")
+        ).hexdigest()[:12]
         output_base = model_root / (
-            f"diagnostic-{trainer.brain_name}-{step}-{request_id[:12]}"
+            f"diagnostic-{safe_brain_name}-{brain_name_digest}-{step}-{request_id[:12]}"
         )
         trainer.model_saver.export(str(output_base), trainer.brain_name)
         model_path = output_base.with_suffix(".onnx")
