@@ -206,7 +206,8 @@ def _owned_child_main(argv: Sequence[str]) -> int:
     try:
         os.killpg(child.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return return_code
+        # No descendants remain, but still preserve the learner's signal exit below.
+        pass
 
     deadline = time.monotonic() + 0.25
     while time.monotonic() < deadline:
