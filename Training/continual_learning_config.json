@@ -13,7 +13,19 @@
     "max_historical_regression": 0.15,
     "min_historical_matches_per_opponent": 50,
     "min_competency_cases": 1,
-    "max_inference_batch_milliseconds": 100
+    "max_inference_batch_milliseconds": 100,
+    "bootstrap_competency_cases": [
+      {
+        "name": "generation-zero-large-map-baseline",
+        "matches": 100,
+        "minimum": 0.45,
+        "metric": "score_rate",
+        "critical": true,
+        "env_args": [
+          "--rl-map-size=48"
+        ]
+      }
+    ]
   },
   "historical_league": {
     "base_weight": 1,
