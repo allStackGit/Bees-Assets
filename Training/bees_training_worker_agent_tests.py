@@ -48,6 +48,27 @@ class BackgroundBuildPreparerTests(unittest.TestCase):
         preparer._thread.join.assert_called_once_with()
 
 
+class ManagedProcessHealthTests(unittest.TestCase):
+    def test_explicit_child_health_error_is_not_reported_as_starting(self):
+        manager = worker.ManagedProcess()
+        manager.process = mock.Mock()
+        manager.process.poll.return_value = None
+        manager.health_required = True
+        manager.health_file = Path("child-health.json")
+        manager.health_token = "health-token"
+
+        with mock.patch.object(
+            worker,
+            "read_managed_health",
+            return_value={"state": "error", "error": "learner initialization failed"},
+        ):
+            self.assertEqual(
+                manager.health_error(),
+                "learner initialization failed",
+            )
+            self.assertEqual(manager.state("dedicated"), "error")
+
+
 class ManagedProcessRestartTests(unittest.TestCase):
     def test_same_launch_records_exit_observed_before_restart(self):
         with tempfile.TemporaryDirectory() as directory:
