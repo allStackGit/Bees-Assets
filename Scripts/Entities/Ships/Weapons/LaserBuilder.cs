@@ -134,7 +134,7 @@ namespace Assets.Scripts.Entities.Ships
             }
             else if (IsFiringManually)
             {
-                TargetPoint = Stage.InputManager.GetMousePosition();
+                TargetPoint = GetManualTargetPoint();
                 IsAlignedWithTargetPoint = true;
             }
             else
