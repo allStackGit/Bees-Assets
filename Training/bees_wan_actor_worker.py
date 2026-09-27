@@ -611,7 +611,8 @@ class ActorSession:
             self.manager = None
         # Do not let the reconnect loop start another session while these threads still own
         # broker requests or can write this actor's throughput file. BrokerClient applies a
-        # finite request timeout, so joining here bounds shutdown by the in-flight request.
+        # finite socket timeout; let each in-flight request finish before reusing this session's
+        # actor identity and output paths.
         if self._watcher is not None and self._watcher.ident is not None:
             self._watcher.join()
         if self._uploader is not None and self._uploader.ident is not None:
