@@ -83,3 +83,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - A POSIX child guardian must preserve signal termination semantics even if its process group disappears before descendant cleanup begins.
 
 - Remote launcher shutdown handlers and cleanup ownership must be established before spawning the SSH tunnel or Unity workers; partial startup must clean every child that was created.
+
+## Training launch arguments
+
+- Launcher-private options must be extracted only before ML-Agents' `--env-args` remainder delimiter; preserve the delimiter and every following Unity argument unchanged.
