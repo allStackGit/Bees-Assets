@@ -66,6 +66,21 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void DestinationDeduplicationRequiresAnActiveMovementTarget()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
+            string source = File.ReadAllText(path);
+            int start = source.IndexOf("public void MoveToPoint(");
+            int end = source.IndexOf("public void MoveToDirectionOfPoint", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            string method = source.Substring(start, end - start);
+
+            StringAssert.Contains("IsFollowingPath ? FinalDestination : TargetCoordinates", method);
+            StringAssert.Contains("!foundObstacle && HasTargetCoordinates", method);
+        }
+
+        [Test]
         public void PolicyHeadingIsNotGatedByAStaleMovementTarget()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
