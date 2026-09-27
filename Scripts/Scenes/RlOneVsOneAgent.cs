@@ -1209,7 +1209,8 @@ internal static class RlPolicyCoordinateFrame
 {
     private const int QuarterTurnCount = 4;
     private const int DistinctOrderedPairCount = QuarterTurnCount * (QuarterTurnCount - 1);
-    private static readonly System.Random FrameRandom = new System.Random(System.Guid.NewGuid().GetHashCode());
+    private static readonly Dictionary<Level, System.Random> FrameRandoms =
+        new Dictionary<Level, System.Random>();
 
     private sealed class EpisodeFrame
     {
@@ -1221,6 +1222,14 @@ internal static class RlPolicyCoordinateFrame
         new Dictionary<Level, EpisodeFrame>();
     private static int _assignmentGeneration;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void ResetForSceneLoad()
+    {
+        EpisodeFrames.Clear();
+        FrameRandoms.Clear();
+        _assignmentGeneration = 0;
+    }
+
     internal static int GetQuarterTurns(Level level, int teamId)
     {
         if (level == null || (teamId != 0 && teamId != 1))
@@ -1230,7 +1239,13 @@ internal static class RlPolicyCoordinateFrame
 
         if (!EpisodeFrames.TryGetValue(level, out EpisodeFrame frame))
         {
-            DecodeDistinctPair(FrameRandom.Next(DistinctOrderedPairCount),
+            if (!FrameRandoms.TryGetValue(level, out System.Random frameRandom))
+            {
+                frameRandom = new System.Random(
+                    RlOneVsOneScenarioSeed.Create(level, RlOneVsOneScenarioSeed.CoordinateFrameStreamSalt));
+                FrameRandoms.Add(level, frameRandom);
+            }
+            DecodeDistinctPair(frameRandom.Next(DistinctOrderedPairCount),
                 out int team0QuarterTurns,
                 out int team1QuarterTurns);
             frame = new EpisodeFrame
@@ -1349,6 +1364,7 @@ internal static class RlPolicyCoordinateFrame
     internal static void ResetForTests()
     {
         EpisodeFrames.Clear();
+        FrameRandoms.Clear();
         _assignmentGeneration = 0;
     }
 }
