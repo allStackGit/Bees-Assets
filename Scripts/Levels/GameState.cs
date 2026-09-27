@@ -820,7 +820,15 @@ namespace Assets.Scripts.Levels
                         squadSnapshot.ColorR,
                         squadSnapshot.ColorG,
                         squadSnapshot.ColorB,
-                        squadSnapshot.ColorA));
+                        squadSnapshot.ColorA),
+                    new SquadStatBlock(
+                        "Multiplayer",
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0));
                 squad.IsSetToChase = squadSnapshot.IsSetToChase;
                 squad.MatchOwnershipToken = ownershipToken;
 

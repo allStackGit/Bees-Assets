@@ -631,7 +631,7 @@ namespace Assets.Scripts.Levels
     {
         public const int Version = 1;
         public const int MaxPacketBytes = 4096;
-        public const int MaxLobbyPacketBytes = 16384;
+        public const int MaxLobbyPacketBytes = 65536;
         private const string CommandPacketType = "command";
         private const string AcknowledgementPacketType = "ack";
         private const string LobbyPacketType = "lobby";
@@ -647,7 +647,7 @@ namespace Assets.Scripts.Levels
         };
         private static readonly HashSet<string> LobbyFields = new HashSet<string>
         {
-            "v", "type", "match", "authority", "peers", "players"
+            "v", "type", "match", "authority", "peers", "players", "squads"
         };
         private static readonly HashSet<string> LobbyPeerFields = new HashSet<string>
         {
@@ -656,6 +656,15 @@ namespace Assets.Scripts.Levels
         private static readonly HashSet<string> LobbyPlayerFields = new HashSet<string>
         {
             "id", "peer", "side"
+        };
+        private static readonly HashSet<string> LobbySquadFields = new HashSet<string>
+        {
+            "token", "owner", "id", "side", "name", "sx", "sy",
+            "r", "g", "b", "a", "cease", "matching", "chase", "strategy", "ships"
+        };
+        private static readonly HashSet<string> LobbyShipFields = new HashSet<string>
+        {
+            "id", "type", "name", "ox", "oy"
         };
 
         public static bool TrySerializeCommand(
@@ -730,6 +739,45 @@ namespace Assets.Scripts.Levels
                 });
             }
 
+            JArray squads = new JArray();
+            for (int i = 0; i < snapshot.Squads.Count; i++)
+            {
+                MatchLobbySquadSnapshot squad = snapshot.Squads[i];
+                JArray ships = new JArray();
+                for (int shipIndex = 0; shipIndex < squad.Ships.Count; shipIndex++)
+                {
+                    MatchLobbyShipSnapshot ship = squad.Ships[shipIndex];
+                    ships.Add(new JObject
+                    {
+                        ["id"] = ship.TransientFleetId,
+                        ["type"] = ship.ShipType,
+                        ["name"] = ship.Name,
+                        ["ox"] = ship.OffsetX,
+                        ["oy"] = ship.OffsetY
+                    });
+                }
+
+                squads.Add(new JObject
+                {
+                    ["token"] = squad.OwnershipToken,
+                    ["owner"] = squad.OwnerPlayerId,
+                    ["id"] = squad.TransientSquadId,
+                    ["side"] = squad.Side,
+                    ["name"] = squad.Name,
+                    ["sx"] = squad.StartingX,
+                    ["sy"] = squad.StartingY,
+                    ["r"] = squad.ColorR,
+                    ["g"] = squad.ColorG,
+                    ["b"] = squad.ColorB,
+                    ["a"] = squad.ColorA,
+                    ["cease"] = squad.CeaseFire,
+                    ["matching"] = squad.IsMatchingSpeed,
+                    ["chase"] = squad.IsSetToChase,
+                    ["strategy"] = squad.ShootingStrategy,
+                    ["ships"] = ships
+                });
+            }
+
             JObject json = new JObject
             {
                 ["v"] = Version,
@@ -737,7 +785,8 @@ namespace Assets.Scripts.Levels
                 ["match"] = snapshot.MatchId,
                 ["authority"] = snapshot.AuthorityPeerId,
                 ["peers"] = peers,
-                ["players"] = players
+                ["players"] = players,
+                ["squads"] = squads
             };
 
             byte[] encoded = StrictUtf8.GetBytes(json.ToString(Formatting.None));
@@ -786,7 +835,9 @@ namespace Assets.Scripts.Levels
                 peers.Count > MatchSession.MaxLobbyPeers ||
                 !(json["players"] is JArray players) ||
                 players.Count == 0 ||
-                players.Count > MatchSession.MaxLobbyPlayers)
+                players.Count > MatchSession.MaxLobbyPlayers ||
+                !(json["squads"] is JArray squads) ||
+                squads.Count > MatchSession.MaxLobbySquads)
             {
                 return false;
             }
@@ -836,6 +887,88 @@ namespace Assets.Scripts.Levels
                     (int)playerId,
                     (int)peerId,
                     (int)side));
+            }
+
+            for (int i = 0; i < squads.Count; i++)
+            {
+                if (!(squads[i] is JObject squadJson) ||
+                    !HasExactFields(squadJson, LobbySquadFields) ||
+                    !TryReadString(squadJson, "token", out string token) ||
+                    !TryReadInt64(squadJson, "owner", out long owner) ||
+                    owner <= MatchSession.UnownedPlayerId ||
+                    owner > int.MaxValue ||
+                    !TryReadInt64(squadJson, "id", out long squadId) ||
+                    squadId >= 0 ||
+                    !TryReadInt64(squadJson, "side", out long side) ||
+                    side < int.MinValue || side > int.MaxValue ||
+                    !TryReadString(squadJson, "name", out string name) ||
+                    string.IsNullOrEmpty(name) ||
+                    name.Length > MatchSession.MaxLobbyNameLength ||
+                    !TryReadFloat(squadJson, "sx", out float sx) ||
+                    !TryReadFloat(squadJson, "sy", out float sy) ||
+                    !TryReadFloat(squadJson, "r", out float r) ||
+                    !TryReadFloat(squadJson, "g", out float g) ||
+                    !TryReadFloat(squadJson, "b", out float b) ||
+                    !TryReadFloat(squadJson, "a", out float a) ||
+                    !TryReadBool(squadJson, "cease", out bool cease) ||
+                    !TryReadBool(squadJson, "matching", out bool matching) ||
+                    !TryReadBool(squadJson, "chase", out bool chase) ||
+                    !TryReadInt64(squadJson, "strategy", out long strategy) ||
+                    strategy < int.MinValue || strategy > int.MaxValue ||
+                    !(squadJson["ships"] is JArray ships) ||
+                    ships.Count == 0 ||
+                    ships.Count > MatchSession.MaxLobbyShipsPerSquad)
+                {
+                    return false;
+                }
+
+                MatchLobbySquadSnapshot squad = new MatchLobbySquadSnapshot
+                {
+                    OwnershipToken = token,
+                    OwnerPlayerId = (int)owner,
+                    TransientSquadId = squadId,
+                    Side = (int)side,
+                    Name = name,
+                    StartingX = sx,
+                    StartingY = sy,
+                    ColorR = r,
+                    ColorG = g,
+                    ColorB = b,
+                    ColorA = a,
+                    CeaseFire = cease,
+                    IsMatchingSpeed = matching,
+                    IsSetToChase = chase,
+                    ShootingStrategy = (int)strategy
+                };
+
+                for (int shipIndex = 0; shipIndex < ships.Count; shipIndex++)
+                {
+                    if (!(ships[shipIndex] is JObject shipJson) ||
+                        !HasExactFields(shipJson, LobbyShipFields) ||
+                        !TryReadInt64(shipJson, "id", out long fleetId) ||
+                        fleetId >= 0 ||
+                        !TryReadInt64(shipJson, "type", out long shipType) ||
+                        shipType < int.MinValue || shipType > int.MaxValue ||
+                        !TryReadString(shipJson, "name", out string shipName) ||
+                        string.IsNullOrEmpty(shipName) ||
+                        shipName.Length > MatchSession.MaxLobbyNameLength ||
+                        !TryReadFloat(shipJson, "ox", out float ox) ||
+                        !TryReadFloat(shipJson, "oy", out float oy))
+                    {
+                        return false;
+                    }
+
+                    squad.Ships.Add(new MatchLobbyShipSnapshot
+                    {
+                        TransientFleetId = fleetId,
+                        ShipType = (int)shipType,
+                        Name = shipName,
+                        OffsetX = ox,
+                        OffsetY = oy
+                    });
+                }
+
+                parsed.Squads.Add(squad);
             }
 
             if (!MatchSession.IsValidLobbySnapshot(parsed))
@@ -1107,6 +1240,19 @@ namespace Assets.Scripts.Levels
             {
                 return false;
             }
+        }
+
+        private static bool TryReadBool(JObject json, string name, out bool value)
+        {
+            value = false;
+            JToken token = json[name];
+            if (token == null || token.Type != JTokenType.Boolean)
+            {
+                return false;
+            }
+
+            value = token.Value<bool>();
+            return true;
         }
 
         private static bool TryReadString(JObject json, string name, out string value)

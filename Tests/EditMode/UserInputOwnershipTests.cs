@@ -1213,7 +1213,7 @@ namespace Bees.Tests.EditMode
             object[] invalidArgs = { System.Text.Encoding.UTF8.GetBytes(invalid), null };
             Assert.That((bool)deserialize.Invoke(null, invalidArgs), Is.False);
 
-            byte[] oversized = new byte[16385];
+            byte[] oversized = new byte[65537];
             object[] oversizedArgs = { oversized, null };
             Assert.That((bool)deserialize.Invoke(null, oversizedArgs), Is.False);
         }
@@ -1233,13 +1233,13 @@ namespace Bees.Tests.EditMode
                 squad,
                 "ChosenShootingStrategy",
                 Enum.Parse(
-                    RuntimeAssembly.GetType("ConfigData+ShootingStrategyTypes"),
-                    "Default"));
+                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShootingStrategyTypes"),
+                    "FirstSeen"));
 
             object fleetShip = Activator.CreateInstance(
                 RuntimeAssembly.GetType("Assets.Scripts.Data.FleetShip"),
                 12345L,
-                Enum.Parse(RuntimeAssembly.GetType("ConfigData+ShipTypes"), "Wasp"),
+                Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes"), "Wasp"),
                 false,
                 false,
                 0, 0, 0, 0, 0, 0, 0,
@@ -1321,15 +1321,15 @@ namespace Bees.Tests.EditMode
                 squadSnapshot,
                 "ShootingStrategy",
                 (int)Enum.Parse(
-                    RuntimeAssembly.GetType("ConfigData+ShootingStrategyTypes"),
-                    "Default"));
+                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShootingStrategyTypes"),
+                    "FirstSeen"));
 
             object shipSnapshot = Activator.CreateInstance(shipType);
             RuntimeAssembly.SetField(shipSnapshot, "TransientFleetId", -1L);
             RuntimeAssembly.SetField(
                 shipSnapshot,
                 "ShipType",
-                (int)Enum.Parse(RuntimeAssembly.GetType("ConfigData+ShipTypes"), "Gunship"));
+                (int)Enum.Parse(RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes"), "Gunship"));
             RuntimeAssembly.SetField(shipSnapshot, "Name", "Remote Ship");
             RuntimeAssembly.AddToCollection(
                 RuntimeAssembly.GetField(squadSnapshot, "Ships"),
@@ -1355,6 +1355,80 @@ namespace Bees.Tests.EditMode
                 "ResolveSquadOwner",
                 reconstructed,
                 2), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void LobbyWireProtocolPreservesTransientSquadLoadout()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            Type snapshotType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbySnapshot");
+            Type peerType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyPeerSnapshot");
+            Type playerType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyPlayerSnapshot");
+            Type squadType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbySquadSnapshot");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchLobbyShipSnapshot");
+            object snapshot = Activator.CreateInstance(snapshotType);
+
+            RuntimeAssembly.SetField(snapshot, "MatchId", Guid.NewGuid().ToString("N"));
+            RuntimeAssembly.SetField(snapshot, "AuthorityPeerId", 1);
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Peers"),
+                Activator.CreateInstance(peerType, 1, "steam:host"));
+            RuntimeAssembly.AddToCollection(
+                RuntimeAssembly.GetField(snapshot, "Players"),
+                Activator.CreateInstance(playerType, 1, 1, 1));
+
+            object squad = Activator.CreateInstance(squadType);
+            RuntimeAssembly.SetField(squad, "OwnershipToken", Guid.NewGuid().ToString("N"));
+            RuntimeAssembly.SetField(squad, "OwnerPlayerId", 1);
+            RuntimeAssembly.SetField(squad, "TransientSquadId", -1L);
+            RuntimeAssembly.SetField(squad, "Side", 1);
+            RuntimeAssembly.SetField(squad, "Name", "Canonical Squad");
+            RuntimeAssembly.SetField(squad, "ColorR", 1f);
+            RuntimeAssembly.SetField(squad, "ColorG", 1f);
+            RuntimeAssembly.SetField(squad, "ColorB", 1f);
+            RuntimeAssembly.SetField(squad, "ColorA", 1f);
+            RuntimeAssembly.SetField(
+                squad,
+                "ShootingStrategy",
+                (int)Enum.Parse(
+                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShootingStrategyTypes"),
+                    "FirstSeen"));
+
+            object ship = Activator.CreateInstance(shipType);
+            RuntimeAssembly.SetField(ship, "TransientFleetId", -1L);
+            RuntimeAssembly.SetField(
+                ship,
+                "ShipType",
+                (int)Enum.Parse(
+                    RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes"),
+                    "Wasp"));
+            RuntimeAssembly.SetField(ship, "Name", "Canonical Ship");
+            RuntimeAssembly.SetField(ship, "OffsetX", 3f);
+            RuntimeAssembly.SetField(ship, "OffsetY", -2f);
+            RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(squad, "Ships"), ship);
+            RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(snapshot, "Squads"), squad);
+
+            MethodInfo serialize = protocolType.GetMethod(
+                "TrySerializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] serializeArgs = { snapshot, null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeLobbySnapshot",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] deserializeArgs = { serializeArgs[1], null };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+
+            object parsed = deserializeArgs[1];
+            object parsedSquads = RuntimeAssembly.GetField(parsed, "Squads");
+            Assert.That(RuntimeAssembly.GetCount(parsedSquads), Is.EqualTo(1));
+            object parsedSquad = ((System.Collections.IList)parsedSquads)[0];
+            Assert.That(RuntimeAssembly.GetField(parsedSquad, "TransientSquadId"), Is.EqualTo(-1L));
+            object parsedShips = RuntimeAssembly.GetField(parsedSquad, "Ships");
+            Assert.That(RuntimeAssembly.GetCount(parsedShips), Is.EqualTo(1));
+            object parsedShip = ((System.Collections.IList)parsedShips)[0];
+            Assert.That(RuntimeAssembly.GetField(parsedShip, "TransientFleetId"), Is.EqualTo(-1L));
         }
     }
 }
