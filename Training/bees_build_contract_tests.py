@@ -629,10 +629,19 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("'learner-live.log'", status)
         self.assertIn("const authoritative = parseLearnerLogFiles([", status)
         self.assertIn("if (authoritative.Step !== null) return authoritative;", status)
+        self.assertIn("Time Elapsed", status)
+        self.assertIn("replace(/,/g, '')", status)
+        self.assertIn("registered candidate ... step=1144671", status)
+        self.assertLess(
+            learner.index("live_log_streams = _install_managed_live_log()"),
+            learner.index("import mlagents.trainers"),
+        )
         authoritative = status.index("if (authoritative.Step !== null) return authoritative;")
         fallback = status.index("const operatorLogRoot = path.join(paths.logsRoot, 'Training');")
         self.assertLess(authoritative, fallback)
         self.assertIn("listLogFiles(managedLearnerLogRoot, false)", status)
+        self.assertIn("'LiveExp/s'", status)
+        self.assertIn("learner_consumed_steps_per_sec", status)
 
     def test_running_remote_heartbeat_publishes_environment_identity_and_throughput(self):
         source = (ROOT / "Training" / "bees_training_worker_agent.py").read_text(
