@@ -477,3 +477,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** removed the redundant catch/rethrow wrapper so any setup exception propagates with its original stack.  
 **Verification:** reviewed the current source and confirmed the catch/rethrow wrapper is gone. No tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
 **Invariant/knowledge:** when an exception needs to propagate unchanged, use a bare rethrow or allow it to propagate; never use `throw exceptionVariable`.
+
+
+### REG-054 — Guard command error logging reset the original exception stack
+**Area:** `Scripts/Levels/Commands/Guard.cs`, guard movement diagnostics  
+**Symptom:** a guard movement exception was rethrown with `throw e`, moving the reported failure site to the logging catch block and obscuring the original source line.  
+**Root cause:** the exception-variable rethrow form resets the recorded stack trace.  
+**Permanent protection:** retained the contextual error log and changed propagation to a bare rethrow, preserving the original stack.  
+**Verification:** reviewed the current catch block and confirmed it logs context then uses `throw;`. No tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
+**Invariant/knowledge:** diagnostic catch blocks should preserve the exception's original stack when rethrowing.
