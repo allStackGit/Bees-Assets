@@ -467,7 +467,9 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             return;
         }
 
-        RlOneVsOneAgent.CollectPolicyObservations(_perception, _ship, _side, sensor, 0);
+        int frameQuarterTurns = RlOneVsOneAgent.GetPolicyFrameQuarterTurns(_level, _side);
+        RlOneVsOneAgent.CollectPolicyObservations(
+            _perception, _ship, _side, sensor, frameQuarterTurns);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -489,7 +491,10 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             return;
         }
 
-        Vector2 movement = EncodeCurrentMovement(_ship);
+        int frameQuarterTurns = RlOneVsOneAgent.GetPolicyFrameQuarterTurns(_level, _side);
+        Vector2 movement = RlPolicyCoordinateFrame.WorldToPolicy(
+            EncodeCurrentMovement(_ship),
+            frameQuarterTurns);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
 
@@ -506,6 +511,7 @@ internal sealed class RlGameplayDemonstrationAgent : Agent
             if (aim.sqrMagnitude > 0.0001f)
             {
                 aim.Normalize();
+                aim = RlPolicyCoordinateFrame.WorldToPolicy(aim, frameQuarterTurns);
                 continuous[aimStart] = aim.x;
                 continuous[aimStart + 1] = aim.y;
             }
