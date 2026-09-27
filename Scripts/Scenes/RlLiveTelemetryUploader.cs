@@ -185,26 +185,39 @@ internal sealed class RlLiveTelemetryUploader : MonoBehaviour
             try
             {
                 bytes = File.ReadAllBytes(path);
-                if (bytes.Length <= 0 || bytes.Length > MaxPayloadBytes)
-                {
-                    QuarantineLocalInvalid(path, "payload-size");
-                    continue;
-                }
-                payload = JsonConvert.DeserializeObject<RlLiveTelemetryRecorder.TelemetryPayload>(
-                    Encoding.UTF8.GetString(bytes));
-                if (!PayloadMatchesCurrentContract(payload))
-                {
-                    QuarantineLocalInvalid(path, "payload-contract");
-                    continue;
-                }
-                sha256 = ComputeSha256(bytes);
             }
             catch (Exception exception)
             {
                 Debug.LogWarning("Could not read pending RL telemetry " + path + ": " + exception.Message);
+                // Preserve the pending file and retry on a later scan; a transient local I/O
+                // failure does not establish that the telemetry payload is corrupt.
+                yield break;
+            }
+
+            if (bytes.Length <= 0 || bytes.Length > MaxPayloadBytes)
+            {
+                QuarantineLocalInvalid(path, "payload-size");
+                continue;
+            }
+
+            try
+            {
+                payload = JsonConvert.DeserializeObject<RlLiveTelemetryRecorder.TelemetryPayload>(
+                    Encoding.UTF8.GetString(bytes));
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Could not parse pending RL telemetry " + path + ": " + exception.Message);
                 QuarantineLocalInvalid(path, "payload-read");
                 continue;
             }
+
+            if (!PayloadMatchesCurrentContract(payload))
+            {
+                QuarantineLocalInvalid(path, "payload-contract");
+                continue;
+            }
+            sha256 = ComputeSha256(bytes);
 
             bool completed = false;
             yield return UploadOne(bytes, payload, sha256, value => completed = value);
