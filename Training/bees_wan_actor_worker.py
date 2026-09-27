@@ -41,6 +41,7 @@ import bees_wan_actor_training as wan
 
 DEFAULT_RECONNECT_SECONDS = 5.0
 DEFAULT_LOCAL_UPLOAD_QUEUE = 8
+ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS = 15.0
 DEFAULT_STATE_WAIT_SECONDS = 20.0
 MAX_TRAJECTORIES_PER_UPLOAD = 256
 MAX_UNITY_SEED = (1 << 31) - 1
@@ -544,6 +545,7 @@ class ActorSession:
         self._thread_error: queue.Queue = queue.Queue()
         self._upload_queue: queue.Queue = queue.Queue(maxsize=upload_queue_size)
         self._upload_stop = threading.Event()
+        self._upload_drain_deadline: Optional[float] = None
         self._watcher: Optional[threading.Thread] = None
         self._uploader: Optional[threading.Thread] = None
         self._onnx_temp = tempfile.TemporaryDirectory(prefix=f"bees-wan-actor-{actor_id}-")
@@ -599,6 +601,10 @@ class ActorSession:
         self._write_throughput_metrics()
 
     def close(self) -> None:
+        if self._upload_drain_deadline is None:
+            self._upload_drain_deadline = (
+                time.monotonic() + ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS
+            )
         self._upload_stop.set()
         if self.manager is not None:
             try:
@@ -952,13 +958,25 @@ class ActorSession:
                 self._thread_error.put(exc)
                 return
 
+    def _upload_shutdown_expired(self) -> bool:
+        deadline = self._upload_drain_deadline
+        return deadline is not None and time.monotonic() >= deadline
+
     def _upload_loop(self) -> None:
-        while not self._upload_stop.is_set() and not self.stop.is_set():
+        while True:
+            if self._upload_stop.is_set() and (
+                self._upload_queue.empty() or self._upload_shutdown_expired()
+            ):
+                return
             try:
                 payload = self._upload_queue.get(timeout=0.5)
             except queue.Empty:
+                if self._upload_stop.is_set():
+                    return
                 continue
-            while not self._upload_stop.is_set() and not self.stop.is_set():
+            while True:
+                if self._upload_stop.is_set() and self._upload_shutdown_expired():
+                    return
                 try:
                     self.client.trajectories(payload)
                     trajectories = payload.get("trajectories", ())
@@ -966,7 +984,7 @@ class ActorSession:
                         self._record_accepted_trajectories(trajectories)
                     break
                 except BrokerBackpressure:
-                    time.sleep(0.25)
+                    delay = 0.25
                 except BrokerStaleActor:
                     self._stale.set()
                     break
@@ -974,10 +992,21 @@ class ActorSession:
                     self._session_changed.set()
                     return
                 except BrokerUnavailable:
-                    time.sleep(1.0)
+                    delay = 1.0
                 except BaseException as exc:
                     self._thread_error.put(exc)
                     return
+
+                if self._upload_stop.is_set():
+                    remaining = (
+                        (self._upload_drain_deadline or time.monotonic())
+                        - time.monotonic()
+                    )
+                    if remaining <= 0:
+                        return
+                    time.sleep(min(delay, remaining))
+                else:
+                    time.sleep(delay)
 
     def _raise_thread_error(self) -> None:
         try:
