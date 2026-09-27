@@ -167,7 +167,7 @@ def should_resume_training(
 
 
 def _max_steps_from_config(text: str) -> int:
-    matches = re.findall(r"(?m)^(\\s*)max_steps:\\s*(\\d+)\\s*(?:#.*)?$", text)
+    matches = re.findall(r"(?m)^(\s*)max_steps:\s*(\d+)\s*(?:#.*)?$", text)
     if len(matches) != 1:
         raise ValueError(
             f"Expected exactly one integer max_steps entry in trainer config; found {len(matches)}."
