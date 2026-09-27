@@ -139,9 +139,10 @@ function normalizeEnvironmentArgs(value) {
 }
 
 function environmentArgsIdentity(environmentArgs) {
+    const normalized = normalizeEnvironmentArgs(environmentArgs);
     return crypto
         .createHash('sha256')
-        .update(JSON.stringify(normalizeEnvironmentArgs(environmentArgs)), 'utf8')
+        .update(JSON.stringify(normalized), 'utf8')
         .digest('hex');
 }
 
