@@ -332,3 +332,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** failed-worker recovery now preserves completed healthy-worker responses and returns them for postprocessing before the next step cycle. `FastEnvManagerTests.test_worker_exit_does_not_discard_other_consumed_step_results` protects this ordering and queued restart response. The test was added but not run, per the static-only audit constraint.  
 **Verification:** the queue-drain and recovery control flow were reviewed statically; successful responses remain in the returned batch, while restart handling schedules subsequent work. No tests or runtime checks were run.  
 **Invariant/knowledge:** once a worker step response is consumed, preserve and postprocess its rollout result even if another worker fails during the same drain.
+
+
+### REG-036 — Continual service resumed after trainer runtime code changed
+**Area:** `Training/bees_continual_service.py`, Python trainer runtime and checkpoint lineage  \
+**Symptom:** restarting a service with the same `run_id` after changing its trainer wrapper or supporting runtime module could resume optimizer state under different training behavior.  
+**Root cause:** the persisted contract hashed configuration and the Unity environment binary, but omitted the Python code invoked to prepare telemetry, construct worker topology, and run ML-Agents.  
+**Permanent protection:** the service contract now hashes the sorted production Python sources and dependency manifests under the configured runtime training root, and includes that root's resolved path. Test modules are excluded. `ContinualServiceTests.test_changed_runtime_training_code_cannot_resume_same_run_id` changes the trainer wrapper between state save and load and requires resume to fail closed. The test was added but not run, per the static-only audit constraint.  
+**Verification:** the source-file selection, deterministic relative-path/content hashing, persisted contract comparison, and regression case were reviewed statically. No tests or runtime checks were run.  
+**Invariant/knowledge:** resumable optimizer state must remain bound to the code and configuration that produce its rollouts and updates.  
