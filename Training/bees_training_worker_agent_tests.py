@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -35,7 +36,7 @@ class EpisodeLogMetricsTests(unittest.TestCase):
 
 class BackgroundBuildPreparerTests(unittest.TestCase):
     def test_wait_for_build_joins_only_matching_preparation(self):
-        preparer = agent.BackgroundBuildPreparer.__new__(agent.BackgroundBuildPreparer)
+        preparer = worker.BackgroundBuildPreparer.__new__(worker.BackgroundBuildPreparer)
         preparer._lock = threading.Lock()
         preparer._requested_build_id = "build-a"
         preparer._thread = mock.Mock()
