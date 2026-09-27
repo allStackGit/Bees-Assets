@@ -497,7 +497,15 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("if not transient_control_error:", source)
         self.assertIn("last_error = error_text", source)
         self.assertIn(
-            "transient control transport interruption within the active lease",
+            "elif transient_control_error and managed.alive():",
+            source,
+        )
+        self.assertIn(
+            "transient control transport interruption within the ",
+            source,
+        )
+        self.assertIn(
+            "active lease; keeping the matching trainer running and retrying: ",
             source,
         )
 
