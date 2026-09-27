@@ -1954,5 +1954,87 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ShipsByMatchId.Remove(ship.MatchShipId);", registrySource);
             StringAssert.Contains("Duplicate match ship id", registrySource);
         }
+
+        [Test]
+        public void BattleStateProtocolRoundTripsMatchScopedShipIdentity()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            Type snapshotType = RuntimeAssembly.GetType("Assets.Scripts.Levels.BattleStateSnapshot");
+            Type shipStateType = RuntimeAssembly.GetType("Assets.Scripts.Levels.BattleShipStateSnapshot");
+            Type shipType = RuntimeAssembly.GetType("Assets.Scripts.ConfigData+ShipTypes");
+            Guid matchId = Guid.NewGuid();
+
+            object snapshot = Activator.CreateInstance(snapshotType);
+            RuntimeAssembly.SetField(snapshot, "MatchLevelId", 3);
+            RuntimeAssembly.SetField(snapshot, "Sequence", 17L);
+
+            object ship = Activator.CreateInstance(shipStateType);
+            RuntimeAssembly.SetField(ship, "MatchShipId", 11L);
+            RuntimeAssembly.SetField(ship, "MatchSquadId", 5L);
+            RuntimeAssembly.SetField(ship, "Side", 1);
+            RuntimeAssembly.SetField(ship, "ShipType", (int)Enum.Parse(shipType, "Wasp"));
+            RuntimeAssembly.SetField(ship, "X", 12.5f);
+            RuntimeAssembly.SetField(ship, "Y", -8.25f);
+            RuntimeAssembly.SetField(ship, "Rotation", 270f);
+            RuntimeAssembly.SetField(ship, "VelocityX", 4f);
+            RuntimeAssembly.SetField(ship, "VelocityY", -2f);
+            RuntimeAssembly.SetField(ship, "Health", 9);
+            RuntimeAssembly.SetField(ship, "IsDead", false);
+            RuntimeAssembly.AddToCollection(RuntimeAssembly.GetField(snapshot, "Ships"), ship);
+
+            MethodInfo serialize = protocolType.GetMethod(
+                "TrySerializeBattleState",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] serializeArgs = { matchId, snapshot, null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+
+            MethodInfo deserialize = protocolType.GetMethod(
+                "TryDeserializeBattleState",
+                BindingFlags.Public | BindingFlags.Static);
+            object[] deserializeArgs = { serializeArgs[2], matchId, null };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+
+            object parsed = deserializeArgs[2];
+            Assert.That(RuntimeAssembly.GetField(parsed, "MatchLevelId"), Is.EqualTo(3));
+            Assert.That(RuntimeAssembly.GetField(parsed, "Sequence"), Is.EqualTo(17L));
+            object parsedShips = RuntimeAssembly.GetField(parsed, "Ships");
+            Assert.That(RuntimeAssembly.GetCount(parsedShips), Is.EqualTo(1));
+            object parsedShip = ((System.Collections.IList)parsedShips)[0];
+            Assert.That(RuntimeAssembly.GetField(parsedShip, "MatchShipId"), Is.EqualTo(11L));
+            Assert.That(RuntimeAssembly.GetField(parsedShip, "MatchSquadId"), Is.EqualTo(5L));
+        }
+
+        [Test]
+        public void BattleStateProtocolRejectsDuplicateShipIdsAndCrossMatchPackets()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("HashSet<long> matchShipIds", source);
+            StringAssert.Contains("!matchShipIds.Add(matchShipId)", source);
+            StringAssert.Contains("matchId != expectedMatchId", source);
+            StringAssert.Contains("MaxBattleStatePacketBytes", source);
+            StringAssert.Contains("MaxBattleStateShips", source);
+        }
+
+        [Test]
+        public void AuthorityBattleSnapshotUsesMatchShipAndSquadIds()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("TryCreateAuthoritativeBattleStateSnapshot", source);
+            StringAssert.Contains("ship.MatchShipId", source);
+            StringAssert.Contains("ship.Squad.CommandSquadId", source);
+            StringAssert.Contains("matchSession.IsLocalAuthority", source);
+        }
     }
 }

@@ -23,6 +23,65 @@ namespace Assets.Scripts.Levels
         private readonly object _queuedPlayerCommandsLock = new object();
         public const int MaxQueuedPlayerCommands = 1024;
         public const int MaxPlayerCommandsPerFrame = 64;
+        private long _nextBattleStateSequence = 1;
+
+
+        public bool TryCreateAuthoritativeBattleStateSnapshot(
+            out BattleStateSnapshot snapshot)
+        {
+            snapshot = null;
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                !matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                MatchLevelId <= 0 ||
+                _nextBattleStateSequence <= 0 ||
+                Ships.Count > MultiplayerProtocol.MaxBattleStateShips)
+            {
+                return false;
+            }
+
+            BattleStateSnapshot candidate = new BattleStateSnapshot
+            {
+                MatchLevelId = MatchLevelId,
+                Sequence = _nextBattleStateSequence++
+            };
+
+            for (int i = 0; i < Ships.Count; i++)
+            {
+                Ship ship = Ships[i];
+                if (ship == null ||
+                    ship.MatchShipId <= 0 ||
+                    ship.Squad == null ||
+                    ship.Squad.CommandSquadId <= 0 ||
+                    !ReferenceEquals(ship.Level, Level))
+                {
+                    return false;
+                }
+
+                Vector2 position = ship.GetPosition();
+                Vector2 velocity = ship.Body == null
+                    ? Vector2.zero
+                    : ship.Body.linearVelocity;
+                candidate.Ships.Add(new BattleShipStateSnapshot
+                {
+                    MatchShipId = ship.MatchShipId,
+                    MatchSquadId = ship.Squad.CommandSquadId,
+                    Side = ship.Side,
+                    ShipType = (int)ship.ShipType,
+                    X = position.x,
+                    Y = position.y,
+                    Rotation = ship.Rotation,
+                    VelocityX = velocity.x,
+                    VelocityY = velocity.y,
+                    Health = ship.Health,
+                    IsDead = ship.IsDead
+                });
+            }
+
+            snapshot = candidate;
+            return true;
+        }
 
         public int AddUserCommand()
         {
@@ -578,6 +637,30 @@ namespace Assets.Scripts.Levels
         }
     }
 
+    [Serializable]
+    public sealed class BattleShipStateSnapshot
+    {
+        public long MatchShipId;
+        public long MatchSquadId;
+        public int Side;
+        public int ShipType;
+        public float X;
+        public float Y;
+        public float Rotation;
+        public float VelocityX;
+        public float VelocityY;
+        public int Health;
+        public bool IsDead;
+    }
+
+    [Serializable]
+    public sealed class BattleStateSnapshot
+    {
+        public int MatchLevelId;
+        public long Sequence;
+        public List<BattleShipStateSnapshot> Ships = new List<BattleShipStateSnapshot>();
+    }
+
     public enum PlayerCommandKind
     {
         Move,
@@ -632,9 +715,12 @@ namespace Assets.Scripts.Levels
         public const int Version = 1;
         public const int MaxPacketBytes = 4096;
         public const int MaxLobbyPacketBytes = 65536;
+        public const int MaxBattleStatePacketBytes = 262144;
+        public const int MaxBattleStateShips = 2048;
         private const string CommandPacketType = "command";
         private const string AcknowledgementPacketType = "ack";
         private const string LobbyPacketType = "lobby";
+        private const string BattleStatePacketType = "state";
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly HashSet<string> CommandFields = new HashSet<string>
         {
@@ -678,6 +764,204 @@ namespace Assets.Scripts.Levels
         {
             "px", "py", "sx", "sy"
         };
+        private static readonly HashSet<string> BattleStateFields = new HashSet<string>
+        {
+            "v", "match", "type", "level", "seq", "ships"
+        };
+        private static readonly HashSet<string> BattleShipStateFields = new HashSet<string>
+        {
+            "id", "squad", "side", "shipType", "x", "y", "rot", "vx", "vy", "health", "dead"
+        };
+
+        public static bool TrySerializeBattleState(
+            Guid matchId,
+            BattleStateSnapshot snapshot,
+            out byte[] payload)
+        {
+            payload = null;
+            if (matchId == Guid.Empty ||
+                !IsValidBattleStateSnapshot(snapshot))
+            {
+                return false;
+            }
+
+            JArray ships = new JArray();
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot ship = snapshot.Ships[i];
+                ships.Add(new JObject
+                {
+                    ["id"] = ship.MatchShipId,
+                    ["squad"] = ship.MatchSquadId,
+                    ["side"] = ship.Side,
+                    ["shipType"] = ship.ShipType,
+                    ["x"] = ship.X,
+                    ["y"] = ship.Y,
+                    ["rot"] = ship.Rotation,
+                    ["vx"] = ship.VelocityX,
+                    ["vy"] = ship.VelocityY,
+                    ["health"] = ship.Health,
+                    ["dead"] = ship.IsDead
+                });
+            }
+
+            JObject json = new JObject
+            {
+                ["v"] = Version,
+                ["match"] = matchId.ToString("N"),
+                ["type"] = BattleStatePacketType,
+                ["level"] = snapshot.MatchLevelId,
+                ["seq"] = snapshot.Sequence,
+                ["ships"] = ships
+            };
+
+            byte[] encoded = StrictUtf8.GetBytes(json.ToString(Formatting.None));
+            if (encoded.Length == 0 || encoded.Length > MaxBattleStatePacketBytes)
+            {
+                return false;
+            }
+
+            payload = encoded;
+            return true;
+        }
+
+        public static bool TryDeserializeBattleState(
+            byte[] payload,
+            Guid expectedMatchId,
+            out BattleStateSnapshot snapshot)
+        {
+            snapshot = null;
+            if (expectedMatchId == Guid.Empty ||
+                payload == null ||
+                payload.Length == 0 ||
+                payload.Length > MaxBattleStatePacketBytes)
+            {
+                return false;
+            }
+
+            JObject json;
+            try
+            {
+                json = JObject.Parse(StrictUtf8.GetString(payload));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (!HasExactFields(json, BattleStateFields) ||
+                !TryReadInt64(json, "v", out long version) ||
+                version != Version ||
+                !TryReadString(json, "match", out string matchText) ||
+                !Guid.TryParseExact(matchText, "N", out Guid matchId) ||
+                matchId != expectedMatchId ||
+                !TryReadString(json, "type", out string packetType) ||
+                packetType != BattleStatePacketType ||
+                !TryReadInt64(json, "level", out long matchLevelId) ||
+                matchLevelId <= 0 ||
+                matchLevelId > int.MaxValue ||
+                !TryReadInt64(json, "seq", out long sequence) ||
+                sequence <= 0 ||
+                !(json["ships"] is JArray ships) ||
+                ships.Count > MaxBattleStateShips)
+            {
+                return false;
+            }
+
+            BattleStateSnapshot parsed = new BattleStateSnapshot
+            {
+                MatchLevelId = (int)matchLevelId,
+                Sequence = sequence
+            };
+
+            HashSet<long> matchShipIds = new HashSet<long>();
+            for (int i = 0; i < ships.Count; i++)
+            {
+                if (!(ships[i] is JObject shipJson) ||
+                    !HasExactFields(shipJson, BattleShipStateFields) ||
+                    !TryReadInt64(shipJson, "id", out long matchShipId) ||
+                    matchShipId <= 0 ||
+                    !matchShipIds.Add(matchShipId) ||
+                    !TryReadInt64(shipJson, "squad", out long matchSquadId) ||
+                    matchSquadId <= 0 ||
+                    !TryReadInt64(shipJson, "side", out long side) ||
+                    side < int.MinValue ||
+                    side > int.MaxValue ||
+                    !TryReadInt64(shipJson, "shipType", out long shipType) ||
+                    shipType < int.MinValue ||
+                    shipType > int.MaxValue ||
+                    !Enum.IsDefined(typeof(ConfigData.ShipTypes), (int)shipType) ||
+                    !TryReadFloat(shipJson, "x", out float x) ||
+                    !TryReadFloat(shipJson, "y", out float y) ||
+                    !TryReadFloat(shipJson, "rot", out float rotation) ||
+                    !TryReadFloat(shipJson, "vx", out float velocityX) ||
+                    !TryReadFloat(shipJson, "vy", out float velocityY) ||
+                    !TryReadInt64(shipJson, "health", out long health) ||
+                    health < 0 ||
+                    health > int.MaxValue ||
+                    !TryReadBool(shipJson, "dead", out bool isDead))
+                {
+                    return false;
+                }
+
+                parsed.Ships.Add(new BattleShipStateSnapshot
+                {
+                    MatchShipId = matchShipId,
+                    MatchSquadId = matchSquadId,
+                    Side = (int)side,
+                    ShipType = (int)shipType,
+                    X = x,
+                    Y = y,
+                    Rotation = rotation,
+                    VelocityX = velocityX,
+                    VelocityY = velocityY,
+                    Health = (int)health,
+                    IsDead = isDead
+                });
+            }
+
+            if (!IsValidBattleStateSnapshot(parsed))
+            {
+                return false;
+            }
+
+            snapshot = parsed;
+            return true;
+        }
+
+        private static bool IsValidBattleStateSnapshot(BattleStateSnapshot snapshot)
+        {
+            if (snapshot == null ||
+                snapshot.MatchLevelId <= 0 ||
+                snapshot.Sequence <= 0 ||
+                snapshot.Ships == null ||
+                snapshot.Ships.Count > MaxBattleStateShips)
+            {
+                return false;
+            }
+
+            HashSet<long> ids = new HashSet<long>();
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot ship = snapshot.Ships[i];
+                if (ship == null ||
+                    ship.MatchShipId <= 0 ||
+                    !ids.Add(ship.MatchShipId) ||
+                    ship.MatchSquadId <= 0 ||
+                    (ship.Side != ConfigData.Configuration.BeeSide &&
+                     ship.Side != ConfigData.Configuration.HumanSide) ||
+                    !Enum.IsDefined(typeof(ConfigData.ShipTypes), ship.ShipType) ||
+                    !IsFinite(new Vector2(ship.X, ship.Y)) ||
+                    !float.IsFinite(ship.Rotation) ||
+                    !IsFinite(new Vector2(ship.VelocityX, ship.VelocityY)) ||
+                    ship.Health < 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
 
         public static bool TrySerializeCommand(
             Guid matchId,

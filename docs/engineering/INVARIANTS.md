@@ -99,3 +99,5 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Malformed canonical lobby level options fail at packet/session validation before Stage setup: map index, environment option ranges, generated squad count, text lengths, obstacle count, finite coordinates, and positive obstacle scales are bounded.
 
 - `Ship.MatchShipId` is the match-scoped runtime identity for battle-state synchronization. It is independent of pooled `Ship.Id` and persistent/transient `FleetShip.Id`, is freshly allocated for each ship lifetime while a `MatchSession` exists, is indexed separately by `GameState`, and resets to zero on pooled cleanup.
+
+- Authoritative battle-state packets use `MatchShipId` plus `MatchSquadId`, never pooled/runtime or persistent fleet identity. Packets are match- and level-bound, sequence-numbered, exact-schema, size/count bounded, reject duplicate ship IDs and non-finite motion values, and are created only by the local authority. Applying spawn/death side effects remains a separate contract and must not reuse normal persistence/stat-mutating kill paths implicitly.
