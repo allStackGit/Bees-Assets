@@ -640,26 +640,7 @@ internal sealed class RlLivePolicyAgent : Agent
 
     private int GetPolicyFrameQuarterTurns()
     {
-        if (_level == null || ConfigData.Configuration == null)
-        {
-            return 0;
-        }
-
-        int teamId;
-        if (_side == ConfigData.Configuration.BeeSide)
-        {
-            teamId = 0;
-        }
-        else if (_side == ConfigData.Configuration.HumanSide)
-        {
-            teamId = 1;
-        }
-        else
-        {
-            return 0;
-        }
-
-        return RlPolicyCoordinateFrame.GetQuarterTurns(_level, teamId);
+        return RlOneVsOneAgent.GetPolicyFrameQuarterTurns(_level, _side);
     }
 
     private void ReleaseShip()
