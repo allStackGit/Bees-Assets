@@ -18,6 +18,7 @@ namespace Assets.Scripts.Data
         private object _jsonObject;
         private DataFileRequest _request = null;
         private bool _isDataLoaded = false;
+        public int ServerReadFailureStatus { get; private set; }
         private ulong _userId;
         private readonly Action<string> _serverWriterOverride;
 
@@ -74,6 +75,7 @@ namespace Assets.Scripts.Data
             }
             else
             {
+                ServerReadFailureStatus = 0;
                 _request = new DataFileRequest(new GetUserData(_userId, Name), this, ConfigData.StandardMaxTimeOnQueue);
                 ConfigData.Socket.SendRequest(_request);
                 contents = ConfigData.WaitingMessage;
@@ -103,6 +105,14 @@ namespace Assets.Scripts.Data
                 DataFileRequest standingRequest = (DataFileRequest)ConfigData.Socket.GetStandingRequest(_request.Hash);
                 if (standingRequest != null)
                 {
+                    if (standingRequest.Status == 403)
+                    {
+                        ServerReadFailureStatus = standingRequest.Status;
+                        ConfigData.Socket.StandingRequests.Remove(standingRequest);
+                        _request = null;
+                        Debug.LogError($"Server denied access to user data '{Name}'. The data remains unavailable; no defaults were substituted.");
+                        return;
+                    }
                     if (standingRequest.Status == 1)
                     {
                         ConfigData.Socket.StandingRequests.Remove(standingRequest);
