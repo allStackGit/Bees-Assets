@@ -271,6 +271,30 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(validation, forced_plan)
         self.assertIn("environmentArgs: envArgs", block)
 
+    def test_ordinary_start_does_not_reuse_historical_incompatible_flag_for_same_run_environment_rollout(self):
+        source = read_operator("commands.js")
+        start = source.index("async function invokeStart")
+        end = source.index("async function invokeStop", start)
+        block = source[start:end]
+
+        ordinary = block.index("const sameRunRelease = release.incompatible")
+        override = block.index("{ ...release, incompatible: false }", ordinary)
+        stage = block.index("stageRelease(", override)
+        self.assertLess(ordinary, override)
+        self.assertLess(override, stage)
+        self.assertIn(
+            "config, admin, sameRunRelease, envArgs, environmentValidationKey",
+            block[stage:stage + 220],
+        )
+
+        forced = block.index("if (performForcedNewRun)")
+        forced_stage = block.index("stageRelease(", forced)
+        self.assertLess(forced_stage, ordinary)
+        self.assertIn(
+            "config, admin, release, envArgs, environmentValidationKey",
+            block[forced_stage:forced_stage + 220],
+        )
+
     def test_forced_new_run_intent_is_durable_before_release_staging(self):
         source = read_operator("commands.js")
         start = source.index("async function invokeStart")
