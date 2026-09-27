@@ -57,15 +57,16 @@ function spawnValidationProcess(executable, args, cwd) {
         detached: process.platform !== 'win32',
         stdio: 'ignore',
     });
+    child.beesSpawnError = null;
     child.on('error', error => {
-        child.spawnError = error;
+        child.beesSpawnError = error;
     });
     return child;
 }
 
 function throwIfSpawnFailed(child, label) {
-    if (child && child.spawnError) {
-        throw new Error('Could not start ' + label + ': ' + child.spawnError.message);
+    if (child && child.beesSpawnError) {
+        throw new Error('Could not start ' + label + ': ' + child.beesSpawnError.message);
     }
 }
 
