@@ -212,6 +212,11 @@ namespace Assets.Scripts.Entities.Ships
 
         public void HitShip(Ship ship)
         {
+            if (ship == null || Level == null || ship.Level != Level)
+            {
+                return;
+            }
+
             if (!ShipsHit.Contains(ship))
             {
                 ShipsHit.Add(ship);
