@@ -31,6 +31,7 @@ EXTRA_RUNTIME_FILES = (
     "continual_learning_config.json",
 )
 REQUIRED_RUNTIME_FILES = (
+    "bees_process_safety.py",
     "bees_training_worker_agent.py",
     "bees_continual_elastic_wan_service.py",
     "bees_managed_remote_worker.py",
