@@ -406,12 +406,10 @@ class ReleaseCycleTests(unittest.TestCase):
         strict_config["promotion"]["min_competency_cases"] = 1
         strict_config["promotion"]["bootstrap_competency_cases"] = [
             {
-                "name": "large-map-baseline",
-                "matches": 7,
-                "minimum": 0.45,
+                "name": "broad-regression-baseline",
                 "metric": "score_rate",
                 "critical": True,
-                "env_args": ["--rl-map-size=48"],
+                "env_args": [],
             }
         ]
         strict_store = ContinualLearningStore(self.root, strict_config)
@@ -428,8 +426,15 @@ class ReleaseCycleTests(unittest.TestCase):
         pinned = strict_store.permanent_competency_suite()
         self.assertIsNotNone(pinned)
         self.assertEqual(pinned["cases"][0]["opponent_model_id"], first["model_id"])
-        self.assertEqual(pinned["cases"][0]["matches"], 7)
-        self.assertEqual(pinned["cases"][0]["env_args"], ["--rl-map-size=48"])
+        self.assertEqual(
+            pinned["cases"][0]["matches"],
+            strict_config["promotion"]["min_matches_vs_champion"],
+        )
+        self.assertEqual(
+            pinned["cases"][0]["minimum"],
+            strict_config["promotion"]["min_win_rate_vs_champion"],
+        )
+        self.assertEqual(pinned["cases"][0]["env_args"], [])
 
     def test_generation_zero_bootstrap_also_pins_source_controlled_competency_baseline(self):
         strict_config = copy.deepcopy(TEST_CONFIG)
