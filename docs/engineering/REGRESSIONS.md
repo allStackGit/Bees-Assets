@@ -981,3 +981,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** source invariant: Pathfinder setup must not mutate shared grid/search buffers until all background searches have completed. Tests were not run or added under the static-only audit instruction.
 **Verification:** statically traced the reset path through `ResetLevel`, ship lifecycle invalidation, `Level.SetupMapAndCamera`, and `Pathfinder.Setup`; confirmed active search arrays are read inside `Task.Run` and are now protected by a wait before reinitialization. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** invalidating a result identity does not cancel a worker or make its captured mutable search state safe to replace.
+
+### REG-111 — WAN learner waited indefinitely for actors that had disconnected
+**Area:** `Training/bees_wan_actor_training.py`, `Training/bees_wan_actor_worker.py`, fixed-topology WAN cohort selection
+**Symptom:** after a remote actor crashed or lost its connection, its registration remained in the learner's active count indefinitely. With `--bees-wan-min-actors` enabled, the learner could keep waiting for a cohort from the dead actor even while another actor remained healthy.
+**Root cause:** the fixed-topology broker recorded actor registration once and had no heartbeat or registration lease; its cohort requirement was derived from every actor ever registered in the session.
+**Fix:** actor state long-polls now include the actor ID and renew a 120-second registration lease. Startup and cohort counts include only recently responsive registrations, and the cohort requirement is recomputed as leases expire. Registration metadata remains available for behavior-spec consistency and actor reconnects.
+**Permanent protection:** source invariant: fixed-WAN actor liveness must be refreshed independently of trajectory uploads, and dead actor registrations must not hold the active cohort count. Tests were not run or added under the static-only audit instruction.
+**Verification:** statically traced actor startup registration, 30-second state long-polls, broker lease renewal, startup actor counting, batch acceptance, and dynamic cohort thresholds. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** transport liveness and trajectory production are separate signals; a quiet actor can be alive, while a terminated actor must eventually leave the active cohort count.
+
