@@ -390,13 +390,20 @@ async function invokeBundle(options = {}) {
         'diagnostic-deterministic-benchmark-' + bundleId + '.json',
     );
     let status = null;
+    let controlOnline = false;
 
     try {
         try {
-            if (await testControl(String(config.controlUrl), admin)) {
+            controlOnline = await testControl(String(config.controlUrl), admin);
+            if (controlOnline) {
                 status = await getStatus(config, admin);
+            } else {
+                console.warn(
+                    'Training control is offline; collecting the diagnostic bundle from durable local state.'
+                );
             }
         } catch (error) {
+            controlOnline = false;
             console.warn(
                 'Could not query live training-control state: ' + error.message
             );
@@ -404,7 +411,11 @@ async function invokeBundle(options = {}) {
 
         const targetRun = options.runId
             ? String(options.runId)
-            : await getActiveRunId(config, admin);
+            : (
+                status && status.desired && status.desired.run_id
+                    ? String(status.desired.run_id).trim()
+                    : await getActiveRunId(config, '')
+            );
         await requestCentralDiagnosticModelSnapshot(
             status,
             targetRun,
@@ -422,24 +433,35 @@ async function invokeBundle(options = {}) {
             );
         }
 
-        try {
-            if (await testControl(String(config.controlUrl), admin)) {
+        if (controlOnline) {
+            try {
                 status = await getStatus(config, admin);
                 writeJsonAtomic(statusJson, status);
+            } catch (error) {
+                controlOnline = false;
+                console.warn(
+                    'Could not capture live training-control JSON: ' + error.message
+                );
             }
-        } catch (error) {
-            console.warn(
-                'Could not capture live training-control JSON: ' + error.message
-            );
         }
 
-        try {
-            const lines = await getStatusFrameLines(config, admin);
-            fs.writeFileSync(statusText, lines.join('\n') + '\n', 'utf8');
-        } catch (error) {
-            console.warn(
-                'Could not capture readable training status: ' + error.message
-            );
+        if (controlOnline) {
+            try {
+                const lines = await getStatusFrameLines(config, admin);
+                fs.writeFileSync(statusText, lines.join('\n') + '\n', 'utf8');
+            } catch (error) {
+                console.warn(
+                    'Could not capture readable training status: ' + error.message
+                );
+            }
+        } else {
+            const offlineLines = [
+                'Bees distributed learning status  ' + new Date().toLocaleString(),
+                '='.repeat(78),
+                'Server: OFFLINE/UNREACHABLE - diagnostic bundle is using durable local state',
+                'Run: ' + (targetRun || '(unknown)'),
+            ];
+            fs.writeFileSync(statusText, offlineLines.join('\n') + '\n', 'utf8');
         }
 
         const args = [
@@ -449,7 +471,7 @@ async function invokeBundle(options = {}) {
             '--log-percent', String(options.logPercent == null ? 10 : options.logPercent),
             '--output-root', path.join(paths.beesRoot, 'Diagnostics'),
         ];
-        if (options.runId) args.push('--run-id', String(options.runId));
+        if (targetRun) args.push('--run-id', String(targetRun));
         if (exists(statusJson)) args.push('--status-json', statusJson);
         if (exists(statusText)) args.push('--status-text', statusText);
         if (exists(snapshotJson)) args.push('--snapshot-json', snapshotJson);
