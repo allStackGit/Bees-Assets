@@ -252,6 +252,7 @@ class BrokerClient:
         policy_epoch: int,
         control_epoch: int,
         wait_seconds: float,
+        actor_id: Optional[int] = None,
     ) -> Mapping[str, Any]:
         status, _headers, body = self._request(
             "GET",
@@ -261,6 +262,7 @@ class BrokerClient:
                 "policy_epoch": policy_epoch,
                 "control_epoch": control_epoch,
                 "wait": wait_seconds,
+                "actor_id": actor_id,
             },
         )
         if status != 200:
@@ -867,6 +869,7 @@ class ActorSession:
             self.policy_epoch,
             self.control_epoch,
             0.0,
+            actor_id=self.actor_id,
         )
         new_control = int(state.get("control_epoch", -1))
         remote_versions_raw = state.get("policy_versions")
@@ -882,7 +885,13 @@ class ActorSession:
                 and set(remote_versions) != expected_behaviors
             ):
                 time.sleep(0.1)
-                state = self.client.state(self.session_id, -1, self.control_epoch, 0.0)
+                state = self.client.state(
+                    self.session_id,
+                    -1,
+                    self.control_epoch,
+                    0.0,
+                    actor_id=self.actor_id,
+                )
                 remote_versions_raw = state.get("policy_versions")
                 if isinstance(remote_versions_raw, Mapping):
                     remote_versions = {str(key): int(value) for key, value in remote_versions_raw.items()}
@@ -964,6 +973,7 @@ class ActorSession:
                     self.policy_epoch,
                     self.control_epoch,
                     DEFAULT_STATE_WAIT_SECONDS,
+                    actor_id=self.actor_id,
                 )
                 if (
                     int(state.get("policy_epoch", -1)) != self.policy_epoch
