@@ -1066,3 +1066,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** preserve the child's signal exit status even when process-group cleanup finds no remaining descendants. No test was added or run under the user's static-analysis-only instruction.
 **Verification:** statically traced the learner return code, process-group cleanup, `SystemExit` caller, and intended signal re-delivery path. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** guardian cleanup must not bypass exit-status translation when the process group disappears between child exit and cleanup.
+
+### REG-120 — Remote launcher could receive shutdown before cleanup ownership
+**Area:** `Training/bees_remote_worker.py`, `main`
+**Symptom:** SIGINT or SIGTERM delivered after the SSH tunnel was created but before handlers and the cleanup scope were installed could exit the launcher without terminating its tunnel.
+**Root cause:** the tunnel subprocess was started before the guarded `try/finally`.
+**Fix:** initialize child tracking, install shutdown handlers, and create the tunnel inside the cleanup scope; cleanup now handles the tunnel only if creation succeeded.
+**Permanent protection:** every child process created by the remote launcher must be covered by its shutdown cleanup scope. No test was added or run under the user's static-analysis-only instruction.
+**Verification:** statically traced signal-handler installation, tunnel startup, each early return, and the final child cleanup. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** establish shutdown ownership before spawning a child process so asynchronous termination cannot strand it.
