@@ -543,6 +543,7 @@ class ActorSession:
         self._accepted_steps_total = 0
         self._accepted_trajectories_total = 0
         self._learner_consumed_steps_total = 0
+        self._learner_consumed_steps_per_sec = None
         self._last_throughput_write = 0.0
         self._session_failure_telemetry = None
         self._startup_health = startup_health
@@ -569,6 +570,10 @@ class ActorSession:
                 "learner_consumed_steps_total": self._learner_consumed_steps_total,
                 "upload_queue_depth": self._upload_queue.qsize(),
             }
+            if self._learner_consumed_steps_per_sec is not None:
+                payload["learner_consumed_steps_per_sec"] = (
+                    self._learner_consumed_steps_per_sec
+                )
             failure_snapshot = getattr(self._session_failure_telemetry, "snapshot", None)
             if callable(failure_snapshot):
                 payload.update(failure_snapshot())
