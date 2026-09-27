@@ -187,6 +187,14 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("argv_transport: 'node-spawn-array-v1'", source)
         self.assertNotIn("launchArgString", source)
         self.assertNotIn("Quote-Arg", source)
+        self.assertIn(
+            "learnerLaunchCommand.map(String).join(os.EOL)",
+            source,
+        )
+        self.assertIn(
+            "fallback.launch_command,",
+            source,
+        )
 
         node = node_executable()
         if not node:
