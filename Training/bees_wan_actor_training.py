@@ -990,7 +990,10 @@ class WanActorEnvManagerMixin:
         behavior_names = tuple(self._bees_wan_broker.merged_behavior_specs())
         result = {name: (None, None) for name in behavior_names}
         actors = self._bees_wan_broker.registered_actor_ids()
-        worker_id = actor_worker_ids(self._bees_wan_options, actors[0])[0]
+        # A reset may race with every remote actor lease expiring. Worker IDs are stable
+        # by configured actor slot, so use slot zero for this metadata-only synthetic step
+        # when no actor is currently connected instead of crashing on actors[0].
+        worker_id = actor_worker_ids(self._bees_wan_options, actors[0] if actors else 0)[0]
         return [EnvironmentStep(result, worker_id, {}, {})]
 
     def _reset_env(self, config: Optional[Dict] = None) -> List[Any]:
