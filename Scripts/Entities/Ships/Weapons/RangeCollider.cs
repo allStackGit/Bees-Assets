@@ -28,6 +28,18 @@ namespace Assets.Scripts.Entities.Ships.Weapons
         public void Deactivate()
         {
             ClearVisibleMapObjects();
+            if (Weapon != null && Weapon.ShipsWithinRange.Count > 0)
+            {
+                foreach (Ship ship in Weapon.ShipsWithinRange.Values)
+                {
+                    if (ship != null)
+                    {
+                        ship.WeaponsThatHaveUsWithinRange.Remove(Weapon);
+                    }
+                }
+                Weapon.ShipsWithinRange.Clear();
+                Weapon.HasCachedChanged = true;
+            }
             Collider.enabled = false;
             enabled = false;
         }
