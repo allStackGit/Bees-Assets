@@ -260,7 +260,8 @@ namespace Assets.Scripts.Levels
                 AddTimer(wave5);
 
                 NextTriggers.Add(new Trigger(
-                    () => State.IsSideKilled(ConfigData.Configuration.AISide),
+                    () => State.IsSideKilled(ConfigData.Configuration.AISide) &&
+                          !State.IsSideKilled(ConfigData.Configuration.UserSide),
                     () =>
                     {
                         CloseLevel();
