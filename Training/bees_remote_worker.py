@@ -29,16 +29,21 @@ CONTROL_ENV_ARGS_VARIABLE = "BEES_TRAINING_ENV_ARGS_JSON"
 
 
 def controlled_environment_args(spec_args: Sequence[str]) -> Tuple[str, ...]:
+    pinned_args = tuple(str(value) for value in spec_args)
     raw = os.environ.get(CONTROL_ENV_ARGS_VARIABLE)
     if raw is None or raw.strip() == "":
-        return tuple(str(value) for value in spec_args)
+        return pinned_args
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(f"{CONTROL_ENV_ARGS_VARIABLE} is invalid JSON") from exc
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise ValueError(f"{CONTROL_ENV_ARGS_VARIABLE} must contain a JSON string list")
-    return tuple(value)
+    if tuple(value) != pinned_args:
+        raise ValueError(
+            f"{CONTROL_ENV_ARGS_VARIABLE} does not match the pinned remote session spec"
+        )
+    return pinned_args
 
 
 
