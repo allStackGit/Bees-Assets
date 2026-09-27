@@ -136,7 +136,7 @@ namespace Bees.Tests.EditMode
             string uranus3 = Read("Level.Campaign.Uranus3.cs");
 
             StringAssert.Contains(
-                "bool hasCarrierInLevel = State.GetHumanShipTypes().Contains(ConfigData.ShipTypes.Carrier);",
+                "bool hasCarrierInLevel = State.GetUserShipTypes().Contains(ConfigData.ShipTypes.Carrier);",
                 uranus3);
             StringAssert.Contains("Level 11 HiveMind activation without Carrier", uranus3);
             StringAssert.Contains("FinishCarrierIntroduction,", uranus3);
