@@ -96,11 +96,16 @@ def _masked_action_log_probs_and_entropy(action_model, actions, dists, masks):
                 2 * math.pi * math.e * dists.continuous.std**2
                 + ACTION_ENTROPY_EPSILON
             )
-            # Match ML-Agents' sum-over-actions entropy scale while excluding
-            # continuous aim dimensions that have no corresponding weapon slot.
-            active_entropy = (per_dimension_entropy * activity).sum(
+            # ML-Agents 1.1.0 averages Gaussian entropy across continuous
+            # dimensions. Preserve that scale over only the dimensions that exist.
+            active_entropy_sum = (per_dimension_entropy * activity).sum(
                 dim=1,
                 keepdim=True,
+            )
+            active_dimension_count = activity.sum(dim=1, keepdim=True)
+            active_entropy = active_entropy_sum / torch.clamp(
+                active_dimension_count,
+                min=1.0,
             )
             entropies.append(active_entropy)
 
