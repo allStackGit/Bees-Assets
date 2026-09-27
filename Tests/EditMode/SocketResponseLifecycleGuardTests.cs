@@ -52,6 +52,26 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void ForbiddenProfileReadsReachTheirWaitersAsTerminalFailures()
+        {
+            string guardSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "SocketResponseLifecycleGuard.cs"));
+            string socketSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Server", "Socket.cs"));
+            string dataFileSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Data", "DataFile.cs"));
+            string settingsSource = File.ReadAllText(Path.Combine(
+                Application.dataPath, "Scripts", "Settings", "ServerSettings.cs"));
+
+            Assert.That(guardSource, Does.Contain("readRequest.Status = response.Status"));
+            Assert.That(guardSource, Does.Contain("response.Status == 403"));
+            Assert.That(socketSource, Does.Contain("_sr.Status == 403"));
+            Assert.That(dataFileSource, Does.Contain("ServerReadFailureStatus = standingRequest.Status"));
+            Assert.That(settingsSource, Does.Contain("ServerReadFailureStatus = standingRequest.Status"));
+            Assert.That(dataFileSource, Does.Contain("no defaults were substituted"));
+        }
+
+        [Test]
         public void BoundedRequestHistoryRetainsTheNewestRequests()
         {
             System.Diagnostics.Stopwatch previousStopwatch = ConfigData.Stopwatch;
