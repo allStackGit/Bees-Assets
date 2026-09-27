@@ -762,7 +762,18 @@ class WanActorBroker:
             raise StaleActorStateError("central policy is not ready")
         if not isinstance(supplied, Mapping):
             raise StaleActorStateError("trajectory batch is missing policy_versions")
-        normalized = {str(key): int(value) for key, value in supplied.items()}
+        normalized: Dict[str, int] = {}
+        for key, value in supplied.items():
+            if (
+                not isinstance(key, str)
+                or not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 0
+            ):
+                raise StaleActorStateError(
+                    "trajectory policy versions must map behavior names to non-negative integers"
+                )
+            normalized[key] = value
         if normalized != expected:
             raise StaleActorStateError(
                 f"trajectory policy versions {normalized} != current versions {expected}"
