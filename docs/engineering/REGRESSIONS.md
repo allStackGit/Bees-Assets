@@ -426,4 +426,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Root cause:** the parser rejected values `<= 0` but did not reject non-finite floating-point values.  
 **Permanent protection:** scan intervals must now be finite and positive. `ContinualOptionTests.test_scan_interval_rejects_non_finite_values` covers NaN and both infinities. The test was added but not run, per the static-only audit constraint.  
 **Verification:** the option parser’s float conversion, finite/positive guard, and its use as the monitor thread wait interval were reviewed statically. No tests or runtime checks were run.  
-**Invariant/knowledge:** any numeric duration passed to a blocking thread wait must reject NaN and infinities as well as zero and negative values.  
+**Invariant/knowledge:** any numeric duration passed to a blocking thread wait must reject NaN and infinities as well as zero and negative values.
+
+### REG-048 — Compound ship names retained mid-phrase capitalization
+**Area:** `Scripts/UI Components/DialogueManager.cs`, campaign dialogue text normalization  
+**Symptom:** dialogue such as “The Fire Barge …” rendered the multiword ship type as “Fire barge” instead of lowercasing the complete ship type in ordinary prose.  
+**Root cause:** the formatter replaced the shorter `Barge` name before `Fire Barge`, so the later compound-name replacement no longer matched.  
+**Permanent protection:** compound ship names are normalized before their component names. `DialoguePresentationTimingTests.CompoundShipNamesAreNormalizedBeforeTheirComponents` verifies the rendered line. The test was added but not run, per the static-only audit constraint.  
+**Verification:** traced the ordered replacements and statically reviewed the focused formatter regression assertion. No tests or runtime checks were run.  
+**Invariant/knowledge:** when normalizing overlapping names by text replacement, process longer compound names before their components.  
