@@ -36,3 +36,5 @@ None currently confirmed. The active audit continues; resolved findings have bee
 - REG-124 prevents the Pluto II campaign polling guard from rewriting live multipage tooltip text owned by `Tooltip.ShowSequencePage`. Dialogue gating and page recognition remain active. Verified by static call-path review only; this ownership fix is not yet proof that the repeated-“s” symptom is fully resolved. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
 
 - REG-125 adds a SHA-256 prefix comparison to training-log offset recovery. Matching prefixes may resume; mismatched or unavailable prefixes fail closed without overwriting the server copy. Verified statically across client, server, and uploader. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
+
+- REG-126 makes desired-state patches transactional: all fields are validated before state mutation, and persistence failure restores the prior state object. Verified statically in the BeesServer control store. No tests or runtime checks were run. The post-fix clean-pass count is **0 / 2**.
