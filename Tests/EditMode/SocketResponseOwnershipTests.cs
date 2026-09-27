@@ -214,6 +214,45 @@ namespace Bees.Tests.EditMode
                 "Persistent Squad identity allowed a response to cross pooled lifecycles.");
         }
 
+        [Test]
+        public void DelayedCommandResponseWithRetiredLevelIsDiscardedSafely()
+        {
+            AddRequestForRetiredLevel(
+                "Assets.Scripts.Server.CommandRequest",
+                "GetStrategy",
+                8201L);
+
+            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(
+                _socket,
+                "HandleStrategicCommandResponse",
+                "{\\"Hash\\":8201}"));
+        }
+
+        [Test]
+        public void DelayedMatchupResponseWithRetiredLevelIsDiscardedSafely()
+        {
+            AddRequestForRetiredLevel(
+                "Assets.Scripts.Server.MatchupStrategyRequest",
+                "GetMatchupStrategy",
+                8202L);
+
+            Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(
+                _socket,
+                "HandleMatchupResponse",
+                "{\\"Hash\\":8202}"));
+        }
+
+        private void AddRequestForRetiredLevel(string requestTypeName, string requestKind, long hash)
+        {
+            object request = RuntimeAssembly.CreateUninitialized(requestTypeName);
+            SetFieldIncludingBase(request, "Hash", hash);
+            SetFieldIncludingBase(request, "Type", Enum.Parse(_requestTypes, requestKind));
+            SetFieldIncludingBase(request, "Squad", _squad);
+            SetFieldIncludingBase(request, "SquadId", 17);
+            SetFieldIncludingBase(request, "Level", null);
+            RuntimeAssembly.AddToCollection(_standingRequests, request);
+        }
+
         private bool CanApply(int expectedItemId)
         {
             return (bool)RuntimeAssembly.InvokeStatic(
