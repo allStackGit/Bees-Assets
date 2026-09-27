@@ -312,6 +312,7 @@ public static class CampaignDialogueOverrides
 internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
 {
     private readonly Dictionary<CutsceneManager, DialogueLine> _appliedMarkers = new Dictionary<CutsceneManager, DialogueLine>();
+    private readonly List<CutsceneManager> _destroyedManagers = new List<CutsceneManager>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Install()
@@ -323,6 +324,7 @@ internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
 
     private void Update()
     {
+        PruneDestroyedManagers();
         if (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
         {
             return;
@@ -344,6 +346,23 @@ internal sealed class CampaignDialogueOverrideGuard : MonoBehaviour
 
             CampaignDialogueOverrides.Apply(manager);
             _appliedMarkers[manager] = marker;
+        }
+    }
+
+    private void PruneDestroyedManagers()
+    {
+        _destroyedManagers.Clear();
+        foreach (CutsceneManager manager in _appliedMarkers.Keys)
+        {
+            if (manager == null)
+            {
+                _destroyedManagers.Add(manager);
+            }
+        }
+
+        for (int i = 0; i < _destroyedManagers.Count; i++)
+        {
+            _appliedMarkers.Remove(_destroyedManagers[i]);
         }
     }
 }
