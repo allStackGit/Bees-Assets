@@ -666,3 +666,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced source validation, pre-parse hash, loader call, post-parse hash, archive copy, and post-archive hash check. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** content identity must be captured before parsing and remain stable through parsing and archival.
 
+### REG-076 — WAN actors labeled fetched policy bytes with an earlier state version
+**Area:** `Training/bees_wan_actor_worker.py`, WAN inference policy synchronization  
+**Symptom:** an actor read policy version N from central state, then requested the latest policy payload independently. If the learner published N+1 between those requests, the actor loaded N+1 weights but labeled resulting trajectories as N. The learner rejects that stale version, so a normal publish race could discard rollouts and force actor resynchronization.  
+**Root cause:** the actor discarded the policy response's `X-Bees-Policy-Version` header and recorded the earlier state version as the version actually loaded.  
+**Permanent protection:** the policy client now returns the response version with the payload. Actor synchronization records the version attached to the exact fetched payload, while preserving the legacy payload-only client method. `ActorPolicyVersionTests.test_applied_snapshot_version_is_not_taken_from_older_state` protects the attribution.  
+**Verification:** statically traced state version retrieval, policy endpoint snapshot/header construction, actor policy application, trajectory version labels, and learner-side stale-version rejection. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** a trajectory's policy version must identify the exact inference snapshot that generated it; stale and current policy metadata cannot be interchanged.
+
