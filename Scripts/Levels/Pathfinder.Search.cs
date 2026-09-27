@@ -647,17 +647,18 @@ namespace Assets.Scripts.Levels
             int lifecycleId = LifecycleIds[threadIndex];
             Task worker = Task.Run(() =>
             {
-                SW.Stopwatch stopwatch = Totals[threadIndex];
-                if (stopwatch == null)
-                {
-                    stopwatch = new SW.Stopwatch();
-                    Totals[threadIndex] = stopwatch;
-                }
-                stopwatch.Restart();
+                SW.Stopwatch stopwatch = null;
                 Path path = null;
                 Exception error = null;
                 try
                 {
+                    stopwatch = Totals[threadIndex];
+                    if (stopwatch == null)
+                    {
+                        stopwatch = new SW.Stopwatch();
+                        Totals[threadIndex] = stopwatch;
+                    }
+                    stopwatch.Restart();
                     path = RunPathSearch(threadIndex);
                 }
                 catch (Exception exception)
@@ -666,7 +667,7 @@ namespace Assets.Scripts.Levels
                 }
                 finally
                 {
-                    stopwatch.Stop();
+                    stopwatch?.Stop();
                     _completedPaths.Enqueue(new PathResult(ship, requestId, lifecycleId, threadIndex, path, error));
                 }
             });
