@@ -982,6 +982,7 @@ class TrainingControlStore {
         incompatible = false,
         environmentArgs = undefined,
         environmentValidationKey = undefined,
+        supersedeCompatibleBuildId = undefined,
     }) {
         buildId = requireString(buildId, 'build_id', 128);
         runId = requireString(runId, 'run_id', 128);
@@ -996,6 +997,20 @@ class TrainingControlStore {
         }
         if (typeof incompatible !== 'boolean') {
             throw Object.assign(new Error('incompatible must be boolean'), { statusCode: 400 });
+        }
+        let expectedSupersededBuildId = null;
+        if (supersedeCompatibleBuildId !== undefined && supersedeCompatibleBuildId !== null) {
+            expectedSupersededBuildId = requireString(
+                supersedeCompatibleBuildId,
+                'supersede_compatible_build_id',
+                128,
+            );
+            if (!/^[A-Za-z0-9._-]+$/.test(expectedSupersededBuildId)) {
+                throw Object.assign(
+                    new Error('supersede_compatible_build_id is malformed'),
+                    { statusCode: 400 },
+                );
+            }
         }
         if (!this._hasBuild(buildId)) {
             throw Object.assign(
@@ -1098,11 +1113,44 @@ class TrainingControlStore {
                         'pending release environment_args differ from the requested release transition'),
                     { statusCode: 409 });
             }
-            throw Object.assign(
-                new Error(
-                    'another release rollout is already pending: ' +
-                    existingPending.build_id + ' (' + existingPending.phase + ')'),
-                { statusCode: 409 });
+
+            const existingEffectiveEnvironmentArgs =
+                Object.prototype.hasOwnProperty.call(existingPending, 'environment_args')
+                    ? existingPending.environment_args
+                    : this.state.environment_args;
+            const safeCompatibleSupersession =
+                expectedSupersededBuildId === existingPending.build_id &&
+                !existingPending.incompatible &&
+                !incompatible &&
+                existingPending.run_id === runId &&
+                existingPending.compatibility_key === compatibilityKey &&
+                this.state.run_id === runId &&
+                this.state.compatibility_key === compatibilityKey &&
+                JSON.stringify(existingEffectiveEnvironmentArgs) ===
+                    JSON.stringify(effectiveEnvironmentArgs);
+
+            if (!safeCompatibleSupersession) {
+                const requestedSupersession = expectedSupersededBuildId
+                    ? ' Supersession was requested for ' + expectedSupersededBuildId +
+                        ' but the pending release is not a same-run, same-contract, same-environment compatible rollout.'
+                    : '';
+                throw Object.assign(
+                    new Error(
+                        'another release rollout is already pending: ' +
+                        existingPending.build_id + ' (' + existingPending.phase + ').' +
+                        requestedSupersession),
+                    { statusCode: 409 });
+            }
+        } else if (expectedSupersededBuildId) {
+            // The expected pending release may have completed while a replacement build was
+            // compiling. In that case the replacement is simply staged normally against the now
+            // canonical same-run contract; never fail solely because recovery succeeded first.
+            if (this.state.run_id !== runId || this.state.compatibility_key !== compatibilityKey) {
+                throw Object.assign(
+                    new Error(
+                        'requested compatible supersession no longer matches the active run contract'),
+                    { statusCode: 409 });
+            }
         }
 
         const requiredTrainers = this._releaseBarrierTrainers();
@@ -1571,6 +1619,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
                     environmentValidationKey: Object.prototype.hasOwnProperty.call(
                         body, 'environment_validation_key')
                         ? body.environment_validation_key
+                        : undefined,
+                    supersedeCompatibleBuildId: Object.prototype.hasOwnProperty.call(
+                        body, 'supersede_compatible_build_id')
+                        ? body.supersede_compatible_build_id
                         : undefined,
                 }));
                 return;
