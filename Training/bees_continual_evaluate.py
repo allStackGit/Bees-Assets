@@ -35,6 +35,12 @@ EVALUATION_PROTOCOL_VERSION = 1
 EVALUATION_MODE_FLAG = "--bees-rl-evaluator"
 TEAM_PATTERN = re.compile(r"(?:\?|&)team=(\d+)(?:&|$)")
 DEFAULT_MAX_ENVIRONMENT_STEPS_PER_MATCH = 200_000
+MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
+
+
+def _managed_stop_requested() -> bool:
+    value = os.environ.get(MANAGED_STOP_FILE_ENV, "").strip()
+    return bool(value and Path(value).expanduser().resolve().is_file())
 
 
 class EvaluationError(ContinualLearningError):
@@ -764,6 +770,8 @@ def run_match_group(
         raise EvaluationError("Match group must request at least one match.")
     if max_environment_steps_per_match <= 0:
         raise EvaluationError("max_environment_steps_per_match must be positive.")
+    if _managed_stop_requested():
+        raise KeyboardInterrupt
 
     UnityEnvironment, ActionTuple, _ = _import_mlagents()
     channel = _create_result_channel()
@@ -790,6 +798,8 @@ def run_match_group(
 
         limit = matches * max_environment_steps_per_match
         while len(completed) < matches:
+            if _managed_stop_requested():
+                raise KeyboardInterrupt
             for team, name in teams.items():
                 decision_steps, terminal_steps = environment.get_steps(name)
                 policies[team].forget(getattr(terminal_steps, "agent_id", ()))
