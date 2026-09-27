@@ -24,7 +24,11 @@ namespace Assets.Scripts.Levels
         public const int MaxQueuedPlayerCommands = 1024;
         public const int MaxPlayerCommandsPerFrame = 64;
         private long _nextBattleStateSequence = 1;
-
+        private long _lastAppliedBattleStateSequence;
+        private readonly Queue<BattleStateSnapshot> _queuedBattleStateSnapshots =
+            new Queue<BattleStateSnapshot>();
+        private readonly object _queuedBattleStateSnapshotsLock = new object();
+        public const int MaxQueuedBattleStateSnapshots = 4;
 
         public bool TryCreateAuthoritativeBattleStateSnapshot(
             out BattleStateSnapshot snapshot)
@@ -81,6 +85,154 @@ namespace Assets.Scripts.Levels
 
             snapshot = candidate;
             return true;
+        }
+
+        public bool QueueReceivedBattleStateSnapshot(
+            int sourcePeerId,
+            BattleStateSnapshot snapshot)
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                sourcePeerId != matchSession.AuthorityPeerId ||
+                snapshot == null ||
+                snapshot.MatchLevelId != MatchLevelId ||
+                snapshot.Sequence <= _lastAppliedBattleStateSequence)
+            {
+                return false;
+            }
+
+            BattleStateSnapshot copy = CloneBattleStateSnapshot(snapshot);
+            lock (_queuedBattleStateSnapshotsLock)
+            {
+                while (_queuedBattleStateSnapshots.Count >= MaxQueuedBattleStateSnapshots)
+                {
+                    _queuedBattleStateSnapshots.Dequeue();
+                }
+                _queuedBattleStateSnapshots.Enqueue(copy);
+            }
+            return true;
+        }
+
+        public bool ProcessQueuedBattleStateSnapshots()
+        {
+            BattleStateSnapshot newest = null;
+            lock (_queuedBattleStateSnapshotsLock)
+            {
+                while (_queuedBattleStateSnapshots.Count > 0)
+                {
+                    BattleStateSnapshot candidate = _queuedBattleStateSnapshots.Dequeue();
+                    if (candidate.Sequence > _lastAppliedBattleStateSequence &&
+                        (newest == null || candidate.Sequence > newest.Sequence))
+                    {
+                        newest = candidate;
+                    }
+                }
+            }
+
+            return newest != null && TryApplyAuthoritativeBattleStateSnapshot(newest);
+        }
+
+        public void ClearQueuedBattleStateSnapshots()
+        {
+            lock (_queuedBattleStateSnapshotsLock)
+            {
+                _queuedBattleStateSnapshots.Clear();
+            }
+        }
+
+        private bool TryApplyAuthoritativeBattleStateSnapshot(
+            BattleStateSnapshot snapshot)
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession == null ||
+                matchSession.IsLocalAuthority ||
+                matchSession.Phase != MatchSessionPhase.Battle ||
+                snapshot == null ||
+                snapshot.MatchLevelId != MatchLevelId ||
+                snapshot.Sequence <= _lastAppliedBattleStateSequence ||
+                snapshot.Ships == null ||
+                snapshot.Ships.Count != ShipsByMatchId.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot state = snapshot.Ships[i];
+                if (state == null ||
+                    !ShipsByMatchId.TryGetValue(state.MatchShipId, out Ship ship) ||
+                    ship == null ||
+                    ship.Squad == null ||
+                    ship.Squad.CommandSquadId != state.MatchSquadId ||
+                    ship.Side != state.Side ||
+                    (int)ship.ShipType != state.ShipType ||
+                    ship.IsDead != state.IsDead ||
+                    state.Health < 0 ||
+                    state.Health > ship.MaxHealth)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < snapshot.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot state = snapshot.Ships[i];
+                Ship ship = ShipsByMatchId[state.MatchShipId];
+
+                ship.Transform.localPosition =
+                    new Vector3(state.X, state.Y, ship.Transform.localPosition.z);
+                ship.Rotation = state.Rotation;
+                ship.Transform.localEulerAngles =
+                    new Vector3(0f, 0f, state.Rotation);
+                if (ship.Body != null)
+                {
+                    ship.Body.linearVelocity =
+                        new Vector2(state.VelocityX, state.VelocityY);
+                }
+
+                if (ship.Health != state.Health)
+                {
+                    ship.Health = state.Health;
+                    ship.Tsv = Utilities.CalculateTsv(ship);
+                    ship.UpdateHealthBar();
+                }
+            }
+
+            _lastAppliedBattleStateSequence = snapshot.Sequence;
+            return true;
+        }
+
+        private static BattleStateSnapshot CloneBattleStateSnapshot(
+            BattleStateSnapshot source)
+        {
+            BattleStateSnapshot copy = new BattleStateSnapshot
+            {
+                MatchLevelId = source.MatchLevelId,
+                Sequence = source.Sequence
+            };
+
+            for (int i = 0; i < source.Ships.Count; i++)
+            {
+                BattleShipStateSnapshot ship = source.Ships[i];
+                copy.Ships.Add(new BattleShipStateSnapshot
+                {
+                    MatchShipId = ship.MatchShipId,
+                    MatchSquadId = ship.MatchSquadId,
+                    Side = ship.Side,
+                    ShipType = ship.ShipType,
+                    X = ship.X,
+                    Y = ship.Y,
+                    Rotation = ship.Rotation,
+                    VelocityX = ship.VelocityX,
+                    VelocityY = ship.VelocityY,
+                    Health = ship.Health,
+                    IsDead = ship.IsDead
+                });
+            }
+
+            return copy;
         }
 
         public int AddUserCommand()
@@ -952,7 +1104,7 @@ namespace Assets.Scripts.Levels
                      ship.Side != ConfigData.Configuration.HumanSide) ||
                     !Enum.IsDefined(typeof(ConfigData.ShipTypes), ship.ShipType) ||
                     !IsFinite(new Vector2(ship.X, ship.Y)) ||
-                    !float.IsFinite(ship.Rotation) ||
+                    (float.IsNaN(ship.Rotation) || float.IsInfinity(ship.Rotation)) ||
                     !IsFinite(new Vector2(ship.VelocityX, ship.VelocityY)) ||
                     ship.Health < 0)
                 {

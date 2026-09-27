@@ -2036,5 +2036,76 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("ship.Squad.CommandSquadId", source);
             StringAssert.Contains("matchSession.IsLocalAuthority", source);
         }
+
+        [Test]
+        public void ClientBattleStateApplicationValidatesWholeWorldBeforeMutation()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+
+            int applyIndex = source.IndexOf("TryApplyAuthoritativeBattleStateSnapshot(");
+            Assert.That(applyIndex, Is.GreaterThanOrEqualTo(0));
+            string applySource = source.Substring(applyIndex);
+
+            int validateCountIndex = applySource.IndexOf(
+                "snapshot.Ships.Count != ShipsByMatchId.Count");
+            int validationLoopIndex = applySource.IndexOf(
+                "for (int i = 0; i < snapshot.Ships.Count; i++)");
+            int mutationIndex = applySource.IndexOf("ship.Transform.localPosition =");
+            Assert.That(validateCountIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(validationLoopIndex, Is.GreaterThan(validateCountIndex));
+            Assert.That(mutationIndex, Is.GreaterThan(validationLoopIndex));
+            StringAssert.Contains("ship.IsDead != state.IsDead", applySource);
+            StringAssert.Contains("ship.Squad.CommandSquadId != state.MatchSquadId", applySource);
+        }
+
+        [Test]
+        public void ClientBattleStateCorrectionDoesNotInvokeGameplayDamageOrKillPaths()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string source = File.ReadAllText(path);
+            int applyIndex = source.IndexOf("TryApplyAuthoritativeBattleStateSnapshot(");
+            int cloneIndex = source.IndexOf("CloneBattleStateSnapshot(", applyIndex);
+            string applySource = source.Substring(
+                applyIndex,
+                cloneIndex - applyIndex);
+
+            StringAssert.Contains("ship.Health = state.Health;", applySource);
+            StringAssert.Contains("ship.UpdateHealthBar();", applySource);
+            StringAssert.DoesNotContain(".Kill(", applySource);
+            StringAssert.DoesNotContain("LogDamage(", applySource);
+            StringAssert.DoesNotContain("LogAttackingDamage(", applySource);
+        }
+
+        [Test]
+        public void BattleStateQueueKeepsLatestBoundedAuthoritySnapshots()
+        {
+            string commandPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.Commands.cs");
+            string statePath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Levels",
+                "GameState.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string stateSource = File.ReadAllText(statePath);
+
+            StringAssert.Contains("MaxQueuedBattleStateSnapshots = 4", commandSource);
+            StringAssert.Contains("sourcePeerId != matchSession.AuthorityPeerId", commandSource);
+            StringAssert.Contains("_queuedBattleStateSnapshots.Dequeue();", commandSource);
+            StringAssert.Contains("candidate.Sequence > newest.Sequence", commandSource);
+            StringAssert.Contains("ClearQueuedBattleStateSnapshots();", stateSource);
+        }
     }
 }

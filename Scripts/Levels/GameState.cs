@@ -209,6 +209,7 @@ namespace Assets.Scripts.Levels
             Squads.Clear();
             ClearSquadsAwaitingHiveMindCommands();
             ClearQueuedPlayerCommands();
+            ClearQueuedBattleStateSnapshots();
             PastCommands.Clear();
             OutcomeIdToPastCommandIndex.Clear();
             SelectedSquads.Clear();
