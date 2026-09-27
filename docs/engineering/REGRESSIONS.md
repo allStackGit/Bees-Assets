@@ -583,3 +583,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** added `GameState.GetUserShipTypes()` and changed the active Pluto IV mission to use it. `CampaignTriggerStructureTests.PlutoFourFleetTutorialUsesConfiguredUserSide` guards both the caller and the helper's side source. The regression guard was added but not run, per the static-only audit scope.  
 **Verification:** traced campaign mission ID 3 to `Pluto4BluerPasturesCampaign`, confirmed `GetHumanShipTypes()` resolves to `HumanSide`, and reviewed the selected dialogue lines about the commander’s fleet. The changed source and regression guard were reread after editing. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** player-facing campaign tutorial content about the user's fleet must derive from `Configuration.UserSide`, which may differ from `HumanSide`.
+
+### REG-066 — Uranus I carrier tutorial gate checked the wrong side
+**Area:** `Scripts/Levels/Level.Campaign.Uranus1.cs`, `Scripts/Levels/GameState.Queries.cs`, carrier tutorial ownership  
+**Symptom:** the carrier introduction was gated on whether the Human side had a Carrier, then selected carrier squads from `Configuration.UserSide`. If those sides differ, the tutorial could run with no user carrier to select or skip an available user carrier's introduction.  
+**Root cause:** the trigger mixed a Human-side ship-type query with user-side squad selection.  
+**Permanent protection:** the gate now uses `GetUserShipTypes()`, matching the side whose carrier squads the trigger selects. `CampaignTriggerStructureTests.UranusCarrierTutorialGateUsesTheConfiguredUserFleet` protects the gate and selection sides. The regression guard was added but not run, per the static-only audit scope.  
+**Verification:** traced the trigger call in Uranus I, the carrier gate, user-side squad selection, and `GetUserShipTypes()` resolving to `Configuration.UserSide`. The changed source and regression guard were reread after editing. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** a tutorial's eligibility check and the entities it selects must refer to the same configured player side.
