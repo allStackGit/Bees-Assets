@@ -411,6 +411,18 @@ test('planned env-count transition does not create an instability hold', () => {
         9,
         0,
         1011,
+        { max: 16, processState: 'starting' },
+    );
+    assert.equal(state.phase, 'awaiting-restart');
+    assert.equal(state.stability_hold_until_ms, 0);
+    assert.equal(state.last_instability_ms, null);
+
+    state = update(
+        optimizer,
+        'remote-a',
+        9,
+        0,
+        1012,
         { max: 16, processState: 'running' },
     );
     assert.equal(state.phase, 'warmup');
