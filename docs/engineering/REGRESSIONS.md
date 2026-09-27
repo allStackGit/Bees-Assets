@@ -359,3 +359,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** restart backoff now resets only when the command, build/run/compatibility identity, environment arguments, state-file path, worker count, or child lifecycle modes change. `ManagedProcessRestartTests.test_control_revision_does_not_bypass_same_launch_backoff` protects the revision-only case. The test was added but not run, per the static-only audit constraint.  
 **Verification:** shared server revision increments during rollout phases and the supervisor's restart identity were reviewed statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** a control-plane revision alone is not evidence of a different launch and must not erase crash-loop backoff.
+
+### REG-039 — Pluto II status centering followed the wrong campaign side
+**Area:** `Scripts/UI Components/PlutoTwoTutorialPresentationGuard.cs`, `Tests/EditMode/InitialDesignPresentationRegressionTests.cs`, campaign UI  \
+**Symptom:** the Pluto II status banner could be centered based on Human campaign progress even when the player's active campaign belonged to the Bee side, or fail to center when Bee-side progress was on Pluto II.  \
+**Root cause:** the presentation guard checked `HumanSide`, while the neighboring campaign feedback guard and active campaign selection use `Configuration.UserSide`.  \
+**Permanent protection:** the centering guard now checks the configured user side, and the source regression assertion requires `UserSide`.  \
+**Verification:** compared both guards' mission-selection logic and inspected the updated source assertion statically. No tests or gameplay run were performed, per the static-only audit constraint.  \
+**Invariant/knowledge:** campaign presentation tied to the player's current mission must use the configured user side, not a hard-coded side.
