@@ -674,3 +674,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced state version retrieval, policy endpoint snapshot/header construction, actor policy application, trajectory version labels, and learner-side stale-version rejection. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** a trajectory's policy version must identify the exact inference snapshot that generated it; stale and current policy metadata cannot be interchanged.
 
+
+### REG-077 — WAN capacity diagnostics retained a stale trainer rate
+**Area:** `Training/bees_elastic_wan_training.py`, elastic WAN capacity measurement  
+**Symptom:** after trainer progress stopped, the capacity monitor could keep reporting the rate from its last two step samples indefinitely. Repeated observations of an unchanged step do not add samples, and pruning deliberately retains two samples even when they are both outside the measurement window. Capacity comparisons could therefore use a stale throughput baseline.  
+**Root cause:** `trainer_rate()` checked sample count and elapsed time but did not require the newest sample to remain within the configured measurement window.  
+**Permanent protection:** the diagnostic now returns no rate when its latest progress sample is older than the measurement window. `CapacityDiagnosticTests.test_trainer_rate_expires_when_progress_samples_are_stale` protects this case.  
+**Verification:** statically traced trainer-step observation, sample pruning, rate calculation, and capacity reporting. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** a reported training rate must be based on step progress observed inside its declared time window.
