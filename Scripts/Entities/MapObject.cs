@@ -53,7 +53,13 @@ public class MapObject : MonoBehaviour
         GameObject colliding = collider.gameObject;
         if (colliding.CompareTag("Projectile"))
         {
-            LastHitProjectile = colliding.GetComponent<Projectile>();
+            Projectile projectile = colliding.GetComponent<Projectile>();
+            if (projectile == null || projectile.Level != Level)
+            {
+                return;
+            }
+
+            LastHitProjectile = projectile;
             // Subtract projectile power from health
             Health -= LastHitProjectile.Power;
             OnHealthChanged();
