@@ -88,7 +88,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 
 ## Training launch arguments
 
-- If persisting control state fails, restore the prior in-memory state; artifact pruning may delete files only after the updated catalog is persisted.
+- If persisting control state fails, restore the prior in-memory state and remove any newly published archive that has no catalog owner; artifact pruning may delete catalog-owned files only after the updated catalog is persisted.
 - Validate complete BeesServer desired-state patches before mutating shared state; any rejected field must leave all desired fields and revision unchanged.
 - A resumed training-log upload must verify that overlapping local bytes match the stored remote prefix; offset equality alone is insufficient, and an ambiguous mismatch must not overwrite either copy.
 - Launcher-private options must be extracted only before ML-Agents' `--env-args` remainder delimiter; preserve the delimiter and every following Unity argument unchanged.
