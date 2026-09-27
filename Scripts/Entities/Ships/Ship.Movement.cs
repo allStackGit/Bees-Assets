@@ -168,6 +168,12 @@ namespace Assets.Scripts.Entities.Ships
             ClearTurretAsteroidTarget(asteroid);
         }
 
+        internal void InvalidatePathfindingForObstacleChange()
+        {
+            _hasPendingPathfindingDestination = true;
+            Level.Pathfinder.InvalidatePathRequest(this);
+        }
+
         public void HandleSupersededPathfindingRequest()
         {
             if (!_hasPendingPathfindingDestination || IsDead)
