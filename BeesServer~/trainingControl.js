@@ -1512,6 +1512,8 @@ class TrainingControlStore {
             worker_capacity: normalizeCapacity(payload.worker_capacity),
             last_seen_ms: now,
         };
+        const previousState = this._snapshotState();
+        const previousTrainerRecord = this.trainers.get(trainerId);
         let persistentHeartbeatStateChanged = false;
         if (role === 'dedicated') {
             persistentHeartbeatStateChanged = this._ensurePendingTrainer(record) ||
@@ -1533,7 +1535,16 @@ class TrainingControlStore {
                 Boolean(canonicalBuild),
         });
         this.trainers.set(trainerId, record);
-        if (persistentHeartbeatStateChanged) this._persist();
+        if (persistentHeartbeatStateChanged) {
+            try {
+                this._persist();
+            } catch (error) {
+                this.state = previousState;
+                if (previousTrainerRecord) this.trainers.set(trainerId, previousTrainerRecord);
+                else this.trainers.delete(trainerId);
+                throw error;
+            }
+        }
         this._advanceRollout();
         return this.stateFor({ trainerId, role, platform });
     }
