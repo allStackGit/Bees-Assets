@@ -13,9 +13,23 @@ namespace Assets.Scripts.Entities
         public List<Squad> SquadsMining = new List<Squad>();
         public override void Setup(Level level)
         {
+            Setup(level, false);
+        }
+
+        public void Setup(Level level, bool useDeterministicSetupRandom)
+        {
             base.Setup(level);
             transform.parent = Level.Map.Transform;
-            transform.localPosition = Utilities.RandomCoordinate(Level, Vector2.zero, Level.MiningAsteroidSpawnDistance, Vector2.zero);
+            transform.localPosition = useDeterministicSetupRandom
+                ? Level.SetupRandomCoordinate(
+                    Vector2.zero,
+                    Level.MiningAsteroidSpawnDistance,
+                    Vector2.zero)
+                : Utilities.RandomCoordinate(
+                    Level,
+                    Vector2.zero,
+                    Level.MiningAsteroidSpawnDistance,
+                    Vector2.zero);
             Level.State.AddObstacle(this);
             Level.State.MiningAsteroids.Add(this);
         }

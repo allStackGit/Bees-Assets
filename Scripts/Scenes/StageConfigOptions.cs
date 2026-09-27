@@ -24,7 +24,7 @@ public static class StageConfigOptions
         if (level.CurrentLevelOptions.EnemySquadGenerationCount > 0)
         {
             level.CurrentLevelOptions.EnemySquadGenerationCount =
-                Utilities.RandomInt(level.CurrentLevelOptions.EnemySquadGenerationCount - stage.GeneratedSquadCountMinimum) +
+                level.SetupUtilityRandomInt(level.CurrentLevelOptions.EnemySquadGenerationCount - stage.GeneratedSquadCountMinimum) +
                 1 + stage.GeneratedSquadCountMinimum;
         }
 
@@ -36,11 +36,11 @@ public static class StageConfigOptions
         {
             if (ConfigData.Configuration.AISide == ConfigData.Configuration.BeeSide)
             {
-                KeepOnly(stage.BeeShipTypes, Utilities.RandomInt(stage.BeeShipTypes.Count));
+                KeepOnly(stage.BeeShipTypes, level.SetupUtilityRandomInt(stage.BeeShipTypes.Count));
             }
             else
             {
-                KeepOnly(stage.HumanShipTypes, Utilities.RandomInt(stage.HumanShipTypes.Count));
+                KeepOnly(stage.HumanShipTypes, level.SetupUtilityRandomInt(stage.HumanShipTypes.Count));
             }
         }
         else if (enemyShipTypeOption == 0)

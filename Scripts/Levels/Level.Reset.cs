@@ -74,6 +74,7 @@ namespace Assets.Scripts.Levels
         public void SetupLevel()
         {
             StartTime = Time.realtimeSinceStartup;
+            ResetMultiplayerSetupRandom();
             bool isDedicatedRlTraining = global::RlOneVsOneTrainingBootstrap.IsActiveFor(Stage);
             if (isDedicatedRlTraining)
             {
@@ -93,7 +94,7 @@ namespace Assets.Scripts.Levels
                         _setup_possibleLevels.Add(level);
                     }
                 }
-                CurrentLevelOptions = (LevelOptions)_setup_possibleLevels[Utilities.RandomInt(_setup_possibleLevels.Count)].Clone();
+                CurrentLevelOptions = (LevelOptions)_setup_possibleLevels[SetupUtilityRandomInt(_setup_possibleLevels.Count)].Clone();
             }
             else if (ConfigData.LevelOptions == null)
             {
@@ -178,7 +179,8 @@ namespace Assets.Scripts.Levels
 
             if (ActivateMining && ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign)
             {
-                SpawnMiningAsteroids();
+                SpawnMiningAsteroids(
+                    useDeterministicSetupRandom: UsesDeterministicMultiplayerSetupRandom);
             }
             if (ActivateFogOfWar && HasPlayer)
             {
