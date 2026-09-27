@@ -535,3 +535,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** statically traced request ownership, the per-session operation tail, completion-result cleanup, and the new focused regression. The test was added but not run; no runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** idle expiry must not delete files owned by an active asynchronous operation; reserve session ownership before yielding to cleanup.
   
+
+### REG-060 — Failed model reads consumed download quota
+**Area:** `BeesServer~/rlModelDistribution.js`, per-user model download quota  
+**Symptom:** a transient file-open or read failure could consume the user's byte quota even though the server returned no model chunk.  
+**Root cause:** `chunk()` reserved quota before opening and reading the bundle, but did not release that reservation when file I/O failed or returned fewer bytes than requested.  
+**Permanent protection:** chunk reads retain the exact quota-window record they reserved against and refund the reserved byte count on failure; the refund is ignored if cleanup or a later request has replaced that user's window record. `rlModelDistribution.module.test.js` removes the bundle after metadata validation and verifies an open failure does not leave quota charged.  
+**Verification:** statically traced successful and failed read paths, including concurrent reservations and rate-window replacement. The focused regression was added but not run; no runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** download byte quota measures bytes successfully returned as chunks; failed reads must release only their own reservation.
