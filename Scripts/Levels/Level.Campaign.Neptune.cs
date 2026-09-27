@@ -276,6 +276,7 @@ namespace Assets.Scripts.Levels
                 () => State.IsSideKilled(ConfigData.Configuration.UserSide) && !_lastShipRetreated,
                 () =>
                 {
+                    WinningSide = ConfigData.Configuration.AISide;
                     CloseLevel();
                     CancelNeptune2Waves(wave1, wave2, wave3, wave4, wave5);
                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[16], true);
@@ -285,6 +286,7 @@ namespace Assets.Scripts.Levels
                 () => State.IsSideKilled(ConfigData.Configuration.UserSide) && _lastShipRetreated,
                 () =>
                 {
+                    WinningSide = ConfigData.Configuration.AISide;
                     CloseLevel();
                     CancelNeptune2Waves(wave1, wave2, wave3, wave4, wave5);
                     Stage.CutsceneManager.PlaySingleDialogueLine(Stage.CutsceneManager.Neptune_OfProduction[17], true);
