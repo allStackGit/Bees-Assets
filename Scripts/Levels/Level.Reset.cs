@@ -316,7 +316,18 @@ namespace Assets.Scripts.Levels
 
         private void ResetRuntimeState(HashSet<long> allHandledRequests)
         {
+            // UpdateTimers iterates a frame snapshot. Mark the old registrations canceled before
+            // clearing the live list so timers later in that snapshot cannot fire against the
+            // replacement level state during the same frame.
+            for (int i = 0; i < Timers.Count; i++)
+            {
+                if (Timers[i] != null)
+                {
+                    Timers[i].IsCanceled = true;
+                }
+            }
             Timers.Clear();
+            _timerCollectionVersion++;
             _hasSetTimeoutTimer = false;
             State.ResetState();
             Seconds = 0;
