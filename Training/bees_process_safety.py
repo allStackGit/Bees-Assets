@@ -223,6 +223,16 @@ def _owned_child_main(argv: Sequence[str]) -> int:
         except ProcessLookupError:
             pass
 
+    if return_code < 0:
+        child_signal = -return_code
+        try:
+            if child_signal not in (signal.SIGKILL, signal.SIGSTOP):
+                signal.signal(child_signal, signal.SIG_DFL)
+            os.kill(os.getpid(), child_signal)
+        except OSError:
+            # Preserve the usual shell status if the signal cannot be redelivered.
+            return min(255, 128 + child_signal)
+
     return return_code
 
 
