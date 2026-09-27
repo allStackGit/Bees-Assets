@@ -11,7 +11,6 @@ namespace Assets.Scripts.Levels
 {
     public partial class Level
     {
-        private const int StaleSquadRequestHistoryLimit = 4096;
         private readonly List<Ship> _resetShips = new List<Ship>();
         private float _reset_remainingHumanTsv, _reset_remainingHumanTSVPercentage, _reset_remainingBeeTsv, _reset_remainingBeeTSVPercentage;
         private Vector2 _reset_swap;
@@ -297,7 +296,7 @@ namespace Assets.Scripts.Levels
             List<ServerRequest> staleResponseHistory = ConfigData.RequestHistory
                 .Where(request => request is CommandRequest || request is MatchupStrategyRequest)
                 .OrderByDescending(request => request.StartTime)
-                .Take(StaleSquadRequestHistoryLimit)
+                .Take(SocketResponseLifecycleGuard.MaxTrackedStaleSquadRequests)
                 .ToList();
             ConfigData.RequestHistory.IntersectWith(staleResponseHistory);
         }
