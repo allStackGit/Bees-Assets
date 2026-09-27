@@ -3,11 +3,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const {
     DEVELOPMENT_DATABASE,
     parseLauncherOptions,
     managedChildOwnerToken,
     trainingControlProbeConfig,
+    supervisorRestartDelayMs,
+    runSupervisor,
 } = require('../start-server');
 
 test('server launcher defaults to the bees development database', () => {
@@ -98,4 +101,55 @@ test('managed child owner token is deterministic and does not contain parent tok
     assert.equal(child.length, 64);
     assert.equal(child, managedChildOwnerToken(parent));
     assert.equal(child.includes(parent), false);
+});
+
+
+test('server supervisor retries when a replacement process fails to spawn', () => {
+    const children = [];
+    const timers = [];
+    const fakeSpawn = () => {
+        const child = new EventEmitter();
+        child.pid = 1000 + children.length;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => {};
+        children.push(child);
+        return child;
+    };
+    const fakeSetTimeout = (callback, delay) => {
+        const timer = { callback, delay, unref() {} };
+        timers.push(timer);
+        return timer;
+    };
+
+    const supervisor = runSupervisor(
+        { serverArgs: ['test', '7146'], managedOwnerToken: '' },
+        {
+            spawn: fakeSpawn,
+            env: {},
+            setTimeout: fakeSetTimeout,
+            clearTimeout() {},
+            registerSignals: false,
+        },
+    );
+
+    assert.equal(children.length, 1);
+    children[0].emit('error', new Error('simulated spawn failure'));
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delay, 1000);
+
+    timers.shift().callback();
+    assert.equal(children.length, 2);
+    children[1].emit('error', new Error('second simulated spawn failure'));
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delay, 2000);
+
+    supervisor.stop('SIGTERM');
+});
+
+test('server supervisor restart backoff is bounded', () => {
+    assert.equal(supervisorRestartDelayMs(0), 1000);
+    assert.equal(supervisorRestartDelayMs(1), 2000);
+    assert.equal(supervisorRestartDelayMs(5), 30000);
+    assert.equal(supervisorRestartDelayMs(100), 30000);
 });
