@@ -815,3 +815,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** `ServerRequestIdentityTests.UniqueRequestHashesUseCallLocalCounterValues` guards the call-local construction. The test was added but not run, per the static-only audit scope.  
 **Verification:** statically traced `ServerRequest.Hash` initialization through `Utilities.Hash()` and the interleaving window in `Unique53Hash()`. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** atomic counters do not make an ID generator thread-safe if callers return a shared mutable temporary; each call must compose and return its own value.
+
+
+### REG-094 — Training-log identities could traverse outside the log root
+**Area:** `BeesServer~/trainingControl.js`, authenticated `/v1/log` path construction  
+**Symptom:** a trainer or run identifier equal to `.` or `..` passed the character allowlist and was then joined as a filesystem path component. A caller holding a training-control token could therefore target paths outside the configured log root.  
+**Root cause:** validation rejected traversal segments in the relative log path, but did not reject the same special components in the trainer and run namespaces. The server trusted client-side run-ID validation for a security boundary that the endpoint itself must enforce.  
+**Fix:** reject `.` and `..` for both trainer and run IDs before creating or joining any log paths.  
+**Permanent protection:** `trainingControl.module.test.js` checks that both identity positions reject traversal components. The test was added but not run, per the static-only audit scope.  
+**Verification:** statically traced the authenticated log route into identity validation, path component assembly, parent creation, and file write operations. No tests, builds, or runtime checks were run.  
+**Invariant/knowledge:** validate every caller-controlled filesystem path component at the server boundary, including namespace identifiers even when clients validate them too.
