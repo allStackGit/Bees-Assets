@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import bees_training_worker_agent as worker
@@ -30,6 +31,42 @@ class EpisodeLogMetricsTests(unittest.TestCase):
 
         self.assertEqual(snapshot["window_episodes"], 1)
         self.assertEqual(snapshot["last_episode"], 1)
+
+
+class ManagedProcessRestartTests(unittest.TestCase):
+    def test_changed_environment_args_bypass_same_command_backoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = worker.ManagedProcess()
+            manager.command = ("python", "trainer.py")
+            manager.revision = 4
+            manager.build_sha256 = "a" * 64
+            manager.build_id = "build-a"
+            manager.run_id = "run-a"
+            manager.compatibility_key = "b" * 64
+            manager.environment_args = ("--rl-map-size=64",)
+            manager.worker_env_count = 2
+            manager.state_file = str((root / "old-state.json").resolve())
+            manager.restart_failure_streak = 5
+            manager.restart_not_before_monotonic = worker.time.monotonic() + 120.0
+            state_file = root / "new-state.json"
+
+            with mock.patch.object(worker, "popen_owned") as popen:
+                manager.start(
+                    ("python", "trainer.py"),
+                    revision=4,
+                    build_sha256="a" * 64,
+                    build_id="build-a",
+                    run_id="run-a",
+                    compatibility_key="b" * 64,
+                    state_file=state_file,
+                    environment_args=("--rl-map-size=128",),
+                    worker_env_count=2,
+                )
+
+            self.assertEqual(manager.restart_failure_streak, 0)
+            self.assertEqual(manager.restart_not_before_monotonic, 0.0)
+            self.assertTrue(popen.called)
 
 
 if __name__ == "__main__":
