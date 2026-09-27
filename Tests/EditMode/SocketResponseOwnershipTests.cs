@@ -225,7 +225,7 @@ namespace Bees.Tests.EditMode
             Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(
                 _socket,
                 "HandleStrategicCommandResponse",
-                "{\\"Hash\\":8201}"));
+                "{\"Hash\":8201}"));
         }
 
         [Test]
@@ -239,7 +239,7 @@ namespace Bees.Tests.EditMode
             Assert.DoesNotThrow(() => RuntimeAssembly.Invoke(
                 _socket,
                 "HandleMatchupResponse",
-                "{\\"Hash\\":8202}"));
+                "{\"Hash\":8202}"));
         }
 
         private void AddRequestForRetiredLevel(string requestTypeName, string requestKind, long hash)
