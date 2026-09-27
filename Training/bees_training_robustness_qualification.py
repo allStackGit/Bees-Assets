@@ -44,6 +44,7 @@ FOCUSED_PYTHON_SUITES = (
 UNITY_REQUIRED_TEST = (
     "RlPolicySchemaContractTests.ContinualLearningConfigTracksFrozenPolicyAbi"
 )
+UNITY_TRANSIENT_NATIVE_CRASH_CODES = frozenset((0xC0000005, -1073741819))
 
 
 @dataclass(frozen=True)
@@ -340,6 +341,33 @@ def _run_check(check: Check) -> tuple[bool, float]:
         check=False,
     )
     elapsed = time.monotonic() - started
+
+    if (
+        check.result_xml is not None
+        and completed.returncode in UNITY_TRANSIENT_NATIVE_CRASH_CODES
+    ):
+        print(
+            f"[RETRY] {check.name}: Unity editor native crash "
+            f"exit={completed.returncode}; retrying once.",
+            flush=True,
+        )
+        try:
+            check.result_xml.unlink()
+        except FileNotFoundError:
+            pass
+        if check.diagnostic_log is not None:
+            try:
+                check.diagnostic_log.unlink()
+            except FileNotFoundError:
+                pass
+        retry_started = time.monotonic()
+        completed = subprocess.run(
+            list(check.command),
+            cwd=str(check.cwd),
+            check=False,
+        )
+        elapsed += time.monotonic() - retry_started
+
     if completed.returncode == 0:
         if check.result_xml is not None:
             valid, detail = _validate_unity_results(
