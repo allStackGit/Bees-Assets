@@ -34,3 +34,11 @@ No new entries are backfilled by the guardrail-bootstrap change itself; existing
 **Fix:** clean temporary copies when staging fails, remove a newly unreferenced destination after immutable-identity rejection or catalog-persistence failure, and preserve existing catalog-owned artifacts.
 **Permanent protection:** artifact publication failure must leave neither a catalog entry nor an unreferenced canonical copy; pruning of old catalog-owned artifacts still occurs only after a successful state commit.
 **Verification:** source review confirms persistence rollback restores the old catalog before failed-copy cleanup, and the added Node regression cases assert both failed-persist cleanup and immutable-ID rejection leave no second archive. The tests were not executed.
+
+### REG-130 — Rejected heartbeat advanced the environment optimizer
+**Area:** `BeesServer~/trainingControl.js`, dedicated heartbeat transaction
+**Symptom:** a heartbeat rejected because trainer-registry persistence failed could still advance the in-memory environment-count optimizer.
+**Root cause:** optimizer state was updated before the heartbeat's persistent state write completed.
+**Fix:** commit the persistent trainer-registry update before passing the observation to the optimizer.
+**Permanent protection:** optimizer state must not change for heartbeats rejected by persistence; the focused Node regression asserts the optimizer snapshot and trainer registry remain unchanged.
+**Verification:** static tracing of mutation and rollback order; the new regression test was not executed.
