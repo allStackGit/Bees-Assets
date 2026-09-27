@@ -402,6 +402,20 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(spawn, active)
         self.assertIn("argv_transport: 'node-spawn-array-v1'", block)
 
+    def test_offline_bundle_captures_sanitized_server_supervisor_state(self):
+        diagnostics = read_operator("diagnostics.js")
+        bundler = (
+            ROOT / "Training" / "bees_training_bundle.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("diagnostic-runtime-state-", diagnostics)
+        self.assertIn("getStateReferencedLivePid(persisted)", diagnostics)
+        self.assertIn("server_supervisor: serverSupervisor", diagnostics)
+        self.assertNotIn("owner_token: String(persisted.owner_token", diagnostics)
+        self.assertIn("'--runtime-state-json', runtimeStateJson", diagnostics)
+        self.assertIn('"status/runtime-state.json", runtime_state_json', bundler)
+        self.assertIn('parser.add_argument("--runtime-state-json")', bundler)
+
     def test_bundle_falls_back_to_durable_run_state_after_one_offline_control_probe(self):
         diagnostics = read_operator("diagnostics.js")
         build = read_operator("build.js")

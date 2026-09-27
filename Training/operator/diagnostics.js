@@ -8,6 +8,7 @@ const {
     ensureDir,
     ensureTokenFile,
     exists,
+    getStateReferencedLivePid,
     loadConfig,
     paths,
     readJson,
@@ -389,6 +390,10 @@ async function invokeBundle(options = {}) {
         paths.runtimeRoot,
         'diagnostic-deterministic-benchmark-' + bundleId + '.json',
     );
+    const runtimeStateJson = path.join(
+        paths.runtimeRoot,
+        'diagnostic-runtime-state-' + bundleId + '.json',
+    );
     let status = null;
     let controlOnline = false;
 
@@ -455,11 +460,45 @@ async function invokeBundle(options = {}) {
                 );
             }
         } else {
+            let serverSupervisor = { state_file_present: false };
+            if (exists(paths.serverStatePath)) {
+                try {
+                    const persisted = readJson(paths.serverStatePath);
+                    serverSupervisor = {
+                        state_file_present: true,
+                        pid: Number(persisted.pid || 0),
+                        pid_alive: Boolean(getStateReferencedLivePid(persisted)),
+                        process_start_utc: String(persisted.process_start_utc || ''),
+                        executable_path: String(persisted.executable_path || ''),
+                        status: String(persisted.status || ''),
+                        source_hash: String(persisted.source_hash || ''),
+                        runtime_root: String(persisted.runtime_root || ''),
+                        config_hash: String(persisted.config_hash || ''),
+                    };
+                } catch (error) {
+                    serverSupervisor = {
+                        state_file_present: true,
+                        unreadable: error.name + ': ' + error.message,
+                    };
+                }
+            }
+            writeJsonAtomic(runtimeStateJson, {
+                schema_version: 1,
+                captured_utc: new Date().toISOString(),
+                control_online: false,
+                run_id: targetRun || '',
+                server_supervisor: serverSupervisor,
+            });
             const offlineLines = [
                 'Bees distributed learning status  ' + new Date().toLocaleString(),
                 '='.repeat(78),
                 'Server: OFFLINE/UNREACHABLE - diagnostic bundle is using durable local state',
                 'Run: ' + (targetRun || '(unknown)'),
+                'Server supervisor: pid=' +
+                    (serverSupervisor.pid || '-') +
+                    ' pid_alive=' + Boolean(serverSupervisor.pid_alive) +
+                    ' state=' + (serverSupervisor.status || '-') +
+                    ' runtime=' + String(serverSupervisor.source_hash || '').slice(0, 12),
             ];
             fs.writeFileSync(statusText, offlineLines.join('\n') + '\n', 'utf8');
         }
@@ -476,6 +515,7 @@ async function invokeBundle(options = {}) {
         if (exists(statusText)) args.push('--status-text', statusText);
         if (exists(snapshotJson)) args.push('--snapshot-json', snapshotJson);
         if (exists(benchmarkJson)) args.push('--benchmark-json', benchmarkJson);
+        if (exists(runtimeStateJson)) args.push('--runtime-state-json', runtimeStateJson);
 
         runChecked(python, args, paths.assetsRoot);
     } finally {
@@ -484,6 +524,7 @@ async function invokeBundle(options = {}) {
             statusText,
             snapshotJson,
             benchmarkJson,
+            runtimeStateJson,
         ]) {
             removeIfExists(temporary);
         }
