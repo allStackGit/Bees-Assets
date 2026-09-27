@@ -599,3 +599,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** Pluto I now queries the configured user or AI side and filters by Scout, Honeybee, or Gunship as appropriate. `CampaignTriggerStructureTests.PlutoOneResolvesMissionShipsByConfiguredSideAndType` guards all three lookups. The regression guard was added but not run, per the static-only audit scope.  
 **Verification:** traced each spawn side and ship type against its subsequent lookup, and confirmed `State.GetShips(int side)` returns the requested side's ships. The edited mission and regression guard were reread after editing. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** mission entities must be retrieved by the same configured side and ship type used to spawn them; faction-named convenience lists are unsafe when user and AI sides can be reversed.
+
+### REG-068 — Uranus I proximity sensing was attached to Human-side Scouts
+**Area:** `Scripts/Levels/Level.Campaign.Uranus1.cs`, player Scout proximity sensing  
+**Symptom:** Uranus I attached proximity colliders to Human-side Scouts, but the mission's Bumblebee discovery trigger checks `UserSide` ships for those nearby-enemy records. With the user side set to Bee, user Scouts received no proximity collider while Human-side AI Scouts did, so proximity-based discovery tracked the wrong fleet.  
+**Root cause:** the sensor setup loop used `GetHumanShips()` even though the consuming discovery condition is keyed to `Configuration.UserSide`.  
+**Permanent protection:** the loop now attaches the generic side-agnostic proximity collider to Scouts from `UserSide`. `CampaignTriggerStructureTests.UranusOneProximitySensingIsAttachedToUserScouts` guards the configured-side source. The regression guard was added but not run, per the static-only audit scope.  
+**Verification:** traced `ProximityCollider.IsEnemyShip` to confirm it compares actual ship sides, and traced the mission discovery trigger to confirm it reads only `UserSide` ships. The edited mission and regression guard were reread after editing. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** proximity state consumed as player perception must be attached to the configured user's ships, not a faction-named collection.
