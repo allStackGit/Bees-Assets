@@ -27,3 +27,10 @@ Use this format:
 - If a permanent test is removed or rewritten, review any ledger entries that cite it so the repository does not claim protection it no longer has.
 
 No new entries are backfilled by the guardrail-bootstrap change itself; existing historical defects remain documented in `docs/TEST_DEFECTS.md` until individually reconciled.
+### REG-129 — Failed artifact publication left unowned archive files
+**Area:** `BeesServer~/trainingControl.js`, `TrainingControlStore.publishArtifact`
+**Symptom:** if persisting the artifact catalog failed after the canonical archive copy was written, the catalog rolled back but the large copy remained unreferenced. Rejected immutable build-ID replacements could also leave a second archive.
+**Root cause:** artifact bytes were installed before the state commit, and failure branches did not remove the unowned destination.
+**Fix:** clean temporary copies when staging fails, remove a newly unreferenced destination after immutable-identity rejection or catalog-persistence failure, and preserve existing catalog-owned artifacts.
+**Permanent protection:** artifact publication failure must leave neither a catalog entry nor an unreferenced canonical copy; pruning of old catalog-owned artifacts still occurs only after a successful state commit.
+**Verification:** source review confirms persistence rollback restores the old catalog before failed-copy cleanup, and the added Node regression cases assert both failed-persist cleanup and immutable-ID rejection leave no second archive. The tests were not executed.
