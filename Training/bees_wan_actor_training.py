@@ -550,6 +550,14 @@ class WanActorBroker:
                         actor_id = claim_actor(payload)
                         self._json({"status": "claimed", "actor_id": actor_id})
                         return
+                    if parsed.path == "/release":
+                        release_actor = getattr(broker, "release_actor", None)
+                        if release_actor is None:
+                            self._error(404, "not-found", "Actor lease release is not enabled.")
+                            return
+                        release_actor(payload)
+                        self._json({"status": "released"})
+                        return
                     if parsed.path == "/register":
                         broker.register_actor(payload)
                         self._json({"status": "registered"})
