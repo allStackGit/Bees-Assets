@@ -399,6 +399,10 @@ namespace Assets.Scripts.Levels
         {
             while (_completedPaths.TryDequeue(out PathResult result))
             {
+                if (result.Error != null)
+                {
+                    Debug.LogException(result.Error);
+                }
                 ApplyCompletedPathResult(result.Ship, result.RequestId, result.LifecycleId, result.ThreadIndex, result.Path);
             }
         }
