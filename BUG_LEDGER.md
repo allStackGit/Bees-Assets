@@ -4,7 +4,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 
 ## Active validated defects
 
-- **BUG-002 — Missing exact-version settings response retries forever.** BeesServer's settings handler returns `Filename: null` and `Contents: null` when the exact user/name/version row is absent. Unity logs the empty response but leaves the settings request standing; `ServerSettings.WaitForResponse` sees its handled hash and issues a fresh request, so required settings never load and the client repeats the lookup. I attempted to mark this response terminal; auto-review rejected the `ServerSettings.cs` update, citing a security-sensitive authentication side effect in the full-file replacement. That authentication behavior was not intentionally changed; the partial socket edit was reverted. This remains unresolved pending a narrowly approved edit to the settings lifecycle.
+- **BUG-002 — Resolved as REG-113.** An authoritative exact-version miss now returns terminal client status 404; `ServerSettings.WaitForResponse` records the failure and removes the standing request instead of retrying forever. Verified by static trace across the server response and both Unity client paths; no tests or runtime checks were run.
 
 - REG-104 fixes persisted artifact catalog paths: stored paths must exactly match the role/platform/build/hash path emitted by the publisher, preventing malformed state from causing pruning to unlink an arbitrary path. Static source review only; no tests run.
 
