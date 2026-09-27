@@ -101,6 +101,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         public int SegmentIndex;
         public int DecisionCounter;
         public bool Completed;
+        public string CompletionResult;
         public TelemetryPayload Current;
         public readonly Dictionary<long, int> DecisionByShip = new Dictionary<long, int>();
         public readonly Dictionary<long, string> AgentKeyByShip = new Dictionary<long, string>();
@@ -108,6 +109,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
     }
 
     private readonly Dictionary<Level, LevelSession> _sessions = new Dictionary<Level, LevelSession>();
+    private readonly List<LevelSession> _pendingFinalization = new List<LevelSession>();
     private readonly RlCombatPerception _perception = new RlCombatPerception();
     private Stage _stage;
     private DeploymentManifest _cachedManifest;
@@ -300,9 +302,10 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 return existing;
             }
 
-            if (!existing.Completed)
+            if (!existing.Completed && !CompleteSession(existing, "timeout"))
             {
-                CompleteSession(existing, "timeout");
+                existing.CompletionResult = "timeout";
+                _pendingFinalization.Add(existing);
             }
             _sessions.Remove(level);
         }
@@ -372,7 +375,16 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             if (session.Current != null &&
                 !string.Equals(session.Current.deployment_id, manifest.deployment_id, StringComparison.Ordinal))
             {
-                FlushDraft(session);
+                if (!FlushDraft(session))
+                {
+                    return;
+                }
+            }
+            if (session.Current != null &&
+                session.Current.steps.Count >= MaxStepsPerSegment &&
+                !FlushDraft(session))
+            {
+                return;
             }
 
             TelemetryPayload payload = EnsurePayload(session, manifest);
@@ -510,13 +522,13 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
         return true;
     }
 
-    private void FlushDraft(LevelSession session)
+    private bool FlushDraft(LevelSession session)
     {
         TelemetryPayload payload = session.Current;
-        session.Current = null;
         if (payload == null || payload.steps == null || payload.steps.Count == 0)
         {
-            return;
+            session.Current = null;
+            return true;
         }
 
         try
@@ -529,21 +541,28 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
                 session.DraftPaths.Add(path);
             }
             session.SegmentIndex++;
+            session.Current = null;
+            return true;
         }
         catch (Exception exception)
         {
             Debug.LogWarning("Could not persist gameplay telemetry draft: " + exception.Message);
+            return false;
         }
     }
 
-    private void CompleteSession(LevelSession session, string result)
+    private bool CompleteSession(LevelSession session, string result)
     {
         if (session.Completed)
         {
-            return;
+            return true;
         }
 
-        FlushDraft(session);
+        if (!FlushDraft(session))
+        {
+            return false;
+        }
+        session.CompletionResult = result;
         bool allFinalized = true;
         for (int i = 0; i < session.DraftPaths.Count; i++)
         {
@@ -578,6 +597,7 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             }
         }
         session.Completed = allFinalized;
+        return session.Completed;
     }
 
     private static string ResolveCompletedResult(Level level)
