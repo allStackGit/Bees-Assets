@@ -142,6 +142,17 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void EndKillRemovesReturningShipFromIncomingWeaponRanges()
+        {
+            RuntimeAssembly.Invoke(_target, "EndKill");
+
+            Assert.That(((IDictionary)RuntimeAssembly.GetField(_weapon, "ShipsWithinRange")).Contains(202L), Is.False);
+            Assert.That(RuntimeAssembly.GetField(_weapon, "HasCachedChanged"), Is.True,
+                "A returning ship must invalidate the weapon's cached targeting queue.");
+            Assert.That(RuntimeAssembly.GetCount(RuntimeAssembly.GetField(_target, "WeaponsThatHaveUsWithinRange")), Is.Zero);
+        }
+
+        [Test]
         public void HarmlessModePreservesHealthTsvAndStatistics()
         {
             RuntimeAssembly.SetField(_stage, "MakeShotsHarmless", true);
