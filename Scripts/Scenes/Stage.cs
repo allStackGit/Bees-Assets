@@ -721,6 +721,37 @@ public class Stage : Scene
     // Update is called once per frame
     private Vector2 _followingShipPosition;
     private Vector3 _oldCameraPosition;
+    public bool TryRouteReceivedBattleStatePacket(
+        int sourcePeerId,
+        byte[] payload)
+    {
+        if (MatchSession == null ||
+            MatchSession.IsLocalAuthority ||
+            sourcePeerId != MatchSession.AuthorityPeerId ||
+            !Assets.Scripts.Levels.MultiplayerProtocol.TryDeserializeBattleState(
+                payload,
+                MatchSession.MatchId,
+                out Assets.Scripts.Levels.BattleStateSnapshot snapshot))
+        {
+            return false;
+        }
+
+        for (int levelIndex = 0; levelIndex < Levels.Count; levelIndex++)
+        {
+            Level level = Levels[levelIndex];
+            if (level != null &&
+                level.State != null &&
+                level.State.MatchLevelId == snapshot.MatchLevelId)
+            {
+                return level.State.QueueReceivedBattleStateSnapshot(
+                    sourcePeerId,
+                    snapshot);
+            }
+        }
+
+        return false;
+    }
+
     public bool TryRouteReceivedPlayerCommandPacket(int sourcePeerId, byte[] payload)
     {
         if (MatchSession == null ||
@@ -753,7 +784,20 @@ public class Stage : Scene
         {
             for (int levelIndex = 0; levelIndex < Levels.Count; levelIndex++)
             {
-                Levels[levelIndex].State?.ProcessQueuedPlayerCommands();
+                GameState state = Levels[levelIndex].State;
+                if (state == null)
+                {
+                    continue;
+                }
+
+                if (MatchSession.IsLocalAuthority)
+                {
+                    state.ProcessQueuedPlayerCommands();
+                }
+                else
+                {
+                    state.ProcessQueuedBattleStateSnapshots();
+                }
             }
         }
         if (!IsTraining && IsFinalized && IsPlayerControlling)

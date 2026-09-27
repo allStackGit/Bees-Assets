@@ -706,9 +706,11 @@ public sealed class SteamMultiplayerLobbyTransport : IMultiplayerLobbyTransport
 public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 {
     private const int CommandChannel = 47;
+    private const int StateChannel = 48;
     private const int MaxMessagesPerUpdate = 64;
     private const int ReceiveBatchSize = 16;
     private const float CommandResendIntervalSeconds = 0.5f;
+    private const float StateBroadcastIntervalSeconds = 0.1f;
     private const int SendFlags =
         Constants.k_nSteamNetworkingSend_ReliableNoNagle |
         Constants.k_nSteamNetworkingSend_AutoRestartBrokenSession;
@@ -735,6 +737,7 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
     private int _pendingAcknowledgementPlayerId;
     private long _pendingAcknowledgementSequence;
     private bool _sendFailureLogged;
+    private float _nextStateBroadcastAt;
     private bool _disposed;
     private bool _isAvailable;
 
@@ -763,7 +766,9 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
 
         SendOutgoingAcknowledgements();
         SendOutgoingCommands();
+        SendAuthoritativeBattleStates();
         ReceiveIncomingCommands();
+        ReceiveBattleStates();
     }
 
     public void Dispose()
@@ -888,6 +893,55 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
     {
         identity.ToString(out string transportIdentity);
         return _peerIdsByTransportIdentity.TryGetValue(transportIdentity, out peerId);
+    }
+
+    private void SendAuthoritativeBattleStates()
+    {
+        if (!_session.IsLocalAuthority || _stage == null || _stage.Levels == null)
+        {
+            return;
+        }
+
+        float now = Time.realtimeSinceStartup;
+        if (now < _nextStateBroadcastAt)
+        {
+            return;
+        }
+        _nextStateBroadcastAt = now + StateBroadcastIntervalSeconds;
+
+        for (int levelIndex = 0; levelIndex < _stage.Levels.Count; levelIndex++)
+        {
+            Level level = _stage.Levels[levelIndex];
+            if (level == null ||
+                level.State == null ||
+                !level.State.TryCreateAuthoritativeBattleStateSnapshot(
+                    out BattleStateSnapshot snapshot) ||
+                !MultiplayerProtocol.TrySerializeBattleState(
+                    _session.MatchId,
+                    snapshot,
+                    out byte[] payload))
+            {
+                continue;
+            }
+
+            foreach (KeyValuePair<int, SteamNetworkingIdentity> peer in
+                _remoteIdentitiesByPeerId)
+            {
+                EResult result = SendState(peer.Value, payload);
+                if (result != EResult.k_EResultOK)
+                {
+                    if (!_sendFailureLogged)
+                    {
+                        Debug.LogWarning(
+                            $"Could not send multiplayer battle state to peer {peer.Key}: {result}.");
+                        _sendFailureLogged = true;
+                    }
+                    break;
+                }
+
+                _sendFailureLogged = false;
+            }
+        }
     }
 
     private void SendOutgoingCommands()
@@ -1090,6 +1144,98 @@ public sealed class SteamMultiplayerTransport : IMultiplayerTransport
         finally
         {
             Marshal.FreeHGlobal(data);
+        }
+    }
+
+    private static EResult SendState(
+        SteamNetworkingIdentity identity,
+        byte[] payload)
+    {
+        IntPtr data = Marshal.AllocHGlobal(payload.Length);
+        try
+        {
+            Marshal.Copy(payload, 0, data, payload.Length);
+            return SteamNetworkingMessages.SendMessageToUser(
+                ref identity,
+                data,
+                (uint)payload.Length,
+                SendFlags,
+                StateChannel);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(data);
+        }
+    }
+
+    private void ReceiveBattleStates()
+    {
+        if (_session.IsLocalAuthority)
+        {
+            return;
+        }
+
+        int maxBatches = MaxMessagesPerUpdate / ReceiveBatchSize;
+        for (int batch = 0; batch < maxBatches; batch++)
+        {
+            int received;
+            try
+            {
+                received = SteamNetworkingMessages.ReceiveMessagesOnChannel(
+                    StateChannel,
+                    _receivePointers,
+                    ReceiveBatchSize);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    $"Steam multiplayer state receive failed: " +
+                    $"{exception.GetType().Name}: {exception.Message}");
+                return;
+            }
+
+            if (received <= 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < received; i++)
+            {
+                IntPtr pointer = _receivePointers[i];
+                if (pointer == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    SteamNetworkingMessage_t message =
+                        SteamNetworkingMessage_t.FromIntPtr(pointer);
+                    if (message.m_cbSize <= 0 ||
+                        message.m_cbSize > MultiplayerProtocol.MaxBattleStatePacketBytes ||
+                        !TryResolvePeer(message.m_identityPeer, out int sourcePeerId) ||
+                        sourcePeerId != _session.AuthorityPeerId)
+                    {
+                        continue;
+                    }
+
+                    byte[] payload = new byte[message.m_cbSize];
+                    Marshal.Copy(message.m_pData, payload, 0, message.m_cbSize);
+                    _stage.TryRouteReceivedBattleStatePacket(
+                        sourcePeerId,
+                        payload);
+                }
+                finally
+                {
+                    SteamNetworkingMessage_t.Release(pointer);
+                    _receivePointers[i] = IntPtr.Zero;
+                }
+            }
+
+            if (received < ReceiveBatchSize)
+            {
+                return;
+            }
         }
     }
 

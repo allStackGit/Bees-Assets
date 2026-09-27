@@ -2107,5 +2107,55 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("candidate.Sequence > newest.Sequence", commandSource);
             StringAssert.Contains("ClearQueuedBattleStateSnapshots();", stateSource);
         }
+
+        [Test]
+        public void SteamBattleStateUsesDedicatedAuthorityToClientChannel()
+        {
+            string steamPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Steamworks.NET",
+                "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("private const int StateChannel = 48;", source);
+            StringAssert.Contains("StateBroadcastIntervalSeconds = 0.1f", source);
+            StringAssert.Contains("TryCreateAuthoritativeBattleStateSnapshot(", source);
+            StringAssert.Contains("TrySerializeBattleState(", source);
+            StringAssert.Contains("sourcePeerId != _session.AuthorityPeerId", source);
+            StringAssert.Contains("SendState(peer.Value, payload)", source);
+        }
+
+        [Test]
+        public void StageRoutesBattleStateOnlyFromAuthorityAndProcessesOnMainThread()
+        {
+            string path = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Scenes",
+                "Stage.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("TryRouteReceivedBattleStatePacket(", source);
+            StringAssert.Contains("sourcePeerId != MatchSession.AuthorityPeerId", source);
+            StringAssert.Contains("QueueReceivedBattleStateSnapshot(", source);
+            StringAssert.Contains("state.ProcessQueuedBattleStateSnapshots();", source);
+            StringAssert.Contains("state.ProcessQueuedPlayerCommands();", source);
+        }
+
+        [Test]
+        public void MultiplayerLobbyCommandAndStateChannelsRemainDistinct()
+        {
+            string steamPath = Path.Combine(
+                Application.dataPath,
+                "Scripts",
+                "Steamworks.NET",
+                "SteamManager.cs");
+            string source = File.ReadAllText(steamPath);
+
+            StringAssert.Contains("private const int LobbyChannel = 46;", source);
+            StringAssert.Contains("private const int CommandChannel = 47;", source);
+            StringAssert.Contains("private const int StateChannel = 48;", source);
+        }
     }
 }
