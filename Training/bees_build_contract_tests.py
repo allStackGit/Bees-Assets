@@ -704,6 +704,111 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
                 [cli.resolve()],
             )
 
+    def test_control_client_retries_transient_reset_for_idempotent_admin_post(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        common = OPERATOR_ROOT / "common.js"
+        script = r"""
+const http=require('node:http');
+const c=require(process.argv[1]);
+let count=0;
+const server=http.createServer((req,res)=>{
+    count++;
+    if(count===1){
+        req.socket.destroy();
+        return;
+    }
+    let body='';
+    req.on('data',chunk=>body+=chunk);
+    req.on('end',()=>{
+        res.statusCode=200;
+        res.setHeader('Content-Type','application/json');
+        res.end(JSON.stringify({ok:true,body:JSON.parse(body)}));
+    });
+});
+server.listen(0,'127.0.0.1',async()=>{
+    const address=server.address();
+    try{
+        const value=await c.requestJson(
+            'http://127.0.0.1:'+address.port,
+            'token',
+            'POST',
+            '/v1/admin/artifact',
+            {build_id:'build-1'},
+            1000
+        );
+        process.stdout.write(JSON.stringify({count,value}));
+    }catch(error){
+        process.stderr.write(error.stack||String(error));
+        process.exitCode=1;
+    }finally{
+        server.close();
+    }
+});
+"""
+        completed = subprocess.run(
+            [node, "-e", script, str(common)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["count"], 2)
+        self.assertTrue(result["value"]["ok"])
+        self.assertEqual(result["value"]["body"]["build_id"], "build-1")
+        self.assertIn("ECONNRESET", completed.stderr)
+
+    def test_control_client_does_not_retry_http_semantic_failure(self):
+        node = node_executable()
+        if not node:
+            self.skipTest("node is not available")
+        common = OPERATOR_ROOT / "common.js"
+        script = r"""
+const http=require('node:http');
+const c=require(process.argv[1]);
+let count=0;
+const server=http.createServer((_req,res)=>{
+    count++;
+    res.statusCode=409;
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({error:'conflict'}));
+});
+server.listen(0,'127.0.0.1',async()=>{
+    const address=server.address();
+    try{
+        await c.requestJson(
+            'http://127.0.0.1:'+address.port,
+            'token',
+            'POST',
+            '/v1/admin/release',
+            {build_id:'build-1'},
+            1000
+        );
+        process.exitCode=2;
+    }catch(error){
+        process.stdout.write(JSON.stringify({count,message:String(error.message)}));
+    }finally{
+        server.close();
+    }
+});
+"""
+        completed = subprocess.run(
+            [node, "-e", script, str(common)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["count"], 1)
+        self.assertIn("HTTP 409", result["message"])
+
     def test_server_runtime_retention_never_prunes_active_or_candidate_runtime(self):
         source = read_operator("server.js")
         start = source.index("function pruneBeesServerRuntimes")
