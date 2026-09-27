@@ -915,3 +915,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** added a focused source regression case that keeps a Unity `--results-dir` argument after the boundary while asserting the trainer default precedes it. The case was not run, per the static-only audit scope.  
 **Verification:** statically traced the launcher option rewrite, ML-Agents/Unity argument boundary, and resulting list order. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** trainer options must remain before `--env-args`, and flags inside the Unity remainder must not satisfy trainer-option checks.
+
+### REG-104 — Persisted artifact paths could escape the artifact catalog
+**Area:** `BeesServer~/trainingControl.js`, persisted training artifact catalog
+**Symptom:** stored artifact paths were resolved but not checked against the configured artifact root or the publisher's deterministic naming scheme. Catalog pruning later unlinks paths from persisted records, so malformed state could direct deletion outside the artifact catalog.
+**Root cause:** persisted build validation checked artifact identity and hash shape but accepted any non-empty archive path for noncanonical records.
+**Fix:** require each resolved stored path to equal the path derived from the configured artifact root, role, platform, build ID, and SHA-256 before the record is accepted.
+**Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that catalog state cannot authorize deletion or serving from a path the publisher would not create.
+**Verification:** statically compared the publisher's destination construction with persisted-record validation and pruning's deletion use. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** validate stored filesystem paths at load time before allowing maintenance code to delete them.
