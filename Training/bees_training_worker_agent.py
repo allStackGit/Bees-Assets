@@ -828,6 +828,10 @@ class ManagedProcess:
         )
         if command_changed:
             self.clear_restart_backoff()
+        elif self.process is not None and self.process.poll() is not None:
+            # The process may exit just after the supervisor's polling loop checks it.
+            # Count that exit before replacing the same launch, or crash-loop backoff is skipped.
+            self.record_exit(self.process.returncode)
         restart_delay = self.restart_delay(command)
         if restart_delay > 0.0:
             raise RuntimeError(
@@ -836,7 +840,16 @@ class ManagedProcess:
             )
 
         # Validate the launch identity before stopping any currently owned child.
-        self.stop(progress_callback=stop_progress)
+        self.stop(
+            progress_callback=stop_progress,
+            record_unexpected_exit=not command_changed,
+        )
+        restart_delay = self.restart_delay(command)
+        if restart_delay > 0.0:
+            raise RuntimeError(
+                "managed process restart deferred for "
+                f"{restart_delay:.1f}s after an exit observed during replacement"
+            )
         environment = os.environ.copy()
         environment["BEES_TRAINING_CONTROL_STATE_FILE"] = str(state_file)
         environment["BEES_TRAINING_ENV_ARGS_JSON"] = json.dumps(list(environment_args))
@@ -903,12 +916,20 @@ class ManagedProcess:
         self.health_required = bool(require_child_health)
         self.started_monotonic = time.monotonic()
 
-    def stop(self, progress_callback: Optional[Callable[[], None]] = None) -> None:
+    def stop(
+        self,
+        progress_callback: Optional[Callable[[], None]] = None,
+        *,
+        record_unexpected_exit: bool = False,
+    ) -> None:
         process = self.process
         if process is None:
             return
         if process.poll() is not None:
-            self.process = None
+            if record_unexpected_exit:
+                self.record_exit(process.returncode)
+            else:
+                self.process = None
             return
 
         # The central learner owns optimizer/checkpoint state. Ask its continual-service child
