@@ -739,7 +739,10 @@ class RuntimeUpdater:
         self._stop.set()
         self._refresh.set()
         if self._started:
-            self._thread.join(timeout=5)
+            # Cutover must not replace staged files while this thread is still writing them.
+            # Bootstrap requests have finite timeouts, so wait for the active stage operation
+            # to finish before the caller activates a staged runtime or exits.
+            self._thread.join()
 
     def verified(self) -> tuple[str, str]:
         with self._lock:
