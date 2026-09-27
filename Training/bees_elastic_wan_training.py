@@ -218,6 +218,26 @@ def actor_worker_ids(
     return tuple(range(start, start + env_count))
 
 
+def validate_trajectory_length(trajectory: Any, trainer_settings: Any, behavior_id: str) -> None:
+    """Bound WAN batches by the session's fixed ML-Agents horizon.
+
+    Elastic topology changes adjust each actor's target segmentation horizon. Completed batches
+    queued before such a change remain valid up to the configured time_horizon, so validating them
+    against the learner's smaller live target would fail an otherwise compatible rollout.
+    """
+    maximum = getattr(trainer_settings, "time_horizon", None)
+    steps = getattr(trajectory, "steps", None)
+    if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
+        raise RuntimeError(f"WAN actor behavior {behavior_id} has an invalid configured time_horizon.")
+    if not isinstance(steps, list) or not steps:
+        raise RuntimeError(f"WAN actor trajectory for {behavior_id} has no experience steps.")
+    if len(steps) > maximum:
+        raise RuntimeError(
+            f"WAN actor trajectory length {len(steps)} exceeds configured time_horizon "
+            f"{maximum} for {behavior_id}."
+        )
+
+
 def classify_capacity(
     baseline_rate: Optional[float],
     current_rate: Optional[float],
@@ -1047,6 +1067,8 @@ class ElasticWanEnvManagerMixin:
         return local_steps
 
     def _inject_remote_batches(self) -> None:
+        from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
+
         active = self._bees_wan_broker.active_actor_snapshot()
         # At most two batches per live actor per Exeter environment advance. If producers exceed
         # this rate the bounded queue/backpressure metric correctly exposes Exeter saturation.
@@ -1059,11 +1081,13 @@ class ElasticWanEnvManagerMixin:
                         f"WAN actor uploaded trajectory for behavior {trajectory.behavior_id!r} "
                         "before trainer registration."
                     )
-                if len(trajectory.steps) > manager._max_trajectory_length:
+                identifiers = BehaviorIdentifiers.from_name_behavior_id(trajectory.behavior_id)
+                trainer_settings = self._bees_wan_broker.run_options.behaviors.get(identifiers.brain_name)
+                if trainer_settings is None:
                     raise RuntimeError(
-                        f"WAN actor trajectory length {len(trajectory.steps)} exceeds "
-                        f"time_horizon {manager._max_trajectory_length} for {trajectory.behavior_id}."
+                        f"WAN actor trajectory uses unconfigured behavior {trajectory.behavior_id!r}."
                     )
+                validate_trajectory_length(trajectory, trainer_settings, trajectory.behavior_id)
                 manager.trajectory_queue.put(trajectory)
 
     def _step(self) -> List[Any]:
