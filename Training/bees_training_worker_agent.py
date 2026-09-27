@@ -504,6 +504,13 @@ class BackgroundBuildPreparer:
             )
             self._thread.start()
 
+    def wait_for_build(self, descriptor: Mapping[str, Any]) -> None:
+        build_id = str(descriptor.get("build_id", ""))
+        with self._lock:
+            thread = self._thread if self._requested_build_id == build_id else None
+        if thread is not None:
+            thread.join()
+
     def _prepare(self, descriptor: Mapping[str, Any]) -> None:
         build_id = str(descriptor.get("build_id", ""))
         try:
@@ -1536,7 +1543,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             )
                         worker_env_count = requested_worker_envs
                 descriptor = desired.get("build")
-                preparer.request(desired.get("prepare_build"))
+                prepare_descriptor = desired.get("prepare_build")
+                preparing_launch_target = (
+                    mode == "training"
+                    and isinstance(descriptor, Mapping)
+                    and isinstance(prepare_descriptor, Mapping)
+                    and all(
+                        descriptor.get(key) == prepare_descriptor.get(key)
+                        for key in ("role", "platform", "build_id", "archive_sha256")
+                    )
+                )
+                if preparing_launch_target:
+                    preparer.wait_for_build(prepare_descriptor)
+                else:
+                    preparer.request(prepare_descriptor)
                 if args.role == "dedicated":
                     desired_process_safe = dedicated_process_matches_desired(
                         managed,
