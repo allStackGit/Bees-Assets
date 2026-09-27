@@ -739,9 +739,22 @@ class ElasticWanBroker(base.WanActorBroker):
                 self._condition.wait(min(remaining, 1.0))
         raise RuntimeError("WAN actor broker closed while waiting for registrations")
 
-    def wait_state(self, policy_epoch: int, control_epoch: int, wait_seconds: float) -> Mapping[str, Any]:
+    def wait_state(
+        self,
+        policy_epoch: int,
+        control_epoch: int,
+        wait_seconds: float,
+        actor_id: Optional[int] = None,
+    ) -> Mapping[str, Any]:
         deadline = time.monotonic() + wait_seconds
         with self._condition:
+            if actor_id is not None:
+                actor_id = self._validate_actor_id(actor_id)
+                self._active_snapshot_locked()
+                record = self._registrations.get(actor_id)
+                if record is not None:
+                    record["last_seen"] = time.monotonic()
+
             initial_topology = self._topology_epoch
             while (
                 not self._closed
@@ -754,7 +767,13 @@ class ElasticWanBroker(base.WanActorBroker):
                 if remaining <= 0:
                     break
                 self._condition.wait(remaining)
+
             active = self._active_snapshot_locked()
+            if actor_id is not None:
+                record = self._registrations.get(actor_id)
+                if record is not None:
+                    record["last_seen"] = time.monotonic()
+                    active[actor_id] = int(record["env_count"])
             return {
                 "session_id": self.session_id,
                 "policy_epoch": self._policy_epoch,
