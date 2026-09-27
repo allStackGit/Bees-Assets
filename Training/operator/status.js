@@ -311,10 +311,10 @@ async function getStatusFrameLines(config, adminToken) {
                 Envs: envDisplay,
                 'OptExp/s': expRate,
                 SentGiB: throughput.network_sent_bytes_total != null
-                    ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 2)
+                    ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 3)
                     : '-',
                 RecvGiB: throughput.network_received_bytes_total != null
-                    ? number(Number(throughput.network_received_bytes_total) / (1024 ** 3), 2)
+                    ? number(Number(throughput.network_received_bytes_total) / (1024 ** 3), 3)
                     : '-',
                 'MiB/s': throughput.network_mib_per_s != null
                     ? number(throughput.network_mib_per_s, 2)
