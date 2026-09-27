@@ -240,6 +240,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             server,
         )
 
+    def test_recursive_cleanup_retries_transient_windows_handle_release(self):
+        common = read_operator("common.js")
+        start = common.index("function removeIfExists")
+        end = common.index("function removeUtf8BomIfPresent", start)
+        block = common[start:end]
+        self.assertIn("maxRetries", block)
+        self.assertIn("retryDelay", block)
+        self.assertIn("options.maxRetries", block)
+        self.assertIn("options.retryDelay", block)
+        self.assertIn(": 50", block)
+        self.assertIn(": 100", block)
+
     def test_environment_validation_uses_argv_array_without_powershell_reparse(self):
         source = read_operator("validation.js")
         self.assertIn("spawn(executable, args.map(String)", source)
