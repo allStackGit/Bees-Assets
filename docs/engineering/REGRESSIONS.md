@@ -885,3 +885,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** no test was added or run, per the static-only audit scope. The source invariant is that failure telemetry is evaluated before an environment-count transition can short-circuit optimizer updates.  
 **Verification:** statically traced capacity transition, process-state and error classification, probe abort, rollback-to-baseline, and cluster probe ownership. No tests, builds, Unity, simulations, or runtime checks were run.  
 **Invariant/knowledge:** restart waits must not mask explicit worker failures; shared optimizer locks must be released or rolled back through the instability path when a probe worker fails.
+
+
+### REG-101 — Model bundle mutations could race a chunk read
+**Area:** `BeesServer~/rlModelDistribution.js`, verified RL bundle serving  
+**Symptom:** the server hashed a published bundle while loading its pointer, then opened the path separately for each requested chunk. The chunk path checked file type, device, inode, and size, but did not compare the opened file's modification/change timestamps with the verified cached record. An in-place same-size mutation between pointer verification and chunk read could therefore return bytes under the old deployment hash.  
+**Root cause:** the per-chunk opened-file identity check was weaker than the cache validation performed by `_loadCurrent()`.  
+**Fix:** compare `mtimeMs` and `ctimeMs` from the opened handle with the values captured when the bundle hash was verified; discard the pointer cache and fail the read if either changed.  
+**Permanent protection:** no test was added or run, per the static-only audit scope. The structural invariant is that each served chunk must come from the same file identity and observed metadata as the hash-verified bundle record.  
+**Verification:** statically traced pointer loading, bundle hashing, cached metadata, per-chunk open/stat/read, and deployment/hash response fields. No tests, builds, Unity, simulations, or runtime checks were run.  
+**Invariant/knowledge:** validating an artifact before opening it is insufficient if later reads do not revalidate that the opened file is unchanged.
