@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -645,6 +646,85 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("TryExecuteReceivedPlayerCommand(queuedCommand.SourcePeerId, queuedCommand.Command)", source);
             StringAssert.Contains("!matchSession.DoesPeerOwnPlayer(sourcePeerId, command.PlayerId)", source);
             StringAssert.Contains("private bool TryExecutePlayerCommand(PlayerCommandEnvelope command)", source);
+        }
+
+        [Test]
+        public void MatchIdCanBeAdoptedOnlyBeforeBattle()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+            Guid adopted = Guid.NewGuid();
+
+            Assert.That(RuntimeAssembly.Invoke(session, "TrySetMatchId", adopted), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.GetField(session, "MatchId"), Is.EqualTo(adopted));
+            Assert.That(RuntimeAssembly.Invoke(session, "AddPlayer", 1, 1, true), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TryBeginBattle"), Is.EqualTo(true));
+            Assert.That(RuntimeAssembly.Invoke(session, "TrySetMatchId", Guid.NewGuid()), Is.EqualTo(false));
+            Assert.That(RuntimeAssembly.GetField(session, "MatchId"), Is.EqualTo(adopted));
+        }
+
+        [Test]
+        public void MultiplayerCommandProtocolRoundTripsOnlyForExpectedMatch()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            Type commandType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandEnvelope");
+            Type kindType = RuntimeAssembly.GetType("Assets.Scripts.Levels.PlayerCommandKind");
+            object command = Activator.CreateInstance(commandType);
+            RuntimeAssembly.SetField(command, "PlayerId", 2);
+            RuntimeAssembly.SetField(command, "Sequence", 7L);
+            RuntimeAssembly.SetField(command, "Kind", Enum.Parse(kindType, "Move"));
+            RuntimeAssembly.SetField(command, "SquadCommandId", 41L);
+            RuntimeAssembly.SetField(command, "TargetSquadCommandId", 0L);
+            RuntimeAssembly.SetField(command, "PointA", new Vector2(12.5f, -9f));
+            RuntimeAssembly.SetField(command, "PointB", Vector2.zero);
+
+            Guid matchId = Guid.NewGuid();
+            MethodInfo serialize = protocolType.GetMethod("TrySerializeCommand", BindingFlags.Public | BindingFlags.Static);
+            object[] serializeArgs = { matchId, command, null };
+            Assert.That((bool)serialize.Invoke(null, serializeArgs), Is.True);
+            byte[] payload = (byte[])serializeArgs[2];
+            Assert.That(payload, Is.Not.Null.And.Not.Empty);
+
+            MethodInfo deserialize = protocolType.GetMethod("TryDeserializeCommand", BindingFlags.Public | BindingFlags.Static);
+            object[] deserializeArgs = { payload, matchId, null };
+            Assert.That((bool)deserialize.Invoke(null, deserializeArgs), Is.True);
+            object parsed = deserializeArgs[2];
+            Assert.That(RuntimeAssembly.GetField(parsed, "PlayerId"), Is.EqualTo(2));
+            Assert.That(RuntimeAssembly.GetField(parsed, "Sequence"), Is.EqualTo(7L));
+            Assert.That(RuntimeAssembly.GetField(parsed, "SquadCommandId"), Is.EqualTo(41L));
+
+            object[] wrongMatchArgs = { payload, Guid.NewGuid(), null };
+            Assert.That((bool)deserialize.Invoke(null, wrongMatchArgs), Is.False);
+        }
+
+        [Test]
+        public void MultiplayerCommandProtocolRejectsOversizedAndUnknownFieldPackets()
+        {
+            Type protocolType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MultiplayerProtocol");
+            MethodInfo deserialize = protocolType.GetMethod("TryDeserializeCommand", BindingFlags.Public | BindingFlags.Static);
+            Guid matchId = Guid.NewGuid();
+
+            byte[] oversized = new byte[4097];
+            object[] oversizedArgs = { oversized, matchId, null };
+            Assert.That((bool)deserialize.Invoke(null, oversizedArgs), Is.False);
+
+            string unknownFieldJson =
+                "{\"v\":1,\"match\":\"" + matchId.ToString("N") +
+                "\",\"type\":\"command\",\"player\":2,\"seq\":1,\"kind\":0," +
+                "\"squad\":1,\"target\":0,\"ax\":0,\"ay\":0,\"bx\":0,\"by\":0,\"extra\":1}";
+            object[] unknownArgs = { System.Text.Encoding.UTF8.GetBytes(unknownFieldJson), matchId, null };
+            Assert.That((bool)deserialize.Invoke(null, unknownArgs), Is.False);
+        }
+
+        [Test]
+        public void ReceivedPacketMustPassProtocolBeforeEnteringPeerCommandQueue()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string source = File.ReadAllText(commandPath);
+
+            StringAssert.Contains("MultiplayerProtocol.TryDeserializeCommand(payload, MatchId", source);
+            StringAssert.Contains("return QueueReceivedPlayerCommand(sourcePeerId, command);", source);
+            StringAssert.Contains("public const int MaxPacketBytes = 4096;", source);
         }
     }
 }
