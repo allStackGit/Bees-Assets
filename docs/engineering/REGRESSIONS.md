@@ -698,3 +698,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** recovery temporarily marks workers with consumed responses busy while it queues restarted workers, then restores their idle state for normal postprocessing. `FastEnvManagerTests.test_worker_exit_does_not_discard_other_consumed_step_results` now asserts that recovery does not requeue a completed worker.  
 **Verification:** statically traced initial action dispatch, response dequeue/state updates, worker restart, recovery dispatch, and trajectory postprocessing. The focused regression guard was updated but not run; no tests or runtime checks were performed, per the static-only audit scope.  
 **Invariant/knowledge:** do not issue a second action from a worker's prior observation until its already-consumed response has been postprocessed.
+
+### REG-080 — PPO compatibility patch weakened continuous entropy scale
+**Area:** `Training/bees_mlagents_ppo_compat.py`, inactive weapon-aim masking  
+**Symptom:** after masking nonexistent weapon aim dimensions, the compatibility patch averaged the remaining continuous entropies. ML-Agents 1.1.0 sums entropy across action dimensions, so this changed the balance between continuous exploration and discrete exploration, especially for ships with few active weapon slots.  
+**Root cause:** active continuous entropy was divided by the number of active dimensions instead of preserving the trainer's sum-over-actions contract.  
+**Permanent protection:** the patch now sums entropy for active continuous dimensions and excludes only inactive aim dimensions. `InactiveContinuousActionMaskTests.test_masked_entropy_sums_only_active_continuous_dimensions` protects the scale.  
+**Verification:** compared the project patch with the pinned ML-Agents 1.1.0 action model's entropy aggregation and statically traced the active-dimension mask. The focused regression guard was added but not run; no tests or runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** masking inactive action dimensions must preserve ML-Agents' entropy aggregation scale for all remaining dimensions.
