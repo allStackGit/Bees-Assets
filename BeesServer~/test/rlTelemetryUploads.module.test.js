@@ -224,11 +224,14 @@ test('failed partial-file creation releases its reserved upload quota', async t 
         randomUUID: () => 'failed-create',
     });
     await manager._ensureInitialized();
-    await fsp.mkdir(path.join(root, 'partial', `${uploadId}.json.partial`));
+    const partialPath = path.join(root, 'partial', `${uploadId}.json.partial`);
+    const existingPartial = Buffer.from('existing upload must be preserved');
+    await fsp.writeFile(partialPath, existingPartial);
     const bytes = payloadBytes();
 
     await assert.rejects(manager.handle(beginRequest(bytes), context));
     assert.equal(manager.userQuotas.has(context.userId), false);
+    assert.deepEqual(await fsp.readFile(partialPath), existingPartial);
     assert.equal(manager.sessions.size, 0);
     assert.equal(manager.logicalUploads.size, 0);
 });
