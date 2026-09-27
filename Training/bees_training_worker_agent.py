@@ -609,6 +609,9 @@ class TrainingLogUploader:
                         continue
                     self._positions[log_path] = next_offset
                     position = next_offset
+                    # The bytes already read came from the old offset. Retry from the
+                    # reset offset on the next pass instead of counting that stale chunk.
+                    continue
                 else:
                     self._positions[log_path] = expected_offset
                     continue
@@ -639,7 +642,6 @@ class TrainingLogUploader:
                 self.MAX_FILE_UPLOAD_BYTES,
             )
             if uploaded_position != terminal_offset:
-                return True
                 return True
         return False
 
