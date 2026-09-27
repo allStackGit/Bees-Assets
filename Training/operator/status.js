@@ -51,24 +51,29 @@ function parseLearnerLogFiles(files) {
         let fileLive = null;
 
         for (const line of readTail(file.full, 1000, 2 * 1024 * 1024)) {
+            // Only ML-Agents summary lines are authoritative learner progress. Other Bees logs
+            // legitimately contain strings such as "registered candidate ... step=1144671" and
+            // must never be mistaken for the learner's current step.
+            const stepMatch = line.match(/\bStep\s*[:=]\s*([\d,]+)/i);
+            const elapsedMatch = line.match(
+                /Time Elapsed\s*[:=]\s*(\d+(?:\.\d+)?)\s*s/i
+            );
+            if (!stepMatch || !elapsedMatch) continue;
+
+            const lineStep = Number(stepMatch[1].replace(/,/g, ''));
+            const lineElapsed = Number(elapsedMatch[1]);
+            if (!Number.isFinite(lineStep) || !Number.isFinite(lineElapsed)) continue;
+            step = lineStep;
+
             let match;
-            if ((match = line.match(/\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)/i))) {
-                elo = Number(match[1]);
-            }
-            let lineStep = null;
-            let lineElapsed = null;
-            if ((match = line.match(/\bStep\s*[:=]\s*(\d+)/i))) {
-                lineStep = Number(match[1]);
-                step = lineStep;
-            }
             if ((match = line.match(/Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)/i))) {
                 reward = Number(match[1]);
             }
-            if ((match = line.match(/Time Elapsed\s*[:=]\s*(\d+(?:\.\d+)?)\s*s/i))) {
-                lineElapsed = Number(match[1]);
+            if ((match = line.match(/\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)/i))) {
+                elo = Number(match[1]);
             }
 
-            if (lineStep !== null && lineElapsed !== null) {
+            {
                 if (
                     firstStep === null ||
                     previousStep === null ||
@@ -328,6 +333,9 @@ async function getStatusFrameLines(config, adminToken) {
                 : optimizer.baseline_sps != null
                     ? number(optimizer.baseline_sps, 0)
                     : '-';
+            const liveExpRate = throughput.learner_consumed_steps_per_sec != null
+                ? number(throughput.learner_consumed_steps_per_sec, 0)
+                : '-';
             const episodes = Number(metrics.window_episodes || 0);
             return {
                 Trainer: String(record.trainer_id || '-'),
@@ -335,6 +343,7 @@ async function getStatusFrameLines(config, adminToken) {
                 Platform: String(record.platform || '-'),
                 State: record.stale ? 'STALE' : String(record.process_state || '-'),
                 Envs: envDisplay,
+                'LiveExp/s': liveExpRate,
                 'OptExp/s': expRate,
                 SentGiB: throughput.network_sent_bytes_total != null
                     ? number(Number(throughput.network_sent_bytes_total) / (1024 ** 3), 3)
@@ -394,7 +403,7 @@ async function getStatusFrameLines(config, adminToken) {
             '  LearnerLiveStep/s=' + (learner.LiveStepsPerSecond == null ? '-' : number(learner.LiveStepsPerSecond, 1))
         );
         lines.push(
-            'Rates: OptExp/s is the last per-worker optimizer consumption sample; learner Step/s is the global ML-Agents training-step rate.'
+            'Rates: LiveExp/s is recent per-worker learner-consumed experience; OptExp/s is the optimizer measurement-window sample; learner Step/s is the global ML-Agents training-step rate.'
         );
         lines.push(
             'Network: SentGiB/RecvGiB are cumulative per-run WAN payload bytes; MiB/s is the current payload rate when a live actor session is available.'
