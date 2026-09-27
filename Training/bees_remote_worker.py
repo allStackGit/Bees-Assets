@@ -238,10 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"[Bees remote] session={spec['identity_sha256']} run_id={spec.get('run_id') or 'none'} "
         f"workers={','.join(str(value) for value in worker_ids)}"
     )
-    tunnel = subprocess.Popen(
-        ssh_command(args.ssh_executable, args.ssh, ports, args.ssh_option),
-        stdin=subprocess.DEVNULL,
-    )
+    tunnel: Optional[subprocess.Popen] = None
     workers: List[subprocess.Popen] = []
     stop_requested = False
 
@@ -252,6 +249,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     old_sigint = signal.signal(signal.SIGINT, request_stop)
     old_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
+        tunnel = subprocess.Popen(
+            ssh_command(args.ssh_executable, args.ssh, ports, args.ssh_option),
+            stdin=subprocess.DEVNULL,
+        )
         deadline = time.monotonic() + args.tunnel_startup_seconds
         while time.monotonic() < deadline and tunnel.poll() is None and not stop_requested:
             time.sleep(0.05)
@@ -297,7 +298,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     finally:
         cleanup_errors = []
-        for process in [*workers, tunnel]:
+        children = [*workers]
+        if tunnel is not None:
+            children.append(tunnel)
+        for process in children:
             try:
                 _terminate(process)
             except RuntimeError as exc:
