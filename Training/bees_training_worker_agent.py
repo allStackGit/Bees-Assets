@@ -689,6 +689,7 @@ class ManagedProcess:
         self.environment_args: tuple[str, ...] = ()
         self.worker_env_count: Optional[int] = None
         self.throughput_metrics_file: Optional[Path] = None
+        self.state_file = ""
         self.graceful_checkpoint = False
         self.graceful_remote_stop = False
         self.stop_request_file: Optional[Path] = None
@@ -809,6 +810,7 @@ class ManagedProcess:
             raise ValueError("managed training process requires a non-empty run_id")
 
         normalized_environment_args = tuple(str(value) for value in environment_args)
+        state_file_identity = str(state_file.expanduser().resolve())
         command_changed = tuple(command) != self.command or (
             revision != self.revision
             or build_sha256 != self.build_sha256
@@ -816,6 +818,7 @@ class ManagedProcess:
             or str(run_id) != self.run_id
             or compatibility_key != self.compatibility_key
             or normalized_environment_args != self.environment_args
+            or state_file_identity != self.state_file
             or worker_env_count != self.worker_env_count
             or bool(graceful_checkpoint) != self.graceful_checkpoint
             or bool(graceful_remote_stop) != self.graceful_remote_stop
@@ -879,6 +882,7 @@ class ManagedProcess:
             start_new_session=(not _is_windows()),
         )
         self.command = tuple(command)
+        self.state_file = state_file_identity
         self.revision = revision
         self.build_sha256 = build_sha256
         self.build_id = build_id
