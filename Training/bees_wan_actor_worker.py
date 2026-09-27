@@ -605,6 +605,7 @@ class ActorSession:
             self._upload_drain_deadline = (
                 time.monotonic() + ACTOR_SHUTDOWN_UPLOAD_DRAIN_SECONDS
             )
+        # The uploader treats this as a bounded drain request, not an immediate discard signal.
         self._upload_stop.set()
         if self.manager is not None:
             try:
