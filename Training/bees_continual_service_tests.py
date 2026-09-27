@@ -36,6 +36,7 @@ class ContinualServiceTests(unittest.TestCase):
                 mock.patch.object(service.os, "name", "posix"),
                 mock.patch.object(service, "_managed_stop_requested", side_effect=[False, True]),
                 mock.patch.object(service, "popen_owned", return_value=fake) as popen,
+                mock.patch.object(service, "write_managed_health") as write_health,
                 mock.patch.object(service.time, "sleep"),
             ):
                 with self.assertRaises(KeyboardInterrupt):
@@ -43,6 +44,10 @@ class ContinualServiceTests(unittest.TestCase):
 
             self.assertTrue(popen.call_args.kwargs["start_new_session"])
             self.assertEqual(popen.call_args.args[0], ["python", "trainer.py"])
+            write_health.assert_called_once_with(
+                "ready",
+                details={"component": "continual-service"},
+            )
 
     def test_fast_child_exit_still_treats_stop_file_as_interrupted_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
