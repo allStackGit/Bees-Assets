@@ -276,6 +276,7 @@ function runSupervisor(options, runtime = {}) {
             ) return;
             if (Date.now() - startedAt < HEALTH_STARTUP_GRACE_MS) return;
 
+            const probedChild = child;
             healthProbeRunning = true;
             let healthy = false;
             try {
@@ -289,6 +290,15 @@ function runSupervisor(options, runtime = {}) {
             } finally {
                 healthProbeRunning = false;
             }
+
+            // The child may have exited and been replaced while the asynchronous probe was
+            // in flight. Its result belongs only to the process that was actually probed.
+            if (
+                stopping ||
+                child !== probedChild ||
+                probedChild.exitCode !== null ||
+                probedChild.signalCode !== null
+            ) return;
 
             if (healthy) {
                 consecutiveHealthFailures = 0;
