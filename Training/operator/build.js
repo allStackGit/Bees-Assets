@@ -322,12 +322,36 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
                 pendingBuild + '/' + pendingRun + ' latest=' + releaseBuild + '/' + releaseRun
             );
         }
+
+        const trainers = Array.isArray(status.trainers) ? status.trainers : [];
+        const central = trainers.find(
+            record => String(record.trainer_id || '') === 'central-learner'
+        );
+        const centralState = central ? String(central.process_state || '') : '';
+        const centralError = central ? String(central.last_error || '').trim() : '';
+        const repairableCompatibleStall =
+            !Boolean(pending.incompatible) &&
+            !Boolean(release.incompatible) &&
+            centralError &&
+            centralState !== 'running';
+
+        if (repairableCompatibleStall) {
+            console.warn(
+                'Previous compatible release ' + releaseBuild +
+                ' is still pending while the central learner is unhealthy (' +
+                centralState + ': ' + centralError +
+                '); compiling a newer same-run compatible repair release that may explicitly ' +
+                'supersede this exact pending build.'
+            );
+            return { supersedeCompatibleBuildId: releaseBuild };
+        }
+
         console.log(
             'Previous release is still rolling out (phase=' + pending.phase +
             '); finishing build ' + releaseBuild + ' before compiling another release.'
         );
         await waitReleaseRollout(config, adminToken, releaseBuild, releaseRun, releaseKey);
-        return;
+        return {};
     }
 
     const desired = status.desired || {};
@@ -336,7 +360,7 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
         String(desired.run_id || '').trim() === releaseRun &&
         String(desired.compatibility_key || '').trim().toLowerCase() === releaseKey
     ) {
-        return;
+        return {};
     }
 
     console.log(
@@ -366,6 +390,7 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
             );
         }
     }
+    return {};
 }
 
 async function invokeBuild(options = {}) {
@@ -385,6 +410,7 @@ async function invokeBuild(options = {}) {
     const unity = resolveUnityEditor(config);
     assertUnityProjectAvailableForBatchBuild();
 
+    let supersedeCompatibleBuildId = '';
     if (exists(paths.latestReleasePath) && exists(paths.adminTokenPath)) {
         const admin = readText(paths.adminTokenPath).trim();
         const controlOnline = admin ? await testControl(String(config.controlUrl), admin) : false;
@@ -421,9 +447,12 @@ async function invokeBuild(options = {}) {
                 );
                 recoverTrainingRunLifecycle(python, activeRun, activeKey);
             } else if (currentRelease.run_id && currentRelease.compatibility_key) {
-                await reconcileLatestReleaseBeforeBuild(
+                const reconciliation = await reconcileLatestReleaseBeforeBuild(
                     config, python, unity, admin, currentRelease
                 );
+                supersedeCompatibleBuildId = String(
+                    (reconciliation && reconciliation.supersedeCompatibleBuildId) || ''
+                ).trim();
             }
         }
     }
@@ -610,7 +639,14 @@ async function invokeBuild(options = {}) {
             }
             await publishRelease(config, admin, release);
             const staged = await stageRelease(
-                config, admin, release, environmentArgs, validationKey
+                config,
+                admin,
+                release,
+                environmentArgs,
+                validationKey,
+                supersedeCompatibleBuildId
+                    ? { supersedeCompatibleBuildId }
+                    : {},
             );
             console.log(
                 'Release staged: build=' + buildId +
