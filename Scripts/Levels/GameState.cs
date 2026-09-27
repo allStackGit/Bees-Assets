@@ -281,6 +281,8 @@ namespace Assets.Scripts.Levels
 
         private readonly List<MatchPlayer> _players = new List<MatchPlayer>();
         private long _nextMatchSquadId = 1;
+        private readonly Dictionary<int, long> _nextPlayerCommandSequences = new Dictionary<int, long>();
+        private readonly Dictionary<int, long> _lastAcceptedPlayerCommandSequences = new Dictionary<int, long>();
         private readonly List<(SavedSquad Squad, int PlayerId)> _squadOwnerAssignments =
             new List<(SavedSquad Squad, int PlayerId)>();
 
@@ -451,6 +453,38 @@ namespace Assets.Scripts.Levels
         {
             MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
             return player == null ? 0 : player.Side;
+        }
+
+        public long AllocatePlayerCommandSequence(int playerId)
+        {
+            if (Phase != MatchSessionPhase.Battle || !HasPlayer(playerId))
+            {
+                return 0;
+            }
+
+            if (!_nextPlayerCommandSequences.TryGetValue(playerId, out long nextSequence))
+            {
+                nextSequence = 1;
+            }
+            _nextPlayerCommandSequences[playerId] = nextSequence + 1;
+            return nextSequence;
+        }
+
+        public bool TryAcceptPlayerCommandSequence(int playerId, long sequence)
+        {
+            if (Phase != MatchSessionPhase.Battle || !HasPlayer(playerId) || sequence <= 0)
+            {
+                return false;
+            }
+
+            _lastAcceptedPlayerCommandSequences.TryGetValue(playerId, out long lastAccepted);
+            if (sequence <= lastAccepted)
+            {
+                return false;
+            }
+
+            _lastAcceptedPlayerCommandSequences[playerId] = sequence;
+            return true;
         }
 
         public bool TryAssignSavedSquadOwner(SavedSquad savedSquad, int playerId)

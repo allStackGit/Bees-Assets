@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels.Commands;
@@ -18,6 +19,64 @@ namespace Assets.Scripts.Levels
         public int AddUserCommand()
         {
             return UserCommands++;
+        }
+
+        public bool TryExecutePlayerCommand(PlayerCommandEnvelope command)
+        {
+            if (command == null || !IsKnownInputPlayer(command.PlayerId))
+            {
+                return false;
+            }
+
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            if (matchSession != null)
+            {
+                if (matchSession.Phase != MatchSessionPhase.Battle ||
+                    !matchSession.TryAcceptPlayerCommandSequence(command.PlayerId, command.Sequence))
+                {
+                    return false;
+                }
+            }
+            else if (command.Sequence > 0)
+            {
+                // Sequenced commands are a multiplayer transport contract and must not leak
+                // into Campaign/Challenge's legacy no-session path.
+                return false;
+            }
+
+            switch (command.Kind)
+            {
+                case PlayerCommandKind.Move:
+                    return TryPlayerMoveSquad(command.PlayerId, command.SquadCommandId, command.PointA);
+                case PlayerCommandKind.TargetEnemy:
+                    return TryPlayerTargetEnemy(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.TargetSquadCommandId);
+                case PlayerCommandKind.Guard:
+                    return TryPlayerGuardSquad(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.TargetSquadCommandId);
+                case PlayerCommandKind.Patrol:
+                    return TryPlayerPatrolSquad(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.PointA,
+                        command.PointB);
+                case PlayerCommandKind.FullRetreat:
+                    return TryPlayerFullRetreat(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.TargetSquadCommandId);
+                case PlayerCommandKind.Heal:
+                    return TryPlayerHealSquad(
+                        command.PlayerId,
+                        command.SquadCommandId,
+                        command.TargetSquadCommandId);
+                default:
+                    return false;
+            }
         }
 
         private Squad GetPlayerCommandSquad(long squadCommandId)
@@ -337,4 +396,53 @@ namespace Assets.Scripts.Levels
             _completes.Clear();
         }
     }
+
+    public enum PlayerCommandKind
+    {
+        Move,
+        TargetEnemy,
+        Guard,
+        Patrol,
+        FullRetreat,
+        Heal
+    }
+
+    /// <summary>
+    /// Transport-neutral player order. A network/local transport may serialize this object, but
+    /// execution remains authoritative in GameState and is revalidated against current ownership.
+    /// </summary>
+    [Serializable]
+    public sealed class PlayerCommandEnvelope
+    {
+        public int PlayerId;
+        public long Sequence;
+        public PlayerCommandKind Kind;
+        public long SquadCommandId;
+        public long TargetSquadCommandId;
+        public Vector2 PointA;
+        public Vector2 PointB;
+
+        public PlayerCommandEnvelope()
+        {
+        }
+
+        public PlayerCommandEnvelope(
+            int playerId,
+            long sequence,
+            PlayerCommandKind kind,
+            long squadCommandId,
+            long targetSquadCommandId = 0,
+            Vector2 pointA = default,
+            Vector2 pointB = default)
+        {
+            PlayerId = playerId;
+            Sequence = sequence;
+            Kind = kind;
+            SquadCommandId = squadCommandId;
+            TargetSquadCommandId = targetSquadCommandId;
+            PointA = pointA;
+            PointB = pointB;
+        }
+    }
+
 }
