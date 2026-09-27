@@ -164,6 +164,7 @@ def _service_contract_sha256(options: ServiceOptions) -> str:
         "run_id": options.run_id,
         "runtime_training_root": str(options.runtime_training_root.resolve()),
         "runtime_training_sha256": _runtime_training_contract_sha256(options.runtime_training_root),
+        "python_executable": options.python_executable,
         "trainer_config_sha256": _file_sha256(options.trainer_config),
         "continual_config_sha256": _file_sha256(options.continual_config),
         "training_env_sha256": _file_sha256(options.training_env),
