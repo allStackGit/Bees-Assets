@@ -495,3 +495,18 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** egress now handles both static obstruction and dynamic-only clearance failure. Dynamic-only egress keeps every waypoint statically safe, never decreases dynamic clearance, and exits once the requested clearance is restored. `DynamicObstacleQualificationTests.ShipOverlappingMovingAsteroidCanFindClearanceEgressPath` covers a start cell blocked only by a moving asteroid. The test was added but not run, per the static-only audit scope.  
 **Verification:** traced asteroid contact through `CollisionAsteroid.ShipCollision` and `Ship.FoundNearbyAsteroid` into path dispatch, then traced clearance-layer construction, worker search, and egress result assembly. Reviewed the updated algorithm and focused regression case statically. No tests or runtime checks were run.  
 **Invariant/knowledge:** when a movement start fails combined clearance, recovery must distinguish static geometry from dynamic obstacles and preserve static-safe cells while escaping dynamic-only obstruction.
+
+
+### REG-056 — RL movement heading was gated by a stale target
+
+**Area:** `Scripts/Entities/Ships/Ship.Movement.cs`, `Scripts/Scenes/RlOneVsOneAgent.cs`, live and training policy movement
+
+**Symptom:** a policy-selected heading could be ignored while a previously issued squad target remained within one ship-height, causing direct RL movement to continue in the old hull direction.
+
+**Root cause:** `RlDirectionalMovement` consulted the legacy `HasTargetCoordinates`/distance state before applying the current `RlMovementDirection`. The policy controller updates the direction without owning or clearing that legacy target, so stale squad state could suppress a valid policy turn.
+
+**Permanent protection:** `RlDirectionalMovement` now applies the policy heading on every movement update unless the policy explicitly selects the stop sentinel. `MovementStaleStateTests.PolicyHeadingIsNotGatedByAStaleMovementTarget` protects against reintroducing the stale-target gate.
+
+**Verification:** traced policy action decoding through `ApplyMovementCommand` into `Ship.Move` and `RlDirectionalMovement`; confirmed the current heading is applied unconditionally and the focused source regression guard is present. The regression was not run, and no Unity or runtime behavior was checked, per the static-only audit scope.
+
+**Invariant/knowledge:** while policy control owns movement, the current policy heading is authoritative; legacy squad target coordinates must not gate that heading.
