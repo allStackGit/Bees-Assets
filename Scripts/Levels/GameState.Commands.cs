@@ -72,6 +72,89 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        public bool TryPlayerGuardSquad(int playerId, int squadItemId, int friendlySquadItemId)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad friendlySquad = GetPlayerCommandSquad(friendlySquadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                friendlySquad == null ||
+                friendlySquad.IsDead ||
+                friendlySquad.Side != squad.Side ||
+                ReferenceEquals(friendlySquad, squad))
+            {
+                return false;
+            }
+
+            squad.UserGuard(friendlySquad);
+            return true;
+        }
+
+        public bool TryPlayerPatrolSquad(int playerId, int squadItemId, Vector2 topLeft, Vector2 bottomRight)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad))
+            {
+                return false;
+            }
+
+            squad.UserPatrol(topLeft, bottomRight);
+            return true;
+        }
+
+        public bool TryPlayerFullRetreat(int playerId, int squadItemId, int warpGateSquadItemId)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad warpGateSquad = GetPlayerCommandSquad(warpGateSquadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                warpGateSquad == null ||
+                warpGateSquad.IsDead ||
+                warpGateSquad.Side != squad.Side)
+            {
+                return false;
+            }
+
+            List<Ship> targetShips = warpGateSquad.GetShips();
+            for (int i = 0; i < targetShips.Count; i++)
+            {
+                if (targetShips[i] is WarpGate warpGate && !warpGate.IsDead)
+                {
+                    squad.UserFullRetreat(warpGate);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool TryPlayerHealSquad(int playerId, int squadItemId, int beehiveSquadItemId)
+        {
+            Squad squad = GetPlayerCommandSquad(squadItemId);
+            Squad beehiveSquad = GetPlayerCommandSquad(beehiveSquadItemId);
+            if (!CanPlayerCommandSquad(playerId, squad) ||
+                beehiveSquad == null ||
+                beehiveSquad.IsDead ||
+                beehiveSquad.Side != squad.Side)
+            {
+                return false;
+            }
+
+            List<Beehive> beehives = new List<Beehive>();
+            List<Ship> targetShips = beehiveSquad.GetShips();
+            for (int i = 0; i < targetShips.Count; i++)
+            {
+                if (targetShips[i] is Beehive beehive && !beehive.IsDead)
+                {
+                    beehives.Add(beehive);
+                }
+            }
+            if (beehives.Count == 0)
+            {
+                return false;
+            }
+
+            squad.UserHeal(beehives);
+            return true;
+        }
+
         public bool AddCommand(Command command)
         {
             if (command.OutcomeId > 0 && OutcomeIdToPastCommandIndex.ContainsKey(command.OutcomeId))
