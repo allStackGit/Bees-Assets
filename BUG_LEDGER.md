@@ -5,6 +5,7 @@ Static-only repository audit on `rl/initial-design-work`. This ledger is the cur
 ## Active validated defects
 
 - **BUG-002 — Resolved as REG-113.** An authoritative exact-version miss now returns terminal client status 404; `ServerSettings.WaitForResponse` records the failure and removes the standing request instead of retrying forever. Verified by static trace across the server response and both Unity client paths; no tests or runtime checks were run.
+- **BUG-003 — Resolved as REG-114.** The public in-range target query no longer mutates the internal cached strategy-order list. Static source trace confirmed Pluto II polls the public query while weapon targeting caches the same previous list by reference; no tests or runtime checks were run.
 
 - REG-104 fixes persisted artifact catalog paths: stored paths must exactly match the role/platform/build/hash path emitted by the publisher, preventing malformed state from causing pruning to unlink an arbitrary path. Static source review only; no tests run.
 
