@@ -18,8 +18,7 @@
     "team_exploration_source_sha256": "c41203e4bc98e018b377017a548127efd8e45a35b5390cb0a8c089f2c43f1361"
   },
   "created_utc": "2026-09-27T11:31:34.878889+00:00",
-  "last_build_utc": "2026-09-27T11:34:02.096419+00:00",
-  "recovered_utc": "2026-09-27T11:34:02.096419+00:00",
+  "last_build_utc": "2026-09-27T11:40:45.363689+00:00",
   "run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
   "schema_version": 1
 }

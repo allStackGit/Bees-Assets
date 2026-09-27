@@ -7153,3 +7153,433 @@
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
 [Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 3, 'BeesRL1v1?team=1': 5} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees WAN actor] synchronized policies={'BeesRL1v1?team=0': 4, 'BeesRL1v1?team=1': 5} control_epoch=2.
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=warmup
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold error=ControlUnavailable: timed out
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=stability-hold
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=47 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=48 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=48 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=48 optimizer=paused error=Unity artifact is prepared for 2026-09-27-073409-5cc55f3e34b6, but the Python runtime is ready for 2026-09-26-135048-f23dbede4be8
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=49 optimizer=paused error=Unity artifact is prepared for 2026-09-27-073409-5cc55f3e34b6, but the Python runtime is ready for 2026-09-26-135048-f23dbede4be8
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=49 optimizer=paused error=Unity artifact is prepared for 2026-09-27-073409-5cc55f3e34b6, but the Python runtime is ready for 2026-09-26-135048-f23dbede4be8
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=running envs=1 build=2026-09-26-135048-f23dbede4be8 rev=49 optimizer=paused error=Unity artifact is prepared for 2026-09-27-073409-5cc55f3e34b6, but the Python runtime is ready for 2026-09-26-135048-f23dbede4be8
+[Bees remote] activating staged worker runtime 64b16166755e at this trainer's rollout turn.
+[Bees remote] staged worker update runtime=64b16166755e bridge=356f0fa12a48.
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=-
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=-
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=(canonical build unavailable) verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] waiting for matching Training runtime before rollout: canonical=2026-09-26-135048-f23dbede4be8 verified=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=STALE envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=51 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=-1 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: connecting to learner; trainer=remote-warwick-a05b8f5b envs=1
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner connected; waiting for trainer registration; trainer=remote-warwick-a05b8f5b envs=1 build=2026-09-27-073409-5cc55f3e34b6
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused
+[Bees remote] status: learner=connected trainer=remote-warwick-a05b8f5b state=stopped envs=1 build=2026-09-27-073409-5cc55f3e34b6 rev=54 optimizer=paused

@@ -1,18 +1,18 @@
 {
   "schema_version": 3,
-  "build_id": "2026-09-27-064827-7201d62f9157",
-  "source_commit": "7201d62f9157",
-  "created_utc": "2026-09-27T10:56:11.429Z",
-  "run_id": "bees-v20-r3-s1-20260927T104826Z-566e2c0d",
+  "build_id": "2026-09-27-073409-5cc55f3e34b6",
+  "source_commit": "5cc55f3e34b6",
+  "created_utc": "2026-09-27T11:40:19.978Z",
+  "run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
   "previous_run_id": "bees-v20-r3-s1-20260926T184018Z-4fc8512c",
-  "compatibility_key": "566e2c0d272db89a2c112acc18632b4df4d94036bf8c37dfad6291074109b737",
-  "incompatible": true,
+  "compatibility_key": "4fc8512cabe70e1612f62af6803298798ad03b489f6efafec257b8041c3602ca",
+  "incompatible": false,
   "contract": {
     "action_schema_version": 9,
     "agent_action_source_sha256": "914b36f9d20018108ebb312e4e4cfc658e979a5c23c33b1f8cc76f40d0ecb696",
     "behavior_name": "BeesRL1v1",
     "combat_perception_source_sha256": "4e9d693140221fdaa7edb9a3460b338388ce7920a33abea1bdaf63f3e2d40d1b",
-    "episode_coordinator_source_sha256": "68a476a289b1f163ee61e301c55c1b91ab3b288818910fd27d585419796a0572",
+    "episode_coordinator_source_sha256": "3dac48b50ed3a0bdfd344b4e552a095a4aa91f17e1073991e56453e8fecbc785",
     "episode_identity_source_sha256": "e526a01196e8f30de12a3dc116d851cf3ed121d88672814646a9c2472df6da00",
     "network_settings": "network_settings:\nnormalize: true\nhidden_units: 128\nnum_layers: 3\n",
     "observation_schema_version": 11,
@@ -29,24 +29,24 @@
       "role": "dedicated",
       "platform": "WindowsPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-27 RL Windows",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-064827-7201d62f9157\\rl-windows.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-073409-5cc55f3e34b6\\rl-windows.zip",
       "entrypoint": "Bees RL Training.exe"
     },
     {
       "role": "dedicated",
       "platform": "LinuxPlayer",
       "folder": "B:\\Bees\\Builds\\2026-09-27 RL Linux",
-      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-064827-7201d62f9157\\rl-linux.zip",
+      "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-073409-5cc55f3e34b6\\rl-linux.zip",
       "entrypoint": "Bees RL Training.x86_64"
     }
   ],
   "training_runtime": {
-    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-064827-7201d62f9157\\training-runtime.zip",
-    "archive_sha256": "efe1dd018d261481332f56823af43ff21939c6862e9ecb170ff5ed2da584876c",
-    "archive_size_bytes": 327804,
-    "build_id": "2026-09-27-064827-7201d62f9157",
-    "runtime_version": "ed5138692ab4131edb34ddd9d2962c3827f566c278af4b7e1c6567cdafe2e3d5",
+    "archive": "B:\\Bees\\Builds\\Packages\\2026-09-27-073409-5cc55f3e34b6\\training-runtime.zip",
+    "archive_sha256": "64b16166755ec17addaf011cc225d694256f88802032c341106e4f3d1317dc6f",
+    "archive_size_bytes": 328586,
+    "build_id": "2026-09-27-073409-5cc55f3e34b6",
+    "runtime_version": "0de83b9950fc1c937a8845aed2db4b9f562ba126f62d0fd12a4fb2cb3cf4f025",
     "schema_version": 1,
-    "source_commit": "7201d62f9157"
+    "source_commit": "5cc55f3e34b6"
   }
 }
