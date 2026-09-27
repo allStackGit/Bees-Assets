@@ -860,6 +860,9 @@ class WanActorBroker:
             self._validate_policy_versions(payload.get("policy_versions"))
             if actor_id not in self._active_actor_ids_locked():
                 raise ValueError("actor registration lease expired before trajectory upload")
+            actor_registration = self._registrations.get(actor_id)
+            if actor_registration is None:
+                raise ValueError("actor registration disappeared before trajectory upload")
             self._touch_actor_locked(actor_id)
             duplicate_count = self._accepted_batch_count_locked(actor_id, batch_id)
             if duplicate_count is not None:
@@ -898,6 +901,13 @@ class WanActorBroker:
             if payload.get("control_epoch") != self._control_epoch:
                 raise StaleActorStateError(
                     "trajectory control epoch changed while validating the batch"
+                )
+            if (
+                self._registrations.get(actor_id) is not actor_registration
+                or actor_id not in self._active_actor_ids_locked()
+            ):
+                raise ValueError(
+                    "actor registration expired or was replaced while validating the batch"
                 )
             self._validate_policy_versions(payload.get("policy_versions"))
             if actor_id in self._cohort_blocked_actors:
