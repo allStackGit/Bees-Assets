@@ -148,16 +148,21 @@ internal static class RlOneVsOneArenaMapSizeState
 
     private static float SampleSteppedMapSize(System.Random random, float minimum, float maximum)
     {
-        int integerMinimum = Mathf.RoundToInt(minimum);
-        int integerMaximum = Mathf.RoundToInt(maximum);
-        if (integerMaximum <= integerMinimum)
+        if (maximum <= minimum)
         {
-            return integerMinimum;
+            return minimum;
         }
 
-        int maximumStep = (integerMaximum - integerMinimum) / MapSizeStep;
+        double range = (double)maximum - minimum;
+        int maximumStep = (int)Math.Floor(range / MapSizeStep);
+        if (maximumStep <= 0)
+        {
+            return minimum;
+        }
+
         int selectedStep = random.Next(maximumStep + 1);
-        return integerMinimum + selectedStep * MapSizeStep;
+        float sampledSize = minimum + selectedStep * MapSizeStep;
+        return Mathf.Min(sampledSize, maximum);
     }
 
     private static System.Random GetMapSizeRandom(Level level)
