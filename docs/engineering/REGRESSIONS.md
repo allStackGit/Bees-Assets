@@ -468,3 +468,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** both hybrid and zero-local elastic learners validate incoming trajectory lengths against the matching behavior's configured `time_horizon`, while preserving a strict upper bound and rejecting malformed/empty trajectories. `Training/bees_elastic_wan_training_tests.py` covers acceptance of an in-flight old-topology batch within that bound, rejection above it, and use of the guard by both learner paths.  
 **Verification:** statically traced topology notifications, horizon recalculation, ML-Agents 1.1.0 `AgentProcessor` segmentation, actor upload queues, broker queueing, and learner injection. The regression tests were added and reviewed but not executed, per the static-only audit constraint.  
 **Invariant/knowledge:** topology-dependent rollout targets are segmentation preferences; the configured `time_horizon` is the stable maximum for compatible queued experience across topology changes.
+
+
+### REG-053 — Pathfinding setup rethrow obscured the original failure site
+**Area:** `Scripts/Levels/Pathfinder.Search.cs`, path request setup diagnostics  
+**Symptom:** exceptions thrown while selecting path worker grid nodes were rethrown with `throw e`, resetting the stack trace to the catch site and hiding the original failure location.  
+**Root cause:** the catch block used the exception-variable rethrow form, which resets the recorded stack.  
+**Permanent protection:** removed the redundant catch/rethrow wrapper so any setup exception propagates with its original stack.  
+**Verification:** reviewed the current source and confirmed the catch/rethrow wrapper is gone. No tests, builds, Unity, simulations, or runtime checks were run, per the static-only audit scope.  
+**Invariant/knowledge:** when an exception needs to propagate unchanged, use a bare rethrow or allow it to propagate; never use `throw exceptionVariable`.
