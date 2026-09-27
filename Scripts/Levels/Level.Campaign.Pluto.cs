@@ -580,11 +580,11 @@ namespace Assets.Scripts.Levels
                                                         aiSideKilled,
                                                         ConfigData.Configuration.UserSide,
                                                         ConfigData.Configuration.AISide);
-                                                    CloseLevel();
                                                     if (WinningSide == ConfigData.Configuration.UserSide)
                                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(5, 1), true);
                                                     else
                                                         Stage.CutsceneManager.PlayDialogueSection(Stage.CutsceneManager.PlutoLines_Reinforcements.GetRange(6, 1), true);
+                                                    CloseLevel();
                                                 },
                                                 "Level 1 ending"));
                                         },
