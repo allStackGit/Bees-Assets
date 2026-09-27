@@ -435,3 +435,12 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** compound ship names are normalized before their component names. `DialoguePresentationTimingTests.CompoundShipNamesAreNormalizedBeforeTheirComponents` verifies the rendered line. The test was added but not run, per the static-only audit constraint.  
 **Verification:** traced the ordered replacements and statically reviewed the focused formatter regression assertion. No tests or runtime checks were run.  
 **Invariant/knowledge:** when normalizing overlapping names by text replacement, process longer compound names before their components.  
+
+
+### REG-049 — Wrong-type response could poison a live socket request hash
+**Area:** `Scripts/Server/Socket.cs`, `Scripts/Server/SocketResponseLifecycleGuard.cs`, standing request ownership  \
+**Symptom:** a response with a live request hash but a different request type could claim the hash as handled. The later correct response, which reuses that hash on retries, was then discarded as a duplicate while the standing request remained pending. Status handling could also retire or alter the mismatched request.  
+**Root cause:** response deduplication and lifecycle decisions were keyed by hash before verifying that the standing request owned that hash for the response's request type.  
+**Permanent protection:** response claiming now requires a matching standing request type, and the lifecycle guard suppresses mismatched types before any status-driven mutation. `SocketResponseOwnershipTests.WrongResponseTypeDoesNotClaimOrRetireTheStandingRequest` protects the live request, unclaimed hash, and subsequent valid claim. The test was added but not run, per the static-only audit constraint.  
+**Verification:** traced response parsing, hash claiming, status handling, and request removal statically; the focused regression case was inspected but not executed.  
+**Invariant/knowledge:** a response must match both the request hash and request type before it may claim deduplication state or change its owner's lifecycle.
