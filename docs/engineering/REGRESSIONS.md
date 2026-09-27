@@ -1097,6 +1097,14 @@ Manual-only protection is acceptable only when the record explains why determini
 **Invariant/knowledge:** externally configured names are data, not safe filesystem components; generated artifacts must remain within their selected output directory.
 
 
+### REG-126 — rejected desired-state patches partially mutated training state
+**Area:** `BeesServer~/trainingControl.js`, `TrainingControlStore.setDesiredState`
+**Symptom:** An admin patch combining `training_enabled` with invalid or rollout-locked `environment_args` could return an error while leaving the in-memory training flag changed.
+**Root cause:** The method mutated `this.state.training_enabled` before normalizing and validating the later environment-argument field. A later exception skipped persistence but did not undo the earlier in-memory mutation, so heartbeat responses could reflect a rejected request.
+**Fix:** Validate and stage every supported field before applying the patch. Commit the new state object only after validation, and restore the previous state object if persistence fails.
+**Permanent protection:** Desired-state patch validation must complete before shared state is mutated; rejected requests leave the whole state unchanged.
+**Verification:** Statically traced the mixed-field failure path, confirming the old implementation mutated training state before the later error and the new implementation stages both values before assignment. Persistence failure restores the previous state reference. No tests, builds, services, or runtime checks were run.
+
 ### REG-125 — training log resume could join different file contents
 **Area:** `Training/bees_training_worker_agent.py`, `TrainingLogUploader.flush_once`; `Training/bees_training_control.py`; `BeesServer~/trainingControl.js`
 **Symptom:** After an uploader restart or same-run file replacement, a server offset could be resumed solely because it was within the local file size, silently joining a new local log to a stale remote prefix.
