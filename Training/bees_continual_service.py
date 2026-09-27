@@ -537,7 +537,7 @@ def run_service(
 
             if phase == "train":
                 write_managed_health(
-                    "starting",
+                    "ready",
                     details={
                         "phase": "train",
                         "generation_index": index,
