@@ -407,7 +407,7 @@ namespace Assets.Scripts.Levels.Commands
                     {
                         GetSquad().RunCommandQueue();
                     }
-                    if (GetSquad().IsUserControlled && GetSquad().IsLockedOn)
+                    if (GetSquad().IsPlayerControlled && GetSquad().IsLockedOn)
                     {
                         GetSquad().IsLockedOn = false;
                     }

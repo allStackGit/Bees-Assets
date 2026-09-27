@@ -358,5 +358,15 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("Level.State.TryPlayerMoveSquad(", source);
             StringAssert.DoesNotContain("_moveSquads_selectedSquads[_moveSquads_i].Move(", source);
         }
+
+        [Test]
+        public void PlayerOwnedCommandCompletionClearsLockRegardlessOfLocalPerspective()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Levels", "Commands", "Command.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("GetSquad().IsPlayerControlled && GetSquad().IsLockedOn", source);
+            StringAssert.DoesNotContain("GetSquad().IsUserControlled && GetSquad().IsLockedOn", source);
+        }
     }
 }
