@@ -31,6 +31,84 @@ class WorkerAgentHealthTests(unittest.TestCase):
         )
 
 
+class WorkerTrafficMetricsTests(unittest.TestCase):
+    def test_persisted_network_totals_fill_session_gap_for_same_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            throughput = root / "worker-throughput.json"
+            traffic = root / worker_agent.NETWORK_TRAFFIC_STATE_FILE
+            traffic.write_text(
+                '{"run_id":"run-a","sent_bytes_total":1073741824,'
+                '"received_bytes_total":536870912}\n',
+                encoding="utf-8",
+            )
+            snapshot = {}
+
+            worker_agent._add_persisted_network_traffic(
+                snapshot,
+                throughput,
+                run_id="run-a",
+            )
+
+            self.assertEqual(
+                snapshot["throughput"]["network_sent_bytes_total"],
+                1073741824,
+            )
+            self.assertEqual(
+                snapshot["throughput"]["network_received_bytes_total"],
+                536870912,
+            )
+            self.assertNotIn("network_mib_per_s", snapshot["throughput"])
+
+    def test_persisted_network_totals_never_cross_run_boundary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            throughput = root / "worker-throughput.json"
+            traffic = root / worker_agent.NETWORK_TRAFFIC_STATE_FILE
+            traffic.write_text(
+                '{"run_id":"run-old","sent_bytes_total":123,'
+                '"received_bytes_total":456}\n',
+                encoding="utf-8",
+            )
+            snapshot = {}
+
+            worker_agent._add_persisted_network_traffic(
+                snapshot,
+                throughput,
+                run_id="run-new",
+            )
+
+            self.assertEqual(snapshot, {})
+
+    def test_live_session_network_metrics_win_over_persisted_fallback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            throughput = root / "worker-throughput.json"
+            traffic = root / worker_agent.NETWORK_TRAFFIC_STATE_FILE
+            traffic.write_text(
+                '{"run_id":"run-a","sent_bytes_total":100,'
+                '"received_bytes_total":200}\n',
+                encoding="utf-8",
+            )
+            snapshot = {
+                "throughput": {
+                    "network_sent_bytes_total": 300,
+                    "network_received_bytes_total": 400,
+                    "network_mib_per_s": 1.25,
+                }
+            }
+
+            worker_agent._add_persisted_network_traffic(
+                snapshot,
+                throughput,
+                run_id="run-a",
+            )
+
+            self.assertEqual(snapshot["throughput"]["network_sent_bytes_total"], 300)
+            self.assertEqual(snapshot["throughput"]["network_received_bytes_total"], 400)
+            self.assertEqual(snapshot["throughput"]["network_mib_per_s"], 1.25)
+
+
 class ManagedRemoteWorkerTests(unittest.TestCase):
     def test_default_envs_are_four_times_available_threads_when_memory_allows(self):
         with (
