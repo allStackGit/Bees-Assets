@@ -647,6 +647,8 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertIn("session_failures_total", status)
         self.assertIn("seconds_since_last_session_failure", status)
         self.assertIn("last_session_failure_type", status)
+        self.assertIn("metrics.control", status)
+        self.assertIn("Control x", status)
         self.assertIn("last_instability_ms", status)
         self.assertIn("last_instability_reason", status)
         self.assertIn("Optimizer, ", status)
