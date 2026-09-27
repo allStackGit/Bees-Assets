@@ -1670,5 +1670,31 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("UnityEngine.Random.Range(minInclusive, maxExclusive)", savedSquadSource);
             StringAssert.Contains("Utilities.GetNegativeFleetshipId()", savedSquadSource);
         }
+
+        [Test]
+        public void ConfigDataCanPeekLobbySessionWithoutConsumingStageHandoff()
+        {
+            string configPath = Path.Combine(Application.dataPath, "Scripts", "ConfigData.cs");
+            string source = File.ReadAllText(configPath);
+
+            StringAssert.Contains("PeekPendingFreePlayMatchSession()", source);
+            StringAssert.Contains("return CurrentGameMode == GameModes.FreePlay", source);
+            StringAssert.Contains("_pendingFreePlayMatchSession", source);
+            StringAssert.Contains("ConsumePendingFreePlayMatchSession()", source);
+        }
+
+        [Test]
+        public void SquadMakerPersistsAndResumesConfiguringLobbyAcrossSceneChanges()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("ConfigData.TrySetPendingFreePlayMatchSession(session);", source);
+            StringAssert.Contains("ConfigData.TrySetPendingFreePlayMatchSession(receivedSession);", source);
+            StringAssert.Contains("ResumePendingMultiplayerLobby();", source);
+            StringAssert.Contains("ConfigData.PeekPendingFreePlayMatchSession()", source);
+            StringAssert.Contains("pendingSession.IsLocalAuthority", source);
+            StringAssert.Contains("SteamMultiplayerLobbyTransportFactory.CreateClient(", source);
+        }
     }
 }

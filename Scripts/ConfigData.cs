@@ -137,6 +137,13 @@ namespace Assets.Scripts
             return true;
         }
 
+        public static Levels.MatchSession PeekPendingFreePlayMatchSession()
+        {
+            return CurrentGameMode == GameModes.FreePlay
+                ? _pendingFreePlayMatchSession
+                : null;
+        }
+
         public static Levels.MatchSession ConsumePendingFreePlayMatchSession()
         {
             Levels.MatchSession session = _pendingFreePlayMatchSession;

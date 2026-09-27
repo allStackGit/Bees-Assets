@@ -208,6 +208,7 @@ namespace Assets.Scripts.Scenes
 
             MultiplayerLobbySession = session;
             _multiplayerLobbyTransport = transport;
+            ConfigData.TrySetPendingFreePlayMatchSession(session);
             return true;
         }
 
@@ -239,6 +240,44 @@ namespace Assets.Scripts.Scenes
             _multiplayerLobbyTransport = null;
         }
 
+        private void ResumePendingMultiplayerLobby()
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
+                _multiplayerLobbyTransport != null)
+            {
+                return;
+            }
+
+            MatchSession pendingSession = ConfigData.PeekPendingFreePlayMatchSession();
+            if (pendingSession == null || !pendingSession.IsConfiguring)
+            {
+                return;
+            }
+
+            IMultiplayerLobbyTransport transport;
+            if (pendingSession.IsLocalAuthority)
+            {
+                transport = SteamMultiplayerLobbyTransportFactory.CreateHost(
+                    pendingSession);
+            }
+            else
+            {
+                string authorityIdentity = pendingSession.GetPeerTransportIdentity(
+                    pendingSession.AuthorityPeerId);
+                transport = SteamMultiplayerLobbyTransportFactory.CreateClient(
+                    authorityIdentity);
+            }
+
+            if (transport == null)
+            {
+                MultiplayerLobbySession = pendingSession;
+                return;
+            }
+
+            MultiplayerLobbySession = pendingSession;
+            _multiplayerLobbyTransport = transport;
+        }
+
         protected override void Update()
         {
             base.Update();
@@ -249,6 +288,7 @@ namespace Assets.Scripts.Scenes
                     out MatchSession receivedSession))
             {
                 MultiplayerLobbySession = receivedSession;
+                ConfigData.TrySetPendingFreePlayMatchSession(receivedSession);
             }
         }
 
@@ -266,7 +306,7 @@ namespace Assets.Scripts.Scenes
             ConfigData.IsTestingLevel = false;
             base.FinalizeSceneWithUserData();
             Setup();
-
+            ResumePendingMultiplayerLobby();
 
             ConfigData.CurrentShips.ReplaceDeadSquadShips(ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign);
             if (ConfigData.CurrentGameMode == ConfigData.GameModes.Campaign)
