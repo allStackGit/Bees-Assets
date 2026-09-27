@@ -14,6 +14,7 @@ processes receive exactly the same final ``--env-args`` as local workers.
 
 from __future__ import annotations
 
+import math
 import sys
 import threading
 from dataclasses import dataclass
@@ -127,8 +128,9 @@ def extract_automatic_public_options(
             f"{QUARANTINE_FLAG} is required and must point at BeesServer's "
             "BEES_RL_TELEMETRY_UPLOAD_DIR root."
         )
-    if float(values["watch_seconds"]) <= 0:
-        raise SystemExit(f"{WATCH_SECONDS_FLAG} must be greater than zero.")
+    watch_seconds = float(values["watch_seconds"])
+    if not math.isfinite(watch_seconds) or watch_seconds <= 0:
+        raise SystemExit(f"{WATCH_SECONDS_FLAG} must be finite and greater than zero.")
     generation_id = values["generation_id"]
     if generation_id is not None and (
         not str(generation_id).strip() or len(str(generation_id)) > 128
