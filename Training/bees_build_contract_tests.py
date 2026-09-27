@@ -240,6 +240,18 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
             server,
         )
 
+    def test_recursive_cleanup_retries_transient_windows_handle_release(self):
+        common = read_operator("common.js")
+        start = common.index("function removeIfExists")
+        end = common.index("function removeUtf8BomIfPresent", start)
+        block = common[start:end]
+        self.assertIn("maxRetries", block)
+        self.assertIn("retryDelay", block)
+        self.assertIn("options.maxRetries", block)
+        self.assertIn("options.retryDelay", block)
+        self.assertIn(": 50", block)
+        self.assertIn(": 100", block)
+
     def test_environment_validation_uses_argv_array_without_powershell_reparse(self):
         source = read_operator("validation.js")
         self.assertIn("spawn(executable, args.map(String)", source)
@@ -271,7 +283,9 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         start = source.index("async function invokeBuild")
         block = source[start:]
         linux_build = block.index("'BeesCommandLineBuild.BuildLinuxRl'")
-        fingerprint = block.index("getTrainingCompatibilityFingerprint(python)")
+        fingerprint = block.index(
+            "const postBuildFingerprint = getTrainingCompatibilityFingerprint(python)"
+        )
         save_release = block.index("saveLatestRelease(release)")
         self.assertLess(linux_build, fingerprint)
         self.assertLess(fingerprint, save_release)
@@ -415,6 +429,29 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         self.assertLess(write_intent, spawn)
         self.assertLess(spawn, active)
         self.assertIn("graceful_checkpoint_shutdown: true", block)
+
+    def test_post_checkpoint_release_has_bounded_replacement_path(self):
+        source = read_operator("central.js")
+        helper = source[
+            source.index("function durablePostCheckpointCentralPhase"):
+            source.index("async function stopCentralAgentGracefully")
+        ]
+        self.assertIn("phase !== 'release' && phase !== 'publish'", helper)
+        self.assertIn("serviceState.training_started", helper)
+        self.assertIn("'checkpoint.pt'", helper)
+        self.assertIn("lifecycle.contract.behavior_name", helper)
+        self.assertIn("behaviorName + '.onnx'", helper)
+        self.assertIn("serviceState.run_id", helper)
+
+        stop = source[
+            source.index("async function stopCentralAgentGracefully"):
+            source.index("function commandIdentity")
+        ]
+        self.assertIn("Math.min(timeoutSeconds, 10)", stop)
+        self.assertIn("initialPostCheckpointPhase.run_id === postCheckpointPhase.run_id", stop)
+        self.assertIn("initialPostCheckpointPhase.phase === postCheckpointPhase.phase", stop)
+        self.assertIn("stopManagedProcessTree(state", stop)
+        self.assertIn("Refusing forced termination", stop)
 
     def test_gateway_launch_intent_is_durable_before_process_creation(self):
         source = read_operator("tailnet.js")
@@ -713,6 +750,17 @@ class BeesCommandLineBuildSourceTests(unittest.TestCase):
         stage = block.index("stageRelease(", central)
         self.assertLess(prepare, central)
         self.assertLess(central, stage)
+
+    def test_canonical_release_reconciliation_does_not_restart_central_before_rebuild(self):
+        source = read_operator("build.js")
+        start = source.index("async function reconcileLatestReleaseBeforeBuild")
+        end = source.index("async function invokeBuild", start)
+        block = source[start:end]
+        canonical = block.index("String(preflightDesired.canonical_build_id || '').trim() === releaseBuild")
+        early_return = block.index("return {};", canonical)
+        prepare = block.index("prepareCentralReleaseRuntime(", early_return)
+        self.assertLess(canonical, early_return)
+        self.assertLess(early_return, prepare)
 
     def test_build_reconciles_previous_release_before_new_release_identity_exists(self):
         source = read_operator("build.js")
@@ -1427,6 +1475,65 @@ server.listen(0,'127.0.0.1',async()=>{
         self.assertIn("findManagedProcessByOwnerToken(node, ownerToken, 'BeesServer supervisor')", reconcile)
         self.assertIn("sha256Text('bees-managed-child:' + ownerToken)", reconcile)
         self.assertIn("'orphaned BeesServer child'", reconcile)
+
+    def test_build_repairs_stale_local_lifecycle_only_from_matching_active_contract(self):
+        build = read_operator("build.js")
+        start = build.index("async function invokeBuild")
+        block = build[start:]
+        recover = block.index("recoverTrainingRunLifecycle(python, activeRun, activeKey)")
+        self.assertIn("sourceKey === activeKey", block[:recover])
+        self.assertIn("releaseRun !== activeRun || releaseKey !== activeKey", block[:recover])
+        self.assertIn("interrupted/stale build", block[:recover])
+
+        runtime = read_operator("runtime.js")
+        recovery = runtime[
+            runtime.index("function recoverTrainingRunLifecycle"):
+            runtime.index("function ensureRunLifecycleMatchesRelease")
+        ]
+        self.assertIn("'recover-active'", recovery)
+        self.assertIn("'--expected-compatibility-key'", recovery)
+
+    def test_build_supersedes_only_exact_unhealthy_compatible_pending_release(self):
+        build = read_operator("build.js")
+        reconcile = build[
+            build.index("async function reconcileLatestReleaseBeforeBuild"):
+            build.index("async function invokeBuild")
+        ]
+        self.assertIn("!Boolean(pending.incompatible)", reconcile)
+        self.assertIn("!Boolean(release.incompatible)", reconcile)
+        self.assertIn("centralError", reconcile)
+        self.assertIn("centralState !== 'running'", reconcile)
+        self.assertIn(
+            "return { supersedeCompatibleBuildId: releaseBuild }",
+            reconcile,
+        )
+
+        invoke = build[build.index("async function invokeBuild"):]
+        self.assertIn("let supersedeCompatibleBuildId = ''", invoke)
+        self.assertIn("{ supersedeCompatibleBuildId }", invoke)
+
+        control = read_operator("control.js")
+        stage = control[
+            control.index("async function stageRelease"):
+            control.index("function rolloutTrainerRecord")
+        ]
+        self.assertIn("options.supersedeCompatibleBuildId", stage)
+        self.assertIn("body.supersede_compatible_build_id", stage)
+
+    def test_build_does_not_commit_release_lifecycle_before_environment_validation(self):
+        build = read_operator("build.js")
+        start = build.index("async function invokeBuild")
+        block = build[start:]
+        validation = block.index("const validationKey = await assertRlEnvironmentArgsValid")
+        persist_after_validation = block.index("persistReleaseLifecycle();", validation)
+        stage = block.index("stageRelease(", persist_after_validation)
+        self.assertLess(validation, persist_after_validation)
+        self.assertLess(persist_after_validation, stage)
+        self.assertIn("const persistReleaseLifecycle = () =>", block)
+        self.assertIn(
+            "persistReleaseLifecycle();\n    return release;",
+            block,
+        )
 
     def test_forced_new_run_operation_is_resumable_until_terminal_archive(self):
         runtime = read_operator("runtime.js")

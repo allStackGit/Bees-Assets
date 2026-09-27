@@ -166,6 +166,17 @@ def _actor_failure_context(session: Any) -> dict[str, Any]:
     return context
 
 
+def _write_waiting_for_central_health(exc: BaseException) -> None:
+    write_managed_health(
+        "ready",
+        details={
+            "component": "elastic-wan-actor",
+            "phase": "waiting-for-central",
+            "last_broker_error": f"{type(exc).__name__}: {exc}",
+        },
+    )
+
+
 def _report_session_failure(exc: BaseException, session: Any) -> None:
     print(
         f"[Bees WAN actor] session failed: {type(exc).__name__}: {exc}; reconnecting.",
@@ -503,11 +514,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("[Bees WAN actor] central generation changed; reconnecting to the next trainer session.")
                 stop.wait(0.25)
             except worker.BrokerUnavailable as exc:
-                write_managed_health(
-                    "error",
-                    error=f"BrokerUnavailable: {exc}",
-                    details={"component": "elastic-wan-actor"},
-                )
+                # The central broker is intentionally absent during release/publish phases.
+                # The actor process is healthy and should remain ready to reconnect rather than
+                # advertising a false child failure to the training-control supervisor.
+                _write_waiting_for_central_health(exc)
                 delay = reconnect_backoff.next_delay()
                 print(
                     f"[Bees WAN actor] central trainer unavailable: {exc}; "

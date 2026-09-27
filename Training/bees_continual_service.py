@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -38,6 +39,7 @@ DEFAULT_NUM_ENVS = 4
 DEFAULT_RETRY_SECONDS = 30.0
 MANAGED_STOP_FILE_ENV = "BEES_TRAINING_STOP_FILE"
 MANAGED_CHILD_POLL_SECONDS = 0.25
+MANAGED_INTERRUPTIBLE_STOP_SECONDS = 5.0
 PLATFORM_BUILD_TARGETS = {
     "WindowsPlayer": "StandaloneWindows64",
     "OSXPlayer": "StandaloneOSX",
@@ -391,6 +393,8 @@ def release_command(options: ServiceOptions) -> list[str]:
     ]
     if options.competency_suite is not None:
         command.append(f"--competency-suite={options.competency_suite}")
+    for value in options.environment_args:
+        command.append(f"--env-arg={value}")
     return command
 
 
@@ -440,7 +444,47 @@ def _managed_stop_requested() -> bool:
     return path is not None and path.is_file()
 
 
-def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> int:
+def _stop_interruptible_managed_child(process: subprocess.Popen) -> None:
+    """Stop non-training phase work that cannot contain newer optimizer state."""
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        process.terminate()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+
+    try:
+        process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "nt":
+        process.kill()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
+    try:
+        process.wait(timeout=MANAGED_INTERRUPTIBLE_STOP_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "interruptible continual-learning phase did not stop after termination"
+        ) from exc
+
+
+def _run_managed_subprocess(
+    command: Sequence[str],
+    options: ServiceOptions,
+    *,
+    interruptible_on_stop: bool = False,
+) -> int:
     if _managed_stop_requested():
         raise KeyboardInterrupt
 
@@ -459,12 +503,20 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
     stop_requested = False
     while process.poll() is None:
         if _managed_stop_requested() and not stop_requested:
+            stop_requested = True
+            if interruptible_on_stop:
+                print(
+                    "[Bees continuous] managed shutdown requested during durable "
+                    "release/publish work; stopping the active phase.",
+                    flush=True,
+                )
+                _stop_interruptible_managed_child(process)
+                break
             print(
-                "[Bees continuous] managed shutdown requested; "
-                "waiting for the active phase to finalize checkpoint/model output.",
+                "[Bees continuous] managed shutdown requested during training; "
+                "waiting for the trainer to finalize checkpoint/model output.",
                 flush=True,
             )
-            stop_requested = True
         time.sleep(MANAGED_CHILD_POLL_SECONDS)
 
     return_code = int(process.wait())
@@ -473,9 +525,19 @@ def _run_managed_subprocess(command: Sequence[str], options: ServiceOptions) -> 
     return return_code
 
 
-def _run(command: Sequence[str], options: ServiceOptions, runner: Runner) -> None:
+def _run(
+    command: Sequence[str],
+    options: ServiceOptions,
+    runner: Runner,
+    *,
+    interruptible_on_stop: bool = False,
+) -> None:
     if runner is subprocess.run and _managed_stop_file() is not None:
-        return_code = _run_managed_subprocess(command, options)
+        return_code = _run_managed_subprocess(
+            command,
+            options,
+            interruptible_on_stop=interruptible_on_stop,
+        )
     else:
         completed = runner(
             list(command),
@@ -489,7 +551,12 @@ def _run(command: Sequence[str], options: ServiceOptions, runner: Runner) -> Non
 
 def publish_current_hot_bundle(options: ServiceOptions, runner: Runner) -> str:
     """Stage, build and publish only the registry's already-validated current champion."""
-    _run(stage_command(options), options, runner)
+    _run(
+        stage_command(options),
+        options,
+        runner,
+        interruptible_on_stop=True,
+    )
     deployment_id = current_deployment_id(options)
     if deployment_id is None:
         raise RuntimeError("Staging completed without publishing a current deployment pointer.")
@@ -501,11 +568,21 @@ def publish_current_hot_bundle(options: ServiceOptions, runner: Runner) -> str:
         dir=str(build_root),
     ) as temp_dir:
         output = Path(temp_dir)
-        _run(unity_build_command(options, output), options, runner)
+        _run(
+            unity_build_command(options, output),
+            options,
+            runner,
+            interruptible_on_stop=True,
+        )
         metadata = output / "bees-rl-policy.metadata.json"
         if not metadata.is_file():
             raise RuntimeError(f"Unity did not produce hot-bundle metadata: {metadata}")
-        _run(hot_publish_command(options, metadata), options, runner)
+        _run(
+            hot_publish_command(options, metadata),
+            options,
+            runner,
+            interruptible_on_stop=True,
+        )
     return deployment_id
 
 
@@ -591,13 +668,32 @@ def run_service(
                 phase = "release"
 
             if phase == "release":
+                write_managed_health(
+                    "ready",
+                    details={
+                        "phase": "release",
+                        "generation_index": index,
+                    },
+                )
                 print(f"[Bees continuous] evaluating/releasing {generation_id(index)}")
-                _run(release_command(options), options, runner)
+                _run(
+                    release_command(options),
+                    options,
+                    runner,
+                    interruptible_on_stop=True,
+                )
                 state["phase"] = "publish"
                 save_state(options, state)
                 phase = "publish"
 
             if phase == "publish":
+                write_managed_health(
+                    "ready",
+                    details={
+                        "phase": "publish",
+                        "generation_index": index,
+                    },
+                )
                 deployment = current_deployment_id(options)
                 if deployment is None:
                     raise RuntimeError("Release phase left no validated current deployment.")
