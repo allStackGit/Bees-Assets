@@ -522,6 +522,59 @@ class FastEnvManagerTests(unittest.TestCase):
         self.SubprocessEnvManager._step = self.original_step
         self.EnvManager._process_step_infos = self.original_process_step_infos
 
+    def test_worker_exit_does_not_discard_other_consumed_step_results(self):
+        from queue import Empty
+        from types import SimpleNamespace
+
+        from mlagents.trainers.subprocess_env_manager import (
+            EnvironmentCommand,
+            EnvironmentResponse,
+        )
+
+        completed = EnvironmentResponse(EnvironmentCommand.STEP, 0, "worker-0")
+        worker_exit = EnvironmentResponse(EnvironmentCommand.ENV_EXITED, 1, "worker-1")
+        restarted = EnvironmentResponse(EnvironmentCommand.STEP, 1, "worker-1-restarted")
+
+        class FakeQueue:
+            def __init__(self):
+                self.values = [completed, worker_exit]
+
+            def get(self, timeout=None):
+                if not self.values:
+                    raise Empty()
+                return self.values.pop(0)
+
+            def get_nowait(self):
+                if not self.values:
+                    raise Empty()
+                return self.values.pop(0)
+
+        class FakeManager:
+            def __init__(self):
+                self.step_queue = FakeQueue()
+                self.env_workers = [
+                    SimpleNamespace(waiting=True),
+                    SimpleNamespace(waiting=True),
+                ]
+                self.queue_steps_calls = 0
+
+            def _queue_steps(self):
+                self.queue_steps_calls += 1
+
+            def _restart_failed_workers(self, step):
+                self.step_queue.values.append(restarted)
+
+            @staticmethod
+            def _postprocess_steps(worker_steps):
+                return worker_steps
+
+        manager = FakeManager()
+        result = self.SubprocessEnvManager._step(manager)
+
+        self.assertEqual(result, [completed])
+        self.assertEqual(manager.step_queue.values, [restarted])
+        self.assertEqual(manager.queue_steps_calls, 2)
+
     def test_blocking_first_result_then_drains_ready_workers(self):
         from queue import Empty
         from types import SimpleNamespace
