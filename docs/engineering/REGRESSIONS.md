@@ -510,3 +510,11 @@ Manual-only protection is acceptable only when the record explains why determini
 **Verification:** traced policy action decoding through `ApplyMovementCommand` into `Ship.Move` and `RlDirectionalMovement`; confirmed the current heading is applied unconditionally and the focused source regression guard is present. The regression was not run, and no Unity or runtime behavior was checked, per the static-only audit scope.
 
 **Invariant/knowledge:** while policy control owns movement, the current policy heading is authoritative; legacy squad target coordinates must not gate that heading.
+
+### REG-057 — Telemetry expiry cleanup removed active upload files
+**Area:** `BeesServer~/rlTelemetryUploads.js`, `RlTelemetryUploadManager.handle()` and `cleanupExpired()`  
+**Symptom:** a slow chunk or completion operation could cross the idle timeout while another request ran cleanup, causing the session and partial file to be deleted before the active operation finished.  
+**Root cause:** request handling awaited global expiry cleanup before reserving its authenticated session operation, while cleanup considered only the last completed activity timestamp and ignored queued/in-flight session work.  
+**Permanent protection:** authenticated chunk/completion requests now reserve their session before the first asynchronous yield. Expiry cleanup skips sessions with active or queued operations; valid chunk activity continues to refresh the idle timestamp. `rlTelemetryUploads.module.test.js` holds a chunk operation open across the idle cutoff and checks that cleanup retains the session.  
+**Verification:** statically traced request ownership, the per-session promise tail, cleanup ordering, and completion cleanup; reviewed the focused regression test. The test was added but not run, and no runtime checks were performed, per the static-only audit scope.  
+**Invariant/knowledge:** idle expiry must not delete storage owned by an active asynchronous operation; reserve request ownership before yielding to cleanup.  
