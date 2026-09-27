@@ -21,6 +21,44 @@ namespace Assets.Scripts.Levels
             return UserCommands++;
         }
 
+        public bool TryIssuePlayerCommand(
+            int playerId,
+            PlayerCommandKind kind,
+            long squadCommandId,
+            long targetSquadCommandId = 0,
+            Vector2 pointA = default,
+            Vector2 pointB = default)
+        {
+            MatchSession matchSession = Stage != null ? Stage.MatchSession : null;
+            long sequence = 0;
+            if (matchSession != null)
+            {
+                if (!matchSession.IsLocalPlayer(playerId))
+                {
+                    return false;
+                }
+
+                sequence = matchSession.AllocatePlayerCommandSequence(playerId);
+                if (sequence <= 0)
+                {
+                    return false;
+                }
+            }
+            else if (playerId != MatchSession.LegacyLocalPlayerId)
+            {
+                return false;
+            }
+
+            return TryExecutePlayerCommand(new PlayerCommandEnvelope(
+                playerId,
+                sequence,
+                kind,
+                squadCommandId,
+                targetSquadCommandId,
+                pointA,
+                pointB));
+        }
+
         public bool TryExecutePlayerCommand(PlayerCommandEnvelope command)
         {
             if (command == null || !IsKnownInputPlayer(command.PlayerId))

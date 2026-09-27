@@ -415,6 +415,12 @@ namespace Assets.Scripts.Levels
             return playerId > UnownedPlayerId && _players.Any(player => player.Id == playerId);
         }
 
+        public bool IsLocalPlayer(int playerId)
+        {
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            return player != null && player.IsLocal;
+        }
+
         public bool TryBeginBattle()
         {
             if (!IsConfiguring || _players.Count == 0 || PrimaryLocalPlayerId == UnownedPlayerId)
