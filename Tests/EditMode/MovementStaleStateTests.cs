@@ -22,6 +22,28 @@ namespace Bees.Tests.EditMode
         }
 
         [Test]
+        public void DeadAsteroidStopsRegisteringCollisionContactsAndCleansShipReferences()
+        {
+            string collisionPath = Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "CollisionAsteroid.Collisions.cs");
+            string collisionSource = File.ReadAllText(collisionPath);
+            StringAssert.Contains("ship.Level != Level || IsDead || Health <= 0", collisionSource);
+            StringAssert.Contains("obstacle.Level != Level || IsDead || Health <= 0", collisionSource);
+
+            string asteroidPath = Path.Combine(
+                Application.dataPath, "Scripts", "Entities", "CollisionAsteroid.cs");
+            string asteroidSource = File.ReadAllText(asteroidPath);
+            int start = asteroidSource.IndexOf("public void Kill(bool endKill)");
+            int end = asteroidSource.IndexOf("private CollisionAsteroid _asteroidShard", start);
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            StringAssert.Contains("ClearNearbyShipReferences();", asteroidSource.Substring(start, end - start));
+            StringAssert.Contains("foreach (Ship ship in TouchingShips)", asteroidSource);
+            StringAssert.Contains("NearbyShips.Clear();", asteroidSource);
+            StringAssert.Contains("TouchingShips.Clear();", asteroidSource);
+        }
+
+        [Test]
         public void LeavingAsteroidClearsCachedTurretTarget()
         {
             string path = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Movement.cs");
