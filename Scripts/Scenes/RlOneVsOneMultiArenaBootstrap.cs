@@ -123,8 +123,12 @@ internal sealed class RlOneVsOneMultiArenaBootstrap : MonoBehaviour
             _stage.LevelCount = arenaCount;
             if (arenaCount > 1)
             {
-                RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(Environment.GetCommandLineArgs());
-                _stage.LevelLayouts[arenaCount] = BuildLayout(arenaCount, options.MapSizeMaximum);
+                string[] args = Environment.GetCommandLineArgs();
+                RlOneVsOneTrainingOptions options = RlOneVsOneTrainingOptions.Parse(args);
+                float maximumMapSize = RlPlayerDerivedTacticalGeometry.GetMaximumConfiguredMapSize(
+                    args,
+                    options.MapSizeMaximum);
+                _stage.LevelLayouts[arenaCount] = BuildLayout(arenaCount, maximumMapSize);
             }
             Debug.Log($"RL training arenas_per_environment={arenaCount}");
         }
