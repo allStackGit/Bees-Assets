@@ -10,6 +10,7 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Static/global state used by tests or scenes must have an explicit ownership/reset strategy.
 - Multiplayer ownership is Free Play-only. Campaign and Challenge must not inherit or create a `MatchSession`.
 - `Squad.OwnerPlayerId` is match-local transient ownership, not persistent fleet identity or a network entity id, and must reset on every pooled squad lifetime.
+- `Squad.MatchSquadId` is a match-scoped command/network identity: it resets on pooled object cleanup, but each new runtime squad lifetime in the same `MatchSession` receives a fresh monotonically allocated value. Player/network command routing must not treat pooled `Squad.ItemId` as a durable match identity.
 - Hive Mind command scheduling must exclude every `Squad.IsPlayerControlled` squad, including remote or same-side co-op ownership; it must not infer human ownership only from `Configuration.UserSide`.
 - Squad selection and command dispatch are scoped by match player id. A non-primary player's selection must not enter the primary-local `SelectedSquads`/`IsSelected` UI state, and all player-scoped selections must be forgotten before pooled squad reuse.
 - External/session-scoped player commands must fail closed for unknown players, dead/foreign squads, or squads owned by another player, and must enter gameplay through the ownership-validating `GameState.TryPlayer*` command gateway rather than directly invoking trusted `Squad.User*` methods.

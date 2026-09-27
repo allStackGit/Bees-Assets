@@ -382,5 +382,43 @@ namespace Bees.Tests.EditMode
             StringAssert.DoesNotContain("squad.UserGuard(ship.Squad)", source);
             StringAssert.DoesNotContain("squad.UserPatrol(_checkForSelectingPatrolArea_startingPosition", source);
         }
+
+        [Test]
+        public void MatchSquadIdsAreUniqueWithinSession()
+        {
+            Type sessionType = RuntimeAssembly.GetType("Assets.Scripts.Levels.MatchSession");
+            object session = Activator.CreateInstance(sessionType);
+
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchSquadId"), Is.EqualTo(1L));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchSquadId"), Is.EqualTo(2L));
+            Assert.That(RuntimeAssembly.Invoke(session, "AllocateMatchSquadId"), Is.EqualTo(3L));
+        }
+
+        [Test]
+        public void MatchSquadIdentityResetsOnPooledSquadLifetime()
+        {
+            string squadPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "Squad.cs");
+            string squadSource = File.ReadAllText(squadPath);
+
+            StringAssert.Contains("MatchSquadId = 0;", squadSource);
+            StringAssert.Contains("MatchSquadId = matchSession == null ? 0 : matchSession.AllocateMatchSquadId();", squadSource);
+            StringAssert.Contains("public long CommandSquadId => MatchSquadId != 0 ? MatchSquadId : ItemId;", squadSource);
+        }
+
+        [Test]
+        public void PlayerCommandBoundaryUsesMatchScopedSquadIdentity()
+        {
+            string commandPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "GameState.Commands.cs");
+            string inputPath = Path.Combine(Application.dataPath, "Scripts", "Levels", "LevelInputManager.cs");
+            string interactionPath = Path.Combine(Application.dataPath, "Scripts", "Entities", "Ships", "Ship.Interaction.cs");
+            string commandSource = File.ReadAllText(commandPath);
+            string inputSource = File.ReadAllText(inputPath);
+            string interactionSource = File.ReadAllText(interactionPath);
+
+            StringAssert.Contains("squad.CommandSquadId == squadCommandId", commandSource);
+            StringAssert.Contains(".CommandSquadId", inputSource);
+            StringAssert.Contains("selectedSquad.CommandSquadId", interactionSource);
+            StringAssert.Contains("Squad.CommandSquadId", interactionSource);
+        }
     }
 }
