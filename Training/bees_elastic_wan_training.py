@@ -824,8 +824,13 @@ class ElasticWanBroker(base.WanActorBroker):
         with self._condition:
             self._active_snapshot_locked()
             self._validate_dynamic_owner_locked(actor_id, payload)
+            if payload.get("control_epoch") != self._control_epoch:
+                raise base.StaleActorStateError(
+                    f"actor control epoch {payload.get('control_epoch')!r} != central epoch {self._control_epoch}"
+                )
+            # Validate and renew under the same lock so a stale reset acknowledgement cannot
+            # extend the lease after a control update races the request.
             self._registrations[actor_id]["last_seen"] = time.monotonic()
-        super().acknowledge_reset(payload)
 
     def submit_trajectory_batch(self, payload: Mapping[str, Any]) -> int:
         actor_id = self._validate_actor_id(payload.get("actor_id"))
