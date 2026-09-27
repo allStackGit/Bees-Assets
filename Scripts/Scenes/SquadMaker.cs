@@ -156,7 +156,11 @@ namespace Assets.Scripts.Scenes
         private int _squadListOriginalScrollHeight, _squadListOptionsScrollHeight, _squadListLevelScrollHeight;
         int _capacity;
         private HashSet<ConfigData.ShipTypes> _availableShipTypes;
+        private IMultiplayerLobbyTransport _multiplayerLobbyTransport;
 
+        public MatchSession MultiplayerLobbySession { get; private set; }
+        public bool IsMultiplayerLobbyTransportActive =>
+            _multiplayerLobbyTransport != null && _multiplayerLobbyTransport.IsAvailable;
 
         public bool HasActionBox => ActionBox != null;
         public bool HasColorPicker => _colorPicker != null;
@@ -165,6 +169,88 @@ namespace Assets.Scripts.Scenes
 
 
 
+
+        public bool StartHostingMultiplayerLobby(MatchSession session)
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
+                session == null ||
+                !session.IsConfiguring)
+            {
+                return false;
+            }
+
+            MatchPeer localPeer = session.Peers.FirstOrDefault(peer => peer.IsLocal);
+            if (localPeer == null ||
+                !SteamMultiplayerTransportFactory.TryGetLocalTransportIdentity(
+                    out string localTransportIdentity))
+            {
+                return false;
+            }
+
+            if (!string.Equals(
+                    localPeer.TransportIdentity,
+                    localTransportIdentity,
+                    StringComparison.Ordinal) &&
+                !session.TrySetPeerTransportIdentity(
+                    localPeer.Id,
+                    localTransportIdentity))
+            {
+                return false;
+            }
+
+            StopMultiplayerLobbyTransport();
+            IMultiplayerLobbyTransport transport =
+                SteamMultiplayerLobbyTransportFactory.CreateHost(session);
+            if (transport == null)
+            {
+                return false;
+            }
+
+            MultiplayerLobbySession = session;
+            _multiplayerLobbyTransport = transport;
+            return true;
+        }
+
+        public bool StartJoiningMultiplayerLobby(string authorityTransportIdentity)
+        {
+            if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay ||
+                string.IsNullOrWhiteSpace(authorityTransportIdentity))
+            {
+                return false;
+            }
+
+            StopMultiplayerLobbyTransport();
+            IMultiplayerLobbyTransport transport =
+                SteamMultiplayerLobbyTransportFactory.CreateClient(
+                    authorityTransportIdentity);
+            if (transport == null)
+            {
+                return false;
+            }
+
+            MultiplayerLobbySession = null;
+            _multiplayerLobbyTransport = transport;
+            return true;
+        }
+
+        public void StopMultiplayerLobbyTransport()
+        {
+            _multiplayerLobbyTransport?.Dispose();
+            _multiplayerLobbyTransport = null;
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+            _multiplayerLobbyTransport?.Update();
+
+            if (_multiplayerLobbyTransport != null &&
+                _multiplayerLobbyTransport.TryTakeReceivedSession(
+                    out MatchSession receivedSession))
+            {
+                MultiplayerLobbySession = receivedSession;
+            }
+        }
 
         // Setup methods
         private new void Start()
@@ -2298,6 +2384,11 @@ namespace Assets.Scripts.Scenes
         {
             _chosenEnemyShipTypes = option - 1;
             //Debug.Log($"Option: {_chosenEnemyShipTypes}"); 
+        }
+
+        private void OnDestroy()
+        {
+            StopMultiplayerLobbyTransport();
         }
 
     }

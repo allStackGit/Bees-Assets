@@ -1538,5 +1538,45 @@ namespace Bees.Tests.EditMode
             StringAssert.Contains("private const int LobbyChannel = 46;", source);
             StringAssert.Contains("private const int CommandChannel = 47;", source);
         }
+
+        [Test]
+        public void SquadMakerPumpsLobbyTransportOnlyThroughFreePlayEntryPoints()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("StartHostingMultiplayerLobby(MatchSession session)", source);
+            StringAssert.Contains("StartJoiningMultiplayerLobby(string authorityTransportIdentity)", source);
+            Assert.That(
+                source.Split(new[] { "ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay" },
+                    StringSplitOptions.None).Length - 1,
+                Is.GreaterThanOrEqualTo(2));
+            StringAssert.Contains("protected override void Update()", source);
+            StringAssert.Contains("base.Update();", source);
+            StringAssert.Contains("_multiplayerLobbyTransport?.Update();", source);
+            StringAssert.Contains("TryTakeReceivedSession(", source);
+        }
+
+        [Test]
+        public void SquadMakerHostBindsCanonicalLocalSteamIdentityBeforeBroadcast()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("TryGetLocalTransportIdentity(", source);
+            StringAssert.Contains("session.TrySetPeerTransportIdentity(", source);
+            StringAssert.Contains("SteamMultiplayerLobbyTransportFactory.CreateHost(session)", source);
+        }
+
+        [Test]
+        public void SquadMakerDisposesLobbyTransportOnSceneTeardown()
+        {
+            string path = Path.Combine(Application.dataPath, "Scripts", "Scenes", "SquadMaker.cs");
+            string source = File.ReadAllText(path);
+
+            StringAssert.Contains("private void OnDestroy()", source);
+            StringAssert.Contains("StopMultiplayerLobbyTransport();", source);
+            StringAssert.Contains("_multiplayerLobbyTransport?.Dispose();", source);
+        }
     }
 }

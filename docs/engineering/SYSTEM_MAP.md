@@ -123,3 +123,5 @@ Inspect broader dependencies before modifying:
 ## Maintenance rule
 
 This map is navigation, not proof. When a task reveals that ownership, call paths, identity namespaces or canonical sources changed, update this file and/or `docs/DEVELOPMENT_MEMORY.md` in the same task. Remove stale statements rather than leaving multiple contradictory maps.
+
+- `SquadMaker` can host or join the Free Play pre-battle Steam lobby and pumps it from the normal scene update; lobby receipt does not implicitly start a battle.

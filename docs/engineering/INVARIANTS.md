@@ -88,3 +88,5 @@ These are cross-cutting rules future changes must preserve. Keep this file conci
 - Performance improvements must preserve gameplay, cleanup, synchronization/ownership, save/network compatibility, and intended default quality.
 - Prefer stable frame-time and bounded resource use over average-FPS-only wins.
 - Do not introduce unbounded caches, retained pooled state, race conditions, or hidden quality reductions to improve a benchmark.
+
+- SquadMaker lobby transport entry points are Free Play-only, must call the base `Scene.Update`, and must dispose their transport on scene teardown. Receiving a lobby session is not sufficient to start battle until canonical match/environment configuration is also staged.
