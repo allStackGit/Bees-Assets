@@ -25,7 +25,7 @@ namespace Assets.Scripts.UIComponents
         private static readonly Color FlightColor = new Color(0.36f, 0.78f, 1f, 1f);
         private static readonly Color ShootingColor = new Color(1f, 0.70f, 0.28f, 1f);
         private static readonly Regex SingularShipsRange = new Regex(
-            @"ships([’']) range\\b",
+            @"ships([’']) range\b",
             RegexOptions.CultureInvariant);
         private static readonly FieldInfo DialogueTimerField = typeof(Level).GetField(
             "_dialogueTimer",
