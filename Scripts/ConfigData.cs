@@ -119,11 +119,36 @@ namespace Assets.Scripts
         public static string WaitingMessage = "{\"status\": \"waiting\"}";
 
         private static LevelOptions _levelOptions;
+        private static Levels.MatchSession _pendingFreePlayMatchSession;
+
         public static LevelOptions LevelOptions
         {
             get => _levelOptions;
             set => _levelOptions = NormalizeCampaignLevelOptions(value);
         }
+        public static bool TrySetPendingFreePlayMatchSession(Levels.MatchSession session)
+        {
+            if (CurrentGameMode != GameModes.FreePlay || session == null || !session.IsConfiguring)
+            {
+                return false;
+            }
+
+            _pendingFreePlayMatchSession = session;
+            return true;
+        }
+
+        public static Levels.MatchSession ConsumePendingFreePlayMatchSession()
+        {
+            Levels.MatchSession session = _pendingFreePlayMatchSession;
+            _pendingFreePlayMatchSession = null;
+            return CurrentGameMode == GameModes.FreePlay ? session : null;
+        }
+
+        public static void ClearPendingFreePlayMatchSession()
+        {
+            _pendingFreePlayMatchSession = null;
+        }
+
         public static bool IsTestingLevel;
         public static bool ChooseRandomLevel;
         public static bool HasSeenPreLevelIntro;

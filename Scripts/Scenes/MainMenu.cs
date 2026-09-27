@@ -181,6 +181,7 @@ namespace Assets.Scripts.Scenes
         {
             DeselectButton();
             ConfigData.CurrentGameMode = ConfigData.GameModes.FreePlay;
+            ConfigData.ClearPendingFreePlayMatchSession();
             ConfigData.CurrentShips = ConfigData.FreePlayShips;
             SetupSquadMaker(side);
         }

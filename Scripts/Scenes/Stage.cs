@@ -395,13 +395,24 @@ public class Stage : Scene
     {
         if (ConfigData.CurrentGameMode != ConfigData.GameModes.FreePlay || !DoesUserHaveController)
         {
+            ConfigData.ClearPendingFreePlayMatchSession();
             MatchSession = null;
             return;
         }
 
         if (MatchSession == null)
         {
+            MatchSession = ConfigData.ConsumePendingFreePlayMatchSession();
+        }
+        if (MatchSession == null)
+        {
             MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
+        }
+        if (!MatchSession.TryBeginBattle())
+        {
+            Debug.LogError("Could not start configured Free Play match session. Falling back to solo ownership.");
+            MatchSession = Assets.Scripts.Levels.MatchSession.CreateSolo(ConfigData.Configuration.UserSide);
+            MatchSession.TryBeginBattle();
         }
     }
 

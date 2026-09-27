@@ -247,7 +247,7 @@ namespace Assets.Scripts.Levels
     public sealed class MatchPlayer
     {
         public int Id { get; }
-        public int Side { get; }
+        public int Side { get; private set; }
         public bool IsLocal { get; }
 
         public MatchPlayer(int id, int side, bool isLocal)
@@ -256,6 +256,18 @@ namespace Assets.Scripts.Levels
             Side = side;
             IsLocal = isLocal;
         }
+
+        internal void SetSide(int side)
+        {
+            Side = side;
+        }
+    }
+
+    public enum MatchSessionPhase
+    {
+        Lobby,
+        Battle,
+        Ended
     }
 
     /// <summary>
@@ -274,7 +286,9 @@ namespace Assets.Scripts.Levels
 
         public IReadOnlyList<MatchPlayer> Players => _players;
         public int PrimaryLocalPlayerId { get; private set; } = UnownedPlayerId;
+        public MatchSessionPhase Phase { get; private set; } = MatchSessionPhase.Lobby;
         public bool IsMultiplayer => _players.Count > 1;
+        public bool IsConfiguring => Phase == MatchSessionPhase.Lobby;
 
         public static MatchSession CreateSolo(int side)
         {
@@ -285,7 +299,7 @@ namespace Assets.Scripts.Levels
 
         public bool AddPlayer(int playerId, int side, bool isLocal)
         {
-            if (playerId <= UnownedPlayerId)
+            if (!IsConfiguring || playerId <= UnownedPlayerId)
             {
                 return false;
             }
@@ -306,8 +320,57 @@ namespace Assets.Scripts.Levels
             return true;
         }
 
+        public bool RemovePlayer(int playerId)
+        {
+            if (!IsConfiguring)
+            {
+                return false;
+            }
+
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            if (player == null)
+            {
+                return false;
+            }
+
+            _players.Remove(player);
+            _squadOwnerAssignments.RemoveAll(assignment => assignment.PlayerId == playerId);
+            if (PrimaryLocalPlayerId == playerId)
+            {
+                MatchPlayer replacement = _players.FirstOrDefault(candidate => candidate.IsLocal);
+                PrimaryLocalPlayerId = replacement == null ? UnownedPlayerId : replacement.Id;
+            }
+            return true;
+        }
+
+        public bool TrySetPlayerSide(int playerId, int side)
+        {
+            if (!IsConfiguring ||
+                (side != ConfigData.Configuration.BeeSide && side != ConfigData.Configuration.HumanSide))
+            {
+                return false;
+            }
+
+            MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+            if (player == null)
+            {
+                return false;
+            }
+
+            player.SetSide(side);
+            _squadOwnerAssignments.RemoveAll(assignment =>
+                assignment.PlayerId == playerId &&
+                (assignment.Squad == null || assignment.Squad.Side != side));
+            return true;
+        }
+
         public bool SetPrimaryLocalPlayer(int playerId)
         {
+            if (!IsConfiguring)
+            {
+                return false;
+            }
+
             MatchPlayer player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
             if (player == null || !player.IsLocal)
             {
@@ -350,6 +413,35 @@ namespace Assets.Scripts.Levels
             return playerId > UnownedPlayerId && _players.Any(player => player.Id == playerId);
         }
 
+        public bool TryBeginBattle()
+        {
+            if (!IsConfiguring || _players.Count == 0 || PrimaryLocalPlayerId == UnownedPlayerId)
+            {
+                return false;
+            }
+
+            MatchPlayer primaryLocalPlayer = _players.FirstOrDefault(player =>
+                player.Id == PrimaryLocalPlayerId && player.IsLocal);
+            if (primaryLocalPlayer == null)
+            {
+                return false;
+            }
+
+            Phase = MatchSessionPhase.Battle;
+            return true;
+        }
+
+        public bool EndBattle()
+        {
+            if (Phase != MatchSessionPhase.Battle)
+            {
+                return false;
+            }
+
+            Phase = MatchSessionPhase.Ended;
+            return true;
+        }
+
         public long AllocateMatchSquadId()
         {
             return _nextMatchSquadId++;
@@ -363,7 +455,7 @@ namespace Assets.Scripts.Levels
 
         public bool TryAssignSavedSquadOwner(SavedSquad savedSquad, int playerId)
         {
-            if (savedSquad == null)
+            if (!IsConfiguring || savedSquad == null)
             {
                 return false;
             }
