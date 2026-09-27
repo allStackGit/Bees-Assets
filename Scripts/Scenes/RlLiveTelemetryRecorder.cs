@@ -447,6 +447,15 @@ internal sealed class RlLiveTelemetryRecorder : MonoBehaviour
             frameQuarterTurns);
         continuous[0] = movement.x;
         continuous[1] = movement.y;
+        if (controller == RlProductionControllerRouter.ControllerKind.NeuralNetwork)
+        {
+            Vector4 communication = RlOneVsOneAgent.GetCommunicationActions(ship);
+            int communicationStart = RlOneVsOneAgent.CommunicationContinuousActionStart;
+            continuous[communicationStart] = communication.x;
+            continuous[communicationStart + 1] = communication.y;
+            continuous[communicationStart + 2] = communication.z;
+            continuous[communicationStart + 3] = communication.w;
+        }
 
         for (int slot = 0; slot < RlOneVsOneAgent.MaxWeaponSlots; slot++)
         {
