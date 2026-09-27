@@ -971,3 +971,13 @@ Manual-only protection is acceptable only when the record explains why determini
 **Permanent protection:** source invariant: map-parented tutorial markers that consume `Squad.GetPosition()` must use local coordinates. No tests were run or added under the static-only audit instruction.
 **Verification:** statically confirmed `Entity.GetPosition()` returns `Transform.localPosition`, verified both map-parented highlight assignments now use `localPosition`, and traced the error to a non-identity map transform. No tests, builds, Unity, simulations, or runtime checks were run.
 **Invariant/knowledge:** a child transform's local point must be assigned through `localPosition`; world-space `position` is only correct after transforming the point.
+
+
+### REG-110 — Pathfinder reset could rebuild buffers while workers were reading them
+**Area:** `Scripts/Levels/Pathfinder.cs`, `Pathfinder.Setup`; `Scripts/Levels/Pathfinder.Search.cs`, background searches
+**Symptom:** a level reset or map setup could replace per-worker clearance and A* scratch arrays while an earlier `Task.Run` search was still reading them, producing corrupted searches or runtime errors.
+**Root cause:** setup reinitialized shared Pathfinder state without tracking or awaiting the background search tasks. Ship lifecycle IDs rejected stale results but did not protect the arrays those workers used.
+**Fix:** each path search now retains its worker Task until result publication; Setup waits for outstanding worker tasks and drains their completions before rebuilding map/search state. Worker exceptions are captured into the completion queue and logged on the main thread, allowing the wait to finish without a Unity-context continuation.
+**Permanent protection:** source invariant: Pathfinder setup must not mutate shared grid/search buffers until all background searches have completed. Tests were not run or added under the static-only audit instruction.
+**Verification:** statically traced the reset path through `ResetLevel`, ship lifecycle invalidation, `Level.SetupMapAndCamera`, and `Pathfinder.Setup`; confirmed active search arrays are read inside `Task.Run` and are now protected by a wait before reinitialization. No tests, builds, Unity, simulations, or runtime checks were run.
+**Invariant/knowledge:** invalidating a result identity does not cancel a worker or make its captured mutable search state safe to replace.
