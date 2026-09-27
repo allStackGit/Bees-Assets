@@ -15,7 +15,8 @@ namespace Assets.Scripts.Levels
         private void OnTriggerEnter2D(Collider2D collision)
         {
             Ship ship = collision.GetComponent<Ship>();
-            if (ship == null || ship.IsDead)
+            Level owningLevel = GetComponentInParent<Level>();
+            if (ship == null || ship.IsDead || owningLevel == null || ship.Level != owningLevel)
             {
                 return;
             }
