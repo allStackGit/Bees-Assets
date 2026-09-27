@@ -109,7 +109,7 @@ namespace Assets.Scripts.Entities.Ships
             for (int i = 0; i < _shipsHealingSnapshot.Count; i++)
             {
                 Ship ship = _shipsHealingSnapshot[i];
-                if (ship != null && ship.Squad.GetCommand() is Heal healCommand && healCommand.IsShipActivelyHealing(ship))
+                if (ship != null && ship.Squad?.GetCommand() is Heal healCommand && healCommand.IsShipActivelyHealing(ship))
                 {
                     ship.Kill(killer, killerFleetShip, killerSavedSquad, endKill);
                 }
