@@ -345,7 +345,7 @@ namespace Assets.Scripts.Levels
 
             public bool Equals(Path other)
             {
-                return other != null &&
+                return !ReferenceEquals(other, null) &&
                     StartX == other.StartX &&
                     StartY == other.StartY &&
                     EndX == other.EndX &&
