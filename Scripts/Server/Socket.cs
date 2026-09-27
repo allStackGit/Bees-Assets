@@ -892,7 +892,10 @@ namespace Assets.Scripts.Server
                 }
                 else
                 {
-                    Debug.LogError($"Null response when requesting settings from the server. {_settingsResponse_userData}");
+                    _settingsResponse_standingRequest.Status = -1;
+                    Debug.LogError(
+                        $"No settings record was returned for '{_settingsResponse_standingRequest.Request.DataFile}'. " +
+                        "Settings remain unavailable; the missing record will not be retried as a pending request.");
                 }
             }
             else
