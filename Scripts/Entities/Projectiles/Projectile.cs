@@ -251,11 +251,20 @@ namespace Assets.Scripts.Entities.Projectiles
             _collidingThing = collider.gameObject;
             if (_collidingThing.CompareTag("Ship"))
             {
-                CollidingQueue.Enqueue(_collidingThing.GetComponent<Ship>());
+                Ship ship = _collidingThing.GetComponent<Ship>();
+                // Concurrent Levels reuse side IDs, so collisions must stay within the owning Level.
+                if (ship != null && ship.Level == Level)
+                {
+                    CollidingQueue.Enqueue(ship);
+                }
             }
             else if (_collidingThing.CompareTag("Obstacle"))
             {
-                CollidingObstacleQueue.Enqueue(_collidingThing.GetComponent<Obstacle>());
+                Obstacle obstacle = _collidingThing.GetComponent<Obstacle>();
+                if (obstacle != null && obstacle.Level == Level)
+                {
+                    CollidingObstacleQueue.Enqueue(obstacle);
+                }
             }
         }
 
