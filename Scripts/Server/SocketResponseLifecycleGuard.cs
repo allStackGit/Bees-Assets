@@ -129,6 +129,15 @@ namespace Assets.Scripts.Server
         {
             if (response == null) return false;
 
+            ServerRequest standingRequest = socket.GetStandingRequest(response.Hash);
+            if (standingRequest != null && standingRequest.Type != response.RequestType)
+            {
+                Debug.LogWarning(
+                    $"Ignoring response #{response.Hash}:{response.RequestType}; " +
+                    $"the standing request expects {standingRequest.Type}.");
+                return true;
+            }
+
             if (IsStaleSquadResponse(socket, response))
             {
                 // Mark the hash handled as well as suppressing this payload so duplicate or delayed
